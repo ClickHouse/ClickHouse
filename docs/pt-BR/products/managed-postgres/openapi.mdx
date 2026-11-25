@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Controle seus serviços do ClickHouse Managed Postgres com nossa OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'linha de comando', 'query insights', 'consultas lentas', 'logs do servidor', 'logs']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'linha de comando', 'query insights', 'consultas lentas', 'consultas bloqueantes', 'logs do servidor', 'logs']
 doc_type: 'guide'
 ---
 
@@ -291,11 +291,12 @@ serviço. Consulte a página [endpoint do Prometheus] para a configuração e a
 
 ## Query insights {#query-insights}
 
-A telemetria por instrução que alimenta a aba [Query Insights] no console da
+A telemetria por instrução que alimenta a aba [Query Insights] no Console do
 Cloud também está disponível programaticamente. Dois endpoints expõem os
 padrões de consulta mais lentos em um serviço: um lista todos os padrões
 ordenados por impacto; o outro retorna um único padrão com suas execuções
-recentes.
+recentes. Um terceiro lista as consultas que ficaram aguardando bloqueios e as
+sessões que as bloquearam.
 
 ### Listar padrões de consultas lentas {#list-slow-query-patterns}
 
@@ -415,9 +416,81 @@ de CPU em modo usuário e do sistema, workers paralelos, JIT e WAL — os mesmos
 O exemplo resume ambos os objetos por brevidade; a API retorna o conjunto completo
 de contadores documentado em [contadores por execução].
 
+### Listar consultas bloqueantes {#list-blocking-queries}
+
+A [blocking queries API] retorna os mesmos grupos que a
+tabela [Blocking queries] no console: cada resultado associa uma consulta em espera
+a um bloqueador direto, com os mais frequentes primeiro. Ela só contém dados dos
+períodos em que a coleta de consultas bloqueantes estava ativada no serviço. Informe
+`from_date` e `to_date` como timestamps RFC 3339. `to_date` deve ser posterior a
+`from_date`, e o intervalo não pode ultrapassar 31 dias:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Filtre pelo `db_name`, `db_user` ou `app` das sessões em espera; um `app=` vazio
+corresponde a sessões sem nome de aplicação. Pagine os resultados
+com `limit` (até 2000, padrão 50) e `offset` e use `totalCount` para
+ver quantos grupos atendem aos filtros.
+
+Os campos que começam com `blocked` descrevem as sessões em espera, e os campos
+que começam com `blocking` descrevem a sessão bloqueadora. `lockType`, `blockedMode`
+e os campos `latest*` vêm da amostra mais recente:
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+Assim como no Console, `blockingQuery` é a instrução atual ou mais recente do bloqueador,
+que pode não ser a que adquiriu o bloqueio. `blockedQuery` e
+`blockingQuery` ficam vazios quando o Query Insights não tem o texto da instrução,
+e `blockingQuery` também fica vazio quando `blockingInternal` ou
+`blockingPrepared` é `true`. Uma transação preparada informa `blockingPids`
+como `[0]`.
+
 ## Logs do servidor {#server-logs}
 
-Os logs do servidor PostgreSQL exibidos no visualizador de logs do console do Cloud também estão
+Os logs do servidor PostgreSQL exibidos no visualizador de logs do Console do Cloud também estão
 disponíveis programaticamente. A [API de logs] retorna entradas de log individuais de um
 serviço em uma janela de tempo. Assim como no Query Insights, a janela é obrigatória; portanto,
 passe `from_date` e `to_date` como timestamps RFC 3339. O intervalo não pode exceder
@@ -499,10 +572,14 @@ total; avance o `offset` até que uma página retorne menos entradas que o `limi
 
 [painel lateral de detalhes]: /products/managed-postgres/monitoring/query-insights#detail "Painel lateral de detalhes do Query Insights"
 
+[Blocking queries]: /products/managed-postgres/monitoring/query-insights#blocking-queries "Blocking queries do Query Insights"
+
 [contadores por execução]: /products/managed-postgres/monitoring/query-insights#counters "Contadores por execução do Query Insights"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Listar padrões de consultas lentas do Postgres"
+[API de padrões de consultas lentas]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Listar padrões de consultas lentas do Postgres"
 
 [API de padrão de consulta lenta]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obter um padrão de consulta lenta do Postgres com execuções recentes"
+
+[blocking queries API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list "Listar consultas bloqueantes do Postgres"
 
 [API de logs]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Listar logs do servidor Postgres"

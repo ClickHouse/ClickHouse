@@ -94,6 +94,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 
 `_path` 또는 `_file` 프레디케이트는 주소가 생성될 때마다 각 주소에 적용됩니다. 따라서 프레디케이트에 의해 제외되는 주소도 생성되어 제한 수에 포함되며, 건너뛰어지는 것은 일치하는 주소의 읽기뿐입니다.
 
+### 패턴은 주소를 생성하며, 목록을 필터링하지 않습니다 {#patterns-generate-addresses}
+
+일반 HTTP로는 서버에 있는 파일 목록을 조회할 수 없으므로, `url`의 패턴은 실제로 존재하는 파일을 걸러내는 *필터(filter)*&#xAC00; 아니라 주소를 만드는 *생성기*입니다. 쿼리(query)에서 읽을 모든 주소를 생성하고 각 주소로 요청을 보내야 하며, 주소 수는 [glob&#95;expansion&#95;max&#95;elements](/ko/reference/settings/session-settings/other#glob_expansion_max_elements)로 제한됩니다. [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/ko/reference/settings/session-settings/http#http_skip_not_found_url_for_globs)가 활성화되어 있으면, 읽기 과정에서 존재하지 않는 것으로 확인된 주소는 건너뜁니다.
+
+[s3](/ko/reference/functions/table-functions/s3)와 같은 객체 스토리지 테이블 함수(table functions)는 반대로 작동합니다. 패턴을 정규식(regular expression)으로 컴파일한 다음 버킷의 객체 목록과 대조하므로, 패턴이 방대한 키 공간을 나타내더라도 추가 비용이 들지 않습니다. 따라서 동일한 패턴으로도 `s3`는 일치하는 데이터를 모두 읽지만 `url`은 해당 패턴을 거부합니다:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+목록에서 패턴과 일치하는 항목을 찾으려면 `s3`(또는 다른 객체 스토리지(Object Storage) 테이블 함수(Table Function))를 사용하고, 생성된 모든 주소에 실제로 요청을 보내야 할 때만 `glob_expansion_max_elements` 값을 높이십시오.
+
 ## HTTP 인덱스 페이지를 사용한 와일드카드 {#wildcards-with-http-index-pages}
 
 `url` 및 `URL` 테이블 엔진에서 ClickHouse는 HTTP 인덱스 페이지(HTML 또는 plaintext)를 가져오고 응답 본문에서 URL을 추출하여 와일드카드를 확장할 수 있습니다. 이를 통해 서버가 디렉터리 목록을 제공할 때 `/**/`와 같은 패턴을 사용할 수 있습니다.

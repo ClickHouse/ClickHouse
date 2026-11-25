@@ -13,7 +13,7 @@ ClickHouse Observability 支持基于原始 SQL 查询创建可视化。这样�
 
 ## 创建基于 SQL 的可视化 {#creating-a-raw-sql-chart}
 
-要创建基于 SQL 的可视化，请打开仪表板面板编辑器并选择 **SQL**。
+要创建基于 SQL 的可视化，请打开仪表板卡片编辑器并选择 **SQL**。
 
 <div className="ch-image-lg">
   <Frame>
@@ -23,10 +23,12 @@ ClickHouse Observability 支持基于原始 SQL 查询创建可视化。这样�
 
 接下来：
 
-1. 选择要执行查询的 **Connection**。
-2. (可选) 选择一个 **Source**——这样即可通过 `$__filters` 宏将仪表板级筛选器应用到图表上。
+1. 选择要执行查询的 **连接**。
+2. (可选) 选择一个 **Source**——这样即可通过 `$__filters` 宏将仪表板级筛选器应用到图表上，并可在查询中使用 `$__sourceTable`。
 3. 在编辑器中编写 SQL 查询，并借助查询参数和宏与仪表盘的时间范围、筛选条件和变量相结合。
 4. 点击 **运行** 预览结果，然后点击 **保存** 保存该可视化。
+
+连接和 source 也可以设为[连接变量或数据源变量](/zh/clickstack/observability/features/dashboards/overview#source-connection-variables)，由查看者自行选择该卡片要查询的连接或 source。
 
 ## 查询参数 {#query-parameters}
 
@@ -104,17 +106,18 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 ### 仪表盘筛选宏 {#dashboard-filter-macro}
 
-| 宏            | 描述                           |
-| ------------ | ---------------------------- |
-| `$__filters` | 替换为仪表盘级别的过滤条件 (需先选择 Source)  |
+| 宏                | 描述                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | 替换为仪表盘级别的过滤条件 (需先选择 Source)                                                                                                                                               |
+| `$__sourceTable` | 替换为所选 source 的完全限定表名，例如 `default.otel_logs`。对于指标数据源，请使用 `$__sourceTable(<metric type>)`，其中指标类型为 `gauge`、`histogram`、`sum`、`summary` 或 `exponential histogram`。需先选择 source |
 
 当图表已选择 **Source** 且仪表盘筛选条件处于活跃状态时，`$__filters` 会展开为相应的 SQL `WHERE` 条件。若未选择 source 或未应用任何筛选条件，它会展开为 `(1=1)`，因此始终可以安全地放入 `WHERE` 子句中。
 
-`$__filters` 只会应用已启用 **Broadcast filter condition** 的筛选条件。以变量形式公开的筛选条件则需要显式引用，详见下文。
+`$__filters` 会应用已启用**广播过滤条件**的 SQL 表达式值过滤器中的选定值，以及适用于该卡片 source 的[临时筛选条件](/zh/clickstack/observability/features/dashboards/overview#adhoc-filters)。以变量形式公开的筛选条件则需要显式引用，详见下文。
 
 ### 仪表盘变量宏 {#dashboard-variables}
 
-当仪表盘过滤器[可作为变量使用](/zh/clickstack/observability/features/dashboards/overview#dashboard-variables)时，可以在查询中的任意位置引用其选中的值。这些宏仅适用于至少声明了一个变量的仪表盘中的内容块。
+当仪表盘过滤器[可作为变量使用](/zh/clickstack/observability/features/dashboards/overview#dashboard-variables)时——即启用了**可作为变量使用**的 SQL 表达式值过滤器，或任意静态值、SQL 查询值或 PromQL 标签值过滤器——可以在查询中的任意位置引用其选中的值。这些宏仅适用于至少声明了一个变量的仪表盘中的卡片。
 
 | 宏                                             | 描述                                                                                  |
 | --------------------------------------------- | ----------------------------------------------------------------------------------- |

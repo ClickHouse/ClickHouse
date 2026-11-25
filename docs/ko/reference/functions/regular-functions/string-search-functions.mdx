@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+도입 버전: v26.11.0
+
+주어진 문자열 전체가 지정된 정규식 패턴과 일치하는지 확인합니다.
+
+문자열 내 어느 위치에서든 일치 항목을 검색하는 [`match`](#match)와 달리, 이 함수는
+패턴의 양쪽 끝을 `^`와 `$`로 앵커링한 것처럼 패턴이 문자열 전체와 일치하는 경우에만 `1`을 반환합니다.
+이는 RE2 라이브러리의 `RE2::FullMatch`, Python의
+`re.fullmatch`, DuckDB의 `regexp_full_match`에 해당합니다.
+
+이 함수는 RE2 정규식 라이브러리를 사용합니다. 지원되는 구문은 [re2](https://github.com/google/re2/wiki/Syntax)를 참조하십시오.
+
+매칭은 UTF-8을 전제로 동작합니다. 예를 들어 `¥`는 내부적으로 2바이트를 사용하지만, 매칭 시에는 단일 코드포인트로 처리됩니다.
+정규식에는 NULL 바이트가 포함되어서는 안 됩니다.
+`haystack` 또는 `pattern`이 올바른 UTF-8이 아니면 동작은 정의되지 않습니다.
+
+re2의 기본 동작과 달리 `.`은 줄바꿈과도 일치합니다. 이를 비활성화하려면 패턴 앞에 `(?-s)`를 추가하십시오.
+
+**구문**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**별칭**: `regexp_full_match`
+
+**인수**
+
+* `haystack` — 패턴을 검색할 검색 대상 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `pattern` — 정규식 패턴입니다. 상수이거나 컬럼에서 가져올 수 있습니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+패턴이 전체 문자열과 일치하면 `1`을 반환하고, 그렇지 않으면 `0`을 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**전체 문자열 매칭**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**최상위 수준에 선택(alternation) 연산자가 있는 패턴**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 도입 버전: v25.10.0
@@ -1530,11 +1592,11 @@ SELECT locate('ca', 'abcabc')
 
 매칭은 UTF-8을 전제로 동작합니다. 예를 들어 `¥`는 내부적으로 2바이트를 사용하지만, 매칭 시에는 단일 코드포인트로 처리됩니다.
 정규식에는 NULL 바이트가 포함되어서는 안 됩니다.
-`haystack` 또는 `pattern`이 올바른 UTF-8이 아니면 동작은 정의되지 않습니다.
+`haystack` 또는 `pattern`이 유효한 UTF-8이 아니면 동작은 정의되지 않습니다.
 
 re2의 기본 동작과 달리 `.`은 줄바꿈과도 일치합니다. 이를 비활성화하려면 패턴 앞에 `(?-s)`를 추가하십시오.
 
-패턴은 앵커링되지 않습니다. 전체 문자열과 일치시키려면 `^`와 `$`를 사용해 패턴에 직접 앵커를 지정하십시오.
+패턴은 앵커링되지 않습니다. 전체 문자열과 일치시키려면 `^`와 `$`를 사용해 패턴에 직접 앵커를 지정하거나 [`fullMatch`](#fullMatch) 함수를 사용하십시오.
 
 부분 문자열을 검색하기만 하면 되는 경우에는 [`like`](#like) 또는 [`position`](#position) 함수를 대신 사용할 수 있으며, 이 함수들이 이 함수보다 훨씬 빠르게 동작합니다.
 

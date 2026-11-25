@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'hypequery'
+keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'semantic layer', 'mcp', 'react']
+description: 'hypequery は、ClickHouse 上で組み込み分析を実現するオープンソースのセマンティックレイヤーです。TypeScript または Python でメトリクスを一度定義すれば、自社のバックエンドからダッシュボード、API、AIエージェントへ提供できます。'
+title: 'hypequery を ClickHouse に接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[hypequery](https://hypequery.com) は、ClickHouse 上で組み込み分析や AIエージェントを構築するチーム向けの、Apache 2.0 ライセンスのオープンソースのセマンティックレイヤーです。TypeScript または Python で、次元、メジャー、メトリクス、リレーションシップ、tenant ルールを含むデータセットを定義し、名前を指定してクエリを実行できます。同じ定義を、OpenAPI 対応の認証済み HTTP エンドポイント、型指定された React フック、AIエージェント向けの Model Context Protocol (MCP) ツールとして公開することもできます。また、TypeScript SDK には type-safe な ClickHouse クエリビルダーも含まれています。
+
+hypequery はホスト型の BI ツールでも、独立したセマンティックレイヤーサーバーでもありません。バックエンドと一緒にインストール・デプロイするライブラリ群であるため、ClickHouse の認証情報はお使いのサーバー上から外に出ることはありません。ClickHouse への接続には HTTP インターフェースを使用し、TypeScript では [`@clickhouse/client`](/ja/integrations/language-clients/js/index)、Python では [`clickhouse-connect`](/ja/integrations/language-clients/python/index) を利用します。
+
+## 前提条件 {#prerequisites}
+
+* ClickHouse サービス (セルフマネージド、または [ClickHouse Cloud](/ja/get-started/setup/cloud) 上のいずれか) 。
+* TypeScript SDK を使用する場合は Node.js、Python SDK を使用する場合は Python 3.11 以降。
+
+<Steps>
+  <Step title="接続情報を準備する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="hypequery のインストール" id="2-install-hypequery">
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npm install @hypequery/datasets @hypequery/clickhouse
+        npm install -D @hypequery/cli
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        pip install "hypequery[clickhouse]"
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="接続を設定する" id="3-configure-the-connection">
+    ステップ 1 で取得した接続情報を、アプリケーションの環境変数に追加します。読み込む変数は SDK ごとに異なります。
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        CLICKHOUSE_URL=https://<your-service>.clickhouse.cloud:8443
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        CLICKHOUSE_HOST=<your-service>.clickhouse.cloud
+        CLICKHOUSE_PORT=8443
+        CLICKHOUSE_SECURE=true
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+
+        ClickHouse Cloud をはじめ、TLS を使用するサービスでは `CLICKHOUSE_SECURE=true` を設定してください。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="スキーマからデータセットを生成する" id="4-generate-datasets">
+    CLI は ClickHouse に接続してテーブルを読み取り、テーブルごとにデータセット定義を書き出します。
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npx hypequery generate:datasets
+        ```
+
+        これにより `analytics/datasets.ts` が生成されます。
+      </Tab>
+
+      <Tab title="Python">
+        ```bash
+        hypequery init
+        ```
+      </Tab>
+    </Tabs>
+
+    生成された定義を確認し、次元とメジャーの名前を自社プロダクトで使われている用語に合わせてリネームしてください。整備後のデータセットは次のようになります。
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { dataset, dimension, measure } from '@hypequery/datasets';
+
+        export const Orders = dataset('orders', {
+          source: 'orders',
+          tenantKey: 'tenant_id',
+          timeKey: 'created_at',
+          dimensions: {
+            country: dimension.string(),
+            status: dimension.string(),
+            createdAt: dimension.timestamp({ column: 'created_at' }),
+          },
+          measures: {
+            revenue: measure.sum('amount'),
+            orderCount: measure.count('id'),
+          },
+        });
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import dataset, dimension, measure
+
+        orders = dataset(
+            "orders",
+            source="orders",
+            tenant_key="tenant_id",
+            time_key="created_at",
+            dimensions={
+                "country": dimension.string(),
+                "status": dimension.string(),
+                "createdAt": dimension.timestamp(column="created_at"),
+            },
+            measures={
+                "revenue": measure.sum("amount"),
+                "orderCount": measure.count("id"),
+            },
+        )
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="データセットにクエリを実行する" id="5-query-a-dataset">
+    次元とメジャーは名前で指定します。hypequery はリクエストを検証し、パラメーター化された SQL を生成して ClickHouse 上で実行します。データセットで `tenantKey` が宣言されているため、すべてのクエリで呼び出し元の tenant を渡す必要があり、hypequery はそれに対応する `WHERE tenant_id = ...` フィルタを自動的に追加します。tenant を指定しないクエリは拒否されます。
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { createQueryBuilder } from '@hypequery/clickhouse';
+        import { createDatasetClient, eq } from '@hypequery/datasets';
+        import { Orders } from './analytics/datasets';
+
+        const db = createQueryBuilder({
+          url: process.env.CLICKHOUSE_URL!,
+          username: process.env.CLICKHOUSE_USERNAME!,
+          password: process.env.CLICKHOUSE_PASSWORD!,
+          database: process.env.CLICKHOUSE_DATABASE!,
+        });
+
+        const analytics = createDatasetClient({ queryBuilder: db });
+
+        const result = await analytics.execute(Orders, {
+          dimensions: ['country'],
+          measures: ['revenue', 'orderCount'],
+          filters: [eq('status', 'completed')],
+          orderBy: [{ field: 'revenue', direction: 'desc' }],
+          limit: 10,
+        }, {
+          runtime: { tenant: 'org_123' },
+        });
+
+        console.log(result.data);
+        ```
+      </Tab>
+
+      <Tab title="Python">
+        ```python
+        from hypequery.datasets import (
+            DatasetQuery,
+            ExecutionContext,
+            create_dataset_client,
+            filter,
+            order,
+            tenant,
+        )
+        from hypequery.execution import ClickHouseConnection, create_clickhouse_executor
+
+        analytics = create_dataset_client(
+            executor=create_clickhouse_executor(ClickHouseConnection.from_env()),
+        )
+
+        result = analytics.execute(
+            orders,
+            DatasetQuery(
+                dimensions=("country",),
+                measures=("revenue", "orderCount"),
+                filters=(filter.eq("status", "completed"),),
+                order_by=(order.desc("revenue"),),
+                limit=10,
+            ),
+            context=ExecutionContext(tenant=tenant("org_123")),
+        )
+
+        print(result.data)
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## データセットをアプリケーションとエージェントに提供する {#serve-datasets}
+
+データセットが in-process で動作するようになったら、SQL を追加で書かなくてもそのまま公開できます。
+
+* **HTTP エンドポイント**: TypeScript の `@hypequery/serve`、または Python の `hypequery.serve` を使うと、各データセットが入力検証と OpenAPI ドキュメントを備えた認証済みエンドポイントになります。Python の API は FastAPI、Django、Flask にマウントできます。詳しくは [Serve](https://hypequery.com/docs/datasets/serve-integration) および [Python serving](https://hypequery.com/docs/python/serving) を参照してください。
+* **React フック**: `@hypequery/react` はこれらのエンドポイント向けに型指定された TanStack Query フックを生成するため、ブラウザ側のコードで ClickHouse の認証情報を保持する必要がありません。詳しくは [React](https://hypequery.com/docs/react/getting-started) を参照してください。
+* **AIエージェント向けの MCP ツール**: `npx hypequery mcp` で MCPサーバーを起動すると、エージェントは未加工の SQL を実行する代わりに、データセットを自動検出し、名前付きメトリクスをクエリできるようになります。詳しくは [MCP](https://hypequery.com/docs/mcp/overview) を参照してください。
+
+どの提供方法も同じデータセット定義を経由するため、いずれにも同じ tenant スコープが適用され、同じ数値が返されます。
+
+## ClickHouseサーバーなしで実行する {#run-without-a-server}
+
+ローカル開発や CI では、hypequery は in-process で動作する ClickHouseエンジンである [chDB](/ja/chdb/index) 上で、同じデータセットを実行できます。サーバーも認証情報も必要ありません。詳しくは [TypeScript での chDB](https://hypequery.com/docs/chdb) および [Python での chDB](https://hypequery.com/docs/python/datasets/chdb) を参照してください。
+
+## さらに詳しく {#learn-more}
+
+* [TypeScript クイックスタート](https://hypequery.com/docs/quick-start)
+* [Python SDK](https://hypequery.com/docs/python)
+* [例](https://github.com/hypequery/hypequery-examples)
+* [GitHub の hypequery](https://github.com/hypequery/hypequery)

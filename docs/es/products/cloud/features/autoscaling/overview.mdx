@@ -2,7 +2,7 @@
 sidebarTitle: 'Escalado automático'
 slug: /manage/scaling
 description: 'Descripción general del escalado automático en ClickHouse Cloud'
-keywords: ['autoescalado', 'escalado automático', 'escalado', 'horizontal', 'vertical', 'ráfagas']
+keywords: ['escalado automático', 'escalado automático', 'escalado', 'horizontal', 'vertical', 'ráfagas']
 title: 'Escalado automático'
 doc_type: 'guide'
 ---
@@ -14,7 +14,11 @@ El escalado es la capacidad de ajustar los recursos disponibles para satisfacer 
 <ScalePlanFeatureBadge feature="Escalado vertical automático" />
 
 <Note>
-  Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas. Los servicios Scale de una sola réplica y los servicios Enterprise con perfiles estándar `1:4` admiten el autoescalado vertical de autoservicio. Los servicios Enterprise con perfiles personalizados requieren redimensionamiento vertical con asistencia del soporte técnico. Los servicios Scale y Enterprise pueden escalarse horizontalmente hasta varias réplicas. Los servicios del nivel Basic tienen una sola réplica, un tamaño fijo y no permiten escalado vertical ni horizontal. Para obtener más información, consulte [servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services).
+  La [capacidad de cómputo Gen 2](/es/products/cloud/features/compute-generations) está en vista previa privada y no admite el escalado automático ni la entrada en estado de inactividad. Sí están disponibles los ajustes de escalado manual y de escalado programado.
+</Note>
+
+<Note>
+  Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas. Los servicios Scale de una sola réplica y los servicios Enterprise con perfiles estándar `1:4` admiten el escalado automático vertical de autoservicio. Los servicios Enterprise con perfiles personalizados requieren redimensionamiento vertical con asistencia del soporte técnico. Los servicios Scale y Enterprise pueden escalarse horizontalmente hasta varias réplicas. Los servicios del nivel Basic tienen una sola réplica, un tamaño fijo y no permiten escalado vertical ni horizontal. Para obtener más información, consulte [servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services).
 </Note>
 
 ## Elección de una opción de compute {#choosing-a-compute-option}
@@ -41,6 +45,14 @@ Para los servicios del nivel Enterprise, el escalado funciona de la siguiente ma
 * **Escalado vertical**:
   * Los perfiles estándar `1:4` admiten escalado automático vertical.
   * Los perfiles personalizados (`highMemory` y `highCPU`) no admiten escalado automático vertical ni escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente poniéndose en contacto con el soporte.
+
+Para los servicios [BYOC (Bring Your Own Cloud)](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview), el escalado funciona de la siguiente manera:
+
+* **Escalado horizontal**: El escalado horizontal puede realizarse manualmente. El escalado automático horizontal solo está disponible para implementaciones de BYOC que tengan habilitado el escalado automático. Ajusta el número de réplicas dentro de los límites configurados y mantiene fijo el tamaño de cada réplica. Contacte con el soporte técnico para confirmar la disponibilidad en su implementación.
+* **Escalado vertical**: El escalado automático vertical solo está disponible si está habilitado para su organización. Contacte con el soporte técnico para confirmar la disponibilidad. El escalado vertical utiliza tamaños discretos que se corresponden con los tamaños de nodo de su infraestructura BYOC.
+  * En BYOC, cada servidor se ejecuta en su propio nodo. ClickHouse dimensiona cada servidor para que ocupe el nodo completo, de modo que no se desperdicie capacidad.
+  * En ClickHouse Cloud, varios servidores comparten un mismo nodo, por lo que los servidores escalan en incrementos continuos.
+  * Al establecer los tamaños mínimo y máximo de un servicio BYOC, se elige entre una lista de tamaños discretos, no dentro de un rango continuo.
 
 <Note>
   El escalado en ClickHouse Cloud se realiza mediante lo que denominamos el enfoque [&quot;Make Before Break&quot; (MBB)](/es/products/cloud/features/autoscaling/make-before-break).

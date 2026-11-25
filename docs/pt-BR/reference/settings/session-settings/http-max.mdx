@@ -13,71 +13,61 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_max_field_name_size">
-  ## http_max_field_name_size
-</div>
+## http_max_field_name_size {#http_max_field_name_size}
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "Reduz o valor padrão para limitar o uso de memória na pré-autenticação por conexões HTTP."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "A alteração recebeu backport para a 26.1 e está registrada lá."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "Reduz o valor padrão para limitar o uso de memória na pré-autenticação por conexões HTTP."}]}]} />
 
 Tamanho máximo do nome de um campo em cabeçalhos da requisição HTTP, parâmetros de consulta e dados de formulário.
 
-<div id="http_max_field_value_size">
-  ## http_max_field_value_size
-</div>
+Também limita o tamanho do nome de um campo nos cabeçalhos das respostas HTTP que o ClickHouse lê ao atuar como cliente, por exemplo, na função de tabela `url`.
+
+## http_max_field_value_size {#http_max_field_value_size}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 Comprimento máximo do valor de um campo nos cabeçalhos da requisição HTTP, nos parâmetros de consulta e nos dados de formulário.
 
-<div id="http_max_fields">
-  ## http_max_fields
-</div>
+Também limita o comprimento do valor de um campo nos cabeçalhos das respostas HTTP que o ClickHouse lê ao atuar como cliente, por exemplo, na função de tabela `url`.
+
+## http_max_fields {#http_max_fields}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Reduz o valor padrão para limitar o uso de memória na pré-autenticação por conexões HTTP."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "A alteração recebeu backport para a 26.1 e está registrada lá."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "Reduz o valor padrão para limitar o uso de memória na pré-autenticação por conexões HTTP."}]}]} />
 
 Número máximo de campos nos cabeçalhos da requisição HTTP, nos parâmetros de consulta e nos dados de formulário.
 
-<div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
-</div>
+Também limita o número de campos nos cabeçalhos das respostas HTTP que o ClickHouse lê quando atua como cliente, por exemplo, na função de tabela `url`.
+
+## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
 Limite do tamanho do conteúdo `multipart/form-data`. Essa configuração não pode ser definida por parâmetros de URL e deve ser configurada em um perfil de usuário. Observe que o conteúdo é processado e as external tables são criadas na memória antes do início da execução da consulta. E este é o único limite que afeta essa etapa (os limites de uso máximo de memória e de tempo máximo de execução não têm efeito durante a leitura de dados de formulário HTTP).
 
-<div id="http_max_request_header_size">
-  ## http_max_request_header_size
-</div>
+## http_max_request_header_size {#http_max_request_header_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "Nova configuração para limitar o tamanho total dos cabeçalhos da requisição HTTP antes da autenticação."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "A alteração passou por backport para a 26.1 e está registrada nessa versão."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "Nova configuração para limitar o tamanho total dos cabeçalhos da requisição HTTP antes da autenticação."}]}]} />
 
 Tamanho máximo total de todos os cabeçalhos da requisição HTTP (nomes e valores combinados), em bytes.
 
-<div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
-</div>
+## http_max_request_param_data_size {#http_max_request_param_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 Limite do tamanho dos dados da requisição usados como parâmetro de consulta em requisições HTTP predefinidas.
 
-<div id="http_max_tries">
-  ## http_max_tries
-</div>
+## http_max_tries {#http_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Número máximo de tentativas de leitura via HTTP.
 
-<div id="http_max_uri_size">
-  ## http_max_uri_size
-</div>
+## http_max_uri_size {#http_max_uri_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 

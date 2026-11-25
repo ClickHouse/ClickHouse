@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="system-tables-introduction">
-  ## 시스템 테이블 개요
+  ## 시스템 테이블 개요 {#system-tables-introduction}
 </div>
 
 시스템 테이블은 다음에 대한 정보를 제공합니다.
@@ -60,7 +60,7 @@ doc_type: 'reference'
 기본적으로 테이블 크기 증가는 제한되지 않습니다. 테이블 크기를 제어하려면 오래된 로그 레코드를 제거하는 [TTL](/ko/reference/statements/alter/ttl) 설정을 사용할 수 있습니다. 또한 `MergeTree` 엔진 테이블의 파티셔닝 기능을 사용할 수도 있습니다.
 
 <div id="system-tables-sources-of-system-metrics">
-  ## 시스템 메트릭의 소스
+  ## 시스템 메트릭의 소스 {#system-tables-sources-of-system-metrics}
 </div>
 
 ClickHouse 서버는 시스템 메트릭을 수집하기 위해 다음을 사용합니다.
@@ -87,9 +87,7 @@ ClickHouse 서버에 `CAP_NET_ADMIN` capability가 없으면 `ProcfsMetricsProvi
   `sudo sysctl kernel.task_delayacct=1`을 사용하거나 `/etc/sysctl.d/`에 `kernel.task_delayacct = 1`이 포함된 `.conf` 파일을 만들어 활성화할 수 있습니다.
 </Note>
 
-<div id="system-tables-in-clickhouse-cloud">
-  ## ClickHouse Cloud의 시스템 테이블
-</div>
+## ClickHouse Cloud의 시스템 테이블 {#system-tables-in-clickhouse-cloud}
 
 ClickHouse Cloud에서는 자가 관리형 배포와 마찬가지로 시스템 테이블이 서비스의 상태와 성능에 관한 중요한 정보를 제공합니다. 일부 시스템 테이블은 클러스터 전체 수준에서 동작하며, 특히 분산 메타데이터를 관리하는 Keeper 노드에서 데이터를 가져오는 테이블이 여기에 해당합니다. 이러한 테이블은 클러스터의 전체 상태를 반영하므로, 개별 노드에서 쿼리하더라도 일관된 결과가 반환되어야 합니다. 예를 들어, [`parts`](/ko/reference/system-tables/parts)는 어느 노드에서 쿼리하든 일관되어야 합니다:
 
@@ -117,7 +115,7 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-반대로, 다른 시스템 테이블은 노드별입니다. 예를 들어 메모리에 있거나 MergeTree 테이블 엔진을 사용해 데이터를 영구 저장합니다. 이는 logs 및 메트릭과 같은 데이터에서 일반적입니다. 이러한 영속성 덕분에 과거 데이터도 분석에 계속 사용할 수 있습니다. 그러나 이러한 노드별 테이블은 본질적으로 각 노드에 고유합니다.
+반대로, 다른 시스템 테이블은 노드별입니다. 예를 들어 메모리에 있거나 MergeTree 테이블 엔진을 사용해 데이터를 영구 저장합니다. 이는 logs 및 메트릭과 같은 데이터에서 일반적입니다. 이러한 영속성 덕분에 과거 데이터도 분석에 계속 사용할 수 있습니다. 그러나 이러한 노드별 테이블은 본질적으로 각 노드에 고유합니다. ClickHouse Cloud에서는 영구 저장된 테이블의 데이터가 노드의 로컬 디스크가 아닌 객체 스토리지에 보관된다는 점에 유의하십시오.
 
 일반적으로 시스템 테이블이 노드별인지 판단할 때는 다음 규칙을 적용할 수 있습니다.
 
@@ -149,9 +147,7 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="querying-multiple-versions">
-  ### 여러 버전에 걸쳐 쿼리하기
-</div>
+### 여러 버전에 걸쳐 쿼리하기 {#querying-multiple-versions}
 
 [`merge`](/ko/reference/functions/table-functions/merge) 함수를 사용하면 이러한 테이블을 대상으로 통합 쿼리를 실행할 수 있습니다. 예를 들어, 아래 쿼리는 각 `query_log` 테이블에서 대상 노드로 전송된 가장 최근 쿼리를 식별합니다:
 
@@ -187,10 +183,10 @@ Peak memory usage: 28.45 MiB.
   테이블의 숫자 접미사는 데이터 순서를 나타내는 것처럼 보일 수 있지만, 이를 신뢰해서는 안 됩니다. 따라서 특정 날짜 범위를 대상으로 할 때는 항상 날짜 필터와 함께 merge 테이블 함수를 사용하십시오.
 </Info>
 
-중요한 점은, 이 테이블들이 여전히 **각 노드에만 로컬로 존재한다는 것**입니다.
+중요한 점은, 이 테이블들이 여전히 **각 노드별로 개별적으로 존재한다는 것**입니다.
 
 <div id="querying-across-nodes">
-  ### 노드 전체에서 쿼리하기
+  ### 노드 전체에서 쿼리하기 {#querying-across-nodes}
 </div>
 
 전체 클러스터를 종합적으로 확인하려면 [`clusterAllReplicas`](/ko/reference/functions/table-functions/cluster) 함수와 `merge` 테이블 함수를 함께 활용할 수 있습니다. `clusterAllReplicas` 함수는 &quot;default&quot; 클러스터 내 모든 레플리카의 시스템 테이블(system table)을 쿼리할 수 있게 하며, 노드별 데이터를 하나의 통합된 결과로 모아줍니다. 여기에 `merge` 테이블 함수를 함께 사용하면 클러스터에서 특정 테이블의 모든 시스템 데이터를 대상으로 쿼리할 수 있습니다.
@@ -234,7 +230,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 ```
 
 <div id="querying-across-nodes-and-versions">
-  ### 노드와 버전 전반에서 쿼리하기
+  ### 노드와 버전 전반에서 쿼리하기 {#querying-across-nodes-and-versions}
 </div>
 
 시스템 테이블(system table)의 버전 관리로 인해, 이 결과는 여전히 클러스터의 전체 데이터를 나타내지 않습니다. 위 내용을 `merge` 테이블 함수와 함께 사용하면 선택한 날짜 범위에 대해 정확한 결과를 얻을 수 있습니다:
@@ -257,7 +253,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 ```
 
 <div id="related-content">
-  ## 관련 콘텐츠
+  ## 관련 콘텐츠 {#related-content}
 </div>
 
 * 블로그: [시스템 테이블과 ClickHouse 내부를 들여다보는 창](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)

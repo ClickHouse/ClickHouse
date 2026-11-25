@@ -176,7 +176,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 `RETURNING` 절은 삽입된 데이터를 대상으로 실행되는 `SELECT` 쿼리(`SELECT` query)를 지정하며, 이 쿼리의 결과(result)가 반환됩니다.
@@ -267,7 +267,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 **구문**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **예시**
@@ -285,6 +285,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### 파티션별 쓰기(partitioned writes) {#partitioned-writes}
+
+`PARTITION BY` 절은 파일 또는 객체 스토리지에 쓰는 일부 테이블 함수(table functions)에서 지원됩니다. [file](/ko/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files), [s3](/ko/reference/functions/table-functions/s3#partitioned-write), [gcs](/ko/reference/functions/table-functions/gcs#partitioned-write), [azureBlobStorage](/ko/reference/functions/table-functions/azureBlobStorage#partitioned-write) 등이 이에 해당합니다. `remote`처럼 이 절을 지원하지 않는 테이블 함수는 쿼리를 거부합니다. `expr`은 테이블 함수의 컬럼을 참조합니다.
+
+삽입된 행의 분할 여부와 분할 방식은 테이블 함수의 파티션 전략(partition strategy)과 경로에 따라 달라집니다. 파티션 전략을 명시적으로 지정하지 않은 상태에서 경로에 `{_partition_id}` 플레이스홀더가 있으면 `wildcard` 전략이 선택됩니다. 이 경우 각 파티션은 별도의 파일 또는 객체에 기록되며, 경로의 플레이스홀더는 `expr` 값을 문자열로 변환한 값으로 대체됩니다. 그 밖의 파티션 전략은 `s3`, `gcs`, `azureBlobStorage` 페이지를 참고하십시오.
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## ClickHouse Cloud에 삽입하기 {#inserting-into-clickhouse-cloud}

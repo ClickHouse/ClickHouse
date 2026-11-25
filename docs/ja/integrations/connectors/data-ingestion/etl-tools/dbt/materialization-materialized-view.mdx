@@ -77,6 +77,8 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+どのビューにも独自の `WITH` 句がない場合、ビューは [ephemeral モデル](https://docs.getdbt.com/docs/build/materializations#ephemeral) から SELECT できます。dbt は ephemeral モデルの CTE を最初のビューの前に一度だけ追加し、dbt-clickhouse はそれらを各ビューに追加します。ビューに独自の `WITH` 句がある場合、dbt は代わりにその句へ CTE を追加します。そのため、これらの CTE を持たずに ephemeral モデルから SELECT するビューはエラーになります。この場合は、各ビューを明示的ターゲットテーブルを持つ個別のモデルとして記述してください ([暗黙的ターゲットから明示的ターゲットへの移行](#migration-implicit-to-explicit) を参照) 。
+
 <Warning>
   複数のmaterialized view (MV) を持つモデルを更新する際、特にMV名の1つを変更した場合、
   dbt-clickhouse は古いMVを自動的に削除しません。代わりに、

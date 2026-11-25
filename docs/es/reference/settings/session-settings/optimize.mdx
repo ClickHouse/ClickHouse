@@ -80,7 +80,7 @@ Reescribe `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` como `dictGet
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Habilita la optimización de DISTINCT si algunas de sus columnas forman un prefijo de la ordenación. Por ejemplo, un prefijo de la clave de ordenación en MergeTree o de la instrucción ORDER BY
+Habilita la optimización de DISTINCT si algunas de sus columnas forman un prefijo de la ordenación. Por ejemplo, un prefijo de la clave de ordenación en MergeTree o de la sentencia ORDER BY. No se aplica a una lectura `FINAL` que utiliza `FINAL` vertical (consulte `enable_vertical_final`), salvo que un `LIMIT` permita a `DISTINCT` dejar de leer antes de tiempo o que la lectura ya esté ordenada por otro motivo, como un `ORDER BY`.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

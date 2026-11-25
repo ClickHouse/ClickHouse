@@ -27,31 +27,38 @@ ClickStack의 Helm 차트는 여러 배포 구성을 지원합니다:
 
 기존 ClickHouse 클러스터(ClickHouse Cloud 포함)가 있으면 내장 ClickHouse를 비활성화하고 외부 인스턴스에 연결할 수 있습니다.
 
+번들로 제공되는 OTel collector는 계속 활성화된 상태로 유지됩니다. collector의 네이티브 프로토콜 엔드포인트와 자격 증명은 HyperDX의 HTTP 쿼리 연결과 별도로 구성하십시오. collector 사용자에게는 텔레메트리 스키마(schema)를 생성하고 데이터를 삽입할 수 있는 권한(permission)이 필요합니다.
+
 ### 옵션 1: 인라인 구성(개발/테스트) {#external-clickhouse-inline}
 
-빠른 테스트 또는 비프로덕션 환경에는 이 방법을 사용합니다. `hyperdx.config` 및 `hyperdx.secrets`를 통해 연결 정보를 제공합니다:
+빠른 테스트 또는 비운영 환경에는 이 방법을 사용합니다. `hyperdx.config` 및 `hyperdx.secrets`를 통해 연결 정보를 제공합니다:
 
 ```yaml
 # values-external-clickhouse.yaml
 clickhouse:
-  enabled: false  # 오퍼레이터가 관리하는 ClickHouse 비활성화
+  enabled: false  # Disable the operator-managed ClickHouse
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-clickhouse-server:9000?dial_timeout=10s"
+    CLICKHOUSE_USER: "your-username"
   secrets:
     CLICKHOUSE_PASSWORD: "your-password"
     CLICKHOUSE_APP_PASSWORD: "your-password"
 
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 ```
+
+서버가 외부에 있더라도 차트의 기본 소스가 연결 이름 `Local ClickHouse`를 참조하므로 이 이름을 변경하지 말고 그대로 유지하십시오.
 
 다음 구성으로 설치하십시오:
 
@@ -65,21 +72,22 @@ helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.y
 
 #### 설정 파일 생성 {#create-configuration}
 
+각 연결의 `host` URL에 HTTP(S) 포트를 포함하십시오. 이 예시에서는 HTTPS 포트 `8443`을 사용하지만, 실제로는 서버에 구성된 포트를 사용하십시오.
+
 ```bash
-# connections.json 생성
+# Create connections.json
 cat <<EOF > connections.json
 [
   {
     "name": "Production ClickHouse",
-    "host": "https://your-production-clickhouse.com",
-    "port": 8123,
+    "host": "https://your-production-clickhouse.com:8443",
     "username": "hyperdx_user",
     "password": "your-secure-password"
   }
 ]
 EOF
 
-# sources.json 생성
+# Create sources.json
 cat <<EOF > sources.json
 [
   {
@@ -97,6 +105,7 @@ cat <<EOF > sources.json
     "bodyExpression": "Body",
     "eventAttributesExpression": "LogAttributes",
     "resourceAttributesExpression": "ResourceAttributes",
+    "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body",
     "severityTextExpression": "SeverityText",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId"
@@ -115,7 +124,12 @@ cat <<EOF > sources.json
     "serviceNameExpression": "ServiceName",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId",
-    "durationExpression": "Duration"
+    "durationExpression": "Duration",
+    "durationPrecision": 9,
+    "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName",
+    "parentSpanIdExpression": "ParentSpanId",
+    "spanNameExpression": "SpanName",
+    "spanKindExpression": "SpanKind"
   }
 ]
 EOF
@@ -134,16 +148,24 @@ rm connections.json sources.json
 
 #### Helm이 시크릿을 사용하도록 설정 {#configure-helm-secret}
 
+구성 시크릿은 HyperDX의 쿼리 연결과 소스를 제공합니다. collector의 엔드포인트와 자격 증명은 아래에서 별도로 설정하며, 이때 서버의 네이티브 TLS 포트(여기서는 `9440`)를 사용하십시오.
+
 ```yaml
 # values-external-clickhouse-secret.yaml
 clickhouse:
   enabled: false
 
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "hyperdx-external-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-production-clickhouse.com:9440?secure=true"
+    CLICKHOUSE_USER: "hyperdx_user"
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-secure-password"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "hyperdx-external-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell
@@ -160,14 +182,18 @@ clickhouse:
   enabled: false
 
 hyperdx:
+  config:
+    CLICKHOUSE_ENDPOINT: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+    CLICKHOUSE_USER: "default"
   secrets:
     CLICKHOUSE_PASSWORD: "your-cloud-password"
     CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
 
-  useExistingConfigSecret: true
-  existingConfigSecret: "clickhouse-cloud-config"
-  existingConfigConnectionsKey: "connections.json"
-  existingConfigSourcesKey: "sources.json"
+  deployment:
+    useExistingConfigSecret: true
+    existingConfigSecret: "clickhouse-cloud-config"
+    existingConfigConnectionsKey: "connections.json"
+    existingConfigSourcesKey: "sources.json"
 ```
 
 ## 외부 OTel collector {#external-otel-collector}
@@ -177,10 +203,11 @@ hyperdx:
 ```yaml
 # values-external-otel.yaml
 otel-collector:
-  enabled: false  # 서브차트 OTel collector 비활성화
+  enabled: false  # Disable the subchart OTEL collector
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 ```
 
 ```shell
@@ -202,25 +229,26 @@ otel-collector:
   enabled: false
 
 hyperdx:
-  otelExporterEndpoint: "http://your-otel-collector:4318"
+  config:
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://your-otel-collector:4318"
 
-  # Option 1: Inline (for testing)
-  defaultConnections: |
-    [
-      {
-        "name": "External ClickHouse",
-        "host": "http://your-clickhouse-server:8123",
-        "port": 8123,
-        "username": "your-username",
-        "password": "your-password"
-      }
-    ]
+  deployment:
+    # Option 1: Inline (for testing)
+    defaultConnections: |
+      [
+        {
+          "name": "Local ClickHouse",
+          "host": "http://your-clickhouse-server:8123",
+          "username": "your-username",
+          "password": "your-password"
+        }
+      ]
 
-  # Option 2: External secret (production)
-  # useExistingConfigSecret: true
-  # existingConfigSecret: "my-external-config"
-  # existingConfigConnectionsKey: "connections.json"
-  # existingConfigSourcesKey: "sources.json"
+    # Option 2: External secret (production)
+    # useExistingConfigSecret: true
+    # existingConfigSecret: "my-external-config"
+    # existingConfigConnectionsKey: "connections.json"
+    # existingConfigSourcesKey: "sources.json"
 ```
 
 ```shell

@@ -18,11 +18,11 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "他の読み取りで分散キャッシュが使用されている場合、オブジェクトストレージのテーブルエンジンおよびテーブル関数も分散キャッシュ経由で読み取ります。"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-ClickHouse Cloud でのみ有効です。テーブルエンジン / テーブル関数 (S3、Azure など) 経由で分散キャッシュから読み取ることを許可します。キャッシュはオブジェクトの ETag をキーとしているため、インプレースで上書きされたオブジェクトについて古くなったデータが返されることはありません。ETag が存在しない、または ETag が強いコンテンツ識別子ではないオブジェクトは、オブジェクトストレージから直接読み取られます。
+ClickHouse Cloud でのみ有効。テーブルエンジン / テーブル関数 (s3、azure、Iceberg、Delta Lake など) を介した分散キャッシュからの読み取りを許可します。`auto` (デフォルト) の場合、他の読み取りで分散キャッシュが使用されているときに分散キャッシュ経由で読み取ります。分散キャッシュを使用するかどうかは、サーバー設定 `enable_read_through_distributed_cache` と設定 `force_read_through_distributed_cache` によって決まります。キャッシュのキーには、オブジェクトの ETag、またはテーブルのレコード (Iceberg、Delta Lake) から取得したデータファイルの変更不可なアイデンティティが使用されます。ETag を使用することで、その場で上書きされたオブジェクトについて古くなったデータが返されることを防ぎ、アイデンティティを使用することで `HEAD` リクエストが不要になります。強い ETag もそのようなアイデンティティも持たないオブジェクトは、オブジェクトストレージから直接読み取られます。キャッシュサーバーが再実行できない読み取りも同様で、具体的には `url` テーブル、`NOSIGN` または `headers` を指定した `s3` の読み取り、完全修飾パスを持つデータファイル (Delta Lake のシャロークローン) 、および設定が `1` の場合を除く `azure` の読み取りが該当します。
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

@@ -1,54 +1,46 @@
 ---
-title: 'BYOC 权限'
+title: 'BYOC 特权'
 slug: /cloud/reference/byoc/reference/privilege
-sidebarTitle: '权限'
-keywords: ['BYOC', '云', '自备 Cloud', '权限']
+sidebarTitle: '概览'
+keywords: ['BYOC', '云', '自备 Cloud', '特权']
 description: '在自有云基础设施上部署 ClickHouse'
 doc_type: 'reference'
 ---
+
+本页概述了 ClickHouse BYOC 在您的云账户中使用的各类身份。如需了解每个身份的权限、作用域和用途，请参阅您所用云平台对应的页面：
+
+* [AWS 上的 BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege-aws)
+* [GCP 上的 BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege-gcp)
 
 ## AWS IAM 角色 {#aws-iam-roles}
 
 ### 引导 IAM 角色 {#bootstrap-iam-role}
 
-引导 IAM 角色需要具备以下权限：
+引导 IAM 角色 `ClickHouseManagementRole` 需要具备以下权限：
 
 * **EC2 和 VPC 操作**：用于设置 VPC 和 EKS 集群。
-* **S3 操作 (例如 `s3:CreateBucket`)&#x20;**：用于为 ClickHouse BYOC Storage 创建 bucket。
-* **IAM 操作 (例如 `iam:CreatePolicy`)&#x20;**：供控制器创建其他角色所需 (详见下一节) 。
-* **EKS 操作**：仅限名称以前缀 `clickhouse-cloud` 开头的资源。
+* **S3 操作 (例如 `s3:CreateBucket`)**：用于为 ClickHouse BYOC 存储创建桶。
+* **IAM 操作 (例如 `iam:CreatePolicy`)**：供控制器创建其他角色所需 (详见下一节) 。
+* **EKS 操作**：写入操作仅限名称以前缀 `clickhouse-cloud` 开头的资源。
 
 ### 控制器创建的其他 IAM 角色 {#additional-iam-roles-created-by-the-controller}
 
-除了通过 CloudFormation 创建的 `ClickHouseManagementRole` 之外，控制器还会创建其他几个角色。
+除 `ClickHouseManagementRole` 外，控制器还会为每个 BYOC 基础设施创建以下几个角色：
 
-这些角色由运行在客户 EKS 集群中的应用来承担：
+* **数据平面管理**：ClickHouse 管理服务使用您的外部 ID 代入该角色，对您的 ClickHouse 服务进行日常管理。
+* **EKS cluster 和节点角色**：供 EKS、系统节点以及 Karpenter 节点使用。
+* **集群控制器**：Karpenter、Cluster Autoscaler、AWS Load Balancer Controller 以及 EBS CSI 驱动程序。
+* **ClickHouse 服务器身份**：读写 BYOC 桶中的表数据和备份。
+* **监控存储 (Thanos)&#x20;**：读写 BYOC 监控桶中的指标。
+* **遥测角色**：向 ClickHouse 发送基础设施健康状况、用于计费的用量数据，以及用于自动扩缩容的 Kubernetes 指标。这些角色不具备其他任何权限。
 
-* **状态导出器角色**
-  * 向 ClickHouse Cloud 报告服务健康信息的 ClickHouse 组件。
-  * 需要具备向 ClickHouse Cloud 拥有的 SQS 队列写入的权限。
-* **负载均衡控制器**
-  * 标准的 AWS 负载均衡控制器。
-  * 用于管理 ClickHouse 服务卷的 EBS CSI 控制器。
-* **External-DNS**
-  * 将 DNS 配置同步到 Route 53。
-* **Cert-Manager**
-  * 为 BYOC 服务域预配 TLS 证书。
-* **集群自动扩缩器**
-  * 根据需要调整节点组规模。
-* **监控存储 (Thanos)&#x20;**
-  * 由集群中的 Prometheus 和 Thanos 工作负载承担。
-  * 写入和读取长期保留的指标数据，范围限定为您自己账户中的监控存储桶。
-
-**K8s-control-plane** 和 **k8s-worker** 角色由 AWS EKS 服务承担。
-
-最后，**`data-plane-mgmt`** 允许 ClickHouse Cloud 控制平面组件协调所需的自定义资源，例如 `ClickHouseCluster` 以及 Istio Virtual Service/Gateway。
+有关各策略和角色的权限及作用范围，请参阅 [AWS 上的 BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege-aws)。
 
 ## GCP 服务账号 {#gcp-service-accounts}
 
 ### 引导服务账号 {#bootstrap-service-account}
 
-引导服务账号会被授予项目级自定义角色，这些角色具备以下权限：
+引导服务账号 `clickhouse-management` 会被授予项目级自定义角色，这些角色具备以下权限：
 
 * **通用**：基础只读和身份相关权限。
 * **VPC**：管理承载你的 BYOC 基础设施的 VPC、子网、路由以及 Private Service Connect 附加连接。
@@ -58,19 +50,18 @@ doc_type: 'reference'
 
 ### 控制器创建的其他服务账号 {#additional-service-accounts-created-by-the-controller}
 
-除了在 onboarding 过程中通过 Terraform 创建的 `clickhouse-management` 服务账号外，当你预配首个 BYOC 服务时，ClickHouse 的 控制平面 (以 `clickhouse-management` 身份进行身份验证) 会在你的项目中为特定的集群内工作负载创建其他服务账号。每个账号都只授予一组权限范围严格且用途单一的权限。
+除 `clickhouse-management` 服务账号外，控制器还会为每个 BYOC 基础设施创建多个其他服务账号。每个账号都只授予一组权限范围严格且用途单一的权限：
 
-* **GKE 节点运行时身份**
-  * 附加到你的 BYOC 集群中的每个 GKE 节点虚拟机。
-  * 供 kubelet 节点代理、节点本地 agent 以及 Cloud Operations collectors 发送日志和指标，也供镜像拉取子系统下载容器镜像。
-* **计费抓取器身份**
-  * 由独立运行的抓取器工作负载用于收集计费 telemetry。
-* **监控身份**
-  * 作为在你的集群中运行的 monitoring stack 的目标身份。用于对专用于此部署的 GCS 存储桶中的长期指标存储进行读写。
-* **ClickHouse 运行时管理身份**
-  * 由 ClickHouse 的运行时数据平面管理控制器使用，该控制器负责处理第 2 天运维操作，例如 Private Service Connect 端点管理、存储桶生命周期调整以及服务账号轮换。
+* **数据平面管理身份**：ClickHouse 管理服务通过模拟该身份，对你的 ClickHouse 服务进行日常管理，例如管理桶、服务器 Pod 的访问权限以及 Private Service Connect。
+* **GKE 节点身份**：附加到所有 GKE 节点，负责写入日志和指标，并拉取容器镜像。
+* **ClickHouse 服务器身份**：在每个 ClickHouse 服务的桶中读写表数据和备份。
+* **监控身份**：在 BYOC 监控桶中读写指标。
+* **遥测身份**：向 ClickHouse 发送用于计费的使用数据，以及用于自动扩缩容的 Kubernetes 指标。这些身份在你的项目中不持有任何权限。
+* **TDE 委托身份** (仅在启用 TDE 时) ：使用你的 KMS 密钥加密和解密 TDE 数据密钥。
 
-向 ClickHouse Cloud 发布服务和备份状态事件的状态导出器有意未列入其中：在 GCP 上，其发布身份是位于 ClickHouse 自有项目中的 ClickHouse 自有服务账号，而非在你的项目中创建的账号。你的项目中创建的只是一个工作负载 identity 绑定，使集群内的 `state-exporter` 服务账号能够模拟该身份。整个过程不涉及任何密钥材料，且向 Pub/Sub 发布数据的身份在你的项目中不持有任何权限。
+有关每个角色和服务账号的权限及范围，请参阅 [GCP 上的 BYOC 特权](/zh/products/bring-your-own-cloud/reference/privilege-gcp)。
+
+向 ClickHouse Cloud 发布服务和备份状态事件的状态导出器有意未列入其中：在 GCP 上，其发布身份是位于 ClickHouse 自有项目中的 ClickHouse 自有服务账号，而非在你的项目中创建的账号。你的项目中创建的只是一个工作负载身份绑定，使集群内的 `state-exporter` 服务账号能够模拟该身份。整个过程不涉及任何密钥材料，且向 Pub/Sub 发布数据的身份在你的项目中不持有任何权限。
 
 ## Azure 角色与身份 {#azure-roles-and-identities}
 

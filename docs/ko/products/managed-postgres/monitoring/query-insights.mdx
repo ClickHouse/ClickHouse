@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: '쿼리 인사이트'
 title: 'Postgres 쿼리 인사이트'
 description: 'ClickHouse Managed Postgres용 SQL 문별 텔레메트리: 데이터베이스에서 실행되는 모든 쿼리 패턴을 영향도순으로 보여주고, 각 쿼리가 느린 이유를 설명하는 진단 카운터를 함께 제공합니다'
-keywords: ['Managed Postgres', '쿼리 인사이트', 'pg_stat_ch', '느린 쿼리', 'p99 지연 시간', '쿼리 패턴', 'Postgres 성능', '임시 블록(blocks)', '병렬 worker', 'wal', '대기 이벤트', '잠금 대기', '차단된 세션']
+keywords: ['Managed Postgres', '쿼리 인사이트', 'pg_stat_ch', '느린 쿼리', 'p99 지연 시간', '쿼리 패턴', 'Postgres 성능', '임시 블록(blocks)', '병렬 worker', 'wal', '대기 이벤트(wait event)', '잠금 대기', '차단된 세션(Blocked sessions)', '차단 쿼리']
 doc_type: 'guide'
 ---
 
@@ -30,8 +30,9 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 * 데이터베이스에서 실행된 모든 쿼리 패턴의 순위를 보여 주며,
   의심되는 기준으로 정렬할 수 있는 **느린 패턴** 테이블.
 * 개별 실행 내역을 최신순으로 나열하는 **최근 쿼리** 패널.
-* 활성 세션이 각 대기 이벤트에서 소비한 시간을 기준으로 순위를 보여 주는
-  **대기(Waits)** 테이블.
+* 활성 세션이 각 대기 이벤트(wait event)에서 소비한 시간을 기준으로 순위를 보여 주는
+  **대기(Waits)** 탭. 이 탭에는 잠금을 기다리던 쿼리를 어떤 세션이
+  차단했는지 보여 주는 **차단 쿼리(Blocking queries)** 테이블도 있습니다.
 * 단일 패턴에 대한 모든 카운터를 집계해 보여 주는 **상세 정보 패널**.
 
 상단의 **시간 범위** 선택기를 사용해 최근 15분, 1시간, 1일, 1주 또는 1개월로 전환합니다. 집계 버킷 크기는
@@ -71,17 +72,17 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 
 | 패널                               | 표시 내용                                                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Active sessions by wait type** | 평균 활성 세션 수를 대기 유형별로 누적하여 표시합니다. **CPU**는 대기 이벤트 없이 활성 상태임을 의미합니다. 막대 위에 마우스를 올리면 각 유형에 속한 대기 이벤트를 확인할 수 있습니다. |
-| **Lock wait time**               | 각 인터벌에서 샘플링된 차단 세션 전체의 잠금 대기 경과 시간에 대한 p50, p95, 최댓값입니다.                                                      |
-| **Blocked sessions**             | 잠금으로 인해 차단된 평균 세션 수입니다.                                                                                       |
+| **Active sessions by wait type** | 평균 활성 세션 수를 대기 유형(wait type)별로 누적하여 표시합니다. **CPU**는 대기 이벤트(wait event) 없이 활성 상태임을 의미합니다. 막대 위에 마우스를 올리면 각 유형에 속한 대기 이벤트(wait event)를 확인할 수 있습니다. |
+| **잠금 대기 시간(Lock wait time)**               | 각 인터벌에서 샘플링된 차단 세션 전체의 잠금 대기 경과 시간에 대한 p50, p95, 최댓값입니다.                                                      |
+| **차단된 세션(Blocked sessions)**             | 잠금으로 인해 차단된 평균 세션 수입니다.                                                                                       |
 
-**Lock wait time**이 증가하는 동안 **Blocked sessions**가 계속 0보다 큰지
-확인하십시오. 이는 잠금 경합(lock contention)이 지속되고 있음을 의미할 수 있습니다. 대기 차트를
-클릭하면 [대기](#waits) 테이블이 열립니다.
+**잠금 대기 시간(Lock wait time)**이 증가하는 동안 **차단된 세션(Blocked sessions)**이 계속 0보다 큰지
+확인하십시오. 이는 잠금 경합(lock contention)이 지속되고 있음을 의미할 수 있습니다.
+**Active sessions by wait type**을 클릭하면 [대기](#waits) 탭이 열립니다.
 
 <div className="ch-image-lg">
   <Frame>
-    ![대기 유형별로 누적된 활성 세션, p50, p95, 최댓값의 잠금 대기 시간, 시간에 따른 차단 세션을 보여주는 대기 차트](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
+    ![대기 유형(wait type)별로 누적된 활성 세션, p50, p95, 최댓값의 잠금 대기 시간(Lock wait time), 시간에 따른 차단된 세션(Blocked sessions)을 보여주는 대기 차트](/images/managed-postgres/monitoring/query-insights-wait-charts.webp)
   </Frame>
 </div>
 
@@ -165,24 +166,85 @@ SQL 문(statement) 1개당 1행이 표시됩니다. 집계 대신 원시 이벤�
 
 ## 대기 {#waits}
 
-**대기**를 펼치거나 [대기 차트](#wait-charts)를 클릭하면 선택한 시간 범위 동안의
-평균 활성 세션 수를 기준으로 정렬된 대기 이벤트를 확인할 수 있습니다.
+**대기** 탭을 열거나 [대기 차트](#wait-charts)에서 **Active sessions by wait type**을 클릭하면 동일한 차트와 함께,
+선택한 시간 범위 동안의 평균 활성 세션 수를 기준으로 대기 이벤트(wait event)를 정렬한 **Wait events
+breakdown** 테이블을 확인할 수 있습니다.
 
 <div className="ch-image-lg">
   <Frame>
-    ![Wait event, Wait type, Avg active sessions, Share of load 컬럼으로 구성되어 평균 활성 세션 수 기준으로 정렬된 대기 이벤트를 보여주는 대기 테이블](/images/managed-postgres/monitoring/query-insights-waits.webp)
+    ![대기 이벤트(wait event), 대기 유형(wait type), Avg active sessions, Share of load 컬럼으로 구성되어 평균 활성 세션 수 기준으로 정렬된 대기 이벤트(wait event)를 보여주는 대기 테이블](/images/managed-postgres/monitoring/query-insights-waits.webp)
   </Frame>
 </div>
 
 | 컬럼                      | 표시 내용                                                                                           |
 | ----------------------- | ----------------------------------------------------------------------------------------------- |
-| **Wait event**          | `type:event` 형식의 대기 이벤트입니다(예: `Lock:relation`, `IO:WalSync`). **CPU**는 대기 이벤트 없이 활성 상태임을 의미합니다. |
-| **Wait type**           | 대기 이벤트의 유형이며, **Active sessions by wait type**에 표시되는 색상과 일치합니다.                                 |
-| **Avg active sessions** | 선택한 시간 범위 동안 해당 대기 이벤트 상태였던 세션의 평균 수입니다.                                                        |
-| **Share of load**       | **CPU**를 포함한 전체 평균 활성 세션 중 해당 대기 이벤트가 차지하는 비율입니다.                                               |
+| **대기 이벤트(wait event)**          | `type:event` 형식의 대기 이벤트(wait event)입니다(예: `Lock:relation`, `IO:WalSync`). **CPU**는 대기 이벤트(wait event) 없이 활성 상태임을 의미합니다. |
+| **대기 유형(wait type)**           | 대기 이벤트(wait event)의 유형이며, **Active sessions by wait type**에 표시되는 색상과 일치합니다.                                 |
+| **Avg active sessions** | 선택한 시간 범위 동안 해당 대기 이벤트(wait event) 상태였던 세션의 평균 수입니다.                                                        |
+| **Share of load**       | **CPU**를 포함한 전체 평균 활성 세션 중 해당 대기 이벤트(wait event)가 차지하는 비율입니다.                                               |
 
 개별 이벤트에 대한 설명은
-[Postgres 대기 이벤트 참고 문서](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE)를 참조하십시오.
+[Postgres 대기 이벤트(wait event) 참고 문서](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE)를 참조하십시오.
+
+### 차단 쿼리 {#blocking-queries}
+
+대기 이벤트(wait event) 테이블 아래의 **차단 쿼리**에는 잠금을 기다린 쿼리와
+이를 차단한 세션이 표시됩니다. 차단 세션은 충돌하는 잠금을
+보유하고 있거나, 잠금 대기열에서 앞쪽에 있는 세션입니다.
+각 행은 대기 중인 쿼리와 이를 직접 차단한 세션을 한 쌍으로 묶으며,
+여러 세션의 샘플이 하나로 합쳐질 수 있습니다. 가장 자주 관찰된
+쌍이 먼저 표시됩니다.
+
+수집은 기본적으로 꺼져 있습니다. 수집을 시작하려면
+**차단 쿼리** 제목 옆의 **Enable** 스위치를 켜십시오. 서비스를
+관리할 수 있는 사용자만 수집을 켜거나 끌 수 있으며, 읽기 복제본(read replicas)은
+프라이머리의 설정을 따릅니다. 샘플링은 보통 1분 정도 이내에 시작됩니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![수집이 꺼진 상태의 차단 쿼리 섹션: 제목 옆의 Enable 스위치가 꺼져 있으며, 차단 쿼리 수집이 비활성화되었다는 메시지가 표시됨](/images/managed-postgres/monitoring/query-insights-blocking-queries-off.webp)
+  </Frame>
+</div>
+
+수집이 켜져 있으면 선택한 시간 범위 동안 관찰된 차단 쿼리가 테이블에
+표시됩니다. 수집을 중지하려면 **Enable** 스위치를
+끄십시오.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![수집이 켜진 상태의 차단 쿼리 섹션: Enable 스위치가 켜져 있고, 그 아래에 데이터베이스, 사용자, 애플리케이션 필터와 Waiting query, Blocked by, Blocker application, Blocker state, Lock, Sessions, Longest wait, Last seen 컬럼으로 구성된 테이블이 있으며, active 및 idle in transaction 상태의 차단 세션으로 인한 행 잠금 및 테이블 잠금 대기가 표시됨](/images/managed-postgres/monitoring/query-insights-blocking-queries.webp)
+  </Frame>
+</div>
+
+| 컬럼                      | 표시 내용                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Waiting query**       | 잠금을 기다린 쿼리의 정규화된 텍스트입니다.                                                                                           |
+| **Blocked by**          | 차단 세션의 현재 또는 가장 최근 SQL 문의 정규화된 텍스트입니다.                                                                             |
+| **Blocker application** | 차단 세션의 `application_name`입니다.                                                                                      |
+| **Blocker state**       | 최신 샘플 시점의 차단 세션 상태입니다(예: `active`, `idle in transaction`). **waiting**은 하나 이상의 샘플에서 차단 세션 자체도 잠금을 기다리고 있었음을 의미합니다. |
+| **Lock**                | 최신 샘플 시점의 잠금 유형(**Row**, **Table** 등)과 대기 중인 쿼리가 요청한 잠금 모드입니다.                                                     |
+| **Sessions**            | 대기한 고유 세션 수입니다.                                                                                                    |
+| **Longest wait**        | 샘플링 시점을 기준으로 대기 중인 세션이 기다린 가장 긴 시간입니다.                                                                             |
+| **Last seen**           | 이 쌍이 관찰된 가장 최근 샘플의 시각입니다.                                                                                          |
+
+**Columns** 선택기를 열면 대기 중인 세션의 사용자, 애플리케이션, PID와
+차단 세션의 사용자, PID를 확인할 수 있습니다. 또한 대기 중인 세션의
+데이터베이스, 사용자 또는 애플리케이션을 기준으로 테이블을 필터링할 수 있습니다.
+
+`idle in transaction` 상태의 차단 세션을 가장 먼저 해결해야 하는 경우가 많습니다.
+이러한 세션은 트랜잭션(transaction)을 시작하고 잠금을 획득한 뒤 커밋하거나 롤백하지 않은 상태입니다.
+이 세션의 **Blocked by** 텍스트는 가장 최근 SQL 문이므로, 실제로 잠금을 획득한
+SQL 문과 다를 수 있습니다.
+
+**No query text**는 쿼리 인사이트에 해당 SQL 문의 텍스트가 없다는 뜻입니다.
+이는 차단 세션의 마지막 SQL 문이 `LOCK TABLE`과 같은 유틸리티
+명령이거나, Postgres가 쿼리 ID(query ID)를 할당하기 전에 쿼리가 테이블 잠금을
+기다리거나, 쿼리 인사이트가 해당 SQL 문의 실행 완료 기록을
+남기지 않은 경우에 발생합니다. 또한 쿼리 인사이트는 모니터링, 복제 등
+서비스가 내부적으로 사용하는 세션의 SQL 문 텍스트를 숨깁니다.
+이 경우에도 행에는 애플리케이션, 상태, 잠금이 표시됩니다. **Blocked
+by**에 **Prepared transaction**이 표시되면 준비된 트랜잭션이 잠금을 보유하고 있다는 뜻이므로,
+표시할 차단 세션이 없습니다.
 
 ## 상세 정보 패널 {#detail}
 
@@ -246,7 +308,9 @@ SQL 문별 텔레메트리는
 엔드포인트에 매핑되며, [상세 정보 패널](#detail)은
 [get slow query pattern](/ko/products/cloud/api-reference/postgres/slow-query-pattern-get)
 엔드포인트에 매핑됩니다. 이 엔드포인트는 단일 패턴의 집계 메트릭과
-최근 실행 내역을 함께 반환합니다.
+최근 실행 내역을 함께 반환합니다. [차단 쿼리](#blocking-queries) 테이블은
+[list blocking queries](/ko/products/managed-postgres/openapi#list-blocking-queries)
+엔드포인트에 매핑됩니다.
 
 <div id="how-it-works">
   ## 동작 방식 {#how-it-works}
@@ -278,6 +342,11 @@ SQL 문별 텔레메트리는
 시작되고 끝나 표시되지 않을 수 있으므로, 이 화면들은
 지속적인 대기와 잠금 경합(lock contention)을 파악하는 데 가장 유용합니다.
 
+[차단 쿼리](#blocking-queries)도 수집이 활성화된 각 인스턴스에서
+30초마다 샘플링되므로, 몇 초 동안만 유지된 잠금은 표시되지 않을 수 있습니다.
+각 샘플에는 쿼리 텍스트가 아닌 쿼리 ID(Query IDs)가 기록됩니다. 테이블에 표시되는 텍스트는
+쿼리 인사이트가 이미 수집하고 있는 정규화된 패턴에서 가져오므로, 리터럴(Literal) 값은 표시되지 않습니다.
+
 <div id="how-raw-events">
   ### 집계가 아닌 원시 이벤트 {#how-raw-events}
 </div>
@@ -308,6 +377,6 @@ ClickHouse로든 전송할 수 있습니다. 소스 코드와 이슈는 다음�
 
 * [모니터링 대시보드](/ko/products/managed-postgres/monitoring/dashboard) — 기본 제공 리소스 및 활동 차트
 * [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — 호스트 수준 메트릭을 자체 관측성 스택으로 스크레이프
-* [ClickHouse Managed Postgres OpenAPI](/ko/products/managed-postgres/openapi#query-insights) — 느린 패턴과 최근 실행 내역을 프로그래밍 방식으로 조회
+* [ClickHouse Managed Postgres OpenAPI](/ko/products/managed-postgres/openapi#query-insights) — 느린 패턴, 최근 실행 내역, 차단 쿼리를 프로그래밍 방식으로 조회
 * [확장 기능](/ko/products/managed-postgres/extensions) — ClickHouse Managed Postgres 인스턴스에서 사용할 수 있는 확장 기능
-* [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — Query Insights를 지원하는 오픈소스 확장 기능
+* [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — 쿼리 인사이트를 지원하는 오픈소스 확장 기능

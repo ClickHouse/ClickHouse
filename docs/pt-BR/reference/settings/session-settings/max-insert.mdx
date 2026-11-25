@@ -80,6 +80,13 @@ Isso se aplica tanto a `INSERT SELECT` quanto a um `INSERT` simples cujos dados 
 (agregação dos blocos e gravação na tabela de destino) é paralelizado
 em até essa quantidade de threads.
 
+Destinos cujos resultados dependem da ordem de inserção mantêm um único fluxo de gravação quando a entrada tem um único fluxo:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(incluindo suas variantes replicadas), tabelas `MergeTree` com uma `UNIQUE KEY`, `EmbeddedRocksDB` e `Distributed`
+(o engine da tabela no fragmento é desconhecido). Um `SELECT` com vários streams de saída não tem ordem de entrada
+a preservar, portanto esses destinos podem manter sinks paralelos. `KeeperMap` sempre mantém um único fluxo de gravação.
+Essas restrições também se aplicam a destinos alcançados por meio de uma visão materializada ou de uma tabela `Alias`.
+
 Valores possíveis:
 
 * 0 — Automático. Usa o número de núcleos de CPU disponíveis no servidor (o mesmo valor automático de [`max_threads`](/pt-BR/reference/settings/session-settings/max-threads#max_threads)), reduzido sob pressão de memória por [`max_insert_threads_min_free_memory_per_thread`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread).

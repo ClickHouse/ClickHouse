@@ -13,14 +13,14 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="レプリカ対応ルーティング" />
 
-レプリカ対応ルーティング (sticky sessions、スティッキールーティング、session affinity とも呼ばれます) は、関連するリクエストを同じ ClickHouse レプリカに振り分けます。[一時テーブル](/ja/reference/statements/create/table/temporary-table)や[名前付きセッション状態](/ja/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)をクエリ間で利用可能な状態に保つ必要がある場合、関連するクエリで同じレプリカのローカル cache を再利用する場合、または書き込みとその後の読み取りで[書き込み後の読み取り整合性](#read-after-write-consistency)が必要な場合に使用します。
+レプリカ対応ルーティング (sticky sessions、スティッキールーティング、session affinity とも呼ばれます) は、関連するリクエストを同じ ClickHouse レプリカに振り分けます。[一時テーブル](/ja/reference/statements/create/table/temporary-table)や[名前付きセッション状態](/ja/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol)をクエリ間で利用可能な状態に保つ必要がある場合、関連するクエリで同じレプリカのローカル cache を再利用する場合、または書き込みとその後の読み取りで[書き込み後の読み取り整合性](#read-after-write-consistency)が必要な場合に使用します。
 
-これはベストエフォートであり、分離は保証されません。プロキシ は各ルーティング値を 1 つのレプリカにマッピングします。レプリカ数が変わらない限り、このマッピングは安定していますが、サービス をスケーリングすると、その値が別のレプリカにマッピングされる可能性があります。
+これはベストエフォートであり、分離は保証されません。プロキシ は各 routing value を 1 つのレプリカにマッピングします。レプリカ数が変わらない限り、このマッピングは安定していますが、サービス をスケーリングすると、その値が別のレプリカにマッピングされる可能性があります。
 
 レプリカ対応ルーティングは、次の両方のインターフェイスで利用できます。
 
 * [HTTP/HTTPS](#http-based-routing) 経由 (`X-ClickHouse-Replica-Tag` ヘッダーを使用) 。
-* [ネイティブプロトコル](#native-protocol-routing) 経由 (TLS Server Name Indication (SNI) の override を使用) 。
+* [ネイティブプロトコル](#native-protocol-routing) 経由 (TLS Server Name Indication (SNI) のオーバーライドを使用) 。
 
 どちらも個別に有効化され、プロキシ の背後で同じ 一貫性ハッシュ を使用します。
 
@@ -42,7 +42,7 @@ Enterprise のお客様は、ClickHouse Cloud コンソールのサービス設�
 
 ## HTTP ベースのルーティング {#http-based-routing}
 
-ワークロードを特定のレプリカに固定するには、[HTTPS インターフェイス](/ja/concepts/features/interfaces/http)経由のリクエストに `X-ClickHouse-Replica-Tag` ヘッダーを付加します。プロキシはヘッダー値に対して一貫性ハッシュを使用するため、レプリカ数が変わらない限り、同じ値を持つリクエストは同じレプリカに送られます。異なる値はそれぞれ独立してハッシュ化され、同じレプリカまたは別のレプリカに送られる可能性がありますが、値をどのレプリカにマッピングするかを指定することはできません。
+ワークロードを特定のレプリカに固定するには、[HTTPS インターフェイス](/ja/concepts/features/connect-to-clickhouse/protocols/http)経由のリクエストに `X-ClickHouse-Replica-Tag` ヘッダーを付加します。プロキシはヘッダー値に対して一貫性ハッシュを使用するため、レプリカ数が変わらない限り、同じ値を持つリクエストは同じレプリカに送られます。異なる値はそれぞれ独立してハッシュ化され、同じレプリカまたは別のレプリカに送られる可能性がありますが、値をどのレプリカにマッピングするかを指定することはできません。
 
 既存のサービスホスト名を使用してください。特別な sticky ホスト名や DNS の変更は必要ありません。ヘッダー値には、アプリケーション名、ユーザー ID、ワークロードラベルなど、任意の文字列を指定できます。ヘッダーのないリクエストには、通常の負荷分散が適用されます。
 
@@ -62,9 +62,9 @@ clickhouse-go (v2) では、`Protocol: clickhouse.HTTP` を設定し、[`HttpHea
   `X-ClickHouse-Replica-Tag` を使用すると、ClickHouse HTTP セッションを作成せずにレプリカアフィニティを実現できます。同時実行リクエストでも、`SESSION_IS_LOCKED` を発生させることなく同じタグを再利用できます。
 </Info>
 
-## ネイティブプロトコルでのルーティング {#native-protocol-routing}
+## ネイティブプロトコルによるルーティング {#native-protocol-routing}
 
-[ネイティブプロトコル](/ja/interfaces/tcp)を使用する場合は、ルーティング値を `<routing-value>.sticky.<host>` という形式の TLS サーバー名として渡します。接続先には、通常どおりサービスホスト名を指定します。[ClickHouse Client](/ja/interfaces/client) では、`--tls-sni-override` でルーティング値を指定します:
+[ネイティブプロトコル](/ja/concepts/features/connect-to-clickhouse/protocols/native-tcp)を使用する場合は、routing value を `<routing-value>.sticky.<host>` という形式の TLS サーバー名として渡します。接続先には、通常どおりサービスホスト名を指定します。[ClickHouse Client](/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) では、`--tls-sni-override` で routing value を指定します:
 
 ```bash
 clickhouse client \
@@ -74,11 +74,11 @@ clickhouse client \
   --query 'SELECT hostName()'
 ```
 
-`--host` には通常のサービスホスト名を指定し、`--secure` で TLS を有効化し、`--tls-sni-override` でルーティング値を渡します。TLS は必須です。追加の証明書や DNS エントリは不要です。
+`--host` には通常のサービスホスト名を指定し、`--secure` で TLS を有効化し、`--tls-sni-override` で routing value を渡します。TLS は必須です。追加の証明書や DNS エントリは不要です。
 
 ## 書き込み後の読み取り整合性 {#read-after-write-consistency}
 
-マルチレプリカの service では、あるレプリカへの書き込みが、レプリケーションが追いつくまで他のレプリカから見えないことがあります。書き込み時に routing value を指定し、後続の読み取りでも同じ値を再利用してください。proxy が両方を同じレプリカにルーティングするため、他のレプリカがまだ追いついていない状態でも、自身の書き込みを読み取れます。このパターンは、書き込んだ直後に同じデータを読み返すワークロード、たとえばインタラクティブなアプリケーションや、次の処理に進む前に insert を検証する ETL ジョブに適しています。
+マルチレプリカの サービス では、あるレプリカへの書き込みが、レプリケーションが追いつくまで他のレプリカから見えないことがあります。書き込み時に routing value を指定し、後続の読み取りでも同じ値を再利用してください。プロキシ が両方を同じレプリカにルーティングするため、他のレプリカがまだ追いついていない状態でも、自身の書き込みを読み取れます。このパターンは、書き込んだ直後に同じデータを読み返すワークロード、たとえばインタラクティブなアプリケーションや、次の処理に進む前に insert を検証する ETL ジョブに適しています。
 
 また、スキーマ変更がまだレプリケーションされていない場合にも有効です。routing value を再利用すれば、新しいスキーマをすでに持つレプリカに insert し続けられるためです。
 
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-すべてのレプリカにわたるより広範な保証が必要な場合は、ClickHouse Cloud で [`select_sequential_consistency`](/ja/reference/settings/session-settings#select_sequential_consistency) を `1` に設定することもできます。
+すべてのレプリカにわたるより広範な保証が必要な場合は、ClickHouse Cloud で [`select_sequential_consistency`](/ja/reference/settings/session-settings/other#select_sequential_consistency) を `1` に設定することもできます。
 
 ## 接続先のレプリカを確認する {#check-which-replica}
 

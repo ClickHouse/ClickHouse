@@ -120,13 +120,19 @@ Para desativar a divisão de nós `Resize`, defina esta configuração como 0. I
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nova configuração: `enable_packed_string_keys_in_hash_join` só se aplica quando o lado direito da junção tem estimativa de 100000 linhas ou mais, ou quando não há estimativa."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nova configuração: o número mínimo de linhas do lado direito para que um hash join calcule o hash de cada chave do lado esquerdo — isto é, uma chave com comprimento médio superior a 15 bytes, ou de comprimento desconhecido — sem um filtro em tempo de execução. `enable_packed_string_keys_in_hash_join` também exige uma tabela hash maior que o cache L2. 0 empacota todas as junções."}]}]} />
 
-Número mínimo estimado de linhas no lado direito de uma junção para que `enable_packed_string_keys_in_hash_join` seja aplicada. Junções menores ganham pouco com ela e podem ficar mais lentas com chaves longas.
+Um hash join cujo lado direito tem uma estimativa de linhas empacota suas chaves `String` (consulte `enable_packed_string_keys_in_hash_join`) somente quando a tabela hash com chaves exatas ficaria maior que, aproximadamente, o cache L2 da CPU, ou quando esta configuração é 0. O tamanho da tabela é o número de linhas do lado direito multiplicado pelos bytes de uma linha: uma célula de 32 bytes mais o comprimento médio da chave, que soma 0 quando é desconhecido. Junções menores ganham pouco com chaves empacotadas e podem até ficar mais lentas.
 
-A estimativa é o número de linhas do lado direito em uma execução anterior da mesma junção, se `collect_hash_table_stats_during_joins` estiver habilitado. Caso contrário, usa-se a estimativa do otimizador de consultas. `parallel_hash_join_threshold` usa a mesma estimativa. Uma junção sem estimativa sempre usa `enable_packed_string_keys_in_hash_join`.
+O hash de uma chave empacotada com mais de 15 bytes é calculado para cada linha do lado esquerdo. Uma junção com um filtro em tempo de execução que deixa passar principalmente as linhas com correspondência (consulte `enable_join_runtime_filters`) calcula o hash apenas das linhas com correspondência e, portanto, não precisa de um mínimo. Sem esse filtro, esta configuração define o número mínimo de linhas do lado direito. Ela se aplica quando o comprimento médio da chave é superior a 15 bytes e também quando o comprimento é desconhecido, pois nesse caso a chave é considerada longa. O comprimento é obtido das estatísticas de coluna `basic` da chave. Tabelas `MergeTree` as coletam por padrão; consulte `auto_statistics_types`.
 
-0 significa que não há valor mínimo.
+A chave não tem estatísticas quando é uma coluna de uma tabela `Memory`, o resultado de uma função de agregação de uma subconsulta ou o resultado de uma expressão em `ON`, como `concat(k, 'x')` ou `hex(k)`. Uma junção com `OR` não as utiliza. Uma subconsulta que apenas repassa a coluna, ou agrupa por ela, as preserva.
+
+Uma junção `LEFT` que não seja `SEMI` nem `ANTI`, assim como uma junção `FULL`, mantém todas as linhas do lado esquerdo e, por isso, não recebe filtro em tempo de execução. O filtro de uma junção `LEFT ANTI` deixa passar as linhas sem correspondência e, portanto, não é levado em conta.
+
+O número de linhas corresponde às linhas do lado direito de uma execução anterior da mesma junção, se `collect_hash_table_stats_during_joins` estiver habilitado. Caso contrário, é a estimativa do otimizador de consultas, que `parallel_hash_join_threshold` também utiliza. Sem uma estimativa do otimizador, é a estimativa deste servidor para sua própria leitura da right table. Uma junção sem nenhuma das duas empacota as chaves, a menos que o servidor que planejou a consulta tenha estimado o lado direito abaixo desse mínimo. Cada servidor de uma consulta distribuída decide com base em sua própria estimativa, em suas estatísticas e no tamanho do seu cache.
+
+0 empacota as chaves de todas as junções.
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 

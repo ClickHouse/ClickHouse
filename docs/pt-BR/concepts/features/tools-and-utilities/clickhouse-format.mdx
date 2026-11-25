@@ -12,8 +12,9 @@ Opções:
 * `--help` ou `-h` — Exibe a mensagem de ajuda.
 * `--query` — Formata consultas de qualquer tamanho e complexidade.
 * `--hilite` ou `--highlight` — Adiciona realce de sintaxe com sequências de escape ANSI do terminal.
-* `--oneline` — Formata em uma única linha.
-* `--max_line_length` — Formata consultas em uma única linha com comprimento menor que o especificado.
+* `--oneline` — Formata em uma linha única.
+* `--max_line_length` — Formata consultas em uma linha única com comprimento menor que o especificado.
+* `--wrap_width` — Quebra consultas multilinha na largura de exibição especificada. A quebra de linha fica desabilitada por padrão (`0`). Consultas formatadas em uma linha única por `--oneline` ou `--max_line_length` não são quebradas.
 * `--comments` — Mantém comentários na saída.
 * `--quiet` ou `-q` — Apenas verifica a sintaxe, sem saída em caso de sucesso.
 * `--multiquery` ou `-n` — Permite várias consultas no mesmo arquivo.
@@ -22,9 +23,9 @@ Opções:
 * `--backslash` — Adiciona uma barra invertida ao final de cada linha da consulta formatada. Pode ser útil quando você copia uma consulta da web ou de outro lugar com várias linhas e quer executá-la na linha de comando.
 * `--semicolons_inline` — No modo multiquery, escreve os pontos e vírgulas na última linha da consulta em vez de em uma nova linha.
 
-<div id="examples">
-  ## Exemplos
-</div>
+Se uma chamada de função, um array ou uma tupla, uma cadeia `AND`/`OR`, uma definição de janela ou a lista de colunas de um `INSERT` não couber na largura, seus elementos passam a começar em novas linhas, com indentação maior. Argumentos de função e elementos do array que são valores simples (nomes de colunas e literais) são empacotados, vários por linha. Consultas cujas linhas formatadas já cabem na largura não são alteradas. A largura é um limite flexível: strings, identificadores e outros fragmentos indivisíveis podem ultrapassá-la. A largura dos caracteres Unicode é levada em consideração. Comentários mantidos por `--comments` e dados após `INSERT ... VALUES` não são quebrados.
+
+## Exemplos {#examples}
 
 1. Formatação de uma consulta:
 
@@ -86,7 +87,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
-5. Adicionando um backslash:
+5. Adicionando uma barra invertida:
 
 ```bash title="Query"
 $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. Quebra de linha em expressões longas:
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

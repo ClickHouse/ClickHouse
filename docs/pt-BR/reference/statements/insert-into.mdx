@@ -176,7 +176,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 A cláusula `RETURNING` especifica uma consulta `SELECT`, que é executada sobre os dados inseridos e retorna seu resultado.
@@ -267,7 +267,7 @@ Os dados podem ser inseridos em tabelas referenciadas por [funções de tabela](
 **Sintaxe**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **Exemplo**
@@ -285,6 +285,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### Gravação particionada {#partitioned-writes}
+
+A cláusula `PARTITION BY` é compatível com algumas funções de tabela que gravam em arquivos ou em armazenamento de objetos, como [file](/pt-BR/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files), [s3](/pt-BR/reference/functions/table-functions/s3#partitioned-write), [gcs](/pt-BR/reference/functions/table-functions/gcs#partitioned-write) e [azureBlobStorage](/pt-BR/reference/functions/table-functions/azureBlobStorage#partitioned-write). Funções de tabela que não oferecem suporte a ela, como `remote`, rejeitam a consulta. `expr` faz referência às colunas da função de tabela.
+
+A divisão das linhas inseridas, e a forma como ela ocorre, depende da estratégia de particionamento da função de tabela e do seu caminho. Sem uma estratégia de particionamento explícita, um marcador de posição `{_partition_id}` no caminho seleciona a estratégia `wildcard`: cada partição é gravada em um arquivo ou objeto separado, em cujo caminho o marcador de posição é substituído pelo valor de `expr` convertido em string. As páginas de `s3`, `gcs` e `azureBlobStorage` descrevem as demais estratégias de particionamento dessas funções.
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## Inserção no ClickHouse Cloud {#inserting-into-clickhouse-cloud}

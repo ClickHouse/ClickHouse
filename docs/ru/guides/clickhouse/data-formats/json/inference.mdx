@@ -104,7 +104,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Управление определением типов**
 
-  Автоматическим определением дат и значений даты и времени можно управлять с помощью настроек [`input_format_try_infer_dates`](/ru/reference/settings/formats/input-format#input_format_try_infer_dates) и [`input_format_try_infer_datetimes`](/ru/reference/settings/formats/input-format#input_format_try_infer_datetimes) соответственно (обе включены по умолчанию). Определение объектов как именованных Tuple управляется настройкой [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Другие настройки, управляющие определением схемы для JSON, например автоматическое определение чисел, можно найти [здесь](/ru/concepts/features/interfaces/schema-inference#text-formats).
+  Автоматическим определением дат и значений даты и времени можно управлять с помощью настроек [`input_format_try_infer_dates`](/ru/reference/settings/formats/input-format#input_format_try_infer_dates) и [`input_format_try_infer_datetimes`](/ru/reference/settings/formats/input-format#input_format_try_infer_datetimes) соответственно (обе включены по умолчанию). Определение объектов как именованных Tuple управляется настройкой [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Другие настройки, управляющие автоматическим определением схемы для JSON, например автоматическое определение чисел, можно найти [здесь](/ru/concepts/features/operations/insert/schema-inference#text-formats).
 </Info>
 
 ## Запросы к JSON {#querying-json}
@@ -421,4 +421,4 @@ SETTINGS describe_compact_output = 1
 
 ## Дополнительные материалы {#further-reading}
 
-Чтобы узнать больше об автоматическом определении типов данных, см. [эту](/ru/concepts/features/interfaces/schema-inference) страницу документации.
+Чтобы узнать больше о выводе типов данных, см. [эту](/ru/concepts/features/operations/insert/schema-inference) страницу документации.

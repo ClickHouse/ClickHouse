@@ -143,10 +143,10 @@ while let Some(row) = cursor.next().await? { .. }
 * Se pueden usar los prácticos métodos `fetch_one::<Row>()` y `fetch_all::<Row>()` para obtener la primera fila o todas las filas, respectivamente.
 * `sql::Identifier` se puede usar para vincular nombres de tablas.
 
-Nota: como toda la respuesta se envía en streaming, los cursores pueden devolver un error incluso después de producir algunas filas. Si esto ocurre en su caso de uso, puede probar `query(...).with_option("wait_end_of_query", "1")` para habilitar el búfer de respuesta en el servidor. [Más detalles](/es/concepts/features/interfaces/http#response-buffering). La opción `buffer_size` también puede ser útil.
+Nota: como toda la respuesta se envía en streaming, los cursores pueden devolver un error incluso después de producir algunas filas. Si esto ocurre en su caso de uso, puede probar `query(...).with_option("wait_end_of_query", "1")` para habilitar el búfer de respuesta en el Servidor. [Más detalles](/es/concepts/features/connect-to-clickhouse/protocols/http#response-buffering). La opción `buffer_size` también puede ser útil.
 
 <Warning>
-  Use `wait_end_of_query` con precaución al seleccionar filas, ya que puede aumentar el consumo de memoria en el servidor y probablemente reduzca el rendimiento general.
+  Use `wait_end_of_query` con precaución al seleccionar filas, ya que puede aumentar el consumo de memoria en el Servidor y probablemente reduzca el rendimiento general.
 </Warning>
 
 ### Insertar filas {#inserting-rows}
@@ -169,7 +169,7 @@ insert.end().await?;
 
 * Si no se llama a `end()`, el `INSERT` se cancela.
 * Las filas se envían progresivamente en flujo para distribuir la carga de red.
-* ClickHouse inserta lotes de forma atómica solo si todas las filas caben en la misma partición y su número es inferior a [`max_insert_block_size`](/es/reference/settings/session-settings#max_insert_block_size).
+* ClickHouse inserta lotes de forma atómica solo si todas las filas caben en la misma partición y su número es inferior a [`max_insert_block_size`](/es/reference/settings/session-settings/max-insert#max_insert_block_size).
 
 ### Async insert (agrupación por lotes del lado del servidor) {#async-insert-server-side-batching}
 

@@ -118,17 +118,27 @@ Pour `ENGINE = Kafka(named_collection)` :
 
 Lorsqu&#39;une collection nommée est utilisée, **le bloc global `<kafka>` du serveur dans `config.xml` n&#39;est pas fusionné**. Chaque collection doit donc inclure toutes les propriétés étendues dont la table a besoin (y compris les fichiers TLS et `security.protocol` lorsque celui-ci n&#39;est pas défini via des `SETTINGS` de table non vides).
 
-Une disposition courante pour `SASL_SSL` avec des certificats client consiste à stocker les chemins TLS et `ssl.key.password` dans la collection nommée, puis à définir `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` et, éventuellement, `kafka_sasl_username` / `kafka_sasl_password` dans la clause `SETTINGS` de la table. `kafka.security_protocol` et `kafka_security_protocol` définissent tous deux `security.protocol`, et c&#39;est le paramètre de table non vide qui l&#39;emporte. Si la collection stocke déjà cette propriété, le paramètre de table constitue une surcharge de la collection nommée : il requiert le privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection et échoue avec l&#39;erreur `Override not allowed` si la clé est `NOT OVERRIDABLE`. Il en va de même pour `kafka_sasl_mechanism`, `kafka_sasl_username` et `kafka_sasl_password`.
+Une collection nommée créée avec `CREATE NAMED COLLECTION` n&#39;accepte que les propriétés `librdkafka` figurant dans la [liste d’autorisation](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), telles que `security.protocol`, `sasl.username` et `fetch.min.bytes`. Si une table utilise une collection contenant une propriété absente de cette liste, ClickHouse renvoie `BAD_ARGUMENTS`. Pour utiliser d&#39;autres propriétés prises en charge, telles que `sasl.kerberos.keytab` ou `sasl.oauthbearer.token.endpoint.url`, définissez la collection dans le fichier de configuration du serveur. Cette restriction s&#39;applique également aux propriétés ajoutées avec `ALTER NAMED COLLECTION` après la création de la table.
 
-Exemple (les chemins des certificats doivent exister sur chaque serveur ClickHouse qui exécute des consommateurs pour la table) :
+Dans une collection nommée créée en SQL, fournissez le contenu du fichier plutôt que son chemin : `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem` et `sasl.oauthbearer.assertion.private.key.pem`. La valeur `probe` de `ssl.ca.location` et `https.ca.location` est également acceptée, car il ne s&#39;agit pas d&#39;un chemin.
+
+Une disposition courante pour `SASL_SSL` avec des certificats client consiste à stocker les certificats, la clé privée et `ssl.key.password` dans la collection nommée, puis à définir `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` et, éventuellement, `kafka_sasl_username` / `kafka_sasl_password` dans la clause `SETTINGS` de la table. `kafka.security_protocol` et `kafka_security_protocol` définissent tous deux `security.protocol`, et c&#39;est le paramètre de table non vide qui l&#39;emporte. Si la collection stocke déjà cette propriété, le paramètre de table constitue une surcharge de la collection nommée : il requiert le privilège `SHOW NAMED COLLECTIONS SECRETS` sur la collection et échoue avec l&#39;erreur `Override not allowed` si la clé est `NOT OVERRIDABLE`. Il en va de même pour `kafka_sasl_mechanism`, `kafka_sasl_username` et `kafka_sasl_password`.
+
+Exemple avec une collection nommée créée en SQL, contenant les certificats et la clé privée au format PEM :
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -144,7 +154,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-Les mêmes paramètres étendus, dans une collection nommée définie en XML :
+Les mêmes paramètres étendus, dans une collection nommée définie en XML, qui peut plutôt faire référence aux fichiers (les fichiers doivent exister sur chaque serveur ClickHouse qui exécute des consommateurs pour la table) :
 
 ```xml
 <clickhouse>
@@ -268,6 +278,24 @@ Exemple, en utilisant des [collections nommées](/fr/concepts/features/configura
 ```
 
 Pour améliorer les performances, les messages reçus sont regroupés en blocs de la taille de [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size). Si le bloc n&#39;a pas été constitué dans le délai de [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms) millisecondes, les données seront écrites dans la table, même si le bloc n&#39;est pas complet.
+
+Les paramètres de table suivants déterminent la fréquence à laquelle les données consommées sont écrites dans les vues matérialisées :
+
+* `kafka_max_block_size` — un bloc est écrit dès qu’il contient ce nombre de lignes. Valeur par défaut : `max_insert_block_size` divisé par `kafka_num_consumers`.
+* `kafka_flush_interval_ms` — un bloc est écrit au terme de ce délai, même s’il n’est pas plein. Valeur par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Diminuez cette valeur pour réduire le délai entre la production d’un message et son apparition dans la table cible.
+* `kafka_consumer_reschedule_ms` — en l’absence de nouveaux messages, le moteur attend ce délai avant d’interroger à nouveau Kafka. Valeur par défaut : `500` ms.
+
+Il s’agit de paramètres de la table Kafka, définis dans sa clause `SETTINGS`. Ils ne peuvent pas être définis dans la section `<kafka>` du fichier de configuration du serveur : chaque clé qui s’y trouve est transmise à librdkafka en tant que propriété (voir [Configuration](#configuration)). Ainsi, `<flush_interval_ms>`, par exemple, n’y est pas un paramètre ClickHouse.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 Pour arrêter de recevoir les données du topic ou modifier la logique de conversion, détachez la vue matérialisée :
 

@@ -20,6 +20,30 @@ Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />Límite no estricto del número de conexiones activas que la caché distribuida intentará mantener libres. Cuando el número de conexiones libres descienda por debajo de distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections, se cerrarán las conexiones con la actividad más antigua hasta que el número vuelva a situarse por encima del límite.
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />El Servidor de caché distribuida finaliza una solicitud cuando lleva este número de milisegundos procesándola desde el último `StartRequest` o `ContinueRequest` de dicha solicitud, sin contar el tiempo de espera del Client; cada nuevo rango de lectura inicia un nuevo presupuesto de tiempo. La solicitud se finaliza en cuanto el servidor puede notificarlo y, si una solicitud nunca llega a ese punto, su conexión se cierra `distributed_cache_stuck_request_scan_interval_ms` más tarde. El valor 0 significa sin límite.
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />El Servidor de caché distribuida solo pide a un Client que reduzca su ritmo cuando al menos esta cantidad de sus solicitudes están atascadas, de modo que a un Client con un par de solicitudes en curso no se le pida hacerlo por una sola de ellas. Con los valores 0 y 1, la decisión queda únicamente en manos de `distributed_cache_slow_down_stuck_requests_ratio`.
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />El Servidor de caché distribuida solicita a un Client que reduzca el ritmo cuando al menos esta proporción de sus solicitudes en curso está bloqueada; las conexiones inactivas no se tienen en cuenta. Si el valor es 0, nunca solicita que se reduzca el ritmo.
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Tiempo, en milisegundos, durante el cual un Servidor de caché distribuida pide a un Client que se mantenga alejado cuando demasiadas de sus solicitudes quedan atascadas. Debe ser al menos el doble de `distributed_cache_stuck_request_scan_interval_ms`, de modo que una ventana solo expire cuando un escaneo no la renueve; no se admite el valor 0.
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />El Servidor de caché distribuida cierra una conexión cuya solicitud no ha intercambiado datos durante este número de milisegundos, sin contar el tiempo de espera del Client. El valor 0 deshabilita este límite; el escaneo de solicitudes atascadas solo se detiene si `distributed_cache_max_request_processing_time_ms` también es 0.
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />Intervalo entre escaneos de solicitudes atascadas del Servidor de caché distribuida, en milisegundos.
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />Retardo, en milisegundos, antes de un reintento en segundo plano de datos temporales committed.
@@ -75,6 +99,10 @@ Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Solo tiene efecto en ClickHouse Cloud. Número máximo de rangos que el precalentador de caché mantiene en cola para un disco sin caché del sistema de archivos local; al superarse este límite, se descartan los rangos más antiguos (si hay una caché local, el precalentador utiliza su `max_elements`). Cero significa sin límite.
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Solo tiene efecto en ClickHouse Cloud. Cuando el precargador de caché precarga únicamente la Distributed Cache (el disco de la parte no tiene caché del sistema de archivos local o la caché está deshabilitada para las lecturas), se omiten las partes producidas por una réplica en la zona de disponibilidad actual: como se han escrito a través de la Distributed Cache, ya se encuentran en la caché de esta zona. Las partes de origen desconocido siempre se precargan.
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

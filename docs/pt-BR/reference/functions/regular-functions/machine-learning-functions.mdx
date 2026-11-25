@@ -30,7 +30,7 @@ A função de agregação [stochasticLogisticRegression](/pt-BR/reference/functi
 
 Introduzido em: v26.8.0
 
-Retorna o id do centróide mais próximo (L2) de um vetor. Os centróides são fornecidos como uma matriz constante de matrizes de números de ponto flutuante, em que o id é a posição, começando em 0, nessa matriz, ou como o nome de um `Dicionário` que contém os atributos `cid` e `vec`, em que o id é `cid`.
+Retorna o id do centróide mais próximo (L2) de um vetor. Os centróides são fornecidos como um array de arrays constante, em que o id é a posição, começando em 0, nesse array, ou como o nome de um `dicionário` que contém os atributos `cid` e `vec`, em que o id é `cid`.
 
 <Note>
   Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
@@ -44,8 +44,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **Argumentos**
 
-* `vec` — Vetor a ser atribuído. Sua dimensão deve corresponder à dimensão dos centroides. Tipos diferentes de `Float32` são convertidos para `Float32`, que é o tipo usado pelo kernel de pontuação. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array) ou [`Array(BFloat16)`](/pt-BR/reference/data-types/array)
-* `centroids` — Os centroides em relação aos quais a pontuação é calculada, que devem ser constantes. Podem ser fornecidos como um array de arrays de números de ponto flutuante não vazios e de mesmo tamanho; nesse caso, o id é a posição baseada em 0 nesse array. Também podem ser fornecidos como o nome de um `Dicionário` com um atributo `cid` de tipo inteiro sem sinal compatível com `UInt32` e um atributo `vec` do tipo `Array(Float32)`; nesse caso, o id é `cid`. O dicionário é lido uma vez e armazenado em cache até ser recarregado. [`Array(Array(Float32))`](/pt-BR/reference/data-types/array) ou [`Array(Array(Float64))`](/pt-BR/reference/data-types/array) ou [`Array(Array(BFloat16))`](/pt-BR/reference/data-types/array) ou [`String`](/pt-BR/reference/data-types/string)
+* `vec` — Vetor a ser atribuído. Sua dimensão deve corresponder à dimensão dos centroides. Tipos de elemento diferentes de `Float32` são convertidos para `Float32`, que é o tipo usado pelo kernel de pontuação. [`Array(Float32)`](/pt-BR/reference/data-types/array) ou [`Array(Float64)`](/pt-BR/reference/data-types/array) ou [`Array(BFloat16)`](/pt-BR/reference/data-types/array) ou [`Array(Int8)`](/pt-BR/reference/data-types/array) ou [`Array(UInt8)`](/pt-BR/reference/data-types/array)
+* `centroids` — Os centroides em relação aos quais a pontuação é calculada, que devem ser constantes. Podem ser fornecidos como um array de arrays não vazios e de mesmo tamanho, com qualquer um dos tipos de elemento aceitos para `vec` (não necessariamente o mesmo); nesse caso, o id é a posição baseada em 0 nesse array. Também podem ser fornecidos como o nome de um `dicionário` com um atributo `cid` de tipo inteiro sem sinal compatível com `UInt32` e um atributo `vec` do tipo `Array(Float32)`; nesse caso, o id é `cid`. O dicionário é lido uma vez e armazenado em cache até ser recarregado. [`Array(Array(Float32))`](/pt-BR/reference/data-types/array) ou [`Array(Array(Float64))`](/pt-BR/reference/data-types/array) ou [`Array(Array(BFloat16))`](/pt-BR/reference/data-types/array) ou [`Array(Array(Int8))`](/pt-BR/reference/data-types/array) ou [`Array(Array(UInt8))`](/pt-BR/reference/data-types/array) ou [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 

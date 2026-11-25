@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />Размер кэша индекса векторного сходства в записях. Ноль означает, что кэш отключён.
+<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />Размер кэша индекса векторного сходства в записях. Ноль означает, что кэш отключён.
 
 ## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
@@ -26,6 +26,10 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <Note>
   Этот параметр можно изменить во время выполнения, и изменения вступят в силу немедленно.
+</Note>
+
+<Note>
+  В ClickHouse Cloud максимальный размер кэша зависит от размера пода. Точное значение можно посмотреть в `system.server_settings`. Настройки сервера нельзя изменить через SQL или консоль, поэтому для увеличения размера обратитесь в службу поддержки.
 </Note>
 
 ## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}

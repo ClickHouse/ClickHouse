@@ -190,7 +190,7 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "새로운 설정으로, 기본적으로 활성화됨: DPsub 조인 순서 알고리즘이 입력의 정렬 순서(sort order)를 바탕으로 해시 조인과 정렬-병합 조인 중 하나를 선택합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "이 변경 사항은 26.10에 백포트되었으며 해당 버전에 기록되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "새로운 설정으로, 기본적으로 활성화됨: DPsub 조인 순서 알고리즘이 입력의 정렬 순서(sort order)를 바탕으로 해시 조인과 정렬-병합 조인 중 하나를 선택합니다."}]}]} />
 
 `dpsub` 조인 순서 알고리즘에만 적용됩니다. 이 설정을 사용하면 알고리즘이 조인되는 테이블의 정렬 순서(sort order)를 고려합니다. 각 내부 등가 조인(inner equi-join)마다 비용을 기준으로 해시 조인과 `full_sorting_merge` 중 하나를 선택하며, 이후 조인에서 활용할 수 있는 조인 키로 결과가 정렬된 부분 계획은 유지합니다.
 
@@ -329,7 +329,7 @@ aggregate projection matcher(및 `IN` 절 Set 비교가 필요한 향후 project
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "새로운 설정"}]}]} />
 
-EXPLAIN PLAN의 단계 설명 최대 길이입니다.
+쿼리 계획 단계(Query Plan Step) 설명의 최대 길이(바이트 단위)입니다. 이보다 긴 설명은 표시되는 모든 위치에서 이 길이로 잘립니다.
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -394,7 +394,7 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "이제 `dpsub`가 기본 조인 순서 알고리즘입니다. 릴레이션이 12개를 초과하는 쿼리는 `greedy`로 폴백됩니다."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "새 실험적 설정."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "이 변경 사항은 26.10으로 백포트되었으며 해당 버전에 기록되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "이제 `dpsub`가 기본 조인 순서 알고리즘입니다. 릴레이션이 12개를 초과하는 쿼리는 `greedy`로 폴백됩니다."}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "새 실험적 설정."}]}]} />
 
 쿼리 계획 최적화 시 시도할 조인 순서(Join Order) 알고리즘을 지정합니다. 사용할 수 있는 알고리즘은 다음과 같습니다.
 
@@ -410,7 +410,7 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다. 기본값은 CD-C이며, `query_plan_optimize_join_order_algorithm`의 기본값인 `dpsub`와 함께 semi 조인과 anti 조인도 순서 재배치 대상에 포함됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "이 변경 사항은 26.10으로 백포트되었으며 해당 버전에 기록되어 있습니다."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다. 기본값은 CD-C이며, `query_plan_optimize_join_order_algorithm`의 기본값인 `dpsub`와 함께 semi 조인과 anti 조인도 순서 재배치 대상에 포함됩니다."}]}]} />
 
 `dpsub` 조인 순서(Join Order) 알고리즘에만 적용됩니다. DPsub가 어떤 JOIN 재정렬이 유효한지
 판단할 때 사용하는 충돌 감지기를 선택합니다. 사용 가능한 값은 다음과 같습니다:
@@ -488,11 +488,11 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "필터 conjunct를 equi-조인 키를 넘어 전파하여 양쪽 모두에서 primary key 프루닝이 동작하도록 하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "필터 conjunct를 equi-조인 키를 넘어 전파하여 양쪽 모두에서 primary key 프루닝이 동작하도록 하는 새로운 설정입니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "통계를 기반으로 행 그룹(row groups)을 건너뛰는 Parquet 읽기의 정수, Date, Decimal 컬럼에도 필터 conjunct를 복사합니다."}]}]} />
 
 equi-조인 한쪽의 필터 conjunct를 equi-key 치환을 통해 반대쪽으로 복사하여, 반대쪽에서도 primary key/인덱스 프루닝에 활용할 수 있도록 하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
 
-필터와 `MergeTree` 읽기가 표현식 단계와 필터 단계만을 사이에 두고 조인과 떨어져 있으며, 복사되는 conjunct가 primary key 컬럼을 상수와 비교하는 경우(상수 Set을 사용하는 `IN` 포함)에 적용됩니다. 중첩된 조인 아래나 `DISTINCT` 아래에 있는 프레디케이트, 또는 두 key 컬럼 간의 비교는 그대로 둡니다. 이런 경우에는 반대쪽에서 primary key 프루닝을 유도할 수 없으므로, 복사해 봐야 작업량만 늘어나기 때문입니다.
+필터와 읽기가 표현식 단계와 필터 단계만을 사이에 두고 조인과 떨어져 있으며, 복사되는 conjunct가 상수(상수 Set을 사용하는 `IN` 포함)를 `MergeTree` 읽기의 primary key 컬럼과 비교하거나, `Parquet` 읽기(`file`, `url`, 데이터 레이크가 아닌 객체 스토리지)에서 기본 표현식이 없는 최대 64비트 정수, `Date`, `Date32` 또는 `Decimal` 유형의 컬럼 중 min/max 통계로 행 그룹(row groups)을 건너뛸 수 있는 컬럼과 비교하는 경우에 적용됩니다. 중첩된 조인 아래나 `DISTINCT` 아래에 있는 프레디케이트, 또는 두 key 컬럼 간의 비교는 그대로 둡니다. 이런 경우에는 반대쪽에서 프루닝을 유도할 수 없으므로, 복사해 봐야 작업량만 늘어나기 때문입니다.
 
 `query_plan_enable_optimizations`가 1인 경우에만 적용됩니다.
 
@@ -621,9 +621,9 @@ JOIN 연산에서 왼쪽 테이블(left table)을 순서대로 읽는 방식을 
 
 **별칭**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "기본적으로 이 로직을 비활성화합니다. 이는 별칭 `optimize_read_in_window_order`에도 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "다시 기본적으로 활성화합니다. 이제 정렬 단계에서 머지된 스트림을 `PARTITION BY` 컬럼 기준으로 분산하므로 윈도우 함수가 병렬로 실행됩니다. 이는 별칭 `optimize_read_in_window_order`에도 적용됩니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "기본적으로 이 로직을 비활성화합니다. 이는 별칭 `optimize_read_in_window_order`에도 적용됩니다."}]}]} />
 
 윈도우 함수 정렬 시 스토리지 정렬을 활용하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 설정 [`query_plan_enable_optimizations`](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.

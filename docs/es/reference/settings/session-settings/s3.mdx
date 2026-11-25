@@ -90,6 +90,16 @@ El tamaño mínimo de la parte que se va a subir durante una carga multiparte a 
 Número máximo de valores de `_path` que pueden extraerse de los filtros de consulta para utilizarlos en la iteración de archivos
 en lugar del listado con glob. 0 significa que está deshabilitado.
 
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "Nueva configuración para acceder a buckets de S3 con pago por el solicitante."}]}]} />
+
+Establezca el valor en `requester` para acceder a un bucket de `S3` con pago por el solicitante: cada solicitud incluirá el encabezado `x-amz-request-payer: requester`, de modo que el solicitante pagará por la solicitud y la transferencia de datos. Valores posibles: `none` (valor predeterminado; no se envía el encabezado), `requester`.
+
+Surte efecto al crear el client de `S3`, por lo que se aplica a los usos limitados al alcance de una consulta, como la función de tabla `s3` y `BACKUP ... TO S3`. Un `SET` posterior para una consulta no reconfigura un client persistente ya creado, como un disco `S3` o una table `S3` con sus propias credenciales. En esos casos, utilice la clave `request_payer` en una sección de endpoint de la configuración del servidor `<s3>` o en la definición del disco. Esta clave también tiene precedencia sobre este parámetro de configuración.
+
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />

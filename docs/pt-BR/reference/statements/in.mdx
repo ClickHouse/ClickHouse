@@ -173,9 +173,9 @@ Duas configurações controlam quando o spill começa:
 
 * `max_bytes_before_external_set` define um limiar, em bytes, para a memória total da consulta. O valor padrão é `0`
   (desabilitado).
-* `max_bytes_ratio_before_external_set` define uma fração da memória disponível dentro dos limites do servidor ou do usuário,
-  medida no início da execução. O valor padrão é `0.5`, metade da memória disponível, e a configuração
-  não tem efeito quando nenhum desses limites se aplica.
+* `max_bytes_ratio_before_external_set` define uma fração da memória disponível dentro do
+  `max_memory_usage` da consulta e dos limites do servidor ou do usuário, medida no início da execução. O valor padrão é
+  `0.5`, metade da memória disponível, e a configuração não tem efeito quando nenhum limite se aplica.
 
 Quando os dois limiares se aplicam, o menor é utilizado. Um conjunto só é gravado em disco quando ocupa pelo menos
 16 MiB, ou o valor do limiar, se este for menor. Por exemplo, esta consulta grava o conjunto em disco assim que ele
@@ -194,9 +194,7 @@ memória que o conjunto mantém quando está em disco, como seu filtro de Bloom,
 gravado em disco, e a maior parte de sua memória é liberada para o restante da consulta, como uma agregação que
 cresce depois que o conjunto é construído.
 
-`max_memory_usage` não afeta a razão. Para configurar o spill em relação a um limite de memória da consulta,
-defina um limiar absoluto abaixo desse limite. Esses limiares não impõem um teto ao uso de memória. Reserve espaço para
-o restante do processamento de consultas e para o próprio spill.
+Esses limiares não impõem um teto ao uso de memória. Reserve espaço para o restante do processamento de consultas e para o próprio spill.
 
 Um conjunto em disco mantém em memória um filtro de Bloom de suas chaves, para que as consultas de chaves que não estão no conjunto
 possam evitar a leitura do disco. `max_bytes_for_external_set_bloom_filter` limita a memória do filtro,

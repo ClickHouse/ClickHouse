@@ -162,7 +162,7 @@ Arrow Flight 요청에 사용할 디스크립터 유형입니다. &#39;path&#39;
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "토큰이 만료되면 S3 백업 및 복원 요청을 재시도합니다. 0으로 설정하면 이전 동작이 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "토큰이 만료되면 S3 백업 및 복원 요청을 재시도합니다. 0으로 설정하면 이전 동작이 적용됩니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "이 변경 사항은 26.8로 백포트되었으며 해당 버전에 기록되어 있습니다."}]}]} />
 
 백업 또는 복원 중 응답에서 `ExpiredToken`이 반환된 S3 요청을 재시도할 최대 시간(밀리초)입니다. 재시도 횟수가 `backup_restore_s3_retry_attempts`에 도달해도 재시도가 중단됩니다. 0으로 설정하면 이 재시도가 비활성화됩니다. AWS S3 `HEAD` 응답은 일반적인 HTTP 상태만 반환하므로, 이 재시도는 `HEAD` 메타데이터 요청에는 적용되지 않습니다.
 
@@ -987,6 +987,14 @@ INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자�
 
 선택된 파서가 값을 읽지 못하면 함수는 오류 없이 해당 타입의 기본값(`1970-01-01 00:00:00`)을 반환합니다. 따라서 두 설정이 서로 맞지 않으면 추출되는 값이 아무런 경고 없이 달라집니다.
 
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "일부 경로만 변경될 때 전체 직렬화+파싱을 거치지 않고 JSON 타입 간 변환을 최적화하는 새로운 설정입니다."}]}]} />
+
+활성화하면 매개변수(타입이 지정된 경로, 건너뛰기 규칙)가 서로 다른 JSON 타입 간 변환에 최적화된 처리 경로를 사용합니다. 이 경로는 변경되지 않은 서브컬럼을 포인터로 재사용하고 변경된 경로에만 CAST를 적용합니다. 따라서 전체 데이터를 문자열로 직렬화한 뒤 다시 파싱하는 파이프라인을 거치지 않습니다. 모든 JSON 타입 변경에 기존의 포맷 변환+파싱 방식을 강제로 적용하려면 비활성화하십시오.
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -1442,7 +1450,7 @@ remerge 후 메모리 사용량이 이 비율만큼 감소하지 않으면 remer
 
 이 설정을 사용하면 `file` 테이블 함수로 처리한 파일의 이름 변경 패턴을 지정할 수 있습니다. 이 옵션을 설정하면 파일 처리가 성공한 경우에만 `file` 테이블 함수가 읽은 모든 파일의 이름이 플레이스홀더를 포함한 지정된 패턴에 따라 변경됩니다.
 
-이름 변경은 소스에 대한 쓰기 작업이므로, 이 옵션을 설정하여 파일을 읽는 쿼리에는 `READ ON FILE` 외에 `WRITE ON FILE` 권한도 필요합니다. `DESCRIBE`는 이름을 변경하는 데이터 읽기 파이프라인을 빌드하지 않으므로 `READ ON FILE`만 필요합니다.
+이름 변경은 소스에 대한 쓰기 작업이므로, 이 옵션을 설정하여 파일을 읽는 쿼리에는 `READ ON FILE` 외에 `WRITE ON FILE` 권한도 필요하며, 읽기 전용 모드(`readonly`가 0보다 큰 경우로, 모든 HTTP GET 요청이 이에 해당함)에서는 거부됩니다. `DESCRIBE`는 이름을 변경하는 데이터 읽기 파이프라인을 빌드하지 않으므로 이 두 가지 제한 사항 중 어느 쪽도 적용되지 않습니다.
 
 ### 플레이스홀더 {#placeholders}
 
@@ -2034,6 +2042,19 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "system.remote_data_paths를 쿼리할 때 섀도 디렉터리도 순회합니다."}]}]} />
 
 system.remote&#95;data&#95;paths를 쿼리할 때 실제 테이블 데이터뿐 아니라 동결된 데이터(섀도 디렉터리)도 순회합니다.
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새 설정입니다. `MergeTree` 테이블에 `TRUNCATE`를 실행하면 제거된 파트를 즉시 삭제하지 않고 `old_parts_lifetime`초 동안 유지합니다"}]}]} />
+
+활성화하면 non-replicated `MergeTree` 테이블에 `TRUNCATE`를 실행할 때 잘린 파트를 디스크에서 즉시 제거합니다. 비활성화하면 머지의 원본 파트(source part)와 마찬가지로 파트가 비활성 상태로 전환된 후 `old_parts_lifetime`초가 지나면 제거됩니다. 따라서 실행 중인 쿼리나 오래된 파트 목록을 참조하는 판독기도 해당 파트를 계속 읽을 수 있습니다. 복제된 테이블(Replicated tables)은 항상 파트를 즉시 제거합니다.
+
+가능한 값:
+
+* 0 - 잘린 파트는 `old_parts_lifetime`초 후에 제거됩니다.
+* 1 - 잘린 파트는 즉시 제거됩니다.
 
 ## union_default_mode {#union_default_mode}
 

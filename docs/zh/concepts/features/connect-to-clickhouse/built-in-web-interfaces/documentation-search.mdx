@@ -1,0 +1,42 @@
+---
+description: '内置文档搜索网页用户界面的说明文档，该界面通过 HTTP 接口的 `/docs` 路径提供，数据来源于 `system.documentation` 表'
+sidebarTitle: '文档搜索'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search
+title: '文档搜索'
+doc_type: 'reference'
+---
+
+文档搜索页面是一个轻量的自包含网页用户界面，可对内嵌的参考文档进行即时搜索。任意 ClickHouse HTTP 端口均在 `/docs` 路径下提供该页面。
+
+在任意 ClickHouse HTTP 端口上访问 `/docs` (例如 `http://localhost:8123/docs`) 即可打开该页面。
+
+## 功能说明 {#what-it-does}
+
+该页面会在您输入时通过 HTTP 查询 [`system.documentation`](/zh/reference/system-tables/documentation) 表，并渲染所选实体的 Markdown 文档。由于数据读取自 `system.documentation`，因此该表公开的所有实体均在覆盖范围内，包括函数、聚合函数、表函数、表引擎、数据库引擎、数据类型、设置、格式、压缩编解码器、profile events、指标以及系统表本身等，并且始终与当前运行的服务器中内置的文档保持一致。
+
+在搜索框中输入内容后，匹配项会显示在按类型着色的列表中；选择某个匹配项即可渲染其文档。渲染内容包括：
+
+* 实体标题旁的铅笔图标链接，点击可在 GitHub 上打开其源文件，链接取自 `system.documentation` 的 `source` 列；
+* 代码块的 ClickHouse SQL 语法高亮，使用与 [`/play`](/zh/concepts/features/connect-to-clickhouse/protocols/http) UI 相同的内置词法分析器 (`Lexer.wasm`) ；
+* 通过 [KaTeX](https://katex.org/) 渲染的 TeX 数学公式 (例如 `corr` 页面中的公式) ；
+* `:::note`/`:::tip`/… 提示块、带可分享链接的标题锚点，以及鼠标悬停在代码块上时显示的“复制”按钮；
+* 相对链接：若目标是其他已收录文档的实体，则在应用内解析到该实体，否则解析到 `https://clickhouse.com/docs`；“Related”和“Alias of”引用会转换为应用内链接。
+
+当前搜索词、已打开的实体和章节会同步到 URL 片段中，因此可以直接链接到特定页面或章节，并可通过浏览器的后退/前进导航恢复。浅色/深色主题切换器 (支持自动检测) 与 `/play` 保持一致。
+
+## 连接 {#connecting}
+
+请求头提供 `URL`、`user` 和 `password` 输入框，与 `/play` 完全一致。当页面由 ClickHouse 提供时，`URL` 默认为当前页面的源 (origin) ；当页面以本地文件形式打开时，默认为 `http://localhost:8123/`，因此也可以在本地打开该页面并连接到远程服务器。连接发生变化时，交叉链接名称缓存会自动重建。
+
+## 静态资源 {#assets}
+
+当页面通过 HTTP 提供时，所有静态资源 (包括 Markdown 渲染器 ([Marked](https://marked.js.org/)) 、数学公式渲染器 (KaTeX 及其字体) 以及 SQL 词法分析器) 均直接由 ClickHouse 二进制文件本身提供。ClickHouse HTTP 源中不会加载任何第三方 CDN，因此该页面是自包含的，可离线使用，并且在处理凭证时不会同时执行任何第三方网络代码。
+
+## 安全方面的考虑 {#security}
+
+该页面会使用在请求头中输入的凭证向 ClickHouse HTTP 端点发送查询，因此 HTTP 协议的各项注意事项在此同样适用：
+
+* 在不受信任的环境中，请始终通过 HTTPS 提供 `/docs`，以保护凭证安全。
+* 按照限制 HTTP 协议访问的方式，在网络层面限制访问 (通过防火墙、反向代理或 `listen_host` 配置) 。
+
+`system.documentation` 仅包含嵌入在服务器中的静态参考文档，因此该页面不会暴露您表中的任何数据。

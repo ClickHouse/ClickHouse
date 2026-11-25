@@ -29,8 +29,16 @@ https://api.clickhouse.cloud/v1에서 JSON 기반 Swagger 엔드포인트를 제
 
 ## 요청 제한 {#rate-limits}
 
-조직당 API Key는 최대 100개까지 생성할 수 있습니다. 각 API Key는
-10초 동안 최대 10개의 요청으로 제한됩니다. 조직의 API Key 수 또는 10초당 요청 수를
+조직당 API Key는 최대 100개까지 생성할 수 있습니다. 각 API Key에는 10초
+윈도우 동안 다음과 같은 제한이 적용됩니다.
+
+* 읽기 요청 40개 (`GET`)
+* 쓰기 요청 20개 (그 외 모든 메서드, 예: `POST`, `PATCH`, `DELETE`)
+
+요청이 제한을 초과하면 API는 `Retry-After` 헤더와 함께 상태 `429 Too Many Requests`를
+반환합니다. 헤더 값은 요청을 다시 보내기 전에 기다려야 하는 시간(초)입니다.
+
+조직의 API Key 수 또는 10초당 요청 수를
 늘리려면 support@clickhouse.com으로 문의하십시오.
 
 ## Terraform 프로바이더 {#terraform-provider}

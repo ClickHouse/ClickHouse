@@ -1,0 +1,99 @@
+---
+description: 'Documentación de la interfaz gRPC en ClickHouse'
+sidebarTitle: 'Interfaz gRPC'
+slug: /concepts/features/connect-to-clickhouse/protocols/grpc
+title: 'Interfaz gRPC'
+doc_type: 'reference'
+---
+
+## Introducción {#grpc-interface-introduction}
+
+ClickHouse admite la interfaz [gRPC](https://grpc.io/), un sistema open source de llamadas a procedimientos remotos que utiliza HTTP/2 y [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). La implementación de gRPC en ClickHouse admite:
+
+* SSL;
+* autenticación;
+* sesiones;
+* compresión;
+* consultas en paralelo a través del mismo canal;
+* cancelación de consultas;
+* obtención del progreso y de los logs;
+* tablas externas.
+
+La especificación de la interfaz se encuentra en [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
+
+## Configuración de gRPC {#grpc-interface-configuration}
+
+Para usar la interfaz gRPC, configure `grpc_port` en la [configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) principal. En el siguiente ejemplo se muestran otras opciones de configuración:
+
+```xml
+<grpc_port>9100</grpc_port>
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if SSL is enabled -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server requests client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+    </grpc>
+```
+
+## Autenticación {#grpc-authentication}
+
+Una consulta se autentica con los campos `user_name` y `password` de `QueryInfo` (el campo `quota` establece la clave de cuota). El campo `user_name` es opcional: si está vacío, la consulta se autentica como el usuario indicado por el [ajuste del servidor](/es/reference/settings/server-settings/settings) `default_session_user` (`default`, salvo que se configure otro) con la contraseña proporcionada, que puede estar vacía, exactamente igual que una solicitud HTTP sin el parámetro `user`. El nombre de usuario vacío es solo un alias de ese usuario: su contraseña, `networks` y las demás comprobaciones de acceso se aplican como de costumbre, por lo que es la configuración de ese usuario la que determina si se acepta una consulta sin credenciales. Si `default_session_user` se establece en una cadena vacía, las consultas sin `user_name` se rechazan y, cuando la sección `session_log` está habilitada en la configuración del servidor, el rechazo se registra en [`system.session_log`](/es/reference/system-tables/session_log) como un evento `LoginFailure` con un `user` vacío.
+
+## Cliente integrado {#grpc-client}
+
+Puede escribir un cliente en cualquiera de los lenguajes de programación compatibles con gRPC a partir de la [especificación](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) proporcionada.
+También puede usar el cliente de Python integrado, que se encuentra en [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) en el repositorio. El cliente integrado requiere los módulos de Python [grpcio y grpcio-tools](https://grpc.io/docs/languages/python/quickstart).
+
+El cliente admite los siguientes argumentos:
+
+* `--help` – Muestra un mensaje de ayuda y finaliza.
+* `--host HOST, -h HOST` – Nombre del servidor. Valor predeterminado: `localhost`. También se pueden usar direcciones IPv4 o IPv6.
+* `--port PORT` – Puerto al que conectarse. Este puerto debe estar habilitado en la configuración del servidor de ClickHouse (consulte `grpc_port`). Valor predeterminado: `9100`.
+* `--user USER_NAME, -u USER_NAME` – Nombre de usuario. Valor predeterminado: `default`.
+* `--password PASSWORD` – Contraseña. Valor predeterminado: cadena vacía.
+* `--query QUERY, -q QUERY` – Consulta que se procesará en el modo no interactivo.
+* `--database DATABASE, -d DATABASE` – Base de datos predeterminada. Si no se especifica, se usa la base de datos actual definida en los ajustes del servidor (`default` de forma predeterminada).
+* `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – [Formato](/es/reference/formats/index) de salida del resultado. Valor predeterminado para el modo interactivo: `PrettyCompact`.
+* `--debug` – Habilita la visualización de información de depuración.
+
+Para ejecutar el cliente en modo interactivo, invóquelo sin el argumento `--query`.
+
+En modo por lotes, los datos de la consulta pueden pasarse a través de `stdin`.
+
+**Ejemplo de uso del cliente**
+
+En el siguiente ejemplo se crea una tabla y se carga con datos de un archivo CSV. A continuación, se consulta el contenido de la tabla.
+
+```bash title="Query"
+./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
+echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
+cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+
+./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
+```
+
+```text title="Response"
+┌─id─┬─text──────────────────┐
+│  0 │ Input data for        │
+│  1 │ gRPC protocol example │
+└────┴───────────────────────┘
+```

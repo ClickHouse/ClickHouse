@@ -632,7 +632,7 @@ ORDER BY tuple();
   다음 고급 매개변수의 기본값은 사실상 모든 상황에서 잘 동작합니다.
   따라서 변경하지 않는 것을 권장합니다.
 
-  선택적 매개변수 `dictionary_block_size` (기본값: 512)는 딕셔너리 블록의 크기를 행 수 기준으로 지정합니다.
+  선택적 매개변수 `dictionary_block_size` (기본값: 8192)는 딕셔너리 블록의 크기를 행 수 기준으로 지정합니다.
 
   선택적 매개변수 `dictionary_block_frontcoding_compression` (기본값: 1)는 딕셔너리 블록이 압축 방식으로 프런트 코딩을 사용하는지 지정합니다.
 
@@ -918,7 +918,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `arrayJoin` {#functions-example-arrayjoin}
 
-인덱싱된 배열의 한 원소에 대한 조건은 `has` 및 `hasAny`와 같은 방식으로 인덱스를 사용합니다. `arrayJoin(tags) = 'clickhouse'`는 `has(tags, 'clickhouse')`와 같은 방식으로, `arrayJoin(tags) IN (set)`는 `hasAny(tags, set)`와 같은 방식으로 인덱스를 사용합니다. 이는 `GLOBAL IN`, 집합(set)에 `NULL`이 없는 상태에서 `transform_null_in = 1`로 설정한 `IN`, 그리고 `ARRAY JOIN` 절에도 동일하게 적용됩니다. 인덱스는 그래뉼을 건너뛰는 데에만 사용되며, ClickHouse는 각 원소에 대해 조건을 계속 확인합니다. `LEFT ARRAY JOIN`은 인덱스를 사용하지 않습니다.
+인덱싱된 배열의 한 원소에 대한 조건은 `has` 및 `hasAny`와 같은 방식으로 인덱스를 사용합니다. `arrayJoin(tags) = 'clickhouse'`는 `has(tags, 'clickhouse')`와 같은 방식으로, `arrayJoin(tags) IN (set)`는 `hasAny(tags, set)`와 같은 방식으로 인덱스를 사용합니다. 이는 `GLOBAL IN`, 집합(set)에 `NULL`이 없는 상태에서 `transform_null_in = 1`로 설정한 `IN`, 그리고 `ARRAY JOIN` 절에도 동일하게 적용됩니다. 인덱스는 그래뉼을 건너뛰는 데에만 사용되며, ClickHouse는 각 원소에 대해 조건을 계속 확인합니다. `LEFT ARRAY JOIN`도 인덱스를 사용합니다. 단, 빈 배열에 대해 추가되는 원소(빈 문자열)를 조건이 허용하는 경우에는 인덱스를 사용하지 않습니다.
 
 예시:
 
@@ -1690,7 +1690,7 @@ String 프레디케이트는 텍스트 인덱스와 블룸 필터 기반 인덱�
 
 **딕셔너리 블록 파일 (.dct)**
 
-텍스트 인덱스의 토큰은 정렬된 뒤 각각 512개의 토큰으로 이루어진 딕셔너리 블록에 저장됩니다(블록 크기는 매개변수 `dictionary_block_size`로 구성할 수 있습니다).
+텍스트 인덱스의 토큰은 정렬된 뒤 각각 8192개의 토큰으로 이루어진 딕셔너리 블록에 저장됩니다(블록 크기는 매개변수 `dictionary_block_size`로 구성할 수 있습니다).
 딕셔너리 블록 파일(.dct)은 파트 내 모든 인덱스 그래뉼의 모든 딕셔너리 블록으로 구성됩니다.
 
 **인덱스 헤더 파일 (.idx)**

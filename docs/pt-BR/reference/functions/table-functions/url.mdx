@@ -94,6 +94,24 @@ O exemplo acima fixa a consulta em um único fluxo. Uma consulta que lê em para
 
 Um predicado sobre `_path` ou `_file` é aplicado a cada endereço à medida que ele é gerado; portanto, os endereços rejeitados por ele também são gerados e contam para o limite. Apenas a leitura dos endereços correspondentes é ignorada.
 
+### Patterns geram endereços, não filtram uma listagem {#patterns-generate-addresses}
+
+O HTTP simples não oferece nenhuma forma de enumerar os arquivos que um servidor possui; por isso, um pattern em `url` é um *gerador* de endereços, e não um *filtro* sobre os arquivos existentes. Cada endereço lido pela consulta precisa ser gerado e requisitado, e a quantidade de endereços é limitada por [glob&#95;expansion&#95;max&#95;elements](/pt-BR/reference/settings/session-settings/other#glob_expansion_max_elements). Endereços que, no fim, não existem são ignorados durante a leitura, desde que [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/pt-BR/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) esteja habilitado.
+
+Funções de tabela de armazenamento de objetos, como [s3](/pt-BR/reference/functions/table-functions/s3), funcionam de forma inversa: o pattern é compilado em uma expressão regular e comparado com a listagem do bucket, de modo que um pattern que descreve um espaço de chaves enorme não gera nenhum custo adicional. Por isso, o mesmo pattern é lido integralmente por `s3` e rejeitado por `url`:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+Use `s3` (ou outra função de tabela de armazenamento de objetos) quando o pattern precisar ser comparado com uma listagem, e aumente `glob_expansion_max_elements` somente quando cada endereço gerado realmente precisar ser requisitado.
+
 ## Wildcards com páginas de índice HTTP {#wildcards-with-http-index-pages}
 
 Para `url` e o mecanismo de tabela `URL`, o ClickHouse pode expandir wildcards ao buscar páginas de índice HTTP (HTML ou texto simples) e extrair URLs do corpo da resposta. Isso permite padrões como `/**/` quando o servidor expõe listagens de diretórios.

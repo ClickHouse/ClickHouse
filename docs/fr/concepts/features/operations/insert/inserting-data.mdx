@@ -101,7 +101,7 @@ De manière générale, ce mécanisme déplace le regroupement des données du c
 ClickHouse dispose de clients pour les langages de programmation les plus populaires.
 Ils sont optimisés pour garantir le bon déroulement des insertions et prennent en charge nativement les insertions asynchrones, soit directement, comme avec le [client Go](/fr/integrations/language-clients/go/clickhouse-api#async-insert), soit indirectement lorsqu’elles sont activées dans les paramètres au niveau de la requête, de l’utilisateur ou de la connexion.
 
-Consultez [Clients natifs et interfaces](/fr/concepts/features/interfaces/native-clients-interfaces-index) pour obtenir la liste complète des clients et pilotes ClickHouse disponibles.
+Consultez [Se connecter à ClickHouse](/fr/concepts/features/connect-to-clickhouse) pour obtenir la liste complète des clients et pilotes ClickHouse disponibles.
 
 <div id="prefer-the-native-format">
   ### Préférez le format natif {#prefer-the-native-format}
@@ -119,18 +119,16 @@ Vous pouvez également utiliser le [format RowBinary](/fr/reference/formats/RowB
 Il est plus efficace, en termes de compression, de surcharge réseau et de traitement côté serveur, que d&#39;autres formats en lignes comme [JSON](/fr/reference/formats/JSON/JSON).
 Le format [JSONEachRow](/fr/reference/formats/JSON/JSONEachRow) peut être envisagé si votre débit d&#39;écriture est plus faible et que vous cherchez à vous intégrer rapidement. Gardez à l&#39;esprit que ce format entraîne une surcharge CPU dans ClickHouse pour l&#39;analyse syntaxique.
 
-<div id="use-the-http-interface">
-  ### Utiliser l’interface HTTP {#use-the-http-interface}
-</div>
+### Utiliser l’interface HTTP {#use-the-http-interface}
 
 Contrairement à de nombreuses bases de données traditionnelles, ClickHouse prend en charge une interface HTTP.
 Vous pouvez l’utiliser à la fois pour insérer des données et les interroger, avec n’importe lequel des formats ci-dessus.
-Cette option est souvent préférable au protocole natif de ClickHouse, car elle permet de rediriger facilement le trafic à l’aide de load balancers.
+Cette option est souvent préférable au protocole natif de ClickHouse, car elle permet de rediriger facilement le trafic à l’aide de répartiteurs de charge.
 On observe généralement une légère différence de performance à l’insertion avec le protocole natif, qui entraîne un peu moins de surcoût.
 Les clients existants utilisent l’un ou l’autre de ces protocoles (et, dans certains cas, les deux, par exemple le client Go).
 Le protocole natif permet également de suivre facilement la progression des requêtes.
 
-Voir [Interface HTTP](/fr/concepts/features/interfaces/http) pour plus de détails.
+Voir [Interface HTTP](/fr/concepts/features/connect-to-clickhouse/protocols/http) pour plus de détails.
 
 <div id="basic-example">
   ## Exemple de base {#basic-example}
@@ -190,9 +188,9 @@ Pour charger des données depuis Postgres, vous pouvez utiliser :
 * `clickhouse-server` est en cours d’exécution
 * Vous avez accès à un terminal avec `wget`, `zcat` et `curl`
 
-Dans cet exemple, vous verrez comment insérer un fichier CSV dans ClickHouse depuis la ligne de commande à l’aide de `clickhouse-client` en mode batch. Pour plus d’informations et d’exemples sur l’insertion de données via la ligne de commande avec `clickhouse-client` en mode batch, consultez [&quot;Mode batch&quot;](/fr/concepts/features/interfaces/client#batch-mode).
+Dans cet exemple, vous verrez comment insérer un fichier CSV dans ClickHouse depuis la ligne de commande à l’aide de `clickhouse-client` en mode batch. Pour plus d’informations et d’exemples sur l’insertion de données via la ligne de commande avec `clickhouse-client` en mode batch, consultez [&quot;Mode batch&quot;](/fr/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
-Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-datasets/hacker-news) pour cet exemple, qui contient 28 millions de lignes de données Hacker News.
+Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-datasets/hacker-news) pour cet exemple, qui contient 28 millions de lignes de données Hacker News.
 
 <Steps>
   <Step title="Télécharger le CSV" id="download-csv">

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'OpenAPI で ClickHouse Managed Postgres サービスを操作する'
-keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ', 'サーバーログ', 'ログ']
+keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ', 'ブロッキングクエリ', 'サーバーログ', 'ログ']
 doc_type: 'guide'
 ---
 
@@ -283,7 +283,7 @@ Prometheus 互換のエンドポイントが 2 つあり、ClickHouse Managed Po
 
 Cloud
 Console の [クエリインサイト] タブの各ステートメントのテレメトリーは、プログラムからも利用できます。2 つのエンドポイントにより、サービス上の最も遅い
-クエリパターンを取得できます。1 つは影響度順にすべてのパターンを一覧表示し、もう 1 つは単一のパターンとその最近の実行結果を返します。
+クエリパターンを取得できます。1 つは影響度順にすべてのパターンを一覧表示し、もう 1 つは単一のパターンとその最近の実行結果を返します。3 つ目のエンドポイントは、ロック待ちが発生したクエリと、それらをブロックしていたセッションを一覧表示します。
 
 ### 低速クエリパターンの一覧 {#list-slow-query-patterns}
 
@@ -404,12 +404,83 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 この例では簡潔にするため、両方のオブジェクトをトリムしています。API は
 [per-execution counters] に記載されている完全なカウンター セットを返します。
 
+### ブロッキングクエリの一覧取得 {#list-blocking-queries}
+
+[blocking queries API] は、コンソールの
+[Blocking queries] テーブルと同じグループを返します。各結果は、待機中のクエリ 1 件と
+直接のブロッカー 1 件の組み合わせで、出現頻度の高いものから順に並びます。データが存在するのは、
+そのサービスでブロッキングクエリの収集が有効になっていた期間のみです。
+`from_date` と `to_date` は RFC 3339 形式のタイムスタンプで指定します。`to_date` は
+`from_date` より後である必要があり、範囲は 31 日以内にする必要があります：
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+待機中のセッションの `db_name`、`db_user`、または `app` でフィルタできます。空の
+`app=` を指定すると、アプリケーション名のないセッションに一致します。結果は
+`limit` (最大 2000、デフォルトは 50) と `offset` でページ送りでき、`totalCount` で
+一致するグループの総数を確認できます。
+
+`blocked` で始まるフィールドは待機中のセッションを表し、
+`blocking` で始まるフィールドはブロックしている側のセッションを表します。`lockType`、`blockedMode`、
+および `latest*` フィールドの値は、最新のサンプルから取得されます：
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+コンソールと同様に、`blockingQuery` はブロックしている側の現在または直近の
+ステートメントであり、ロックを取得したステートメントとは限りません。クエリインサイトにステートメントのテキストがない場合、`blockedQuery` と
+`blockingQuery` は空になります。また、`blockingInternal` または
+`blockingPrepared` が `true` の場合も、`blockingQuery` は空になります。準備済みトランザクションの場合、`blockingPids`
+は `[0]` として報告されます。
+
 ## サーバーログ {#server-logs}
 
 Cloud Console のログビューアで表示される PostgreSQL サーバーログは、
-プログラムからも利用できます。[logs API] は、指定した期間内のサービスの個々のログエントリを
-返します。クエリインサイトと同様に、この期間の指定は必須のため、
-`from_date` と `to_date` を RFC 3339 形式のタイムスタンプとして渡します。期間は
+プログラムからも利用できます。[logs API] は、指定した時間ウィンドウ内のサービスの個々のログエントリを
+返します。クエリインサイトと同様に、この時間ウィンドウの指定は必須のため、
+`from_date` と `to_date` を RFC 3339 形式のタイムスタンプとして渡します。時間ウィンドウは
 30 日を超えることはできず、`to_date` は `from_date` より後でなければなりません。
 
 ```bash
@@ -459,7 +530,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
-[API キー]: /products/cloud/features/admin-features/api/openapi "API キーの管理"
+[API keys]: /products/cloud/features/admin-features/api/openapi "API キーの管理"
 
 [pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API リファレンス: Postgres"
 
@@ -479,20 +550,24 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "PostgreSQL サービスを削除"
 
-[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの superuser パスワードをリセット"
+[password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの スーパーユーザーのパスワードをリセット"
 
-[Prometheus エンドポイント]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
 
-[メトリクス リファレンス]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
 
-[クエリインサイト]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
+[Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
 
 [detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "クエリインサイトの詳細フライアウト"
 
+[Blocking queries]: /products/managed-postgres/monitoring/query-insights#blocking-queries "クエリインサイトのブロッキングクエリ"
+
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "クエリインサイトの実行ごとのカウンター"
 
-[スローパターン API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリのパターンを一覧表示"
 
 [低速クエリパターン API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
+
+[blocking queries API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list "Postgres のブロッキングクエリを一覧表示"
 
 [logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Postgres サーバーログを一覧表示"

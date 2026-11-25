@@ -11,6 +11,10 @@ doc_type: 'guide'
 
 자동 유휴 상태 전환은 사용자가 제출한 쿼리가 일정 기간 없으면 ClickHouse Cloud 서비스를 일시 중지하는 기능으로, [적응형 유휴 상태 전환 조건](#adaptive-idling)에 따라 동작합니다. 자동 유휴 상태 전환의 활성화와 비활성 시간 설정은 서비스의 **설정** 페이지에서 수행할 수 있습니다.
 
+<Note>
+  [Gen 2 컴퓨트](/ko/products/cloud/features/compute-generations)는 비공개 프리뷰 기간에는 자동 유휴 상태 전환을 지원하지 않습니다.
+</Note>
+
 ## 서비스가 일시 중지된 동안 청구되는 항목은 무엇입니까? {#billing-while-paused}
 
 서비스가 일시 중지된 동안에는 컴퓨트 리소스에 대한 비용이 청구되지 않습니다. 스토리지와 backup 비용은 계속 청구되며, 유휴 상태 전환으로 저장된 데이터가 삭제되지는 않습니다. 청구 세부 정보는 [pricing](/ko/products/cloud/reference/billing/billing-overview)을 참조하십시오.

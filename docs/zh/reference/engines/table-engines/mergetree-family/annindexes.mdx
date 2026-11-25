@@ -435,8 +435,8 @@ ENGINE = MergeTree ORDER BY id;
 
 **调优索引创建**
 
-向量相似度索引的生命周期与 parts 的生命周期密切相关。
-换句话说，每当创建一个定义了向量相似度索引的新 part 时，对应的索引也会同时创建。
+向量相似度索引的生命周期与分片的生命周期密切相关。
+换句话说，每当创建一个定义了向量相似度索引的新分片时，对应的索引也会同时创建。
 这通常发生在数据[插入](/zh/concepts/features/operations/insert/inserting-data)时，或在[合并](/zh/concepts/core-concepts/merges)过程中。
 遗憾的是，HNSW 的索引创建耗时较长是众所周知的问题，这会显著拖慢插入和合并操作。
 因此，向量相似度索引更适合用于数据不可变或很少发生变化的场景。
@@ -447,11 +447,11 @@ ENGINE = MergeTree ORDER BY id;
 可通过服务器设置 [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size) 配置用于创建索引的最大线程数。
 为获得最佳性能，建议将该设置值配置为 CPU 核心数。
 
-其次，为了加快 INSERT 语句的执行，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) 禁止在新插入的 parts 上创建跳过索引。
-对此类 parts 执行的 SELECT 查询将回退为精确搜索。
-由于新插入的 parts 相对于整个表通常较小，因此预计对性能的影响可以忽略不计。
+其次，为了加快 INSERT 语句的执行，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) 禁止在新插入的分片上创建跳过索引。
+对此类分片执行的 SELECT 查询将回退为精确搜索。
+由于新插入的分片相对于整个表通常较小，因此预计对性能的影响可以忽略不计。
 
-第三，为了加快合并，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/zh/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) 禁止在已合并的 parts 上创建跳过索引。
+第三，为了加快合并，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/zh/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) 禁止在已合并的分片上创建跳过索引。
 配合语句 [ALTER TABLE [...] MATERIALIZE INDEX [...]](/zh/reference/statements/alter/skipping-index#materialize-index)，这可以显式控制向量相似度索引的生命周期。
 例如，可以将索引创建延后到所有数据都已摄取完成之后，或延后到系统负载较低的时段 (如周末) 再进行。
 
@@ -461,7 +461,11 @@ SELECT 查询要使用向量相似度索引，需要先将其加载到主内存�
 为避免重复将同一个向量相似度索引加载到主内存，ClickHouse 为这类索引提供了专用的内存缓存。
 缓存越大，不必要的加载就越少。
 可通过服务器设置 [vector&#95;similarity&#95;index&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size) 配置缓存的最大大小。
-默认情况下，缓存最大可增长到 5 GB。
+在 ClickHouse OSS 中，默认情况下缓存最大可增长到 5 GB。
+
+在 ClickHouse Cloud 中，缓存的最大大小取决于 pod 的规格。
+具体大小可在 [system.server&#95;settings](/zh/reference/system-tables/server_settings) 中查看。
+由于服务器设置无法通过 SQL 或控制台更改，如需配置更大的缓存，请联系支持团队。
 
 以下日志消息 (`system.text_log`) 表明正在加载向量相似度索引。
 如果这类消息在不同的向量搜索查询中反复出现，则说明缓存容量过小。
@@ -476,13 +480,13 @@ SELECT 查询要使用向量相似度索引，需要先将其加载到主内存�
 
 <Note>
   向量相似度索引缓存用于存储向量索引粒度。
-  如果单个向量索引粒度大于缓存容量，则不会被缓存。
-  因此，请务必计算向量索引的大小 (根据“估算存储和内存消耗”中的公式，或参考 [system.data&#95;skipping&#95;indices](/zh/reference/system-tables/data_skipping_indices)) ，并据此设置相应的缓存容量。
+  如果单个向量索引粒度大于缓存大小，则不会被缓存。
+  因此，请务必计算向量索引的大小 (可基于&quot;估算存储和内存消耗&quot;中的公式或 [system.data&#95;skipping&#95;indices](/zh/reference/system-tables/data_skipping_indices)) ，并据此设置缓存大小。
 </Note>
 
-*我们再次强调，在排查向量搜索查询缓慢的问题时，首先应检查向量索引缓存，并在必要时增大其容量。*
+*需要再次强调的是，在排查较慢的向量搜索查询时，第一步应当是检查向量索引缓存，并在必要时调大缓存。*
 
-当前向量相似度索引缓存的大小可在 [system.metrics](/zh/reference/system-tables/metrics) 中查看：
+向量相似度索引缓存的当前大小可在 [system.metrics](/zh/reference/system-tables/metrics) 中查看：
 
 ```sql
 SELECT metric, value
@@ -499,6 +503,13 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
+```
+
+语句 [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/zh/reference/statements/system#drop-vector-similarity-index-cache) 会从缓存中移除所有向量相似度索引。
+如果只需从缓存中移除单个表的索引，请添加 `FOR TABLE` 子句：
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 对于生产环境中的用例，我们建议将缓存设置得足够大，以确保所有向量索引始终驻留在内存中。
@@ -689,7 +700,7 @@ LIMIT 3;
 
 #### 应用编解码器 {#quantized-codecs-declaring}
 
-为 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列指定 `Quantized(...)` 编解码器。
+为 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) 列指定 `Quantized(...)` 编解码器。
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -710,13 +721,17 @@ ORDER BY ...;
 每种量化方法在大小和准确性之间各有不同的权衡。
 `dimensions` 参数表示向量长度。
 
-* `Quantized('rabitq', dimensions)` — 每个坐标使用一个符号位，再加上一个无偏余弦校正因子 (`dimensions/8 + 4` 字节) 。体积小、`popcount` 成本低，是一个很强的默认选择。仅支持 `cosineDistance`。
-* `Quantized('turboquant', dimensions)` — 每个坐标使用两位 (1 位 MSE 编码和 1 位残差编码) ，可获得保真度更高的候选结果 (`dimensions/4 + 4` 字节) 。仅支持 `cosineDistance`。
+* `Quantized('rabitq', dimensions)` — 每个坐标使用一个符号位，再加上一个无偏余弦校正因子 (`dimensions/8 + 4` 字节) 。体积小、`popcount` 成本低，是一个很强的默认选择。仅估算余弦距离，`L2Distance` 的相关说明见下文。
+* `Quantized('turboquant', dimensions)` — 每个坐标使用两位 (1 位 MSE 编码和 1 位残差编码) ，可获得保真度更高的候选结果 (`dimensions/4 + 4` 字节) 。仅估算余弦距离，`L2Distance` 的相关说明见下文。
 * `Quantized('int8', dimensions)` — 每个坐标使用一个 `Int8` 编码，再加上向量范数 (`dimensions + 4` 字节) ；体积最大，但也是最忠实的平坦编码。支持 `L2Distance` 和 `cosineDistance`。
 * `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka：只保留前 `leading_dimensions` 个坐标，并存为 `Int8` (带每向量标度) 或 `BFloat16`。适用于使用 Matryoshka Representation Learning 训练的嵌入向量，可生成极小的编码。支持 `L2Distance` 和 `cosineDistance`。
 * `Quantized('product', dimensions, nbits, m)` — Product Quantization：按分片使用通过 k-means 训练得到的码本；每个向量会变成 `m` 个、每个 `nbits` 位的编码 (因此 `dimensions` 必须是 `m` 的倍数) 。这是最紧凑的方案，且单位字节召回率最高，但代价是在 insert 时需要执行训练步骤。支持 `L2Distance` 和 `cosineDistance`。
 
 `rabitq` 和 `turboquant` 要求 `dimensions` 必须是 8 的倍数。
+
+对于 `Array(Int8)` 和 `Array(UInt8)` 列，不支持 `int8` 方法以及格式为 `int8` 的 `prefix` 方法，因为它们的编码并不比原始向量更小。
+`UInt8` 嵌入向量通常是经过 128 偏移的有符号值。`rabitq` 和 `turboquant` 方法假定向量分布在原点附近，因此对于 `Array(UInt8)` 列，它们会在编码前将已存储向量和参考向量的每个元素减去 128。
+因此，候选短名单按偏移后向量的余弦距离排序，而最终结果则按原始向量的精确 `cosineDistance` 重新打分。
 
 #### 使用编解码器 {#quantized-codecs-searching}
 
@@ -734,10 +749,13 @@ SETTINGS vector_search_use_quantized_codes = 1;
 将 `vector_search_use_quantized_codes = 1` 设为启用后，优化器可将查询重写为两阶段扫描。
 该设置默认关闭。
 未启用此设置时，相同查询会对原始向量执行常规精确扫描。
-所有方法均支持距离函数 `cosineDistance`；其中 `int8`、`prefix` 和 `product` 方法还额外支持 `L2Distance` 距离函数。
+所有方法均支持距离函数 `cosineDistance` 和 `L2Distance`。
+`int8`、`prefix` 和 `product` 方法可估算这两种距离。
+`rabitq` 和 `turboquant` 方法不存储向量范数，仅估算余弦距离：对于 `L2Distance`，候选短名单按余弦距离排名，随后使用精确的 `L2Distance` 对结果重新评分。
+返回的距离是精确的，但召回率取决于向量范数的差异程度。对于归一化向量，两种排名完全相同。
 
-设置 `vector_search_index_fetch_multiplier` 用于指定相对于查询 `LIMIT` 要入围的候选数量。
-较大的乘数可提高召回率，但会增加重评分开销。
+设置 `vector_search_index_fetch_multiplier` 用于指定相对于查询 `LIMIT` 要入围的候选结果数量。
+较大的乘数可提高召回率，但会增加重新评分开销。
 默认值为 `1` (不进行过采样) ；通常需要将其提高到 (例如) `10`，才能获得良好的召回率。
 
 ### 量化位 (QBit) {#approximate-nearest-neighbor-search-qbit}

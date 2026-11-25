@@ -13,8 +13,15 @@ doc_type: 'reference'
 ## CREATE TABLE {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -32,7 +39,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `compression` — Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить `auto`). Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).
 * `partition_strategy` – Варианты: `wildcard` или `hive`. Для `wildcard` требуется `{_partition_id}` в пути, который заменяется ключом партиционирования. `hive` не допускает подстановочных шаблонов, предполагает, что путь является корнем таблицы, и создаёт каталоги партиций в стиле Hive, где в качестве имён файлов используются Snowflake ID, а в качестве расширения — формат файла. Без явного указания стратегии для пути с `{_partition_id}` используется `wildcard`. Для пути с другим глоб-шаблоном стратегия партиционирования не используется, а `PARTITION BY` игнорируется. Для пути без глоб-шаблона используется `hive`, если значение `file_like_engine_default_partition_strategy` равно `hive`; в противном случае стратегия партиционирования не используется.
 * `partition_columns_in_data_file` - Используется только со стратегией партиционирования `hive`. Указывает ClickHouse, следует ли ожидать, что столбцы партиции будут записаны в файл данных. По умолчанию `false`.
-* `extra_credentials` - Используйте `client_id` и `tenant_id` для аутентификации. Если указаны extra&#95;credentials, они имеют приоритет над `account_name` и `account_key`.
+* `extra_credentials` - Используйте `client_id` и `tenant_id` для аутентификации через Azure workload identity. Несовместим с `account_name` / `account_key` и требует `storage_account_url` (а не `connection_string`).
 
 **Пример**
 

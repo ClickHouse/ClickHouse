@@ -41,6 +41,18 @@ Iceberg 테이블의 메타데이터 로깅 수준을 `system.iceberg_metadata_l
 * manifest&#95;file&#95;metadata - 위의 모든 항목 + 탐색한 avro manifest 파일의 메타데이터입니다.
 * manifest&#95;file&#95;entry - 위의 모든 항목 + 탐색한 avro manifest 파일의 항목입니다.
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "새 설정입니다. 이전에는 커밋할 때마다 계속 늘어나던 `metadata-log`를 이제 Iceberg 테이블에 대한 쓰기 작업에서 제한합니다."}]}]} />
+
+쓰기(write) 시 Iceberg 테이블의 `metadata-log`에 유지하는 엔트리의 최대 개수이며, 해당 쓰기에서 작성하는 메타데이터 파일의 엔트리도 포함됩니다. 쓰기로 인해 엔트리 수가 제한을 초과하면 가장 오래된 엔트리부터 제거됩니다. 메타데이터 파일 자체는 삭제되지 않습니다.
+
+Iceberg 테이블 속성 `write.metadata.previous-versions-max`가 이 설정보다 우선합니다. Java 구현과 마찬가지로 이 속성은 이전 메타데이터 파일의 개수를 나타내며 최솟값은 1이므로, `metadata-log`에는 속성 값보다 1개 많은 엔트리가 유지됩니다.
+
+REST 카탈로그(REST catalog)처럼 메타데이터 파일을 직접 작성하는 카탈로그(Catalog)에 속한 테이블에는 이 설정이 적용되지 않습니다. 이 경우 카탈로그가 자체 구성과 테이블 속성에 따라 `metadata-log`를 관리합니다.
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

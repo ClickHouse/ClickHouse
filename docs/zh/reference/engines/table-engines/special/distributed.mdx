@@ -127,13 +127,18 @@ SETTINGS
 
 ## 集群 {#distributed-clusters}
 
-集群是在[服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中配置的：
+集群是在[服务端配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中配置的：
 
 ```xml
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,
@@ -183,33 +188,33 @@ SETTINGS
 </remote_servers>
 ```
 
-这里定义了一个名为 `logs` 的集群，它由两个分片组成，每个分片包含两个副本。分片指的是存放不同数据部分的服务器 (要读取全部数据，必须访问所有分片) 。副本则是彼此冗余的服务器 (要读取全部数据，访问任意一个副本即可) 。
+这里定义了一个名为 `logs` 的集群，它由两个分片组成，每个分片包含两个副本。分片指的是存放不同数据部分的服务端 (要读取全部数据，必须访问所有分片) 。副本则是彼此冗余的服务端 (要读取全部数据，访问任意一个副本即可) 。
 
 集群名称中不能包含点号。
 
-需要为每台服务器指定 `host`、`port` 参数，以及可选的 `user`、`password`、`secure`、`compression`、`bind_host` 参数：
+需要为每台服务端指定 `host`、`port` 参数，以及可选的 `user`、`password`、`secure`、`compression`、`bind_host` 参数：
 
-| Parameter     | Description                                                                                                           | Default Value |
+| 参数     | 描述                                                                                                           | Default Value |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `host`        | 远程服务器的地址。可以使用域名、IPv4 地址或 IPv6 地址。如果指定的是域名，服务器会在启动时发起 DNS 请求，并在运行期间缓存结果。如果 DNS 请求失败，服务器将无法启动。如果修改了 DNS 记录，请重启服务器。      | -             |
+| `host`        | 远程服务端的地址。可以使用域名、IPv4 地址或 IPv6 地址。如果指定的是域名，服务端会在启动时发起 DNS 请求，并在运行期间缓存结果。如果 DNS 请求失败，服务端将无法启动。如果修改了 DNS 记录，请重启服务端。      | -             |
 | `port`        | 用于 TCP 通信的端口 (即 config 中的 `tcp_port`，通常设置为 9000) 。不要与 `http_port` 混淆。                                                 | -             |
-| `user`        | 用于连接远程服务器的用户名。该用户必须具有连接到指定服务器的权限。访问权限在 `users.xml` 文件中配置。更多信息，请参见[访问权限](/zh/concepts/features/security/access-rights)章节。 | `default`     |
-| `password`    | 用于连接远程服务器的密码 (不会被掩码处理) 。                                                                                              | &#39;&#39;    |
-| `secure`      | 是否使用安全的 SSL/TLS 连接。通常还需要同时指定端口 (默认安全端口为 `9440`) 。服务器应监听 `<tcp_port_secure>9440</tcp_port_secure>`，并配置正确的证书。           | `false`       |
+| `user`        | 用于连接远程服务端的用户名。该用户必须具有连接到指定服务端的权限。访问权限在 `users.xml` 文件中配置。更多信息，请参见[访问权限](/zh/concepts/features/security/access-rights)章节。 | `default`     |
+| `password`    | 用于连接远程服务端的密码 (不会被掩码处理) 。                                                                                              | &#39;&#39;    |
+| `secure`      | 是否使用安全的 SSL/TLS 连接。通常还需要同时指定端口 (默认安全端口为 `9440`) 。服务端应监听 `<tcp_port_secure>9440</tcp_port_secure>`，并配置正确的证书。           | `false`       |
 | `compression` | 使用压缩。                                                                                                                 | `true`        |
-| `bind_host`   | 从当前节点连接到远程服务器时使用的源地址。仅支持 IPv4 地址。适用于高级部署场景，即需要设置 ClickHouse 分布式查询所使用的源 IP 地址。                                         | -             |
+| `bind_host`   | 从当前节点连接到远程服务端时使用的源地址。仅支持 IPv4 地址。适用于高级部署场景，即需要设置 ClickHouse 分布式查询所使用的源 IP 地址。                                         | -             |
 
-指定副本时，读取每个分片的数据都会从可用副本中选取一个。你可以配置负载均衡算法 (即优先访问哪个副本) ——请参见 [load&#95;balancing](/zh/reference/settings/session-settings/load-balancing#load_balancing) 设置。如果无法与服务器建立连接，则会以较短的超时时间尝试连接。如果连接失败，就会选择下一个副本，并依次尝试所有副本。如果所有副本的连接尝试都失败了，则会按照同样的方式重复尝试若干次。这样有利于提高系统弹性，但并不能提供完整的容错能力：远程服务器可能会接受连接，但实际上无法正常工作，或者工作状态不佳。
+指定副本后，读取时会为每个分片从可用副本中选择一个。您可以配置负载均衡算法 (即优先访问哪个副本) ，参见 [load&#95;balancing](/zh/reference/settings/session-settings/load-balancing#load_balancing) 设置。如果尚未与服务端建立连接，系统会以较短的超时时间尝试连接。如果连接失败，则选择下一个副本，依此类推，直至遍历所有副本。如果所有副本均连接失败，则会按相同方式重试若干次。这有助于提升系统弹性，但无法实现完全的容错能力：远程服务端可能接受了连接，却无法正常工作或运行不佳。
 
-你可以只指定一个分片 (在这种情况下，应称为 remote 查询处理，而不是 Distributed) ，也可以指定任意多个分片。在每个分片中，你可以指定一个或多个副本。你也可以为每个分片指定不同数量的副本。
+您可以只指定一个分片 (此时查询处理应称为远程查询，而非分布式查询) ，也可以指定任意数量的分片。每个分片可以包含一个到任意数量的副本，且各分片的副本数量可以不同。
 
-你可以在配置中按需指定任意多个集群。
+您可以在配置中指定任意数量的集群。
 
-要查看你的集群，请使用 `system.clusters` 表。
+要查看集群，请查询 `system.clusters` 表。
 
-`Distributed` 引擎允许你像使用本地服务器一样使用集群。不过，集群配置不能动态指定，必须在服务器配置文件中进行配置。通常，集群中的所有服务器都会使用相同的集群配置 (虽然这不是必需的) 。配置文件中的集群会动态更新，无需重启服务器。
+借助 `Distributed` 引擎，可以像使用本地服务端一样使用集群。不过，集群配置无法动态指定，必须在服务端配置文件中进行配置。通常，集群中所有服务端的集群配置都相同 (但这并非必需) 。配置文件中的集群会在运行时动态更新，无需重启服务端。
 
-如果你需要每次都向一组未知的分片和副本发送查询，则无需创建 `Distributed` 表，而应改用 `remote` 表函数。请参见 [表函数](/zh/reference/functions/table-functions/index) 部分。
+如果每次都需要将查询发送到一组不确定的分片和副本，则无需创建 `Distributed` 表，改用 `remote` 表函数即可。参见[表函数](/zh/reference/functions/table-functions/index)章节。
 
 ## 写入数据 {#distributed-writing-data}
 

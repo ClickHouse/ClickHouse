@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "Fuentes de datos",
       "pages": [
         "es/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "Visualización de datos",
       "pages": [
         "es/integrations/connectors/data-visualization/index",
         {
@@ -78,7 +78,7 @@
         "es/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integraciones de la comunidad",
           "pages": [
             "es/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
@@ -91,6 +91,7 @@
             "es/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse",
+            "es/integrations/connectors/data-visualization/community-integrations/hypequery-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
@@ -102,7 +103,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "Ingestión de datos",
       "pages": [
         "es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         {
@@ -147,7 +148,7 @@
             "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Plantillas de Dataflow",
               "pages": [
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -186,12 +187,14 @@
             "es/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
           ]
         },
+        "es/integrations/connectors/data-ingestion/etl-tools/workos",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integraciones de la comunidad",
           "pages": [
             "es/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "es/integrations/connectors/data-ingestion/community-integrations/erathos",
+            "es/integrations/connectors/data-ingestion/community-integrations/olake-and-clickhouse",
             "es/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
@@ -207,7 +210,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "Integraciones de datos",
       "pages": [
         "es/integrations/connectors/tools/data-integration-index",
         "es/integrations/connectors/data-integrations/integrations/retool",
@@ -220,7 +223,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "Clientes SQL",
       "pages": [
         "es/integrations/connectors/sql-clients/index",
         "es/integrations/connectors/sql-clients/sql-console",
@@ -237,7 +240,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "Herramientas",
       "pages": [
         "es/integrations/connectors/tools/index",
         "es/integrations/connectors/tools/misc-index",
@@ -247,5 +250,5 @@
       ]
     }
   ],
-  "item": "Connectors"
+  "item": "Conectores"
 }

@@ -42,14 +42,14 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
     ```
 
     <Accordion title="기타 설치 방법">
-      | 도구                             | 명령                              |
-      | ------------------------------ | ------------------------------- |
-      | npm                            | `npm install -g clickhousectl`  |
-      | uv                             | `uv tool install clickhousectl` |
-      | pipx                           | `pipx install clickhousectl`    |
-      | pip                            | `pip install clickhousectl`     |
-      | cargo-binstall                 | `cargo binstall clickhousectl`  |
-      | Cargo, 소스 코드로부터 빌드(Rust 1.94+) | `cargo install clickhousectl`   |
+      | 도구                               | 명령                              |
+      | -------------------------------- | ------------------------------- |
+      | npm                              | `npm install -g clickhousectl`  |
+      | uv                               | `uv tool install clickhousectl` |
+      | pipx                             | `pipx install clickhousectl`    |
+      | pip                              | `pip install clickhousectl`     |
+      | cargo-binstall                   | `cargo binstall clickhousectl`  |
+      | Cargo, 소스 코드로부터 빌드(Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       `chctl` 별칭은 설치 스크립트 또는 npm으로 설치한 경우에만 생성됩니다.
     </Accordion>
@@ -60,6 +60,9 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update`는 스크립트, 직접 다운로드 또는 Cargo로 설치한 경우 기존 설치를 새 버전으로 대체합니다. npm, uv,
+    pipx, pip로 설치한 경우에는 직접 업데이트하는 대신 실행해야 할 패키지 매니저 명령을 출력합니다.
   </Step>
 
   <Step title="ClickHouse 설치" id="cli-install-clickhouse">
@@ -103,12 +106,13 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
   </Step>
 
   <Step title="clickhouse-server 시작" id="cli-start-clickhouse-server">
-    `clickhousectl`은 명령을 실행한 디렉터리 단위로 로컬 서버를 관리합니다. 프로젝트
-    디렉터리를 생성한 후 해당 디렉터리에서 서버를 시작하세요:
+    `clickhousectl`은 로컬 서버를 프로젝트 단위로 관리합니다. 프로젝트 디렉터리를 생성하고,
+    `local init`으로 해당 디렉터리를 프로젝트 루트로 지정한 다음, 그 디렉터리에서 서버를 시작하십시오.
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -118,17 +122,18 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
       Version:   26.9.1.1312
     ```
 
-    서버는 백그라운드에서 실행되며 이름은 `default`입니다. 서버 데이터는
-    `./.clickhouse/`에 저장되므로 이후 `clickhousectl local` 명령어도 같은
-    디렉터리에서 실행하십시오. `clickhousectl`은 상위 디렉터리를 검색하지 않습니다. 서버는
-    HTTP 포트 `8123`과 TCP 포트 `9000`에서 수신 대기하며, 해당 포트가 이미 사용 중이면 비어 있는 다른 포트를 사용합니다.
-    포트를 직접 지정하려면 `--http-port`와 `--tcp-port`를 사용하십시오. 서버를 2개 이상
-    실행하려면 `clickhousectl local server start dev`와 같이 서버마다 이름을 지정하십시오.
+    서버는 백그라운드에서 실행되며 이름은 `default`입니다. 서버 데이터는 프로젝트 루트의
+    `.clickhouse/`에 저장됩니다. Git과 마찬가지로 이후의 `clickhousectl local`
+    명령어는 해당 디렉터리 또는 그 아래의 모든 하위 디렉터리에서 동작합니다. 서버는
+    HTTP 포트 `8123`과 TCP 포트 `9000`에서 수신 대기하며, 해당 포트가 이미 사용 중이면 비어 있는 다른 포트를
+    사용합니다. 포트를 직접 지정하려면 `--http-port`와 `--tcp-port`를 지정하십시오. 서버를 2개 이상
+    실행하려면 `clickhousectl local clickhouse start dev`와 같이 서버마다 이름을 지정하십시오.
+    `local ch`는 `local clickhouse`의 축약형입니다.
 
-    서버가 실행 중인지 확인하려면 다음을 실행하십시오:
+    서버가 실행 중인지 확인하려면 다음을 실행하십시오.
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -138,17 +143,19 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status`는 실행 중인지 중지되었는지와 관계없이 프로젝트의 모든 ClickHouse 서버와 Postgres 인스턴스(instance)를 나열합니다.
   </Step>
 
   <Step title="clickhouse-client 시작" id="cli-start-clickhouse-client">
-    같은 디렉터리에서 `clickhouse-client`로 서버에 연결하십시오:
+    프로젝트 내 어느 위치에서든 `clickhouse-client`로 서버에 연결하십시오:
 
     ```bash
     clickhousectl local client
     ```
 
-    `local client`는 `default`라는 이름의 서버에 연결하며, 해당 서버와 동일한
-    ClickHouse 버전을 사용합니다. 다른 서버에 연결하려면 `clickhousectl local client dev`와 같이
+    `local client`는 `default`라는 이름의 서버에 연결하며, `default`라는 이름의 서버가 없으면 프로젝트의 유일한
+    서버에 연결합니다. 이때 해당 서버와 동일한 ClickHouse 버전을 사용합니다. 다른 서버에 연결하려면 `clickhousectl local client dev`와 같이
     서버 이름을 인수로 지정하십시오. 다음과 비슷한 출력이 표시됩니다:
 
     ```response
@@ -174,17 +181,17 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)는 로컬 ClickHouse 버전을 �
   </Step>
 
   <Step title="서버를 중지하십시오" id="cli-stop-clickhouse-server">
-    서버는 중지하기 전까지 백그라운드에서 계속 실행됩니다. 서버를 시작한
-    디렉터리에서 다음과 같이 서버를 중지하십시오.
+    서버는 중지하기 전까지 백그라운드에서 계속 실행됩니다. 프로젝트 내
+    어느 위치에서든 다음과 같이 서버를 중지하십시오.
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    서버를 중지해도 데이터는 보존되므로, 다음에 `clickhousectl local server start`를 실행하면 기존 데이터를 그대로 사용할 수 있습니다.
+    서버를 중지해도 데이터는 보존되므로, 다음에 `clickhousectl local clickhouse start`를 실행하면 기존 데이터를 그대로 사용할 수 있습니다.
 
     <Warning>
-      `clickhousectl local server remove`를 실행하면 중지된 서버의 데이터가 영구적으로 삭제됩니다.
+      `clickhousectl local clickhouse remove`를 실행하면 중지된 서버의 데이터가 영구적으로 삭제됩니다.
     </Warning>
   </Step>
 </Steps>

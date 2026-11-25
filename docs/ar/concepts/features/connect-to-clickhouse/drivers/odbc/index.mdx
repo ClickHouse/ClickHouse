@@ -1,0 +1,258 @@
+---
+description: 'توثيق مشغّل ODBC لـ ClickHouse'
+sidebarTitle: 'نظرة عامة'
+slug: /concepts/features/connect-to-clickhouse/drivers/odbc
+title: 'مشغّل ODBC'
+doc_type: 'reference'
+---
+
+يوفّر مشغّل ODBC لـ ClickHouse واجهة متوافقة مع المعايير لربط التطبيقات المتوافقة مع ODBC بـ
+ClickHouse. فهو يطبّق واجهة ODBC البرمجية، ويُمكّن التطبيقات وأدوات ذكاء الأعمال وبيئات البرمجة النصية من تنفيذ استعلامات SQL
+واسترجاع النتائج والتفاعل مع ClickHouse عبر آليات مألوفة.
+
+يتواصل المشغّل مع خادم ClickHouse عبر [بروتوكول HTTP](/ar/concepts/features/connect-to-clickhouse/protocols/http)، وهو البروتوكول الرئيسي
+المدعوم في جميع عمليات نشر ClickHouse. وهذا ما يتيح للمشغّل العمل بصورة متّسقة في بيئات متنوعة،
+منها عمليات التثبيت المحلية والخدمات السحابية المُدارة والبيئات التي لا يتوفر فيها الوصول إلا عبر HTTP.
+
+الشيفرة المصدرية للمشغّل متاحة في
+[مستودع ClickHouse-ODBC على GitHub](https://github.com/ClickHouse/clickhouse-odbc).
+
+<Tip>
+  لتوافق أفضل، نوصي بشدة بترقية خادم ClickHouse إلى الإصدار 24.11 أو أحدث.
+</Tip>
+
+<Note>
+  لا يزال المشغّل هذا قيد التطوير النشط، وقد لا تكون بعض ميزات ODBC مطبّقة بالكامل بعد. يركّز الإصدار الحالي
+  على توفير إمكانات الاتصال الأساسية ووظائف ODBC الجوهرية، ومن المخطط إضافة ميزات أخرى في
+  الإصدارات المستقبلية.
+
+  نقدّر ملاحظاتكم كثيرًا، فهي تساعدنا على تحديد أولويات الميزات والتحسينات الجديدة. إذا واجهتم
+  قيودًا أو وظائف مفقودة أو سلوكًا غير متوقع، فيُرجى مشاركة ملاحظاتكم أو طلبات الميزات عبر
+  متتبّع التذاكر على
+  [https://github.com/ClickHouse/clickhouse-odbc/issues](https://github.com/ClickHouse/clickhouse-odbc/issues)
+</Note>
+
+## التثبيت على Windows {#installation-on-windows}
+
+يمكنك العثور على أحدث إصدار من المشغّل على الرابط
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest).
+ومن هناك يمكنك تنزيل مُثبِّت MSI وتشغيله، ثم اتباع خطوات التثبيت البسيطة.
+
+## الاختبار {#testing}
+
+يمكنك اختبار المشغّل بتشغيل هذا البرنامج النصي البسيط في PowerShell. انسخ النص أدناه، واضبط قيم URL واسم المستخدم وكلمة المرور، ثم
+الصقه في موجّه أوامر PowerShell. بعد تشغيل `$reader.GetValue(0)` من المفترض أن يظهر إصدار خادم ClickHouse
+لديك.
+
+```powershell
+$url = "http://127.0.0.1:8123/"
+$username = "default"
+$password = ""
+$conn = New-Object System.Data.Odbc.OdbcConnection("`
+    Driver={ClickHouse ODBC Driver (Unicode)};`
+    Url=$url;`
+    Username=$username;`
+    Password=$password")
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "select version()"
+$reader = $cmd.ExecuteReader()
+$reader.Read()
+$reader.GetValue(0)
+$reader.Close()
+$conn.Close()
+```
+
+## معلمات التكوين {#configuration-parameters}
+
+تمثل المعلمات أدناه الإعدادات الأكثر استخدامًا لإنشاء اتصال باستخدام برنامج تشغيل ODBC لـ ClickHouse، وهي تغطي الخيارات الأساسية للمصادقة وسلوك الاتصال ومعالجة البيانات. تتوفر قائمة كاملة بالمعلمات المدعومة في صفحة المشروع على GitHub
+[https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc).
+
+* `Url`: يحدد نقطة النهاية الكاملة لخادم ClickHouse عبر HTTP(S)، بما في ذلك البروتوكول والمضيف والمنفذ والمسار
+  الاختياري.
+* `Username`: اسم المستخدم الذي يُستخدم للمصادقة على خادم ClickHouse.
+* `Password`: كلمة المرور المرتبطة باسم المستخدم المحدد. إذا لم تُحدَّد، يتصل المشغّل دون مصادقة بكلمة
+  مرور.
+* `Database`: قاعدة البيانات الافتراضية التي يستخدمها الاتصال.
+* `Timeout`: الحد الأقصى للوقت (بالثواني) الذي ينتظره المشغّل لتلقي استجابة الخادم قبل إلغاء الطلب.
+* `ClientName`: معرّف مخصص يُرسَل إلى خادم ClickHouse ضمن البيانات الوصفية للعميل، ويفيد في التتبع أو
+  في التمييز بين حركة المرور الواردة من تطبيقات مختلفة. تُضمَّن هذه المعلمة في ترويسة User-Agent لطلبات HTTP
+  التي يُرسلها المشغّل.
+* `Compression`: يُفعّل أو يُعطّل ضغط HTTP لحمولات بيانات الطلبات والاستجابات. ويمكن عند تفعيله تقليل
+  استهلاك عرض النطاق الترددي وتحسين الأداء مع مجموعات النتائج الكبيرة.
+* `SqlCompatibilitySettings`: يفعّل إعدادات استعلام تجعل سلوك ClickHouse أقرب إلى سلوك قواعد البيانات العلائقية
+  التقليدية. ويفيد ذلك عندما تُولِّد أدوات تابعة لجهات خارجية الاستعلامات تلقائيًا، مثل Power BI؛ إذ لا تراعي هذه
+  الأدوات عادةً بعض السلوكيات الخاصة بـ ClickHouse، وقد تُنتج استعلامات تؤدي إلى أخطاء أو
+  نتائج غير متوقعة. لمزيد من التفاصيل، راجع [إعدادات ClickHouse التي تستخدمها معلمة التكوين SqlCompatibilitySettings
+  ](#sql-compatibility-settings).
+
+فيما يلي بعض الأمثلة على سلاسل الاتصال الكاملة التي تُمرَّر إلى المشغّل لإنشاء اتصال.
+
+* خادم ClickHouse مثبّت محليًا على مثيل WSL
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=http://localhost:8123/;Username=default
+```
+
+* مثيل ClickHouse Cloud.
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=https://you-instance-url.gcp.clickhouse.cloud:8443/;Username=default;Password=your-password
+```
+
+## تكامل Microsoft Power BI {#powerbi-integration}
+
+يمكنك استخدام برنامج تشغيل ODBC لربط Microsoft Power BI بخادم ClickHouse. يوفّر Power BI خيارَين
+للاتصال: موصل ODBC العام وموصل ClickHouse، وكلاهما مضمَّن في عمليات التثبيت القياسية لـ Power BI.
+
+يعتمد كلا الموصلين على ODBC داخليًا، لكنهما يختلفان في الإمكانات:
+
+* موصل ClickHouse (موصى به)
+  يستخدم ODBC في الخلفية، لكنه يدعم وضع DirectQuery. في هذا الوضع، يُنشئ Power BI استعلامات SQL تلقائيًا
+  ولا يسترجع سوى البيانات المطلوبة لكل تصور أو عملية تصفية.
+
+* موصل ODBC
+  يدعم وضع Import فقط. ينفّذ Power BI الاستعلام الذي يحدده المستخدم (أو يقرأ الجدول بأكمله) ويستورد
+  مجموعة النتائج كاملةً إلى Power BI. وتُعيد عمليات التحديث اللاحقة استيراد مجموعة البيانات بأكملها.
+
+اختر الموصل المناسب لحالة الاستخدام لديك. يُعد DirectQuery الخيار الأمثل للوحات المعلومات التفاعلية التي تتعامل مع مجموعات بيانات كبيرة،
+بينما يُفضَّل وضع Import عندما تحتاج إلى نسخ محلية كاملة من البيانات.
+
+لمزيد من المعلومات حول تكامل Microsoft Power BI مع ClickHouse، راجع [صفحة توثيق ClickHouse حول تكامل Power
+BI](/ar/integrations/connectors/data-visualization/powerbi-and-clickhouse).
+
+## إعدادات التوافق مع SQL {#sql-compatibility-settings}
+
+تمتلك ClickHouse لهجة SQL خاصة بها ومميزة، وقد يختلف سلوكها في بعض الحالات عن قواعد البيانات الأخرى مثل MS SQL
+Server وMySQL وPostgreSQL. وغالبًا ما تكون هذه الاختلافات ميزةً، إذ توفّر صيغة محسّنة تُسهّل
+استخدام ميزات ClickHouse.
+
+غير أن برنامج تشغيل ODBC يُستخدم غالبًا في بيئات تُنشئ فيها أدوات تابعة لجهات خارجية، مثل Power
+BI، الاستعلامات بدلًا من أن يكتبها المستخدمون. وعادةً ما تعتمد هذه الاستعلامات على مجموعة جزئية محدودة من معيار SQL. وفي مثل هذه الحالات،
+قد لا تعمل الجوانب التي تحيد فيها ClickHouse عن معيار SQL على النحو المتوقع، فتُنتج نتائج أو أخطاء غير متوقعة.
+ولذلك يوفّر برنامج تشغيل ODBC معلمة تكوين إضافية، `SqlCompatibilitySettings`، تُفعّل إعدادات استعلام محددة
+لتقريب سلوك ClickHouse أكثر من SQL القياسية.
+
+### إعدادات ClickHouse المفعّلة بواسطة معلمة التكوين SqlCompatibilitySettings {#sql-compatibility-settings-list}
+
+يوضّح هذا القسم الإعدادات التي يعدّلها برنامج تشغيل ODBC وسبب تعديلها.
+
+**[cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable)**
+
+لا يسمح ClickHouse افتراضيًا بتحويل الأنواع القابلة لقبول قيم NULL إلى أنواع غير قابلة لقبولها. غير أن كثيرًا من أدوات ذكاء الأعمال لا تميّز
+بين هذين النوعين عند إجراء تحويلات الأنواع. ولذلك، من الشائع
+أن تولّد أدوات ذكاء الأعمال استعلامات مثل الاستعلام التالي:
+
+```sql
+SELECT sum(CAST(value, 'Int32'))
+FROM values
+```
+
+افتراضيًا، عندما يكون العمود `value` قابلًا لقبول قيم NULL، يفشل هذا الاستعلام ويعرض الرسالة التالية:
+
+```plaintext
+DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
+'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+```
+
+يؤدي تفعيل `cast_keep_nullable` إلى تغيير سلوك `CAST` بحيث يحافظ على قابلية وسيطاته لقبول قيم NULL. وهذا
+يُقرّب سلوك ClickHouse من سلوك قواعد البيانات الأخرى ومن معيار SQL في هذا النوع من التحويلات.
+
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/ar/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
+
+يتيح ClickHouse الإشارة إلى التعبيرات الواردة في قائمة `SELECT` نفسها عبر أسمائها المستعارة. فعلى سبيل المثال، يتجنّب هذا الاستعلام
+التكرار وتسهل كتابته:
+
+```sql
+SELECT
+    sum(value) AS S,
+    count() AS C,
+    S / C
+FROM test
+```
+
+تُستخدم هذه الميزة على نطاق واسع، لكن قواعد البيانات الأخرى لا تحلّ عادةً الأسماء المستعارة بهذه الطريقة ضمن قائمة `SELECT` نفسها،
+وتفشل فيها مثل هذه الاستعلامات بخطأ. وتظهر المشكلات بوضوح أكبر عندما يكون للاسم المستعار الاسم نفسه لأحد الأعمدة. على سبيل المثال:
+
+```sql
+SELECT
+    sum(value) AS value,
+    avg(value)
+FROM test
+```
+
+أيّ `value` ينبغي أن تُجمِّعه `avg(value)`؟ افتراضيًا، يُفضّل ClickHouse الاسم المستعار، مما يحوّل هذا فعليًا إلى
+تجميع متداخل، وهو ما لا تتوقعه معظم الأدوات.
+
+نادرًا ما يمثّل هذا مشكلة في حد ذاته، لكن بعض أدوات ذكاء الأعمال تُنشئ استعلامات تتضمن استعلامات فرعية تعيد استخدام الأسماء المستعارة للأعمدة. على
+سبيل المثال، كثيرًا ما يُنشئ Power BI استعلامات مشابهة لما يلي:
+
+```sql
+SELECT
+    sum(C1) AS C1,
+    count(C1) AS C2
+FROM
+(
+    SELECT sum(value) AS C1
+    FROM test
+    GROUP BY group_index
+) AS TBL
+```
+
+قد تؤدي الإشارات إلى `C1` إلى ظهور الـ error التالي:
+
+```plaintext
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function sum(C1) AS C1 is found
+inside another aggregate function in query. (ILLEGAL_AGGREGATION)
+```
+
+لا تحلّ قواعد البيانات الأخرى عادةً الأسماء المستعارة على المستوى نفسه بهذه الطريقة، بل تتعامل مع `C1` على أنه عمود من
+الاستعلام الفرعي. وللحفاظ على سلوك مماثل في ClickHouse والسماح بتشغيل مثل هذه الاستعلامات دون أخطاء، يفعّل برنامج تشغيل ODBC
+الإعداد `prefer_column_name_to_alias`.
+
+في معظم الحالات، لا يُفترض أن يسبّب تمكين هذه الإعدادات أي مشكلة. غير أنّ المستخدمين الذين تكون قيمة إعداد readonly لديهم `1`
+لا يمكنهم تغيير أي إعدادات، حتى في استعلامات `SELECT`. ولذلك سيؤدي تمكين `SqlCompatibilitySettings` لدى هؤلاء المستخدمين
+إلى حدوث error. يوضّح القسم التالي كيفية جعل معلمة التكوين هذه تعمل مع المستخدمين للقراءة فقط.
+
+## تشغيل إعدادات التوافق مع SQL للمستخدمين ذوي صلاحية القراءة فقط {#readonly-users}
+
+عند الاتصال بـ ClickHouse عبر برنامج تشغيل ODBC مع تفعيل المَعلمة `SqlCompatibilitySettings`، سيواجه المستخدم الذي
+يكون إعداد readonly لديه مضبوطًا على `1` خطأً (error)، لأن المشغّل يحاول تعديل إعدادات الاستعلام:
+
+```plaintext
+Code: 164. DB::Exception: Cannot modify 'cast_keep_nullable' setting in readonly mode. (READONLY)
+Code: 164. DB::Exception: Cannot modify 'prefer_column_name_to_alias' setting in readonly mode. (READONLY)
+```
+
+يحدث ذلك لأن المستخدمين في وضع القراءة فقط لا يُسمح لهم بتغيير الإعدادات، حتى في استعلامات `SELECT` الفردية.
+هناك عدة طرق لحل هذه المشكلة.
+
+**الخيار 1. تعيين `readonly` إلى `2`**
+
+هذا هو الخيار الأبسط، إذ يتيح تعيين `readonly` إلى `2` تغيير الإعدادات مع إبقاء المستخدم في وضع القراءة
+فقط.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    readonly = 2
+```
+
+في معظم الحالات، يُعدّ ضبط `readonly` على القيمة 2 الطريقة الأسهل والموصى بها لحل هذه المشكلة. وإذا
+لم يناسبك ذلك، فاستخدم الخيار الثاني.
+
+**الخيار 2. تعديل إعدادات المستخدم لتطابق الإعدادات التي يضبطها برنامج تشغيل ODBC.**
+
+هذا الخيار بسيط أيضًا: حدِّث إعدادات المستخدم بحيث تكون مطابقة مسبقًا لما يحاول برنامج تشغيل ODBC ضبطه.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    cast_keep_nullable = 1,
+    prefer_column_name_to_alias = 1
+```
+
+بفضل هذا التغيير، يظل بإمكان برنامج تشغيل ODBC محاولة تطبيق الإعدادات، ولكن نظرًا لتطابق القيم مسبقًا، لا
+يحدث أي تغيير فعلي ويُتجنَّب الخطأ.
+
+هذا الخيار بسيط أيضًا، لكنه يتطلب صيانة: فقد تُغيّر الإصدارات الأحدث من المشغّل قائمة الإعدادات أو تضيف
+إعدادات جديدة لأغراض التوافق. وإذا ثبّتَّ قيم هذه الإعدادات يدويًا لمستخدم ODBC، فقد تحتاج إلى تحديثها كلما بدأ
+برنامج تشغيل ODBC بتطبيق إعدادات إضافية.

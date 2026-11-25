@@ -1,0 +1,47 @@
+---
+description: 'Documentation des modes de codage couleur per-column dans l’interface Web SQL intégrée (`/play`)'
+sidebarTitle: 'Codage couleur de l’interface utilisateur web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding
+title: 'Codage couleur de l’interface utilisateur web'
+doc_type: 'reference'
+sidebar: false
+---
+
+L’interface Web SQL intégrée (`play.html`, servie sur le path [`/play`](/fr/concepts/features/connect-to-clickhouse/protocols/http) de n’importe quel port HTTP de ClickHouse) peut colorer les cellules de l’ensemble de résultats pour faire ressortir d’un coup d’œil les tendances au sein d’une colonne. Chaque colonne dispose de son propre mode de codage couleur, activable indépendamment.
+
+## Changer de mode {#switching-the-mode}
+
+Une icône 🌈 apparaît à droite de chaque en-tête de colonne. Cliquez dessus pour faire passer la colonne d&#39;un mode disponible à l&#39;autre. Sur les appareils dotés d&#39;un pointeur capable de survol (une souris), l&#39;icône ne s&#39;affiche qu&#39;au survol de l&#39;en-tête, afin de ne pas encombrer l&#39;affichage le reste du temps ; sur les appareils tactiles et les autres appareils à pointeur imprécis, qui ne permettent pas le survol, l&#39;icône est toujours affichée pour pouvoir être touchée directement.
+
+L’ensemble des modes proposés par une colonne dépend de son type :
+
+* Les colonnes numériques et les colonnes `Date`/`DateTime`/`Date32`/`DateTime64` passent successivement par `bar` → `heatmap` → `categorical` → `none`.
+* Toutes les autres colonnes basculent entre `none` et `categorical`.
+
+Le mode par défaut est `bar` pour les colonnes numériques et `none` pour toutes les autres colonnes, y compris les colonnes de date et d&#39;heure.
+
+## Modes {#modes}
+
+* **`bar`** — dessine dans la cellule une barre horizontale proportionnelle à la valeur. Pour les colonnes numériques, la barre part d&#39;une valeur de référence nulle ; pour les colonnes `Date`/`DateTime`, elle couvre plutôt la plage `min`..`max` de la colonne, car une valeur de référence nulle n&#39;a pas de sens pour des timestamp.
+* **`heatmap`** — remplit tout l&#39;arrière-plan de la cellule avec une couleur qui encode la valeur, mise à l&#39;échelle entre le minimum et le maximum de la colonne.
+* **`categorical`** — remplit l&#39;arrière-plan de la cellule avec une couleur obtenue par hachage de sa valeur : des valeurs identiques reçoivent ainsi la même couleur, et des valeurs différentes des couleurs différentes. Ce mode fonctionne avec tous les types de colonne.
+* **`none`** — aucun codage couleur.
+
+Les colonnes `Date`, `DateTime`, `Date32` et `DateTime64` sont colorées en fonction de leur valeur temporelle, analysée en UTC afin que l&#39;échelle ne dépende pas du fuseau horaire du navigateur de l&#39;utilisateur.
+
+Les couleurs d&#39;arrière-plan des modes `heatmap` et `categorical` utilisent l&#39;espace colorimétrique `oklch` : seule la teinte varie, tandis que la clarté et le chroma restent fixes pour chaque thème, de sorte que le texte des cellules reste lisible avec les thèmes clair et sombre. L&#39;arrière-plan remplit toute la cellule, même lorsqu&#39;une ligne s&#39;étend sur plusieurs lignes de texte.
+
+## Mise en évidence catégorielle lors de la sélection {#categorical-emphasis}
+
+En mode `categorical`, sélectionner une cellule met en évidence les autres cellules ayant la même valeur : elles s&#39;affichent dans une police plus grasse et avec une couleur de texte à contraste maximal (blanc pur avec le thème sombre, noir pur avec le thème clair). La cellule sélectionnée, elle, n&#39;est pas mise en évidence. Vous repérez ainsi facilement les autres occurrences d&#39;une valeur donnée dans la colonne.
+
+## Persistance {#persistence}
+
+Les modes choisis sont mémorisés pour chaque colonne dans l’URL de la page et dans l’historique du navigateur : ils sont donc conservés lorsque vous rechargez la page, partagez le lien ou naviguez vers l’arrière et vers l’avant. Seuls les choix autres que ceux par défaut sont stockés, afin que l’URL et l’état de l’historique restent compacts.
+
+Comme les [colonnes épinglées](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns), les modes sont rattachés à l’ensemble de résultats qu’ils colorent : à l’onglet de requête et, dans un onglet de type [notebook](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), à chaque cellule. Les tables issues d’une même exécution `Run all` (multi-requêtes) les partagent, tandis que les autres cellules et les autres onglets conservent les leurs.
+
+## Limitations {#limitations}
+
+* L&#39;affichage vertical (transposé) d&#39;une seule ligne n&#39;applique aucun codage couleur.
+* Les différences de valeurs `DateTime64(9)` inférieures à une microseconde ne sont pas distinguées dans l&#39;échelle de couleurs, car elles n&#39;auraient pas de signification visuelle dans un dégradé.

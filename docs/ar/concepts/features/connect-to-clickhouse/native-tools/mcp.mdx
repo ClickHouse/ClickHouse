@@ -1,0 +1,50 @@
+---
+description: 'نظرة عامة على بروتوكول سياق النموذج وخادم ClickHouse MCP'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'AI', 'interfaces']
+sidebarTitle: 'بروتوكول سياق النموذج (MCP)'
+slug: /concepts/features/connect-to-clickhouse/native-tools/mcp
+title: 'بروتوكول سياق النموذج (MCP)'
+doc_type: 'reference'
+---
+
+يُعد [بروتوكول سياق النموذج](https://www.anthropic.com/news/model-context-protocol) (MCP) معيارًا مفتوحًا يُمكّن مساعدي الذكاء الاصطناعي من الاتصال بالأنظمة الخارجية.
+ويوفّر للنماذج واجهة موحّدة للوصول إلى مصادر البيانات وواجهات برمجة التطبيقات وقواعد البيانات والأدوات، دون الحاجة إلى تكامل مخصص لكل نموذج مع كل خدمة.
+
+يكفي أن يُنفِّذ تطبيق الذكاء الاصطناعي بروتوكول MCP مرة واحدة ليتمكّن من الاتصال بأي خادم متوافق.
+وبالمثل، يستطيع خادم MCP إتاحة إمكاناته لأي عميل متوافق.
+
+## المعمارية {#architecture}
+
+يعتمد MCP معمارية العميل والخادم:
+
+* تُنشئ عملاء MCP، مثل Claude Desktop أو Cursor أو VS Code، اتصالات مع خوادم MCP.
+* تُتيح خوادم MCP الأدوات والإمكانات عبر واجهة موحّدة.
+* تستخدم نماذج الذكاء الاصطناعي الأدوات المُتاحة للوصول إلى البيانات والوظائف الخارجية عند الحاجة.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![معمارية العميل والخادم في MCP](/images/use-cases/AI_ML/MCP/mcp_overview.webp)
+  </Frame>
+</div>
+
+يمكنك العثور على مجموعات يتولّى المجتمع صيانتها من [عملاء MCP](https://github.com/punkpeye/awesome-mcp-clients) و[خوادم MCP](https://github.com/punkpeye/awesome-mcp-servers) على GitHub.
+
+[يوفّر ClickHouse Loom ذاكرة مشتركة لوكلاء البرمجة](https://loom.clickhouse.com/docs/use-cases/agent-memory) من خلال خادم MCP مستضاف ذاتيًا.
+إذ يحتفظ بقرارات المشروع عبر الجلسات، ويربط الدروس المحفوظة بالشيفرة المفهرسة.
+
+## خادم ClickHouse MCP {#clickhouse-mcp-server}
+
+يتيح [خادم ClickHouse MCP](https://github.com/ClickHouse/mcp-clickhouse) لمساعد الذكاء الاصطناعي اكتشاف قواعد البيانات والجداول، وفحص المخططات، وتشغيل استعلامات SQL على عنقود ClickHouse.
+قد تختلف الأدوات التي يوفّرها الخادم باختلاف الإصدار، لذا ارجع إلى دليل التكامل المعني لمعرفة أسماء الأدوات المستخدمة في أمثلته.
+
+لا يسمح الخادم افتراضيًا إلا باستعلامات القراءة فقط.
+استخدم مستخدم ClickHouse مخصصًا لا يملك سوى الصلاحيات التي يحتاجها المساعد.
+
+لربط عميل MCP محلي، راجع [إعداد خادم ClickHouse MCP](/ar/guides/use-cases/ai-ml/MCP/claude-desktop).
+أما للحصول على خادم بعيد مُدار، فراجع [خادم MCP البعيد في ClickHouse Cloud](/ar/products/cloud/features/ai-ml/remote-mcp).
+
+<Tip>
+  **Agent Skills**
+
+  يوفّر [مستودع ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills) تعليمات مُجمّعة في حزم تُثري وكلاء البرمجة المدعومين بالذكاء الاصطناعي بخبرة خاصة بـ ClickHouse، بما في ذلك تصميم المخططات، وتحسين الاستعلامات، وأنماط استيعاب البيانات.
+</Tip>

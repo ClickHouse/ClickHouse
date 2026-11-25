@@ -77,6 +77,33 @@ ClickHouse では、テーブルは[データベース](/ja/reference/statements
 
 以下で説明する最適化はすべて、標準のClickHouse SQLを使って、[ClickHouse Cloud SQL Console](/ja/integrations/connectors/sql-clients/sql-console)または [clickhouse client](/ja/concepts/features/interfaces/client) から基になるテーブルに直接適用できます。
 
+## クエリ負荷の要因を特定する {#query-attribution}
+
+最適化を行う前に、どのダッシュボード、アラート、その他の機能が最も多くの処理を発生させているかを確認します。ClickStack は ClickHouse に送信するすべてのクエリにタグを付けるため、[`system.query_log`](/ja/reference/system-tables/query_log) または [`system.processes`](/ja/reference/system-tables/processes) 内のクエリから、その発行元をたどることができます。
+
+* `query_id` は `hdx-` と、そのクエリを発行した画面・機能の名前で始まります(例: `hdx-alert-<uuid>`、`hdx-mcp-<uuid>`)。これを使って `system.processes` 内の実行中のクエリを特定できます。なお、`system.processes` には `log_comment` カラムがないため、コメントは `Settings['log_comment']` に格納されています。
+* `log_comment` は小さな JSONオブジェクトです。`surface` はクエリの発行元を示し、`dashboard`、`search`、`chart-explorer`、`alert`、`mcp`、`api` などの値をとります。surface に応じて、`dashboard` と `tile`、保存済みの `search`、`alert`、`source` の各 ID、および `label`(MCP ツール名、API ルート、組み込みダッシュボードの名前など)も含まれます。例: `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`。
+
+このコメントに記録されるのは何が要求されたかであり、誰が要求したかではありません。ユーザーやチームの識別子は書き込まれません(クエリログにユーザーのメールアドレスを記録するには、接続の **Query Log Setting Prefix** を使用してください。詳細は [Connections](/ja/clickstack/managing/config#connection-settings) を参照してください)。バージョンチェックなど一部の内部クエリは、`hdx-` で始まるクエリ ID を持ちますが、`log_comment` は空です。PromQL クエリにも同様の発行元情報が付与されます。
+
+次のクエリは、読み取り負荷の発生元を surface およびダッシュボードごとに示します。
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+ClickHouse Cloud では、`system.query_log` と `system.processes` は各レプリカのローカルなテーブルです。サービス内のすべてのレプリカを対象にするには、代わりに `clusterAllReplicas(default, system.query_log)` または `clusterAllReplicas(default, system.processes)` から読み取ってください。オールインワンイメージのように `default` クラスターが存在しない単一サーバー環境では、これらのテーブルを直接クエリしてください。
+
 <div id="materialize-frequently-queried-attributes">
   ## 最適化 1. 頻繁にクエリされる属性をマテリアライズする {#materialize-frequently-queried-attributes}
 </div>

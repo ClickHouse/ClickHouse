@@ -889,12 +889,10 @@ Establece `--disable-version-update-checks=true` en entornos aislados de la red 
   ## Configuración de ClickHouse {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### Contraseña del usuario `default` {#default-user-password}
-</div>
+### Contraseña del usuario `default` {#default-user-password}
 
 `spec.settings.defaultUserPassword` establece la contraseña del usuario `default`
-integrado. Proporcione el valor de una clave de un Secret (recomendado) o de un ConfigMap que
+integrado. Proporcione el valor de una clave de un Secret que
 cree, en lugar de incluirlo directamente en el CR:
 
 ```yaml
@@ -902,13 +900,12 @@ spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-Proporcione exactamente uno de `secret` o `configMap`, y en ambos casos `name` (el objeto)
-y `key` (la entrada que contiene la contraseña).
+Indique tanto `name` (el Secret) como `key` (la entrada que contiene la contraseña).
 
 <div id="password-types">
   #### Tipos de contraseña {#password-types}
@@ -969,13 +966,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### Uso de un ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### Uso de un ConfigMap (obsoleto) {#using-configmap-for-user-passwords}
 
-Un ConfigMap funciona de la misma manera, pero su contenido no está protegido como un Secret.
-Úselo solo para valores no confidenciales o con hash previo, como un
-resumen `password_sha256_hex`:
+<Warning>
+  La fuente `configMap` está obsoleta y se elimina en `v1alpha2`. Los ConfigMaps
+  no están protegidos como los Secrets, y los hashes de contraseñas sin sal pueden descifrarse por fuerza bruta.
+  En su lugar, almacene la contraseña, ya sea en texto sin cifrar o con hash, en un Secret.
+</Warning>
+
+Un ConfigMap funciona de la misma manera que un Secret, pero su contenido no está protegido:
 
 ```yaml
 spec:
@@ -988,8 +987,8 @@ spec:
 ```
 
 <Note>
-  No coloque una contraseña en texto plano en un ConfigMap. Use un Secret para cualquier valor
-  (`passwordType: password`) en texto plano.
+  No coloque una contraseña en texto sin cifrar en un ConfigMap. Use un Secret para cualquier valor
+  (`passwordType: password`) en texto sin cifrar.
 </Note>
 
 ### Usuarios personalizados en la configuración {#custom-users-in-configuration}

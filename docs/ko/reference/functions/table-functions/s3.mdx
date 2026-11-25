@@ -388,13 +388,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## 요청자 부담 버킷 액세스 {#accessing-requester-pays-buckets}
 
-요청자 부담 버킷에 액세스하려면 모든 요청에 `x-amz-request-payer = requester` 헤더를 포함해야 합니다. 이는 s3 함수에 `headers('x-amz-request-payer' = 'requester')` 매개변수를 전달하여 설정할 수 있습니다. 예시:
+요청자 부담 버킷에 액세스하려면 모든 요청에 `x-amz-request-payer = requester` 헤더를 포함해야 합니다. 이는 [`s3_request_payer`](/ko/reference/settings/session-settings/s3#s3_request_payer) 설정을 `requester`로 지정하거나, 서버 구성의 엔드포인트 섹션에서 `request_payer` 키를 사용하여 설정할 수 있습니다. 예시:
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -403,6 +404,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+`s3` 함수에 `headers('x-amz-request-payer' = 'requester')` 매개변수를 전달해도 됩니다.
 
 ## 상대 URL 해석 {#resolving-relative-urls}
 

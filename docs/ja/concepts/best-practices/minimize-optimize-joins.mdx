@@ -44,10 +44,10 @@ JOIN のパフォーマンスを向上させるには、以下のベストプラ
 * **ディスクへのスピルが発生する JOIN は避けます。** JOIN の中間状態をディスクにスピルすればクエリをメモリ制限内に収められますが、通常はディスク I/O によってレイテンシが増加します。ハッシュ結合は設定されたスピル threshold に達すると grace hash に切り替えることができ、マージ結合は外部ソートを使用できます。スピルに頼る前に、入力の行数やカラム数を減らす、あるいはデータモデルを見直すといった対策を検討してください。詳細は [最適な JOIN アルゴリズムの選択](#choosing-the-optimal-join-algorithm) を参照してください。
 * **必要に応じてデフォルト値を不一致のマーカーとして利用します。** デフォルトの [`join_use_nulls = 0`](/ja/reference/settings/session-settings/join#join_use_nulls) では、外部 JOIN で一致しなかったカラムはそのデータ型のデフォルト値で埋められるため、`Nullable` でラップされずに済みます。一致しなかった行と、デフォルト値を含む一致した行をクエリで区別する必要がある場合にのみ、`join_use_nulls` を有効化してください。
 
-## 最適な JOIN アルゴリズムの選択 {#choosing-the-optimal-join-algorithm}
+## 最適な 結合アルゴリズムの選択 {#choosing-the-optimal-join-algorithm}
 
-ClickHouse は、速度とメモリのトレードオフが異なる複数の JOIN アルゴリズムをサポートしています。
-[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のデフォルト値は `direct,hash,ie_join` で、ClickHouse は JOIN の種類、strictness、条件、テーブルエンジンに対して適用可能な最初のアルゴリズムを選択します。この設定の変更を検討するのは、両方の入力を削減したうえで、代表的なデータでの計測により別のメモリ戦略または実行戦略が必要だと判明した場合に限ってください。アルゴリズムの実行の詳細とサポートされる JOIN の種類については、[JOIN アルゴリズム](/ja/concepts/features/operations/select/join-algorithms)を参照してください。
+ClickHouse は、速度とメモリのトレードオフが異なる複数の 結合アルゴリズムをサポートしています。
+[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のデフォルト値は `direct,hash,inequality` で、ClickHouse は JOIN の種類、strictness、条件、テーブルエンジンに対して適用可能な最初のアルゴリズムを選択します。この設定の変更を検討するのは、両方の入力を削減したうえで、代表的なデータでの計測により別のメモリ戦略または実行戦略が必要だと判明した場合に限ってください。アルゴリズムの実行の詳細とサポートされる JOIN の種類については、[結合アルゴリズム](/ja/concepts/features/operations/select/join-algorithms)を参照してください。
 
 最適化で最も重視する指標がパフォーマンスであり、結合をできるだけ高速に実行したい場合は、次の決定木を使って適切な結合アルゴリズムを選択できます。
 

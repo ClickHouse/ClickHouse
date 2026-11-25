@@ -16,23 +16,23 @@ JOIN 的内存使用由两组设置控制。对于大多数算法，硬限制会
 
 这两个限制同样适用于 [`Join` 表引擎](/zh/reference/engines/table-engines/special/join)。如果一个查询包含多个 JOIN，ClickHouse 会对每个 JOIN 分别检查这些限制。
 
-对于基于哈希的算法 (包括可溢写的算法) ，达到限制会直接终止查询，而不会触发 JOIN 溢写。因此，如果限制小于或等于溢写阈值，查询通常会在 JOIN 溢写之前就被终止。
+对于基于哈希的算法 (包括可落盘的算法) ，达到限制会直接终止查询，而不会触发 JOIN 落盘。因此，如果限制小于或等于落盘阈值，查询通常会在 JOIN 落盘之前就被终止。
 
 以下两个设置会改变这一行为：
 
-* [`enable_adaptive_memory_spill_scheduler`](/zh/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) 会在查询面临内存压力时将符合条件的处理器溢写。对于 JOIN，它仅适用于本身已支持溢写的 JOIN：溢写阈值 (参见[溢写阈值](#spill-thresholds)) 不为零的 `hash`、`parallel_hash` 或 `auto` JOIN，`grace_hash` JOIN，以及已配置临时存储时的块嵌套循环回退。这类 JOIN 可以在达到溢写阈值或硬限制之前就溢写。
-* [`legacy_join_size_limits_trigger_spilling`](/zh/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) 会恢复 26.10 之前版本的行为：在这些版本中，达到硬限制时，JOIN 中已在磁盘上运行的部分会进一步溢写，而不是终止查询。启用此设置后，`grace_hash` 仅根据硬限制溢写，并忽略溢写阈值。`hash` 和 `parallel_hash` 仍在达到溢写阈值时开始溢写，并在 in-memory 阶段继续将硬限制作为上限。
+* [`enable_adaptive_memory_spill_scheduler`](/zh/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) 会在查询面临内存压力时将符合条件的处理器落盘。对于 JOIN，它仅适用于本身已支持落盘的 JOIN：落盘阈值 (参见[落盘阈值](#spill-thresholds)) 不为零的 `hash`、`parallel_hash` 或 `auto` JOIN，`grace_hash` JOIN，以及已配置临时存储时的块嵌套循环回退。这类 JOIN 可以在达到落盘阈值或硬限制之前就落盘。
+* [`legacy_join_size_limits_trigger_spilling`](/zh/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) 会恢复 26.10 之前版本的行为：在这些版本中，达到硬限制时，JOIN 中已在磁盘上运行的部分会进一步落盘，而不是终止查询。启用此设置后，`grace_hash` 仅根据硬限制落盘，并忽略落盘阈值。`hash` 和 `parallel_hash` 仍在达到落盘阈值时开始落盘，并在 in-memory 阶段继续将硬限制作为上限。
 
 对于其他算法，这些限制的作用方式有所不同：
 
-* 对于 [`ie_join`](/zh/concepts/features/operations/select/join-algorithms#ie-join)，限制作用于两侧累积输入的总量。
-* 对于[块嵌套循环回退](/zh/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback)，限制作用于已物化的右侧数据，包括已溢写到磁盘的块。
+* 对于 [`inequality`](/zh/concepts/features/operations/select/join-algorithms#inequality)，限制作用于两侧累积输入的总量。
+* 对于[块嵌套循环回退](/zh/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback)，限制作用于已物化的右侧数据，包括已落盘到磁盘的块。
 * 对于 [`partial_merge`](/zh/concepts/features/operations/select/join-algorithms#partial-merge)，达到限制不会终止查询，而是改变执行策略：JOIN 会开始将已排序的右侧块写入磁盘。
 
 ## 落盘阈值 {#spill-thresholds}
 
 * [`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 为基于哈希的 JOIN 的右侧表设置一个以字节为单位的绝对落盘阈值。
-* [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) 以比率形式设置落盘阈值，该比率相对于在用户级和服务器级内存限制下剩余的内存。如果未配置内存限制，则该比率不起作用。
+* [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) 以比率形式设置落盘阈值，该比率相对于在查询的 `max_memory_usage` 以及用户级和服务器级内存限制下剩余的内存。如果未配置内存限制，则该比率不起作用。
 
 如果同时设置了这两项设置，则以计算得出的较小阈值为准。这些阈值适用于 `hash`、`parallel_hash`、`grace_hash`、`auto` 值，以及块嵌套循环回退。使用这些阈值前，需要先配置临时数据路径。
 
@@ -46,7 +46,7 @@ JOIN 的内存使用由两组设置控制。对于大多数算法，硬限制会
 * **`partial_merge`。** 右侧数据达到硬限制后，已排序的右侧块及其最小值-最大值索引会被写入临时文件。
 * **块嵌套循环回退。** 右侧块会先在内存中压缩，达到落盘阈值后再写入临时文件。
 
-[`direct`](/zh/concepts/features/operations/select/join-algorithms#direct) 和 [`ie_join`](/zh/concepts/features/operations/select/join-algorithms#ie-join) 算法不会落盘。
+[`direct`](/zh/concepts/features/operations/select/join-algorithms#direct) 和 [`inequality`](/zh/concepts/features/operations/select/join-algorithms#inequality) 算法不会落盘。
 
 临时文件会写入由服务器设置 [`tmp_path`](/zh/reference/settings/server-settings/settings/tmp#tmp_path)、[`tmp_policy`](/zh/reference/settings/server-settings/settings/tmp#tmp_policy) 或 [`temporary_data_in_cache`](/zh/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache) 所配置的存储中。读写临时文件会增加磁盘 I/O，因此发生溢写的 JOIN 比完全在内存中执行的相同 JOIN 更慢。
 

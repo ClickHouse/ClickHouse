@@ -18,11 +18,11 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "Lee los motores de tablas y las funciones de tabla de almacenamiento de objetos a través de la Distributed Cache cuando esta se utiliza para otras lecturas."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Solo tiene efecto en ClickHouse Cloud. Permite leer desde distributed cache mediante motores de tabla / funciones de tabla (s3, azure, etc.). La caché usa como clave el ETag del objeto, de modo que un objeto sobrescrito en su misma ubicación no se sirva desactualizado. Los objetos cuyo ETag esté ausente o no sea un identificador de contenido fuerte se leen directamente desde el almacenamiento de objetos.
+Solo tiene efecto en ClickHouse Cloud. Permite leer desde la Distributed Cache mediante motores de tablas / funciones de tabla (s3, azure, Iceberg, Delta Lake, etc.). `auto` (el valor predeterminado) indica que se lee a través de la Distributed Cache cuando esta se utiliza para otras lecturas, según lo determinen el ajuste del servidor `enable_read_through_distributed_cache` y el parámetro de configuración `force_read_through_distributed_cache`. La clave de la caché es el ETag del objeto, para que un objeto sobrescrito en su ubicación no se sirva desactualizado, o bien la identidad inmutable de un archivo de datos obtenida de los registros de la tabla (Iceberg, Delta Lake), para que no sea necesaria ninguna solicitud `HEAD`. Un objeto sin un ETag fuerte o sin dicha identidad se lee directamente desde el almacenamiento de objetos, al igual que las lecturas que el servidor de caché no puede repetir: tablas `url`, lecturas de `s3` con `NOSIGN` o con `headers`, archivos de datos con una ruta completa (un clon superficial de Delta Lake) y, salvo que el parámetro de configuración sea `1`, las lecturas de `azure`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

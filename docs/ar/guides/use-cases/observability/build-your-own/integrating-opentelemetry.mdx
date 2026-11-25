@@ -123,23 +123,21 @@ doc_type: 'guide'
 
 نوصي المستخدمين باعتماد التسجيل المنظَّم وتسجيل السجلات بصيغة JSON (أي ndjson) كلما أمكن. سيُبسّط ذلك معالجة السجلات المطلوبة لاحقًا، سواء قبل إرسالها إلى ClickHouse باستخدام [معالجات Collector](https://opentelemetry.io/docs/collector/configuration/#processors) أو عند وقت الإدراج باستخدام العروض المادية. وفي النهاية، توفّر السجلات المنظَّمة موارد المعالجة اللاحقة، مما يقلّل من مقدار CPU المطلوب في حل ClickHouse لديك.
 
-<div id="example">
-  ### مثال {#example}
-</div>
+### مثال {#example}
 
-لأغراض هذا المثال، نوفر مجموعة بيانات لسجلات منظَّمة (JSON) وأخرى غير منظَّمة، تحتوي كل منهما على نحو 10m صفوف، وهما متاحتان عبر الروابط التالية:
+لأغراض هذا المثال، نوفر مجموعة بيانات لسجلات مهيكلة (JSON) وأخرى غير مهيكلة، تحتوي كل منهما على نحو 10m صفوف، وهما متاحتان عبر الروابط التالية:
 
-* [غير منظَّمة](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz)
-* [منظَّمة](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)
+* [غير مهيكلة](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz)
+* [مهيكلة](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)
 
-نستخدم مجموعة البيانات المنظَّمة في المثال أدناه. تأكد من تنزيل هذا الملف وفك ضغطه حتى تتمكن من إعادة تنفيذ الأمثلة التالية.
+نستخدم مجموعة البيانات المهيكلة في المثال أدناه. تأكد من تنزيل هذا الملف وفك ضغطه حتى تتمكن من إعادة تنفيذ الأمثلة التالية.
 
-يمثل ما يلي إعدادًا بسيطًا لـ OTel Collector يقرأ هذه الملفات من القرص باستخدام filelog receiver، ويُخرج الرسائل الناتجة إلى stdout. نستخدم العامل [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) لأن سجلاتنا منظَّمة. عدّل المسار إلى ملف access-structured.log.
+يمثل ما يلي إعدادًا بسيطًا لجامع البيانات OTel يقرأ هذه الملفات من القرص باستخدام مستقبِل filelog، ويُخرج الرسائل الناتجة إلى stdout. نستخدم المشغّل [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) لأن سجلاتنا مهيكلة. عدّل المسار إلى ملف access-structured.log.
 
 <Info>
-  **فكّر في استخدام ClickHouse لإجراء التحليل**
+  **فكّر في استخدام ClickHouse لإجراء التحليل النحوي**
 
-  يستخرج المثال أدناه `timestamp` من السجل. ويتطلب ذلك استخدام العامل `json_parser`، الذي يحوّل سطر السجل بالكامل إلى JSON string، ثم يضع النتيجة في `LogAttributes`. قد يكون هذا مكلفًا من الناحية الحسابية، و[يمكن تنفيذه بكفاءة أعلى في ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [استخراج البنية باستخدام SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). ويمكن العثور على مثال غير منظَّم مكافئ يستخدم [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) لتحقيق ذلك [هنا](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==).
+  يستخرج المثال أدناه `timestamp` من السجل. ويتطلب ذلك استخدام المشغّل `json_parser`، الذي يحوّل سطر السجل بالكامل إلى JSON string، ثم يضع النتيجة في `LogAttributes`. قد يكون هذا مكلفًا من الناحية الحسابية، و[يمكن تنفيذه بكفاءة أعلى في ClickHouse](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local) - [استخراج البنية باستخدام SQL](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql). ويمكن العثور على مثال غير مهيكل مكافئ يستخدم [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) لتحقيق ذلك [هنا](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==).
 </Info>
 
 **[config-structured-logs.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*N*Nprocessors%3A*N__batch%3A*N____timeout%3A_5s*N____send*_batch*_size%3A_1*N*N*Nexporters%3A*N_logging%3A*N___loglevel%3A_debug*N*N*Nservice%3A*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Blogging%5D%7E)**
@@ -170,15 +168,15 @@ service:
       exporters: [logging]
 ```
 
-يمكنك اتباع [التعليمات الرسمية](https://opentelemetry.io/docs/collector/installation/) لتثبيت OTel collector محليًا. والأهم من ذلك، تأكّد من تعديل التعليمات لاستخدام [توزيعة contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (التي تتضمن `filelog` receiver)؛ فعلى سبيل المثال، بدلًا من `otelcol_0.102.1_darwin_arm64.tar.gz` سينزّل المستخدمون `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. ويمكن العثور على الإصدارات [هنا](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
+يمكنك اتباع [التعليمات الرسمية](https://opentelemetry.io/docs/collector/installation/) لتثبيت جامع البيانات OTel محليًا. والأهم من ذلك، تأكّد من تعديل التعليمات لاستخدام [توزيعة contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (التي تتضمن مستقبِل `filelog`)؛ فعلى سبيل المثال، بدلًا من `otelcol_0.102.1_darwin_arm64.tar.gz` سينزّل المستخدمون `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. ويمكن العثور على الإصدارات [هنا](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
 
-بعد التثبيت، يمكن تشغيل OTel Collector باستخدام الأوامر التالية:
+بعد التثبيت، يمكن تشغيل جامع البيانات OTel باستخدام الأوامر التالية:
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
-بافتراض استخدام السجلات المنظَّمة، ستظهر الرسائل بالشكل التالي في المخرجات:
+بافتراض استخدام السجلات المهيكلة، ستظهر الرسائل بالشكل التالي في المخرجات:
 
 ```response
 LogRecord #98

@@ -2,7 +2,7 @@
 title: 接続情報 CLI
 ---
 
-このページでは、既存の ClickHouse Cloud サービスの接続情報 (ホスト名、ポート番号、ユーザー名、パスワード) を、[ClickHouse CLI](/ja/concepts/features/interfaces/cli) (`clickhousectl`) を使ってコマンドラインから確認する方法を説明します。ログインを除き、コマンドは非対話型です。`clickhousectl` は、`--json` を指定すると JSON を出力し、コーディングエージェントから実行された場合は自動的に JSON を出力します。
+このページでは、既存の ClickHouse Cloud サービスの接続情報 (ホスト名、ポート番号、ユーザー名、パスワード) を、[ClickHouse CLI](/ja/concepts/features/interfaces/cli) (`clickhousectl`) を使ってコマンドラインから確認する方法を説明します。ログインと、`cloud clickhouse client` 実行時のブラウザでのサインインを除き、コマンドは非対話型です。`clickhousectl` は、`--json` を指定すると JSON を出力し、コーディングエージェントから実行された場合は自動的に JSON を出力します。
 
 ## 前提条件 {#prerequisites}
 
@@ -16,15 +16,15 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 `jq` も必要です。
 
-読み取り専用の手順 (`service list`、`service get`) であれば、ブラウザでのログインで十分です。ブラウザが開くため、人が操作してログインを完了する必要があります。
+読み取り専用の手順 (`clickhouse list`、`clickhouse get`、`clickhouse dotenv`、`clickhouse client`) であれば、ブラウザでのログインで十分です。ブラウザが開くため、人が操作してログインを完了する必要があります。
 
 ```bash
 clickhousectl cloud auth login
 ```
 
-ブラウザでのログインは読み取り専用です。以下の書き込みを伴う手順には [APIキー](/ja/products/cloud/features/admin-features/api/openapi) が必要です: `cloud service start` または `cloud service wake` (サービスが `stopped` または `idle` の場合のみ) 、および `reset-password`。キーでログインするには `clickhousectl cloud auth login --interactive` を実行します。このコマンドはキーとシークレットの入力を求めるため、シークレットがシェル履歴に残りません。あるいは、`--api-key` と `--api-secret` を指定するか、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定する方法もあります。コーディングエージェントやスクリプトから実行する場合は、環境変数を使用してください。
+ブラウザでのログインは読み取り専用です。以下の書き込みを伴う手順には [APIキー](/ja/products/cloud/features/admin-features/api/openapi) が必要です: `cloud clickhouse start` または `cloud clickhouse wake` (サービスが `stopped` または `idle` の場合のみ) 、および `reset-password`。キーでログインするには `clickhousectl cloud auth login --interactive` を実行します。このコマンドはキーとシークレットの入力を求めるため、シークレットがシェル履歴に残りません。あるいは、`--api-key` と `--api-secret` を指定するか、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定する方法もあります。コーディングエージェントやスクリプトから実行する場合は、環境変数を使用してください。
 
-ログイン時に認証情報が検証され、アイデンティティが表示されます。この情報は `clickhousectl cloud auth whoami` でいつでも確認できます。複数の組織に所属している場合は、このガイドの各 `cloud service` コマンドに `--org-id <org-id>` (または `--org-name <name>`) を追加してください。
+ログイン時に認証情報が検証され、アイデンティティが表示されます。この情報は `clickhousectl cloud auth whoami` でいつでも確認できます。複数の組織に所属している場合は、このガイドの各 `cloud clickhouse` コマンドに `--org-id <org-id>` (または `--org-name <name>`) を追加してください。
 
 また、接続情報の取得元となる既存の ClickHouse Cloud サービスも必要です。たとえば、[Cloud クイックスタート](/ja/get-started/setup/cloud) で作成したサービスを利用できます。
 
@@ -33,7 +33,7 @@ clickhousectl cloud auth login
 組織内のサービスを一覧表示し、接続したいサービスの ID を控えておきます:
 
 ```bash
-clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+clickhousectl cloud clickhouse list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
 ```
 
 ```text
@@ -43,26 +43,26 @@ clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @t
 サービス ID を控えておいてください。本ガイドの他のすべてのコマンドは、これを引数として受け取ります。名前から調べるには次のようにします:
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-first-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-first-service --json | jq -r .id)
 ```
 
 後続のステップで接続を確認するために、サービスが起動している必要があります。state が `stopped` の場合は起動し、`running` になるまでポーリングしてください:
 
 ```bash
-clickhousectl cloud service start "$CH_ID"
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+clickhousectl cloud clickhouse start "$CH_ID"
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-アイドルスケーリングにより `idle` になっている サービスは最初の接続時に自動的に復帰するため、ここでの操作は不要です。事前に復帰させておくには、`clickhousectl cloud service wake "$CH_ID"` を実行し、同様にポーリングしてください。
+アイドルスケーリングにより `idle` になっている サービスは最初の接続時に自動的に復帰するため、ここでの操作は不要です。事前に復帰させておくには、`clickhousectl cloud clickhouse wake "$CH_ID"` を実行し、同様にポーリングしてください。
 
 ## 接続情報を取得する {#get-your-connection-details}
 
-`clickhousectl cloud service get` は、公開されているプロトコルごとの endpoint を含む、サービスの完全な詳細を返します。レスポンスを保存し、必要な情報を抽出してください。
+`clickhousectl cloud clickhouse get` は、公開されているプロトコルごとの endpoint を含む、サービスの完全な詳細を返します。レスポンスを保存し、必要な情報を抽出してください。
 
 ```bash
-clickhousectl cloud service get "$CH_ID" --json > service.json
+clickhousectl cloud clickhouse get "$CH_ID" --json > service.json
 jq '.endpoints' service.json
 ```
 
@@ -100,7 +100,7 @@ CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' serv
 
 ## パスワードを取得する {#get-a-password}
 
-`default` ユーザーのパスワードは `clickhousectl cloud service create` の実行時に一度だけ返され、後から API や CLI の呼び出しで読み出すことはできません。作成時に保存してある場合は、以降の手順で使用する変数に代入し、リセットの手順は省略してください。
+`default` ユーザーのパスワードは `clickhousectl cloud clickhouse create` の実行時に一度だけ返され (または `create --dotenv` でファイルに書き込まれ) 、後から API や CLI の呼び出しで読み出すことはできません。作成時に保存してある場合は、以降の手順で使用する変数に代入し、リセットの手順は省略してください。
 
 ```bash
 CH_PASSWORD='<your saved password>'
@@ -109,7 +109,7 @@ CH_PASSWORD='<your saved password>'
 紛失した場合は、新しいものを生成します:
 
 ```bash
-CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+CH_PASSWORD=$(clickhousectl cloud clickhouse reset-password "$CH_ID" --json | jq -r .password)
 ```
 
 <Warning>
@@ -130,6 +130,12 @@ export CLICKHOUSE_PASSWORD=$CH_PASSWORD
   これらの環境変数は、現在の端末セッションの間のみ保持されます。パスワードをシェルのプロファイルファイル (`.bashrc`、`.zshrc`) に保存したり、バージョン管理にコミットしたりしないでください。
 </Warning>
 
+`.env` ファイルを読み込むアプリケーションでは、`clickhousectl cloud clickhouse dotenv` を実行すると、現在のディレクトリの `.env` に接続設定が書き込まれます (`--local` を指定した場合は `.env.local` に書き込まれます)。書き込まれる項目は `CLICKHOUSE_HOST`、`CLICKHOUSE_PORT` (ネイティブ TLS ポート)、`CLICKHOUSE_HTTP_PORT`、`CLICKHOUSE_USER` (`default`)、`CLICKHOUSE_SECURE=true` です。パスワードは書き込まれないため、`CLICKHOUSE_PASSWORD` は手動で追加してください。ファイルがすでに存在する場合はそのファイルが直接編集され、これらのキーのみが置換されるため、既存のパスワードはそのまま保持されます。
+
+```bash
+clickhousectl cloud clickhouse dotenv "$CH_ID"
+```
+
 ## 接続の確認 {#verify-connectivity}
 
 `curl` で HTTPS インターフェイス (ポート 8443) を確認します。
@@ -143,7 +149,20 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-[**clickhouse client**](/ja/concepts/features/interfaces/client) でネイティブプロトコル (ポート 9440) を確認します。ClickHouse CLI が `clickhouse` バイナリを管理してくれるため、未インストールの場合は `clickhousectl local use latest` を実行すれば ClickHouse の最新バージョンがインストールされ、`~/.local/bin/clickhouse` へのシンボリックリンクが作成されます。続いて、次を実行します:
+[**clickhouse client**](/ja/concepts/features/interfaces/client) でネイティブプロトコル (ポート 9440) を確認します。ClickHouse CLI が `clickhouse` バイナリを管理してくれるため、未インストールの場合は `clickhousectl local use latest` を実行すれば ClickHouse の最新バージョンがインストールされてデフォルトに設定され、`~/.local/bin/clickhouse` へのシンボリックリンクが作成されます。
+
+最も手軽な確認方法ではパスワードは不要です。`clickhousectl cloud clickhouse client` はホストとポートを自動的に取得し、ネイティブ TLS 経由で `clickhouse client` を起動します。その際、`default` ではなく Cloud ユーザーとしてブラウザ経由でサインインします。この方法には ClickHouse 25.12 以降が必要です。また、ブラウザでのサインインはユーザー自身が手動で完了させる必要があります:
+
+```bash
+clickhousectl cloud clickhouse client "$CH_ID" \
+  --query "SELECT concat('Connected to ClickHouse ', version())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558
+```
+
+ネイティブプロトコル経由で `default` ユーザーのパスワードを確認するには、アプリケーションと同じ方法で接続します:
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
@@ -162,7 +181,7 @@ Connected to ClickHouse 26.2.1.558 as default
 ただし、1つ例外があります。サービスが `stopped` の状態で、接続確認のために起動した場合、そのサービスは実行され続け、コンピュートの課金が発生します。まだ実行しておく必要がなければ、再度停止してください:
 
 ```bash
-clickhousectl cloud service stop "$CH_ID"
+clickhousectl cloud clickhouse stop "$CH_ID"
 ```
 
 ## 次のステップ {#next-steps}

@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+Introduit dans : v26.11.0
+
+Vérifie si une chaîne donnée correspond dans son intégralité au motif d’expression régulière fourni.
+
+Contrairement à [`match`](#match), qui recherche une correspondance n’importe où dans la chaîne, cette fonction
+renvoie `1` uniquement si le motif correspond à la chaîne entière, comme si le motif était ancré aux
+deux extrémités avec `^` et `$`. Cela correspond à `RE2::FullMatch` de la bibliothèque RE2, à
+`re.fullmatch` en Python et à `regexp_full_match` dans DuckDB.
+
+Cette fonction utilise la bibliothèque d’expressions régulières RE2. Veuillez consulter [re2](https://github.com/google/re2/wiki/Syntax) pour connaître la syntaxe prise en charge.
+
+La correspondance repose sur l’hypothèse UTF-8 : par exemple, `¥` utilise deux octets en interne, mais est traité comme un seul point de code lors de la correspondance.
+L’expression régulière ne doit pas contenir d’octets NULL.
+Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comportement est indéfini.
+
+Contrairement au comportement par défaut de re2, `.` correspond aux sauts de ligne. Pour désactiver cela, faites précéder le motif de `(?-s)`.
+
+**Syntaxe**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Alias** : `regexp_full_match`
+
+**Arguments**
+
+* `haystack` — Chaîne dans laquelle le motif est recherché. [`String`](/fr/reference/data-types/string)
+* `pattern` — Motif d’expression régulière. Peut être une constante ou provenir d’un colonne. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Renvoie `1` si le motif correspond à la chaîne entière, `0` sinon. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Correspondance avec la chaîne entière**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Motif avec une alternance de premier niveau**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 Introduit dans : v25.10.0
@@ -1534,7 +1596,7 @@ Si la chaîne d’entrée ou le motif ne sont pas en UTF-8 valide, le comporteme
 
 Contrairement au comportement par défaut de re2, `.` correspond aux sauts de ligne. Pour désactiver cela, faites précéder le motif de `(?-s)`.
 
-Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez vous-même le motif à l’aide de `^` et `$`.
+Le motif n’est pas ancré. Pour faire correspondre la chaîne entière, ancrez vous-même le motif à l’aide de `^` et `$`, ou utilisez la fonction [`fullMatch`](#fullMatch).
 
 Si vous souhaitez simplement rechercher des sous-chaînes, vous pouvez utiliser à la place les fonctions [`like`](#like) ou [`position`](#position), qui sont bien plus rapides que cette fonction.
 

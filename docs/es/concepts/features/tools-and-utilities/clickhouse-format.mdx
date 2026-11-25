@@ -14,6 +14,7 @@ Opciones:
 * `--hilite` o `--highlight` — Añade resaltado de sintaxis con secuencias de escape ANSI del terminal.
 * `--oneline` — Formatea en una sola línea.
 * `--max_line_length` — Formatea en una sola línea las consultas cuya longitud sea inferior a la especificada.
+* `--wrap_width` — Ajusta las consultas multilínea al ancho de visualización especificado. El ajuste de línea está deshabilitado de forma predeterminada (`0`). Las consultas formateadas en una sola línea mediante `--oneline` o `--max_line_length` no se ajustan.
 * `--comments` — Conserva los comentarios en la salida.
 * `--quiet` o `-q` — Solo comprueba la sintaxis; no produce salida si se ejecuta correctamente.
 * `--multiquery` o `-n` — Permite varias consultas en el mismo archivo.
@@ -22,9 +23,9 @@ Opciones:
 * `--backslash` — Añade una barra invertida al final de cada línea de la consulta formateada. Puede ser útil cuando copias una consulta desde la web o desde otro lugar en varias líneas y quieres ejecutarla en la línea de comandos.
 * `--semicolons_inline` — En el modo multiquery, escribe los puntos y coma en la última línea de la consulta en lugar de en una línea nueva.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+Si una llamada a función, un array o tupla, una cadena `AND`/`OR`, una definición de ventana o la lista de columnas de `INSERT` no cabe en el ancho disponible, sus elementos pasan a líneas nuevas con mayor sangría. Los argumentos de función y los elementos de un array que son valores simples (nombres de columnas y literales) se empaquetan de varios en varios por línea. Las consultas cuyas líneas formateadas ya caben en el ancho no se modifican. El ancho es un límite flexible: las cadenas, los identificadores y otros fragmentos indivisibles pueden superarlo. Se tiene en cuenta el ancho de los caracteres Unicode. Los comentarios conservados con `--comments` y los datos que siguen a `INSERT ... VALUES` no se ajustan.
+
+## Ejemplos {#examples}
 
 1. Formatear una consulta:
 
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. Ajuste de línea en expresiones largas:
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

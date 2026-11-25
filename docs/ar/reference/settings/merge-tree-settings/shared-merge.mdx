@@ -157,6 +157,17 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period لتجنب ظاهرة
 الحد الأقصى للمدة لإعادة التحقق من القائد المسؤول عن تحديث الأجزاء. متاح فقط في
 ClickHouse Cloud
 
+## shared_merge_tree_max_noop_updates_from_leader {#shared_merge_tree_max_noop_updates_from_leader}
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "إعداد جديد: بعد هذا العدد من تحديثات البيانات الوصفية المتتالية من نوع no-op، تقرأ العقدة التابعة البيانات الوصفية من Keeper بدلًا من قائد تحديث أجزاء البيانات"}]}]} />
+
+عدد تحديثات البيانات الوصفية المتتالية التي لم تُغيّر أجزاء البيانات الافتراضية ولا عمليات التعديل،
+وبعد بلوغه تقرأ العقدة التابعة البيانات الوصفية من Keeper بدلًا من
+قائد تحديث أجزاء البيانات إلى أن يطرأ تغيير جديد. القيمة 0 تُعطّل هذا التحويل. متاح فقط
+في ClickHouse Cloud
+
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -342,6 +353,14 @@ partitions for mutations>` أعلى من هذا الإعداد. هذا متاح 
 
 عدد مهام جلب البيانات الوصفية للأجزاء التي تُجدوَل في المرة الواحدة. متاح فقط في
 ClickHouse Cloud
+
+## shared_merge_tree_parts_update_leader_tables_budget_factor {#shared_merge_tree_parts_update_leader_tables_budget_factor}
+
+<SettingsInfoBlock type="Float" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2"},{"label": "إعداد جديد"}]}]} />
+
+تتوقف النسخة المتماثلة عن الحصول على أقفال جديدة لقيادة تحديث أجزاء البيانات بمجرد أن يبلغ عدد الأقفال التي تحتفظ بها `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ`. تؤدي القيمة 0 إلى تعطيل هذا الحد. متاح فقط في ClickHouse Cloud.
 
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 

@@ -8,9 +8,7 @@ doc_type: 'guide'
 
 ClickHouse prend en charge E2K (Elbrus-2000) à titre expérimental et ne peut être compilé qu’en mode natif, avec une configuration minimale reposant sur des bibliothèques e2k compilées sur mesure, telles que boost, jemalloc, libunwind et zstd.
 
-<div id="build-clickhouse">
-  ## Compiler ClickHouse
-</div>
+## Compiler ClickHouse {#build-clickhouse}
 
 La version de llvm requise pour compiler doit être supérieure ou égale à 20.1.8.
 
@@ -21,7 +19,7 @@ cmake -DCMAKE_CROSSCOMPILING=OFF -DCOMPILER_CACHE=disabled \
  -DCMAKE_C_COMPILER=/usr/lib/llvm-20/bin/clang -DCMAKE_CXX_COMPILER=/usr/lib/llvm-20/bin/clang++ \
  -DLLD_PATH=/usr/lib/llvm-20/bin/ld.lld \
  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
- -DGLIBC_COMPATIBILITY=OFF -DENABLE_LIBRARIES=OFF -DWERROR=OFF \
+ -DGLIBC_COMPATIBILITY=OFF -DGLIBC_COMPATIBILITY=OFF -DENABLE_LIBRARIES=OFF -DWERROR=OFF \
  -DENABLE_SSL=OFF -DENABLE_OPENSSL_DYNAMIC=ON \
  -DUSE_SIMDJSON=OFF -DENABLE_JEMALLOC=OFF -DENABLE_TESTS=OFF \
  -DBOOST_USE_UCONTEXT=ON -DENABLE_NURAFT=ON -DENABLE_RAPIDJSON=ON -DUSE_LIBFIU=ON ..

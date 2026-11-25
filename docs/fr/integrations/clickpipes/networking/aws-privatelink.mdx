@@ -136,7 +136,12 @@ Pour configurer PrivateLink avec une ressource VPC :
       et doit être supprimé manuellement s&#39;il n&#39;est plus nécessaire.
     </Note>
 
-    Vous pouvez ajouter la Resource-Configuration au Resource-Share via la [console AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) ou en exécutant la commande suivante avec l&#39;ID du compte ClickPipes `072088201116` (arn:aws:iam::072088201116) :
+    <Tip>
+      Un Resource-Share est lié à un Point de terminaison privé inversé dès que ClickPipes l&#39;accepte et ne peut dès lors plus être utilisé par un autre endpoint.
+      Nous vous recommandons de créer le Point de terminaison privé inversé immédiatement après la création du Resource-Share et de garder les informations de ce dernier confidentielles jusque-là.
+    </Tip>
+
+    Vous pouvez ajouter la Resource-Configuration au Resource-Share via la [console AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) ou en exécutant la commande suivante avec l&#39;ID du compte ClickPipes `072088201116` (arn:aws:iam::072088201116:root) :
 
     ```bash
     aws ram create-resource-share \
@@ -150,8 +155,8 @@ Pour configurer PrivateLink avec une ressource VPC :
     Vous pouvez maintenant [créer un ClickPipe avec un endpoint privé inverse](#creating-clickpipe) à l’aide d’une ressource VPC. Vous devrez :
 
     * Définir `VPC endpoint type` sur `VPC Resource`.
-    * Définir `Resource configuration ID` sur l’ID de la Resource-Configuration créée à l’étape 2.
-    * Définir `Resource share ARN` sur l’ARN du Resource-Share créé à l’étape 3.
+    * Définir `Resource configuration ID` sur l’ID de la Resource-Configuration créée à l’étape 2.
+    * Définir `Resource share ARN` sur l’ARN du Resource-Share créé à l’étape 3.
 
     Pour plus d’informations sur PrivateLink avec une ressource VPC, consultez la [documentation AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html).
   </Step>

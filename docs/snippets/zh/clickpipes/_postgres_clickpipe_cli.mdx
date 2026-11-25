@@ -2,7 +2,7 @@
 title: Postgres ClickPipe 命令行客户端
 ---
 
-本页介绍如何创建 Postgres 变更数据捕获 ClickPipe、持续监控其状态直至进入复制阶段，并验证 ClickHouse 中的数据，整个过程均通过 [clickhousectl](/zh/concepts/features/interfaces/cli) 在命令行中完成。除可选的 `--interactive` 登录外，这些命令均为非交互式。加上 `--json` 后，`clickhousectl` 会以 JSON 格式输出；检测到 coding agent 时，也会自动输出 JSON。如需获取纯文本值，可为 `cloud service query` 传入 `--format` 参数。
+本页介绍如何创建 Postgres 变更数据捕获 ClickPipe、持续监控其状态直至进入复制阶段，并验证 ClickHouse 中的数据，整个过程均通过 [clickhousectl](/zh/concepts/features/interfaces/cli) 在命令行中完成。除可选的 `--interactive` 登录外，这些命令均为非交互式。加上 `--json` 后，`clickhousectl` 会以 JSON 格式输出；检测到 coding agent 时，也会自动输出 JSON。如需获取纯文本值，可为 `cloud clickhouse query` 传入 `--format` 参数。
 
 ## 前置条件 {#cli-prerequisites}
 
@@ -24,12 +24,12 @@ clickhousectl cloud auth login --interactive
 
 或者，通过 `--api-key` 和 `--api-secret` 将 key 和 secret 传给 `clickhousectl cloud auth login`，也可以设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。登录时会验证凭证并输出身份信息；之后可使用 `clickhousectl cloud auth whoami` 再次检查。如果你属于多个组织，请在每条命令中添加 `--org-id <id>` (或 `--org-name <name>`)。
 
-源 Postgres 数据库必须先完成 CDC (变更数据捕获) 准备工作：启用逻辑复制、创建复制用户，并在防火墙中放行 ClickPipes IP 地址。请按照对应提供商的设置指南操作 —— 例如 [亚马逊 RDS](/zh/integrations/clickpipes/postgres/source/rds)、[Supabase](/zh/integrations/clickpipes/postgres/source/supabase)、[Neon](/zh/integrations/clickpipes/postgres/source/neon-postgres)，自托管及其他提供商则可参考[通用 Postgres 源指南](/zh/integrations/clickpipes/postgres/source/generic)。请连接到实际的 Postgres 主机：CDC (变更数据捕获) 不支持 PgBouncer、RDS Proxy、Supabase Pooler 等代理和连接池器。
+源 Postgres 数据库必须先完成 CDC (变更数据捕获) 准备工作：启用逻辑复制、创建复制用户，并在防火墙中放行 ClickPipes IP 地址。请按照对应提供商的设置指南操作 —— 例如 [亚马逊 RDS](/zh/integrations/clickpipes/postgres/source/rds)、[Supabase](/zh/integrations/clickpipes/postgres/source/supabase)、[Neon](/zh/integrations/clickpipes/postgres/source/neon-postgres)，自托管及其他提供商则可参考[通用 Postgres 数据源指南](/zh/integrations/clickpipes/postgres/source/generic)。请连接到实际的 Postgres 主机：CDC (变更数据捕获) 不支持 PgBouncer、RDS Proxy、Supabase Pooler 等代理和连接池器。
 
-你还需要一个正在运行的目标端 ClickHouse Cloud 服务。可通过 `clickhousectl cloud service list --json` 获取其 ID，或先按照 [Cloud 快速入门](/zh/get-started/setup/cloud)创建一个：
+你还需要一个正在运行的目标端 ClickHouse Cloud 服务。可通过 `clickhousectl cloud clickhouse list --json` 获取其 ID，或先按照 [Cloud 快速入门](/zh/get-started/setup/cloud)创建一个：
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-service --json | jq -r .id)
 ```
 
 将前置条件步骤中获取的源连接信息保存到变量中。本演练以复制单个表 `public.orders` 为例——请将该表名以及后文中对它的所有引用 (包括验证步骤中的列名) 替换为你自己的表：
@@ -106,9 +106,9 @@ PIPE_ID=$(jq -r .id pipe.json)
 * `--replication-mode` 可选 `cdc` (初始快照加持续复制，默认值) 、`snapshot` (一次性拷贝) 或 `cdc_only` (跳过初始快照)
 * 对于使用 IAM 数据库身份验证的亚马逊 RDS 和 Aurora 源，请传入 `--auth IAM_ROLE --iam-role <role-arn>`，以替代 `--username` 和 `--password`
 
-### 调整目标端表结构 {#shaping-the-destination-tables}
+### 调整目标表结构 {#shaping-the-destination-tables}
 
-`--table-mapping` 仅用于重命名。若要使用可调整目标端表结构的逐表选项，请改用 `--table-mapping-json` 以 JSON 对象形式传入映射，该参数会原样接受 API 的表映射对象。其中 `sourceSchemaName`、`sourceTable` 和 `targetTable` 为必填项；`excludedColumns`、`sortingKeys`、`useCustomSortingKey`、`partitionByExpr`、`partitionKey` 和 `tableEngine` 为可选项。这两个参数均可重复使用，也可在同一条命令中组合使用：
+`--table-mapping` 仅用于重命名。若要使用可调整目标表结构的逐表选项，请改用 `--table-mapping-json` 以 JSON 对象形式传入映射，该参数会原样接受 API 的表映射对象。其中 `sourceSchemaName`、`sourceTable` 和 `targetTable` 为必填项；`excludedColumns`、`sortingKeys`、`useCustomSortingKey`、`partitionByExpr`、`partitionKey` 和 `tableEngine` 为可选项。这两个参数均可重复使用，也可在同一条命令中组合使用：
 
 ```bash
 clickhousectl cloud clickpipe create postgres "$CH_ID" \
@@ -127,7 +127,7 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
 该映射会将 `ssn` 完全排除在目标端之外，并按 `(created_at, customer_id)` 而非源端主键对 `customers` 进行排序：
 
 ```bash
-clickhousectl cloud service query "$CH_ID" \
+clickhousectl cloud clickhouse query "$CH_ID" \
   --query "SHOW CREATE TABLE customers" --format TSVRaw
 ```
 
@@ -147,7 +147,7 @@ ORDER BY (created_at, customer_id)
 SETTINGS index_granularity = 8192
 ```
 
-注意事项：
+说明：
 
 * 当提供了 `sortingKeys` 时，`useCustomSortingKey` 会自动为你设置，因为不设置该项时 API 会忽略这些键。未知字段会在客户端被拒绝并以退出码 2 结束，而不是被静默丢弃，因此像 `excludeColumns` 这样的拼写错误会直接报错，而不会被忽略
 * `partitionKey` 用于对初始快照进行分区以实现并行处理，与目标表的 `PARTITION BY` (即 `partitionByExpr`) 无关
@@ -155,9 +155,11 @@ SETTINGS index_granularity = 8192
 
 ### CDC 设置 {#cdc-settings}
 
-复制相关的设置均为创建时标志：`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots` 以及 `--delete-on-merge`。管道创建后，只有 `syncIntervalSeconds` 和 `pullBatchSize` 可以修改；快照与初始加载相关的设置在创建时即已固定，因此请提前确定好这些值。
+复制相关的设置均为创建时标志：`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots`、`--delete-on-merge` 以及 `--use-json-native-format`。管道创建后，只有 `syncIntervalSeconds` 和 `pullBatchSize` 可以修改；快照与初始加载相关的设置在创建时即已固定，因此请提前确定好这些值。
 
-Postgres CDC 管道的设置保存在管道本身，因此可使用 `clickpipe get` 读取：
+`--use-json-native-format true` 会将 `json` 和 `jsonb` 列存储为 ClickHouse 原生 `JSON` 类型，而不是 `String`。此选项要求 ClickHouse 25.3 或更高版本，并且需要为你的组织启用该功能；否则 JSON 将存储为 `String`。
+
+Postgres 变更数据捕获管道的设置保存在管道本身，因此可使用 `clickpipe get` 读取：
 
 ```bash
 clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
@@ -242,12 +244,12 @@ e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19	orders-sync	Running
 
 ## 在 ClickHouse 中验证数据 {#verify-the-data-in-clickhouse}
 
-直接通过命令行客户端查询目标端 服务。首次调用时，clickhousectl 会将您的 API key 添加到该 服务 的查询 API 端点 (如有需要会先创建该端点) ，不会创建新的 key。如果不希望自动启用，而是希望直接报错，请传入 `--no-auto-enable`。
+直接通过命令行客户端查询目标服务。首次调用时，clickhousectl 会将您的 API key 添加到该 服务 的查询 API 端点 (如有需要会先创建该端点) ，不会创建新的 key。如果不希望自动启用，而是希望直接报错，请传入 `--no-auto-enable`。
 
 目标表使用 `ReplacingMergeTree` 引擎，因此源端的更新和删除会以新行版本的形式写入。使用 `FINAL` 读取当前状态，并通过 `WHERE _peerdb_is_deleted = 0` 排除已删除的行：
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json \
+clickhousectl cloud clickhouse query "$CH_ID" --json \
   --query "SELECT order_id, customer, amount FROM orders FINAL WHERE _peerdb_is_deleted = 0 ORDER BY order_id"
 ```
 
@@ -270,7 +272,7 @@ Binding the authenticated API key to the Query API endpoint for service 'my-serv
 PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
   -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM orders FINAL WHERE _peerdb_is_deleted = 0")" != "6" ]; do
   sleep 10
 done

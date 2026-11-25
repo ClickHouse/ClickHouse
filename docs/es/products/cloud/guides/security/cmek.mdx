@@ -46,7 +46,7 @@ TDE debe habilitarse al crear el servicio. Los servicios existentes no pueden ci
 </div>
 
 <Warning>
-  Eliminar una clave de KMS utilizada para cifrar un servicio de ClickHouse Cloud hará que el servicio de ClickHouse se detenga y que sus datos, junto con los backups existentes, no se puedan recuperar. Para evitar la pérdida accidental de datos al rotar claves, puede ser conveniente conservar las claves de KMS antiguas durante un tiempo antes de eliminarlas.
+  Eliminar de forma permanente una clave de KMS utilizada para cifrar un servicio de ClickHouse Cloud hace que los datos del servicio y sus copias de seguridad existentes sean irrecuperables. Al eliminar una clave, primero se detiene el servicio, y la mayoría de los proveedores de KMS permiten recuperar una clave eliminada durante un período de espera antes de destruirla (consulte [Verificación periódica de la clave de KMS](#kms-key-poller)). Para evitar la pérdida accidental de datos al rotar claves, conserve las claves de KMS antiguas durante un tiempo antes de eliminarlas.
 </Warning>
 
 Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la clave para habilitar CMEK. El servicio se reiniciará automáticamente después de actualizar la configuración de TDE. Durante este proceso, la clave de KMS anterior descifra la clave de cifrado de datos (DEK), y la nueva clave de KMS vuelve a cifrar la DEK. Esto garantiza que, tras reiniciarse, el servicio use la nueva clave de KMS para las operaciones de cifrado a partir de ese momento. Este proceso puede tardar varios minutos.
@@ -87,7 +87,7 @@ Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la
 
   9. Copie el ARN de la clave
 
-  10. Vuelva a ClickHouse Cloud y pegue el ARN de la clave en la sección Cifrado transparente de datos de Service Settings
+  10. Vuelva a ClickHouse Cloud y pegue el ARN de la clave en la sección Cifrado transparente de datos de Configuración del Servicio
 
   11. Guarde el cambio
 </Accordion>
@@ -104,7 +104,7 @@ Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la
      * Cloud KMS Viewer
   8. Guarde el permiso de la clave
   9. Copie la ruta del recurso de la clave
-  10. Vuelva a ClickHouse Cloud y pegue la ruta del recurso de la clave en la sección Cifrado transparente de datos de Service Settings
+  10. Vuelva a ClickHouse Cloud y pegue la ruta del recurso de la clave en la sección Cifrado transparente de datos de Configuración del Servicio
   11. Guarde el cambio
 </Accordion>
 
@@ -142,11 +142,19 @@ Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la
 
 Una vez configurado CMEK, rote la clave siguiendo los procedimientos anteriores para crear una nueva clave de KMS y conceder permisos. Vuelva a la configuración del servicio para pegar el nuevo ARN (AWS), la ruta del recurso de la clave (GCP) o el nombre de la clave (Azure), y guarde la configuración. El servicio se reiniciará para aplicar la nueva clave.
 
-<div id="kms-key-poller">
-  #### Verificación periódica de la clave de KMS {#kms-key-poller}
-</div>
+#### Verificación periódica de la clave de KMS {#kms-key-poller}
 
-Al usar CMEK, la validez de la clave de KMS proporcionada se comprueba cada 10 minutos. Si el acceso a la clave de KMS deja de ser válido, el servicio de ClickHouse se detendrá. Para reanudar el servicio, restaure el acceso a la clave de KMS siguiendo los pasos de esta guía y, a continuación, reinicie el servicio.
+Al usar CMEK, la validez de la clave de KMS proporcionada se comprueba cada 10 minutos. Si el acceso a la clave de KMS no es válido, el servicio de ClickHouse se detendrá. Para reanudar el servicio, restaure el acceso a la clave de KMS siguiendo los pasos de esta guía y, a continuación, reinicie el servicio.
+
+Un servicio detenido por la verificación periódica de la clave no se elimina y no hay límite de tiempo para recuperarlo. Si la clave se revocó o se deshabilitó, restaure el acceso a ella y reinicie el servicio: volverá a estar disponible con todos sus datos.
+
+Eliminar la clave es otra cuestión. Una vez que una clave se elimina de forma permanente, los datos del servicio y sus copias de seguridad ya no se pueden descifrar (consulte la advertencia en [Claves de cifrado gestionadas por el cliente](#customer-managed-encryption-keys-cmek)). Cada proveedor de KMS permite recuperar una clave eliminada durante un período de espera antes de destruirla:
+
+* AWS KMS: de 7 a 30 días (30 de forma predeterminada). [Cancele la eliminación de la clave](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys-cancelling-key-deletion.html) y, a continuación, habilítela.
+* GCP Cloud KMS: de 24 horas a 120 días (30 días de forma predeterminada). El período se establece al crear la clave y no se puede modificar después, por lo que una clave creada con un período corto puede destruirse apenas 24 horas después de programarse su destrucción. Compruebe la hora de destrucción programada de la versión de la clave en lugar de dar por hecho el valor predeterminado. [Restaure la versión de la clave](https://docs.cloud.google.com/kms/docs/destroy-restore) y, a continuación, habilítela.
+* Azure Key Vault: de 7 a 90 días, siempre que la eliminación temporal (soft-delete) esté habilitada en el almacén y la clave no se haya purgado. Sin protección contra purga, una clave eliminada puede purgarse de forma permanente antes de que venza este período. Habilite la protección contra purga para evitar una eliminación permanente anticipada. [Recupere la clave eliminada](https://learn.microsoft.com/en-us/azure/key-vault/general/key-vault-recovery).
+
+Cuando la clave vuelva a estar operativa, reinicie el servicio.
 
 <div id="backup-and-restore">
   ### Copia de seguridad y restauración {#backup-and-restore}

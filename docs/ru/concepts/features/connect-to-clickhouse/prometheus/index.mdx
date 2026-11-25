@@ -1,0 +1,309 @@
+---
+description: 'Поддержка HTTP API Prometheus в ClickHouse: удалённая запись, удалённое чтение и запросы PromQL к таблице TimeSeries.'
+sidebarTitle: 'API Prometheus и PromQL'
+slug: /concepts/features/connect-to-clickhouse/prometheus
+title: 'HTTP API Prometheus и PromQL'
+doc_type: 'reference'
+---
+
+import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+ClickHouse реализует HTTP API Prometheus поверх таблицы [`TimeSeries`](/ru/reference/engines/table-engines/integrations/time-series). Один обработчик обслуживает удалённую запись, удалённое чтение, мгновенные запросы PromQL и диапазонные запросы PromQL.
+
+Чтобы открыть собственные метрики ClickHouse для сбора сервером Prometheus, см. раздел [Конечная точка метрик Prometheus](/ru/concepts/features/connect-to-clickhouse/prometheus/metrics).
+
+## Предварительные требования {#prerequisites}
+
+Порядок настройки различается для ClickHouse Cloud и самоуправляемого ClickHouse. Следуйте инструкциям из раздела, соответствующего вашему варианту развертывания.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  Поддержка PromQL в ClickHouse Cloud доступна в рамках закрытой предварительной версии. В сервисах, участвующих в закрытой предварительной версии, настройка `enable_time_series_table` и конечные точки API Prometheus уже настроены. В остальных сервисах ClickHouse Cloud такой конфигурации нет, и включить эту возможность в них самостоятельно нельзя. Оператор `SET enable_time_series_table` и конфигурация `http_handlers`, описанные в следующих разделах, относятся к самоуправляемым развертываниям.
+</Note>
+
+Если ваш сервис участвует в закрытой предварительной версии, переходите к разделу [Создание таблицы TimeSeries](#create-a-timeseries-table). Сервис обслуживает пути конечных точек, перечисленные в [таблице конечных точек](#configure-prometheus-api).
+
+### Самоуправляемое развертывание: включение настройки TimeSeries {#enable-the-timeseries-setting}
+
+Включите настройку `enable_time_series_table` для пользователя, который создает таблицу и обращается к ней:
+
+```sql
+SET enable_time_series_table = 1;
+```
+
+Для запросов к HTTP API включите настройку `enable_time_series_table` в профиле пользователя, от имени которого выполняются запросы к API.
+
+### Самоуправляемый вариант: настройка конечных точек API Prometheus {#configure-prometheus-api}
+
+Настройте один обработчик с маршрутизацией по префиксу на основном HTTP-порту ClickHouse:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` сохраняет встроенные обработчики для конечных точек, таких как `/ping`, и для SQL-запросов. Указанный выше префикс открывает доступ к следующим конечным точкам через один обработчик:
+
+| Конечная точка                           | Назначение                      |
+| ---------------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`               | Удалённая запись Prometheus     |
+| `/prometheus/api/v1/read`                | Удалённое чтение Prometheus     |
+| `/prometheus/api/v1/query`               | Мгновенные запросы PromQL       |
+| `/prometheus/api/v1/query_range`         | Диапазонные запросы PromQL      |
+| `/prometheus/api/v1/format_query`        | Форматирование выражений PromQL |
+| `/prometheus/api/v1/series`              | Метаданные серий                |
+| `/prometheus/api/v1/labels`              | Имена меток                     |
+| `/prometheus/api/v1/label/<name>/values` | Значения меток                  |
+| `/prometheus/api/v1/metadata`            | Метаданные семейств метрик      |
+| `/prometheus/api/v1/federate`            | Федерация последних выборок    |
+
+В этом примере `database` и `table` в обработчике не указаны. В каждом запросе необходимо передавать параметр запроса `table` (за исключением `/format_query`: эта конечная точка лишь разбирает переданное выражение PromQL, и таблица ей не нужна). Кроме того, в запросе можно передать `database`, указать полное имя таблицы, например `prometheus.metrics`, или не указывать базу данных — тогда используется `default`. Благодаря этому один обработчик может обслуживать несколько таблиц `TimeSeries`.
+
+Чтобы использовать одну фиксированную таблицу для всех запросов, задайте её в обработчике:
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+Таблицу, настроенную в обработчике, нельзя переопределить параметрами запроса.
+
+Настройки маршрутизации и обработчика:
+
+| Имя          | По умолчанию | Описание                                                                                                                                                                                                                                             |
+| ------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | нет          | Фильтр правила, с которым совпадает любой путь запроса, начинающийся с настроенного префикса.                                                                                                                                                        |
+| `table`      | нет          | Имя таблицы `TimeSeries`. Если параметр не указан, запрос должен содержать параметр запроса `table`. Настроенное имя может включать имя базы данных.                                                                                                 |
+| `database`   | нет          | База данных, в которой находится таблица. Её можно передать в запросе как параметр запроса. Если параметр не указан, ClickHouse использует базу данных из полного значения `table`, а при её отсутствии переходит к резервному варианту — `default`. |
+
+### Создание таблицы TimeSeries {#create-a-timeseries-table}
+
+Создайте базу данных и таблицу `TimeSeries`:
+
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+## Приём метрик через удалённую запись {#remote-write}
+
+ClickHouse поддерживает [протокол Prometheus remote-write](https://prometheus.io/docs/specs/remote_write_spec/). Настройте Prometheus на запись данных в этот обработчик:
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Prometheus отправляет выборки в таблицу `prometheus.metrics`.
+
+Чтобы объединять данные из множества параллельных запросов remote-write в меньшее число частей, ClickHouse использует [асинхронные вставки](/ru/reference/settings/session-settings/async-insert#async_insert). По умолчанию они включены; включить или отключить их можно настройкой `async_insert` в URL (или в профиле пользователя).
+
+ClickHouse подтверждает асинхронный запрос remote-write только после того, как данные сброшены на диск во все внутренние таблицы таблицы `TimeSeries`, независимо от настройки [`wait_for_async_insert`](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert): протокол remote-write считает подтверждённую запись надёжно сохранённой. Если сброс на диск завершается ошибкой, запрос возвращает ошибку, и Prometheus повторяет его.
+
+Поскольку каждый запрос ожидает своего сброса на диск, асинхронные вставки ограничивают скорость записи одного отправителя. Prometheus отправляет по одному запросу за раз на каждый сегмент remote-write. Когда несколько сегментов отправляют данные одновременно, адаптивный тайм-аут сброса на диск увеличивается до [`async_insert_busy_timeout_max_ms`](/ru/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), если только ожидающие запросы раньше не достигнут [`async_insert_max_data_size`](/ru/reference/settings/session-settings/async-insert#async_insert_max_data_size). Запрос ожидает, пока его пакет не будет сброшен на диск, а это происходит не позднее чем через указанное время после начала формирования пакета. Поэтому при постоянной нагрузке каждый сегмент записывает примерно `samples per request / async_insert_busy_timeout_max_ms`, где по умолчанию Prometheus отправляет до 2,000 выборок на запрос. Чтобы повысить эту скорость:
+
+* Увеличьте `max_shards` (по умолчанию 50) или `max_samples_per_send` в `queue_config` секции [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write). При отставании Prometheus самостоятельно добавляет сегменты, вплоть до `max_shards`.
+* Уменьшите `async_insert_busy_timeout_max_ms` в URL или в профиле пользователя, например `&async_insert_busy_timeout_max_ms=50`. В этом случае сбросы на диск происходят чаще, и каждый сброс создаёт новые части во внутренних таблицах.
+* Отключите асинхронные вставки с помощью `async_insert=0`. В этом случае каждый запрос создаёт собственные части во внутренних таблицах.
+
+## Запросы на PromQL {#promql-query-support}
+
+Чтобы вычислить выражение PromQL в определённый момент времени, используйте конечную точку instant-query:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Чтобы вычислить выражение на временном диапазоне, используйте конечную точку range-запросов:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Эндпоинты запросов также принимают параметры в теле формы. Без `--get` curl отправляет параметры в формате `application/x-www-form-urlencoded` методом `POST`:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Чтобы разобрать и отформатировать выражение PromQL, не вычисляя его, используйте конечную точку format-query:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+Выражение возвращается в сериализованном виде из синтаксически разобранного запроса: пробельные символы нормализованы, комментарии удалены, избыточные скобки убраны, а длительности выведены в единицах, которые принимает синтаксический анализатор: `sum by (job) (http_requests_total{code="200"}) / 2`. Длительность сохраняет свои единицы и не преобразуется в число секунд, поэтому `rate(x[5m])` возвращается как `rate(x[5m])`. Если же длительность не равна целому числу какой-либо одной единицы, она записывается с использованием всех необходимых единиц, поэтому `rate(x[90s])` возвращается как `rate(x[1m30s])`. Эта конечная точка не вычисляет выражение, поэтому параметры `database` и `table` ей не нужны.
+
+Список функций и операторов агрегации, используемых HTTP API, диалектом `promql` и табличными функциями, см. в разделе [Поддерживаемые возможности PromQL](/ru/reference/functions/table-functions/prometheusQueryRange#supported-promql-features).
+
+### Grafana {#grafana}
+
+Настройте источник данных Prometheus, указав базовый URL без завершающего `/api/v1`:
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: POST
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+Grafana дописывает `/api/v1/query` или `/api/v1/query_range` в конец этого базового URL и добавляет `customQueryParameters` к каждому запросу.
+
+При `httpMethod: POST` Grafana передаёт параметры запроса в теле запроса. ClickHouse читает и тело запроса, и строку запроса URL, поэтому `customQueryParameters` по-прежнему применяются. Для длинных выражений PromQL используйте `POST`, поскольку длина URL ограничена.
+
+<Note>
+  Реализованы только эндпоинты запроса `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`, а также конечная точка [федерации](#federation) `/api/v1/federate`. `/api/v1/series` требует хотя бы один селектор серий `match[]`, поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому из селекторов. `/api/v1/labels` принимает те же параметры (`match[]` здесь необязателен) и возвращает отсортированные имена меток найденных серий (или всех серий, если селекторы не заданы). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки; в `<name>` можно использовать принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблонов и автодополнения в построителе запросов.
+</Note>
+
+### Точки входа SQL {#sql-entry-points}
+
+ClickHouse использует один и тот же преобразователь PromQL для HTTP API, диалекта `promql`, а также табличных функций [`prometheusQuery`](/ru/reference/functions/table-functions/prometheusQuery) и [`prometheusQueryRange`](/ru/reference/functions/table-functions/prometheusQueryRange).
+
+Выполнить запрос PromQL можно напрямую в `clickhouse-client`:
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+Чтобы встроить PromQL в SQL-запрос, используйте табличные функции:
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+## Запрос метаданных метрик {#metadata}
+
+Конечная точка `/prometheus/api/v1/metadata` возвращает метаданные метрик, сохранённые в целевой таблице `Metrics` таблицы `TimeSeries`: тип, справочный текст и единицу измерения для каждого семейства метрик. Она поддерживает следующие параметры Prometheus в строке запроса URL:
+
+| Параметр           | Описание                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `metric`           | Возвращает метаданные только для указанного семейства метрик.                                                                                          |
+| `limit`            | Ограничивает количество возвращаемых семейств метрик. Отрицательное значение снимает ограничение; при нуле не возвращается ни одного семейства метрик. |
+| `limit_per_metric` | Ограничивает количество объектов метаданных, возвращаемых для каждого семейства метрик. Ноль и отрицательные значения снимают ограничение.             |
+
+По умолчанию целевая таблица `Metrics` использует движок `ReplacingMergeTree` с упорядочиванием по имени семейства метрик: в ней сохраняется последняя записанная запись метаданных для каждого семейства. Несколько записей для одного семейства возвращаются, только пока они хранятся в целевой таблице, — до слияния её частей или если таблица создана с движком, который их сохраняет.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+## Федерация метрик {#federation}
+
+ClickHouse поддерживает конечную точку [федерации Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) по пути `/prometheus/api/v1/federate` (а также по любому пути, оканчивающемуся на `/federate`, который обслуживается обработчиком типа `query`). Для каждой серии, соответствующей селекторам `match[]`, она возвращает самую свежую выборку за последние 5 минут в текстовом формате Prometheus, благодаря чему сервер Prometheus может собирать с неё метрики:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
+```
+
+## Чтение метрик через удалённое чтение {#remote-read}
+
+ClickHouse поддерживает [протокол удалённого чтения Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) по адресу `/prometheus/api/v1/read`.
+
+Настройте сервер Prometheus на чтение из той же таблицы `TimeSeries`:
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+## Правила записи {#recording-rules}
+
+ClickHouse не вычисляет файлы правил Prometheus. Роль [правила записи](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) может выполнять [refreshable materialized view](/ru/reference/statements/create/view#refreshable-materialized-view): оно по расписанию вычисляет выражение PromQL и добавляет результат в конец таблицы `TimeSeries`. Следующее представление каждую минуту записывает `sum by (job) (rate(http_requests_total[5m]))` как `job:http_requests:rate5m`:
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+При каждом обновлении выражение вычисляется на начало текущей минуты, имя метрики задаётся с помощью `mapUpdate`, а в конец каждой серии результата добавляется по одной выборке. В тот же Map можно добавить дополнительные метки, например `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. Записанная серия запрашивается так же, как любая другая метрика:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Время и ошибка последнего вычисления отображаются в [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes).
+
+Представление отличается от правила записи Prometheus в следующем:
+
+* Время вычисления — это значение `now()` в момент выполнения обновления. Помимо обновлений по расписанию, представление обновляется сразу после создания (если только оно не создано с `EMPTY`), после перезапуска сервера, если его обновления не координируются (представление вне базы данных Replicated или Shared либо представление с `all_replicas = 1` не запоминает своё последнее обновление), а также когда `SYSTEM START VIEW` возобновляет его после пропущенного планового обновления. Округляйте `now()` вниз до интервала, как в примере, чтобы такие обновления не добавляли выборки между плановыми. Дополнительное обновление всё равно может записать вторую выборку с той же округлённой временной меткой. Для правила с периодом в пять минут используйте `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+* Пропущенные вычисления не наверстываются. После простоя сервера или остановки представления оно вычисляет только текущий интервал, а предшествующие интервалы остаются пустыми. То же самое происходит, если обновление длится дольше интервала.
+* Серия, выпавшая из результата, не получает маркер устаревания, поэтому запросы продолжают возвращать её последнее записанное значение в течение периода ретроспективы (по умолчанию 5 минут).
+* Файла правил нет: каждое правило — это отдельное представление. Правила не выводятся в `/api/v1/rules`.

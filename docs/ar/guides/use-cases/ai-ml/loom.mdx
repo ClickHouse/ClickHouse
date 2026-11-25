@@ -1,0 +1,162 @@
+---
+title: 'ذاكرة مشتركة للوكلاء باستخدام ClickHouse Loom'
+sidebarTitle: 'ذاكرة الوكلاء باستخدام Loom'
+slug: /use-cases/AI/loom
+description: 'شغّل ClickHouse Loom، وهو خادم MCP مفتوح المصدر يحفظ في ClickHouse ذاكرة مشتركة طويلة الأمد ومستندات وفهرسًا للشيفرة لوكلاء الذكاء الاصطناعي.'
+doc_type: 'guide'
+keywords: ['loom', 'agent memory', 'mcp', 'ai agents', 'rag', 'claude code', 'codex', 'cursor']
+---
+
+يشرح هذا الدليل كيفية تثبيت [ClickHouse Loom](https://loom.clickhouse.com/)، وهو خادم MCP مفتوح المصدر (Apache-2.0) وواجهة برمجة تطبيقات HTTP، يزوّد وكلاء الذكاء الاصطناعي بذاكرة مشتركة طويلة الأمد، وبحث في المستندات مع ذكر المصادر، وفهرس لشيفرة مستودعاتك. وبنهاية هذا الدليل، سيكون Loom قد أصبح يعمل مع ClickHouse، ويحتفظ بأول ذاكرة، ويخدم وكيل برمجة متصلًا به.
+
+## قبل أن تبدأ {#before-you-begin}
+
+* Docker مع Compose 2.20 أو أحدث، على Linux `amd64` أو `arm64` (يعمل Docker Desktop على Apple Silicon)، مع توفر المنفذ 7777.
+* نسخة ClickHouse مخصصة لـ Loom. يستطيع مكدس Loom تشغيل حاوية ClickHouse خاصة به. أما لاستخدام خدمة ClickHouse Cloud أو خادم مُدار ذاتيًا بدلًا من ذلك، فيلزم توفر ما يلي:
+
+  * الإصدار 26.4 أو أحدث (في Cloud، يُعتدّ بأقدم نسخة متماثلة في الخدمة)؛
+  * Keeper: يتوفر Keeper في Cloud، أما في الخادم المُدار ذاتيًا فيُضاف ملف `keeper.xml` الخاص بـ Loom إلى `config.d/`، أو قسم `<zookeeper>` يشير إلى Keeper الخاص بك؛
+  * مستخدم يملك جميع الأذونات على `loom.*` و`loom_telemetry.*` (`GRANT ALL`، أو `GRANT CURRENT GRANTS` في Cloud)، وإذن `SELECT` على جداول النظام التي يقرؤها Loom، وإذن `READ ON REMOTE`.
+
+  راجع [متطلبات ClickHouse](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#clickhouse-requirements).
+
+## آلية العمل {#how-it-works}
+
+1. يُنزّل المثبّت حزمة Compose الخاصة بالإصدار، ويتحقق من قيمة التحقق الخاصة بها، ثم يشغّل خادم Loom ومستخرج المستندات التابع له من صور الحاويات المنشورة.
+2. تبدأ حاوية ClickHouse المضمّنة وفيها قاعدة البيانات `loom`. أما إذا كنت تستخدم ClickHouse الخاص بك، فإن المثبّت يُنشئها بنفسه، أو يطبع أوامر SQL ليشغّلها المسؤول. ويُنشئ Loom جداوله عند تشغيله لأول مرة، حيث تُخزَّن عناصر Memory والمستندات وفهرس الشيفرة في جداول عادية.
+3. يقرأ الوكلاء البيانات ويكتبونها عبر MCP أو واجهة برمجة تطبيقات HTTP. وتعتمد مجموعة تطوير البرمجيات (SDK) الخاصة ببايثون وتلك الخاصة بـ TypeScript، وإضافتا Claude Code وCodex، على واجهة برمجة التطبيقات نفسها.
+
+## تثبيت Loom {#install-loom}
+
+<Steps>
+  <Step title="تشغيل المثبّت" id="run-the-installer">
+    شغّله من الدليل الرئيسي الخاص بك، أو من أي دليل آخر لا يملك أحد غيرك صلاحية الكتابة فيه، إذ يحفظ الملف `loom-install.sh` فيه قبل تشغيله.
+
+    <Tabs>
+      <Tab title="ClickHouse المضمّن" id="bundled-clickhouse">
+        يُشغّل المكدس حاوية ClickHouse خاصة به:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh && rm loom-install.sh
+        ```
+      </Tab>
+
+      <Tab title="ClickHouse Cloud" id="clickhouse-cloud">
+        أنشئ مستخدمًا لـ Loom على خدمتك (غير المستخدم `default`)، وأضف عنوان IP الخاص بمضيف Loom إلى قائمة الوصول لعناوين IP الخاصة بالخدمة. مرّر URL الخدمة إلى المثبّت، وسيطلب منك كلمة المرور ما لم تكن مضمّنة في URL أو في `LOOM_CH_PASSWORD`. بعد ذلك ينشئ قاعدة البيانات `loom` مع مستخدم قارئ بصلاحيات القراءة فقط. وإذا لم يكن لدى المستخدم الصلاحيات اللازمة، يطبع بدلًا من ذلك استعلامات SQL التي يتعين على المسؤول تشغيلها:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse https://loom@<service-host>:8443 \
+          && rm loom-install.sh
+        ```
+
+        لاستخدام Kubernetes مع ClickHouse Cloud وClickHouse Managed Postgres، اتبع دليل [ClickHouse Cloud وManaged Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/clickhouse-cloud.md).
+      </Tab>
+
+      <Tab title="ClickHouse مُدار ذاتيًا" id="self-managed-clickhouse">
+        مرّر URL الخاص بخادمك، وسيعمل المثبّت كما في علامة التبويب Cloud. يستخدم `http://` المنفذ 8123 افتراضيًا. أما الخادم الموجود على مضيف Docker نفسه فعنوانه `host.docker.internal`، لأن `localhost` داخل حاوية Loom يشير إلى الحاوية نفسها:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse http://loom@host.docker.internal:8123 && rm loom-install.sh
+        ```
+      </Tab>
+    </Tabs>
+
+    ينتظر المثبّت حتى يُبلغ `http://localhost:7777/v1/health` عن `status` بالقيمة `ok`. هذا التثبيت مخصّص لمستخدم واحد: لا يتطلب تسجيل دخول، ولا يمكن الوصول إليه إلا من localhost، ويستخدم مساحة الأسماء الافتراضية `dev/local`، لذا لا تحتاج استدعاءات MCP وSDK إلى رمز. أما النشر الخاص بالفرق فيُفعّل تسجيل الدخول ويمنح كل وكيل رمزًا مع أذونات على مساحات الأسماء؛ راجع [أوضاع الهوية](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#identity-modes).
+  </Step>
+
+  <Step title="حفظ ذاكرة واسترجاعها" id="save-and-recall">
+    ```bash
+    curl -sX POST http://localhost:7777/v1/memory.set -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart",
+           "memory_key":"deploy_window","value":"Tue and Thu only; never Friday."}'
+    curl -sX POST http://localhost:7777/v1/memory.get -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart","memory_key":"deploy_window"}'
+    ```
+
+    تتضمن استجابة `memory.get` القيمة `found: true` والحقل `value` كما كُتب تمامًا.
+  </Step>
+
+  <Step title="ربط وكيل برمجة" id="connect-a-coding-agent">
+    <Tabs>
+      <Tab title="Claude Code" id="claude-code">
+        ```bash
+        claude plugin marketplace add ClickHouse/loom
+        claude plugin install loom@loom
+        ```
+
+        عندما يطلب Claude Code إعدادات الإضافة، أبقِ URL الخادم الافتراضي واترك حقل الرمز فارغًا.
+      </Tab>
+
+      <Tab title="Codex" id="codex">
+        ```bash
+        codex plugin marketplace add ClickHouse/loom
+        codex plugin add loom@loom
+        ```
+
+        ثم شغّل `codex` مرة واحدة في الوضع التفاعلي ووافق على خطافات الإضافة؛ فإلى أن تفعل ذلك، ستعمل الأدوات لكن دون التقاط أي شيء.
+      </Tab>
+
+      <Tab title="Cursor" id="cursor">
+        ادمج هذا الإدخال في `~/.cursor/mcp.json`، ثم أعد تشغيل Cursor:
+
+        ```json
+        { "mcpServers": { "loom": { "url": "http://localhost:7777/mcp?toolset=coding" } } }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## التحقق {#verify}
+
+| الإجراء                                                                                                                                                                                                                                         | النتيجة المتوقعة                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `curl -s http://localhost:7777/v1/health`                                                                                                                                                                                                       | قيمة `status` هي `ok`                                     |
+| افتح `http://localhost:7777/`                                                                                                                                                                                                                   | لوحة معلومات Loom، وتظهر فيها الذاكرة المحفوظة            |
+| استدعاء `memory.get` الوارد أعلاه                                                                                                                                                                                                               | قيمة `found` هي `true`، مع القيمة التي حفظها `memory.set` |
+| على ClickHouse المضمّن: `docker compose --project-directory "$HOME/.loom" exec clickhouse clickhouse-client --user loom --password loomdev --query "SELECT memory_key, value FROM loom.memory FINAL WHERE org = 'dev' AND namespace = 'local'"` | الصف `deploy_window`                                      |
+
+## أفضل الممارسات {#best-practices}
+
+### خصّص لكل فريق مساحة أسماء خاصة به {#namespace-per-team}
+
+يُحدَّد نطاق عناصر Memory والمستندات والأذونات بحسب مساحة الأسماء. فالوكلاء الذين ينبغي أن يتشاركوا ما يتعلمونه يكتبون إلى مساحة الأسماء نفسها، بينما تقصر الرموز كل وكيل على مساحات الأسماء المسموح له بالقراءة منها والكتابة إليها. راجع [الرموز والأذونات](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/guides/tokens-and-grants.md).
+
+### تهيئة موفر نماذج اللغة الكبيرة للاستخراج والإجابات {#configure-an-llm}
+
+يُنشئ المكدس بإصداره المنشور التضمينات باستخدام نموذج CPU محلي، ويعتمد على نموذج لغة كبير بديل مؤقت؛ لذا لا تُعطي عمليات الاستخراج والملخصات و`memory.ask` نتائج مفيدة إلى أن يُعيَّن مزوّد للنماذج من **Settings → Models &amp; keys** في لوحة المعلومات. يكفي مفتاح OpenAI واحد لتغطية كلٍّ من النموذج والتضمينات، أما Anthropic فيتطلب مزوّد تضمينات منفصلًا. راجع [النماذج والمفاتيح](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/models-and-keys.md).
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+<Accordion title="يتوقف المثبِّت عند فحص ClickHouse">
+  يتطلب Loom الإصدار ClickHouse 26.4 أو أحدث، وKeeper، والأذونات المدرجة في [قبل أن تبدأ](#before-you-begin). إذا كان الخادم مُدارًا ذاتيًا ولا يتوفر فيه Keeper، فأضِف واحدًا، أو شغِّل المثبِّت مع الخيار `--bundled` لاستخدام ClickHouse المضمَّن في المكدس. ويطبع الأمر `docker compose --project-directory "$HOME/.loom" run --rm loom loom ch-setup --print-sql` عبارات SQL اللازمة ليُنفِّذها المسؤول، دون إنشاء أي اتصال.
+</Accordion>
+
+<Accordion title="لا تصل الحالة التشغيلية لـ Loom إلى healthy">
+  اطّلع على السجلات باستخدام `docker compose --project-directory "$HOME/.loom" logs --tail 100 loom clickhouse`. ويعرض دليل [استكشاف الأخطاء وإصلاحها](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md) لكل مشكلة أعراضَها، والفحصَ الذي يؤكدها، وطريقةَ إصلاحها.
+</Accordion>
+
+## الأسئلة الشائعة {#faq}
+
+<Accordion title="هل يشغّل Loom الوكلاء؟">
+  لا. يتولى Loom تخزين السياق الخاص بالوكلاء وترتيبه واسترجاعه، لكنه ليس إطار عمل للوكلاء.
+</Accordion>
+
+<Accordion title="هل يمكن الاحتفاظ بالذاكرة الحية في Postgres؟">
+  نعم. يمكن لأي نشر جديد أن يعتمد Postgres عند إقلاعه الأول مرجعًا معتمدًا للذاكرة الحية ورؤوس مستندات المعرفة، بينما تبقى المتجهات والبحث والسجل في ClickHouse. راجع [Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/postgres.md).
+</Accordion>
+
+## الخطوات التالية {#next-steps}
+
+* [وثائق Loom](https://loom.clickhouse.com/docs) للاطلاع على النشر والعملاء والعمليات.
+* [قيّم الذاكرة المشتركة لوكلاء البرمجة](https://loom.clickhouse.com/docs/use-cases/agent-memory) عبر الجلسات والأدوات.
+* [جرّب ذاكرة الوكيل المرتبطة بالشيفرة](https://loom.clickhouse.com/docs/use-cases/memory-linked-to-code#check-a-lesson-after-a-code-edit) وتعرّف على كيفية تنبيه Loom إلى الدرس المحفوظ عند تغيّر الشيفرة التي يشير إليها.
+* [اختبر ذاكرة الوكيل في مصنع برمجيات](https://loom.clickhouse.com/docs/use-cases/multi-agent#choosing-memory-for-a-software-factory) على مستودع واحد مع بيانات اعتماد منفصلة لكلٍّ من المنفّذ والمراجع.
+* [أنشئ مصنع معرفة لوكلاء الذكاء الاصطناعي](https://loom.clickhouse.com/docs/use-cases/knowledge-factory) عبر نشر دليل تشغيل، واسترجاع revision موثّقة المصدر، وتحديث درس محفوظ.
+* [دقّق ذاكرة الوكيل باستخدام SQL](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#query-agent-memory-with-sql) لفحص سجل القرارات وتتبّع الذاكرة المحفوظة حتى عملية تشغيل الوكيل التي أنشأتها، باستخدام قارئ يقتصر نطاقه على مساحة أسماء محددة.
+* [دليل البدء السريع لـ Loom](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
+* [ربط وكيل برمجة](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
+* [استخدام ClickHouse مع MCP](/ar/guides/use-cases/ai-ml/MCP/index)

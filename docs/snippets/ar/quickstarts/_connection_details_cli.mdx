@@ -2,7 +2,7 @@
 title: بيانات الاتصال عبر سطر الأوامر
 ---
 
-تتناول هذه الصفحة كيفية العثور على بيانات الاتصال الخاصة بخدمة ClickHouse Cloud موجودة — اسم المضيف وأرقام المنافذ واسم المستخدم وكلمة المرور — من سطر الأوامر باستخدام [واجهة سطر الأوامر لـ ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`). الأوامر غير تفاعلية باستثناء تسجيل الدخول، ويُخرج `clickhousectl` بيانات بصيغة JSON عند استخدام `--json`، وكذلك تلقائيًا عندما يشغّله وكيل برمجة.
+تتناول هذه الصفحة كيفية العثور على بيانات الاتصال الخاصة بخدمة ClickHouse Cloud موجودة — اسم المضيف وأرقام المنافذ واسم المستخدم وكلمة المرور — من سطر الأوامر باستخدام [واجهة سطر الأوامر لـ ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`). الأوامر غير تفاعلية باستثناء تسجيل الدخول، وتسجيل الدخول عبر المتصفح في الأمر `cloud clickhouse client`، ويُخرج `clickhousectl` بيانات بصيغة JSON عند استخدام `--json`، وكذلك تلقائيًا عندما يشغّله وكيل برمجة.
 
 ## المتطلبات المسبقة {#prerequisites}
 
@@ -16,15 +16,15 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 ستحتاج أيضًا إلى `jq`.
 
-أما الخطوات المخصصة للقراءة فقط (`service list` و`service get`)، فيكفي لها تسجيل الدخول عبر المتصفح. ولأن هذه العملية تفتح نافذة متصفح، فلا بد أن يُكملها شخص بنفسه:
+أما الخطوات المخصصة للقراءة فقط (`clickhouse list` و`clickhouse get` و`clickhouse dotenv` و`clickhouse client`)، فيكفي لها تسجيل الدخول عبر المتصفح. ولأن هذه العملية تفتح نافذة متصفح، فلا بد أن يُكملها شخص بنفسه:
 
 ```bash
 clickhousectl cloud auth login
 ```
 
-يتيح تسجيل الدخول عبر المتصفح صلاحية القراءة فقط. أما خطوات الكتابة أدناه فتتطلب [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi)، وهي: `cloud service start` أو `cloud service wake` (فقط إذا كانت خدمتك في الحالة `stopped` أو `idle`)، و`reset-password`. لتسجيل الدخول باستخدام مفتاح، شغّل `clickhousectl cloud auth login --interactive`، إذ يطلب منك إدخال المفتاح والـ secret ويحول دون ظهور الـ secret في سجل الـ shell. ويمكنك بدلاً من ذلك تمرير `--api-key` و`--api-secret`، أو ضبط متغيرات البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`؛ ويُفضَّل أن يستخدم وكيل البرمجة أو البرنامج النصي متغيرات البيئة.
+يتيح تسجيل الدخول عبر المتصفح صلاحية القراءة فقط. أما خطوات الكتابة أدناه فتتطلب [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi)، وهي: `cloud clickhouse start` أو `cloud clickhouse wake` (فقط إذا كانت خدمتك في الحالة `stopped` أو `idle`)، و`reset-password`. لتسجيل الدخول باستخدام مفتاح، شغّل `clickhousectl cloud auth login --interactive`، إذ يطلب منك إدخال المفتاح والـ secret ويحول دون ظهور الـ secret في سجل الـ shell. ويمكنك بدلاً من ذلك تمرير `--api-key` و`--api-secret`، أو ضبط متغيرات البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`؛ ويُفضَّل أن يستخدم وكيل البرمجة أو البرنامج النصي متغيرات البيئة.
 
-يتحقق أمر تسجيل الدخول من بيانات الاعتماد ثم يعرض الهوية، ويمكنك التحقق منها في أي وقت باستخدام `clickhousectl cloud auth whoami`. إذا كنت تنتمي إلى أكثر من مؤسسة، فأضف `--org-id <org-id>` (أو `--org-name <name>`) إلى كل أمر `cloud service` في هذا الدليل.
+يتحقق أمر تسجيل الدخول من بيانات الاعتماد ثم يعرض الهوية، ويمكنك التحقق منها في أي وقت باستخدام `clickhousectl cloud auth whoami`. إذا كنت تنتمي إلى أكثر من مؤسسة، فأضف `--org-id <org-id>` (أو `--org-name <name>`) إلى كل أمر `cloud clickhouse` في هذا الدليل.
 
 ينبغي أيضاً أن تكون لديك خدمة ClickHouse Cloud قائمة تسترد منها بيانات الاتصال، كالخدمة التي أنشأتها في [البدء السريع مع Cloud](/ar/get-started/setup/cloud) مثلاً.
 
@@ -33,7 +33,7 @@ clickhousectl cloud auth login
 اعرض قائمة الخدمات في مؤسستك ودوّن معرّف (ID) الخدمة التي تريد الاتصال بها:
 
 ```bash
-clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+clickhousectl cloud clickhouse list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
 ```
 
 ```text
@@ -43,26 +43,26 @@ clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @t
 احفظ معرّف الخدمة (Service ID)، فكل أمر آخر في هذا الدليل يستخدمه كوسيط. وللعثور عليه بالاسم:
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-first-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-first-service --json | jq -r .id)
 ```
 
 ستحتاج إلى أن تكون الخدمة قيد التشغيل للتحقق من الاتصال في خطوة لاحقة. إذا كانت حالتها `stopped`، فشغّلها واستعلم عن حالتها دوريًا حتى تصبح `running`:
 
 ```bash
-clickhousectl cloud service start "$CH_ID"
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+clickhousectl cloud clickhouse start "$CH_ID"
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-أما الخدمة التي تكون `idle` بسبب التوسيع عند الخمول فتستيقظ تلقائيًا عند أول اتصال، ولذا لا تحتاج إلى أي إجراء هنا. ولإيقاظها مسبقًا، شغّل الأمر `clickhousectl cloud service wake "$CH_ID"` واستعلم عن حالتها دوريًا بالطريقة نفسها.
+أما الخدمة التي تكون `idle` بسبب التوسيع عند الخمول فتستيقظ تلقائيًا عند أول اتصال، ولذا لا تحتاج إلى أي إجراء هنا. ولإيقاظها مسبقًا، شغّل الأمر `clickhousectl cloud clickhouse wake "$CH_ID"` واستعلم عن حالتها دوريًا بالطريقة نفسها.
 
-## احصل على تفاصيل الاتصال {#get-your-connection-details}
+## احصل على بيانات الاتصال {#get-your-connection-details}
 
-يُرجع الأمر `clickhousectl cloud service get` تفاصيل الخدمة كاملةً، بما في ذلك نقطة نهاية واحدة لكل بروتوكول متاح. احفظ الاستجابة واستخرج منها الأجزاء التي تحتاجها:
+يُرجع الأمر `clickhousectl cloud clickhouse get` تفاصيل الخدمة كاملةً، بما في ذلك نقطة نهاية واحدة لكل بروتوكول متاح. احفظ الاستجابة واستخرج منها الأجزاء التي تحتاجها:
 
 ```bash
-clickhousectl cloud service get "$CH_ID" --json > service.json
+clickhousectl cloud clickhouse get "$CH_ID" --json > service.json
 jq '.endpoints' service.json
 ```
 
@@ -83,10 +83,10 @@ jq '.endpoints' service.json
 
 هذان هما بروتوكولا الشبكة الرئيسيان في ClickHouse Cloud، ولكل منهما منفذه الخاص:
 
-* **البروتوكول native (`nativesecure`، المنفذ 9440)** - بروتوكول binary يستخدمه `clickhouse-client` و`clickhouse-local` ومعظم الـ drivers الخاصة باللغات. وهو الخيار الأسرع ويدعم جميع features الخاصة بـ ClickHouse، ويتطلب TLS على Cloud.
-* **بروتوكول HTTPS (`https`، المنفذ 8443)** - interface قائم على HTTP ومفيد لعملاء REST و`curl` والأدوات المستندة إلى الويب والـ drivers التي تفضّل HTTP، ويتطلب هو أيضاً TLS على Cloud.
+* **البروتوكول الأصلي (`nativesecure`، المنفذ 9440)** - بروتوكول binary يستخدمه `clickhouse-client` و`clickhouse-local` ومعظم الـ drivers الخاصة باللغات. وهو الخيار الأسرع ويدعم جميع features الخاصة بـ ClickHouse، ويتطلب TLS على Cloud.
+* **بروتوكول HTTPS (`https`، المنفذ 8443)** - واجهة قائمة على HTTP ومفيدة لعملاء REST و`curl` والأدوات المستندة إلى الويب والـ drivers التي تفضّل HTTP، ويتطلب هو أيضاً TLS على Cloud.
 
-يتطلب كلا البروتوكولين تشفير TLS عند الاتصال بـ ClickHouse Cloud - إذ لا يمكنك الاتصال عبر plaintext. وتتولى معظم الأدوات ذلك تلقائياً عند تحديد المنفذ الصحيح، لكن قد تحتاج إلى تمرير flag باسم `--secure` أو تعيين `ssl=true` بحسب الـ client. وفي معظم أدلة البدء السريع وسير عمل CLI في هذه الـ series، ستستخدم **البروتوكول native على المنفذ 9440**.
+يتطلب كلا البروتوكولين تشفير TLS عند الاتصال بـ ClickHouse Cloud - إذ لا يمكنك الاتصال عبر plaintext. وتتولى معظم الأدوات ذلك تلقائياً عند تحديد المنفذ الصحيح، لكن قد تحتاج إلى تمرير flag باسم `--secure` أو تعيين `ssl=true` بحسب الـ Client. وفي معظم أدلة البدء السريع وسير عمل واجهة سطر الأوامر في هذه الـ series، ستستخدم **البروتوكول الأصلي على المنفذ 9440**.
 
 استخرج اسم المضيف والمنافذ:
 
@@ -100,7 +100,7 @@ CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' serv
 
 ## الحصول على كلمة مرور {#get-a-password}
 
-تُعرض كلمة مرور المستخدم `default` مرة واحدة فقط عند تنفيذ `clickhousectl cloud service create`، ولا يمكن استرجاعها لاحقًا عبر أي استدعاء لواجهة برمجة التطبيقات أو CLI. إذا كنت قد حفظتها وقت الإنشاء، فعيّنها للمتغير الذي تستخدمه الخطوات التالية وتخطَّ إعادة التعيين:
+تُعرض كلمة مرور المستخدم `default` مرة واحدة فقط عند تنفيذ `clickhousectl cloud clickhouse create` (أو تُكتب في ملف باستخدام `create --dotenv`)، ولا يمكن استرجاعها لاحقًا عبر أي استدعاء لواجهة برمجة التطبيقات أو واجهة سطر الأوامر. إذا كنت قد حفظتها وقت الإنشاء، فعيّنها للمتغير الذي تستخدمه الخطوات التالية وتخطَّ إعادة التعيين:
 
 ```bash
 CH_PASSWORD='<your saved password>'
@@ -109,16 +109,16 @@ CH_PASSWORD='<your saved password>'
 في حال فُقدت، أنشئ كلمة مرور جديدة:
 
 ```bash
-CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+CH_PASSWORD=$(clickhousectl cloud clickhouse reset-password "$CH_ID" --json | jq -r .password)
 ```
 
 <Warning>
   يستبدل الأمر `reset-password` كلمة مرور المستخدم `default`. ويستغرق سريان التغيير بضع ثوانٍ، وإلى أن يسري تُرفض كلمة المرور الجديدة وتظل القديمة صالحة، لذا أعد محاولة الاتصال الأول لبرهة وجيزة. بعد ذلك، أي عميل لا يزال مهيّأً بكلمة المرور القديمة سيفشل في المصادقة. وإذا كانت الخدمة جزءًا من [مستودع](/ar/products/cloud/features/infrastructure/warehouses)، فإن مستخدمي قاعدة البيانات مشتركون بين جميع الخدمات في ذلك المستودع، ولذلك تؤدي إعادة التعيين إلى تغيير كلمة المرور لكل خدمة شقيقة أيضًا. وكما هو الحال مع كلمة المرور الأصلية، تُعرض كلمة المرور الجديدة مرة واحدة فقط، لذا احفظها في مكان آمن.
 </Warning>
 
-## احفظ تفاصيل الاتصال لإعادة استخدامها {#save-your-connection-details-for-reuse}
+## احفظ بيانات الاتصال لإعادة استخدامها {#save-your-connection-details-for-reuse}
 
-ستحتاج إلى تفاصيل الاتصال هذه بشكل متكرر في أدلة البدء السريع. ولتجنّب إعادة كتابتها في كل مرة، يمكنك تصديرها كمتغيرات بيئة في جلسة الطرفية لديك:
+ستحتاج إلى بيانات الاتصال هذه بشكل متكرر في أدلة البدء السريع. ولتجنّب إعادة كتابتها في كل مرة، يمكنك تصديرها كمتغيرات بيئة في جلسة الطرفية لديك:
 
 ```bash
 export CLICKHOUSE_HOST=$CH_HOST
@@ -129,6 +129,12 @@ export CLICKHOUSE_PASSWORD=$CH_PASSWORD
 <Warning>
   متغيرات البيئة هذه تبقى فعّالة فقط طوال جلسة الطرفية الحالية. لا تُخزّن كلمات المرور في ملفات profile الخاصة بـ shell (`.bashrc`، `.zshrc`) ولا تُودعها في نظام التحكم بالإصدارات.
 </Warning>
+
+إذا كان تطبيقك يقرأ ملف `.env`، فإن الأمر `clickhousectl cloud clickhouse dotenv` يكتب إعدادات الاتصال إلى الملف `.env` في الدليل الحالي (ومع الخيار `--local` يكتبها إلى `.env.local`): `CLICKHOUSE_HOST`، و`CLICKHOUSE_PORT` (منفذ TLS الأصلي)، و`CLICKHOUSE_HTTP_PORT`، و`CLICKHOUSE_USER` (`default`)، و`CLICKHOUSE_SECURE=true`. ولأنه لا يستطيع كتابة كلمة المرور، أضف `CLICKHOUSE_PASSWORD` بنفسك. وإذا كان الملف موجودًا مسبقًا، فسيُعدَّل في مكانه ولن تُستبدَل سوى هذه المفاتيح، وبذلك تُحفَظ كلمة المرور الموجودة فيه:
+
+```bash
+clickhousectl cloud clickhouse dotenv "$CH_ID"
+```
 
 ## التحقق من الاتصال {#verify-connectivity}
 
@@ -143,7 +149,20 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-تحقّق من البروتوكول native (المنفذ 9440) باستخدام [**clickhouse client**](/ar/concepts/features/interfaces/client). تتولى واجهة سطر الأوامر لـ ClickHouse إدارة الملف التنفيذي لـ `clickhouse` نيابةً عنك، لذا إن لم يكن لديك بالفعل، فإن `clickhousectl local use latest` يثبّت أحدث إصدار من ClickHouse وينشئ له ارتباطًا رمزيًا في `~/.local/bin/clickhouse`. ثم:
+تحقّق من البروتوكول الأصلي (المنفذ 9440) باستخدام [**clickhouse client**](/ar/concepts/features/interfaces/client). تتولى واجهة سطر الأوامر لـ ClickHouse إدارة الملف التنفيذي لـ `clickhouse` نيابةً عنك، لذا إن لم يكن لديك بالفعل، فإن `clickhousectl local use latest` يثبّت أحدث إصدار من ClickHouse، ويجعله الإصدار الافتراضي، وينشئ له ارتباطًا رمزيًا في `~/.local/bin/clickhouse`.
+
+لا يتطلب أسرع فحص أي كلمة مرور: يبحث الأمر `clickhousectl cloud clickhouse client` عن المضيف والمنفذ ويفتح `clickhouse client` عبر البروتوكول الأصلي مع TLS، مع تسجيل الدخول من خلال المتصفح بصفتك مستخدم Cloud بدلًا من المستخدم `default`. يتطلب ذلك ClickHouse 25.12 أو أحدث، ووجود شخص لإكمال تسجيل الدخول عبر المتصفح:
+
+```bash
+clickhousectl cloud clickhouse client "$CH_ID" \
+  --query "SELECT concat('Connected to ClickHouse ', version())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558
+```
+
+للتحقق من كلمة مرور المستخدم `default` عبر البروتوكول الأصلي، اتصل بالطريقة نفسها التي يتصل بها التطبيق:
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
@@ -157,12 +176,12 @@ Connected to ClickHouse 26.2.1.558 as default
 
 ## التنظيف {#cleanup}
 
-يكتفي هذا الدليل بقراءة البيانات الوصفية لخدمة وإعادة تعيين password (اختياريًا)، فهو لا ينشئ أي cloud resources جديدة، ومن ثم لا يوجد ما يحتاج إلى تنظيف.
+يكتفي هذا الدليل بقراءة البيانات الوصفية لخدمة وإعادة تعيين كلمة المرور (اختياريًا)، فهو لا ينشئ أي cloud resources جديدة، ومن ثم لا يوجد ما يحتاج إلى تنظيف.
 
 وهناك استثناء واحد: إذا كانت الخدمة الخاصة بك في حالة `stopped` وقمت بتشغيلها فقط للتحقق من الاتصال، فستظل قيد التشغيل وسيُحتسب billing على compute. أوقفها مرة أخرى إذا لم تكن بحاجة إلى تشغيلها بعد:
 
 ```bash
-clickhousectl cloud service stop "$CH_ID"
+clickhousectl cloud clickhouse stop "$CH_ID"
 ```
 
 ## الخطوات التالية {#next-steps}

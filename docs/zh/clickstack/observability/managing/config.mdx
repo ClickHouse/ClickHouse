@@ -82,6 +82,8 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 **导出到 Terraform** 目前标记为 **Experimental**。选择要包含的资源类型，然后通过 **Download import file** 将其添加到 Terraform 项目中。UI 会提供使用 ClickHouse 提供商生成资源配置的命令。由平台托管的连接将导出为仅供引用的 locals。
 
+基于已保存的搜索和仪表板面板创建的告警都会被导出。包含面板告警的文件需要 ClickHouse Terraform provider 3.28.0 或更高版本。Chart Explorer 告警不会被导出；如果某个面板在其所属仪表盘中没有唯一且非空的名称，该面板上的告警同样不会被导出。为面板告警生成的配置会将 `dashboard_id` 和 `tile_id` 设为字面量值：在应用配置之前，请将它们替换为对 `clickhouse_clickstack_dashboard` 资源的引用。
+
 ### 配置生成式 AI {#generative-ai}
 
 通过 **配置生成式 AI** 为该服务启用或禁用生成式 AI 功能，包括 Chart Explorer 中的 Chart AI 助手以及 [AI 笔记本](/zh/clickstack/observability/notebooks)。

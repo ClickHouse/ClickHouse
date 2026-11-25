@@ -96,6 +96,60 @@ ORDER BY name ASC
 * `SourceFromSingleChunk` 需要等待，因为 `ExpressionTransform` 在执行 `sleep(1)` 期间不接受任何数据，因此它会有 1e6 us 处于 `PortFull` 状态，所以 `output_wait_elapsed_us` &gt; 1e6。
 * `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` 需要等待，直到 `ExpressionTransform` 执行完 `sleep(1)` 并处理结果，因此 `input_wait_elapsed_us` &gt; 1e6。
 
+### 对连接进行性能分析 {#profiling-a-join}
+
+当一个查询从多个表读取数据时，每个表都有各自的读取管道，行在汇入结果之前会流经许多处理器。
+因此，将所有处理器的 `input_rows` 或 `output_rows` 相加，会重复计数相同的行，也无法反映每个表各读取了多少数据。
+以下示例在单服务器上使用两个大小不同的 `MergeTree` 表。
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` 会为连接的每一侧各显示一条读取管道 (`ReadFromMergeTree`，其下为 `MergeTreeSelect` 数据源) ，两条管道通过连接处理器相连。设置 `join_algorithm = 'hash'` 和 `enable_join_runtime_filters = 0` 是为了让此示例可以复现：在 `big` 的数据源输出行之前，JOIN 运行时过滤器无法对其进行剪枝。
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+结果解读方法如下：
+
+* 查看 source 处理器，即 `name` 为 `MergeTreeSelect(...)` (或 `MergeTreeSource`) 且 `plan_step_name` 为 `ReadFromMergeTree` 的处理器。它们的 `output_rows` 表示每个 source 产生的行数。应按读取步骤 (`plan_step`) 分别求和，而不是对整个查询求和。所得值即该读取步骤传递给管道后续部分的行数。
+* 连接的每一侧都有各自的 `ReadFromMergeTree` 步骤，其 `plan_step` 互不相同。在本次执行记录的行中，`parent_ids` 列出了下游处理器的 ID。从某个 source 出发，在同一 `query_id` 内递归地将每个 `parent_ids` 值与 `id` 相匹配，即可沿分支追溯至连接。例如，可借此确定为 `FillingRightJoinSide` 提供数据的分支。
+* 位于 source 上游之后的处理器 (例如 `ExpressionTransform`、`FillingRightJoinSide`、`ConcatProcessor` 或连接变换本身) 消费并产生由 source 派生的行。不要将它们的计数器与 source 的计数器相加，否则会重复计算相同的行。
+* 仅凭步骤信息未必能识别出某个 source。`EXPLAIN PIPELINE` 是一个独立的执行计划：它有助于比较处理器名称和分支结构，但其纯文本输出既不包含已记录到日志的 `id` 值，也不包含 `parent_ids`。如果两张表的步骤描述相似，请结合已执行查询的图和已知行数进行判断。在本示例中，`big` 的各读取 source 合计为 1,000,000 行，`small` 的各读取 source 合计为 1,000 行。
+* 处理器的行计数器和字节计数器反映的是流经管道的数据，而非物理存储读取。它们不包括已读取但随后被过滤掉的粒度或标记，会受到主键及其他索引过滤、`PREWHERE` 和列裁剪的影响，也不反映从磁盘读取的已压缩字节。`system.query_log` 中的 `SelectedRows`、`SelectedBytes` 和 `SelectedMarks` 属于逻辑层面的选取统计：即使所有数据均来自缓存，它们也可能不为零。如需排查文件读取，请使用 `ReadBufferFromFileDescriptorReadBytes`，它包含由 OS 页面缓存提供的读取。如需排查不经过 OS 页面缓存的本地磁盘或块设备读取，请使用 `OSReadBytes`。
+
 ## 另请参阅 {#see-also}
 
 * [`EXPLAIN PIPELINE`](/zh/reference/statements/explain#explain-pipeline)

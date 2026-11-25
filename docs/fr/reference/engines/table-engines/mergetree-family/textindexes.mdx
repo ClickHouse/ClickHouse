@@ -632,15 +632,15 @@ Les positions stockées peuvent être consultées dans la colonne `positions` de
   Les valeurs par défaut des paramètres avancés suivants conviennent dans la quasi-totalité des cas.
   Nous ne recommandons pas de les modifier.
 
-  Le paramètre facultatif `dictionary_block_size` (par défaut : 512) spécifie la taille des blocs du dictionnaire en lignes.
+  Le paramètre facultatif `dictionary_block_size` (par défaut : 8192) spécifie la taille des blocs de dictionnaire en lignes.
 
-  Le paramètre facultatif `dictionary_block_frontcoding_compression` (par défaut : 1) indique si les blocs du dictionnaire utilisent le front coding comme méthode de compression.
+  Le paramètre facultatif `dictionary_block_frontcoding_compression` (par défaut : 1) indique si les blocs de dictionnaire utilisent le front coding comme méthode de compression.
 
-  Le paramètre facultatif `posting_list_block_size` (par défaut : 1048576) spécifie la taille des blocs de posting lists en lignes.
+  Le paramètre facultatif `posting_list_block_size` (par défaut : 1048576) spécifie la taille des blocs de listes de postings en lignes.
 
-  Le paramètre facultatif `posting_list_codec` (par défaut : `pfor`) spécifie le codec de la posting list :
+  Le paramètre facultatif `posting_list_codec` (par défaut : `pfor`) spécifie le codec de la liste de postings :
 
-  * `none` - les posting lists sont stockées sans compression supplémentaire.
+  * `none` - les listes de postings sont stockées sans compression supplémentaire.
   * `bitpacking` - applique le [codage différentiel (delta)](https://en.wikipedia.org/wiki/Delta_encoding), suivi du [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (chacun dans des blocs de taille fixe). Cela ralentit les requêtes SELECT et n&#39;est pas recommandé pour le moment.
   * `pfor` - applique le codage différentiel (delta), suivi du bit-packing PFor (chacun dans des blocs de taille fixe). Semblable à `bitpacking`, mais la largeur en bits de chaque bloc est choisie de façon à minimiser la taille totale, et les valeurs qui n&#39;y tiennent pas sont stockées séparément comme exceptions corrigées (patched exceptions) : ainsi, un seul grand écart n&#39;élargit plus l&#39;ensemble du bloc. Les blocs dont tous les deltas sont égaux se réduisent à une constante.
 
@@ -648,7 +648,7 @@ Les positions stockées peuvent être consultées dans la colonne `positions` de
   Ils s&#39;appliquent à chaque index de texte de la table qui ne spécifie pas explicitement le paramètre.
 
   Le principal cas d&#39;usage des paramètres au niveau de la table est de modifier les paramètres d&#39;index d&#39;une table existante sans supprimer puis recréer l&#39;index de texte sur toutes les parts de la table.
-  La modification d&#39;un paramètre au niveau de la table applique les nouveaux paramètres uniquement aux index de texte construits pour les nouvelles parts ; les parts existantes conservent leur layout actuel.
+  La modification d&#39;un paramètre au niveau de la table applique les nouveaux paramètres uniquement aux index textuels construits pour les nouvelles parts ; les parts existantes conservent leur layout actuel.
 
   Un argument donné dans la définition de l&#39;index prévaut sur le paramètre de table, par exemple :
 
@@ -666,8 +666,8 @@ Les positions stockées peuvent être consultées dans la colonne `positions` de
 </details>
 
 *Granularité de l&#39;index.*
-Les index de texte sont implémentés dans ClickHouse comme un type de [skip indexes](/fr/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types).
-Cependant, contrairement aux autres skip indexes, les index de texte utilisent une granularité infinie (100 millions).
+Les index textuels sont implémentés dans ClickHouse comme un type d’[index de saut](/fr/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types).
+Cependant, contrairement aux autres index de saut, les index textuels utilisent une granularité infinie (100 millions).
 Cela est visible dans la définition de table d&#39;un index de texte.
 
 Exemple :
@@ -918,7 +918,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `arrayJoin` {#functions-example-arrayjoin}
 
-Une condition portant sur un élément du tableau indexé utilise l’index de la même manière que `has` et `hasAny` : `arrayJoin(tags) = 'clickhouse'` l’utilise comme `has(tags, 'clickhouse')`, et `arrayJoin(tags) IN (set)` l’utilise comme `hasAny(tags, set)`. Il en va de même pour `GLOBAL IN`, pour `IN` avec `transform_null_in = 1` lorsque le set ne contient aucun `NULL`, ainsi que pour la clause `ARRAY JOIN`. L’index permet uniquement d’ignorer des granules : ClickHouse vérifie toujours la condition sur chaque élément. `LEFT ARRAY JOIN` n’utilise pas l’index.
+Une condition portant sur un élément du tableau indexé utilise l’index de la même manière que `has` et `hasAny` : `arrayJoin(tags) = 'clickhouse'` l’utilise comme `has(tags, 'clickhouse')`, et `arrayJoin(tags) IN (set)` l’utilise comme `hasAny(tags, set)`. Il en va de même pour `GLOBAL IN`, pour `IN` avec `transform_null_in = 1` lorsque le set ne contient aucun `NULL`, ainsi que pour la clause `ARRAY JOIN`. L’index permet uniquement d’ignorer des granules : ClickHouse vérifie toujours la condition sur chaque élément. `LEFT ARRAY JOIN` utilise également l’index, sauf si la condition accepte l’élément qu’il ajoute pour un tableau vide (une chaîne vide).
 
 Exemple :
 
@@ -1684,13 +1684,13 @@ Chaque index de texte se compose de deux structures de données (abstraites) :
 * un ensemble de listes de postings, chacune représentant un ensemble de numéros de ligne.
 
 L’index de texte est construit pour l’ensemble de la part.
-Contrairement aux autres skip indexes, l’index de texte peut être fusionné au lieu d’être reconstruit lors de la fusion des data parts (voir ci-dessous).
+Contrairement aux autres skip indexes, l’index de texte peut être fusionné au lieu d’être reconstruit lors de la fusion des parts (voir ci-dessous).
 
 Lors de la création de l’index, trois fichiers sont créés (par part) :
 
 **Fichier des blocs de dictionnaire (.dct)**
 
-Les tokens de l’index de texte sont triés et stockés dans des blocs de dictionnaire de 512 tokens chacun (la taille du bloc est configurable via le paramètre `dictionary_block_size`).
+Les tokens de l’index de texte sont triés et stockés dans des blocs de dictionnaire de 8192 tokens chacun (la taille du bloc est configurable via le paramètre `dictionary_block_size`).
 Un fichier de blocs de dictionnaire (.dct) contient tous les blocs de dictionnaire de toutes les index granules d’une part.
 
 **Fichier d’en-tête d’index (.idx)**
@@ -1712,9 +1712,9 @@ Il stocke les positions des tokens dans les lignes correspondantes.
 
 **Fusion des index de texte**
 
-Lorsque des data parts sont fusionnées, l’index de texte n’a pas besoin d’être reconstruit à partir de zéro ; il peut au contraire être fusionné efficacement dans une étape distincte du processus de fusion.
+Lorsque des parts sont fusionnées, l’index de texte n’a pas besoin d’être reconstruit à partir de zéro ; il peut au contraire être fusionné efficacement dans une étape distincte du processus de fusion.
 Au cours de cette étape, les dictionnaires triés des index de texte de chaque part d’entrée sont lus et combinés en un nouveau dictionnaire unifié.
-Les numéros de ligne dans les listes de postings sont également recalculés afin de refléter leurs nouvelles positions dans la data part fusionnée, à l’aide d’une correspondance entre anciens et nouveaux numéros de ligne créée pendant la phase initiale de fusion.
+Les numéros de ligne dans les listes de postings sont également recalculés afin de refléter leurs nouvelles positions dans la part fusionnée, à l’aide d’une correspondance entre anciens et nouveaux numéros de ligne créée pendant la phase initiale de fusion.
 Cette méthode de fusion des index de texte est similaire à la manière dont les [projections](/fr/reference/statements/alter/projection#projection-indexes) avec la colonne `_part_offset` sont fusionnées.
 Si l’index n’est pas matérialisé dans la part source, il est construit, écrit dans un fichier temporaire, puis fusionné avec les index des autres parts et ceux des autres fichiers d’index temporaires.
 

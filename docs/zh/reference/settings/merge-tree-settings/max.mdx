@@ -52,6 +52,8 @@ server 上的单个表中存储数百 TB 的数据。这
 
 对于由定长值组成的列，块大小会向下取整为单个值字节大小的整数倍，但至少为一个值的大小。
 
+一个压缩块最多容纳 256 MiB 的未压缩数据，因此超过 256 MiB 的值均按 256 MiB 处理。
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

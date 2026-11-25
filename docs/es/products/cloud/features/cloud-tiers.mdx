@@ -204,9 +204,11 @@ En esta página se explica qué niveles son los adecuados para su caso de uso es
   </tbody>
 </table>
 
-<div id="basic">
-  ## Basic
-</div>
+<Note>
+  La [capacidad de cómputo Gen 2](/es/products/cloud/features/compute-generations) está disponible en vista previa privada únicamente para las organizaciones elegibles del Nivel Scale y Enterprise en determinadas regiones de AWS. Sus capacidades de escalado y de entrada en estado de inactividad difieren de las del nivel estándar que se describen en esta tabla.
+</Note>
+
+## Basic {#basic}
 
 * Opción económica que admite implementaciones con una sola réplica.
 * Ideal para casos de uso departamentales con volúmenes de datos más reducidos que no requieren garantías estrictas de fiabilidad.
@@ -216,9 +218,7 @@ En esta página se explica qué niveles son los adecuados para su caso de uso es
   Puede pasar al nivel Scale o Enterprise para escalar sus servicios.
 </Note>
 
-<div id="scale">
-  ## Scale
-</div>
+## Scale {#scale}
 
 Diseñado para cargas de trabajo que requieren SLA más exigentes (implementaciones con 2 o más réplicas), escalabilidad y seguridad avanzada.
 
@@ -228,9 +228,7 @@ Diseñado para cargas de trabajo que requieren SLA más exigentes (implementacio
   * Opciones de [escalado flexible](/es/products/cloud/features/autoscaling/overview) (escalado vertical y horizontal).
   * [Copias de seguridad configurables](/es/products/cloud/guides/backups/configurable-backups)
 
-<div id="enterprise">
-  ## Enterprise
-</div>
+## Enterprise {#enterprise}
 
 Pensado para implementaciones de misión crítica a gran escala con requisitos estrictos de seguridad y cumplimiento.
 
@@ -247,9 +245,7 @@ Pensado para implementaciones de misión crítica a gran escala con requisitos e
   Los niveles Scale y Enterprise admiten [servicios grandes de una sola réplica](/es/products/cloud/features/large-single-replica-services). Los servicios Scale y los servicios Enterprise con perfiles estándar `1:4` admiten escalado vertical automático de autoservicio, mientras que los servicios Enterprise con perfiles personalizados requieren redimensionamiento vertical con asistencia de soporte. Los servicios de una sola réplica del nivel Basic mantienen un tamaño fijo (`8 GiB` o `12 GiB`).
 </Note>
 
-<div id="upgrading-to-a-different-tier">
-  ## Cambiar a otro nivel
-</div>
+## Cambiar a otro nivel {#upgrading-to-a-different-tier}
 
 Siempre puedes pasar de Basic a Scale o de Scale a Enterprise. Para bajar de nivel, tendrás que desactivar las funciones prémium.
 

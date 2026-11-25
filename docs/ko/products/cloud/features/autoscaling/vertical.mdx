@@ -1,15 +1,19 @@
 ---
-sidebarTitle: '수직 자동 스케일링'
+sidebarTitle: '수직 자동 확장'
 slug: /cloud/features/autoscaling/vertical
-description: 'ClickHouse Cloud에서 수직 자동 스케일링을 구성합니다'
+description: 'ClickHouse Cloud에서 수직 자동 확장을 구성합니다'
 keywords: ['자동 스케일링', '자동 스케일링', '수직', '스케일링', 'CPU', '메모리']
-title: '수직 자동 스케일링'
+title: '수직 자동 확장'
 doc_type: 'guide'
 ---
 
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="자동 수직 스케일링" />
+
+<Note>
+  [Gen 2 컴퓨트](/ko/products/cloud/features/compute-generations)는 비공개 프리뷰 기간에는 수직 자동 확장을 지원하지 않습니다. 지원되는 스케일링 옵션은 Gen 2 문서를 참조하십시오.
+</Note>
 
 표준 `1:4` 프로필을 사용하는 Scale tier 서비스 및 Enterprise 티어 서비스는 CPU 및 메모리 사용량을 기준으로 자동 스케일링을 지원합니다. 서비스 사용량은 스케일링 결정을 내리기 위해 lookback 윈도우 동안 지속적으로 모니터링됩니다. 사용량이 특정 임계값을 초과하거나 그보다 낮아지면, 수요에 맞춰 서비스가 적절하게 스케일링됩니다.
 

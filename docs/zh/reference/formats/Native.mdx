@@ -347,20 +347,20 @@ const data = new Uint8Array([
 
 #### Array {#array}
 
-与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#array) 为每个数组都添加 LEB128 元素计数前缀不同，Native format 会将数组编码为两个列式子流：
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#array) 为每个数组都添加 LEB128 元素计数前缀不同，Native 格式会将数组编码为两个列式子流：
 
-* N 个累计的 `UInt64` 偏移量 (小端序，每个 8 字节) 。第 `i` 行有 `offset[i] - offset[i-1]` 个元素，其中 `offset[-1]` 默认视为 0。
+* N 个累计的 `UInt64` 偏移量 (小端序，每个 8 字节) 。第 `i` 行有 `offset[i] - offset[static_cast<ssize_t>(i) - 1]` 个元素，其中 `offset[-1]` 默认视为 0。
 * 所有行中的全部嵌套元素会被连续地批量序列化。
 
 例如，`Array(UInt32)` 有 3 行 `[[0, 10], [1, 11], [2, 12]]`：
 
 ```text
-// 偏移量
-02 00 00 00 00 00 00 00    // 2（第 0 行：2 个元素）
-04 00 00 00 00 00 00 00    // 4（第 1 行：2 个元素）
-06 00 00 00 00 00 00 00    // 6（第 2 行：2 个元素）
+// Offsets
+02 00 00 00 00 00 00 00    // 2 (row 0: 2 elements)
+04 00 00 00 00 00 00 00    // 4 (row 1: 2 elements)
+06 00 00 00 00 00 00 00    // 6 (row 2: 2 elements)
 
-// 嵌套的 UInt32 值（共 6 个）
+// Nested UInt32 values (6 total)
 00 00 00 00                 // 0
 0a 00 00 00                 // 10
 01 00 00 00                 // 1
@@ -372,7 +372,7 @@ const data = new Uint8Array([
 空数组与前一行的偏移量相同。例如，包含 4 行 `[[], ['0'], ['0','1'], ['0','1','2']]` 的 `Array(String)`：
 
 ```text
-00 00 00 00 00 00 00 00    // 0（空）
+00 00 00 00 00 00 00 00    // 0 (empty)
 01 00 00 00 00 00 00 00    // 1
 03 00 00 00 00 00 00 00    // 3
 06 00 00 00 00 00 00 00    // 6

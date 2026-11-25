@@ -2,7 +2,7 @@
 title: 'JOIN 算法'
 sidebarTitle: '算法'
 description: 'ClickHouse JOIN 算法的工作原理、各算法支持的 JOIN 类型，以及如何选择合适的算法。'
-keywords: ['JOIN 算法', 'join_algorithm', '哈希连接', '并行哈希连接', 'Grace 哈希连接', '全排序合并连接', '部分合并连接', '直接 JOIN', 'IEJoin']
+keywords: ['JOIN 算法', 'join_algorithm', '哈希连接', '并行哈希连接', 'Grace 哈希连接', '全排序合并连接', '部分合并连接', '直接 JOIN', '不等式连接', 'IEJoin']
 doc_type: 'guide'
 ---
 
@@ -120,22 +120,24 @@ doc_type: 'guide'
   </Frame>
 </div>
 
-`partial_merge` 算法是排序合并 JOIN 的一种变体，仅对右侧进行完全排序。ClickHouse 将右侧拆分为若干块，每块最多包含 [`partial_merge_join_rows_in_right_blocks`](/zh/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) 行，按 JOIN 键对每个块排序，并为每个块创建最小值-最大值索引。随后，ClickHouse 在内存中对左侧的每个块进行排序，再将其与右侧块合并。借助最小值-最大值索引，可以跳过不可能包含匹配项的右侧块。
+`partial_merge` 算法是排序合并 JOIN 的一种变体，仅对右侧进行完全排序。ClickHouse 将右侧拆分为若干块，每块最多包含 [`partial_merge_join_rows_in_right_blocks`](/zh/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) 行，按连接键对每个块排序，并为每个块创建最小值-最大值索引。随后，ClickHouse 在内存中对左侧的每个块进行排序，再将其与右侧块合并。借助最小值-最大值索引，可以跳过不可能包含匹配项的右侧块。
 
-**适用场景。** 该算法以牺牲执行速度为代价，力求在连接大表时将内存占用降至最低。当左侧的物理行顺序与 JOIN 键顺序一致时效率最高，因为此时最小值-最大值索引能够跳过大部分右侧块；当每个左侧块所含键值的范围较广时，效率最低。当 `join_algorithm` 设为 `auto` 时，可能会在运行时切换到 `partial_merge`。该算法支持 `ALL` 严格性的 `INNER`、`LEFT`、`RIGHT` 和 `FULL` JOIN，`ANY` 严格性的 `INNER` 和 `LEFT` JOIN，以及 `SEMI` 严格性的 `LEFT` JOIN。
+**适用场景。** 该算法以牺牲执行速度为代价，力求在连接大表时将内存占用降至最低。当左侧的物理行顺序与连接键顺序一致时效率最高，因为此时最小值-最大值索引能够跳过大部分右侧块；当每个左侧块所含键值的范围较广时，效率最低。当 `join_algorithm` 设为 `auto` 时，可能会在运行时切换到 `partial_merge`。该算法支持 `ALL` 严格性的 `INNER`、`LEFT`、`RIGHT` 和 `FULL` JOIN，`ANY` 严格性的 `INNER` 和 `LEFT` JOIN，以及 `SEMI` 严格性的 `LEFT` JOIN。
 
 **内存与溢写。** ClickHouse 会将已排序的右侧块保留在内存中，直到达到 [`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) 或 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 的上限。如果两者均未设置，则以 [`default_max_bytes_in_join`](/zh/reference/settings/session-settings/default#default_max_bytes_in_join) 为准。超出上限后，ClickHouse 会将已排序的块及其索引写入临时存储。[`join_on_disk_max_files_to_merge`](/zh/reference/settings/session-settings/join#join_on_disk_max_files_to_merge) 用于限制可并行合并的文件数量。
 
-**限制。** `RIGHT` 和 `FULL` JOIN 仅支持 `ALL` 严格性。不支持 `ANTI` 和 `ASOF` 严格性，不支持以 `OR` 组合的多个 JOIN 键，也不支持对两个表的列进行比较的条件。
+**限制。** `RIGHT` 和 `FULL` JOIN 仅支持 `ALL` 严格性。不支持 `ANTI` 和 `ASOF` 严格性，不支持以 `OR` 组合的多个连接键，也不支持对两个表的列进行比较的条件。
 
-## `ie_join` {#ie-join}
+<a id="ie-join" />
 
-`ie_join` 算法实现了基于排序的 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 算法，适用于 `ON` 子句中包含两个不等式比较 (`<`、`<=`、`>` 或 `>=`) 的 JOIN，这两个比较均作用于被连接表的表达式之间。ClickHouse 按这两个比较中的表达式对两个输入分别排序，无需逐一比较所有行对即可找到匹配的行对。该算法自 26.8 版本起可用。
+## `inequality` {#inequality}
+
+`inequality` 算法实现了基于排序的[不等式连接](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf)算法 (也称为 IEJoin) ，适用于 `ON` 子句中包含两个不等式比较 (`<`、`<=`、`>` 或 `>=`) 的 JOIN，这两个比较均作用于被连接表的表达式之间。ClickHouse 按这两个比较中的表达式对两个输入分别排序，无需逐一比较所有行对即可找到匹配的行对。该算法自 26.8 版本起可用。在 26.12 版本之前，该算法名为 `ie_join`，目前仍可使用该名称。
 
 **使用时机。** 该算法在 `join_algorithm` 中的位置决定了其优先级：
 
 * 若排在其他算法之后，则仅当 `ON` 子句中不包含表之间的等值条件时才会使用该算法。
-* 若排在首位，则只要 `ON` 子句包含两个不等式条件，就会使用该算法。其他条件 (包括等值条件) 将作为 JOIN 结果上的过滤器应用，或作为算子内部的残余条件应用。以这种方式应用的相等比较通过 `equals` 求值，而不会作为 JOIN 键使用。参见 [JOIN 键的比较](#comparison-of-join-keys)。
+* 若排在首位，则只要 `ON` 子句包含两个不等式条件，就会使用该算法。其他条件 (包括等值条件) 将作为 JOIN 结果上的过滤器应用，或作为算子内部的残余条件应用。以这种方式应用的相等比较通过 `equals` 求值，而不会作为连接键使用。参见 [连接键的比较](#comparison-of-join-keys)。
 
 当 `ON` 子句包含两个以上符合条件的不等式条件时，ClickHouse 会根据列统计信息估算出的选择性，从中选出两个作为连接键的条件。若没有统计信息，则按语法顺序使用前两个条件。该算法支持 `ALL` 严格性的 `INNER`、`LEFT`、`RIGHT` 和 `FULL` JOIN，以及 `SEMI` 和 `ANTI` 严格性的 `LEFT` 和 `RIGHT` JOIN。
 
@@ -145,9 +147,9 @@ doc_type: 'guide'
 
 ## 块嵌套循环回退 {#block-nested-loop-fallback}
 
-块嵌套循环 JOIN 用于执行这样一类 JOIN：其 `ON` 子句中不包含表之间的相等条件，且其他算法均无法执行。ClickHouse 会物化右侧数据，并对每一对左侧行与右侧行计算 `ON` 条件。条件内部的相等比较 (例如 `t1.a = t2.a OR t1.b < 0` 中的 `t1.a = t2.a`) 会通过 `equals` 计算，而不会作为 JOIN 键。参见 [JOIN 键的比较](#comparison-of-join-keys)。它不是 `join_algorithm` 的可选值，而是 JOIN 规划的最后手段。
+块嵌套循环 JOIN 用于执行这样一类 JOIN：其 `ON` 子句中不包含表之间的等值条件，且其他算法均无法执行。ClickHouse 会物化右侧数据，并对每一对左侧行与右侧行计算 `ON` 条件。条件内部的相等比较 (例如 `t1.a = t2.a OR t1.b < 0` 中的 `t1.a = t2.a`) 会通过 `equals` 计算，而不会作为连接键。参见 [连接键的比较](#comparison-of-join-keys)。它不是 `join_algorithm` 的可选值，而是 JOIN 规划的最后手段。
 
-**使用场景。** 当 `ON` 子句是涉及两张表中列的任意布尔表达式 (例如范围检查或函数调用) ，且 `ie_join` 不适用时，会使用该算法。若 `join_algorithm` 中包含 `hash`，则 `ALL` 严格性的 `INNER` JOIN 会改为以 `CROSS JOIN` 执行，并将该条件用作过滤条件。该回退机制自 26.10 起可用，可通过 [`allow_block_nested_loop_join`](/zh/reference/settings/session-settings/allow#allow_block_nested_loop_join) 设置控制是否启用。如果不允许回退，此类查询将被拒绝，并报错 `INVALID_JOIN_ON_EXPRESSION`。除 `ASOF`、`PASTE` 和 `ANY FULL` 之外，它支持所有连接类型和严格性。
+**使用场景。** 当 `ON` 子句是涉及两张表中列的任意布尔表达式 (例如范围检查或函数调用) ，且 `inequality` 不适用时，会使用该算法。若 `join_algorithm` 中包含 `hash`，则 `ALL` 严格性的 `INNER` JOIN 会改为以 `CROSS JOIN` 执行，并将该条件用作过滤条件。该回退机制自 26.10 起可用，可通过 [`allow_block_nested_loop_join`](/zh/reference/settings/session-settings/allow#allow_block_nested_loop_join) 设置控制是否启用。如果不允许回退，此类查询将被拒绝，并报错 `INVALID_JOIN_ON_EXPRESSION`。除 `ASOF`、`PASTE` 和 `ANY FULL` 之外，它支持所有连接类型和严格性。
 
 **内存与溢写。** 内存占用以物化后的右侧数据为上限，不会随结果规模增长。右侧的块在内存中以压缩形式存储，达到落盘阈值后写入磁盘。[硬限制](/zh/concepts/features/operations/select/join-memory-management#hard-limits)同样适用于右侧数据，包括已溢写到磁盘的块。
 
@@ -164,7 +166,7 @@ doc_type: 'guide'
 | `grace_hash`                                        | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 | `full_sorting_merge`, `parallel_full_sorting_merge` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` |                 |                 | `INNER`, `LEFT` |
 | `partial_merge`                                     | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`          | `LEFT`          |                 |                 |
-| `ie_join`                                           | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| `inequality`                                        | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 | 块嵌套循环 (回退)                                          | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 
 此外，还需遵循以下规则：
@@ -174,38 +176,38 @@ doc_type: 'guide'
 * `partial_merge` 仅在 `ALL` 严格性下支持 `RIGHT` 和 `FULL` JOIN。
 * 作为回退方案的块嵌套循环不支持 `ASOF`、`PASTE` 和 `ANY FULL` JOIN。
 * 只有 `hash` 及其别名 `parallel_hash` 支持在 `ON` 子句中用 `OR` 组合多个连接键。取值为 `auto` 时，此类 JOIN 会使用 `hash` 执行。
-* 只有 `hash`、`parallel_hash` 和 `grace_hash` 支持将相等键与比较两表列的条件组合使用。
+* 只有 `hash`、`parallel_hash` 和 `grace_hash` 支持将等值连接键与比较两表列的条件组合使用。
 * `direct` 算法仅适用于 [`direct`](#direct) 中列出的右侧数据源。对于 `MergeTree` 表，它不支持 `ANY` 严格性。
 * `CROSS JOIN`、带常量 `ON` 条件的 JOIN 以及 `PASTE JOIN` 均有各自的专用实现，不受 `join_algorithm` 影响。
 
-## JOIN 键的比较 {#comparison-of-join-keys}
+## 连接键的比较 {#comparison-of-join-keys}
 
-除 `ie_join` 和块嵌套循环回退之外，所有算法都会将 `ON` 子句中两个表的列之间的相等条件用作 JOIN 键。算法会自行比较这些键，而不是借助 [`equals`](/zh/reference/functions/regular-functions/comparison-functions#equals) 函数，因此对于某些 `equals` 不返回 `1` 的值对，键仍会匹配。`ie_join` 会对其两个不等式条件匹配到的值对使用 `equals` 计算此类相等条件，而块嵌套循环回退则会将其作为 `ON` 条件的一部分，使用 `equals` 进行计算。
+除 `inequality` 和块嵌套循环回退之外，所有算法都会将 `ON` 子句中两个表的列之间的等值条件用作连接键。算法会自行比较这些键，而不是借助 [`equals`](/zh/reference/functions/regular-functions/comparison-functions#equals) 函数，因此对于某些 `equals` 不返回 `1` 的值对，键仍会匹配。`inequality` 会对其两个不等式条件匹配到的值对使用 `equals` 计算此类等值条件，而块嵌套循环回退则会将其作为 `ON` 条件的一部分，使用 `equals` 进行计算。
 
-| 算法                                                                   | 表之间的相等条件 | 两个 `NaN` 值   | 两个 `Tuple` 值 `(1, NULL)` |
+| 算法                                                                   | 表之间的等值条件 | 两个 `NaN` 值   | 两个 `Tuple` 值 `(1, NULL)` |
 | -------------------------------------------------------------------- | -------- | ------------ | ------------------------ |
-| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | JOIN 键   | 若两者比特模式相同则匹配 | 匹配                       |
-| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | JOIN 键   | 匹配           | 匹配                       |
-| `ie_join`                                                            | `equals` | 不匹配          | 不匹配                      |
+| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | 连接键   | 若两者比特模式相同则匹配 | 匹配                       |
+| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | 连接键   | 匹配           | 匹配                       |
+| `inequality`                                                         | `equals` | 不匹配          | 不匹配                      |
 | 块嵌套循环回退                                                              | `equals` | 不匹配          | 不匹配                      |
 
-`Variant` 键的 `NULL` 值，其行为与包含 `NULL` 元素的 `Tuple` 相同。键本身为 `NULL` 时，无论使用哪种算法都不会匹配，这与 `equals` 一致。请参阅 [JOIN 键中的 NULL 和 NaN 值](/zh/reference/statements/select/join#null-values-in-join-keys)。
+`Variant` 键的 `NULL` 值，其行为与包含 `NULL` 元素的 `Tuple` 相同。键本身为 `NULL` 时，无论使用哪种算法都不会匹配，这与 `equals` 一致。请参阅 [连接键中的 NULL 和 NaN 值](/zh/reference/statements/select/join#null-values-in-join-keys)。
 
 `ASOF` JOIN 的等值条件取决于实际执行它的算法，遵循 `hash` 或 `full_sorting_merge` 所在行的规则；右侧使用 `Join` 表引擎时，则遵循 `hash` 行的规则。
 
-当 `direct` JOIN 使用布局为 `complex_key_direct`、`complex_key_cache` 或 `complex_key_ssd_cache` 且 source 为 `CLICKHOUSE` 的字典时，键会以文本形式发送到 source，而文本会将所有 `NaN` 都写为 `nan`，因此只有当两个 `NaN` 键都具有 `nan` 的比特模式时才会匹配。当 [`max_rows_in_set_to_optimize_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) 不为零时，`full_sorting_merge` 和 `parallel_full_sorting_merge` 可能会先用一个 JOIN 键集合过滤输入，而该集合按比特模式比较 `NaN` 值，因此两个比特模式不同的 `NaN` 值是否匹配，每次执行的结果可能不同。
+当 `direct` JOIN 使用布局为 `complex_key_direct`、`complex_key_cache` 或 `complex_key_ssd_cache` 且 source 为 `CLICKHOUSE` 的字典时，键会以文本形式发送到 source，而文本会将所有 `NaN` 都写为 `nan`，因此只有当两个 `NaN` 键都具有 `nan` 的比特模式时才会匹配。当 [`max_rows_in_set_to_optimize_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) 不为零时，`full_sorting_merge` 和 `parallel_full_sorting_merge` 可能会先用一个连接键集合过滤输入，而该集合按比特模式比较 `NaN` 值，因此两个比特模式不同的 `NaN` 值是否匹配，每次执行的结果可能不同。
 
-因此，比较此类值的 JOIN 可能因执行算法不同而返回不同的行。例如，在 `join_algorithm` 中将 `ie_join` 列在首位，可能会使其执行同时包含一个相等条件和两个不等式条件的 JOIN，此时该相等条件会使用 `equals` 计算，而不是作为 JOIN 键。
+因此，比较此类值的 JOIN 可能因执行算法不同而返回不同的行。例如，在 `join_algorithm` 中将 `inequality` 列在首位，可能会使其执行同时包含一个等值条件和两个不等式条件的 JOIN，此时该等值条件会使用 `equals` 计算，而不是作为连接键。
 
 ## 选择 JOIN 算法 {#choosing-a-join-algorithm}
 
 <div className="ch-image-lg">
   <Frame>
-    ![direct、并行哈希、哈希、grace hash、全排序合并和部分合并 JOIN 算法的相对内存使用量与执行时间](/images/guides/joins-2.png)
+    ![direct、并行哈希、哈希、Grace 哈希、全排序合并和部分合并 JOIN 算法的相对内存使用量与执行时间](/images/guides/joins-2.png)
   </Frame>
 </div>
 
-上图展示了六种 JOIN 算法的相对内存使用量和执行时间。图中的并行哈希 JOIN 即采用拆分哈希表的 `hash` 算法。各算法在图中的位置仅作定性参考，实际数值取决于数据规模、键的类型以及键值的分布情况。该图表未涵盖 `ie_join`、`parallel_full_sorting_merge` 以及块嵌套循环回退。
+上图展示了六种 JOIN 算法的相对内存使用量和执行时间。图中的并行哈希 JOIN 即采用拆分哈希表的 `hash` 算法。各算法在图中的位置仅作定性参考，实际数值取决于数据规模、键的类型以及键值的分布情况。该图表未涵盖 `inequality`、`parallel_full_sorting_merge` 以及块嵌套循环回退。
 
 ### 优化 JOIN 性能 {#optimizing-join-performance}
 
@@ -219,7 +221,7 @@ ClickHouse 会按列表顺序依次尝试各算法，并选用第一个同时支
 
 * 右侧为 `Join` 表引擎时，始终使用该表所存储的哈希表进行连接。
 * `CROSS JOIN`、带常量 `ON` 条件的 JOIN 以及 `PASTE JOIN` 均使用专门的实现。
-* 不包含表间相等条件的 `ON` 子句由 `ie_join` 或块嵌套循环回退机制处理。
+* 不包含表间等值条件的 `ON` 子句由 `inequality` 或块嵌套循环回退机制处理。
 
 当落盘阈值生效且已配置临时存储时，`parallel_hash` 和 `hash` 会以溢写哈希 JOIN 的方式运行，并在右侧超过阈值时切换为 `grace_hash`。请参阅[落盘阈值](/zh/concepts/features/operations/select/join-memory-management#spill-thresholds)。
 

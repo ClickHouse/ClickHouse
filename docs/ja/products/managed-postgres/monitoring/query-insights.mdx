@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'クエリインサイト'
 title: 'Postgres のクエリインサイト'
 description: 'ClickHouse Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
-keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 レイテンシ', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal', '待機イベント', 'ロック待機', 'ブロックされたセッション']
+keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 低減', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal', '待機イベント', 'ロック待機', 'ブロックされたセッション', 'ブロックしているクエリ']
 doc_type: 'guide'
 ---
 
@@ -18,9 +18,7 @@ ClickHouse Cloud にストリーミングするオープンソースの Postgres
 データベースを出る前に Postgres 内で正規化されます。リテラルは取り除かれてプレースホルダーに置き換えられるため、
 クエリした正確な値がテレメトリーストリームに含まれることはありません。
 
-<div id="open">
-  ## クエリインサイトを開く {#open}
-</div>
+## クエリインサイトを開く {#open}
 
 Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左側のサイドバーで
 **クエリインサイト** をクリックします。ページは、実際に使う順に
@@ -31,7 +29,8 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
   ソートして順位付けできる **低速クエリパターン** テーブル。
 * 個々の実行を新しい順に一覧表示する **最近のクエリ** パネル。
 * アクティブなセッションが待機に費やした時間を待機イベントごとに順位付けする
-  **Waits** テーブル。
+  **Waits** タブ。このタブには、ロック待ちのクエリをどのセッションが
+  ブロックしたかを示す **ブロッキングクエリ** テーブルもあります。
 * 単一のパターンに関するすべてのカウンターを集約する **詳細フライアウト**。
 
 上部の **期間** セレクターを使用すると、直近 15 分、1 時間、1 日、
@@ -71,10 +70,10 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 | パネル                              | 表示内容                                                                                                      |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **Active sessions by wait type** | アクティブなセッションの平均数を待機タイプごとに積み上げて表示します。**CPU** は、待機イベントなしでアクティブな状態を表します。棒にカーソルを合わせると、各タイプの内訳となる待機イベントが表示されます。 |
-| **Lock wait time**               | 各時間間隔でサンプリングされた、ブロック中のセッションにおけるロック待機の経過時間の p50、p95、最大値です。                                                 |
-| **Blocked sessions**             | ロックによってブロックされているセッションの平均数です。                                                                              |
+| **ロック待機時間**               | 各時間間隔でサンプリングされた、ブロック中のセッションにおけるロック待機の経過時間の p50、p95、最大値です。                                                 |
+| **ブロックされたセッション**             | ロックによってブロックされているセッションの平均数です。                                                                              |
 
-**Lock wait time** が上昇する一方で、**Blocked sessions** がゼロを上回ったままになっていないかを確認してください。これは、ロック競合が継続していることを示している可能性があります。いずれかの待機チャートをクリックすると、[Waits](#waits) テーブルが開きます。
+**ロック待機時間** が上昇する一方で、**ブロックされたセッション** がゼロを上回ったままになっていないかを確認してください。これは、ロック競合が継続していることを示している可能性があります。**Active sessions by wait type** をクリックすると、[Waits](#waits) タブが開きます。
 
 <div className="ch-image-lg">
   <Frame>
@@ -158,22 +157,82 @@ CPU時間 でソートできます。
 
 ## Waits {#waits}
 
-**Waits** を展開するか、[待機チャート](#wait-charts)をクリックすると、選択した期間の平均アクティブセッション数の多い順に並んだ待機イベントを確認できます。
+**Waits** タブを開くか、[待機チャート](#wait-charts)の **Active sessions by wait type** をクリックすると、同じチャートに加えて、選択した期間の平均アクティブセッション数の多い順に待機イベントを並べた **Wait events breakdown** テーブルを確認できます。
 
 <div className="ch-image-lg">
   <Frame>
-    ![平均アクティブセッション数の順に待機イベントを並べた Waits テーブル。Wait event、Wait type、Avg active sessions、Share of load の各カラムを表示](/images/managed-postgres/monitoring/query-insights-waits.webp)
+    ![平均アクティブセッション数の順に待機イベントを並べた Waits テーブル。待機イベント、待機タイプ、Avg active sessions、Share of load の各カラムを表示](/images/managed-postgres/monitoring/query-insights-waits.webp)
   </Frame>
 </div>
 
 | カラム                     | 表示内容                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------- |
-| **Wait event**          | `type:event` 形式の待機イベント (例: `Lock:relation`、`IO:WalSync`) 。**CPU** は、待機イベントがなくアクティブな状態を表します。 |
-| **Wait type**           | 待機イベントの種別。**Active sessions by wait type** の色分けに対応しています。                                    |
+| **待機イベント**          | `type:event` 形式の待機イベント (例: `Lock:relation`、`IO:WalSync`) 。**CPU** は、待機イベントがなくアクティブな状態を表します。 |
+| **待機タイプ**           | 待機イベントの種別。**Active sessions by wait type** の色分けに対応しています。                                    |
 | **Avg active sessions** | 選択した期間中に、この待機イベントの状態にあったセッションの平均数。                                                          |
 | **Share of load**       | **CPU** を含む全平均アクティブセッションのうち、この待機イベントが占める割合。                                                 |
 
 個々のイベントの説明については、[Postgres 待機イベントリファレンス](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE)を参照してください。
+
+### ブロッキングクエリ {#blocking-queries}
+
+待機イベントのテーブルの下にある **ブロッキングクエリ** には、どのクエリがロックを待機し、
+どのセッションがそれをブロックしたかが表示されます。ブロックしているセッションは、
+競合するロックを保持しているか、ロック待ちのキューで先行しています。
+各行は待機中のクエリとその直接のブロッカーの組み合わせを示し、
+複数のセッションのサンプルがまとめられている場合があります。観測頻度の高い
+組み合わせから順に表示されます。
+
+収集はデフォルトで無効です。収集を開始するには、
+**ブロッキングクエリ** タイトルの横にある **Enable** スイッチをオンにします。収集のオン/オフを切り替えられるのは
+サービスを管理できるユーザーのみで、読み取りレプリカは
+プライマリの設定に従います。サンプリングは通常、1分ほどで開始されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![収集がオフの ブロッキングクエリ セクション: タイトル横の Enable スイッチがオフになっており、ブロッキングクエリの収集が無効であることを示すメッセージが表示されている](/images/managed-postgres/monitoring/query-insights-blocking-queries-off.webp)
+  </Frame>
+</div>
+
+収集がオンの場合、テーブルには選択した期間に観測されたブロッキングクエリが
+表示されます。収集を停止するには、**Enable** スイッチを
+オフにします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![収集がオンの ブロッキングクエリ セクション: Enable スイッチがオンで、その下にデータベース、ユーザー、アプリケーションのフィルタと、Waiting query、Blocked by、Blocker application、Blocker state、Lock、Sessions、Longest wait、Last seen のカラムを持つテーブルがあり、active および idle in transaction のブロッカーによる行ロックとテーブルロックの待機が表示されている](/images/managed-postgres/monitoring/query-insights-blocking-queries.webp)
+  </Frame>
+</div>
+
+| カラム                     | 表示内容                                                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Waiting query**       | ロックを待機したクエリの正規化されたテキスト。                                                                                          |
+| **Blocked by**          | ブロッカーの現在または直近のステートメントの正規化されたテキスト。                                                                                |
+| **Blocker application** | ブロックしているセッションの `application_name`。                                                                               |
+| **Blocker state**       | 最新のサンプル時点でのブロッカーの状態 (`active` や `idle in transaction` など) 。**waiting** は、少なくとも1つのサンプルでブロッカー自身もロックを待機していたことを示します。 |
+| **Lock**                | 最新のサンプル時点でのロックの種類 (**Row** や **Table** など) と、待機中のクエリが要求したロックモード。                                                 |
+| **Sessions**            | 待機したセッションの数 (重複を除く) 。                                                                                            |
+| **Longest wait**        | サンプリング時点で、待機中のセッションがそれまでに待機していた時間の最大値。                                                                           |
+| **Last seen**           | この組み合わせが観測された最新のサンプルの時刻。                                                                                         |
+
+**Columns** ピッカーを開くと、待機中のセッションのユーザー、アプリケーション、PID、
+およびブロックしているセッションのユーザーと PID を表示できます。また、テーブルは
+待機中のセッションのデータベース、ユーザー、アプリケーションでフィルタできます。
+
+`idle in transaction` 状態のブロッカーは、真っ先に対処すべき対象であることが多くあります。
+このようなブロッカーはトランザクションを開始してロックを取得したまま、コミットもロールバックもしていません。
+その **Blocked by** のテキストは直近のステートメントであり、
+ロックを取得したステートメントとは限りません。
+
+**No query text** は、クエリインサイトがそのステートメントのテキストを保持していないことを意味します。
+これは、ブロックしているセッションの最後のステートメントが `LOCK TABLE` などのユーティリティ
+コマンドだった場合、Postgres がクエリ ID を割り当てる前にクエリがテーブルロックを
+待機した場合、またはクエリインサイトがそのステートメントの実行完了を
+記録していない場合に発生します。また、クエリインサイトは、監視やレプリケーションなど、
+サービスが内部的に使用するセッションのステートメントのテキストも非表示にします。
+その場合でも、行にはアプリケーション、状態、ロックが表示されます。**Blocked
+by** に **Prepared transaction** と表示される場合は、プリペアドトランザクションがロックを保持しているため、
+表示すべきブロッキングセッションが存在しないことを意味します。
 
 ## 詳細フライアウト {#detail}
 
@@ -235,7 +294,9 @@ CPU時間 でソートできます。
 エンドポイントに対応し、[詳細フライアウト](#detail) は
 [get slow query pattern](/ja/products/cloud/api-reference/postgres/slow-query-pattern-get)
 エンドポイントに対応しています。このエンドポイントは、1 つのパターンの集計メトリクスと
-その最近の実行を返します。
+その最近の実行を返します。[ブロッキングクエリ](#blocking-queries) テーブルは
+[list blocking queries](/ja/products/managed-postgres/openapi#list-blocking-queries)
+エンドポイントに対応しています。
 
 <div id="how-it-works">
   ## 仕組み {#how-it-works}
@@ -262,6 +323,8 @@ CPU時間 でソートできます。
 ### Waitsはサンプリングで取得される {#how-waits}
 
 [待機チャート](#wait-charts)と[Waits](#waits)テーブルは、プライマリで30秒ごとに収集されるサンプルに基づいています。短時間の待機はサンプル間で完結してしまうと表示されないことがあるため、これらのビューは継続的な待機やロック競合の特定に最も適しています。
+
+[ブロッキングクエリ](#blocking-queries)も、収集が有効になっている各インスタンスで30秒ごとにサンプリングされます。そのため、数秒間しか保持されないロックは表示されない場合があります。各サンプルに記録されるのはクエリ ID であり、クエリテキストは記録されません。テーブルに表示されるテキストは、クエリインサイト がすでに収集している正規化されたパターンから取得されるため、リテラル値が表示されることはありません。
 
 <div id="how-raw-events">
   ### 集計ではなく生のイベント {#how-raw-events}
@@ -291,6 +354,6 @@ ClickHouse に送信できます。ソースコードと issue は
 
 * [監視ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのリソースおよびアクティビティのチャート
 * [Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — ホストレベルのメトリクスを独自のオブザーバビリティスタックに取り込めます
-* [ClickHouse Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — 低速クエリパターンや最近の実行履歴をプログラムから取得できます
+* [ClickHouse Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — 低速クエリパターン、最近の実行、ブロッキングを引き起こしているクエリをプログラムから取得できます
 * [拡張機能](/ja/products/managed-postgres/extensions) — ClickHouse Managed Postgres インスタンスで利用可能な拡張機能
 * [GitHub 上の `pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) — クエリインサイトを支えるオープンソースの拡張機能

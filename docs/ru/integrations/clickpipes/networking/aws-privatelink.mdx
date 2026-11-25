@@ -136,6 +136,11 @@ integration:
       и, если он больше не нужен, его необходимо удалить вручную.
     </Note>
 
+    <Tip>
+      Resource-Share привязывается к обратной частной конечной точке в момент, когда ClickPipes его принимает, и после этого не может использоваться никакой другой конечной точкой.
+      Рекомендуется создавать обратную частную конечную точку сразу после создания Resource-Share и до этого момента не раскрывать сведения о Resource-Share.
+    </Tip>
+
     Вы можете добавить Resource-Configuration в Resource-Share через [консоль AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) или выполнить следующую команду, указав ID аккаунта ClickPipes `072088201116` (arn:aws:iam::072088201116:root):
 
     ```bash

@@ -97,16 +97,16 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用或禁用针对简单查询 `SELECT ... FROM table GROUP BY key_expr LIMIT n` (不含 `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/窗口子句，且不含 `GROUP BY` 修饰符) 的优化：将聚合的不同键数量上限设为 `n + offset`。
 
-若投影中不含聚合函数，则通过设置 `max_rows_to_group_by = n + offset` 并配合 `group_by_overflow_mode = 'any'` 来施加该上限 (此方式同样适用于分布式查询中的各个分片) 。若投影中含有聚合函数，则仅当服务器在本地完成全部聚合时才会施加该上限：一旦任一聚合线程超出上限，所有线程都将被限制为共用同一个包含 `n + offset` 个保留键的集合，从而确保所返回键的聚合值依然精确。
+若投影中不含聚合函数，则此类查询的聚合 (包括此类子查询中的聚合，以及分布式查询中各个分片上的聚合) 的行为等同于设置了 `max_rows_to_group_by = n + offset` 和 `group_by_overflow_mode = 'any'`。这些设置本身不会被修改，因此该查询所读取的视图和子查询中的聚合不受影响，除非它们本身也符合这种形式。若投影中含有聚合函数，则仅当服务器在本地完成全部聚合时才会施加该上限：一旦任一聚合线程超出上限，所有线程都将被限制为共用同一个包含 `n + offset` 个保留键的集合，从而确保所返回键的聚合值依然精确。
 
-以下情况下该优化不会生效：用户已显式将 `group_by_overflow_mode` 设为 `any` 以外的值 (以遵循其显式指定的 `throw`/`break` 契约) ；用户已设置了更严格的 `max_rows_to_group_by`；或启用了 [exact&#95;rows&#95;before&#95;limit](/zh/reference/settings/session-settings/other#exact_rows_before_limit) (此时该上限会导致 `rows_before_limit_at_least` 报告的值不超过 `n + offset`) 。
+以下情况下该优化不会生效：用户已显式将 `group_by_overflow_mode` 设为 `any` 以外的值 (以遵循其显式指定的 `throw`/`break` 契约) ；用户已设置了更严格的 `max_rows_to_group_by`；在关联子查询中，以及在投影中含有关联子查询的查询中；启用了 [make&#95;distributed&#95;plan](/zh/reference/settings/session-settings/other#make_distributed_plan) (包括仅由外层查询启用的情况) ；或启用了 [exact&#95;rows&#95;before&#95;limit](/zh/reference/settings/session-settings/other#exact_rows_before_limit) (此时该上限会导致 `rows_before_limit_at_least` 报告的值不超过 `n + offset`) 。
 
 对于同一查询，聚合函数方式与 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) 所使用的 `GROUP BY` top-K 堆互斥。由于堆方式更快，因此仅在堆方式不适用时才会应用该截断，即：堆优化被禁用、`n + offset` 超过 [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization)、设置了 `max_rows_to_group_by`，或查询计划被序列化。
 
-可能的值：
+可选值：
 
-* 0 — 禁用优化。
-* 1 — 启用优化。
+* 0 — 优化已禁用。
+* 1 — 优化已启用。
 
 ## optimize_trivial_insert_select {#optimize_trivial_insert_select}
 

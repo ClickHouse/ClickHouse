@@ -165,7 +165,15 @@ Borra la caché de páginas en espacio de usuario, es decir, la propia caché en
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-Limpia la caché del índice de similitud vectorial.
+Vacía la caché de [índices de similitud vectorial](/es/reference/engines/table-engines/mergetree-family/annindexes), que almacena en memoria los gránulos de índice vectorial deserializados.
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+Con `FOR TABLE`, solo se eliminan las entradas de caché de la tabla `MergeTree` indicada.
+
+Requiere el privilegio `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` para todas las tablas o para una sola.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1015,7 +1023,7 @@ SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
 
 Restaura una réplica si [posiblemente] los datos están presentes, pero se han perdido los metadatos de ZooKeeper.
 
-Funciona solo en tablas `ReplicatedMergeTree` en modo de solo lectura.
+Funciona solo en tables `ReplicatedMergeTree` en modo de solo lectura.
 
 La consulta puede ejecutarse después de:
 
@@ -1029,6 +1037,29 @@ Las partes presentes en una réplica antes de la pérdida de metadatos no se vue
 <Note>
   Las partes en todos los estados se mueven a la carpeta `detached/`. Las partes activas antes de la pérdida de datos (committed) se adjuntan.
 </Note>
+
+La sentencia también vacía las cachés de datos de todo el servidor: las partes restauradas reciben nuevos nombres, que pueden coincidir con los nombres y rutas anteriores de otras partes, por lo que las entradas almacenadas en caché para esos nombres quedarían obsoletas.
+
+Esto afecta a todas las tables del servidor, no solo a la restaurada: las consultas sobre ellas tendrán que volver a llenar las cachés. Con `ON CLUSTER`, las cachés se vacían en todos los servidores donde se restaure la réplica.
+
+Las cachés que se vacían son:
+
+* [marcas](#drop-mark-cache)
+* [datos sin comprimir](#drop-uncompressed-cache)
+* [índice primario](#drop-primary-index-cache)
+* [estadísticas](#drop-statistics-cache)
+* [marcas de índice](#drop-index-mark-cache)
+* [índice sin comprimir](#drop-index-uncompressed-cache)
+* [índice de similitud vectorial](#drop-vector-similarity-index-cache)
+* [índice de texto](#drop-text-index-caches)
+* [mmap](#drop-mmap-cache)
+* [páginas](#drop-page-cache)
+* [columnas](#drop-columns-cache)
+* [condiciones de consulta](#drop-query-condition-cache)
+* [encabezados de cifrado](#drop-encryption-headers-cache)
+* Cachés de mapas de bits de eliminación de `UNIQUE KEY`
+
+La [caché de consultas](#drop-query-cache) y la [caché del sistema de archivos](#drop-filesystem-cache) se conservan.
 
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
@@ -1209,7 +1240,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Espera a que finalice la actualización en curso. Si no hay ninguna actualización en curso, devuelve el resultado inmediatamente. Si el último intento de actualización falló, devuelve un error.
+Espera a que finalice la actualización en curso, incluida una actualización pendiente que todavía esté a la espera del retraso de `refresh_coordination_jitter_ms`. Si no hay ninguna actualización en curso ni pendiente, devuelve el resultado inmediatamente. Si el último intento de actualización falló, devuelve un error.
 
 Se puede usar justo después de crear una nueva vista materializada actualizable (sin la palabra clave EMPTY) para esperar a que finalice la actualización inicial.
 

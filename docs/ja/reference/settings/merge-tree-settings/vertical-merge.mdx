@@ -47,9 +47,8 @@ true の場合、Vertical merge アルゴリズム における論理削除が�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "有効期限 (TTL) により期限切れになった行を削除する必要があるマージに対して、Vertical merge アルゴリズムを許可します"}]}]} />
 
-true の場合、行 TTL によるマージで、horizontal merge にフォールバックせずに Vertical merge アルゴリズムを使用できるようになります。これが適用されるのは、マージモードが `MergeTree`、`Replacing`、`Collapsing`、`VersionedCollapsing`
-のいずれかで、行 TTL を持ち、カラム TTL や `GROUP BY` TTL を持たないテーブルの場合のみです。さらに、マージ対象のパーツ
-のいずれにも論理削除が含まれていないことが条件となります。それ以外の TTL マージは引き続き horizontal merge で実行されます。
+true の場合、行の有効期限 (TTL) によるマージで、horizontal merge にフォールバックせずに Vertical merge アルゴリズムを使用できるようになります。これが適用されるのは、マージモードが `MergeTree`、`Replacing`、`Collapsing`、`VersionedCollapsing`
+のいずれかで、行の有効期限 (TTL) を持ち、カラムの有効期限 (TTL) や `GROUP BY` 有効期限 (TTL) を持たないテーブルの場合のみです。それ以外の有効期限 (TTL) マージは引き続き horizontal merge で実行されます。
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

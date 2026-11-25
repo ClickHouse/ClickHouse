@@ -120,17 +120,27 @@ SETTINGS
 
 При использовании именованной коллекции **глобальный серверный блок `<kafka>` из `config.xml` с ней не объединяется**. Каждая коллекция должна содержать все расширенные свойства, необходимые таблице (включая файлы TLS и `security.protocol`, если он не задан через непустые `SETTINGS` таблицы).
 
-Типичная структура для `SASL_SSL` с клиентскими сертификатами: пути TLS и `ssl.key.password` храните в именованной коллекции, а `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` и при необходимости `kafka_sasl_username` / `kafka_sasl_password` задайте в секции `SETTINGS` таблицы. И `kafka.security_protocol`, и `kafka_security_protocol` задают `security.protocol`, при этом приоритет имеет непустая настройка таблицы. Если это свойство уже хранится в коллекции, настройка таблицы становится переопределением именованной коллекции: для него требуется привилегия `SHOW NAMED COLLECTIONS SECRETS` на коллекцию, а если ключ помечен как `NOT OVERRIDABLE`, возникает ошибка `Override not allowed`. То же самое относится к `kafka_sasl_mechanism`, `kafka_sasl_username` и `kafka_sasl_password`.
+Именованная коллекция, созданная с помощью `CREATE NAMED COLLECTION`, допускает только свойства `librdkafka` из [списка разрешённых](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), например `security.protocol`, `sasl.username` и `fetch.min.bytes`. Если таблица использует коллекцию со свойством, которого нет в списке, ClickHouse возвращает `BAD_ARGUMENTS`. Чтобы использовать другие поддерживаемые свойства, например `sasl.kerberos.keytab` или `sasl.oauthbearer.token.endpoint.url`, определите коллекцию в файле конфигурации сервера. Это ограничение также распространяется на свойства, добавленные с помощью `ALTER NAMED COLLECTION` после создания таблицы.
 
-Пример (пути к сертификатам должны существовать на каждом сервере ClickHouse, где запущены потребители этой таблицы):
+В именованной коллекции, созданной с помощью SQL, передавайте содержимое файла вместо пути к нему в свойствах `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem` и `sasl.oauthbearer.assertion.private.key.pem`. Для `ssl.ca.location` и `https.ca.location` также допускается значение `probe`, поскольку оно не является путём.
+
+Типичная структура для `SASL_SSL` с клиентскими сертификатами: сертификаты, закрытый ключ и `ssl.key.password` храните в именованной коллекции, а `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` и при необходимости `kafka_sasl_username` / `kafka_sasl_password` задайте в предложении `SETTINGS` таблицы. И `kafka.security_protocol`, и `kafka_security_protocol` задают `security.protocol`, при этом приоритет имеет непустая настройка таблицы. Если это свойство уже хранится в коллекции, настройка таблицы становится переопределением именованной коллекции: для него требуется привилегия `SHOW NAMED COLLECTIONS SECRETS` на коллекцию, а если ключ помечен как `NOT OVERRIDABLE`, возникает ошибка `Override not allowed`. То же самое относится к `kafka_sasl_mechanism`, `kafka_sasl_username` и `kafka_sasl_password`.
+
+Пример с именованной коллекцией, созданной с помощью SQL и содержащей сертификаты и закрытый ключ в формате PEM:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -146,7 +156,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-Те же расширенные настройки в именованной коллекции, заданной в XML:
+Те же расширенные настройки в именованной коллекции, заданной в XML, где вместо этого можно указать пути к файлам (файлы должны существовать на каждом сервере ClickHouse, где запущены потребители этой таблицы):
 
 ```xml
 <clickhouse>
@@ -269,7 +279,25 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms) миллисекунд, данные будут записаны в таблицу независимо от полноты блока.
+Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms) миллисекунд, данные будут сброшены на диск в таблицу независимо от полноты блока.
+
+Следующие настройки таблицы определяют, как часто прочитанные данные записываются в materialized view:
+
+* `kafka_max_block_size` — блок сбрасывается на диск, как только в нём накапливается указанное количество строк. По умолчанию: значение `max_insert_block_size`, делённое на `kafka_num_consumers`.
+* `kafka_flush_interval_ms` — блок сбрасывается на диск по истечении указанного времени, даже если он не заполнен. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 мс). Уменьшите это значение, чтобы сократить задержку между созданием сообщения и его появлением в целевой таблице.
+* `kafka_consumer_reschedule_ms` — при отсутствии новых сообщений движок ожидает указанное время перед повторным опросом. По умолчанию: `500` мс.
+
+Это настройки таблицы Kafka, задаваемые в её предложении `SETTINGS`. Их нельзя задать в разделе `<kafka>` файла конфигурации сервера: каждый ключ в этом разделе передаётся в librdkafka как свойство (см. [Configuration](#configuration)), поэтому, например, `<flush_interval_ms>` в этом разделе не является настройкой ClickHouse.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 Чтобы прекратить получение данных из топика или изменить логику преобразования, отсоедините materialized view:
 

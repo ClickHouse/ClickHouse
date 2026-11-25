@@ -190,7 +190,7 @@ Só tem efeito se a configuração [query&#95;plan&#95;enable&#95;optimizations]
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração, habilitada por default: o algoritmo de ordem de join DPsub escolhe entre hash joins e sort-merge com base na ordenação das entradas."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "A alteração recebeu backport para a 26.10 e está registrada nessa versão."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração, habilitada por default: o algoritmo de ordem de join DPsub escolhe entre hash joins e sort-merge com base na ordenação das entradas."}]}]} />
 
 Afeta apenas o algoritmo de ordem de join `dpsub`. Faz com que ele leve em conta a ordenação das tabelas unidas: para cada equi-junção interna, escolhe entre um hash join e `full_sorting_merge` com base no custo, e mantém os planos parciais cujo resultado esteja ordenado por uma chave de junção que possa ser aproveitada por uma junção posterior.
 
@@ -335,7 +335,7 @@ Usado pelo mecanismo de correspondência de projeção agregada (e por qualquer 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "Nova configuração"}]}]} />
 
-Comprimento máximo da descrição da etapa no EXPLAIN PLAN.
+Comprimento máximo, em bytes, da descrição de um passo do plano de consulta. Descrições mais longas são truncadas nesse comprimento sempre que forem exibidas.
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -400,9 +400,9 @@ Só tem efeito quando `query_plan_direct_read_from_text_index` está habilitada.
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` agora é o algoritmo de ordem de join padrão; consultas com mais de 12 relações recorrem a `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "A alteração recebeu backport para a 26.10 e está registrada lá."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` agora é o algoritmo de ordem de junção padrão; consultas com mais de 12 relações recorrem a `greedy`."}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
 
-Especifica quais algoritmos de ordem de join devem ser testados durante a otimização do plano de consulta. Os seguintes algoritmos estão disponíveis:
+Especifica quais algoritmos de ordem de junção devem ser testados durante a otimização do plano de consulta. Os seguintes algoritmos estão disponíveis:
 
 * &#39;greedy&#39; - algoritmo guloso básico - é rápido, mas pode não produzir a melhor ordem de junção
 * &#39;dpsize&#39; - implementa o algoritmo DPsize, atualmente apenas para junções INNER - considera todas as ordens de junção possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
@@ -416,12 +416,12 @@ Especifica quais algoritmos de ordem de join devem ser testados durante a otimiz
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum. O padrão é o CD-C, em conjunto com o padrão `dpsub` de `query_plan_optimize_join_order_algorithm`, o que também permite que junções semi e junções anti participem da reordenação."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "A alteração recebeu backport para a 26.10 e está registrada lá."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum. O padrão é o CD-C, em conjunto com o padrão `dpsub` de `query_plan_optimize_join_order_algorithm`, o que também permite que junções semi e junções anti participem da reordenação."}]}]} />
 
-Afeta apenas o algoritmo de ordem de junção `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
+Afeta apenas o algoritmo de ordem de join `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
 decidir quais reordenações de junções baseadas em custo são válidas. Os seguintes valores estão disponíveis:
 
-* `''` - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
+* `''` - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relação
 * `'a'` - o conflict detector CD-A, que é correto, porém incompleto
 * `'c'` (padrão) - o conflict detector CD-C, que é correto e completo
 
@@ -494,17 +494,19 @@ Use a otimização de materialização lazy para ler arquivos Parquet e Vortex d
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração que eleva conjunções de filtro através de chaves de equi-join para que a poda por chave primária seja acionada em ambos os lados."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração que eleva conjunções de filtro através de chaves de equi-junção para que a poda por chave primária seja acionada em ambos os lados."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "Também copia conjunções de filtro para colunas dos tipos inteiro, Date e Decimal em leituras Parquet, que ignoram grupos de linhas com base em suas estatísticas."}]}]} />
 
 Ativa ou desativa uma otimização no nível do plano de consulta que copia conjunções de filtro de um
-lado de um equi-join para o outro lado por meio da substituição de equi-chaves, de modo que a poda
+lado de uma equi-junção para o outro lado por meio da substituição de equi-chaves, de modo que a poda
 por chave primária/índice do outro lado possa utilizá-las.
 
-Aplica-se quando o filtro e a leitura do `MergeTree` estão separados do join apenas por passos de
-expressão e de filtro, e quando a conjunção copiada compara uma coluna de chave primária com uma
-constante (incluindo `IN` com um conjunto constante). Um predicado abaixo de um join aninhado ou
-abaixo de `DISTINCT`, ou uma comparação entre duas colunas-chave, não é alterado: ele não teria como
-viabilizar a poda por chave primária do outro lado, portanto copiá-lo apenas geraria trabalho extra.
+Aplica-se quando o filtro e a leitura estão separados da junção apenas por etapas de expressão e de
+filtro, e quando a conjunção copiada compara uma constante (incluindo `IN` com um conjunto constante)
+com uma coluna de chave primária de uma leitura `MergeTree` ou com uma coluna de uma leitura `Parquet`
+(`file`, `url`, armazenamento de objetos que não seja um lago de dados) do tipo inteiro de até 64 bits, `Date`, `Date32` ou `Decimal`, sem
+expressão padrão, cujos grupos de linhas a leitura pode ignorar com base nas estatísticas de mín./máx. Um predicado abaixo de uma
+junção aninhada ou abaixo de `DISTINCT`, ou uma comparação entre duas colunas-chave, não é alterado: ele não teria
+como viabilizar a poda do outro lado, portanto copiá-lo apenas geraria trabalho extra.
 
 Só entra em vigor se `query_plan_enable_optimizations` for 1.
 
@@ -633,9 +635,9 @@ Substitui uma etapa de filtro por uma etapa de expressão quando a condição de
 
 **Aliases**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Desativa essa lógica por padrão. Isso também se aplica ao alias `optimize_read_in_window_order`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Habilitado novamente por padrão: a ordenação agora distribui o stream mesclado pelas colunas de `PARTITION BY`, de modo que as funções de janela são executadas em paralelo. Isso também se aplica ao alias `optimize_read_in_window_order`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Desativa essa lógica por padrão. Isso também se aplica ao alias `optimize_read_in_window_order`."}]}]} />
 
 Ativa/desativa uma otimização no nível do plano de consulta que usa a ordenação do armazenamento ao ordenar funções de janela.
 Só tem efeito se a configuração [`query_plan_enable_optimizations`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) for 1.

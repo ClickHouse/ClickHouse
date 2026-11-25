@@ -77,17 +77,19 @@ Ne prend effet qu’avec `make_distributed_plan = 1` : ce paramètre n’a à l
 
 <ExperimentalBadge />
 
-**Alias** : `allow_experimental_cleanup_old_data_files_compaction`
+**alias** : `allow_experimental_cleanup_old_data_files_compaction`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Ajout d'un alias de paramètre `allow_experimental_cleanup_old_data_files_compaction`."}]}]} />
 
-Permet de nettoyer les anciens fichiers de données lors du compactage Iceberg.
+Permet de nettoyer les anciens fichiers de données des tables Iceberg par compactage en arrière-plan.
 
-Le nettoyage exécute `iceberg_compaction_data_cleanup` après un compactage. Il fait expirer les snapshots rendus obsolètes par le compactage, de la même
-manière que `expire_snapshots` : il les retire des métadonnées de la table et supprime les fichiers qui ne sont référencés par aucun autre snapshot. Pour une table
-en version 1 du format, ou derrière un catalogue transactionnel, seuls les fichiers sont supprimés et les snapshots sont conservés dans les métadonnées.
+Une tâche en arrière-plan de la table fait expirer les snapshots remplacés par un snapshot plus récent depuis plus de `iceberg_compaction_data_cleanup`,
+à l&#39;exception de ceux référencés par des branches et des étiquettes, de la même manière que `expire_snapshots` : elle les retire des métadonnées de la table et supprime
+les fichiers qui ne sont référencés par aucun autre snapshot. Elle retire également du journal des métadonnées les fichiers de métadonnées remplacés depuis plus de ce même délai et les supprime,
+sauf si un catalogue transactionnel écrit les métadonnées de la table. Les snapshots en cours de lecture par une requête sur une réplique quelconque sont conservés
+jusqu&#39;à une exécution ultérieure. Ce paramètre n&#39;a aucun effet sur les tables utilisant la version 1 du format.
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -185,6 +187,15 @@ Le tableau ci-dessous montre le comportement de ce paramètre pour différentes 
 | `toStartOfMinute`         | Renvoie `DateTime`<br />*Remarque : résultats incorrects pour les valeurs hors de la plage 1970-2149*      | Renvoie `DateTime` pour une entrée `Date`/`DateTime`<br />Renvoie `DateTime64` pour une entrée `Date32`/`DateTime64`                                   |
 | `timeSlot`                | Renvoie `DateTime`<br />*Remarque : résultats incorrects pour les valeurs hors de la plage 1970-2149*      | Renvoie `DateTime` pour un argument `Date`/`DateTime`<br />Renvoie `DateTime64` pour un argument `Date32`/`DateTime64`                                 |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’utiliser une table de hachage dédiée pour `GROUP BY` avec des clés de largeur fixe totalisant au plus 16 octets et une clé `String` non nullable. Lorsque ce paramètre est désactivé, la méthode sérialisée est utilisée."}]}]} />
+
+Utilise une table de hachage dédiée pour `GROUP BY` avec des clés de largeur fixe totalisant au plus 16 octets et une clé `String` non nullable. Chacune de ces clés peut être de type `LowCardinality`. Une clé contenant une chaîne vide est stockée uniquement sous forme de valeurs de largeur fixe, dans des cellules de même largeur que les clés de largeur fixe ; les autres clés sont stockées sous forme de valeurs de largeur fixe accompagnées d’une référence compactée à la chaîne de caractères. Cette référence intègre directement les chaînes de caractères de 11 octets au maximum, ou de 15 octets au maximum lorsque les valeurs de largeur fixe occupent au plus 4 octets. Un `GROUP BY` sans fonctions d’agrégation stocke uniquement les clés, sans réserver d’espace aux états d’agrégation, et utilise donc moins de mémoire.
+Lorsque ce paramètre est désactivé, la méthode sérialisée est utilisée.
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **Alias** : `allow_experimental_full_text_index`
@@ -240,7 +251,7 @@ Propage les instructions WITH aux requêtes UNION et à toutes les sous-requête
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre : `GROUP BY key [ORDER BY key] LIMIT n` publie la frontière du tas top-K vers l'étape de lecture `MergeTree`, qui s'en sert pour filtrer les lignes et ignorer des granules. Une valeur de `compatibility` inférieure à 26.10 le désactive."}]}]} />
 
-Pour [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) : lorsque la première clé `GROUP BY` de tri est une colonne lue depuis une table `MergeTree`, l&#39;agrégation publie la frontière de son tas top-K vers l&#39;étape de lecture dès que le tas contient `LIMIT` clés. L&#39;étape de lecture écarte alors les lignes dont la clé se situe au-delà de cette frontière avant même la lecture des autres colonnes (`PREWHERE`), et ignore les granules entiers situés au-delà à l&#39;aide de la clé primaire ou d&#39;un index de saut `minmax` défini sur cette colonne.
+Pour [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) : lorsque la première clé `GROUP BY` de tri est une colonne lue depuis une table `MergeTree`, l&#39;agrégation publie la frontière de son tas top-K vers l&#39;étape de lecture dès que le tas contient `LIMIT` clés. L&#39;étape de lecture écarte alors les lignes dont la clé se situe au-delà de cette frontière avant même la lecture des autres colonnes (`PREWHERE`), et ignore les granules entiers situés au-delà à l&#39;aide de la clé primaire ou d&#39;un index de saut `minmax` défini sur cette colonne. Lorsque la colonne est lue depuis des fichiers `Parquet` (fonctions de table et moteurs `file`, `s3`, `azureBlobStorage`, `hdfs` et de lac de données), le lecteur écarte lui-même ces lignes et ignore, d&#39;après leurs statistiques, les groupes de lignes entiers situés au-delà de la frontière.
 
 Cela s&#39;applique à `GROUP BY key ORDER BY key LIMIT n` ainsi qu&#39;à `GROUP BY key LIMIT n` sans `ORDER BY`, auquel cas n&#39;importe quel ensemble de `n` groupes constitue une réponse valide.
 
@@ -556,7 +567,7 @@ Accélère les jointures `hash`, `parallel_hash` et `grace_hash` portant sur une
 
 La table de hachage étant plus petite, une jointure atteint plus tardivement les limites `max_bytes_in_join` et `max_bytes_before_external_join`.
 
-Ce paramètre ne s’applique ni aux clés `FixedString` ou `LowCardinality(Nullable(String))`, ni aux tables utilisant le moteur `Join`, ni à `joinGet`. Une jointure sur une clé `LowCardinality(String)` peut utiliser à la place le dictionnaire de la clé. Une jointure dont le côté droit est estimé à moins de lignes que `min_rows_for_packed_string_keys_in_hash_join` n’est pas non plus concernée.
+Ce paramètre ne s’applique ni aux clés `FixedString` ou `LowCardinality(Nullable(String))`, ni aux tables utilisant le moteur `Join`, ni à `joinGet`. Une jointure sur une clé `LowCardinality(String)` peut utiliser à la place le dictionnaire de la clé. Une jointure conserve les clés exactes lorsque sa table de hachage tient dans le cache L2 du CPU, ainsi que lorsqu’elle devrait hacher chaque clé du côté gauche et que le côté droit comporte moins de lignes que `min_rows_for_packed_string_keys_in_hash_join`. Lorsque ce paramètre est défini sur 0, toutes les jointures utilisent des clés compactées, même celles dont la table de hachage tient dans le cache L2.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 

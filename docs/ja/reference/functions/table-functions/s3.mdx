@@ -387,13 +387,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## requester-pays バケットへのアクセス {#accessing-requester-pays-buckets}
 
-requester-pays バケットにアクセスするには、すべてのリクエストにヘッダー `x-amz-request-payer = requester` を含める必要があります。これを行うには、s3関数にパラメーター `headers('x-amz-request-payer' = 'requester')` を渡します。例:
+requester-pays バケットにアクセスするには、すべてのリクエストにヘッダー `x-amz-request-payer = requester` を含める必要があります。これを行うには、[`s3_request_payer`](/ja/reference/settings/session-settings/s3#s3_request_payer) 設定を `requester` に設定するか、サーバー構成のエンドポイントセクションで `request_payer` キーを使用します。例:
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -402,6 +403,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+`s3` 関数にパラメーター `headers('x-amz-request-payer' = 'requester')` を渡す方法でも同様に動作します。
 
 ## 相対 URL の解決 {#resolving-relative-urls}
 

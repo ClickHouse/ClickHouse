@@ -11,7 +11,7 @@ ClickStack propose plusieurs façons d’ingérer des données d’observabilit�
 <Note>
   Plusieurs de ces guides d’intégration utilisent l’OpenTelemetry Collector intégré de ClickStack Open Source pour des tests rapides et l’évaluation.
 
-  Pour les déploiements de production, nous vous recommandons d’exécuter les intégrations en tant qu’agents OpenTelemetry Collector, au plus près de vos workloads. Ces agents doivent transmettre les données de télémétrie via OTLP à un ClickStack OpenTelemetry Collector, qui achemine ensuite les données soit vers une instance ClickHouse autogérée pour la distribution ClickStack Open Source, soit vers Managed ClickStack. Consultez [&quot;Envoi de données OpenTelemetry&quot;](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
+  Pour les déploiements de production, nous vous recommandons d’exécuter les intégrations en tant qu’agents OpenTelemetry Collector, au plus près de vos workloads. Ces agents doivent transmettre les données de télémétrie via OTLP à un ClickStack OpenTelemetry Collector, qui achemine ensuite les données vers l’instance ClickHouse utilisée par votre déploiement ClickStack Open Source. Consultez [&quot;Envoi de données OpenTelemetry&quot;](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
 </Note>
 
 | Section                                                                   | Description                                              |
@@ -24,6 +24,7 @@ ClickStack propose plusieurs façons d’ingérer des données d’observabilit�
 | [Logs Kafka](/fr/clickstack/integration-examples/kafka-logs)                 | Collecter les logs des brokers Kafka                     |
 | [Métriques Kafka](/fr/clickstack/integration-examples/kafka-metrics)         | Surveiller les performances de Kafka                     |
 | [Kubernetes](/fr/clickstack/integration-examples/kubernetes)                 | Surveiller les clusters K8s                              |
+| [Loom](/fr/clickstack/integration-examples/loom)                             | Envoyer les traces de requêtes et les métriques de Loom  |
 | [Logs MongoDB](/fr/clickstack/integration-examples/mongodb-logs)             | Collecter les logs du serveur MongoDB                    |
 | [Logs MySQL](/fr/clickstack/integration-examples/mysql)                      | Collecter les logs de requêtes lentes et d’erreurs MySQL |
 | [Logs Nginx](/fr/clickstack/integration-examples/nginx-logs)                 | Collecter les logs d’accès et d’erreurs Nginx            |

@@ -378,7 +378,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
 
 #### 배치 스트림 처리에 DEPENDS ON 사용하기 {#using-depends-on-for-batched-stream-processing}
 
-`REFRESH EVERY`를 사용하지 않으면, 의존하는 뷰 X는 X가 마지막으로 갱신된 이후 모든 의존성이 각각 최소 한 번씩 갱신되었을 때 갱신됩니다. `REFRESH AFTER T`는 지연 시간을 추가합니다. 즉, 의존성이 갱신을 완료한 후 T 시간이 지나면 의존하는 뷰의 갱신이 시작됩니다.
+`REFRESH EVERY`를 사용하지 않으면, 종속 뷰 X는 X가 마지막으로 갱신된 이후 모든 의존성이 각각 최소 한 번씩 갱신되었을 때 갱신됩니다. `REFRESH AFTER T`는 지연 시간을 추가합니다. 즉, 의존성이 갱신을 완료한 후 T 시간이 지나면 종속 뷰의 갱신이 시작됩니다.
 
 순환 의존성은 허용되며 유용하게 활용할 수 있습니다. 다음 갱신 가능 구체화 뷰 그래프를 살펴보십시오:
 
@@ -430,6 +430,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_initial_backoff_ms` - `refresh_retries`가 0이 아닐 때 첫 번째 재시도 전까지의 지연 시간입니다. 이후 각 재시도마다 지연 시간이 두 배로 증가하며, 최대 `refresh_retry_max_backoff_ms`까지 늘어납니다. 기본값: 100 ms.
 * `refresh_retry_max_backoff_ms` - 갱신 시도 사이의 지연 시간이 지수적으로 증가할 때의 상한입니다. 기본값: 60000 ms(1분).
 * `all_replicas` - `APPEND`를 사용하는 [복제된 데이터베이스](/ko/reference/engines/database-engines/replicated)에서 모든 레플리카가 각각 독립적으로 갱신할지, 아니면 예약된 각 시각마다 하나의 레플리카만 갱신할지를 제어합니다. 이 설정은 뷰를 생성한 후에는 변경할 수 없습니다. 기본값: `false`.
+* `refresh_coordination_jitter_ms` - 레플리카 간에 갱신이 조정되는 경우, 각 레플리카는 예정된 갱신을 시작하기 전에 이 값 이내의 무작위 시간만큼 대기합니다. 따라서 `RANDOMIZE FOR`를 지정하지 않아도 갱신 시점이 레플리카마다 분산됩니다. 이 지연 시간은 `next_refresh_time`에 반영되지 않습니다. 0으로 설정하면 지연이 비활성화됩니다. 기본값: 1000 ms.
 
 ### 갱신 매개변수 변경 {#changing-refresh-parameters}
 

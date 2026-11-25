@@ -115,6 +115,10 @@ Dictionnaires actifs.
 
 Tables répliquées actives.
 
+### AttachedSharedTable {#attachedsharedtable}
+
+Tables SharedMergeTree actives.
+
 ### Table attachée {#attachedtable}
 
 Tables actives.
@@ -615,6 +619,10 @@ Nombre de serveurs enregistrés du Distributed Cache
 
 Nombre de serveurs du Distributed Cache enregistrés dans l’AZ actuelle
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+Nombre de clients du Distributed Cache dont la fenêtre de ralentissement est ouverte, au moment du dernier parcours de détection des requêtes bloquées
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 Nombre de fichiers temporaires validés appartenant à ce processus serveur du Distributed Cache
@@ -629,11 +637,15 @@ Nombre de connexions ouvertes entre Distributed Cache et le serveur ClickHouse
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-Nombre de connexions actives ouvertes par Distributed Cache vers le serveur ClickHouse (non marquées comme annulées en raison d’une limite)
+Nombre de connexions client répertoriées dans le registre du serveur de cache distribué, y compris celles marquées pour être fermées
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 Nombre de clients S3 mis en cache dans le Distributed Cache
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+Nombre de requêtes en transit vers le serveur de cache distribué qui n&#39;ont enregistré aucune progression pendant au moins `distributed_cache_stuck_request_no_progress_timeout_ms`, ou qui ont dépassé `distributed_cache_max_request_processing_time_ms` sans se terminer d&#39;elles-mêmes dans un intervalle de parcours, lors du dernier parcours de détection des requêtes bloquées
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -957,7 +969,7 @@ Nombre de jobs en attente ou actifs dans le pool de threads IcebergCatalog.
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-Nombre de tasks en arrière-plan chargées de supprimer les fichiers de données rendus obsolètes par la compaction Iceberg, qui sont planifiées ou encore conservées par les tables Iceberg.
+Nombre de tables Iceberg pour lesquelles est activé, via `enable_cleanup_old_data_files_compaction`, le task en arrière-plan qui fait expirer leurs snapshots obsolètes et supprime les fichiers référencés uniquement par ces snapshots.
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1974,6 +1986,10 @@ Le nombre minimal de répliques enregistrées dans Keeper pour l’ensemble des 
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 Nombre d’enregistrements de parts obsolètes stockés dans Keeper
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+Verrous de leader pour la mise à jour des parts, détenus ou en cours d&#39;acquisition par cette réplique, à raison d&#39;un par table SharedMergeTree dont elle est le leader
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

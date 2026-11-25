@@ -62,14 +62,14 @@ ClickStack 为工程团队提供基于 ClickHouse 构建的可观测性解决方
   * **ClickStack** 在 ClickHouse 中存储和查询生成的分布式 trace，并在 ClickStack 用户界面中呈现。
 </Tip>
 
-<div id="prerequisites">
-  ## 前置条件 {#prerequisites}
-</div>
+## 前置条件 {#prerequisites}
 
-* 已安装 **ClickStack**，且后端服务可访问；可采用自管理部署或使用 ClickHouse Cloud。请参阅[开源 ClickStack 入门](/zh/clickstack/getting-started/oss)或[自管理 ClickHouse Observability 入门](/zh/clickstack/self-configured/getting-started/managed)。
+* 已安装 **ClickStack 开源版**，且后端服务可访问。请参阅[开源 ClickStack 入门](/zh/clickstack/getting-started/oss)。
 * 后端服务已使用 **OpenTelemetry** 进行插桩，并将链路追踪发送至 ClickStack。请参阅[通过 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
 * 移动应用已集成 **bitdrift Capture SDK**。安装说明请参阅 [bitdrift SDK 文档](https://docs.bitdrift.io/)。
 * 已拥有 **bitdrift 账户**，并可联系 [技术支持](https://bitdrift.io/contact-us) 为你的租户启用追踪 (追踪 是 bitdrift 按租户启用的 Experimental 功能) 。
+
+如使用 ClickHouse Observability，请参阅单独的 [bitdrift 集成指南](/zh/clickstack/observability/integration-partners/bitdrift)。
 
 ## 配置追踪 {#configure-tracing}
 
@@ -95,7 +95,7 @@ ClickStack 为工程团队提供基于 ClickHouse 构建的可观测性解决方
   ## 部署灵活性 {#deployment-flexibility}
 </div>
 
-无论 ClickStack 是自管理还是作为 ClickHouse Cloud 上的托管服务运行，该集成都能正常工作，因为它不会改变数据进入 ClickStack 的方式。bitdrift 不会将移动端遥测数据导出到 ClickStack：它会捕获设备上请求的 OpenTelemetry trace context，并关联到您已通过 OpenTelemetry 插桩的服务发送至 ClickStack 的后端 trace。bitdrift 只需获取您的 ClickStack 用户界面地址来构建 **View Trace** 链接，因此无需更改 ClickStack 部署或其摄取管道。
+无论 ClickStack 开源版的数据库是在本地运行还是在 ClickHouse Cloud 上运行，该集成都能正常工作，因为它不会改变数据进入 ClickStack 的方式。bitdrift 不会将移动端遥测数据导出到 ClickStack：它会捕获设备上请求的 OpenTelemetry trace context，并关联到您已通过 OpenTelemetry 插桩的服务发送至 ClickStack 的后端追踪。bitdrift 只需获取您的 ClickStack 用户界面地址来构建 **View Trace** 链接，因此无需更改 ClickStack 部署或其摄取管道。
 
 <div id="next-steps">
   ## 后续步骤 {#next-steps}

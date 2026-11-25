@@ -30,7 +30,18 @@ la [Swagger UI](/fr/products/cloud/api-reference/organization/get-list-of-availa
 
 ## Limites de débit {#rate-limits}
 
-Les développeurs peuvent créer jusqu’à 100 clés API par organisation. Chaque clé API est limitée à 10 requêtes sur une période de 10 secondes. Si vous souhaitez augmenter le nombre de clés API ou de requêtes par période de 10 secondes pour votre organisation, veuillez contacter support@clickhouse.com
+Les développeurs peuvent créer jusqu’à 100 clés API par organisation. Chaque clé API est soumise aux
+limites suivantes sur une période de 10 secondes :
+
+* 40 requêtes de lecture (`GET`)
+* 20 requêtes d’écriture (toutes les autres méthodes, par exemple `POST`, `PATCH` et `DELETE`)
+
+Lorsqu’une requête dépasse une limite, l’API renvoie le statut `429 Too Many Requests`
+avec un en-tête `Retry-After`. La valeur de cet en-tête indique le nombre de secondes à attendre
+avant de renvoyer la requête.
+
+Si vous souhaitez augmenter le nombre de clés API ou de requêtes par période de 10 secondes
+pour votre organisation, veuillez contacter support@clickhouse.com
 
 ## Provider Terraform {#terraform-provider}
 

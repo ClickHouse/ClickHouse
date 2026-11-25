@@ -72,6 +72,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 不要将用于压缩的块 (由字节组成的一段内存) 与用于查询处理的块 (表中的一组行) 混淆。
 
+一个压缩块最多可容纳 256 MiB 的未压缩数据，因此超过 256 MiB 的设置值会按 256 MiB 处理。如果编解码器处理后的块大小会超过 512 MiB，块还会进一步缩小；这种情况只会在串联使用会使数据膨胀的编解码器时发生。旧版本以更大的块写入的数据无法读取。
+
 ## max_consume_snapshots {#max_consume_snapshots}
 
 <ExperimentalBadge />

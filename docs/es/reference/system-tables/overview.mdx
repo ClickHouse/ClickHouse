@@ -7,9 +7,7 @@ title: 'Descripción general de las tablas del sistema'
 doc_type: 'reference'
 ---
 
-<div id="system-tables-introduction">
-  ## Descripción general de las tablas del sistema
-</div>
+## Descripción general de las tablas del sistema {#system-tables-introduction}
 
 Las tablas del sistema proporcionan información sobre:
 
@@ -59,9 +57,7 @@ Un ejemplo:
 
 De forma predeterminada, el crecimiento de la tabla es ilimitado. Para controlar el tamaño de una tabla, puede usar la configuración de [TTL](/es/reference/statements/alter/ttl) para eliminar registros de log antiguos. También puede usar la función de particionado de las tablas con motor `MergeTree`.
 
-<div id="system-tables-sources-of-system-metrics">
-  ## Fuentes de métricas del sistema
-</div>
+## Fuentes de métricas del sistema {#system-tables-sources-of-system-metrics}
 
 Para recopilar métricas del sistema, el servidor de ClickHouse utiliza:
 
@@ -87,9 +83,7 @@ Si procfs es compatible y está habilitado en el sistema, el servidor de ClickHo
   Puede habilitarla con `sudo sysctl kernel.task_delayacct=1` o creando un archivo `.conf` en `/etc/sysctl.d/` con `kernel.task_delayacct = 1`
 </Note>
 
-<div id="system-tables-in-clickhouse-cloud">
-  ## Tablas del sistema en ClickHouse Cloud
-</div>
+## Tablas del sistema en ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
 En ClickHouse Cloud, las tablas del sistema proporcionan información esencial sobre el estado y el rendimiento del servicio, igual que en las implementaciones autogestionadas. Algunas tablas del sistema operan a nivel de todo el clúster, especialmente las que obtienen sus datos de los nodos Keeper, que gestionan los metadatos distribuidos. Estas tablas reflejan el estado global del clúster y deberían ser coherentes al consultarlas desde nodos individuales. Por ejemplo, [`parts`](/es/reference/system-tables/parts) debería ser coherente independientemente del nodo desde el que se consulte:
 
@@ -117,7 +111,7 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-Por el contrario, otras tablas del sistema son específicas de cada nodo; por ejemplo, se almacenan en memoria o conservan sus datos mediante el table engine MergeTree. Esto es habitual en datos como logs y métricas. Esta persistencia garantiza que los datos históricos sigan estando disponibles para su análisis. Sin embargo, estas tablas específicas de cada nodo son, por naturaleza, únicas en cada nodo.
+Por el contrario, otras tablas del sistema son específicas de cada nodo; por ejemplo, se almacenan en memoria o conservan sus datos mediante el motor de tabla MergeTree. Esto es habitual en datos como logs y métricas. Esta persistencia garantiza que los datos históricos sigan estando disponibles para su análisis. Sin embargo, estas tablas específicas de cada nodo son, por naturaleza, únicas en cada nodo. Tenga en cuenta que, en ClickHouse Cloud, las tablas persistidas conservan sus datos en el almacenamiento de objetos, no en el disco local del nodo.
 
 En general, pueden aplicarse las siguientes reglas para determinar si una tabla del sistema es específica de un nodo:
 
@@ -149,9 +143,7 @@ SHOW TABLES FROM system LIKE 'query_log%'
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="querying-multiple-versions">
-  ### Consultar varias versiones
-</div>
+### Consultar varias versiones {#querying-multiple-versions}
 
 Podemos consultar estas tablas mediante la función [`merge`](/es/reference/functions/table-functions/merge). Por ejemplo, la siguiente consulta identifica la consulta más reciente enviada al nodo de destino en cada tabla `query_log`:
 
@@ -187,11 +179,9 @@ Peak memory usage: 28.45 MiB.
   Aunque el sufijo numérico de las tablas puede sugerir el orden de los datos, nunca debes basarte en él. Por este motivo, usa siempre la función de tabla merge combinada con un filtro de fecha cuando consultes rangos de fechas específicos.
 </Info>
 
-Es importante destacar que estas tablas siguen siendo **locales a cada nodo**.
+Es importante destacar que estas tablas siguen siendo **específicas de cada nodo**.
 
-<div id="querying-across-nodes">
-  ### Consultas en todos los nodos
-</div>
+### Consultas en todos los nodos {#querying-across-nodes}
 
 Para obtener una vista completa de todo el clúster, los usuarios pueden aprovechar la función [`clusterAllReplicas`](/es/reference/functions/table-functions/cluster) en combinación con la función `merge`. La función `clusterAllReplicas` permite consultar tablas del sistema en todas las réplicas del clúster &quot;default&quot;, consolidando los datos específicos de cada nodo en un único resultado. En combinación con la función `merge`, puede usarse para consultar todos los datos del sistema de una tabla específica en un clúster.
 
@@ -233,9 +223,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
 ```
 
-<div id="querying-across-nodes-and-versions">
-  ### Consultas entre nodos y versiones
-</div>
+### Consultas entre nodos y versiones {#querying-across-nodes-and-versions}
 
 Debido al versionado de las tablas del sistema, esto todavía no representa todos los datos del clúster. Al combinar lo anterior con la función `merge`, obtenemos un resultado preciso para nuestro intervalo de fechas:
 
@@ -256,9 +244,7 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
 ```
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Las tablas del sistema y una mirada a los componentes internos de ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 * Blog: [Consultas esenciales de monitorización - parte 1 - consultas INSERT](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)

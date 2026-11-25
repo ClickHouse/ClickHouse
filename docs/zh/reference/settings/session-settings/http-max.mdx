@@ -14,35 +14,41 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
 <div id="http_max_field_name_size">
-  ## http_max_field_name_size
+  ## http&#95;max&#95;field&#95;name&#95;size {#http_max_field_name_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "下调默认值，以限制 HTTP 连接在身份验证前的内存占用。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "该变更已回移至 26.1，并记录于该版本中。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "下调默认值，以限制 HTTP 连接在身份验证前的内存使用量。"}]}]} />
 
 HTTP 请求头、查询参数和表单数据中的字段名称最大长度。
 
+此外，该设置还限制 ClickHouse 作为客户端读取 HTTP 响应时响应头中字段名称的长度，例如在 `url` 表函数中。
+
 <div id="http_max_field_value_size">
-  ## http_max_field_value_size
+  ## http&#95;max&#95;field&#95;value&#95;size {#http_max_field_value_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 HTTP 请求头、查询参数和表单数据中字段值的最大长度。
 
+此设置同样限制 ClickHouse 作为客户端读取的 HTTP 响应头中字段值的长度，例如使用 `url` 表函数时。
+
 <div id="http_max_fields">
-  ## http_max_fields
+  ## http&#95;max&#95;fields {#http_max_fields}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "降低默认值，以限制 HTTP 连接在身份验证前阶段的内存使用量。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "该变更已回移至 26.1，并在该版本中记录。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "降低默认值，以限制 HTTP 连接在身份验证前阶段的内存使用量。"}]}]} />
 
 HTTP 请求头、查询参数和表单数据中的最大字段数。
 
+此设置还会限制 ClickHouse 作为客户端读取 HTTP 响应时响应头中的字段数，例如在使用 `url` 表函数时。
+
 <div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
+  ## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
@@ -50,17 +56,17 @@ HTTP 请求头、查询参数和表单数据中的最大字段数。
 multipart/form-data 内容大小上限。此设置无法通过 URL 参数解析，应在用户 profile 中设置。请注意，在查询执行开始之前，内容会先在内存中解析并创建外部表。此外，这是在该阶段唯一会生效的限制 (内存使用量上限和最大执行时间限制在读取 HTTP form data 时不起作用) 。
 
 <div id="http_max_request_header_size">
-  ## http_max_request_header_size
+  ## http&#95;max&#95;request&#95;header&#95;size {#http_max_request_header_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "新增设置：在身份验证前限制 HTTP 请求头总大小。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "此更改已回移至 26.1，并记录在该版本中。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "新增设置：在身份验证前限制 HTTP 请求头总大小。"}]}]} />
 
 所有 HTTP 请求头 (名称和值合计) 的最大总大小，以字节为单位。
 
 <div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
+  ## http_max_request_param_data_size {#http_max_request_param_data_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
@@ -68,7 +74,7 @@ multipart/form-data 内容大小上限。此设置无法通过 URL 参数解析�
 预定义 HTTP 请求中用作查询参数的请求数据大小上限。
 
 <div id="http_max_tries">
-  ## http_max_tries
+  ## http_max_tries {#http_max_tries}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -76,7 +82,7 @@ multipart/form-data 内容大小上限。此设置无法通过 URL 参数解析�
 通过 HTTP 读取时的最大重试次数。
 
 <div id="http_max_uri_size">
-  ## http_max_uri_size
+  ## http_max_uri_size {#http_max_uri_size}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />

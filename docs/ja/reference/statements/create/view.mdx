@@ -378,13 +378,13 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
 
 #### バッチ単位のストリーム処理での DEPENDS ON の使用 {#using-depends-on-for-batched-stream-processing}
 
-`REFRESH EVERY` を使用しない場合、依存するビュー X は、X の前回のリフレッシュ以降に、そのすべての依存関係が少なくとも 1 回リフレッシュされていればリフレッシュされます。`REFRESH AFTER T` は遅延を追加するもので、依存先は依存元のリフレッシュ完了から T 時間後にリフレッシュを開始します。
+`REFRESH EVERY` を使用しない場合、依存ビュー X は、X の前回のリフレッシュ以降に、そのすべての依存関係が少なくとも 1 回リフレッシュされていればリフレッシュされます。`REFRESH AFTER T` は遅延を追加するもので、依存先は依存元のリフレッシュ完了から T 時間後にリフレッシュを開始します。
 
 循環依存は許可されており、有用でもあります。次のリフレッシャブルmaterialized view のグラフを考えてみましょう。
 
-1. X はある stream から行の batch を取り出し、それをテーブルに格納します。
+1. X はある stream から行の バッチ を取り出し、それをテーブルに格納します。
 2. 次に、Y と Z はどちらもそのテーブルを読み取り、異なる集計を行って、結果を別のテーブルに追記します。
-3. batch の処理が完了すると、X は次の batch を取り出し、この cycle が繰り返されます。
+3. バッチ の処理が完了すると、X は次の バッチ を取り出し、この cycle が繰り返されます。
 
 ```text
             source
@@ -430,6 +430,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_initial_backoff_ms` - `refresh_retries` が 0 でない場合の、最初の再試行までの待機時間です。以降の再試行では、待機時間が回ごとに 2 倍になり、最大で `refresh_retry_max_backoff_ms` まで増加します。デフォルト: 100 ms。
 * `refresh_retry_max_backoff_ms` - リフレッシュ試行の間隔が指数的に増加する際の上限です。デフォルト: 60000 ms (1 分) 。
 * `all_replicas` - `APPEND` を使用する [Replicated database](/ja/reference/engines/database-engines/replicated) で、すべてのレプリカが独立してリフレッシュするか、スケジュール時刻ごとに 1 つのレプリカだけがリフレッシュするかを制御します。ビューの作成後は変更できません。デフォルト: `false`。
+* `refresh_coordination_jitter_ms` - リフレッシュがレプリカ間で協調されている場合、各レプリカは予定時刻を迎えたリフレッシュを開始する前に、最大でこの値までのランダムな時間だけ待機します。これにより、`RANDOMIZE FOR` を使用しなくてもリフレッシュがレプリカ間に分散されます。この待機時間は `next_refresh_time` には反映されません。0 を指定すると待機は無効になります。デフォルト: 1000 ms。
 
 ### リフレッシュパラメータの変更 {#changing-refresh-parameters}
 

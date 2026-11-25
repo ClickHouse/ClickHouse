@@ -632,7 +632,7 @@ As posições armazenadas podem ser inspecionadas na coluna `positions` da funç
   Os valores padrão dos parâmetros avançados a seguir funcionam bem em praticamente todas as situações.
   Não recomendamos alterá-los.
 
-  O parâmetro opcional `dictionary_block_size` (padrão: 512) especifica o tamanho dos blocos do dicionário em linhas.
+  O parâmetro opcional `dictionary_block_size` (padrão: 8192) especifica o tamanho dos blocos do dicionário em linhas.
 
   O parâmetro opcional `dictionary_block_frontcoding_compression` (padrão: 1) especifica se os blocos do dicionário usam front coding como compressão.
 
@@ -918,7 +918,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `arrayJoin` {#functions-example-arrayjoin}
 
-Uma condição sobre um elemento do array indexado usa o índice da mesma forma que `has` e `hasAny`: `arrayJoin(tags) = 'clickhouse'` usa o índice como `has(tags, 'clickhouse')`, e `arrayJoin(tags) IN (set)` o usa como `hasAny(tags, set)`. O mesmo vale para `GLOBAL IN`, para `IN` com `transform_null_in = 1` quando o conjunto não contém `NULL` e para a cláusula `ARRAY JOIN`. O índice serve apenas para ignorar grânulos; o ClickHouse continua verificando a condição em cada elemento. `LEFT ARRAY JOIN` não usa o índice.
+Uma condição sobre um elemento do array indexado usa o índice da mesma forma que `has` e `hasAny`: `arrayJoin(tags) = 'clickhouse'` usa o índice como `has(tags, 'clickhouse')`, e `arrayJoin(tags) IN (set)` o usa como `hasAny(tags, set)`. O mesmo vale para `GLOBAL IN`, para `IN` com `transform_null_in = 1` quando o conjunto não contém `NULL` e para a cláusula `ARRAY JOIN`. O índice serve apenas para ignorar grânulos; o ClickHouse continua verificando a condição em cada elemento. `LEFT ARRAY JOIN` também usa o índice, a menos que a condição aceite o elemento que ele adiciona no caso de um array vazio (uma string vazia).
 
 Exemplo:
 
@@ -1690,7 +1690,7 @@ Durante a criação do índice, três arquivos são criados (por parte):
 
 **Arquivo de blocos do dicionário (.dct)**
 
-Os tokens no índice de texto são ordenados e armazenados em blocos de dicionário de 512 tokens cada (o tamanho do bloco é configurável pelo parâmetro `dictionary_block_size`).
+Os tokens no índice de texto são ordenados e armazenados em blocos de dicionário de 8192 tokens cada (o tamanho do bloco é configurável pelo parâmetro `dictionary_block_size`).
 Um arquivo de blocos do dicionário (.dct) consiste em todos os blocos de dicionário de todos os grânulos de índice em uma parte.
 
 **Arquivo de cabeçalho do índice (.idx)**

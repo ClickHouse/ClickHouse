@@ -154,11 +154,11 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     }
     ```
 
-    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+    `<version>`은 모듈의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
   </Step>
 
   <Step title="인프라별 IAM 역할 생성" id="byo-iam-per-infra-roles">
-    각 BYOC 인프라가 Provisioning되기 전에 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) per-infra module을 사용하여 필요한 IAM 역할(EKS 파드 아이덴티티 역할, ClickHouse S3 액세스 역할, 데이터 플레인 관리 역할)을 생성하십시오.
+    각 BYOC 인프라가 프로비저닝되기 전에 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) per-infra 모듈을 사용하여 필요한 IAM 역할(EKS 파드 아이덴티티 역할, ClickHouse S3 액세스 역할, 데이터 플레인 관리 역할)을 생성하십시오.
 
     ```hcl
     module "clickhouse_per_infra_iam" {
@@ -170,14 +170,14 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
     }
     ```
 
-    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+    `<version>`은 모듈의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
   </Step>
 
   <Step title="인프라별 역할을 최신 상태로 유지" id="byo-iam-keep-up-to-date">
     <Warning>
-      ClickHouse는 새로운 플랫폼 기능에 필요한 역할과 권한을 주기적으로 추가합니다. ClickHouse에서 업데이트를 안내하면 최신 release의 per-infra module을 다시 적용하십시오. 오래된 버전을 사용하면 BYOC 인프라의 Provisioning 및 upgrade가 실패할 수 있습니다.
+      ClickHouse는 새로운 플랫폼 기능에 필요한 역할과 권한을 주기적으로 추가합니다. ClickHouse에서 업데이트를 안내하면 최신 release의 per-infra 모듈을 다시 적용하십시오. 오래된 버전을 사용하면 BYOC 인프라의 프로비저닝 및 upgrade가 실패할 수 있습니다.
     </Warning>
   </Step>
 </Steps>
 
-ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [BYOC Privilege Reference](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.
+ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [AWS의 BYOC 권한](/ko/products/bring-your-own-cloud/reference/privilege-aws#additional-iam-roles-created-by-the-controller)을 참조하십시오.

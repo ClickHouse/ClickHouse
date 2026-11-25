@@ -13,13 +13,21 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## read_in_order_two_level_merge_threshold
+## read_in_order_max_bytes_to_prefetch {#read_in_order_max_bytes_to_prefetch}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "134217728"},{"label": "Nueva configuración para limitar la memoria destinada a la lectura anticipada de los flujos concatenados en orden al leer una única parte en el orden de la clave primaria."}]}]} />
+
+Tamaño total máximo, en bytes, de los bloques almacenados temporalmente en el búfer de forma anticipada al leer una única parte en el orden de la clave primaria con un filtro, cuando la parte se divide en varios flujos que se concatenan en orden en lugar de fusionarse. Los flujos posteriores en el orden se leen por adelantado en memoria mientras se consumen los anteriores, y este presupuesto se asigna primero a los flujos más próximos. Un valor mayor permite leer más flujos en paralelo. El flujo que se está consumiendo en cada momento puede almacenar en el búfer un par de bloques por encima de este límite. Con 0, no hay límite en bytes y cada flujo lee por adelantado solo un par de bloques.
+
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Número mínimo de partes que se deben leer para ejecutar el paso de fusión preliminar durante la lectura multihilo en el orden de la clave primaria.
 
-## read_in_order_use_buffering
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +35,7 @@ Número mínimo de partes que se deben leer para ejecutar el paso de fusión pre
 
 Usa búfer antes de fusionar al leer en orden de la clave primaria. Aumenta el paralelismo de la ejecución de consultas
 
-## read_in_order_use_virtual_row
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,7 +43,7 @@ Usa búfer antes de fusionar al leer en orden de la clave primaria. Aumenta el p
 
 Usa una fila virtual al leer siguiendo el orden de la clave primaria o de su función monótona. Resulta útil al buscar en múltiples partes, ya que solo se leen las partes que pueden contribuir realmente al resultado, además de una ventana de lectura anticipada limitada de como máximo `max_threads` partes que mantiene las lecturas en paralelo.
 
-## read_in_order_use_virtual_row_per_block
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

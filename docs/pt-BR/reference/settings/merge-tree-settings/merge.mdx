@@ -53,12 +53,13 @@ Disponível apenas no ClickHouse Cloud. Tamanho máximo total das partes para pr
 
 Use a fila de ordenação em lote para reduzir a sobrecarga da fila por linha ao mesclar fluxos ordenados.
 
-Aplica-se apenas a mesclagens que não alteram linhas, isto é, `MergeTree`
-simples (modo de mesclagem `Ordinary`). Não tem efeito em motores com semântica
-no momento da mesclagem, como `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` e `VersionedCollapsingMergeTree`, que continuam usando a
-fila padrão independentemente dessa configuração.
+Aplica-se apenas às mesclagens no modo de mesclagem `Ordinary`: as mesclagens de partes de `MergeTree` simples, incluindo
+as que removem ou reescrevem linhas (exclusões leves, exclusões por TTL, partes de patch de atualizações
+leves e `OPTIMIZE ... DEDUPLICATE`), e as mesclagens de partes de projeções normais. Os algoritmos de
+mesclagem de motores com semântica no momento da mesclagem, como `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` e
+`VersionedCollapsingMergeTree`, bem como os de partes de projeções de agregação, escolhem sua própria fila de ordenação; portanto,
+esta configuração não tem efeito sobre eles.
 
 ## merge_workload {#merge_workload}
 

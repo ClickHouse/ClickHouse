@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Fournit une interface de type table pour les tables [Delta Lake](https://github.com/delta-io/delta) dans Amazon S3, Azure Blob Storage ou un système de fichiers monté localement, avec prise en charge de la lecture et de l&#39;écriture (écriture pour S3 et GCS à partir de la v25.10, pour Azure à partir de la v26.9)
 
-## Syntaxe
+## Syntaxe {#syntax}
 
 `deltaLake` est un alias de `deltaLakeS3`, maintenu pour des raisons de compatibilité.
 
@@ -20,24 +20,27 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 
 deltaLakeLocal(path, [,format])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 Les arguments de cette fonction de table sont les mêmes que ceux des fonctions de table `s3`, `azureBlobStorage`, `HDFS` et `file`.
 L’argument `format` correspond au format des fichiers de données de la table Delta Lake.
 
 Un paramètre facultatif `extra_credentials` peut être utilisé pour transmettre un `role_arn` afin d’utiliser le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
 
-## Valeur renvoyée
+Pour Azure (`deltaLakeAzure`), `extra_credentials` accepte `client_id` et `tenant_id` pour l’identité de charge de travail (workload identity) et ne peut pas être combiné avec `account_name` / `account_key`. La variable `AZURE_FEDERATED_TOKEN_FILE` doit également être définie pour le processus (ainsi que `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` s’ils ne sont pas transmis explicitement ; `AZURE_AUTHORITY_HOST` est facultative). L’identité de charge de travail s’appuie sur l’identité propre du serveur ; elle est donc refusée par défaut : activez `allow_server_credentials_in_user_queries` dans la session qui exécute la requête ou dans son settings profile.
+
+## Valeur renvoyée {#returned-value}
 
 Renvoie une table ayant la structure spécifiée pour lire des données depuis la table Delta Lake indiquée ou y écrire des données.
 
-## Exemples
+## Exemples {#examples}
 
-### Lecture des données
+### Lecture des données {#reading-data}
 
 Prenons une table dans un stockage S3 à l’adresse `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
 Pour lire les données de cette table dans ClickHouse, exécutez :
@@ -58,7 +61,7 @@ LIMIT 2
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-### Insertion de données
+### Insertion de données {#inserting-data}
 
 Considérez une table dans un stockage S3 à l’emplacement `s3://ch-docs-s3-bucket/people_10k/`.
 Les écritures Delta Lake sont une fonctionnalité bêta désactivée par défaut. Activez-les comme suit (`allow_delta_lake_writes` est disponible à partir de la version 26.7 ; sur les versions antérieures, utilisez `allow_experimental_delta_lake_writes`) :
@@ -97,7 +100,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
    └───────┴───────────┴──────────┴────────┴─────┘
 ```
 
-## Colonnes virtuelles
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
@@ -105,7 +108,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
 * `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
 
-## Voir aussi
+## Voir aussi {#related}
 
 * [Moteur DeltaLake](/fr/reference/engines/table-engines/integrations/deltalake)
 * [Fonction de table DeltaLake cluster](/fr/reference/functions/table-functions/deltalakeCluster)

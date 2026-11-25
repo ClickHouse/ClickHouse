@@ -1079,7 +1079,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · q-error <ra
 
 * `rows estimated <estimated_rows>` — 连接顺序优化器对该侧行数的估算，用于与其旁边的实际 `rows` 进行比较；当优化器未生成估算时显示 `no stats` (请参阅[估算值与实际连接指标](#explain-analyze-join-estimation)) 。
 * `rows <rows>` — 该侧经过连接的行总数。
-* `q-error <ratio>`：该侧的 `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)`，计算方式与 `Output rows` 相同；仅当两者均非零时输出。如果该侧是经过过滤的表读取，则该值即为过滤器估算的 q-error。连接运行时过滤器会从其所作用的一侧移除行，而任何估算都未将这一点考虑在内；如需单独比较估算值，请设置 `enable_join_runtime_filters = 0`。
+* `q-error <ratio>`：该侧的 `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)`，计算方式与 `Output rows` 相同；仅当两者均非零时输出。如果该侧是经过过滤的表读取，则该值即为过滤器估算的 q-error。连接运行时过滤器会从其所作用的一侧移除行，而任何估算都未将这一点考虑在内；如需单独比较估算值，请设置 `enable_join_runtime_filters = 0`。同样，对于按主键范围分片的哈希连接 (`query_plan_join_shard_by_pk_ranges`) ，如果某个范围的构建侧为空，且探测侧的行不可能出现在结果中，则不会读取这些行；如需单独比较估算值，请设置 `query_plan_join_shard_by_pk_ranges = 0`。
 * `matched <matched_rows>` — 该侧在另一侧找到至少一个连接匹配行的行数。这里统计的是*行*，而不是键：如果某个键在右侧出现三次且能够匹配，则这三行右侧行都会计为已匹配。
 * `match rate <match_rate>%` — 该侧已匹配行的占比，计算方式为 `100 * <matched_rows> / <rows>`。
 * `fanout <fanout>` — 该侧平均每个已匹配行产生的输出行数。

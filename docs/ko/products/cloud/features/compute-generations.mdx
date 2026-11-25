@@ -1,0 +1,70 @@
+---
+sidebarTitle: '컴퓨트 세대'
+slug: /cloud/features/compute-generations
+title: 'ClickHouse 컴퓨트 세대: Gen 2'
+description: 'ClickHouse Cloud의 Gen 1 및 Gen 2 컴퓨트 세대를 비교합니다.'
+keywords: ['컴퓨트 세대', 'Gen 1', 'Gen 2', 'CPU', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+## 개요 {#overview}
+
+이제 ClickHouse Cloud 컴퓨트는 세대(generation)별로 제공됩니다. Gen 1은 현재 사용 중인 표준 컴퓨트입니다. Gen 2는 최신 CPU 계열에서 실행되며, 가격은 더 높지만 더 높은 성능을 제공합니다. Gen 2로의 전환은 선택 사항이며 서비스별로 설정합니다. 기존 서비스는 현재 가격 그대로 Gen 1에 유지됩니다.
+
+<PrivatePreviewBadge />
+
+Gen 2는 요청 시 기능 플래그를 통해 제공됩니다. 기능, 리전, 요금 및 약관은 정식 출시 전에 변경될 수 있습니다.
+
+향후 특정 세대의 지원이 종료되면 해당 세대의 서비스는 사전에 공지된 날짜에 최신 세대로 마이그레이션됩니다.
+
+## Gen 1 및 Gen 2 {#gen-1-and-gen-2}
+
+Gen 2는 동일한 CPU 및 메모리 사용량 기준으로 Gen 1보다 약 30~50% 향상된 성능을 제공하므로, 비용 대비 성능이 더 높습니다. 실제 결과는 구성과 워크로드에 따라 달라지므로, 비용이나 성능 또는 둘 다에 미치는 영향을 확인하려면 실제 워크로드로 직접 테스트하십시오.
+
+|                    | Gen 1                                       | Gen 2                                          |
+| ------------------ | ------------------------------------------- | ---------------------------------------------- |
+| 하드웨어               | 표준 컴퓨트 하드웨어                                 | 최신 CPU 계열                                      |
+| 성능                 | 기준값                                         | 최대 약 30~50% 더 빠름                               |
+| 가격                 | 표준 컴퓨트 가격                                   | Gen 1보다 높음                                     |
+| CPU 대 메모리 비율       | 1:4                                         | 1:4(용량 재산정 불필요)                                |
+| 가용성                | Basic, Scale 및 Enterprise 요금제, 모든 리전 및 클라우드 | Scale 및 Enterprise 요금제, 일부 AWS 리전              |
+| 자동 스케일링 및 유휴 상태 전환 | 지원됨                                         | 곧 제공될 예정입니다. 수동 스케일링 및 예약 스케일링 설정은 사용할 수 있습니다. |
+
+## 가용성 {#availability}
+
+Gen 2는 용량이 확보된 다음 AWS 리전의 조직에서 Scale 및 Enterprise 요금제로 제공됩니다:
+
+* `us-east-1`
+* `us-east-2`
+* `us-west-2`
+* `eu-central-1`
+
+더 많은 리전, 요금제 등급 및 클라우드가 추가될 예정입니다. 사용 가능 여부를 확인하고 조직에 기능 플래그를 활성화하려면 ClickHouse 고객 계정 담당팀에 문의하십시오.
+
+## 하드웨어 할당 {#hardware-allocation}
+
+Gen 2는 최신 CPU 계열을 최우선으로 하는 머신 유형 우선순위 목록에 따라 배치되므로, 서비스는 사용 가능한 최상의 하드웨어에서 실행됩니다.
+
+우선순위가 높은 하드웨어를 사용할 수 없는 경우 ClickHouse는 목록의 다음 머신 유형으로 각 노드를 할당하므로 서비스가 중단 없이 계속 실행됩니다. 이 경우에도 서비스에는 Gen 2 요금이 청구됩니다.
+
+최신 하드웨어에 대한 액세스를 최대한 보장하기 위해 ClickHouse는 Gen 2 용량을 사전에 예약하며, 공급이 확정된 리전에서만 Gen 2를 제공합니다. 가용성은 리전과 시기에 따라 달라집니다.
+
+## 시작하기 {#get-started}
+
+<Steps>
+  <Step title="액세스 요청" id="request-access">
+    계정 담당 팀에 조직의 Gen 2 활성화를 요청하십시오.
+  </Step>
+
+  <Step title="서비스 생성" id="create-a-service">
+    활성화가 완료되면 ClickHouse Cloud 콘솔에서 서비스를 생성하고, 서비스 생성 과정에서 **Gen 2**를 선택하십시오. 자동 스케일링은 지원되지 않지만, 예약 스케일링을 사용하면 워크로드 요구 사항에 맞춰 지정한 시간에 서비스 크기를 변경할 수 있습니다.
+  </Step>
+
+  <Step title="기존 서비스 업그레이드" id="upgrade-an-existing-service">
+    기존 Gen 1 서비스를 Gen 2로 업그레이드하려면 서비스 설정을 변경하십시오.
+  </Step>
+</Steps>
+
+비공개 프리뷰 기간 중 질문이나 피드백이 있으면 계정 담당 팀 또는 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하십시오.

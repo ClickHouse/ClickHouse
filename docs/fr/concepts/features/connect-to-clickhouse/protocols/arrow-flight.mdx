@@ -1,0 +1,466 @@
+---
+description: 'Documentation de l’interface Apache Arrow Flight de ClickHouse, qui permet aux clients Flight SQL de se connecter à ClickHouse'
+sidebarTitle: 'Interface Arrow Flight'
+slug: /concepts/features/connect-to-clickhouse/protocols/arrow-flight
+title: 'Interface Arrow Flight'
+doc_type: 'reference'
+---
+
+## Vue d’ensemble {#overview}
+
+ClickHouse prend en charge le protocole [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html), un framework RPC hautes performances conçu pour le transport efficace de données en colonnes au format [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) sur [gRPC](https://grpc.io/).
+
+L’implémentation prend également en charge [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html), ce qui permet aux outils de BI et aux applications compatibles avec le protocole Flight SQL d’interroger directement ClickHouse.
+
+Principales fonctionnalités :
+
+* Exécution de requêtes SQL et récupération des résultats au format Apache Arrow.
+* Insertion de données dans des tables au format Arrow.
+* Interrogation des métadonnées (catalogues, schémas, tables, clés primaires) via les commandes Flight SQL.
+* Création, liaison, exécution et fermeture de requêtes préparées côté serveur via Flight SQL.
+* Gestion des sessions et des paramètres via les actions Flight SQL.
+* Chiffrement TLS et authentification par nom d’utilisateur et mot de passe.
+* Récupération incrémentale des résultats via `PollFlightInfo`.
+* Annulation des requêtes via `CancelFlightInfo`.
+
+<Note>
+  Dans ClickHouse Cloud, l’interface Arrow Flight est désactivée par défaut et son utilisation nécessite l’activation d’un feature flag Cloud pour votre service. Les exemples de configuration du serveur ci-dessous s’appliquent à ClickHouse autogéré.
+</Note>
+
+## Activer le serveur Arrow Flight {#enabling-server}
+
+Pour activer le serveur Arrow Flight, ajoutez le paramètre `arrowflight_port` à la configuration du serveur ClickHouse :
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+</clickhouse>
+```
+
+Au démarrage, un message de journal confirme que l&#39;interface est active :
+
+```text
+{} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
+```
+
+## Configuration TLS {#tls-configuration}
+
+Pour activer TLS sur l&#39;interface Arrow Flight, configurez les paramètres suivants :
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/path/to/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/path/to/server-key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+```
+
+Lorsque TLS est activé, les clients doivent se connecter avec le schéma `grpc+tls://` plutôt que `grpc://`.
+
+## Authentification {#authentication}
+
+L’interface Arrow Flight prend en charge deux méthodes d’authentification :
+
+### Authentification de base {#basic-auth}
+
+Les clients s’authentifient avec un nom d’utilisateur et un mot de passe au moyen de l’en-tête HTTP standard `Authorization: Basic`. Si l’authentification réussit, le serveur renvoie un jeton Bearer dans l’en-tête de réponse.
+
+### Authentification par jeton Bearer {#bearer-auth}
+
+Les requêtes suivantes peuvent utiliser le jeton Bearer obtenu après une authentification de base en le transmettant dans l’en-tête `Authorization: Bearer <token>`. Le jeton est automatiquement renouvelé à chaque utilisation et expire après le délai défini par le paramètre du serveur `default_session_timeout` (par défaut : 60 secondes).
+
+### Appels sans nom d’utilisateur {#auth-without-user-name}
+
+Un appel sans en-tête `authorization`, ou avec des identifiants Basic dont le nom d’utilisateur est vide, est authentifié en tant qu’utilisateur désigné par le paramètre du serveur [`default_session_user`](/fr/reference/settings/server-settings/settings/default#default_session_user) (`default`, sauf configuration contraire), avec le mot de passe fourni (éventuellement vide). Le comportement est exactement le même que pour une requête HTTP sans le paramètre `user`.
+
+Le nom d’utilisateur vide n’est qu’un alias de cet utilisateur. Son mot de passe, ses `networks` et les autres vérifications d’accès s’appliquent normalement : c’est donc la configuration de cet utilisateur qui détermine si un appel sans identifiants est accepté.
+
+Si `default_session_user` est défini sur une chaîne vide, ces appels sont rejetés avec `Unauthenticated`. Lorsque la section `session_log` est activée dans la configuration du serveur, le rejet est consigné dans [`system.session_log`](/fr/reference/system-tables/session_log) sous la forme d’un événement `LoginFailure` avec un `user` vide.
+
+### Exemple en Python {#auth-python-example}
+
+```python
+import pyarrow.flight as flight
+
+client = flight.FlightClient("grpc://localhost:9090")
+
+# Basic auth returns a bearer token for subsequent calls
+token_pair = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+Avec TLS :
+
+```python
+import pyarrow.flight as flight
+
+with open("ca-cert.pem", "rb") as f:
+    tls_root_certs = f.read()
+
+client = flight.FlightClient(
+    "grpc+tls://localhost:9090",
+    tls_root_certs=tls_root_certs,
+)
+
+token_pair = client.authenticate_basic_token("default", "password")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+## Gestion des sessions {#session-management}
+
+L&#39;interface Arrow Flight prend en charge les sessions ClickHouse au moyen d&#39;en-têtes de métadonnées gRPC personnalisés :
+
+| En-tête                        | Description                                                                                                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `x-clickhouse-session-id`      | Identifiant de session. S&#39;il est fourni, plusieurs requêtes partagent le même état de session (tables temporaires, paramètres).                                        |
+| `x-clickhouse-session-timeout` | Délai d&#39;expiration de la session, en secondes. Ne doit pas dépasser `max_session_timeout`.                                                                             |
+| `x-clickhouse-session-check`   | Définir sur `1` pour vérifier si la session existe, sans en créer une nouvelle.                                                                                            |
+| `x-clickhouse-session-close`   | Définir sur `1` pour clôturer la session une fois la requête terminée. Nécessite que `enable_arrow_close_session` soit défini sur `true` dans la configuration du serveur. |
+
+<Note>
+  Comme Arrow Flight utilise gRPC sur HTTP/2, les noms des en-têtes de métadonnées sont sensibles à la casse et doivent être écrits en minuscules, exactement comme indiqué (par exemple, `x-clickhouse-session-id` et non `X-ClickHouse-Session-Id`). Cette exigence découle de la [RFC 9113, section 8.2](https://www.rfc-editor.org/rfc/rfc9113#section-8.2), qui impose que les noms de champs HTTP/2 ne contiennent que des caractères minuscules. HTTP/1.1 se comporte différemment : les noms d&#39;en-têtes y sont case-insensitive.
+</Note>
+
+Les sessions permettent de définir des paramètres ClickHouse persistants à l&#39;aide de l&#39;action `SetSessionOptions` (voir [DoAction](#doaction)).
+
+## Référence de la configuration du serveur {#configuration-reference}
+
+| Paramètre                                                     | Valeur par défaut | Description                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arrowflight_port`                                            | —                 | Port du serveur Arrow Flight. Le serveur ne démarre que si ce paramètre est défini.                                                                                                                                                                                                                                                                                                                                                                  |
+| `arrowflight.enable_ssl`                                      | `false`           | Active le chiffrement TLS.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `arrowflight.ssl_cert_file`                                   | —                 | Chemin du fichier de certificat TLS. Obligatoire lorsque TLS est activé.                                                                                                                                                                                                                                                                                                                                                                             |
+| `arrowflight.ssl_key_file`                                    | —                 | Chemin du fichier de clé privée TLS. Obligatoire lorsque TLS est activé.                                                                                                                                                                                                                                                                                                                                                                             |
+| `arrowflight.tickets_lifetime_seconds`                        | `600`             | Durée, en secondes, au terme de laquelle les tickets Flight expirent et sont supprimés. Définissez-le sur `0` pour désactiver l’expiration automatique des tickets.                                                                                                                                                                                                                                                                                  |
+| `arrowflight.cancel_ticket_after_do_get`                      | `false`           | Si `true`, les tickets sont annulés dès qu’ils ont été consommés par `DoGet`, ce qui libère de la mémoire.                                                                                                                                                                                                                                                                                                                                           |
+| `arrowflight.poll_descriptors_lifetime_seconds`               | `600`             | Durée, en secondes, au terme de laquelle les descripteurs d’interrogation expirent. Définissez-le sur `0` pour désactiver l’expiration automatique.                                                                                                                                                                                                                                                                                                  |
+| `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false`           | Si `true`, les descripteurs d’interrogation sont annulés après avoir été consommés par `PollFlightInfo`.                                                                                                                                                                                                                                                                                                                                             |
+| `arrowflight.max_prepared_statements_per_user`                | `100`             | Nombre maximal de requêtes préparées ouvertes par utilisateur. Définissez-le sur `0` pour supprimer la limite.                                                                                                                                                                                                                                                                                                                                       |
+| `arrowflight.prepared_statements_lifetime_seconds`            | `-1`              | Mode de durée de vie des requêtes préparées. `> 0` : utilise cette valeur comme durée de vie et renouvelle l’expiration à chaque requête, pour les statements session-bound comme session-less. `0` : désactive l’expiration automatique. `-1` : pour les statements session-bound, utilise le délai d’expiration de la session comme durée de vie et le renouvelle à chaque requête ; les instructions sans session n’expirent pas automatiquement. |
+| `enable_arrow_close_session`                                  | `true`            | Permet aux clients de fermer des sessions via l’en-tête `x-clickhouse-session-close`.                                                                                                                                                                                                                                                                                                                                                                |
+| `default_session_timeout`                                     | `60`              | Délai d’expiration de session par défaut, en secondes. Détermine également l’expiration du jeton Bearer.                                                                                                                                                                                                                                                                                                                                             |
+| `max_session_timeout`                                         | `3600`            | Délai d’expiration de session maximal autorisé, en secondes.                                                                                                                                                                                                                                                                                                                                                                                         |
+
+## Méthodes RPC prises en charge {#rpc-methods}
+
+### GetFlightInfo {#getflightinfo}
+
+Exécute une requête et renvoie un `FlightInfo` contenant le schéma du résultat, les endpoints avec les tickets permettant de récupérer les données, le nombre de lignes et le nombre d&#39;octets.
+
+Accepte un `FlightDescriptor`, qui peut être :
+
+* **Descripteur PATH** : un path composé d&#39;un seul élément, interprété comme un nom de table. Génère `SELECT * FROM <table>`.
+* **Descripteur CMD** : soit une chaîne de requête SQL brute, soit une commande protobuf Flight SQL sérialisée (voir [Commandes Flight SQL](#flight-sql-commands)).
+
+La requête est exécutée intégralement et les résultats sont stockés dans des tickets côté serveur. Chaque bloc de données produit un endpoint/ticket distinct, ce qui permet aux clients de récupérer les données en parallèle.
+
+```python
+# Query by table name
+descriptor = flight.FlightDescriptor.for_path("my_table")
+info = client.get_flight_info(descriptor, options)
+
+# Query by SQL
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM my_table WHERE id > 100"
+)
+info = client.get_flight_info(descriptor, options)
+
+# Retrieve results
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+### PollFlightInfo {#pollflightinfo}
+
+Permet la récupération incrémentale de l’ensemble de résultats pour les requêtes long-running. Au lieu d’attendre que la requête soit entièrement terminée (comme le fait `GetFlightInfo`), `PollFlightInfo` renvoie les résultats bloc par bloc.
+
+Lors du premier appel, la requête commence à s’exécuter. La réponse contient :
+
+* Un `FlightInfo` comportant des endpoint pour chacun des blocs de données déjà disponibles.
+* Un `FlightDescriptor` pour la prochaine interrogation (si d’autres résultats sont attendus).
+
+Les appels suivants effectués avec le descripteur renvoyé récupèrent des blocs supplémentaires. Lorsqu’il n’y a plus de données disponibles, la réponse ne contient plus de descripteur suivant.
+
+<Note>
+  L’implémentation actuelle reste bloquée jusqu’à ce qu’un bloc de données soit disponible, au lieu de répondre immédiatement sans données.
+</Note>
+
+### GetSchema {#getschema}
+
+Renvoie le schéma Arrow du résultat d’une requête sans exécuter la requête dans son intégralité. Accepte les mêmes types de descripteurs que `GetFlightInfo`.
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT 1 AS x, 'hello' AS y"
+)
+schema_result = client.get_schema(descriptor, options)
+schema = schema_result.schema
+print(schema)  # x: int32, y: string
+```
+
+### DoGet {#doget}
+
+Récupère les données associées à un ticket donné. Accepte au choix :
+
+* un ticket renvoyé par `GetFlightInfo` ou `PollFlightInfo` ;
+* une chaîne de requête SQL brute comme valeur du ticket.
+
+```python
+# Using a ticket from GetFlightInfo
+reader = client.do_get(endpoint.ticket, options)
+table = reader.read_all()
+
+# Using a raw SQL query as ticket
+ticket = flight.Ticket("SELECT number FROM system.numbers LIMIT 10")
+reader = client.do_get(ticket, options)
+table = reader.read_all()
+```
+
+### DoPut {#doput}
+
+Envoie des données à ClickHouse. Accepte un `FlightDescriptor` et un flux de lots d’enregistrements Arrow.
+
+**Insertion par nom de table** (descripteur PATH) :
+
+```python
+schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3]), pa.array(["Alice", "Bob", "Charlie"])],
+    schema=schema,
+)
+
+descriptor = flight.FlightDescriptor.for_path("my_table")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**Insertion via SQL** (descripteur CMD) :
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "INSERT INTO my_table FORMAT Arrow"
+)
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**Exécuter des statements DDL/DML via Flight SQL `CommandStatementUpdate` :**
+
+Les clients Flight SQL utilisent `CommandStatementUpdate` pour exécuter des statements DDL/DML (CREATE, INSERT, ALTER, etc.). La réponse inclut le nombre de lignes affectées.
+
+**Ingestion en masse via Flight SQL `CommandStatementIngest` :**
+
+Seul l&#39;ajout à la fin de tables existantes est pris en charge (`TABLE_NOT_EXIST_OPTION_FAIL` + `TABLE_EXISTS_OPTION_APPEND`). Les catalogues et les tables temporaires ne sont pas pris en charge pour cette commande.
+
+`transaction_id` n&#39;est pas pris en charge pour `CommandStatementUpdate` ni pour `CommandStatementIngest`. S&#39;il est fourni, ClickHouse renvoie une erreur `NotImplemented`.
+
+<Note>
+  Seul le format `Arrow` est accepté pour le transfert de données. Spécifier d&#39;autres formats en SQL (par exemple `FORMAT JSON`) provoque une erreur.
+</Note>
+
+### DoAction {#doaction}
+
+Exécute des actions nommées. Les actions suivantes sont prises en charge :
+
+#### CancelFlightInfo {#cancelflightinfo}
+
+Annule une requête en cours d’exécution associée à un `FlightInfo`. L’identifiant de requête est extrait du champ `app_metadata` du `FlightInfo`. Annule également tous les descripteurs d’interrogation associés à cette requête.
+
+```python
+# Start a long-running query via PollFlightInfo, then cancel it
+cancel_request = flight.CancelFlightInfoRequest(info)
+result = client.cancel_flight_info(cancel_request, options)
+# result.status is CancelStatus.CANCELLED if successful
+```
+
+#### SetSessionOptions {#setsessionoptions}
+
+Définit les paramètres du serveur ClickHouse pour la session en cours. Un ID de session doit être défini au préalable via l&#39;en-tête `x-clickhouse-session-id`.
+
+Types de valeurs pris en charge : string, booléen, integer, double et listes de strings.
+
+Si un nom de paramètre est inconnu, l&#39;erreur `INVALID_NAME` est renvoyée. Si une valeur ne peut pas être analysée, l&#39;erreur `INVALID_VALUE` est renvoyée.
+
+#### GetSessionOptions {#getsessionoptions}
+
+Renvoie tous les paramètres ClickHouse actuels de la session, ainsi que leurs valeurs. Renvoie un dictionnaire associant les noms des paramètres à des valeurs de type string (en interrogeant `system.settings` en interne).
+
+#### CreatePreparedStatement {#createpreparedstatement}
+
+Crée une requête préparée côté serveur et renvoie un handle d’instruction. La requête contient le texte de la requête SQL avec des caractères de substitution `?`.
+
+`transaction_id` n’est pas pris en charge pour cette action. S’il est fourni, ClickHouse renvoie une erreur `NotImplemented`.
+
+Pour les statements de requête, la réponse peut inclure :
+
+* `dataset_schema` : schéma de l’ensemble de résultats.
+* `parameter_schema` : schéma des paramètres du statement.
+
+Si l’inférence de schéma échoue pour une requête valide (par exemple, si le remplacement des caractères de substitution par `NULL` rend cette requête invalide), ClickHouse crée tout de même la requête préparée et renvoie le handle sans `dataset_schema`.
+
+`dataset_schema` est une estimation aussi précise que possible, conformément à la spécification Flight SQL : celle-ci indique que le schéma de l’ensemble de résultats peut dépendre des paramètres, que le serveur doit fournir sa meilleure estimation et que les clients ne doivent pas supposer que le schéma est exact. Ne vous y fiez pas ; exécutez le statement pour obtenir le schéma qui décrit les données. Dans ClickHouse, il peut différer de celui des données renvoyées pour deux raisons :
+
+* L’inférence remplace chaque `?` par `NULL` : le type d’un caractère de substitution qui détermine une colonne du résultat est donc déduit de ce `NULL` plutôt que de la valeur que vous lierez ultérieurement. `SELECT ? AS x` conduit à inférer une colonne de type `Nothing`, mais la liaison de la valeur `5` produit un `UInt8`. Un caractère de substitution utilisé uniquement dans un prédicat, comme dans `SELECT id, name FROM t WHERE id = ?`, ne présente pas ce problème, car les types de résultat proviennent de la table.
+* Le type Arrow d’une colonne sans équivalent Arrow est déterminé par [`output_format_arrow_unsupported_types`](/fr/reference/settings/formats/output-format), dont la valeur est évaluée à chaque appel à partir de la session qui l’effectue. Comme un handle appartient à l’utilisateur plutôt qu’à une session, un appel ultérieur peut utiliser une valeur différente de ce paramètre et renvoyer `binary` alors que `utf8` avait été annoncé, ou l’inverse. Définir ce mode dans la requête préparée elle-même garantit qu’il reste identique pour l’inférence et l’exécution.
+
+Les requêtes préparées appartiennent à l’utilisateur authentifié, et non à une session particulière. Si vous ouvrez plusieurs sessions sous le même compte utilisateur, vous pouvez exécuter le même handle d’instruction, lui lier de nouvelles valeurs et le fermer depuis n’importe laquelle de ces sessions.
+
+Les autres utilisateurs ne peuvent pas exécuter ou fermer un handle d’instruction qu’ils n’ont pas créé, ni lui lier de valeurs.
+
+`arrowflight.prepared_statements_lifetime_seconds` détermine les règles d’expiration :
+
+* `> 0` : la valeur configurée définit la durée de vie du statement. Le délai d’expiration est réinitialisé à chaque requête, aussi bien pour les requêtes préparées session-bound que pour les instructions sans session.
+* `0` : les requêtes préparées n’expirent pas automatiquement.
+* `-1` (par défaut) : si le statement est créé dans une session, il reprend le délai d’expiration de cette session, qui est réinitialisé à chaque requête dans cette session. Si le statement est créé sans session, il n’expire pas automatiquement.
+
+Les statements expirés sont supprimés et ne sont plus comptabilisés dans la limite `arrowflight.max_prepared_statements_per_user`.
+
+#### ClosePreparedStatement {#closepreparedstatement}
+
+Ferme une requête préparée et libère les ressources associées côté serveur lorsque la requête contient un handle d’instruction non vide.
+
+ClickHouse prend également en charge la fermeture en masse avec `ClosePreparedStatement` lorsque le handle est vide :
+
+* Si `x-clickhouse-session-id` est présent, toutes les requêtes préparées de l’utilisateur authentifié dans cette session sont fermées.
+* Si aucun ID de session n’est présent, seules les requêtes préparées session-less de l’utilisateur authentifié sont fermées.
+
+Si une requête préparée est créée dans une session (via `x-clickhouse-session-id`), elle est également fermée automatiquement à la fermeture de cette session.
+
+## Commandes Flight SQL {#flight-sql-commands}
+
+Lorsqu&#39;un descripteur `CMD` contient un message [protobuf Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html) sérialisé, ClickHouse prend en charge les commandes suivantes :
+
+### Prise en charge via GetFlightInfo / GetSchema {#flightsql-getflightinfo}
+
+| Commande                        | Description                                                                                                                                        |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementQuery`         | Exécuter une requête SQL quelconque. `transaction_id` n’est pas pris en charge.                                                                    |
+| `CommandGetSqlInfo`             | Récupérer les métadonnées du serveur (nom, version, version d’Arrow, fonctionnalités).                                                             |
+| `CommandGetCatalogs`            | Lister les catalogues. Renvoie un ensemble de résultats vide (ClickHouse n’utilise pas de catalogues).                                             |
+| `CommandGetDbSchemas`           | Lister les bases de données. Prend en charge le paramètre facultatif `db_schema_filter_pattern` (motif SQL `LIKE`).                                |
+| `CommandGetTables`              | Lister les tables. Prend en charge les filtres sur le schéma, le nom de table et les types de tables, ainsi que l’inclusion facultative du schéma. |
+| `CommandGetTableTypes`          | Lister les types de table engines (à partir de `system.table_engines`).                                                                            |
+| `CommandGetPrimaryKeys`         | Récupérer les colonnes de la clé primaire d’une table donnée.                                                                                      |
+| `CommandPreparedStatementQuery` | Exécuter un statement préparé de type `SELECT` à l’aide de son handle.                                                                             |
+
+### Pris en charge via DoPut {#flightsql-doput}
+
+| Commande                         | Description                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CommandStatementUpdate`         | Exécute un statement DDL/DML (CREATE, INSERT, ALTER, etc.). Renvoie le nombre de lignes concernées. `transaction_id` n&#39;est pas pris en charge.                                                                                                                                                                                      |
+| `CommandStatementIngest`         | Effectue une insertion en masse de données Arrow dans une table existante. Seul le mode d&#39;ajout à la fin (append) est pris en charge. `transaction_id` n&#39;est pas pris en charge.                                                                                                                                                   |
+| `CommandPreparedStatementQuery`  | Lie les valeurs des paramètres d&#39;un statement préparé lorsqu&#39;elles sont envoyées via `DoPut`, puis renvoie `DoPutPreparedStatementResult` avec le handle de statement. Un seul jeu de paramètres (une ligne) est accepté, et le nombre de valeurs liées doit correspondre exactement au nombre de caractères de substitution `?`. |
+| `CommandPreparedStatementUpdate` | Exécute un statement DDL/DML préparé à partir de son handle et renvoie le nombre de lignes concernées.                                                                                                                                                                                                                                 |
+
+### Non pris en charge dans ClickHouse {#flightsql-not-implemented}
+
+Ces commandes correspondent à des fonctionnalités que ClickHouse ne fournit pas ; elles ne sont donc pas prises en charge par l&#39;interface Arrow Flight SQL.
+
+| Commande                        | Raison                                                                                                                                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandGetCrossReference`      | ClickHouse n&#39;est pas une base de données relationnelle et n&#39;implémente pas de contraintes de clé étrangère ; les métadonnées de références croisées ne sont donc pas disponibles. |
+| `CommandGetExportedKeys`        | ClickHouse n&#39;est pas une base de données relationnelle et n&#39;implémente pas de contraintes de clé étrangère ; les métadonnées des clés exportées ne sont donc pas disponibles.     |
+| `CommandGetImportedKeys`        | ClickHouse n&#39;est pas une base de données relationnelle et n&#39;implémente pas de contraintes de clé étrangère ; les métadonnées des clés importées ne sont donc pas disponibles.     |
+| `CommandStatementSubstraitPlan` | ClickHouse ne prend pas en charge les plans Substrait.                                                                                                                                    |
+
+## Exemple complet {#complete-example}
+
+```python title="Query"
+import pyarrow as pa
+import pyarrow.flight as flight
+
+# Connect and authenticate
+client = flight.FlightClient("grpc://localhost:9090")
+token = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token])
+
+# Insert data using DoPut with a PATH descriptor
+schema = pa.schema([("id", pa.uint32()), ("value", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3], type=pa.uint32()), pa.array(["a", "b", "c"])],
+    schema=schema,
+)
+descriptor = flight.FlightDescriptor.for_path("test")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+
+# Query data using GetFlightInfo + DoGet
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM test ORDER BY id"
+)
+info = client.get_flight_info(descriptor, options)
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+```text title="Response"
+   id value
+0   1     a
+1   2     b
+2   3     c
+```
+
+## Format des données {#data-format}
+
+Toutes les données sont transférées au format Apache Arrow IPC. Seul le format `Arrow` est pris en charge — l’utilisation d’autres formats ClickHouse (par exemple, `FORMAT JSON`, `FORMAT CSV`) entraîne une erreur.
+
+Les types de données ClickHouse sont convertis en types Arrow lors de la sérialisation. Arrow Flight utilise toujours la correspondance Arrow canonique et, contrairement aux formats de sortie `Arrow` et `ArrowStream`, ne tient **pas** compte des paramètres `output_format_arrow_*` qui modifient la représentation d’un type — `output_format_arrow_string_as_string`, `output_format_arrow_low_cardinality_as_dictionary`, `output_format_arrow_date_as_uint16`, `output_format_arrow_fixed_string_as_fixed_byte_array` et les paramètres d’index du dictionnaire n’ont aucun effet ici. Une même requête peut donc produire un schéma différent avec Arrow Flight et avec `FORMAT Arrow`. Ce comportement est intentionnel, pour deux raisons :
+
+* Flight SQL impose le schéma de ses réponses de métadonnées. `CommandGetTables`, par exemple, doit renvoyer `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null`. Permettre à un paramètre de session de convertir ces colonnes `utf8` en `binary` rendrait ClickHouse non conforme aux exigences de tous les drivers Flight SQL et modifierait également le schéma de chaque table annoncé par ClickHouse dans `table_schema`.
+* Un client Flight récupère le schéma et les données lors d’appels distincts (`GetFlightInfo` ou `GetSchema`, puis `DoGet`). Tout paramètre susceptible de modifier le schéma peut entraîner une divergence entre le schéma annoncé et le flux transmis si la session change entre les deux appels.
+
+La seule exception concerne les types sans aucun équivalent Arrow, tels que `JSON`, `Dynamic`, `QBit` ou `AggregateFunction`. En l’absence de correspondance canonique à respecter, ClickHouse doit choisir une représentation, et [`output_format_arrow_unsupported_types`](/fr/reference/settings/formats/output-format) vous permet de préciser laquelle :
+
+| Valeur                | Comportement                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `throw`               | La requête est rejetée.                                                                                             |
+| `text`                | Une valeur par ligne sous sa forme textuelle, dans une colonne Arrow `Utf8` — ce que renvoie `CAST(col AS String)`. |
+| `binary` (par défaut) | Une valeur par ligne sous sa forme binaire, dans une colonne Arrow `Binary` — l’encodage utilisé par `RowBinary`.   |
+
+`AggregateFunction` est le seul type dont les colonnes restent des colonnes Arrow `Binary` même en mode `text` : sa forme textuelle est l’état d’agrégation brut, qui n’est pas de l’UTF-8 valide, alors qu’une colonne Arrow `Utf8` doit contenir de l’UTF-8 valide. Utilisez `finalizeAggregation` si vous souhaitez obtenir une valeur lisible.
+
+Pour la même raison, ClickHouse remplace chaque séquence UTF-8 invalide d’une valeur en mode `text` par U+FFFD (`�`) avant d’écrire cette valeur dans la colonne `Utf8`. Un `Dynamic` contenant un `String` sérialise les octets de celui-ci tels quels, et ces octets peuvent être arbitraires. Sans ce remplacement, la colonne enfreindrait donc la spécification Arrow et pourrait être rejetée par un client strict. Seules les valeurs qui ne constituent pas du texte valide sont modifiées. Utilisez le mode `binary` lorsque les octets doivent être conservés à l’identique.
+
+`output_format_arrow_string_as_string` ne s’applique jamais à ces colonnes, pas même avec `FORMAT Arrow` — il ne concerne que les colonnes dont le type est réellement `String` ou `FixedString`. Le type Arrow d’une colonne `clickhouse.opaque` indique donc toujours l’encodage utilisé : `Utf8` pour la forme textuelle, `Binary` pour la forme binaire.
+
+C’est pourquoi un état d’agrégation contenu dans un `Dynamic` subit une perte d’information en mode `text`, contrairement à une colonne `AggregateFunction`. Le type de la colonne est déterminé à partir de `Dynamic`, qui ne précise pas ce que contiennent ses lignes, et le schéma est fixé avant qu’une quelconque valeur soit examinée. L’état ne peut donc pas disposer de sa propre colonne `Binary`. Utilisez le mode `binary` pour le conserver. Un `Variant` énumère ses types possibles : un `AggregateFunction` parmi ceux-ci dispose donc bien de son propre champ enfant `Binary` et n’est pas affecté.
+
+Une telle colonne est par ailleurs impossible à distinguer d’une véritable colonne `Utf8`/`Binary` ; elle est donc déclarée comme un type d’extension Arrow : les métadonnées du champ contiennent `ARROW:extension:name` = `clickhouse.opaque` et le nom du type ClickHouse d’origine dans `ARROW:extension:metadata`. Un client qui ne reconnaît pas le nom de l’extension voit le type de stockage sous-jacent, conformément à la spécification Arrow. Les colonnes imbriquées portent cette annotation sur leur propre champ : c’est donc le champ enfant d’un `Array(JSON)` qui la porte, tout comme la clé d’un `Map(JSON, ...)`, plutôt que le conteneur lui-même.
+
+L’ancien paramètre booléen `output_format_arrow_unsupported_types_as_binary` fonctionne toujours et équivaut à `throw` lorsqu’il vaut `0` et à `binary` lorsqu’il vaut `1`. Il n’est pris en compte que si `output_format_arrow_unsupported_types` conserve sa valeur par défaut.
+
+## Compatibilité {#compatibility}
+
+L’interface Arrow Flight est compatible avec tout client ou outil prenant en charge le protocole Arrow Flight ou Arrow Flight SQL, notamment :
+
+* Python (`pyarrow`)
+* Java (`org.apache.arrow.flight`)
+* C++ (`arrow::flight`)
+* Go (`apache/arrow/go`)
+* Les drivers ADBC (Arrow Database Connectivity)
+* DBeaver et d’autres outils prenant en charge Flight SQL
+
+Si un connecteur ClickHouse natif est disponible pour votre outil (par exemple, JDBC, ODBC, protocole natif), privilégiez-le, sauf si Arrow Flight est spécifiquement requis pour des raisons de performance ou de compatibilité des formats.
+
+## Fonctionnalités ArrowFlight client-side {#client-side}
+
+ClickHouse peut également servir de client Flight pour lire des données provenant de serveurs Arrow Flight externes. Consultez :
+
+* [Table engine ArrowFlight](/fr/reference/engines/table-engines/integrations/arrowflight)
+* [Fonction de table arrowFlight](/fr/reference/functions/table-functions/arrowflight)
+
+## Voir aussi {#see-also}
+
+* [Spécification d’Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html)
+* [Spécification d’Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+* [Format Arrow dans ClickHouse](/fr/reference/formats/Arrow/Arrow)

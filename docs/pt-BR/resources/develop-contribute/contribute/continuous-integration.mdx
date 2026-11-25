@@ -205,28 +205,27 @@ Nenhuma dependência além de Python 3 e Docker é necessária.
 
 Os nomes dos jobs de compilação são exatamente os mesmos exibidos no relatório de CI:
 
-**Builds AMD64:**
+**Compilações AMD64:**
 
-* `Build (amd_debug)` - Build de depuração com símbolos
-* `Build (amd_release)` - Build de release otimizada
-* `Build (amd_asan)` - Build com Address Sanitizer
-* `Build (amd_tsan)` - Build com Thread Sanitizer
-* `Build (amd_msan)` - Build com Memory Sanitizer
-* `Build (amd_ubsan)` - Build com Undefined Behavior Sanitizer
-* `Build (amd_binary)` - Build de release rápida sem Thin LTO
-* `Build (amd_compat)` - Build de compatibilidade para sistemas mais antigos
-* `Build (amd_musl)` - Build com musl libc
-* `Build (amd_darwin)` - Build para macOS
-* `Build (amd_freebsd)` - Build para FreeBSD
+* `Build (amd_debug)` - Compilação de depuração com símbolos
+* `Build (amd_release)` - Compilação de release otimizada
+* `Build (amd_asan)` - Compilação com Address Sanitizer
+* `Build (amd_tsan)` - Compilação com Thread Sanitizer
+* `Build (amd_msan)` - Compilação com Memory Sanitizer
+* `Build (amd_ubsan)` - Compilação com Undefined Behavior Sanitizer
+* `Build (amd_binary)` - Compilação de release rápida sem Thin LTO
+* `Build (amd_compat)` - Compilação de compatibilidade para sistemas mais antigos
+* `Build (amd_darwin)` - Compilação para macOS
+* `Build (amd_freebsd)` - Compilação para FreeBSD
 
-**Builds ARM64:**
+**Compilações ARM64:**
 
-* `Build (arm_release)` - Build de release otimizada para ARM64
-* `Build (arm_asan)` - Build ARM64 com Address Sanitizer
-* `Build (arm_coverage)` - Build ARM64 com instrumentação de cobertura
-* `Build (arm_binary)` - Build de release rápida para ARM64 sem Thin LTO
-* `Build (arm_darwin)` - Build ARM64 para macOS
-* `Build (arm_v80compat)` - Build de compatibilidade para ARMv8.0
+* `Build (arm_release)` - Compilação de release otimizada para ARM64
+* `Build (arm_asan)` - Compilação ARM64 com Address Sanitizer
+* `Build (arm_coverage)` - Compilação ARM64 com instrumentação de cobertura
+* `Build (arm_binary)` - Compilação de release rápida para ARM64 sem Thin LTO
+* `Build (arm_darwin)` - Compilação ARM64 para macOS
+* `Build (arm_v80compat)` - Compilação de compatibilidade para ARMv8.0
 
 **Outras arquiteturas:**
 
@@ -238,7 +237,7 @@ Os nomes dos jobs de compilação são exatamente os mesmos exibidos no relatór
 
 Se o job for concluído com sucesso, os resultados da compilação estarão disponíveis no diretório `<repo_root>/ci/tmp/build`.
 
-**Observação:** Para builds que não estejam na categoria &quot;Outras arquiteturas&quot; (que usam compilação cruzada), a arquitetura da sua máquina local deve corresponder ao tipo de build para gerar a compilação solicitada por `BUILD_JOB_NAME`.
+**Observação:** Para compilações que não estejam na categoria &quot;Outras arquiteturas&quot; (que usam compilação cruzada), a arquitetura da sua máquina local deve corresponder ao tipo de compilação para gerar a compilação solicitada por `BUILD_JOB_NAME`.
 
 #### Exemplo {#example-run-local}
 
@@ -302,7 +301,7 @@ Executa os [testes de integração](/pt-BR/resources/develop-contribute/contribu
 
 A cada commit, a branch master executa os testes sem estado, de integração e unitários em uma compilação com instrumentação de cobertura LLVM e publica o relatório de cobertura.
 Os pull requests só executam esses jobs quando têm o rótulo `ci-coverage` (ou quando alteram o código que coleta e reporta a cobertura); adicione-o para obter o relatório de cobertura do pull request e a cobertura das linhas alteradas.
-Sem o rótulo, os pull requests executam as mesmas configurações de testes sem estado e de integração na compilação `arm_binary`; os testes unitários são executados na compilação `amd_debug` e nas compilações com sanitizadores em todos os pull requests.
+Sem o rótulo, os pull requests executam as mesmas configurações de testes sem estado e de integração na compilação `arm_binary`; os testes unitários são executados nas compilações `arm_debug`, `arm_asan_ubsan`, `arm_tsan` e `amd_msan` em todos os pull requests.
 Os módulos de testes de integração que são ignorados automaticamente no ARM são executados nos jobs direcionados de sanitizador quando a alteração afeta o código que eles cobrem.
 Um pull request que apenas adiciona testes sem estado e precisa do relatório de cobertura pode usar, em vez disso, o rótulo `ci-llvm-coverage`: ele executa os jobs de cobertura, os jobs dos testes excluídos da cobertura, as verificações de instabilidade dos testes sem estado alterados, a verificação de estilo e a revisão de código por IA, e pula todos os demais jobs. Um pull request desse tipo pode ser mesclado com o rótulo; já um pull request que altere qualquer outra coisa, não.
 

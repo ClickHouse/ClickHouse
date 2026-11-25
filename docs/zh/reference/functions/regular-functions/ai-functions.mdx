@@ -29,6 +29,7 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
 * **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) 。
 * **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings/ai-function#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) 。
 * **并发请求**：请求通过服务器级线程池发出，可多个请求同时进行 (由 [`ai_function_max_concurrent_requests_per_thread`](/zh/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) 控制) 。
+* **空白字符裁剪**：`aiClassify`、`aiExtract` 和 `aiFilter` 会请求结构化输出，并去除模型回复中的前导和尾随空白字符，因此像 `\n\nbug` 这样的回复会变为 `bug`。
 
 ## 配置 {#configuration}
 

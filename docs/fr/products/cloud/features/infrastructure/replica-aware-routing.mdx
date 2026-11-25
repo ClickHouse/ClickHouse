@@ -2,7 +2,7 @@
 title: 'Routage tenant compte des répliques'
 slug: /manage/replica-aware-routing
 description: 'Acheminez les requêtes associées vers la même réplique ClickHouse Cloud pour les tables temporaires, les sessions, la réutilisation du cache et la cohérence lecture après écriture'
-keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'routage sticky', 'routage', 'routage tenant compte des répliques', 'X-ClickHouse-Replica-Tag', 'affinité de session', 'tables temporaires', 'cohérence lecture après écriture', 'sni', 'tls-sni-override']
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency', 'sni', 'tls-sni-override']
 doc_type: 'guide'
 ---
 
@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="Routage tenant compte des répliques" />
 
-Le routage tenant compte des répliques (également appelé sessions sticky, routage sticky ou affinité de session) achemine les requêtes liées vers la même réplique ClickHouse. Utilisez-le lorsque des [tables temporaires](/fr/reference/statements/create/table/temporary-table) ou un [état de session nommé](/fr/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) doivent rester accessibles d’une requête à l’autre, lorsque vous souhaitez que des requêtes liées réutilisent les caches locaux d’une même réplique, ou lorsque vous avez besoin d’une [cohérence lecture après écriture](#read-after-write-consistency) entre une écriture et les lectures qui suivent.
+Le routage tenant compte des répliques (également appelé sessions sticky, routage sticky ou affinité de session) achemine les requêtes liées vers la même réplique ClickHouse. Utilisez-le lorsque des [tables temporaires](/fr/reference/statements/create/table/temporary-table) ou un [état de session nommé](/fr/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol) doivent rester accessibles d’une requête à l’autre, lorsque vous souhaitez que des requêtes liées réutilisent les caches locaux d’une même réplique, ou lorsque vous avez besoin d’une [cohérence lecture après écriture](#read-after-write-consistency) entre une écriture et les lectures qui suivent.
 
 Il est fourni au mieux et ne garantit pas l’isolation. Le proxy associe chaque valeur de routage à une réplique. Cette association reste stable tant que le nombre de répliques ne change pas ; la mise à l’échelle du service peut toutefois associer cette valeur à une autre réplique.
 
@@ -42,11 +42,11 @@ Ces toggles sont progressivement déployés sur les plans de l&#39;Enterprise ti
 
 ## Routage HTTP {#http-based-routing}
 
-Pour associer une charge de travail à une réplique, envoyez un en-tête `X-ClickHouse-Replica-Tag` via l’[interface HTTPS](/fr/concepts/features/interfaces/http). Le proxy applique un hachage cohérent à la valeur de l’en-tête : les requêtes partageant cette valeur sont donc dirigées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être associée à la même réplique ou à une autre, mais vous ne choisissez pas *à quelle* réplique une valeur est associée.
+Pour associer une charge de travail à une réplique, envoyez un en-tête `X-ClickHouse-Replica-Tag` via l’[interface HTTPS](/fr/concepts/features/connect-to-clickhouse/protocols/http). Le proxy applique un hachage cohérent à la valeur de l’en-tête : les requêtes partageant cette valeur sont donc dirigées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être associée à la même réplique ou à une autre, mais vous ne choisissez pas *à quelle* réplique une valeur est associée.
 
-Utilisez le nom d’hôte existant de votre service. Aucun nom d’hôte sticky spécifique ni aucune modification DNS ne sont nécessaires. La valeur de l’en-tête peut être n’importe quelle chaîne de votre choix, par exemple un nom d’application, un ID utilisateur ou un label de charge de travail. Les requêtes sans cet en-tête conservent l’équilibrage de charge habituel.
+Utilisez le nom d’hôte existant de votre service. Aucun nom d’hôte sticky spécifique ni aucune modification DNS ne sont nécessaires. La valeur de l’en-tête peut être n’importe quelle chaîne de votre choix, par exemple un nom d’application, un ID utilisateur ou un label de charge de travail. Les requêtes sans cet en-tête conservent l’équilibrage de charge normal.
 
-Définissez l’en-tête `X-ClickHouse-Replica-Tag` pour chaque requête :
+Définissez l’en-tête `X-ClickHouse-Replica-Tag` pour chaque requête :
 
 ```bash
 echo 'SELECT hostName()' | curl \
@@ -62,9 +62,9 @@ Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez 
   `X-ClickHouse-Replica-Tag` assure une affinité avec une réplique sans créer de session HTTP ClickHouse. Les requêtes concurrentes peuvent réutiliser le même tag sans rencontrer l’erreur `SESSION_IS_LOCKED`.
 </Info>
 
-## Routage via le protocole natif {#native-protocol-routing}
+## Routage par protocole natif {#native-protocol-routing}
 
-Avec le [protocole natif](/fr/interfaces/tcp), transmettez la valeur de routage sous la forme d&#39;un nom de serveur TLS du type `<routing-value>.sticky.<host>`. Connectez-vous au nom d’hôte habituel de votre service, comme d&#39;ordinaire. [ClickHouse Client](/fr/interfaces/client) récupère la valeur de routage via `--tls-sni-override` :
+Avec le [protocole natif](/fr/concepts/features/connect-to-clickhouse/protocols/native-tcp), transmettez la valeur de routage sous la forme d&#39;un nom de serveur TLS du type `<routing-value>.sticky.<host>`. Connectez-vous au nom d’hôte habituel de votre service, comme d&#39;ordinaire. [ClickHouse Client](/fr/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) récupère la valeur de routage via `--tls-sni-override` :
 
 ```bash
 clickhouse client \
@@ -78,7 +78,7 @@ clickhouse client \
 
 ## Cohérence lecture après écriture {#read-after-write-consistency}
 
-Sur un service comptant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n&#39;a pas rattrapé son retard. Envoyez votre écriture avec une valeur de routage, puis réutilisez cette même valeur lors des lectures qui suivent. Le proxy dirige les deux vers la même réplique : vous lisez ainsi votre propre écriture, même si les autres répliques accusent encore du retard. Ce modèle convient aux workloads qui écrivent puis relisent immédiatement les mêmes données, comme les applications interactives ou les jobs ETL qui valident les insertions avant de poursuivre.
+Sur un service comptant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n&#39;a pas rattrapé son retard. Envoyez votre écriture avec une valeur de routage, puis réutilisez cette même valeur lors des lectures qui suivent. Le proxy dirige les deux vers la même réplique : vous lisez ainsi votre propre écriture, même si les autres répliques accusent encore du retard. Ce modèle convient aux charges de travail qui écrivent puis relisent immédiatement les mêmes données, comme les applications interactives ou les jobs ETL qui valident les insertions avant de poursuivre.
 
 Il est également utile après une modification de schéma qui n&#39;a pas encore été répliquée, car la réutilisation de la valeur de routage maintient les insertions sur une réplique disposant déjà du nouveau schéma.
 
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-Pour des garanties plus étendues sur l&#39;ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
+Pour des garanties plus étendues sur l&#39;ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings/other#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
 
 ## Vérifier quelle réplique est utilisée {#check-which-replica}
 

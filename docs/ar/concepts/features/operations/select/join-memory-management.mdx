@@ -25,14 +25,14 @@ doc_type: 'guide'
 
 يختلف سلوك الحدود مع الخوارزميات الأخرى:
 
-* في [`ie_join`](/ar/concepts/features/operations/select/join-algorithms#ie-join)، تنطبق الحدود على المدخلات المتراكمة من الجانبين معًا.
+* في [`inequality`](/ar/concepts/features/operations/select/join-algorithms#inequality)، تنطبق الحدود على المدخلات المتراكمة من الجانبين معًا.
 * في [الآلية الاحتياطية block nested loop](/ar/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback)، تنطبق الحدود على الجانب الأيمن المُجسَّد، بما في ذلك الكتل المُرحَّلة إلى القرص.
 * في [`partial_merge`](/ar/concepts/features/operations/select/join-algorithms#partial-merge)، يؤدي بلوغ أحد الحدود إلى تغيير استراتيجية التنفيذ بدلًا من إيقاف الاستعلام: إذ يبدأ JOIN بكتابة كتل الجانب الأيمن المرتّبة إلى القرص.
 
 ## عتبات الكتابة {#spill-thresholds}
 
 * يحدد [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) عتبة كتابة مطلقة بالبايتات للجانب الأيمن من عملية JOIN القائمة على التجزئة.
-* يحدد [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) عتبة الكتابة على هيئة نسبة من الذاكرة المتبقية ضمن الحد الأقصى للذاكرة على مستوى المستخدم والخادم. وإذا لم يُهيَّأ أي حد أقصى للذاكرة، فلا يكون للنسبة أي تأثير.
+* يحدد [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) عتبة الكتابة على هيئة نسبة من الذاكرة المتبقية ضمن حد `max_memory_usage` الخاص بالاستعلام والحد الأقصى للذاكرة على مستوى المستخدم والخادم. وإذا لم يُهيَّأ أي حد أقصى للذاكرة، فلا يكون للنسبة أي تأثير.
 
 عند ضبط كلا الإعدادين، تُطبَّق العتبة الأصغر الناتجة عنهما. وتنطبق العتبات على `hash` و`parallel_hash` و`grace_hash` والقيمة `auto` والآلية الاحتياطية block nested loop، ويتطلب ذلك تهيئة مسار للبيانات المؤقتة.
 
@@ -46,7 +46,7 @@ doc_type: 'guide'
 * **`partial_merge`.** تُكتب كتل الجانب الأيمن المرتّبة وفهارس الحدين الأدنى والأقصى الخاصة بها إلى الملفات المؤقتة بعد أن يبلغ الجانب الأيمن حدًا صارمًا.
 * **الآلية الاحتياطية block nested loop.** تُضغط كتل الجانب الأيمن في الذاكرة، ثم تُكتب إلى الملفات المؤقتة بعد بلوغ عتبة الكتابة.
 
-لا تكتب الخوارزميتان [`direct`](/ar/concepts/features/operations/select/join-algorithms#direct) و[`ie_join`](/ar/concepts/features/operations/select/join-algorithms#ie-join) إلى القرص.
+لا تكتب الخوارزميتان [`direct`](/ar/concepts/features/operations/select/join-algorithms#direct) و[`inequality`](/ar/concepts/features/operations/select/join-algorithms#inequality) إلى القرص.
 
 تُكتب الملفات المؤقتة إلى وحدة التخزين التي يحددها إعداد الخادم [`tmp_path`](/ar/reference/settings/server-settings/settings/tmp#tmp_path) أو [`tmp_policy`](/ar/reference/settings/server-settings/settings/tmp#tmp_policy) أو [`temporary_data_in_cache`](/ar/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache). ونظرًا لأن قراءة الملفات المؤقتة وكتابتها تزيد من عمليات I/O على القرص، تكون عملية JOIN التي تكتب إلى القرص أبطأ من نظيرتها المنفّذة بالكامل في الذاكرة.
 

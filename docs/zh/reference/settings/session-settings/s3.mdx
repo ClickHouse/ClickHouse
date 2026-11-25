@@ -90,6 +90,16 @@ ListObject 请求一次批次中可返回的最大文件数
 可从查询过滤器中提取并用于文件迭代的 `_path` 值的最大数量，而不是通过 glob 列举文件。
 0 表示禁用。
 
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "新增设置，用于访问请求者付费的 S3 存储桶。"}]}]} />
+
+设置为 `requester` 即可访问请求者付费的 `S3` 存储桶：此后每个请求都会携带请求头 `x-amz-request-payer: requester`，由请求者承担请求费用和数据传输费用。可选值：`none` (默认值，不发送该请求头) 、`requester`。
+
+该设置在创建 `S3` 客户端时生效，因此适用于查询级别的用法，例如 `s3` 表函数和 `BACKUP ... TO S3`；对于已创建的长期存在的客户端，例如 `S3` 磁盘或配置了独立凭证的 `S3` 表，之后在单个查询中执行的 `SET` 不会对其重新配置。对于这类情况，请在 `<s3>` 服务器配置的端点配置节或磁盘定义中使用 `request_payer` 键，该键的优先级也高于此设置。
+
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />

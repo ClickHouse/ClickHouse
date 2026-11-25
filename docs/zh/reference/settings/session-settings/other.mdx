@@ -162,7 +162,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "在令牌过期后重试 S3 备份和恢复请求；设置为 0 可恢复之前的行为。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "在令牌过期后重试 S3 备份和恢复请求；设置为 0 可恢复之前的行为。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "此变更已回移到 26.8，并记录在该版本中。"}]}]} />
 
 在备份或恢复期间，如果 S3 请求的响应标识为 `ExpiredToken`，则对该请求进行重试的最长时间 (以毫秒为单位) 。重试次数达到 `backup_restore_s3_retry_attempts` 时也会停止重试。设置为 0 则禁用此类重试。由于 AWS S3 的 `HEAD` 响应仅返回通用的 HTTP 状态码，此重试不适用于 `HEAD` 元数据请求。
 
@@ -976,6 +976,14 @@ HSTS 的过期时长。0 表示禁用 HSTS。
 
 如果所选解析器无法读取该值，函数会直接返回该类型的默认值 (`1970-01-01 00:00:00`) ，且不会报错。因此，若这两个设置不一致，提取出的值可能会在无任何提示的情况下发生变化。
 
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置，用于启用经过优化的 JSON 到 JSON 类型转换，在仅有部分路径发生变化时，可避免完整的序列化 + 解析过程。"}]}]} />
+
+启用后，在参数 (类型化路径、跳过规则) 不同的 JSON 类型之间进行转换时，将采用优化路径：通过指针复用未发生变化的子列，仅对发生变化的路径应用 CAST。这样可以避免完整的“序列化为字符串、再从字符串解析”的处理管道。禁用此设置后，所有 JSON 类型变更都将强制使用旧版的“格式化 + 解析”转换方式。
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -1425,7 +1433,7 @@ a   Tuple(
 
 此设置用于为由 `file` 表函数处理的文件指定重命名模式。设置此选项后，`file` 表函数读取的所有文件都会在处理成功后，按照包含占位符的指定模式重命名。
 
-重命名会写入源文件，因此，使用此选项读取文件的查询除需要 `READ ON FILE` 外，还需要 `WRITE ON FILE` 授权。`DESCRIBE` 不会构建用于重命名的数据读取管道，因此只需要 `READ ON FILE`。
+重命名会写入源文件，因此，使用此选项读取文件的查询除需要 `READ ON FILE` 外，还需要 `WRITE ON FILE` 授权，并且在 readonly 模式下 (即 `readonly` 大于 0，所有 HTTP GET 请求均隐含此设置) 会被拒绝。`DESCRIBE` 不会构建用于重命名的数据读取管道，因此上述两项限制均不适用于它。
 
 ### 占位符 {#placeholders}
 
@@ -2017,6 +2025,19 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "查询 system.remote_data_paths 时，除实际表数据外，也遍历冻结数据（shadow 目录）。"}]}]} />
 
 查询 system.remote&#95;data&#95;paths 时，除实际表数据外，也遍历冻结数据 (shadow 目录)
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置。对 `MergeTree` 表执行 `TRUNCATE` 时，被移除的 parts 会保留 `old_parts_lifetime` 秒，而不是立即删除"}]}]} />
+
+启用后，对非复制的 `MergeTree` 表执行 `TRUNCATE` 时，会立即从磁盘上删除被截断的 parts。否则，这些 parts 会变为非活跃状态，并像合并操作的源数据片段一样，在 `old_parts_lifetime` 秒后才被删除，从而确保正在运行的查询以及持有过时 parts 列表的读取器仍能读取它们。复制表始终会立即删除这些 parts。
+
+可选值：
+
+* 0 - 被截断的 parts 在 `old_parts_lifetime` 秒后删除。
+* 1 - 被截断的 parts 立即删除。
 
 ## union_default_mode {#union_default_mode}
 

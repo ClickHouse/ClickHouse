@@ -54,12 +54,13 @@ caché durante la fusión.
 
 Use la cola de ordenación por lotes para reducir la sobrecarga por fila de la cola al fusionar flujos ordenados.
 
-Solo se aplica a las fusiones que no modifican filas, es decir, a `MergeTree`
-sin modificaciones (modo de fusión `Ordinary`). No tiene efecto en los motores con
-semántica de fusión, como `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` y `VersionedCollapsingMergeTree`, que siguen usando la
-cola predeterminada independientemente de esta configuración.
+Solo se aplica a las fusiones en el modo de fusión `Ordinary`: las fusiones de partes de `MergeTree` simples, incluidas
+las fusiones que eliminan o reescriben filas (eliminaciones ligeras, eliminaciones por TTL, partes de parche de actualizaciones
+ligeras y `OPTIMIZE ... DEDUPLICATE`), y las fusiones de partes de proyecciones normales. Los algoritmos
+de fusión de los motores con semántica en tiempo de fusión, como `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` y
+`VersionedCollapsingMergeTree`, así como los de las partes de proyecciones de agregación, eligen su propia cola de ordenación, por lo que
+esta configuración no tiene ningún efecto sobre ellos.
 
 ## merge_workload {#merge_workload}
 

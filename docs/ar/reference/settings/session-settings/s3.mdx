@@ -90,6 +90,16 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الحد الأقصى لعدد قيم `_path` التي يمكن استخراجها من عوامل تصفية الاستعلام لاستخدامها في اجتياز الملفات
 بدلاً من إدراجها باستخدام `glob`. وتعني القيمة 0 أنه معطّل.
 
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "إعداد جديد للوصول إلى حاويات S3 التي يتحمّل فيها الطالب التكاليف (requester-pays)."}]}]} />
+
+اضبطه على `requester` للوصول إلى حاوية `S3` من نوع requester-pays، إذ يحمل حينها كل طلب الترويسة `x-amz-request-payer: requester`، فيتحمّل الطالب تكلفة الطلب ونقل البيانات. القيم الممكنة: `none` (القيمة الافتراضية، ولا تُرسَل فيها الترويسة)، و`requester`.
+
+يسري هذا الإعداد عند إنشاء عميل `S3`، ولذلك ينطبق على الاستخدامات المحصورة في نطاق الاستعلام، مثل دالة الجدول `s3` و`BACKUP ... TO S3`. أما تنفيذ `SET` لاحقًا على مستوى الاستعلام، فلا يعيد تهيئة عميل طويل الأمد سبق إنشاؤه، مثل قرص `S3` أو جدول `S3` له بيانات اعتماد خاصة به. في هذه الحالات، استخدم المفتاح `request_payer` في قسم نقطة النهاية ضمن تكوين الخادم `<s3>` أو ضمن تعريف القرص، علمًا بأن له الأسبقية على هذا الإعداد.
+
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />

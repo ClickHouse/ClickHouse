@@ -12,6 +12,8 @@ doc_type: 'reference'
 
 虽然 `clickhouse-local` 非常适合用于开发、测试和文件处理，但它并不适合为终端用户或应用程序提供服务。在这些场景中，建议使用开源版 [ClickHouse](/zh/get-started/setup/install)。ClickHouse 是一个强大的 OLAP 数据库，专为处理大规模分析型工作负载而设计。它能够快速高效地处理大型数据集上的复杂查询，因此非常适合对高性能要求极高的生产环境。此外，ClickHouse 还提供复制、分片和高可用等丰富功能，这些功能对于扩展系统以处理大型数据集并为应用程序提供服务至关重要。如果你需要处理更大规模的数据集，或为终端用户或应用程序提供服务，我们建议使用开源 ClickHouse，而不是 `clickhouse-local`。
 
+尽管 `clickhouse-local` 可以[接受网络连接](#starting-listeners)，但每个已连接的客户端都将获得对本地文件的无限制访问权限、执行命令的能力以及管理员特权，因此切勿将其用于多用户场景——请参阅[多用户场景](#multi-user-scenarios)。
+
 请阅读下方文档，了解 `clickhouse-local` 的示例用例，例如[查询本地文件](#query_data_in_file)或[读取 S3 中的 Parquet 文件](#query-data-in-a-parquet-file-in-aws-s3)。
 
 ## 下载 clickhouse-local {#download-clickhouse-local}
@@ -428,10 +430,30 @@ HTTP 监听器会使用与默认 `clickhouse-server` 配置相同的宽松请求
 <Warning>
   **安全**
 
-  默认情况下，`clickhouse-local` 使用临时用户配置运行，因此它开启的任何监听都不进行身份验证。除非你已通过将 `users_config` 设置指向自定义 `users.xml` (例如通过 `--config-file`) 显式配置用户和访问控制，否则请绑定到回环地址 (`127.0.0.1` 或 `::1`) 。如果在未启用身份验证的情况下监听非回环地址，任何能够访问所选端口的人都可以访问本地实例的数据。
+  默认情况下，`clickhouse-local` 使用临时用户配置运行，因此它开启的任何监听器都不进行身份验证。除非你已通过将 `users_config` 设置指向自定义 `users.xml` (例如通过 `--config-file`) 显式配置用户和访问控制，否则请绑定到回环地址 (`127.0.0.1` 或 `::1`) 。如果在未启用身份验证的情况下监听非回环地址，任何能够访问所选端口的人不仅可以获取本地实例的数据，还可以访问文件，并能以运行 `clickhouse-local` 的 OS 用户的特权执行命令，参见[多用户场景](#multi-user-scenarios)。
 
   请注意，浏览器仍可访问回环地址：只要 HTTP 监听器处于打开状态，你访问的任何网页都可以查询本地实例，并且借助默认 CORS 请求头读取结果。
 </Warning>
+
+### 多用户场景 {#multi-user-scenarios}
+
+<Note>
+  `clickhouse-local` 的监听器仅面向单个用户，即启动它并使用自己的工具进行连接的那个用户。对于多用户场景，例如多个人员或应用拥有不同的特权，或者存在任何您不会允许其登录您 OS 账户的客户端，请改用 [`clickhouse-server`](/zh/get-started/setup/install)。
+</Note>
+
+`clickhouse-local` 是一个面向其运行用户本地环境的工具，因此它取消了 `clickhouse-server` 对查询施加的限制。这一点适用于整个进程：监听器接受的每个连接都拥有与 `clickhouse-local` 自身会话相同的能力。已连接的客户端可以执行以下操作：
+
+* **读写任意文件。** `clickhouse-server` 将文件访问限制在 [`user_files_path`](/zh/reference/settings/server-settings/settings/user#user_files_path) 目录内。`clickhouse-local` 没有这样的目录：查询可以读取、列出、创建和覆盖运行 `clickhouse-local` 的 OS 用户可访问的所有文件。可借助 [`file`](/zh/reference/functions/table-functions/file) 和 [`filesystem`](/zh/reference/functions/table-functions/filesystem) 表函数、[`file`](/zh/reference/functions/regular-functions/files#file) 函数、[`File`](/zh/reference/engines/table-engines/special/file) 表引擎、[`Filesystem`](/zh/reference/engines/database-engines/filesystem) 和 [`SQLite`](/zh/reference/engines/database-engines/sqlite) 数据库引擎来实现，甚至只需将路径用作表名即可，例如 `SELECT * FROM '/path/to/data.csv'`。可访问的文件包括私钥、云服务凭据、shell 配置文件以及进程的环境变量 (`/proc/self/environ`) 。
+* **运行命令。** `clickhouse-server` 仅接受管理员编写的配置文件中使用 [`EXECUTABLE`](/zh/reference/statements/create/dictionary/sources/executable-file) 和 [`EXECUTABLE_POOL`](/zh/reference/statements/create/dictionary/sources/executable-pool) 数据源的字典，并拒绝通过查询创建此类字典。而 `clickhouse-local` 允许执行 `CREATE DICTIONARY ... SOURCE(EXECUTABLE(COMMAND '...'))`，且命令由 shell 执行，因此查询可以运行任意程序。
+* **以管理员身份操作。** 除非通过 `users_config` 配置了用户，否则唯一的用户是 `default`：它没有密码，允许从任意地址连接，并拥有管理员特权，包括访问管理。每个连接都可以读取、修改和删除实例中的所有数据，更改任意设置 (不存在设置约束或配额) ，在 `system.processes` 中查看并终止其他会话的查询，关闭监听器，以及通过 `SYSTEM SHUTDOWN` 终止进程。它还可以创建用户；若数据目录是持久化的，这些用户会保存在其中，重启后依然存在。
+* **连接任意主机。** `clickhouse-local` 不应用 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 限制，因此面向外部数据源的表函数和引擎 (例如 `url`、`s3`、`remote`、`mysql` 和 `postgresql`) 可以从您的机器向任意地址发送请求，包括回环接口上和内部网络中的服务。
+* **使用内省函数。** [内省函数](/zh/reference/functions/regular-functions/introspection)默认处于启用状态 (参见 [`allow_introspection_functions`](/zh/reference/settings/session-settings/allow#allow_introspection_functions)) ，因此客户端可以将进程的堆栈跟踪 (例如 `system.stack_trace` 中的堆栈跟踪) 解析为符号名称和源码位置。
+
+为用户配置密码和受限特权只是增加了身份验证，并不能恢复上述限制。被授予文件访问权限 (对 `FILE` 的 `READ` 和 `WRITE`) 的用户将能访问整个文件系统，而不仅限于某个专用目录；若再获得 `CREATE DICTIONARY` 授权，还能运行命令。`file` 函数根本不检查授权，因此即使没有任何文件授权的用户也能读取所有文件。
+
+此外，这些监听器不支持 TLS：`clickhouse-local` 中的 `SYSTEM START LISTEN` 仅开启普通的 `TCP` 和 `HTTP` 监听器，因此密码、查询和数据均以明文形式在网络上传输。
+
+所有这些操作都以运行 `clickhouse-local` 的 OS 用户的特权执行，该用户通常就是你的个人账户；而 `clickhouse-server` 通常运行在一个专用账户下，该账户除了自身数据之外不拥有任何其他内容。在由多个 OS 用户共享的机器上，回环地址对所有用户都可访问：在默认无需身份验证的配置下，该机器上的其他用户只要连接到该监听器，就能读取你的文件，并以你的账户身份执行命令。
 
 ## 相关内容 {#related-content-1}
 

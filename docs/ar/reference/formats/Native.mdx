@@ -347,9 +347,9 @@ const data = new Uint8Array([
 
 #### Array {#array}
 
-بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#array)، حيث تُسبق كل مصفوفة بعدد عناصر مُرمَّز بـ LEB128، يشفّر التنسيق Native المصفوفات على شكل تدفقين فرعيين عموديين:
+بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#array)، حيث تُسبق كل مصفوفة بعدد عناصر مُرمَّز بـ LEB128، يشفّر التنسيق Native المصفوفات على شكل تدفقين فرعيين عموديين:
 
-* عدد N من إزاحات `UInt64` التراكمية (بترتيب little-endian، 8 بايت لكل إزاحة). يحتوي الصف `i` على `offset[i] - offset[i-1]` عنصرًا، مع اعتبار `offset[-1]` مساويًا ضمنيًا لـ 0.
+* عدد N من إزاحات `UInt64` التراكمية (بترتيب little-endian، 8 بايت لكل إزاحة). يحتوي الصف `i` على `offset[i] - offset[static_cast<ssize_t>(i) - 1]` عنصرًا، مع اعتبار `offset[-1]` مساويًا ضمنيًا لـ 0.
 * جميع العناصر المتداخلة عبر كل الصفوف، مُسلسلة دفعةً واحدة وبشكل متجاور.
 
 على سبيل المثال، `Array(UInt32)` مع 3 صفوف `[[0, 10], [1, 11], [2, 12]]`:

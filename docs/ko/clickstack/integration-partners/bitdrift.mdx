@@ -62,14 +62,14 @@ ClickStack은 ClickHouse 기반의 관측성 솔루션으로, 백엔드 서비�
   * **ClickStack**은 생성된 분산 트레이스를 ClickHouse에 저장하고 쿼리하며, ClickStack UI에 표시합니다.
 </Tip>
 
-<div id="prerequisites">
-  ## 사전 요구 사항 {#prerequisites}
-</div>
+## 사전 요구 사항 {#prerequisites}
 
-* 자가 관리형으로 설치했거나 ClickHouse Cloud에서 사용하는 **ClickStack**에 백엔드 서비스에서 연결할 수 있어야 합니다. [오픈 소스 ClickStack 시작하기](/ko/clickstack/getting-started/oss) 또는 [자체 관리형 ClickHouse Observability 시작하기](/ko/clickstack/self-configured/getting-started/managed)를 참조하십시오.
+* **ClickStack Open Source**가 설치되어 있고 백엔드 서비스에서 연결할 수 있어야 합니다. [오픈 소스 ClickStack 시작하기](/ko/clickstack/getting-started/oss)를 참조하십시오.
 * **OpenTelemetry**로 계측되고 ClickStack으로 trace를 전송하는 백엔드 서비스. [OpenTelemetry를 사용한 수집](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
 * 모바일 앱에 통합된 **bitdrift Capture SDK**. 설치 방법은 [bitdrift SDK 문서](https://docs.bitdrift.io/)를 참조하십시오.
 * **bitdrift 계정** 및 테넌트에서 트레이싱을 활성화할 수 있도록 [Support](https://bitdrift.io/contact-us)에 문의할 수 있어야 합니다(트레이싱은 bitdrift가 테넌트별로 활성화하는 실험적 기능입니다).
+
+ClickHouse Observability를 사용하는 경우 별도의 [bitdrift 통합 가이드](/ko/clickstack/observability/integration-partners/bitdrift)를 따르십시오.
 
 ## 트레이싱 구성 {#configure-tracing}
 
@@ -91,11 +91,9 @@ ClickStack은 ClickHouse 기반의 관측성 솔루션으로, 백엔드 서비�
 
 *bitdrift 세션의 View Trace 링크를 따라 ClickStack UI의 분산 트레이스로 이동합니다.*
 
-<div id="deployment-flexibility">
-  ## 배포 유연성 {#deployment-flexibility}
-</div>
+## 배포 유연성 {#deployment-flexibility}
 
-이 통합은 데이터가 ClickStack에 도달하는 방식을 변경하지 않으므로 ClickStack을 자가 관리형으로 운영하든 ClickHouse Cloud의 관리형 서비스로 운영하든 사용할 수 있습니다. bitdrift는 모바일 텔레메트리를 ClickStack으로 내보내지 않습니다. 대신 기기에서 요청의 OpenTelemetry 추적 컨텍스트를 캡처하고, 자체 OpenTelemetry 계측 서비스가 이미 ClickStack으로 전송하는 백엔드 트레이스에 연결합니다. bitdrift에는 **View Trace** 링크를 생성하기 위한 ClickStack UI의 주소만 필요하므로 ClickStack 배포 또는 수집 파이프라인을 변경할 필요가 없습니다.
+이 통합은 데이터가 ClickStack에 도달하는 방식을 변경하지 않으므로 ClickStack Open Source의 데이터베이스가 로컬에서 실행되든 ClickHouse Cloud에서 실행되든 사용할 수 있습니다. bitdrift는 모바일 텔레메트리를 ClickStack으로 내보내지 않습니다. 대신 기기에서 요청의 OpenTelemetry 추적 컨텍스트를 캡처하고, 자체 OpenTelemetry 계측 서비스가 이미 ClickStack으로 전송하는 백엔드 트레이스에 연결합니다. bitdrift에는 **View Trace** 링크를 생성하기 위한 ClickStack UI의 주소만 필요하므로 ClickStack 배포 또는 수집 파이프라인을 변경할 필요가 없습니다.
 
 <div id="next-steps">
   ## 다음 단계 {#next-steps}

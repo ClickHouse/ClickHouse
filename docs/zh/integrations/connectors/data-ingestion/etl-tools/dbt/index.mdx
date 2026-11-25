@@ -43,11 +43,12 @@ dbt 可通过 [ClickHouse 支持的 适配器](https://github.com/ClickHouse/dbt
 
 支持的功能列表：
 
-* [x] 表物化类型
-* [x] 视图物化类型
+* [x] 表物化
+* [x] 视图物化
 * [x] 增量物化类型
 * [x] Microbatch 增量物化类型
 * [x] materialized view 物化类型 (使用 MATERIALIZED VIEW 的 `TO` 形式，属 Experimental)
+* [x] 用户自定义函数 (SQL)
 * [x] Seeds
 * [x] Sources
 * [x] 文档生成
@@ -55,7 +56,7 @@ dbt 可通过 [ClickHouse 支持的 适配器](https://github.com/ClickHouse/dbt
 * [x] Snapshots
 * [x] 大多数 dbt-utils macro (现已并入 dbt-core)
 * [x] Ephemeral 物化类型
-* [x] 分布式表物化类型 (属 Experimental)
+* [x] 分布式表物化 (属 Experimental)
 * [x] 分布式增量物化类型 (属 Experimental)
 * [x] 字典物化类型 (属 Experimental)
 * [x] Contracts
@@ -172,6 +173,10 @@ profile: 'clickhouse-service'
 
 自 dbt-clickhouse 1.10.1 起，[`dbt clone`](https://docs.getdbt.com/reference/commands/clone) 命令使用 ClickHouse 的零拷贝 `CREATE OR REPLACE TABLE ... CLONE AS ...` 语句，克隆物化为采用 MergeTree 家族引擎的表的模型。此操作会创建表副本，但不会复制底层数据分区片段，因此可快速、低成本地同步环境，例如基于生产环境状态搭建开发环境或 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 环境。
 
+`CLONE AS` 不支持 `ON CLUSTER`，也无法在 `Replicated` 数据库中执行。
+对于此类表，会改用 `CREATE OR REPLACE TABLE ... AS ...` 创建，再通过 `ALTER TABLE ... ATTACH PARTITION ALL FROM ...` 填充数据；这种方式同样会共享数据分区片段，但不具备原子性。
+在 `Replicated` 数据库中，只有 `Replicated*MergeTree` 表的数据才会同步到其他副本。
+
 无法通过此方式克隆的模型会回退到 dbt 的默认行为：创建一个指向源关系的视图：
 
 * 使用非 MergeTree 引擎的表
@@ -213,10 +218,10 @@ WHERE query_id = '<query_id from run_results.json>'
 
 当前用于 dbt 的 ClickHouse 适配器 有一些限制需要注意：
 
-* 该插件使用的语法要求 ClickHouse 版本为 25.3 或更高。我们不测试较旧版本的 ClickHouse，目前也不测试 Replicated 表。
+* 该插件针对[仍提供安全支持](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)的 ClickHouse 版本进行测试，目前为 26.3 或更高版本。旧版本未经测试，可能无法正常工作。目前也不测试 Replicated 表。
 * 如果同时运行，不同的 `dbt-adapter` 运行之间可能会发生冲突，因为它们在内部可能会为相同操作使用相同的表名。更多信息，请参见问题 [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420)。
-* 该 适配器 当前使用 [INSERT INTO SELECT](/zh/reference/statements/insert-into#inserting-the-results-of-select) 将模型 materialize 为表。这实际上意味着如果再次执行运行，会产生重复数据。超大数据集 (PB 级) 可能会导致运行时间极长，从而使某些模型不具备可行性。要提升性能，请通过将视图实现为 `materialized: materialization_view` 来使用 ClickHouse Materialized Views。此外，应尽可能使用 `GROUP BY`，以减少任何查询返回的行数。相比只做转换但保持 source 行数不变的模型，应优先选择对数据进行汇总的模型。
-* 要使用 分布式表 来表示模型，必须先在每个节点上手动创建底层 replicated 表，然后再在这些表之上创建 分布式表。该 适配器 不管理 集群 的创建。
+* 该 适配器 当前使用 [INSERT INTO SELECT](/zh/reference/statements/insert-into#inserting-the-results-of-select) 将模型 物化 为表。这实际上意味着如果再次执行运行，会产生重复数据。超大数据集 (PB 级) 可能会导致运行时间极长，从而使某些模型不具备可行性。要提升性能，请通过将视图实现为 `materialized: materialization_view` 来使用 ClickHouse 物化视图。此外，应尽可能使用 `GROUP BY`，以减少任何查询返回的行数。相比只做转换但保持 source 行数不变的模型，应优先选择对数据进行汇总的模型。
+* 该 适配器 不管理 集群 的创建。分布式物化类型使用的集群必须预先在服务器上定义。
 * 当 dbt 在 数据库 中创建 关系 (表/视图) 时，通常会按以下形式创建：`{{ database }}.{{ schema }}.{{ table/view id }}`。ClickHouse 没有 schema 的概念，因此该 适配器 使用 `{{schema}}.{{ table/view id }}`，其中 `schema` 就是 ClickHouse 数据库。
 
 ## Fivetran {#fivetran}

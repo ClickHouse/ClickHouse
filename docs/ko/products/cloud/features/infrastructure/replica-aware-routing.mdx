@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePl
 
 <EnterprisePlanFeatureBadge feature="Replica-aware 라우팅" />
 
-Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. 쿼리 간에도 [임시 테이블](/ko/reference/statements/create/table/temporary-table) 또는 [이름이 지정된 세션 상태](/ko/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)에 계속 액세스해야 하거나, 관련 쿼리에서 동일한 레플리카의 로컬 캐시를 재사용하려는 경우 또는 쓰기 후 후속 읽기에서 [쓰기 후 읽기 일관성](#read-after-write-consistency)이 필요한 경우 사용하십시오.
+Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. 쿼리 간에도 [임시 테이블](/ko/reference/statements/create/table/temporary-table) 또는 [이름이 지정된 세션 상태](/ko/concepts/features/connect-to-clickhouse/protocols/http#using-clickhouse-sessions-in-the-http-protocol)에 계속 액세스해야 하거나, 관련 쿼리에서 동일한 레플리카의 로컬 캐시를 재사용하려는 경우 또는 쓰기 후 후속 읽기에서 [쓰기 후 읽기 일관성](#read-after-write-consistency)이 필요한 경우 사용하십시오.
 
 이 기능은 최선의 노력 방식으로 작동하며 격리를 보장하지 않습니다. 프록시는 각 라우팅 값을 하나의 레플리카에 매핑합니다. 레플리카 수가 변경되지 않는 한 이 매핑은 유지됩니다. 서비스를 스케일링하면 해당 값이 다른 레플리카에 매핑될 수 있습니다.
 
@@ -42,9 +42,9 @@ Enterprise 고객은 ClickHouse Cloud 콘솔의 서비스 설정 페이지에서
 
 ## HTTP 기반 라우팅 {#http-based-routing}
 
-워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 프록시는 헤더 값에 일관된 해싱을 적용하므로 레플리카 수가 변하지 않는 한 동일한 값을 사용하는 요청은 같은 레플리카로 전송됩니다. 다른 값은 독립적으로 해싱되며 같은 레플리카 또는 다른 레플리카에 할당될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
+워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/connect-to-clickhouse/protocols/http)를 통해 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 프록시는 헤더 값에 일관된 해싱을 적용하므로 레플리카 수가 변하지 않는 한 동일한 값을 사용하는 요청은 같은 레플리카로 전송됩니다. 다른 값은 독립적으로 해싱되며 같은 레플리카 또는 다른 레플리카에 할당될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
 
-기존 서비스 호스트명을 사용하십시오. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다. 헤더 값에는 애플리케이션 이름, 사용자 ID 또는 워크로드 레이블 등 원하는 문자열을 사용할 수 있습니다. 헤더가 없는 요청에는 일반적인 부하 분산이 적용됩니다.
+기존 서비스 호스트명을 사용하십시오. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다. 헤더 값에는 애플리케이션 이름, 사용자 ID 또는 워크로드 레이블 등 원하는 문자열을 사용할 수 있습니다. 헤더가 없는 요청에는 기본 부하 분산이 적용됩니다.
 
 각 요청에 `X-ClickHouse-Replica-Tag` 헤더를 설정하십시오:
 
@@ -64,7 +64,7 @@ clickhouse-go(v2)의 경우 `Protocol: clickhouse.HTTP`를 설정하고 [`HttpHe
 
 ## 네이티브 프로토콜 라우팅 {#native-protocol-routing}
 
-[네이티브 프로토콜](/ko/interfaces/tcp)을 사용할 때는 라우팅 값을 `<routing-value>.sticky.<host>` 형식의 TLS 서버 이름으로 전달합니다. 연결은 평소와 같이 일반 서비스 호스트명으로 수행하면 됩니다. [ClickHouse Client](/ko/interfaces/client)는 `--tls-sni-override`로 라우팅 값을 전달받습니다:
+[네이티브 프로토콜](/ko/concepts/features/connect-to-clickhouse/protocols/native-tcp)을 사용할 때는 라우팅 값을 `<routing-value>.sticky.<host>` 형식의 TLS 서버 이름으로 전달합니다. 연결은 평소와 같이 일반 서비스 호스트명으로 수행하면 됩니다. [ClickHouse Client](/ko/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)는 `--tls-sni-override`로 라우팅 값을 전달받습니다:
 
 ```bash
 clickhouse client \
@@ -76,7 +76,7 @@ clickhouse client \
 
 `--host`는 일반적인 서비스 호스트명이고, `--secure`는 TLS를 활성화하며, `--tls-sni-override`는 라우팅 값을 전달합니다. TLS는 필수입니다. 별도의 인증서나 DNS 항목은 필요하지 않습니다.
 
-## 읽기 후 쓰기 일관성(Read-after-write consistency) {#read-after-write-consistency}
+## 쓰기 후 읽기 일관성(Read-after-write consistency) {#read-after-write-consistency}
 
 멀티 레플리카 서비스에서는 한 레플리카에 수행한 쓰기가 복제가 완료되기 전까지 다른 레플리카에서 보이지 않을 수 있습니다. 쓰기 요청을 보낼 때 라우팅 값을 함께 지정하고, 이어지는 읽기에서 동일한 값을 재사용하십시오. 프록시가 두 요청을 같은 레플리카로 라우팅하므로, 다른 레플리카가 아직 뒤처져 있더라도 자신이 수행한 쓰기를 그대로 읽을 수 있습니다. 이 패턴은 데이터를 쓴 직후 동일한 데이터를 다시 읽는 워크로드, 예를 들어 대화형 애플리케이션이나 삽입 결과를 검사한 후 다음 단계로 진행하는 ETL 작업에 적합합니다.
 
@@ -118,7 +118,7 @@ clickhouse client \
   --query 'SELECT count() FROM events'
 ```
 
-모든 레플리카에 걸쳐 더 폭넓은 보장이 필요하다면, ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
+모든 레플리카에 걸쳐 더 폭넓은 보장이 필요하다면, ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings/other#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
 
 ## 연결된 레플리카 확인 {#check-which-replica}
 

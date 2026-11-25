@@ -1,0 +1,117 @@
+---
+description: 'توثيق واجهة SSH في ClickHouse'
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'واجهة SSH'
+slug: /concepts/features/connect-to-clickhouse/protocols/ssh
+title: 'واجهة SSH مع PTY'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+## مقدمة {#preface}
+
+يتيح خادم ClickHouse الاتصال به مباشرةً باستخدام بروتوكول SSH، ويمكن استخدام أي عميل لهذا الغرض.
+
+بعد إنشاء [مستخدم قاعدة بيانات تُجرى المصادقة عليه باستخدام مفتاح SSH](/ar/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys):
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+يمكنك استخدام هذا المفتاح للاتصال بخادم ClickHouse، إذ سيفتح طرفية زائفة (PTY) تتضمن session تفاعلية من clickhouse-client.
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+يمكن أيضًا تنفيذ الأوامر عبر SSH (الوضع غير التفاعلي):
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+## تكوين الخادم {#server-configuration}
+
+لتمكين ميزة خادم SSH، يجب إزالة علامات التعليق عن القسم التالي أو إضافته إلى ملف `config.xml`:
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+يُعدّ مفتاح المضيف جزءًا أساسيًا من بروتوكول SSH. ويُخزَّن الجزء العام من هذا المفتاح في الملف `~/.ssh/known_hosts` على جهة العميل، ويُستخدم عادةً للحماية من هجمات الوسيط (man-in-the-middle). وعند الاتصال بالخادم لأول مرة، ستظهر لك الرسالة التالية:
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+وهذا يعني في الواقع: &quot;هل تريد تذكّر المفتاح العام لهذا المضيف ومتابعة الاتصال؟&quot;.
+
+يمكنك توجيه عميل SSH إلى عدم التحقق من المضيف بتمرير خيار:
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+## تهيئة العميل المُضمَّن {#configuring-embedded-client}
+
+يمكنك تمرير الخيارات إلى العميل المُضمَّن على نحو مشابه لـ `clickhouse-client` العادي، ولكن مع بعض القيود.
+ونظرًا لأن هذا بروتوكول SSH، فإن الطريقة الوحيدة لتمرير المعلمات إلى المضيف الهدف هي عبر متغيرات البيئة.
+
+على سبيل المثال، يمكن ضبط `format` على النحو التالي:
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+يمكنك بهذه الطريقة تغيير أي إعداد على مستوى المستخدم، كما يمكنك تمرير معظم خيارات `clickhouse-client` العادية (باستثناء تلك التي لا معنى لها في هذا الإعداد).
+
+مهم:
+
+عند تمرير الخيار `query` وأمر SSH معًا، يُضاف الأخير إلى قائمة الاستعلامات المراد تنفيذها:
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

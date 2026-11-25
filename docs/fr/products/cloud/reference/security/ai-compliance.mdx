@@ -30,14 +30,17 @@ Le paramètre permettant d’activer le partage des données à des fins d’am�
 
 Lorsque le paramètre de niveau administrateur autorisant le partage de données avec ClickHouse à des fins d’amélioration du produit est activé pour votre organisation, ClickHouse peut utiliser les données générées ou collectées dans le cadre de l’utilisation d’une fonctionnalité d’IA par vos utilisateurs, y compris les entrées, les sorties, les logs et les métadonnées (à l’exclusion des résultats directs des requêtes vers ClickHouse Cloud), à des fins telles que l’évaluation des modèles (tests de précision, de performance et de sécurité/conformité), l’amélioration de la fiabilité, de la sécurité et de l’expérience utilisateur du service, ainsi que la conduite d’analyses. Nous n’utiliserons pas ces données pour entraîner, réentraîner ou affiner des modèles.
 
-## Assistant {#clickhouse-assistant}
+## SQL AI, Assistant et ClickHouse Agents {#clickhouse-assistant}
 
-Le paramètre permettant d’activer [Assistant](/fr/agents/assistant/using-ai-chat) peut être consulté et modifié par un utilisateur disposant des autorisations `service:manage-generative-ai`. Il est disponible sur la page des paramètres du service. Cette fonctionnalité offre deux capacités distinctes :
+Le paramètre permettant d’activer l’[Assistant](/fr/agents/assistant/using-ai-chat) peut être consulté et modifié par un utilisateur disposant des autorisations `service:manage-generative-ai`. Il est accessible depuis la page des paramètres du service.
 
-| Fonctionnalité | Description                                                                                 | Données utilisées                                                                | Validation utilisateur                                                                            |
-| :------------- | :------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------ |
-| SQL AI         | Rédige, analyse et recommande des améliorations pour les requêtes                           | Métadonnées du service, texte de requête et entrées de prompt                    | La sortie est fournie à l’utilisateur pour vérification avant l’exécution de la requête           |
-| Assistant      | Permet aux utilisateurs de poser des questions en langage naturel et d’obtenir des réponses | Métadonnées et contenu du service, documentation ClickHouse et entrées de prompt | La sortie est présentée pour vérification ; les utilisateurs doivent la valider avant utilisation |
+[ClickHouse Agents](/fr/agents) permet aux utilisateurs d’explorer leurs données ClickHouse au moyen de conversations en langage naturel et de créer des agents personnalisés dotés d’outils configurés.
+
+| Fonctionnalité    | Description                                                                                                            | Données utilisées                                                                | Validation par l’utilisateur                                                    |
+| :---------------- | :--------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------ |
+| SQL AI            | Génère du SQL, fournit une complétion automatique intégrée et suggère des corrections et des améliorations de requêtes | Métadonnées du service, texte de la requête et entrées du prompt                 | Les utilisateurs doivent vérifier l’exactitude du SQL généré et des suggestions |
+| Assistant         | Répond aux questions sur ClickHouse et aide à analyser les données par le biais d’une conversation                     | Métadonnées et contenu du service, documentation ClickHouse et entrées du prompt | Les utilisateurs doivent valider les réponses et les analyses                   |
+| ClickHouse Agents | Prend en charge des agents personnalisés qui utilisent des outils configurés pour interroger et analyser les données   | Métadonnées et contenu du service, instructions de l’agent et entrées du prompt  | Les utilisateurs doivent valider les réponses et les analyses                   |
 
 ## Model Context Protocol {#model-comtext-protocol}
 

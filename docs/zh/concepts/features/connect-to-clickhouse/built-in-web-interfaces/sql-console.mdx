@@ -1,0 +1,40 @@
+---
+description: 'ClickHouse HTTP 服务器在 `/ui` 路径下提供的嵌入式 SQL 控制台 UI 的文档'
+sidebarTitle: 'SQL 控制台'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console
+title: 'SQL 控制台'
+doc_type: 'reference'
+---
+
+SQL 控制台是一个嵌入式网页用户界面，可用于运行查询和探索数据。任意 ClickHouse HTTP 端口均可通过 `/ui` 路径访问该控制台，例如 `http://localhost:8123/ui`。
+
+<Note>
+  SQL 控制台是一项实验性功能。
+</Note>
+
+## 概览 {#overview}
+
+SQL 控制台是一个单页应用 (SPA) ，编译打包为静态支持包后直接嵌入 ClickHouse 二进制文件中，与 ClickStack 嵌入在 `/clickstack` 路径下的方式类似。所有静态资源均由 ClickHouse 二进制文件本身提供，不会从任何第三方 CDN 加载资源。
+
+要打开 SQL 控制台，请通过任意 ClickHouse HTTP 端口访问 `/ui` 路径 (例如 `http://localhost:8123/ui`) 。
+
+## 提供服务的方式 {#how-it-is-served}
+
+支持包在构建时使用 gzip 压缩，并通过 `#embed` 嵌入，因此 `/ui` 的每个响应都带有 `Content-Encoding: gzip` 响应头。SQL 控制台是一个使用客户端路由的单页应用，因此，`/ui` 下的请求如果既不对应嵌入的静态资源，也不像文件路径 (即没有扩展名) ，就会回退到返回 `index.html`。如果请求的路径看起来指向不存在的静态资源 (例如 `/ui/nonexistent.js`) ，则返回 HTTP 状态码 `404 Not Found`。
+
+只有路径完全等于 `/ui`，或 `/ui` 后紧跟 `/`、`?` 或 `#` 作为边界时，才会匹配，因此 `/uix` 等同级路由不会被 SPA 回退机制拦截。
+
+## 与其他网页用户界面的关系 {#relationship-to-other-web-uis}
+
+ClickHouse 自带多个内置 Web 界面，均通过 HTTP 端口提供服务：
+
+* [`/play`](/zh/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql) — 轻量级 Web SQL 界面。
+* `/dashboard` — 内置仪表盘。
+* `/clickstack` — 嵌入式 ClickStack 用户界面。
+* `/ui` — 本文介绍的 SQL 控制台。
+
+上述所有界面的链接均可在 ClickHouse HTTP 服务器的首页上找到。
+
+## 身份验证 {#authentication}
+
+SQL 控制台的身份验证与 HTTP 协议采用相同的 `Session` 和访问控制检查。通过 `/ui` 提供 UI 静态资源时无需身份验证；而 UI 发出的查询则与其他任何 HTTP 请求一样，均需经过身份验证。

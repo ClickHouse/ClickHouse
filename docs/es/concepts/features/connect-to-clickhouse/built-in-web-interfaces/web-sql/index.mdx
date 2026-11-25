@@ -1,0 +1,61 @@
+---
+description: 'Documentación de la interfaz web SQL (Play), la interfaz de consultas integrada en el navegador que se sirve en `/play`'
+sidebarTitle: 'Interfaz web SQL'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql
+title: 'Interfaz web SQL (Play)'
+doc_type: 'reference'
+---
+
+La interfaz web SQL (Play) es la interfaz de consultas integrada en el navegador de ClickHouse. Se sirve desde cualquier puerto HTTP de ClickHouse en la ruta `/play` (por ejemplo, `http://localhost:8123/play`). Permite escribir y ejecutar consultas, ver los resultados en forma de tabla o de gráfico y compartir una consulta copiando su URL.
+
+Toda la interfaz se encuentra en `programs/server/play.html`, una única página autocontenida que se sirve directamente desde el binary de ClickHouse, sin frameworks ni paso de build. La única excepción es la generación de gráficos: la biblioteca de gráficos `uPlot` se carga de forma diferida desde una CDN de terceros la primera vez que un resultado se muestra como gráfico, por lo que los gráficos no están disponibles en implementaciones sin conexión o con el tráfico de salida restringido.
+
+## Pestañas de consulta {#query-tabs}
+
+Las pestañas le permiten tener varias consultas abiertas en paralelo, en lugar de ir alternándolas en un único editor o depender del historial del navegador.
+
+Cada pestaña tiene su propio texto de la consulta, título, parámetros de consulta y último resultado. Los ajustes de conexión (URL, usuario, contraseña) son globales y se comparten entre todas las pestañas.
+
+### Cuándo aparece la barra de pestañas {#when-the-tab-bar-appears}
+
+La barra de pestañas aparece en cuanto se ejecuta una consulta o cuando hay más de una pestaña. Una única pestaña sin resultado se ve exactamente igual que la página antes de que existieran las pestañas, por lo que la barra de pestañas no se muestra hasta que la necesite.
+
+La pestaña activa se funde visualmente con la página: su fondo sigue el color derivado del hash de cada consulta (el mismo color que ya utiliza el fondo de la página), con un degradado más saturado en la parte superior en el tema claro y más brillante en la parte superior en el tema oscuro. Las pestañas inactivas se tiñen según el hash del texto de su propia consulta, de modo que las distintas pestañas se distinguen automáticamente por su color.
+
+### Crear, cerrar y cambiar el nombre de las pestañas {#creating-closing-and-renaming-tabs}
+
+* Cree una pestaña nueva con el botón `[+]`, situado a la derecha de las pestañas.
+* Cierre una pestaña con el icono `x` que aparece en ella.
+* Las pestañas nuevas reciben los nombres predeterminados `Query A`, `Query B`, etc.
+* Haga clic en el título de la pestaña activa para editarlo directamente; el campo de edición se amplía para ajustarse al texto.
+
+### Cambiar de pestaña {#switching-tabs}
+
+* Haga clic en una pestaña inactiva para cambiar a ella.
+* Gire la rueda del ratón sobre el panel de pestañas para cambiar de pestaña: al desplazarse hacia arriba se pasa a la pestaña de la izquierda y, al desplazarse hacia abajo, a la de la derecha (si existen). Funciona tanto con el desplazamiento vertical como con el horizontal de la rueda.
+
+La barra de pestañas es fija en sentido horizontal: permanece a la izquierda cuando la página se desplaza horizontalmente, al igual que el logotipo de ClickHouse en la parte inferior, pero se desplaza verticalmente junto con el resto de la página.
+
+### Persistencia e historial del navegador {#persistence-and-browser-history}
+
+El workspace (las pestañas, sus títulos, la pestaña activa, su orden y pequeñas instantáneas de los resultados) se persiste en IndexedDB y se restaura al recargar. La persistencia se aplica en la medida de lo posible: si IndexedDB no está disponible, el workspace se mantiene únicamente como estado en memoria durante la sesión actual.
+
+Las pestañas también se integran con la History API del navegador y con la URL:
+
+* El estado del historial incluye la pestaña activa, de modo que los botones Atrás y Adelante del navegador permiten cambiar de pestaña.
+* La URL incorpora un parámetro `tab=<name>`. Al cargar la página, la consulta de la URL y el parámetro `tab` se reconcilian con las pestañas guardadas: se reutiliza una pestaña existente con ese nombre (y se sustituye su consulta) o, si no se encuentra el nombre o la pestaña no tenía nombre, se crea una nueva. Así, es posible abrir una URL con una consulta nueva sin perder tus propias pestañas guardadas.
+
+## Modo notebook {#notebook-mode}
+
+Una pestaña puede convertirse en un notebook (una secuencia ordenada de celdas de consulta y de texto) añadiendo una
+celda con el botón `[+]` que aparece debajo de un resultado. El modo notebook se configura por pestaña. Consulte
+[Modo notebook de la interfaz de usuario web](/es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook).
+
+### Limitaciones {#limitations}
+
+Una consulta sigue ejecutándose cuando cambia a otra pestaña. Sus indicadores de progreso y de recursos siguen
+acumulándose en segundo plano y, al volver a abrir la pestaña, se recupera ese estado activo, de modo que los indicadores
+continúan desde sus valores actuales en lugar de reiniciarse cerca de cero. En cambio, cerrar la pestaña o navegar
+hacia atrás o hacia adelante a otra entrada del historial sí detiene la consulta.
+
+Solo se guardan instantáneas de los resultados pequeños para poder restaurarlos. Los resultados grandes (que superan el límite de tamaño de la instantánea) y los resultados de imagen no se persisten: tras cambiar de pestaña o recargar, la pestaña conserva su consulta, pero no el resultado generado, que se puede reproducir volviendo a ejecutar la consulta. Esto se aplica tanto a los resultados de una sola consulta como a la salida combinada de una ejecución con &quot;Run all&quot; (varias consultas).

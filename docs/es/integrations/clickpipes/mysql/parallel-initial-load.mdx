@@ -21,7 +21,7 @@ Sin embargo, el ClickPipe para MySQL puede paralelizar este proceso, lo que pued
 
 ### Columna de clave de partición {#key-mysql-snapshot}
 
-Una vez habilitada la feature flag, deberías ver la siguiente configuración en el selector de tablas de ClickPipe (tanto al crear como al editar un ClickPipe):
+Puedes ver la siguiente configuración en el selector de tablas de ClickPipe (tanto al crear como al editar un ClickPipe):
 
 <div className="ch-image-md">
   <Frame>
@@ -61,17 +61,10 @@ Esta configuración controla cuántas particiones se procesan en paralelo. El va
   #### Número de tablas de la instantánea en paralelo {#tables-parallel-mysql-snapshot}
 </div>
 
-No está directamente relacionado con la instantánea en paralelo, pero esta configuración controla cuántas tablas se procesan en paralelo durante la carga inicial. El valor predeterminado es 1. Ten en cuenta que esto se suma al paralelismo de las particiones, así que si tienes 4 particiones y 2 tablas, el ClickPipe leerá 8 particiones en paralelo.
+No está directamente relacionado con la instantánea en paralelo, pero esta configuración controla cuántas tablas se procesan en paralelo durante la carga inicial. El valor predeterminado es 1. Ten en cuenta que esto se suma al paralelismo de las particiones, así que si el paralelismo de la carga inicial es 4 y tienes 2 tablas, el ClickPipe leerá 8 particiones en paralelo.
 
 <div id="monitoring-parallel-mysql-snapshot">
-  ### Supervisión de la instantánea paralela en MySQL {#monitoring-parallel-mysql-snapshot}
+  ### Supervisión de la instantánea en paralelo en MySQL {#monitoring-parallel-mysql-snapshot}
 </div>
 
-Puede ejecutar **SHOW processlist** en MySQL para ver la instantánea paralela en acción. El ClickPipe creará múltiples conexiones a la base de datos de origen, cada una leyendo una partición diferente de la tabla de origen. Si ve consultas **SELECT** con distintos rangos, significa que el ClickPipe está leyendo las tablas de origen. Aquí también puede ver COUNT(*) y la consulta de particionamiento.
-
-<div id="limitations-parallel-mysql-snapshot">
-  ### Limitaciones {#limitations-parallel-mysql-snapshot}
-</div>
-
-* Los parámetros de la instantánea no se pueden editar después de crear el pipe. Si desea cambiarlos, tendrá que crear un nuevo ClickPipe.
-* Al añadir tablas a un ClickPipe existente, no se pueden cambiar los parámetros de la instantánea. El ClickPipe usará los parámetros existentes para las nuevas tablas.
+Puede ejecutar **SHOW processlist** en MySQL para ver la instantánea en paralelo en acción. El ClickPipe creará múltiples conexiones a la base de datos de origen, cada una leyendo una partición diferente de la tabla de origen. Si ve consultas **SELECT** con distintos rangos, significa que el ClickPipe está leyendo las tablas de origen.

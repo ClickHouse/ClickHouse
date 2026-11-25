@@ -57,16 +57,16 @@ helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
 
 ### 连接 {#connection-settings}
 
-在团队设置中配置数据源所使用的数据库连接。
+在团队设置中配置 source 所使用的数据库连接。
 
-| 设置项                        | 描述                                                                                                          |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Connection Name`          | 在数据源设置中用于标识此连接的名称。                                                                                          |
-| `Host`                     | ClickHouse HTTP(S) 端点，需包含端口。该端点与采集器的导出端点相互独立。                                                               |
-| `Username`                 | ClickHouse 用户名，默认为 `default`。                                                                               |
-| `Password`                 | ClickHouse 密码，默认为空。                                                                                         |
-| `Query Log Setting Prefix` | 可选的自定义 ClickHouse 设置前缀，用于在查询日志中记录当前用户的电子邮件。必须在 ClickHouse 的 `custom_settings_prefixes` 配置中加入相同的前缀，否则查询将被拒绝。 |
-| `Prometheus compatible`    | 该选项可用时，会将 Host 视为与 Prometheus 兼容的 API 端点，用于代理 PromQL 查询。此连接不能用于基于 ClickHouse 的日志、链路追踪或 OTel 指标数据源。          |
+| 设置项                        | 描述                                                                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection Name`          | 在 source 设置中用于标识此连接的名称。                                                                                                                                                                                                                    |
+| `Host`                     | ClickHouse HTTP(S) 端点，需包含端口。该端点与采集器的导出端点相互独立。                                                                                                                                                                                         |
+| `Username`                 | ClickHouse 用户名，默认为 `default`。                                                                                                                                                                                                         |
+| `Password`                 | ClickHouse 密码，默认为空。                                                                                                                                                                                                                   |
+| `Query Log Setting Prefix` | 可选的自定义 ClickHouse 设置前缀，用于在查询日志中记录当前用户的电子邮件。必须在 ClickHouse 的 `custom_settings_prefixes` 配置中加入相同的前缀，否则查询将被拒绝。如需在不涉及用户标识符的情况下查看查询由哪个仪表盘、告警或其他 ClickStack 功能发出，请参阅[找出查询负载的来源](/zh/clickstack/managing/performance-tuning#query-attribution)。 |
+| `Prometheus compatible`    | 该选项可用时，会将 Host 视为与 Prometheus 兼容的 API 端点，用于代理 PromQL 查询。此连接不能用于基于 ClickHouse 的日志、链路追踪或 OTel 指标 source。                                                                                                                                    |
 
 ### 数据源设置 {#datasource-settings}
 
@@ -182,21 +182,21 @@ ClickStack 用户界面 依赖用户为每一种可观测性数据类型/支柱�
 
 | 设置项                           | 描述                                                                                            | 必填 | 在默认 schema 中推断 | 推断值                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------- | -- | -------------- | ------------------------------------ |
-| `Name`                        | 数据源名称。                                                                                        | 是  | 否              | –                                    |
-| `Section`                     | 可选。用于在数据源选择器中对数据源进行分组的标签。属于同一分组的数据源会显示在一起，搜索时除数据源名称外，也会匹配分组名称。                                | 否  | 否              | –                                    |
+| `Name`                        | source 名称。                                                                                        | 是  | 否              | –                                    |
+| `Section`                     | 可选。用于在 source 选择器中对 source 进行分组的标签。属于同一分组的 source 会显示在一起，搜索时除 source 名称外，也会匹配分组名称。                                | 否  | 否              | –                                    |
 | `Server Connection`           | 服务器连接名称。                                                                                      | 是  | 否              | `Default`                            |
 | `Database`                    | ClickHouse 数据库名称。                                                                             | 是  | 是              | `default`                            |
-| `Query Settings`              | 最多可配置十个查询级别的[会话设置](/zh/reference/settings/session-settings)，每项均由设置名称和值组成，并会添加到针对该数据源发出的每个查询中。 | 否  | 否              | –                                    |
-| `Enabled`                     | 数据源表单顶部的切换开关。禁用的数据源会被保留，但会在数据源选择器中隐藏，且绝不会被自动选择。仅在编辑现有数据源时显示。                                  | 否  | 否              | 已启用                                  |
+| `Query Settings`              | 最多可配置十个查询级别的[会话设置](/zh/reference/settings/session-settings)，每项均由设置名称和值组成，并会添加到针对该 source 发出的每个查询中。 | 否  | 否              | –                                    |
+| `Enabled`                     | source 表单顶部的切换开关。禁用的 source 会被保留，但会在 source 选择器中隐藏，且绝不会被自动选择。仅在编辑现有 source 时显示。                                  | 否  | 否              | 已启用                                  |
 | `Gauge Table`                 | 存储 Gauge 类型指标的表。                                                                              | 否  | 是              | `otel_metrics_gauge`                 |
 | `Histogram Table`             | 存储 Histogram 类型指标的表。                                                                          | 否  | 是              | `otel_metrics_histogram`             |
 | `Sum Table`                   | 存储 Sum 类型 (Counter) 指标的表。                                                                     | 否  | 是              | `otel_metrics_sum`                   |
 | `Exponential Histogram Table` | 存储 Exponential Histogram 类型指标的表。                                                              | 否  | 是              | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | 可选。关联的日志数据源 (例如 ClickStack 用户界面日志) 。                                                          | 否  | 否              | –                                    |
+| `Correlated Log Source`       | 可选。关联的日志 source (例如 ClickStack 用户界面日志) 。                                                          | 否  | 否              | –                                    |
 | `Summary Table`               | 存储 Summary 类型指标的表。对 Summary 和 Exponential Histogram 的支持尚不完善。                                  | 否  | 是              | `otel_metrics_summary`               |
-| `Minimum auto granularity`    | 自动选择图表粒度时的最小分桶大小。不会覆盖显式指定的图表粒度。                                                               | 否  | 否              | 无最小值                                 |
+| `Minimum auto granularity`    | 自动选择图表粒度时的最小分桶大小。不会覆盖显式指定的图表粒度。适用于 UI 中的图表，例如仪表板面板。告警、通过外部 API 查询的图表以及 MCP 查询工具目前尚不支持此设置。     | 否  | 否              | 无最小值                                 |
 
-指标数据源还会存储时间戳和资源属性的映射 (通常为 `TimeUnix` 和 `ResourceAttributes`) 。统一的 `series Table` 字段仅对已启用指标数据系列表支持的团队显示。
+指标 source 还会存储时间戳和资源属性的映射 (通常为 `TimeUnix` 和 `ResourceAttributes`) 。统一的 `series Table` 字段仅对已启用指标数据系列表支持的团队显示。
 
 #### PromQL {#promql-source-settings}
 

@@ -176,7 +176,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 `RETURNING` 子句指定一个 `SELECT` 查询，该查询基于已插入的数据执行，并返回其结果。
@@ -267,7 +267,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 **语法**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **示例**
@@ -285,6 +285,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### 分区写入 {#partitioned-writes}
+
+部分写入文件或对象存储的表函数支持 `PARTITION BY` 子句，例如 [file](/zh/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files)、[s3](/zh/reference/functions/table-functions/s3#partitioned-write)、[gcs](/zh/reference/functions/table-functions/gcs#partitioned-write) 和 [azureBlobStorage](/zh/reference/functions/table-functions/azureBlobStorage#partitioned-write)。不支持该子句的表函数 (例如 `remote`) 会拒绝执行该查询。`expr` 引用的是表函数的列。
+
+插入的行是否拆分以及如何拆分，取决于表函数的分区策略及其路径。如果未显式指定分区策略，路径中的 `{_partition_id}` 占位符会启用 `wildcard` 策略：每个分区写入单独的文件或对象，其路径中的占位符会被替换为 `expr` 的值转换后的字符串。`s3`、`gcs` 和 `azureBlobStorage` 的文档页面介绍了它们支持的其他分区策略。
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## 向 ClickHouse Cloud 插入数据 {#inserting-into-clickhouse-cloud}

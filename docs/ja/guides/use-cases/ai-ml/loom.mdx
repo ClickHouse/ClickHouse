@@ -1,0 +1,162 @@
+---
+title: 'ClickHouse Loom による AI エージェント間の共有メモリ'
+sidebarTitle: 'Loom によるエージェントメモリ'
+slug: /use-cases/AI/loom
+description: 'AIエージェント向けの共有長期メモリ、ドキュメント、コード索引を ClickHouse に保持するオープンソースのMCPサーバー、ClickHouse Loom を実行します。'
+doc_type: 'guide'
+keywords: ['loom', 'agent memory', 'mcp', 'ai agents', 'rag', 'claude code', 'codex', 'cursor']
+---
+
+このガイドでは、[ClickHouse Loom](https://loom.clickhouse.com/) をインストールします。ClickHouse Loom は、オープンソース (Apache-2.0) のMCPサーバー兼 HTTP API です。AIエージェントに対して、共有の長期メモリ、引用付きのドキュメント検索、リポジトリのコード索引を提供します。このガイドを終える頃には、Loom が ClickHouse に接続して動作し、最初のメモリが保存され、接続したコーディングエージェントから利用できる状態になります。
+
+## 始める前に {#before-you-begin}
+
+* Linux の `amd64` または `arm64` 上で動作する Docker (Compose 2.20 以降) が必要です (Apple Silicon 上の Docker Desktop でも動作します) 。また、ポート 7777 が空いている必要があります。
+* Loom 用の ClickHouse。Loom スタックでは、専用の ClickHouse コンテナを実行することもできます。代わりに ClickHouse Cloud サービスまたはセルフマネージドのサーバーを使用する場合は、次の要件を満たす必要があります。
+
+  * バージョン 26.4 以降 (Cloud では、サービス内で最も古いレプリカのバージョンが基準になります)
+  * Keeper: Cloud には Keeper が用意されています。セルフマネージドのサーバーでは、Loom の `keeper.xml` を `config.d/` に追加するか、使用する Keeper を指定した `<zookeeper>` セクションを追加します。
+  * `loom.*` および `loom_telemetry.*` に対するすべての権限 (`GRANT ALL`、または Cloud では `GRANT CURRENT GRANTS`) 、Loom が読み取るシステムテーブルに対する `SELECT` 権限、および `READ ON REMOTE` 権限を持つユーザー
+
+  詳しくは、[ClickHouse の要件](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#clickhouse-requirements)を参照してください。
+
+## 仕組み {#how-it-works}
+
+1. インストーラーはリリースの Compose バンドルをダウンロードしてチェックサムを検証し、公開済みのイメージから Loom サーバーとそのドキュメント抽出器を起動します。
+2. バンドルされた ClickHouse コンテナは、`loom` データベースが作成された状態で起動します。独自の ClickHouse を使用する場合は、インストーラーがこのデータベースを作成するか、管理者が実行するための SQL を出力します。Loom は初回起動時にテーブルを作成します。メモリエントリ、ドキュメント、コード索引は、いずれもこのデータベース内の通常のテーブルとして保存されます。
+3. エージェントは MCP または HTTP API を介して読み取りと書き込みを行います。Python SDK、TypeScript SDK、および Claude Code と Codex のプラグインも同じ API を使用します。
+
+## Loom のインストール {#install-loom}
+
+<Steps>
+  <Step title="インストーラーを実行する" id="run-the-installer">
+    ホームディレクトリ、または自分だけが書き込めるディレクトリで実行してください。インストーラーは実行前に `loom-install.sh` をそのディレクトリに保存します。
+
+    <Tabs>
+      <Tab title="同梱の ClickHouse" id="bundled-clickhouse">
+        スタック内で専用の ClickHouse コンテナが実行されます:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh && rm loom-install.sh
+        ```
+      </Tab>
+
+      <Tab title="ClickHouse Cloud" id="clickhouse-cloud">
+        サービス上に Loom 用のユーザー (`default` 以外) を作成し、サービスの IP アクセスリストで Loom ホストの IP を許可します。次に、サービスの URL をインストーラーに渡します。URL または `LOOM_CH_PASSWORD` でパスワードが指定されていない場合は、パスワードの入力を求められます。続いてインストーラーが `loom` データベースと読み取り専用の リーダー ユーザーを作成します。ユーザーに必要な権限がない場合は、代わりに管理者が実行すべき SQL が出力されます:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse https://loom@<service-host>:8443 \
+          && rm loom-install.sh
+        ```
+
+        ClickHouse Cloud と ClickHouse Managed Postgres を使用する Kubernetes 環境については、[ClickHouse Cloud and Managed Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/clickhouse-cloud.md) の手順に従ってください。
+      </Tab>
+
+      <Tab title="自己管理型 ClickHouse" id="self-managed-clickhouse">
+        サーバーの URL を渡します。インストーラーの動作は Cloud タブと同じです。`http://` のデフォルトポートは 8123 です。Loom コンテナ内の `localhost` はコンテナ自身を指すため、Docker ホスト上で動作するサーバーは `host.docker.internal` で指定します:
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse http://loom@host.docker.internal:8123 && rm loom-install.sh
+        ```
+      </Tab>
+    </Tabs>
+
+    インストーラーは、`http://localhost:7777/v1/health` が `status` `ok` を返すまで待機します。このインストールはシングルユーザー構成です。ログインは不要で、localhost からのみアクセスでき、デフォルトの名前空間 `dev/local` が使用されるため、MCP および SDK の呼び出しにトークンは必要ありません。チーム向けのデプロイメントではサインインを有効にし、各エージェントに名前空間の権限を付与したトークンを発行します。詳細は [Identity modes](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#identity-modes) を参照してください。
+  </Step>
+
+  <Step title="メモリを保存して呼び出す" id="save-and-recall">
+    ```bash
+    curl -sX POST http://localhost:7777/v1/memory.set -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart",
+           "memory_key":"deploy_window","value":"Tue and Thu only; never Friday."}'
+    curl -sX POST http://localhost:7777/v1/memory.get -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart","memory_key":"deploy_window"}'
+    ```
+
+    `memory.get` のレスポンスには `found: true` と、書き込んだとおりの `value` が含まれます。
+  </Step>
+
+  <Step title="コーディングエージェントを接続する" id="connect-a-coding-agent">
+    <Tabs>
+      <Tab title="Claude Code" id="claude-code">
+        ```bash
+        claude plugin marketplace add ClickHouse/loom
+        claude plugin install loom@loom
+        ```
+
+        Claude Code でプラグインの設定を求められたら、サーバー URL はデフォルトのまま、トークンは空欄のままにしてください。
+      </Tab>
+
+      <Tab title="Codex" id="codex">
+        ```bash
+        codex plugin marketplace add ClickHouse/loom
+        codex plugin add loom@loom
+        ```
+
+        次に `codex` を一度対話モードで実行し、プラグインのフックを承認してください。承認するまでツール自体は動作しますが、何も記録されません。
+      </Tab>
+
+      <Tab title="Cursor" id="cursor">
+        次のエントリを `~/.cursor/mcp.json` にマージし、Cursor を再起動します:
+
+        ```json
+        { "mcpServers": { "loom": { "url": "http://localhost:7777/mcp?toolset=coding" } } }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## 動作確認 {#verify}
+
+| 操作                                                                                                                                                                                                                                               | 期待される結果                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| `curl -s http://localhost:7777/v1/health`                                                                                                                                                                                                        | `status` が `ok` になる                           |
+| `http://localhost:7777/` を開く                                                                                                                                                                                                                     | 保存したメモリが表示された Loom ダッシュボード                    |
+| 上記の `memory.get` 呼び出し                                                                                                                                                                                                                            | `found` が `true` になり、`memory.set` で保存した値が返される |
+| バンドルされた ClickHouse 上で実行: `docker compose --project-directory "$HOME/.loom" exec clickhouse clickhouse-client --user loom --password loomdev --query "SELECT memory_key, value FROM loom.memory FINAL WHERE org = 'dev' AND namespace = 'local'"` | `deploy_window` の行が返される                       |
+
+## ベストプラクティス {#best-practices}
+
+### チームごとに専用の名前空間を割り当てる {#namespace-per-team}
+
+メモリエントリ、ドキュメント、権限のスコープは名前空間単位です。学習した内容を共有させたいエージェント同士は、同じ名前空間に書き込むようにします。トークンによって、各エージェントが読み書きできる名前空間を制限できます。詳しくは[トークンと権限](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/guides/tokens-and-grants.md)を参照してください。
+
+### 抽出と回答に使用する LLM プロバイダーを設定する {#configure-an-llm}
+
+リリース版のスタックは、埋め込みにローカルの CPU モデルを使用し、LLM には代替の仮実装を使用します。そのため、ダッシュボードの **Settings → Models &amp; keys** でモデルプロバイダーを設定するまで、抽出、要約、`memory.ask` から意味のある結果は得られません。OpenAI の API キーが 1 つあれば、モデルと埋め込みの両方をまかなえます。Anthropic を使用する場合は、埋め込み用のプロバイダーを別途用意する必要があります。詳しくは [Models and keys](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/models-and-keys.md) を参照してください。
+
+## トラブルシューティング {#troubleshooting}
+
+<Accordion title="インストーラーが ClickHouse のチェックで停止する">
+  Loom には ClickHouse 26.4 以降、Keeper、および[始める前に](#before-you-begin)に記載された権限が必要です。Keeper のないセルフマネージドのサーバーでは、Keeper を追加するか、`--bundled` を指定してインストーラーを実行し、スタックに同梱された ClickHouse を使用してください。`docker compose --project-directory "$HOME/.loom" run --rm loom loom ch-setup --print-sql` を実行すると、接続せずに管理者向けの SQL を出力できます。
+</Accordion>
+
+<Accordion title="Loom が正常な状態にならない">
+  `docker compose --project-directory "$HOME/.loom" logs --tail 100 loom clickhouse` でログを確認してください。[トラブルシューティング](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md)には、問題ごとの症状、その問題を特定するためのチェック、および対処方法が記載されています。
+</Accordion>
+
+## よくある質問 {#faq}
+
+<Accordion title="Loom はエージェントを実行しますか？">
+  いいえ。Loom はエージェント向けのコンテキストを保存、ランク付け、取得するためのものであり、エージェントフレームワークではありません。
+</Accordion>
+
+<Accordion title="ライブメモリを Postgres に保持できますか？">
+  はい。新規デプロイメントでは、初回起動時に、ライブメモリとナレッジドキュメントの最新版 (head) の正本の保存先として Postgres を選択できます。その場合も、ベクトル、検索、履歴は引き続き ClickHouse に保持されます。詳しくは [Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/postgres.md) を参照してください。
+</Accordion>
+
+## 次のステップ {#next-steps}
+
+* デプロイメント、クライアント、運用については [Loom ドキュメント](https://loom.clickhouse.com/docs) を参照してください。
+* セッションやツールをまたいで利用できる、[コーディングエージェント向けの共有メモリを評価する](https://loom.clickhouse.com/docs/use-cases/agent-memory)。
+* [コードに関連付けられたエージェントメモリを試し](https://loom.clickhouse.com/docs/use-cases/memory-linked-to-code#check-a-lesson-after-a-code-edit)、参照先のコードが変更されたときに Loom が保存済みの教訓にどのようにフラグを立てるかを確認します。
+* 実装者用とレビュアー用に認証情報を分けた 1 つのリポジトリで、[ソフトウェアファクトリー向けのエージェントメモリをテストする](https://loom.clickhouse.com/docs/use-cases/multi-agent#choosing-memory-for-a-software-factory)。
+* ランブックをパブリッシュし、引用元のリビジョンを取得し、保存済みの教訓を更新することで、[AIエージェント向けのナレッジファクトリーを構築する](https://loom.clickhouse.com/docs/use-cases/knowledge-factory)。
+* [SQL でエージェントメモリを監査し](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#query-agent-memory-with-sql)、名前空間スコープのリーダーを使って意思決定の履歴を調べ、保存されたメモリを生成元のエージェント実行までトレースします。
+* [Loom クイックスタート](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
+* [コーディングエージェントを接続する](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
+* [MCP で ClickHouse を使用する](/ja/guides/use-cases/ai-ml/MCP/index)

@@ -378,9 +378,9 @@ Tanto a dependência quanto o dependente podem, independentemente, pular interva
 
 #### Usando DEPENDS ON para processamento em lote de streams {#using-depends-on-for-batched-stream-processing}
 
-Se `REFRESH EVERY` não for usado, a VIEW dependente X será atualizada se todas as suas dependências tiverem sido atualizadas pelo menos uma vez desde a última atualização de X. `REFRESH AFTER T` adiciona um atraso: a dependente iniciará a atualização T unidades de tempo após a dependência concluir uma atualização.
+Se `REFRESH EVERY` não for usado, a visão dependente X será atualizada se todas as suas dependências tiverem sido atualizadas pelo menos uma vez desde a última atualização de X. `REFRESH AFTER T` adiciona um atraso: a dependente iniciará a atualização T unidades de tempo após a dependência concluir uma atualização.
 
-Dependências circulares são permitidas e úteis. Considere este grafo de VIEWs materializadas atualizáveis:
+Dependências circulares são permitidas e úteis. Considere este grafo de visões materializadas atualizáveis:
 
 1. X pega um lote de linhas de algum stream e as coloca em uma tabela.
 2. Em seguida, Y e Z leem dessa tabela, fazem agregações diferentes e acrescentam os resultados a outras tabelas.
@@ -418,9 +418,9 @@ CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO st
 SYSTEM REFRESH VIEW current_batch_v;
 ```
 
-Encadeamentos mais longos também funcionam.
+Cadeias mais longas também funcionam.
 
-Isso só funciona bem quando a coordenação da atualização está habilitada, ou seja, quando as VIEWs estão em um banco de dados Replicated ou Shared. Sem coordenação, a reinicialização do servidor interrompe o ciclo, exigindo um `SYSTEM REFRESH VIEW` manual após cada reinicialização, em vez de apenas uma vez após a criação das VIEWs.
+Isso só funciona bem quando a coordenação da atualização está habilitada, ou seja, quando as visões estão em um banco de dados Replicated ou Shared. Sem coordenação, a reinicialização do servidor interrompe o ciclo, exigindo um `SYSTEM REFRESH VIEW` manual após cada reinicialização, em vez de apenas uma vez após a criação das visões.
 
 ### Configurações de atualização {#refresh-settings}
 
@@ -429,7 +429,8 @@ Configurações de atualização disponíveis:
 * `refresh_retries` - Quantas vezes tentar novamente se a consulta de atualização falhar com uma exceção. Se todas as tentativas falharem, a atualização será adiada para o próximo horário agendado. 0 significa nenhuma tentativa adicional; -1 significa tentativas infinitas. Padrão: 2.
 * `refresh_retry_initial_backoff_ms` - Atraso antes da primeira tentativa de repetição, se `refresh_retries` não for zero. Cada nova tentativa dobra esse atraso, até `refresh_retry_max_backoff_ms`. Padrão: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limite para o crescimento exponencial do atraso entre tentativas de atualização. Padrão: 60000 ms (1 minuto).
-* `all_replicas` - Em um [banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated) com `APPEND`, controla se todas as réplicas são atualizadas de forma independente ou se apenas uma réplica é atualizada em cada horário agendado. Não pode ser alterado após a criação da VIEW. Padrão: `false`.
+* `all_replicas` - Em um [banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated) com `APPEND`, controla se todas as réplicas são atualizadas de forma independente ou se apenas uma réplica é atualizada em cada horário agendado. Não pode ser alterado após a criação da visão. Padrão: `false`.
+* `refresh_coordination_jitter_ms` - Se as atualizações forem coordenadas entre réplicas, cada réplica aguarda um intervalo aleatório de até esse valor antes de iniciar uma atualização programada, de modo que as atualizações sejam distribuídas entre as réplicas mesmo sem `RANDOMIZE FOR`. Esse atraso não é refletido em `next_refresh_time`. 0 desabilita o atraso. Padrão: 1000 ms.
 
 ### Alterando os parâmetros de atualização {#changing-refresh-parameters}
 

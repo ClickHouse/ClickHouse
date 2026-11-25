@@ -16,10 +16,10 @@ Pour les valeurs d’enregistrement Protobuf, vous pouvez également [télévers
 
 ## Registres pris en charge pour les ClickPipes de streaming {#supported-schema-registries}
 
-Les ClickPipes Kafka prennent en charge deux types de registres de schémas :
+Les Kafka ClickPipes prennent en charge deux familles de registres de schémas :
 
 * [Registres compatibles avec Confluent](#confluent-compatible-registries) : tout registre compatible avec l’API de Confluent Schema Registry, notamment Confluent Schema Registry lui-même et Redpanda Schema Registry. Prend en charge Avro et Protobuf.
-* [AWS Glue Schema Registry](#aws-glue-schema-registry) : pour les données Avro sérialisées avec AWS SerDe Glue, généralement à partir d’Amazon MSK.
+* [AWS Glue Schema Registry](#aws-glue-schema-registry) : pour les données Avro et Protobuf sérialisées avec AWS SerDe Glue, généralement à partir d’Amazon MSK.
 
 Les ClickPipes Kinesis prennent en charge AWS Glue Schema Registry pour les données Avro et Protobuf.
 
@@ -61,12 +61,12 @@ Lorsque des correspondances pour des champs tels que `_key.id` sont configurées
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-Si vos producteurs sérialisent des données Avro avec AWS SerDe Glue (par exemple, `AWSKafkaAvroSerializer` pour un topic Amazon MSK), ClickPipes peut résoudre ces schémas directement depuis AWS Glue Schema Registry. Glue utilise un format de sérialisation et une API différents de ceux des registres compatibles avec Confluent ; sa configuration est donc distincte.
+Si vos producteurs sérialisent des données Avro ou Protobuf avec AWS SerDe Glue (par exemple, `AWSKafkaAvroSerializer` ou `GlueSchemaRegistryKafkaSerializer` pour un topic Amazon MSK), ClickPipes peut résoudre ces schémas directement depuis AWS Glue Schema Registry. Glue utilise un format de sérialisation et une API différents de ceux des registres compatibles avec Confluent ; sa configuration est donc distincte.
 
 La configuration d’AWS Glue Schema Registry est disponible via la console ClickHouse Cloud, l’API ClickPipes et le Terraform provider.
 
 <Note>
-  **Kafka :** les registres AWS Glue ne prennent en charge que le format Avro. **Kinesis :** les registres AWS Glue prennent en charge `AvroConfluent` et `Protobuf`. Le format JSON n’est pas pris en charge via SerDe Glue.
+  Les registres AWS Glue prennent en charge les formats `AvroConfluent` et `Protobuf` pour Kafka comme pour Kinesis. Le format JSON n’est pas pris en charge via SerDe Glue. Contrairement aux registres compatibles avec Confluent, le format ne peut pas être détecté à partir du registre : sélectionnez-le donc explicitement lors de la création du ClickPipe.
 </Note>
 
 ### Configuration {#glue-configuration}
@@ -87,6 +87,8 @@ Dans l’assistant de création de ClickPipe, activez **Registre de schémas** �
 | ARN du rôle IAM  | Conditionnel | Rôle dédié à l’accès au registre. Facultatif lorsque votre broker utilise l’authentification IAM ; requis dans le cas contraire.                                       | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
 Aucune URL de registre n’est à configurer. Chaque enregistrement produit par le SerDe Glue contient l’ID de sa propre version de schéma, que ClickPipes résout à l’aide de `glue:GetSchemaVersion` et met en cache, à raison d’un appel d’API par version de schéma distincte. L’évolution du schéma est gérée automatiquement : lorsque les enregistrements basculent vers une nouvelle version de schéma en cours de flux, celle-ci est résolue dès sa première occurrence. Pour Kinesis, configurez les mêmes champs via [OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) ou [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
+
+Pour Protobuf, les enregistrements doivent respecter le tramage produit par le sérialiseur AWS Glue : l’en-tête Glue de 18 octets, suivi d’un index de message encodé en varint non signé, puis du message sérialisé. L’index correspond à la position du message parmi l’ensemble des messages définis dans le fichier de schéma (messages imbriqués compris), triés par nom pleinement qualifié. Les enregistrements qui comportent l’en-tête Glue sans index de message ne sont pas pris en charge.
 
 ### Configuration IAM {#glue-iam-setup}
 
@@ -190,12 +192,13 @@ Utilisez cette option lorsque votre broker ne s’authentifie pas via IAM (SASL/
 | `… is not authorized to perform: sts:AssumeRole on resource: …`                              | La stratégie d’approbation désigne le mauvais principal. L’erreur indique le rôle exact qui a tenté d’assumer le rôle. Utilisez cette valeur dans la stratégie d’approbation.                                                                                                                                               |
 | `schema version … not found in Glue schema registry`                                         | Les enregistrements font référence à une version du schéma qui n’existe pas dans le compte ou la région configurés. Vérifiez que la **région AWS** correspond à celle du registre.                                                                                                                                          |
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | Vos producteurs enregistrent les schémas dans un registre différent de celui configuré pour le pipe. Corrigez le **nom du registre** ou configurez les producteurs pour utiliser le bon registre.                                                                                                                           |
-| `the AWS Glue schema registry only supports the Avro format`                                 | Les pipes Glue ne prennent en charge que le format Avro. JSON et Protobuf via Glue SerDe ne sont pas pris en charge.                                                                                                                                                                                                        |
+| `the AWS Glue schema registry only supports the Avro and Protobuf formats`                   | Le ClickPipe associe un registre Glue à un format non pris en charge, tel que JSON. Sélectionnez Avro ou Protobuf.                                                                                                                                                                                                          |
+| `message index … out of range: Glue schema version … defines N messages`                     | L’enregistrement comporte un en-tête Glue, mais aucun index de message valide, généralement parce qu’un sérialiseur personnalisé l’a omis. ClickPipes interprète alors le premier octet du message comme l’index. Écrivez l’index dans le producteur, comme le fait le sérialiseur AWS Glue.                                |
 
 ### Limitations {#glue-limitations}
 
-* Kafka prend uniquement en charge Avro. JSON Schema et Protobuf via le SerDe Glue ne sont pas pris en charge.
-* Kinesis prend en charge `AvroConfluent` et `Protobuf` via AWS Glue Schema Registry. Un schéma Protobuf téléversé ne peut pas être combiné avec un registre de schémas.
+* Kafka et Kinesis prennent en charge `AvroConfluent` et `Protobuf` via AWS Glue Schema Registry. JSON Schema via le SerDe Glue n&#39;est pas pris en charge.
+* Un schéma Protobuf téléversé ne peut pas être combiné avec un registre de schémas.
 
 ## Mappage de schéma {#schema-mapping}
 

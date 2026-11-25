@@ -12,6 +12,8 @@ doc_type: 'reference'
 
 `clickhouse-local`은 개발, 테스트, 파일 처리 용도로는 매우 유용하지만, 최종 사용자나 애플리케이션에 서비스를 제공하는 용도로는 적합하지 않습니다. 이런 경우에는 오픈소스 [ClickHouse](/ko/get-started/setup/install)를 사용하는 것이 좋습니다. ClickHouse는 대규모 분석 워크로드를 처리하도록 설계된 강력한 OLAP 데이터베이스입니다. 대규모 데이터셋에 대한 복잡한 쿼리를 빠르고 효율적으로 처리하므로, 고성능이 중요한 프로덕션 환경에 적합합니다. 또한 ClickHouse는 복제(replication), 세그먼트 분할(sharding), 고가용성(high availability)과 같은 다양한 기능을 제공하며, 이러한 기능은 대규모 데이터셋을 처리하도록 확장하고 애플리케이션을 서비스하는 데 필수적입니다. 더 큰 데이터셋을 처리하거나 최종 사용자 또는 애플리케이션에 서비스를 제공해야 한다면 `clickhouse-local` 대신 오픈소스 ClickHouse를 사용하는 것이 좋습니다.
 
+`clickhouse-local`은 [네트워크 연결을 수락](#starting-listeners)할 수 있지만, 연결된 모든 클라이언트에 로컬 파일에 대한 무제한 액세스, 명령 실행 권한, 관리자 권한을 부여하므로 다중 사용자 환경에서는 절대 사용하지 마십시오. 자세한 내용은 [다중 사용자 시나리오](#multi-user-scenarios)를 참조하십시오.
+
 아래 문서를 읽고 [로컬 파일 쿼리](#query_data_in_file) 또는 [S3의 Parquet 파일 읽기](#query-data-in-a-parquet-file-in-aws-s3)와 같은 `clickhouse-local`의 예시 사용 사례를 확인하십시오.
 
 ## clickhouse-local 다운로드 {#download-clickhouse-local}
@@ -429,10 +431,30 @@ HTTP 리스너는 기본 `clickhouse-server` 구성과 동일한 허용적인 �
 <Warning>
   **보안**
 
-  기본적으로 `clickhouse-local`은 임시 사용자 설정으로 실행되므로, 열리는 모든 리스너는 인증 없이 열립니다. `users_config` 설정이 사용자 지정 `users.xml`을 가리키도록 지정하여(예: `--config-file` 사용) 사용자와 액세스 제어(access control)를 명시적으로 구성한 경우가 아니라면 루프백 주소(`127.0.0.1` 또는 `::1`)에 바인딩하십시오. 인증 없이 비루프백 주소에서 수신하면, 선택한 포트에 접근할 수 있는 누구에게나 로컬 인스턴스의 데이터가 노출됩니다.
+  기본적으로 `clickhouse-local`은 임시 사용자 설정으로 실행되므로, 열리는 모든 리스너는 인증 없이 열립니다. `users_config` 설정이 사용자 지정 `users.xml`을 가리키도록 지정하여(예: `--config-file` 사용) 사용자와 액세스 제어(access control)를 명시적으로 구성한 경우가 아니라면 루프백 주소(`127.0.0.1` 또는 `::1`)에 바인딩하십시오. 인증 없이 비루프백 주소에서 수신하면, 선택한 포트에 접근할 수 있는 누구나 로컬 인스턴스의 데이터에 접근할 수 있을 뿐 아니라 `clickhouse-local`을 실행하는 OS 사용자의 권한으로 파일에 접근하고 명령을 실행할 수도 있습니다. 자세한 내용은 [다중 사용자 시나리오](#multi-user-scenarios)를 참조하십시오.
 
   루프백 주소도 브라우저에서 접근할 수 있다는 점에 유의하십시오. HTTP 리스너가 열려 있는 동안에는 방문하는 모든 웹 페이지가 로컬 인스턴스를 쿼리할 수 있으며, 기본 CORS 헤더 덕분에 결과를 읽을 수 있습니다.
 </Warning>
+
+### 다중 사용자 시나리오 {#multi-user-scenarios}
+
+<Note>
+  `clickhouse-local`의 리스너는 단일 사용자, 즉 이를 시작한 사용자가 자신의 도구로 연결하는 용도로 설계되었습니다. 서로 다른 권한을 가진 여러 사람이나 애플리케이션이 사용하는 경우, 또는 OS 계정에 로그인을 허용하지 않을 클라이언트가 연결하는 경우와 같은 다중 사용자 시나리오에서는 [`clickhouse-server`](/ko/get-started/setup/install)를 사용하십시오.
+</Note>
+
+`clickhouse-local`은 이를 실행하는 사용자의 로컬 환경에서 작업하기 위한 도구이므로, `clickhouse-server`가 쿼리에 적용하는 제한 사항이 해제되어 있습니다. 이는 프로세스 전체에 적용되므로, 리스너가 수락한 모든 연결은 `clickhouse-local` 자체 세션과 동일한 권한을 갖습니다. 연결된 클라이언트는 다음 작업을 수행할 수 있습니다.
+
+* **모든 파일 읽기 및 쓰기.** `clickhouse-server`는 파일 액세스를 [`user_files_path`](/ko/reference/settings/server-settings/settings/user#user_files_path) 디렉터리로 제한합니다. `clickhouse-local`에는 이러한 디렉터리가 없으므로, 쿼리로 `clickhouse-local`을 실행하는 OS 사용자가 접근할 수 있는 모든 파일을 읽고, 나열하고, 생성하고, 덮어쓸 수 있습니다. 이는 [`file`](/ko/reference/functions/table-functions/file) 및 [`filesystem`](/ko/reference/functions/table-functions/filesystem) 테이블 함수, [`file`](/ko/reference/functions/regular-functions/files#file) 함수, [`File`](/ko/reference/engines/table-engines/special/file) 테이블 엔진, [`Filesystem`](/ko/reference/engines/database-engines/filesystem) 및 [`SQLite`](/ko/reference/engines/database-engines/sqlite) 데이터베이스 엔진으로 가능하며, `SELECT * FROM '/path/to/data.csv'`처럼 경로를 테이블 이름으로 사용하기만 해도 가능합니다. 접근 가능한 파일에는 개인 키, 클라우드 서비스 자격 증명, 셸 설정 파일, 프로세스의 환경 변수(`/proc/self/environ`)도 포함됩니다.
+* **명령 실행.** `clickhouse-server`는 [`EXECUTABLE`](/ko/reference/statements/create/dictionary/sources/executable-file) 및 [`EXECUTABLE_POOL`](/ko/reference/statements/create/dictionary/sources/executable-pool) 소스를 사용하는 딕셔너리를 관리자가 작성한 설정 파일에서만 허용하며, 쿼리로 생성하는 것은 거부합니다. 반면 `clickhouse-local`은 `CREATE DICTIONARY ... SOURCE(EXECUTABLE(COMMAND '...'))`를 허용하고 명령이 셸을 통해 실행되므로, 쿼리로 임의의 프로그램을 실행할 수 있습니다.
+* **관리자로 동작.** `users_config`로 사용자를 구성하지 않으면 유일한 사용자는 `default`입니다. 이 사용자는 비밀번호가 없고, 모든 주소에서 연결할 수 있으며, 액세스 관리를 포함한 관리자 권한을 가집니다. 따라서 모든 연결은 인스턴스의 모든 데이터를 읽고, 변경하고, 삭제할 수 있고, 모든 설정을 변경할 수 있으며(설정 제약 조건이나 할당량이 없음), `system.processes`에서 다른 세션의 쿼리를 확인하고 종료할 수 있고, 리스너를 닫거나 `SYSTEM SHUTDOWN`으로 프로세스를 종료할 수도 있습니다. 사용자를 생성할 수도 있으며, 데이터 디렉터리가 영구적이면 생성된 사용자는 데이터 디렉터리에 저장되어 재시작 후에도 유지됩니다.
+* **모든 호스트에 연결.** `clickhouse-local`에서는 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 제한이 적용되지 않으므로, `url`, `s3`, `remote`, `mysql`, `postgresql` 등 외부 소스용 테이블 함수와 엔진을 통해 해당 머신에서 루프백 인터페이스와 내부 네트워크의 서비스를 포함한 모든 주소로 요청을 보낼 수 있습니다.
+* **인트로스펙션 함수 사용.** [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)는 기본적으로 활성화되어 있으므로([`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions) 참조), 클라이언트는 `system.stack_trace`의 스택 트레이스 등 프로세스의 스택 트레이스를 심볼 이름과 소스 위치로 변환할 수 있습니다.
+
+비밀번호와 제한된 권한으로 사용자를 구성하면 인증은 추가되지만, 이러한 제한 사항이 다시 적용되지는 않습니다. 파일 액세스 권한(`FILE`에 대한 `READ` 및 `WRITE`)을 부여받은 사용자는 전용 디렉터리가 아닌 파일 시스템 전체에 접근할 수 있으며, `CREATE DICTIONARY` 권한까지 부여받으면 명령도 실행할 수 있습니다. `file` 함수는 권한을 전혀 확인하지 않으므로, 파일 관련 권한이 전혀 없는 사용자도 모든 파일을 읽을 수 있습니다.
+
+또한 리스너는 TLS를 지원하지 않습니다. `clickhouse-local`의 `SYSTEM START LISTEN`은 암호화되지 않은 `TCP` 및 `HTTP` 리스너만 열기 때문에, 비밀번호, 쿼리, 데이터가 암호화되지 않은 상태로 네트워크를 통해 전송됩니다.
+
+이 모든 작업은 `clickhouse-local`을 실행하는 OS 사용자의 권한으로 수행되며, 이 사용자는 대개 사용자 본인의 개인 계정입니다. 반면 `clickhouse-server`는 일반적으로 자체 데이터 외에는 아무것도 소유하지 않는 전용 계정으로 실행됩니다. 여러 OS 사용자가 함께 사용하는 머신에서는 모든 사용자가 루프백 주소에 접근할 수 있습니다. 따라서 인증을 사용하지 않는 기본 설정에서는 같은 머신의 다른 사용자가 리스너에 연결하여 사용자 본인의 파일을 읽고, 본인의 계정 권한으로 명령어를 실행할 수 있습니다.
 
 ## 관련 콘텐츠 {#related-content-1}
 

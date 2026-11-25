@@ -10,28 +10,23 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_aggregation_memory_efficient">
-  ## distributed_aggregation_memory_efficient
-</div>
+## distributed_aggregation_memory_efficient {#distributed_aggregation_memory_efficient}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Indique si le mode d&#39;économie de mémoire de l&#39;agrégation distribuée est activé.
 
-<div id="distributed_connections_pool_size">
-  ## distributed_connections_pool_size
-</div>
+## distributed_connections_pool_size {#distributed_connections_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
 Nombre maximal de connexions simultanées aux serveurs distants pour le traitement distribué de toutes les requêtes vers une même table Distributed. Nous recommandons de définir une valeur au moins égale au nombre de serveurs du cluster.
 
-<div id="distributed_foreground_insert">
-  ## distributed_foreground_insert
-</div>
+## distributed_foreground_insert {#distributed_foreground_insert}
 
 **Alias** : `insert_distributed_sync`
 
@@ -53,9 +48,7 @@ Valeur par défaut dans Cloud : `1`.
 * [Moteur de table Distributed](/fr/reference/engines/table-engines/special/distributed)
 * [Gestion des tables distribuées](/fr/reference/statements/system#managing-distributed-tables)
 
-<div id="distributed_group_by_no_merge">
-  ## distributed_group_by_no_merge
-</div>
+## distributed_group_by_no_merge {#distributed_group_by_no_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -96,9 +89,17 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-<div id="distributed_insert_skip_read_only_replicas">
-  ## distributed_insert_skip_read_only_replicas
-</div>
+## distributed_group_by_top_k {#distributed_group_by_top_k}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre interne : l'initiateur d'une requête avec répliques parallèles permet aux répliques d'appliquer le tas top-K de `GROUP BY` à `GROUP BY ... LIMIT` sans `ORDER BY`."}]}]} />
+
+Il s&#39;agit d&#39;un paramètre interne qui ne doit pas être utilisé directement et qui constitue un détail d’implémentation du mode « répliques parallèles ». L&#39;initiateur le transmet avec la valeur `n` pour une requête `GROUP BY ... LIMIT n` sans `ORDER BY` lorsqu&#39;il conserve les `n` plus petits groupes fusionnés selon l&#39;ensemble des clés de regroupement. Chaque réplique ne conserve alors que ses `n` plus petits groupes lors de son agrégation partielle (voir `enable_group_by_top_k_optimization`). Ce paramètre n&#39;est pas transmis au-delà.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -111,9 +112,7 @@ Valeurs possibles :
 * 0 — INSERT se comporte comme d&#39;habitude ; s&#39;il est envoyé à une réplique en lecture seule, il échouera
 * 1 — L&#39;initiateur ignorera les répliques en lecture seule avant d&#39;envoyer les données aux shards.
 
-<div id="distributed_product_mode">
-  ## distributed_product_mode
-</div>
+## distributed_product_mode {#distributed_product_mode}
 
 <SettingsInfoBlock type="DistributedProductMode" default_value="deny" />
 
@@ -135,9 +134,7 @@ Valeurs possibles :
 * `global` — Remplace la requête `IN`/`JOIN` par `GLOBAL IN`/`GLOBAL JOIN`.
 * `allow` — Autorise l’utilisation de ces types de sous-requêtes.
 
-<div id="distributed_push_down_limit">
-  ## distributed_push_down_limit
-</div>
+## distributed_push_down_limit {#distributed_push_down_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

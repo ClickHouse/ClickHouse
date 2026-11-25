@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Este motor proporciona una integración con tablas existentes de [Delta Lake](https://github.com/delta-io/delta) en S3 y en almacenamiento de GCP y Azure, y admite tanto lecturas como escrituras (escrituras para S3 y GCS desde la v25.10, para Azure desde la v26.9).
 
-## Crear una tabla DeltaLake
+## Crear una tabla DeltaLake {#create-table}
 
 De forma predeterminada, la tabla Delta Lake ya debe existir en el almacenamiento de S3, GCP o Azure, y los siguientes comandos se conectan a ella sin definiciones DDL de columnas. Con `allow_delta_lake_create_table = 1`, un `CREATE TABLE` con columnas explícitas sobre una ubicación que no tiene `_delta_log` crea en su lugar una nueva tabla Delta Lake escribiendo el commit inicial a través de `delta-kernel-rs` (aún no se admite la creación de una tabla particionada) y, dentro de una base de datos `DataLakeCatalog` de Unity, la tabla también se registra en el catálogo.
 
@@ -98,22 +98,54 @@ De forma predeterminada, la tabla Delta Lake ya debe existir en el almacenamient
     **Sintaxis**
 
     ```sql
+    -- Account key
     CREATE TABLE table_name
-    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    -- Workload identity (mutually exclusive with account_name / account_key)
+    CREATE TABLE table_name
+    ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
     ```
 
     **Argumentos**
 
-    * `connection_string` — Cadena de conexión de Azure
+    * `connection_string` — cadena de conexión de Azure
     * `storage_account_url` — URL de la cuenta de almacenamiento de Azure (p. ej., https://account.blob.core.windows.net)
-    * `container_name` — Nombre del contenedor de Azure
-    * `blobpath` — Ruta a la tabla Delta Lake dentro del contenedor
-    * `account_name` — Nombre de la cuenta de almacenamiento de Azure
-    * `account_key` — Clave de la cuenta de almacenamiento de Azure
+    * `container_name` — nombre del contenedor de Azure
+    * `blobpath` — ruta a la tabla de Delta Lake dentro del contenedor
+    * `account_name` — nombre de la cuenta de almacenamiento de Azure
+    * `account_key` — clave de la cuenta de almacenamiento de Azure
+    * `extra_credentials` — alternativa opcional a `account_name` / `account_key`. Use `client_id` y `tenant_id` para la autenticación con workload identity de Azure. No se puede combinar con las credenciales de la cuenta. No se trata de la variante `role_arn` de S3 de `extra_credentials`.
+
+    Los parámetros del motor pueden especificarse mediante [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections). Las colecciones con nombre aceptan las mismas claves `client_id` y `tenant_id`.
+
+    **Workload identity**
+
+    La integración de Azure de delta-kernel también requiere las siguientes variables de entorno:
+
+    * `AZURE_FEDERATED_TOKEN_FILE` — obligatoria (el archivo de token proyectado, p. ej., en AKS)
+    * `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — obligatorias, salvo que se pasen mediante `extra_credentials` o una colección con nombre
+    * `AZURE_AUTHORITY_HOST` — opcional
+
+    Workload identity utiliza la propia identity del servidor, por lo que se rechaza de forma predeterminada: cada sesión que cree o consulte la tabla debe tener habilitado `allow_server_credentials_in_user_queries`, ya sea con `SET` o en su perfil de configuración.
+
+    ```sql
+    SET allow_server_credentials_in_user_queries = 1;
+
+    CREATE NAMED COLLECTION azure_wi AS
+        storage_account_url = 'https://<account>.blob.core.windows.net',
+        container = 'mycontainer',
+        blob_path = 'path/to/table',
+        client_id = '<client-id>',
+        tenant_id = '<tenant-id>';
+
+    CREATE TABLE azureDeltaLake
+    ENGINE = DeltaLakeAzure(azure_wi)
+    ```
   </Tab>
 </Tabs>
 
-## Escribir datos con una tabla DeltaLake
+## Escribir datos con una tabla DeltaLake {#insert-data}
 
 Una vez que haya creado una tabla con el motor de tabla DeltaLake, puede insertar datos en ella con:
 
@@ -129,14 +161,13 @@ Las escrituras de Delta Lake son una funcionalidad Beta deshabilitada de forma p
 <Note>
   La escritura con el motor de tabla solo es compatible a través de delta kernel.
   Las escrituras funcionan en S3 y GCS, y en Azure a partir de la versión 26.9.
-  La autenticación con Workload Identity de Azure (`extra_credentials(client_id = ..., tenant_id = ...)`) no es compatible con delta kernel.
 </Note>
 
-### Caché de datos
+### Caché de datos {#data-cache}
 
 El motor de tabla `DeltaLake` y la función de tabla admiten la caché de datos, al igual que los almacenamientos `S3`, `AzureBlobStorage` y `HDFS`. Consulta [&quot;motor de tabla S3&quot;](/es/reference/engines/table-engines/integrations/s3#data-cache) para más detalles.
 
-## Véase también
+## Véase también {#see-also}
 
 * [función de tabla DeltaLake](/es/reference/functions/table-functions/deltalake)
 

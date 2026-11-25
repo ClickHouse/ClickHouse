@@ -172,9 +172,9 @@ Dos ajustes controlan cuándo comienza el volcado a disco:
 
 * `max_bytes_before_external_set` establece un umbral, en bytes, de la memoria total de la consulta. Su valor predeterminado es `0`
   (deshabilitado).
-* `max_bytes_ratio_before_external_set` establece una fracción de la memoria disponible según los límites del servidor o del usuario,
-  medida al inicio de la ejecución. Su valor predeterminado es `0.5`, es decir, la mitad de la memoria disponible, y
-  no tiene efecto si no se aplica ninguno de esos límites.
+* `max_bytes_ratio_before_external_set` establece una fracción de la memoria disponible según el `max_memory_usage` de la consulta
+  y los límites del servidor o del usuario, medida al inicio de la ejecución. Su valor predeterminado es
+  `0.5`, es decir, la mitad de la memoria disponible, y no tiene efecto si no se aplica ningún límite.
 
 Cuando se aplican ambos umbrales, se utiliza el menor. Un conjunto solo se escribe en disco cuando ocupa al menos
 16 MiB, o el umbral si este es menor. Por ejemplo, esta consulta escribe el conjunto en disco en cuanto este
@@ -193,9 +193,7 @@ la memoria que el conjunto conserva cuando está en disco, como su filtro de Blo
 escribe en disco y se libera la mayor parte de su memoria para el resto de la consulta, por ejemplo, para una agregación que
 crece una vez construido el conjunto.
 
-`max_memory_usage` no afecta a la proporción. Para configurar el volcado a disco en relación con el memory limit de una consulta,
-establezca un umbral absoluto inferior a ese límite. Estos umbrales no limitan el uso de memoria. Deje margen para
-el resto del procesamiento de consultas y para el propio volcado a disco.
+Estos umbrales no limitan el uso de memoria. Deje margen para el resto del procesamiento de consultas y para el propio volcado a disco.
 
 Un conjunto en disco mantiene en memoria un filtro de Bloom de sus claves, de modo que las búsquedas de claves que no están en el conjunto
 pueden evitar la lectura del disco. `max_bytes_for_external_set_bloom_filter` limita la memoria del filtro,

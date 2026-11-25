@@ -49,8 +49,8 @@ Si es true, la eliminación ligera se optimiza durante la fusión vertical.
 
 Si es true, una fusión con TTL de filas puede usar el algoritmo de fusión vertical en lugar de recurrir a una
 fusión horizontal. Solo se aplica en los modos de fusión `MergeTree`, `Replacing`, `Collapsing` o `VersionedCollapsing`,
-a tablas con TTL de filas y sin TTL de columna ni de `GROUP BY`, y solo mientras ninguna parte
-de la fusión contenga una eliminación ligera. Cualquier otra fusión con TTL se mantiene horizontal.
+a tablas con TTL de filas y sin TTL de columna ni de `GROUP BY`. Cualquier otra fusión con TTL se mantiene
+horizontal.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

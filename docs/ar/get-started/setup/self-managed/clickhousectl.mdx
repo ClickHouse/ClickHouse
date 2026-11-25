@@ -42,14 +42,14 @@ doc_type: 'guide'
     ```
 
     <Accordion title="طرق تثبيت أخرى">
-      | الأداة                                  | الأمر                           |
-      | --------------------------------------- | ------------------------------- |
-      | npm                                     | `npm install -g clickhousectl`  |
-      | uv                                      | `uv tool install clickhousectl` |
-      | pipx                                    | `pipx install clickhousectl`    |
-      | pip                                     | `pip install clickhousectl`     |
-      | cargo-binstall                          | `cargo binstall clickhousectl`  |
-      | Cargo، من الشيفرة المصدرية (Rust 1.94+) | `cargo install clickhousectl`   |
+      | الأداة                                    | الأمر                           |
+      | ----------------------------------------- | ------------------------------- |
+      | npm                                       | `npm install -g clickhousectl`  |
+      | uv                                        | `uv tool install clickhousectl` |
+      | pipx                                      | `pipx install clickhousectl`    |
+      | pip                                       | `pip install clickhousectl`     |
+      | cargo-binstall                            | `cargo binstall clickhousectl`  |
+      | Cargo، من الشيفرة المصدرية (Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       لا يُنشئ الاسمَ البديل `chctl` إلا برنامجُ التثبيت النصي وnpm.
     </Accordion>
@@ -60,6 +60,9 @@ doc_type: 'guide'
     clickhousectl update --check
     clickhousectl update
     ```
+
+    يستبدل `update` عمليات التثبيت التي جرت عبر برنامج التثبيت النصي أو التنزيل أو Cargo. أما عمليات التثبيت عبر npm وuv
+    وpipx وpip، فيطبع بدلًا من ذلك أمر مدير الحزم الذي ينبغي تشغيله.
   </Step>
 
   <Step title="ثبّت ClickHouse" id="cli-install-clickhouse">
@@ -101,12 +104,13 @@ doc_type: 'guide'
   </Step>
 
   <Step title="شغّل clickhouse-server" id="cli-start-clickhouse-server">
-    تحصر أداة `clickhousectl` نطاق الخوادم المحلية في الدليل الذي تشغّلها منه. أنشئ
-    دليلًا للمشروع وشغّل خادمًا فيه:
+    يحصر `clickhousectl` نطاق الخوادم المحلية ضمن مشروع واحد. أنشئ دليلًا للمشروع،
+    وعيّنه جذرًا للمشروع باستخدام `local init`، ثم شغّل خادمًا فيه:
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -116,17 +120,18 @@ doc_type: 'guide'
       Version:   26.9.1.1312
     ```
 
-    يعمل الخادم في الخلفية ويحمل الاسم `default`. تُخزَّن بياناته في
-    `./.clickhouse/`، لذا شغّل أوامر `clickhousectl local` اللاحقة من الدليل
-    نفسه؛ إذ لا يبحث `clickhousectl` في الأدلة الأعلى. يستمع الخادم
-    على منفذ HTTP ‏`8123` ومنفذ TCP ‏`9000`، أو على منافذ متاحة أخرى إذا كانت هذه المنافذ مشغولة.
-    لتحديد المنافذ بنفسك، مرّر الخيارين `--http-port` و`--tcp-port`. ولتشغيل أكثر من
-    خادم، امنح كل خادم اسمًا خاصًا به، مثل `clickhousectl local server start dev`.
+    يعمل الخادم في الخلفية ويحمل الاسم `default`. وتوجد بياناته في
+    `.clickhouse/` ضمن جذر المشروع. وكما هو الحال في Git، تعمل أوامر `clickhousectl local`
+    اللاحقة من ذلك الدليل أو من أي دليل فرعي داخله. يستمع
+    الخادم على منفذ HTTP رقم `8123` ومنفذ TCP رقم `9000`، أو على منافذ متاحة إذا كانت تلك
+    المنافذ مشغولة. لتحديد المنافذ، مرّر `--http-port` و`--tcp-port`. ولتشغيل أكثر من
+    خادم، امنح كلًّا منها اسمًا، مثل `clickhousectl local clickhouse start dev`.
+    ويُعدّ `local ch` اختصارًا لـ `local clickhouse`.
 
-    للتحقق من أن الخادم قيد التشغيل:
+    للتحقق من أنه قيد التشغيل:
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -136,17 +141,21 @@ doc_type: 'guide'
 
     1 server, 1 running
     ```
+
+    يعرض الأمر `clickhousectl local status` جميع خوادم ClickHouse ومثيلات Postgres
+    في المشروع، سواء أكانت قيد التشغيل أم متوقفة.
   </Step>
 
   <Step title="شغّل clickhouse-client" id="cli-start-clickhouse-client">
-    اتصل بالخادم باستخدام `clickhouse-client` من الدليل نفسه:
+    اتصل بالخادم باستخدام `clickhouse-client` من أي مكان داخل المشروع:
 
     ```bash
     clickhousectl local client
     ```
 
-    يتصل `local client` بالخادم المسمّى `default` ويستخدم إصدار
-    ClickHouse نفسه الذي يعمل به الخادم. للاتصال بخادم آخر، مرّر اسمه،
+    يتصل `local client` بالخادم المسمّى `default`، أو بالخادم الوحيد في المشروع إذا لم يكن
+    هناك خادم مسمّى `default`، ويستخدم إصدار ClickHouse نفسه الذي يعمل به
+    الخادم. للاتصال بخادم آخر، مرّر اسمه،
     مثل `clickhousectl local client dev`. ستظهر لك مخرجات مشابهة لما يلي:
 
     ```response
@@ -173,16 +182,16 @@ doc_type: 'guide'
 
   <Step title="أوقف الخادم" id="cli-stop-clickhouse-server">
     يظل الخادم قيد التشغيل في الخلفية إلى أن توقفه. ولإيقافه، نفّذ الأمر من
-    الدليل نفسه:
+    أي مكان داخل المشروع:
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    لا يؤدي إيقاف الخادم إلى فقدان بياناته، إذ تظل محفوظة لحين تشغيله مجددًا باستخدام الأمر `clickhousectl local server start`.
+    لا يؤدي إيقاف الخادم إلى فقدان بياناته، إذ تظل محفوظة لحين تشغيله مجددًا باستخدام الأمر `clickhousectl local clickhouse start`.
 
     <Warning>
-      يحذف الأمر `clickhousectl local server remove` بيانات الخادم المتوقف نهائيًا.
+      يحذف الأمر `clickhousectl local clickhouse remove` بيانات الخادم المتوقف نهائيًا.
     </Warning>
   </Step>
 </Steps>

@@ -124,7 +124,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 * **للقراءة والكتابة**
   * يمكنها قراءة البيانات وكتابتها في ClickHouse
-  * تُجري عمليات الدمج في الخلفية (مثل دمج الأجزاء بعد عمليات insert للبيانات)، ما يستهلك CPU والذاكرة
+  * تُجري عمليات الدمج في الخلفية (مثل دمج الأجزاء بعد عمليات إدراج للبيانات)، ما يستهلك CPU والذاكرة
   * يمكنها تصدير البيانات إلى أنظمة خارجية
 * **للقراءة فقط**
   * يمكنها فقط قراءة البيانات؛ ولا يمكنها كتابة البيانات أو تعديلها في ClickHouse
@@ -147,7 +147,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 <Note>
   1. تدعم خدمات للقراءة فقط حاليًا عمليات إدارة المستخدمين (CREATE وDROP وما إلى ذلك).
-  2. تعمل [Refreshable materialized views](/ar/concepts/features/materialized-views/refreshable-materialized-view) **فقط** على خدمات للقراءة والكتابة ‏(RW) داخل مستودع.
+  2. تعمل [Refreshable materialized views](/ar/concepts/features/materialized-views/refreshable-materialized-view) ذات عمليات التحديث المنسَّقة (وهو الوضع الافتراضي) **فقط** على خدمات للقراءة والكتابة ‏(RW) داخل مستودع. أما العروض المُنشأة باستخدام `APPEND` و`SETTINGS all_replicas = 1` فليست منسَّقة؛ إذ تحاول كل خدمة، بما فيها خدمات القراءة فقط، تنفيذ كل عملية تحديث، وتفشل كل محاولة على خدمة للقراءة فقط بالخطأ `QUERY_IS_PROHIBITED` (الرمز 392) ما لم يكتب العرض إلى التخزين الخارجي.
   3. يكون نوع خدمة (للقراءة فقط أو للقراءة والكتابة) ثابتًا عند الإنشاء، ولا يمكن تغييره لاحقًا من Cloud Console. وللتبديل بين للقراءة فقط وللقراءة والكتابة، أنشئ خدمة جديدة في مستودع بالنوع المطلوب.
 </Note>
 

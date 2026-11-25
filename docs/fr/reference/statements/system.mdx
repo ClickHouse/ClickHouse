@@ -165,7 +165,15 @@ Efface le userspace page cache, c’est-à-dire le cache en mémoire propre à C
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-Vide le cache de l’index de similarité vectorielle.
+Vide le cache des [index de similarité vectorielle](/fr/reference/engines/table-engines/mergetree-family/annindexes), qui conserve en mémoire les granules d’index vectoriel désérialisés.
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+Avec `FOR TABLE`, seules les entrées du cache de la table `MergeTree` spécifiée sont supprimées.
+
+Nécessite le privilège `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` sur l&#39;ensemble des tables ou sur une table donnée.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1017,10 +1025,10 @@ Restaure une réplique si les données sont [potentiellement] présentes, mais q
 
 Fonctionne uniquement sur les tables `ReplicatedMergeTree` en mode readonly.
 
-Cette requête peut être exécutée après :
+Cette requête peut être exécutée après :
 
-* la perte de la racine ZooKeeper `/` ;
-* la perte du chemin des répliques `/replicas` ;
+* la perte de la racine ZooKeeper `/` ;
+* la perte du chemin des répliques `/replicas` ;
 * la perte du chemin d&#39;une réplique individuelle `/replicas/replica_name/`.
 
 La réplique attache les parts trouvées localement et envoie à ZooKeeper des informations à leur sujet.
@@ -1029,6 +1037,29 @@ Les parts présentes sur une réplique avant la perte des métadonnées ne sont 
 <Note>
   Les parts dans tous les états sont déplacées vers le dossier `detached/`. Les parts actives avant la perte des données (`committed`) sont attachées.
 </Note>
+
+Ce statement vide également les caches de données à l&#39;échelle du serveur : les parts restaurées reçoivent de nouveaux noms, qui peuvent correspondre aux anciens noms et chemins d&#39;autres parts ; les entrées mises en cache pour ces noms deviendraient donc obsolètes.
+
+Cela affecte toutes les tables du serveur, et pas seulement celle qui est restaurée : les requêtes sur ces tables doivent à nouveau remplir les caches. Avec `ON CLUSTER`, les caches sont vidés sur chaque serveur où la réplique est restaurée.
+
+Les caches vidés sont les suivants :
+
+* [marques](#drop-mark-cache)
+* [données décompressées](#drop-uncompressed-cache)
+* [index primaire](#drop-primary-index-cache)
+* [statistiques](#drop-statistics-cache)
+* [marques d’index](#drop-index-mark-cache)
+* [index décompressés](#drop-index-uncompressed-cache)
+* [index de similarité vectorielle](#drop-vector-similarity-index-cache)
+* [index de texte](#drop-text-index-caches)
+* [mmap](#drop-mmap-cache)
+* [pages](#drop-page-cache)
+* [colonnes](#drop-columns-cache)
+* [conditions de requête](#drop-query-condition-cache)
+* [en-têtes de chiffrement](#drop-encryption-headers-cache)
+* caches des bitmaps de suppression `UNIQUE KEY`
+
+Le [cache de requêtes](#drop-query-cache) et le [cache du système de fichiers](#drop-filesystem-cache) sont conservés.
 
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
@@ -1209,7 +1240,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Attend la fin du rafraîchissement en cours. Si aucun rafraîchissement n’est en cours, la commande retourne immédiatement. Si la dernière tentative de rafraîchissement a échoué, elle signale une erreur.
+Attend la fin du rafraîchissement en cours, y compris celle d’un rafraîchissement arrivé à échéance qui attend encore l’expiration de son délai `refresh_coordination_jitter_ms`. Si aucun rafraîchissement n’est en cours ou arrivé à échéance, la commande retourne immédiatement. Si la dernière tentative de rafraîchissement a échoué, elle signale une erreur.
 
 Peut être utilisée juste après la création d’une nouvelle vue matérialisée actualisable (sans le mot-clé EMPTY) pour attendre la fin du rafraîchissement initial.
 

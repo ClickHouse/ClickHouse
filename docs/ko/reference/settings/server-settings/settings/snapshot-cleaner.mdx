@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하는 항목이며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-SharedMergeTree의 스냅샷 파트를 완전히 제거하는 주기입니다. ClickHouse Cloud에서만 사용할 수 있습니다.
+스냅샷(snapshot) 레지스트리에 등록된 각 테이블(table)에 대해 스냅샷 정리 작업을 실행할 수 있는 최대 레플리카 수입니다. 정리 작업을 실행하는 각 레플리카는 `snapshot_cleaner_enabled` 레플리카 플래그로 실행 여부를 알립니다. 레플리카는 테이블과 레플리카 이름으로 계산한 랑데부 해시를 기준으로 실행 여부를 알린 레플리카의 순위를 매기며, 상위에 포함된 레플리카만 해당 테이블을 처리합니다. 이렇게 하면 테이블별 정리 작업이 플릿 전체에 분산되면서 중복 작업도 일정 범위로 제한됩니다. 정리 작업이 비활성화된 레플리카(`snapshot_cleaner_period = 0`)는 실행 여부를 알리지 않으며 정리 작업 대상으로 선정되지도 않습니다. `0`은 제한이 없음을 의미하며, 모든 레플리카가 모든 테이블을 처리합니다. ClickHouse Cloud에서만 사용할 수 있습니다
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+SharedMergeTree의 스냅샷 파트를 완전히 제거하는 주기(초)입니다. ClickHouse Cloud에서만 사용할 수 있습니다.
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

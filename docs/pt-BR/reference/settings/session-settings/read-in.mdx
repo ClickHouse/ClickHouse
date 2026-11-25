@@ -13,13 +13,21 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## read_in_order_two_level_merge_threshold
+## read_in_order_max_bytes_to_prefetch {#read_in_order_max_bytes_to_prefetch}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "134217728"},{"label": "Nova configuração para limitar a memória usada na leitura antecipada dos fluxos concatenados em ordem ao ler uma única parte na ordem da chave primária."}]}]} />
+
+Tamanho total máximo, em bytes, dos blocos armazenados em buffer antecipadamente ao ler uma única parte na ordem da chave primária com um filtro, quando a parte é dividida em vários fluxos que são concatenados em ordem em vez de mesclados. Os fluxos posteriores na ordem fazem leitura antecipada para a memória enquanto os anteriores são consumidos, e esse orçamento é destinado primeiro aos fluxos mais próximos. Um valor maior permite que mais fluxos sejam lidos em paralelo. O fluxo consumido no momento pode armazenar em buffer alguns blocos além desse limite. Com 0, não há limite em bytes, e cada fluxo faz leitura antecipada de apenas alguns blocos.
+
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Número mínimo de partes que devem ser lidas para executar a etapa de merge preliminar durante a leitura multithread na ordem da chave primária.
 
-## read_in_order_use_buffering
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +35,7 @@ Número mínimo de partes que devem ser lidas para executar a etapa de merge pre
 
 Usa bufferização antes da mesclagem ao ler na ordem da chave primária. Isso aumenta o paralelismo da execução da consulta
 
-## read_in_order_use_virtual_row
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,7 +43,7 @@ Usa bufferização antes da mesclagem ao ler na ordem da chave primária. Isso a
 
 Usa linha virtual ao ler na ordem da chave primária ou de sua função monotônica. Isso é útil ao pesquisar em várias partes, pois apenas as partes que podem realmente contribuir para o resultado são lidas, além de uma janela limitada de leitura antecipada de, no máximo, `max_threads` partes, que mantém as leituras paralelas.
 
-## read_in_order_use_virtual_row_per_block
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -190,7 +190,7 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre, activé par défaut : l’algorithme d’ordre des jointures DPsub choisit entre jointure par hachage et jointure sort-merge en fonction de l’ordre de tri des entrées."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Cette modification a été rétroportée vers la version 26.10, où elle est consignée."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre, activé par défaut : l’algorithme d’ordre des jointures DPsub choisit entre jointure par hachage et jointure sort-merge en fonction de l’ordre de tri des entrées."}]}]} />
 
 N’affecte que l’algorithme d’ordre des jointures `dpsub`. Ce paramètre lui permet de tenir compte de l’ordre de tri des tables jointes : pour chaque équi-jointure interne, l’algorithme choisit entre une jointure par hachage et `full_sorting_merge` en fonction du coût, et conserve les plans partiels dont l’ensemble de résultats est trié selon une clé de jointure exploitable par une jointure ultérieure.
 
@@ -335,7 +335,7 @@ Utilisé par le mécanisme de correspondance des projections d’agrégation (et
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "Nouveau paramètre"}]}]} />
 
-Longueur maximale de la description d’étape dans EXPLAIN PLAN.
+Longueur maximale, en octets, de la description d’une étape du plan de requête. Les descriptions plus longues sont tronquées à cette longueur partout où elles apparaissent.
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -400,7 +400,7 @@ Ne prend effet que si `query_plan_direct_read_from_text_index` est activé.
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` est désormais l’algorithme d’ordre des jointures par défaut ; les requêtes comportant plus de 12 relations se rabattent sur `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nouveau paramètre expérimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "La modification a été rétroportée dans la version 26.10 et y est consignée."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` est désormais l’algorithme d’ordre des jointures par défaut ; les requêtes comportant plus de 12 relations se rabattent sur `greedy`."}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
 Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisation du plan de requête. Les algorithmes suivants sont disponibles :
 
@@ -416,7 +416,7 @@ Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisa
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun. La valeur par défaut est CD-C, en combinaison avec la valeur par défaut `dpsub` de `query_plan_optimize_join_order_algorithm`, ce qui permet également aux semi-jointures et aux anti-jointures de participer au réordonnancement."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "La modification a été rétroportée vers la version 26.10, où elle est consignée."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun. La valeur par défaut est CD-C, en combinaison avec la valeur par défaut `dpsub` de `query_plan_optimize_join_order_algorithm`, ce qui permet également aux semi-jointures et aux anti-jointures de participer au réordonnancement."}]}]} />
 
 N&#39;affecte que l’algorithme d’ordre des jointures `dpsub`. Sélectionne le conflict detector utilisé par DPsub pour
 déterminer quels réordonnancements des JOIN sont valides. Les valeurs suivantes sont disponibles :
@@ -494,17 +494,19 @@ Utilise l&#39;optimisation par matérialisation différée pour lire des fichier
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre qui fait remonter les conjoncts de filtre à travers les clés d'équi-jointure afin que le pruning par clé primaire s'applique des deux côtés."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre qui fait remonter les conjoncts de filtre à travers les clés d'équi-jointure afin que le pruning par clé primaire s'applique des deux côtés."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "Copie également les conjoncts de filtre vers les colonnes integer, Date et Decimal des lectures Parquet, qui ignorent des groupes de lignes grâce à leurs statistiques."}]}]} />
 
 Active ou désactive une optimisation au niveau du plan de requête qui copie les conjoncts de filtre d&#39;un côté
 d&#39;une équi-jointure vers l&#39;autre par substitution des clés d&#39;équi-jointure, afin que le pruning par clé primaire/index
 de l&#39;autre côté puisse en tirer parti.
 
-S&#39;applique lorsque le filtre et la lecture `MergeTree` ne sont séparés de la jointure que par des étapes d&#39;expression
-et de filtre, et lorsque le conjonct copié compare une colonne de clé primaire à une constante
-(y compris `IN` avec un ensemble constant). Un prédicat situé sous une jointure imbriquée ou sous `DISTINCT`, de même qu&#39;une
-comparaison entre deux colonnes clés, est laissé tel quel : il ne pourrait pas déclencher de pruning par clé primaire de
-l&#39;autre côté, et le copier ne ferait donc qu&#39;ajouter du travail inutile.
+S&#39;applique lorsque le filtre et la lecture ne sont séparés de la jointure que par des étapes d&#39;expression et de filtre,
+et lorsque le conjonct copié compare une constante (y compris `IN` avec un ensemble constant) soit à
+une colonne de clé primaire d&#39;une lecture `MergeTree`, soit à une colonne d&#39;une lecture `Parquet` (`file`, `url`,
+stockage d’objet autre qu&#39;un lac de données) de type integer d&#39;au plus 64 bits, `Date`, `Date32` ou `Decimal` sans
+expression par défaut, pour laquelle la lecture peut ignorer des groupes de lignes grâce aux statistiques min/max. Un prédicat situé sous une
+jointure imbriquée ou sous `DISTINCT`, de même qu&#39;une comparaison entre deux colonnes clés, est laissé tel quel : il ne pourrait
+pas déclencher de pruning de l&#39;autre côté, et le copier ne ferait donc qu&#39;ajouter du travail inutile.
 
 Ne prend effet que si `query_plan_enable_optimizations` vaut 1.
 
@@ -631,13 +633,13 @@ Remplace une étape de filtre par une étape d&#39;expression lorsque la conditi
 
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
-**Aliases** : `optimize_read_in_window_order`
+**Alias** : `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Désactive cette logique par défaut. Cela s'applique également à l'alias `optimize_read_in_window_order`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Réactivé par défaut : le tri répartit désormais le flux fusionné selon les colonnes `PARTITION BY`, de sorte que les fonctions de fenêtrage s'exécutent en parallèle. Cela s'applique également à l'alias `optimize_read_in_window_order`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Désactive cette logique par défaut. Cela s'applique également à l'alias `optimize_read_in_window_order`."}]}]} />
 
-Active ou désactive une optimisation au niveau du plan de requête qui exploite l&#39;ordre de tri du stockage lors du tri pour les fonctions de fenêtre.
+Active ou désactive une optimisation au niveau du plan de requête qui exploite l&#39;ordre de tri du stockage lors du tri pour les fonctions de fenêtrage.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) vaut 1.
 
 <Note>

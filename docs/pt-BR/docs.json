@@ -4,7 +4,7 @@
       "pages": [
         "pt-BR/index"
       ],
-      "tab": "Home"
+      "tab": "Início"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Databases"
+      "tab": "Bancos de dados"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Deployments"
+          "item": "Implantações"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -48,7 +48,7 @@
           ]
         },
         {
-          "item": "Private",
+          "item": "Privado",
           "pages": [
             "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
@@ -56,7 +56,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Applications"
+          "item": "Aplicações"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -67,17 +67,17 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI Engineering"
+          "item": "Engenharia de IA"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Security"
+          "item": "Segurança"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "Código aberto"
         },
         {
           "item": "ClickStack",
@@ -96,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Products"
+      "tab": "Produtos"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "Ecossistema",
           "pages": [
             "pt-BR/integrations/home",
             "pt-BR/integrations/data-catalogs"
@@ -117,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "Integrações"
     },
     {
       "menu": [
@@ -134,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "Recursos"
     }
   ]
 }

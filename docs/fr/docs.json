@@ -4,7 +4,7 @@
       "pages": [
         "fr/index"
       ],
-      "tab": "Home"
+      "tab": "Accueil"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Databases"
+      "tab": "Bases de données"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Deployments"
+          "item": "Déploiements"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -48,7 +48,7 @@
           ]
         },
         {
-          "item": "Private",
+          "item": "Privé",
           "pages": [
             "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
@@ -67,12 +67,12 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI Engineering"
+          "item": "Ingénierie de l’IA"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Security"
+          "item": "Sécurité"
         },
         {
           "href": "#",
@@ -96,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Products"
+      "tab": "Produits"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "Écosystème",
           "pages": [
             "fr/integrations/home",
             "fr/integrations/data-catalogs"
@@ -117,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "Intégrations"
     },
     {
       "menu": [
@@ -134,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "Ressources"
     }
   ]
 }

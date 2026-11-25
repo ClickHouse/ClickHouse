@@ -77,17 +77,19 @@ Só tem efeito junto com `make_distributed_plan = 1`: isoladamente, a configura�
 
 <ExperimentalBadge />
 
-**Nomes alternativos**: `allow_experimental_cleanup_old_data_files_compaction`
+**aliases**: `allow_experimental_cleanup_old_data_files_compaction`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_cleanup_old_data_files_compaction`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para configuração `allow_experimental_cleanup_old_data_files_compaction`."}]}]} />
 
-Permite limpar arquivos de dados antigos durante a compactação Iceberg.
+Permite limpar arquivos de dados antigos de tabelas Iceberg por meio de compactação em segundo plano.
 
-A limpeza executa `iceberg_compaction_data_cleanup` após uma compactação. Ela expira os snapshots que a compactação tornou obsoletos, da mesma
-forma que `expire_snapshots`: remove-os dos metadados da tabela e exclui os arquivos que não são referenciados por nenhum outro snapshot. Para uma tabela
-na versão do formato 1 ou gerenciada por um catálogo transacional, ela apenas exclui os arquivos, e os snapshots permanecem nos metadados.
+Uma tarefa em segundo plano da tabela expira os snapshots substituídos por um mais recente há mais tempo que o intervalo definido em `iceberg_compaction_data_cleanup`,
+exceto aqueles referenciados por branches e tags, da mesma forma que `expire_snapshots`: remove-os dos metadados da tabela e exclui
+os arquivos que não são referenciados por nenhum outro snapshot. Ela também remove do log de metadados os arquivos de metadados substituídos há mais tempo que esse intervalo e os exclui,
+a menos que um catálogo transacional grave os metadados da tabela. Os snapshots que estiverem sendo lidos por uma consulta em qualquer réplica são mantidos
+até uma execução posterior. Não tem efeito em tabelas na versão do formato 1.
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -185,6 +187,15 @@ A tabela abaixo mostra o comportamento dessa configuração em várias funções
 | `toStartOfMinute`         | Retorna `DateTime`<br />*Observação: resultados incorretos para valores fora do intervalo de 1970 a 2149* | Retorna `DateTime` para entradas `Date`/`DateTime`<br />Retorna `DateTime64` para entradas `Date32`/`DateTime64`                                     |
 | `timeSlot`                | Retorna `DateTime`<br />*Nota: resultados incorretos para valores fora do intervalo de 1970 a 2149*       | Retorna `DateTime` para valores de entrada `Date`/`DateTime`<br />Retorna `DateTime64` para valores de entrada `Date32`/`DateTime64`                 |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para usar uma tabela hash dedicada para `GROUP BY` com chaves de largura fixa de até 16 bytes no total e uma chave `String` não anulável. Quando desabilitada, é usado o método serializado."}]}]} />
+
+Usa uma tabela hash dedicada para `GROUP BY` com chaves de largura fixa de até 16 bytes no total e uma chave `String` não anulável. Qualquer uma dessas chaves pode ser `LowCardinality`. Uma chave com uma string vazia é armazenada apenas pelos seus valores de largura fixa, em células tão estreitas quanto as de chaves de largura fixa; as demais chaves são armazenadas como os valores de largura fixa mais uma referência empacotada para a string, que mantém em linha strings de até 11 bytes, ou de até 15 bytes quando os valores de largura fixa ocupam no máximo 4 bytes. Um `GROUP BY` sem funções de agregação armazena apenas as chaves, sem espaço para estados de agregação, e por isso usa menos memória.
+Quando desabilitada, é usado o método serializado.
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **Aliases**: `allow_experimental_full_text_index`
@@ -240,7 +251,7 @@ Propagar instruções WITH para consultas UNION e todas as subconsultas
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: `GROUP BY key [ORDER BY key] LIMIT n` publica a fronteira do heap top-K no passo de leitura do `MergeTree`, que a usa para filtrar linhas e ignorar grânulos. Um valor de `compatibility` abaixo de 26.10 a desabilita."}]}]} />
 
-Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): quando a primeira chave ranqueada do `GROUP BY` é uma coluna lida de uma tabela `MergeTree`, a agregação publica a fronteira do seu heap top-K no passo de leitura assim que o heap atinge `LIMIT` chaves. Em seguida, o passo de leitura descarta as linhas cuja chave esteja além da fronteira antes de ler as demais colunas (`PREWHERE`) e ignora grânulos inteiros que estejam além dela, usando a chave primária ou um índice de exclusão `minmax` nessa coluna.
+Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): quando a primeira chave ranqueada do `GROUP BY` é uma coluna lida de uma tabela `MergeTree`, a agregação publica a fronteira do seu heap top-K no passo de leitura assim que o heap atinge `LIMIT` chaves. Em seguida, o passo de leitura descarta as linhas cuja chave esteja além da fronteira antes de ler as demais colunas (`PREWHERE`) e ignora grânulos inteiros que estejam além dela, usando a chave primária ou um índice de exclusão `minmax` nessa coluna. Quando a coluna é lida de arquivos `Parquet` (as funções de tabela e os motores `file`, `s3`, `azureBlobStorage`, `hdfs` e de lago de dados), o próprio leitor descarta essas linhas e ignora grupos de linhas inteiros que estejam além da fronteira com base em suas estatísticas.
 
 Isso se aplica a `GROUP BY key ORDER BY key LIMIT n` e a `GROUP BY key LIMIT n` sem `ORDER BY`, caso em que quaisquer `n` grupos constituem uma resposta válida.
 
@@ -557,7 +568,7 @@ Torna as junções `hash`, `parallel_hash` e `grace_hash` sobre uma única chave
 
 Como a tabela hash fica menor, a junção demora mais para atingir `max_bytes_in_join` e `max_bytes_before_external_join`.
 
-A configuração não se aplica a chaves `FixedString` ou `LowCardinality(Nullable(String))`, a tabelas com o motor `Join` nem a `joinGet`. Já uma junção sobre uma chave `LowCardinality(String)` pode usar o dicionário da própria chave. Uma junção cujo lado direito tenha estimativa de menos linhas do que `min_rows_for_packed_string_keys_in_hash_join` também não é afetada.
+A configuração não se aplica a chaves `FixedString` ou `LowCardinality(Nullable(String))`, a tabelas com o motor `Join` nem a `joinGet`. Já uma junção sobre uma chave `LowCardinality(String)` pode usar o dicionário da própria chave. Uma junção mantém as chaves exatas quando sua tabela hash cabe no cache L2 da CPU e também quando precisaria calcular o hash de todas as chaves do lado esquerdo e o lado direito tem menos linhas do que `min_rows_for_packed_string_keys_in_hash_join`. Com essa configuração em 0, toda junção é empacotada, inclusive aquela cuja tabela hash cabe no cache L2.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 

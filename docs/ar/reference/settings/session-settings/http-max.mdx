@@ -13,71 +13,61 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_max_field_name_size">
-  ## http_max_field_name_size
-</div>
+## http_max_field_name_size {#http_max_field_name_size}
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "خفض القيمة الافتراضية للحد من استخدام الذاكرة قبل الاستيثاق الناتج عن اتصالات HTTP."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "نُقل هذا التغيير إلى الإصدار 26.1 وهو مُسجَّل هناك."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "خفض القيمة الافتراضية للحد من استخدام الذاكرة قبل المصادقة الناتج عن اتصالات HTTP."}]}]} />
 
-الحد الأقصى لطول اسم الحقل في رؤوس طلب HTTP، ومعلمات الاستعلام، وبيانات النموذج.
+الحد الأقصى لطول اسم الحقل في ترويسات طلب HTTP، ومَعلمَات الاستعلام، وبيانات النموذج.
 
-<div id="http_max_field_value_size">
-  ## http_max_field_value_size
-</div>
+يحدّ أيضًا من طول اسم الحقل في ترويسات استجابات HTTP التي يقرؤها ClickHouse بصفته عميلًا، كما في دالة الجدول `url` مثلًا.
+
+## http_max_field_value_size {#http_max_field_value_size}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
-الحد الأقصى لطول قيمة الحقل في رؤوس طلب HTTP ومعلمات الاستعلام وبيانات النموذج.
+الحد الأقصى لطول قيمة الحقل في ترويسات طلب HTTP ومَعلمَات الاستعلام وبيانات النموذج.
 
-<div id="http_max_fields">
-  ## http_max_fields
-</div>
+يحدّ أيضًا من طول قيمة الحقل في ترويسات استجابات HTTP التي يقرؤها ClickHouse بصفته عميلًا، كما هو الحال مثلًا في دالة الجدول `url`.
+
+## http_max_fields {#http_max_fields}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "خُفِّضت القيمة الافتراضية للحد من استخدام الذاكرة قبل المصادقة في اتصالات HTTP."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "نُقل هذا التغيير إلى الإصدار 26.1 وسُجِّل فيه."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "خُفِّضت القيمة الافتراضية للحد من استخدام الذاكرة قبل المصادقة في اتصالات HTTP."}]}]} />
 
-الحد الأقصى لعدد الحقول في رؤوس طلبات HTTP، ومعلمات الاستعلام، وبيانات النماذج.
+الحد الأقصى لعدد الحقول في ترويسات طلبات HTTP، ومَعلمَات الاستعلام، وبيانات النماذج.
 
-<div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
-</div>
+يحدّ هذا الإعداد أيضًا من عدد الحقول في ترويسات استجابات HTTP التي يقرؤها ClickHouse بصفته عميلًا، كما هو الحال في دالة الجدول `url`.
+
+## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
 حدّ حجم محتوى multipart/form-data. لا يمكن تحليل هذا الإعداد من معلمات URL، ويجب ضبطه في ملف تعريف المستخدم. لاحظ أن المحتوى يُحلَّل وتُنشأ الجداول الخارجية في الذاكرة قبل بدء تنفيذ الاستعلام. وهذا هو الحدّ الوحيد الذي يؤثر في تلك المرحلة (أما حدود الحد الأقصى لاستخدام الذاكرة والحد الأقصى لوقت التنفيذ فلا يكون لها أي تأثير أثناء قراءة بيانات النموذج عبر HTTP).
 
-<div id="http_max_request_header_size">
-  ## http_max_request_header_size
-</div>
+## http_max_request_header_size {#http_max_request_header_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "إعداد جديد لتقييد الحجم الإجمالي لرؤوس طلب HTTP قبل المصادقة."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "نُقل هذا التغيير إلى الإصدار 26.1 وهو مسجَّل هناك."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "إعداد جديد لتقييد الحجم الإجمالي لترويسات طلب HTTP قبل المصادقة."}]}]} />
 
-الحد الأقصى للحجم الإجمالي لجميع رؤوس طلب HTTP (بما يشمل الأسماء والقيم معًا) بالبايت.
+الحد الأقصى للحجم الإجمالي لجميع ترويسات طلب HTTP (بما يشمل الأسماء والقيم معًا) بالبايت.
 
-<div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
-</div>
+## http_max_request_param_data_size {#http_max_request_param_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 الحد الأقصى لحجم بيانات الطلب المستخدمة كمعامل استعلام في طلبات HTTP المعرَّفة مسبقًا.
 
-<div id="http_max_tries">
-  ## http_max_tries
-</div>
+## http_max_tries {#http_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 الحد الأقصى لعدد محاولات القراءة عبر HTTP.
 
-<div id="http_max_uri_size">
-  ## http_max_uri_size
-</div>
+## http_max_uri_size {#http_max_uri_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 

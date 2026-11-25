@@ -87,11 +87,11 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "기본 자동 통계에서 `minmax` 통계 타입을 `basic`(`minmax`의 상위 집합)으로 대체하고, 삽입 시 오버헤드와 메모리 사용량을 줄이기 위해 `uniq`도 `uniq_v2`로 대체합니다"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "기본적으로 자동 통계를 활성화합니다"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "26.7에서 `minmax, uniq`를 `basic, uniq_v2`로 대체했습니다(`basic`은 사용 중단 권고된 `minmax`의 상위 집합이며, `uniq_v2`는 삽입, 머지 및 메모리 측면에서 오버헤드가 더 적습니다). 이 변경 사항은 26.4에 기록되어 있으므로, 26.4~26.6 버전과의 `compatibility`를 설정해도 `minmax, uniq`로 되돌아가지 않습니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "basic, uniq_v2"},{"label": "기본적으로 자동 통계를 활성화합니다. 26.4~26.6 버전은 `minmax, uniq`로 배포되었지만, 이 버전들과의 `compatibility`를 설정하면 `basic, uniq_v2`가 적용됩니다. 통계는 쿼리 계획에만 영향을 주고 결과에는 영향을 주지 않으며, 모든 파트의 큰 `uniq` 상태(state)를 머지하면 최신 버전에서 쿼리 계획 수립이 몇 배나 느려지기 때문입니다."}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
 모든 적합한 컬럼에 대해 자동으로 계산할 통계 타입의 쉼표로 구분된 목록입니다.
 지원되는 통계 타입: basic, tdigest, countmin, uniq, uniq&#95;v2.
-`minmax` 통계 타입은 더 이상 권장되지 않습니다. `basic`의 부분 집합이므로 대신 `basic`을 사용해야 합니다.
+`minmax` 통계 타입은 사용 중단 권고 상태입니다. `basic`의 부분 집합이므로 대신 `basic`을 사용해야 합니다.
 
 ## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
@@ -196,6 +196,23 @@ Keeper와 왕복 통신하지 않고도 중복을 감지할 수 있습니다.
 예를 들어 `FirstApplicable(PCO, ZSTD(3))`은 숫자는 `PCO`로, 그 외 데이터는 `ZSTD(3)`으로 압축합니다. 지정된 코덱 중 최소 하나는
 모든 데이터 타입에 적용할 수 있어야 하며, 손실 압축 코덱은 포함할 수 없습니다.
 기본값: 빈 문자열(정의되지 않음)입니다.
+
+## delay_merges_after_startup_seconds {#delay_merges_after_startup_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "60"},{"label": "서버 시작 후 백그라운드 머지를 지연시키는 새로운 설정"}]}]} />
+
+서버가 시작 시 로드하는 테이블의 백그라운드 머지는 테이블이 시작되고 이 설정에 지정된 초만큼
+지난 뒤에야 시작됩니다. 따라서 재시작 직후의 첫 쿼리가 머지와 리소스를 두고
+경쟁하지 않습니다. 이 서버에서 해당 테이블에 첫 `INSERT`, `OPTIMIZE`,
+뮤테이션 또는 경량 업데이트가 수행되면 지연이 종료됩니다.
+`ReplicatedMergeTree` 테이블의 레플리카는 복제 큐의 머지를 연기하며, 병합된 파트로
+가져올 머지도 함께 연기합니다. 따라서 `SYSTEM SYNC REPLICA` 및 다른 레플리카에서 시작된
+뮤테이션은 지연이 끝날 때까지 대기할 수 있습니다. `CREATE TABLE`로 생성되었거나,
+`ATTACH TABLE`로 연결되었거나, `UNDROP TABLE`로 복원된 테이블은 지연되지 않습니다. 파티션에
+활성 데이터 파트(active parts)가 `parts_to_delay_insert`개 이상 있는 동안에는 머지가 지연되지 않습니다.
+0으로 설정하면 지연이 비활성화됩니다.
 
 ## 디스크 {#disk}
 
@@ -765,6 +782,16 @@ ClickHouse는 정책에 포함되지 않은 정의되지 않은 디스크의 데
 롤링 업그레이드 중에는 새 server가 기존 server와 호환되는
 데이터 파트를 생성하도록 이 값을 `basic`으로 설정하십시오. upgrade가 완료되면
 해당 기능을 활성화하기 위해 `with_types`(또는 `with_missing_columns`)로 전환하십시오.
+
+## serialize_statistics_bounds_with_column_type {#serialize_statistics_bounds_with_column_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+이 설정을 활성화하면 `minmax` 및 `basic` 통계의 최솟값과 최댓값을 `V4`의 범용 `Field` 인코딩 대신 컬럼 타입의 직렬화 방식을 사용해 통계 파일 포맷 `V5`로 기록합니다.
+이전 버전은 `V5` 통계 파일을 읽을 수 없으므로, 모든 레플리카를 업그레이드하기 전에는 이 설정을 활성화하지 마십시오.
+다운그레이드한 후에는 이 설정이 활성화된 상태에서 기록된 파트의 통계를 다시 구체화해야 합니다.
 
 ## share_nested_offsets {#share_nested_offsets}
 

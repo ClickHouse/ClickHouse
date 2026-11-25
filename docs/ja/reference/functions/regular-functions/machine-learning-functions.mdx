@@ -30,10 +30,10 @@ doc_type: 'reference'
 
 導入バージョン: v26.8.0
 
-ベクトルに最も近い(L2)セントロイドの id を返します。セントロイドは、float 配列の定数配列として指定でき、この場合 id はその配列内の 0 始まりの位置を表します。または、属性 `cid` と `vec` を持つ `Dictionary` の名前として指定でき、この場合 id は `cid` になります。
+ベクトルに最も近い(L2)セントロイドの id を返します。セントロイドは、定数の配列の配列として指定でき、この場合 id はその配列内の 0 始まりの位置を表します。または、属性 `cid` と `vec` を持つ `Dictionary` の名前として指定でき、この場合 id は `cid` になります。
 
 <Note>
-  この関数は非決定論的ではありません。同じ引数に対して異なる結果を返すことがあります。
+  この関数は非決定的です。同じ引数に対して異なる結果を返すことがあります。
 </Note>
 
 **構文**
@@ -44,8 +44,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **引数**
 
-* `vec` — 割り当て対象のベクトル。その次元数はセントロイドの次元数と一致する必要があります。`Float32` 以外のビット幅は `Float32` に変換されます (スコアリングkernelが使用する型です) 。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array) または [`Array(BFloat16)`](/ja/reference/data-types/array)
-* `centroids` — スコアリング対象のセントロイドで、定数である必要があります。サイズが等しく空でない浮動小数点配列の配列として指定する場合、id はその配列内の0始まりの位置になります。または、`UInt32` に収まるunsigned integer typeの属性 `cid` と `Array(Float32)` 型の属性 `vec` を持つ `Dictionary` の名前として指定する場合、id は `cid` になります。このdictionaryは一度だけ読み込まれ、reloadされるまでキャッシュされます。[`Array(Array(Float32))`](/ja/reference/data-types/array) または [`Array(Array(Float64))`](/ja/reference/data-types/array) または [`Array(Array(BFloat16))`](/ja/reference/data-types/array) または [`String`](/ja/reference/data-types/string)
+* `vec` — 割り当て対象のベクトル。その次元数はセントロイドの次元数と一致する必要があります。`Float32` 以外の要素型は `Float32` に変換されます (スコアリングkernelが使用する型です) 。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array) または [`Array(BFloat16)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array) または [`Array(UInt8)`](/ja/reference/data-types/array)
+* `centroids` — スコアリング対象のセントロイドで、定数である必要があります。`vec` で受け付けられる任意の要素型 (同じ型である必要はありません) を持つ、サイズが等しく空でない配列の配列として指定する場合、id はその配列内の0始まりの位置になります。または、`UInt32` に収まるunsigned integer typeの属性 `cid` と `Array(Float32)` 型の属性 `vec` を持つ `Dictionary` の名前として指定する場合、id は `cid` になります。この辞書は一度だけ読み込まれ、reloadされるまでキャッシュされます。[`Array(Array(Float32))`](/ja/reference/data-types/array) または [`Array(Array(Float64))`](/ja/reference/data-types/array) または [`Array(Array(BFloat16))`](/ja/reference/data-types/array) または [`Array(Array(Int8))`](/ja/reference/data-types/array) または [`Array(Array(UInt8))`](/ja/reference/data-types/array) または [`String`](/ja/reference/data-types/string)
 
 **戻り値**
 

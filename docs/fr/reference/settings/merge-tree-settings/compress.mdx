@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Les marks peuvent être compressés, ce qui réduit la taille du fichier de marks et accélère la
 transmission sur le réseau.
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +32,21 @@ depuis le disque. Si false, toutes les colonnes d&#39;une granule sont regroupé
 ce qui améliore le taux de compression, mais nécessite de décompresser davantage de données lors des lectures.
 Ce paramètre est avantageux pour les charges de travail qui lisent toujours toutes les colonnes (par ex. les projections).
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre : démarre un nouveau bloc compressé à chaque frontière de sous-flux de colonne dans les parts compacts afin d'accélérer la lecture des sous-colonnes"}]}]} />
+
+Contrôle la disposition physique des parts compacts. Si true (par défaut), un sous-flux de colonne dans un granule démarre
+un nouveau bloc compressé dès que le bloc courant a atteint `min_compress_block_size` : la lecture d&#39;une seule
+sous-colonne (par ex. la taille d&#39;un `Array`, un élément de `Tuple` ou un chemin JSON) ne décompresse alors que ce sous-flux,
+tandis que les petits sous-flux continuent de partager un même bloc. Si false, tous les sous-flux d&#39;une colonne dans un granule sont compactés
+dans le même bloc compressé, ce qui améliore le taux de compression, mais oblige à décompresser davantage de données
+lors de la lecture d&#39;une sous-colonne. N&#39;a d&#39;effet que si `write_marks_for_substreams_in_compact_parts` et
+`compress_per_column_in_compact_parts` sont activés.
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

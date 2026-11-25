@@ -136,7 +136,12 @@ Les clusters se configurent dans le [fichier de configuration du serveur](/fr/co
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,
@@ -186,7 +191,7 @@ Les clusters se configurent dans le [fichier de configuration du serveur](/fr/co
 </remote_servers>
 ```
 
-Ici, un cluster nommé `logs` est défini. Il se compose de deux shards, chacun contenant deux répliques. Les shards correspondent à des serveurs qui contiennent différentes parties des données (pour lire l’ensemble des données, vous devez accéder à tous les shards). Les répliques sont des serveurs dupliqués (pour lire l’ensemble des données, vous pouvez accéder aux données sur n’importe laquelle des répliques).
+Ici, un cluster nommé `logs` est défini. Il se compose de deux partitionnés, chacun contenant deux répliques. Les partitionnés correspondent à des serveurs qui contiennent différentes parties des données (pour lire l’ensemble des données, vous devez accéder à tous les partitionnés). Les répliques sont des serveurs dupliqués (pour lire l’ensemble des données, vous pouvez accéder aux données sur n’importe laquelle des répliques).
 
 Les noms de cluster ne doivent pas contenir de points.
 
@@ -195,24 +200,24 @@ Les paramètres `host`, `port` et, éventuellement, `user`, `password`, `secure`
 | Paramètre     | Description                                                                                                                                                                                                                                                                                                                                                                         | Valeur par défaut |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | `host`        | Adresse du serveur distant. Vous pouvez utiliser soit le nom de domaine, soit l’adresse IPv4 ou IPv6. Si vous indiquez un domaine, le serveur effectue une requête DNS au démarrage, et le résultat est conservé tant que le serveur reste en cours d’exécution. Si la requête DNS échoue, le serveur ne démarre pas. Si vous modifiez l’enregistrement DNS, redémarrez le serveur. | -                 |
-| `port`        | Port TCP utilisé pour l’activité de messagerie (`tcp_port` dans la config, généralement défini sur 9000). À ne pas confondre avec `http_port`.                                                                                                                                                                                                                                      | -                 |
+| `port`        | Port TCP utilisé pour l’activité de messagerie (`tcp_port` dans la configuration, généralement défini sur 9000). À ne pas confondre avec `http_port`.                                                                                                                                                                                                                                      | -                 |
 | `user`        | Nom de l’utilisateur utilisé pour se connecter à un serveur distant. Cet utilisateur doit disposer des droits nécessaires pour se connecter au serveur spécifié. L’accès est configuré dans le fichier `users.xml`. Pour plus d’informations, consultez la section [Droits d’accès](/fr/concepts/features/security/access-rights).                                                     | `default`         |
 | `password`    | Mot de passe utilisé pour se connecter à un serveur distant (non masqué).                                                                                                                                                                                                                                                                                                           | &#39;&#39;        |
 | `secure`      | Indique s’il faut utiliser une connexion SSL/TLS sécurisée. Cela nécessite généralement aussi de préciser le port (le port sécurisé par défaut est `9440`). Le serveur doit écouter sur `<tcp_port_secure>9440</tcp_port_secure>` et être configuré avec les certificats appropriés.                                                                                                | `false`           |
 | `compression` | Utiliser la compression des données.                                                                                                                                                                                                                                                                                                                                                | `true`            |
 | `bind_host`   | Adresse source à utiliser lors de la connexion au serveur distant depuis ce nœud. Seules les adresses IPv4 sont prises en charge. Destiné aux cas d’usage de déploiement avancés où il est nécessaire de définir l’adresse IP source utilisée par les requêtes distribuées ClickHouse.                                                                                              | -                 |
 
-Lors de la spécification des répliques, l&#39;une des répliques disponibles sera sélectionnée pour chacun des shards lors de la lecture. Vous pouvez configurer l&#39;algorithme d&#39;équilibrage de charge (la préférence pour déterminer à quelle réplique accéder) – voir le paramètre [load&#95;balancing](/fr/reference/settings/session-settings/load-balancing#load_balancing). Si la connexion au serveur n&#39;est pas établie, une tentative de connexion sera effectuée avec un délai d&#39;attente court. Si la connexion échoue, la réplique suivante sera sélectionnée, et ainsi de suite pour toutes les répliques. Si la tentative de connexion échoue pour toutes les répliques, elle sera répétée de la même manière, plusieurs fois. Cela améliore la résilience, mais n&#39;assure pas une tolérance aux pannes complète : un serveur distant peut accepter la connexion, mais ne pas fonctionner, ou mal fonctionner.
+Lorsque vous spécifiez des répliques, l’une des répliques disponibles est sélectionnée pour chacun des partitionnés lors de la lecture. Vous pouvez configurer l’algorithme d’équilibrage de charge (qui détermine la réplique à privilégier) — consultez le paramètre [load&#95;balancing](/fr/reference/settings/session-settings/load-balancing#load_balancing). Si aucune connexion au serveur n’est établie, une tentative de connexion est effectuée avec un délai d’expiration court. En cas d’échec, la réplique suivante est sélectionnée, et ainsi de suite pour toutes les répliques. Si toutes les tentatives échouent, la procédure est répétée plusieurs fois. Ce mécanisme améliore la résilience, mais ne garantit pas une tolérance aux pannes complète : un serveur distant peut accepter la connexion sans pour autant fonctionner, ou fonctionner de manière dégradée.
 
-Vous pouvez spécifier un seul shard (dans ce cas, le traitement des requêtes devrait être qualifié de `remote` plutôt que de `distributed`) ou un nombre quelconque de shards. Dans chaque shard, vous pouvez spécifier d&#39;une à un nombre quelconque de répliques. Vous pouvez spécifier un nombre différent de répliques pour chaque shard.
+Vous pouvez spécifier un seul partitionné (dans ce cas, le traitement des requêtes doit être qualifié de distant plutôt que de distribué) ou plusieurs, sans limite de nombre. Pour chaque partitionné, vous pouvez spécifier une ou plusieurs répliques, sans limite de nombre. Le nombre de répliques peut varier d’un partitionné à l’autre.
 
 Vous pouvez spécifier autant de clusters que vous le souhaitez dans la configuration.
 
 Pour afficher vos clusters, utilisez la table `system.clusters`.
 
-Le moteur `Distributed` permet de travailler avec un cluster comme avec un serveur local. Cependant, la configuration du cluster ne peut pas être définie dynamiquement : elle doit être configurée dans le fichier de configuration du serveur. En général, tous les serveurs d&#39;un cluster auront la même configuration de cluster (bien que cela ne soit pas obligatoire). Les clusters du fichier de configuration sont mis à jour à la volée, sans redémarrage du serveur.
+Le moteur `Distributed` permet de travailler avec un cluster comme avec un serveur local. Toutefois, la configuration du cluster ne peut pas être spécifiée dynamiquement : elle doit être définie dans le fichier de configuration du serveur. En général, tous les serveurs d’un cluster partagent la même configuration de cluster, sans que cela soit obligatoire. Les clusters définis dans le fichier de configuration sont mis à jour à la volée, sans redémarrage du serveur.
 
-Si vous devez envoyer une requête à un ensemble inconnu de shards et de répliques à chaque fois, vous n&#39;avez pas besoin de créer une table `Distributed` – utilisez plutôt la fonction de table `remote`. Voir la section [Fonctions de table](/fr/reference/functions/table-functions/index).
+Si vous devez envoyer à chaque fois une requête à un ensemble de partitionnés et de répliques qui n’est pas connu à l’avance, vous n’avez pas besoin de créer une table `Distributed` : utilisez plutôt la fonction de table `remote`. Consultez la section [Fonctions de table](/fr/reference/functions/table-functions/index).
 
 ## Écriture des données {#distributed-writing-data}
 

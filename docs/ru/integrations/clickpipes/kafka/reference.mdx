@@ -110,7 +110,7 @@ ClickPipes поддерживает JSON-тип в следующих случа
 
 #### Поддерживаемые типы данных Avro {#supported-avro-data-types}
 
-ClickPipes поддерживает все примитивные и составные типы Avro, а также все логические типы Avro, кроме `local-timestamp-millis` и `local_timestamp-micros`. Типы Avro `record` преобразуются в Tuple, типы `array` — в Array, а `map` — в Map (только со строковыми ключами). В общем случае доступны преобразования, перечисленные [здесь](/ru/concepts/features/interfaces/schema-inference#avro). Мы рекомендуем использовать точное соответствие типов для числовых типов Avro, поскольку ClickPipes не проверяет переполнение или потерю точности при преобразовании типов. Также все типы Avro можно вставить в столбец `String`; в этом случае они будут представлены как корректная JSON-строка.
+ClickPipes поддерживает все примитивные и составные типы Avro, а также все логические типы Avro, кроме `local-timestamp-millis` и `local_timestamp-micros`. Типы Avro `record` преобразуются в Tuple, типы `array` — в Array, а `map` — в Map (только со строковыми ключами). В общем случае доступны преобразования, перечисленные [здесь](/ru/concepts/features/operations/insert/schema-inference#avro). Мы рекомендуем использовать точное соответствие типов для числовых типов Avro, поскольку ClickPipes не проверяет переполнение или потерю точности при преобразовании типов. Также все типы Avro можно вставить в столбец `String`; в этом случае они будут представлены как корректная JSON-строка.
 
 <div id="nullable-types-and-avro-unions">
   #### Типы Nullable и union в Avro {#nullable-types-and-avro-unions}

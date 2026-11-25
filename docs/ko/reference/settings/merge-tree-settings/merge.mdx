@@ -53,12 +53,13 @@ ClickHouse Cloud에서만 사용할 수 있습니다. 머지 중 캐시를 예�
 
 정렬된 스트림을 머지할 때 행별 큐 오버헤드를 줄이기 위해 배치 정렬 큐를 사용합니다.
 
-행을 변경하지 않는 머지, 즉 일반 `MergeTree`
-(`Ordinary` 머지 모드)에만 적용됩니다. 이 설정과 관계없이 기본 큐를 계속 사용하는
+`Ordinary` 머지 모드의 머지에만 적용됩니다. 여기에는 행을 삭제하거나 재작성하는 머지(경량 삭제(lightweight deletes), TTL 삭제, 경량
+갱신(updates)의 패치 파트, `OPTIMIZE ... DEDUPLICATE`)를 포함한 일반 `MergeTree` 파트의 머지와
+일반 프로젝션(Normal Projection) 파트의 머지가 포함됩니다. 머지 시점에 별도의 의미 체계를 적용하는
 `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree`, `VersionedCollapsingMergeTree`와 같이 머지 시점에 별도의 의미 체계를 적용하는 엔진에는
-영향을 주지 않습니다.
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`,
+`VersionedCollapsingMergeTree` 등의 엔진과 집계 프로젝션 파트는 머지 알고리즘에서 자체 정렬 큐를 선택하므로
+이 설정의 영향을 받지 않습니다.
 
 ## merge_workload {#merge_workload}
 

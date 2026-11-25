@@ -1,0 +1,58 @@
+---
+title: 'GCP의 BYOC 권한(privilege)'
+slug: /cloud/reference/byoc/reference/privilege-gcp
+sidebarTitle: 'GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilege', 'gcp', 'iam', 'service account']
+description: 'ClickHouse BYOC가 Google Cloud 프로젝트에서 사용하는 사용자 정의 역할, 서비스 계정, IAM 권한 부여 및 각각의 권한, 범위, 목적'
+doc_type: 'reference'
+---
+
+이 페이지에서는 ClickHouse BYOC가 Google Cloud 프로젝트에서 사용하는 사용자 정의 역할, 서비스 계정, IAM 권한 부여 각각의 권한, 범위, 목적을 설명합니다. BYOC 권한 모델의 전반적인 개요는 [BYOC 권한(privilege)](/ko/products/bring-your-own-cloud/reference/privilege)을 참조하십시오.
+
+## 부트스트랩 서비스 계정 {#bootstrap-service-account}
+
+다음 표는 부트스트랩 서비스 계정 `clickhouse-management@<project>.iam.gserviceaccount.com`의 각 사용자 정의 역할을 설명합니다. 이 서비스 계정에 대한 `roles/iam.serviceAccountTokenCreator`를 통해 ClickHouse 프로비저닝 서비스 계정만 이 계정을 가장(impersonate)할 수 있습니다. GCP 사용자 정의 역할은 리소스 이름으로 범위를 제한할 수 없으므로 각 역할은 프로젝트 전체에 적용됩니다. 따라서 BYOC 전용 Google Cloud 프로젝트를 사용할 것을 권장합니다.
+
+| 사용자 정의 역할                      | 권한                                                                                                                            | 범위                                                  | 용도                                                                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `clickhouseCommonRole`         | 리전, 영역, 프로젝트 및 활성화된 서비스 읽기. 서비스 계정 조회. 서비스 계정을 리소스에 연결(`iam.serviceAccounts.actAs`).                                          | 프로젝트                                                | 상태 점검. BYOC 서비스 계정을 GKE 노드 풀에 연결.                                                                                              |
+| `clickhouseVPCRole`            | 네트워크, 서브넷, 경로 및 Cloud Router 읽기 및 사용. Private Service Connect 서비스 어태치먼트와 고정 IP 주소 생성, 변경 및 삭제.                                | 프로젝트                                                | Private Service Connect 엔드포인트 및 로드 밸런서의 IP 주소                                                                                  |
+| `clickhouseVPCWriteRole`       | 네트워크, 서브넷, 경로 및 Cloud Router 생성, 변경 및 삭제. 네트워크 피어링 및 서브넷 IAM 정책 변경.                                                           | 프로젝트                                                | BYOC VPC. [자체 VPC를 사용하는](/ko/products/bring-your-own-cloud/onboarding/customization-gcp#customer-managed-vpc-gcp) 경우에는 필요하지 않습니다. |
+| `clickhouseClusterRole`        | GKE 클러스터와 노드 풀 생성, 변경 및 삭제, 관련 관리형 인스턴스 그룹 변경. 클러스터 자격 증명 조회. 시크릿, RBAC, 사용자 정의 리소스 정의를 포함한 클러스터 내 모든 Kubernetes 리소스 읽기 및 쓰기. | 프로젝트                                                | GKE 클러스터 관리 및 BYOC 소프트웨어 설치                                                                                                    |
+| `clickhouseStorageRole`        | 버킷 생성, 변경 및 삭제. 버킷 IAM 정책 읽기 및 설정. 객체 읽기 또는 쓰기 권한 없음.                                                                         | 프로젝트                                                | ClickHouse 테이블 데이터, 백업 및 모니터링 데이터를 저장하는 버킷 관리                                                                                  |
+| `clickhouseStorageObjectsRole` | 객체 나열, 읽기 및 삭제                                                                                                                | 이름이 `_gcp_clickhouse_cloud-monitoring`으로 끝나는 버킷만 해당 | ClickHouse가 모니터링 버킷을 삭제하기 전에 버킷 비우기                                                                                            |
+| `clickhouseIamRole`            | 프로젝트 IAM 정책 읽기 및 설정. 서비스 계정 생성, 변경, 비활성화 및 삭제, 해당 IAM 정책 설정. 사용자 정의 역할 생성, 변경 및 삭제. 서비스 계정 키 생성 권한 없음.                        | 프로젝트                                                | 다음 섹션의 서비스 계정 생성 및 역할 부여                                                                                                       |
+| `clickhouseTdeRole`            | KMS 키링과 키 생성 및 읽기. 키 변경. 키 IAM 정책 읽기 및 설정. 키 버전 폐기 권한 없음.                                                                     | 프로젝트                                                | [TDE](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)에 사용됩니다. 선택 사항이며 기본적으로 비활성화되어 있습니다                  |
+
+[공유 VPC](/ko/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project)를 사용하는 경우 모듈은 호스트 프로젝트에서 다음 역할도 부여합니다.
+
+| 사용자 정의 역할                                                            | 권한                                                                                                                             | 범위                                                                                         | 용도                                               |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `clickhouseSharedVPCHostRole`                                        | 네트워크와 서브넷 읽기. 서브넷 사용.                                                                                                          | 호스트 프로젝트                                                                                   | 호스트 네트워크 읽기. Private Service Connect NAT 서브넷 사용. |
+| `clickhouseGKESharedVPCFirewallRole`                                 | 방화벽 규칙 생성, 변경 및 삭제. `clickhouse-management`가 아닌 BYOC 프로젝트의 GKE 서비스 에이전트에 부여됩니다.                                                | 호스트 프로젝트                                                                                   | 호스트 네트워크에서 GKE 클러스터와 해당 로드 밸런서에 적용되는 방화벽 규칙      |
+| `roles/container.hostServiceAgentUser` 및 `roles/compute.networkUser` | 공유 VPC용 표준 GKE 역할입니다. GKE 서비스 에이전트와 Google APIs 서비스 에이전트에 부여됩니다. `clickhouse-management`에도 `roles/compute.networkUser`가 부여됩니다. | `roles/container.hostServiceAgentUser`: 호스트 프로젝트. `roles/compute.networkUser`: 노드 서브넷만 해당. | 공유 VPC에 대한 표준 GKE 요구 사항                          |
+
+정확한 역할 정의는 [Terraform 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/gcp/roles.tf)을 참조하십시오.
+
+## 컨트롤러가 생성하는 추가 서비스 계정 {#additional-service-accounts-created-by-the-controller}
+
+컨트롤러는 Terraform으로 생성되는 `clickhouse-management` 서비스 계정 외에도 BYOC 인프라마다 여러 개의 서비스 계정과 역할을 추가로 생성합니다.
+각 서비스 계정의 이름은 `<infra>-<suffix>` 형식입니다. `<infra>`는 BYOC 인프라의 이름입니다(예: `infra-ab-123`). 해당 인프라의 모든 ClickHouse 서비스는 이 서비스 계정을 공유합니다. ClickHouse는 서비스 계정 키를 생성하지 않으며, 모든 액세스에는 수명이 짧은 토큰을 사용합니다.
+
+| 서비스 계정                                  | 권한                                                                                                                                                                                                                                  | 용도                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `<infra>-dp-mgmt`                       | 프로젝트에 대한 사용자 정의 역할: Private Service Connect 서비스 어태치먼트 관리. 버킷 생성, 변경, 삭제 및 버킷의 IAM 정책 설정. 객체 나열 및 삭제. 서비스 계정 생성, 변경, 삭제 및 서비스 계정의 IAM 정책 설정. GKE 클러스터 읽기 및 연결. 프로젝트 IAM 정책은 변경할 수 없습니다. ClickHouse 관리 서비스가 이 계정을 가장(impersonate)합니다. | ClickHouse 서비스의 일상적인 관리: 버킷, ClickHouse 서버 파드의 액세스, Private Service Connect |
+| `<infra>-gke-node`                      | 프로젝트에 대한 `roles/container.defaultNodeServiceAccount`. ClickHouse 컨테이너 레지스트리에 대한 읽기 액세스.                                                                                                                                             | 모든 GKE 노드 풀의 노드 아이덴티티: 로그, 메트릭, 이미지 풀                                       |
+| `<infra>-clickhouse`                    | 각 ClickHouse 서비스의 데이터 버킷과 백업 버킷에 대한 `roles/storage.admin`. 백업에서 서비스를 복원할 때 원본 백업 버킷에 대한 읽기 액세스. ClickHouse에 사용량 데이터 쓰기. 각 ClickHouse 서비스의 파드가 Workload Identity를 통해 사용합니다.                                                          | ClickHouse 서버 파드의 아이덴티티. 테이블 데이터와 백업을 읽고 씁니다.                               |
+| `<infra>-monitoring`                    | BYOC 모니터링 버킷에만 적용되는 `roles/storage.objectAdmin`. Prometheus와 Thanos가 Workload Identity를 통해 사용합니다.                                                                                                                                   | 모니터링용 메트릭 저장                                                                |
+| `<infra>-scraper`                       | 프로젝트 내 권한 없음. ClickHouse에 사용량 데이터 쓰기.                                                                                                                                                                                               | 과금용 사용량 데이터를 ClickHouse로 전송                                                 |
+| `<infra>-kmf`                           | 프로젝트 내 권한 없음. ClickHouse에 메트릭 쓰기. 이 클러스터에서만 사용할 수 있습니다.                                                                                                                                                                             | 오토스케일링을 위해 Kubernetes 메트릭을 ClickHouse로 전송                                   |
+| `<infra>-tde-delegate` (TDE가 활성화된 경우에만) | 키 링 `<infra>-tde`의 TDE 키 `tde-default-kek`에만 적용되는 `roles/cloudkms.cryptoKeyEncrypterDecrypter` 및 `roles/cloudkms.viewer`                                                                                                            | TDE 데이터 키를 암호화하고 복호화합니다. 이 계정의 키 액세스 권한은 언제든 취소할 수 있습니다.                    |
+
+또한 컨트롤러는 BYOC 인프라마다 프로젝트에 다음 권한을 부여합니다.
+
+| 권한 부여                                                                                                                                 | 대상                                                 | 용도                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| `container.clusters.connect`만 포함된 사용자 정의 역할                                                                                           | ClickHouse 관리 서비스 계정                               | ClickHouse 관리 서비스가 GKE API 엔드포인트에 연결할 수 있도록 합니다            |
+| 프로젝트에 대한 `roles/container.clusterViewer`                                                                                              | ClickHouse 배포 서비스 계정                               | 클러스터에 BYOC 소프트웨어를 배포하고 업그레이드합니다                            |
+| 키 링 `<infra>-snc`의 키 `snc-kek`에 대한 `roles/cloudkms.cryptoKeyEncrypter` 및 `roles/cloudkms.cryptoKeyDecrypter` (이름이 지정된 컬렉션이 활성화된 경우에만) | 암호화: `<infra>-dp-mgmt`. 복호화: `<infra>-clickhouse`. | 이름이 지정된 컬렉션의 시크릿을 암호화합니다. 복호화는 ClickHouse 서버 파드만 할 수 있습니다. |

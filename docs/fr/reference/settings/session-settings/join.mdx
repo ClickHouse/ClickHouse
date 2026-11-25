@@ -15,9 +15,43 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,inequality" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` est un alias obsolète de `hash` et a été retiré de la liste par défaut ; il reste toutefois accepté. Mentionner `hash` ou `parallel_hash` dans la liste ne détermine pas le degré de parallélisme de la jointure."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déconseillé au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
+<VersionHistory
+  rows={[
+  {
+    id: "row-1",
+    items: [
+      { label: "26.8" },
+      { label: "direct,parallel_hash,hash,ie_join" },
+      {
+        label:
+          "Ajout de `ie_join` (désormais nommé `inequality`) à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec l'algorithme de jointure par inégalité au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."
+      }
+    ]
+  },
+  { id: "row-2", items: [{ label: "26.12" }, { label: "direct,hash,inequality" }, { label: "`ie_join` a été renommé en `inequality`. L'ancien nom `ie_join` reste accepté en tant qu'alias." }] },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.11" },
+      { label: "direct,hash,ie_join" },
+      {
+        label:
+          "`parallel_hash` est un alias obsolète de `hash` et a été retiré de la liste par défaut ; il reste toutefois accepté. Mentionner `hash` ou `parallel_hash` dans la liste ne détermine pas le degré de parallélisme de la jointure."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "24.12" },
+      { label: "direct,parallel_hash,hash" },
+      { label: "'default' a été déconseillé au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash" }
+    ]
+  }
+  ]}
+/>
 
 Spécifie quel algorithme de [JOIN](/fr/reference/statements/select/join) est utilisé.
 
@@ -36,10 +70,10 @@ Valeurs possibles :
 
 * grace&#95;hash
 
-Le [grace jointure par hachage](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé.  Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
+Le [grace jointure par hachage](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) est utilisé. Grace hash fournit une option d&#39;algorithme permettant d&#39;exécuter des jointures complexes de manière performante tout en limitant l&#39;utilisation de la mémoire.
 La sélection explicite de `grace_hash` est principalement destinée au diagnostic. Pour activer le déversement sur disque des jointures, définissez plutôt [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
-`grace_hash` est externe dès le premier bloc : la table de droite est partitionnée immédiatement, là où `hash` et `parallel_hash` la collectent d&#39;abord en mémoire et ne la partitionnent qu&#39;une fois le seuil de déversement franchi. Choisissez-le lorsque vous savez déjà que le côté droit ne tiendra pas en mémoire et que vous souhaitez éviter la phase en mémoire. Le seuil de déversement lui-même est celui qu&#39;utilisent tous les algorithmes de hachage, [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), et l&#39;une des deux valeurs doit être non nulle, sauf si `legacy_join_size_limits_trigger_spilling` est activé. Sans seuil, `grace_hash` est ignoré au profit de l&#39;algorithme suivant dans la liste, et rejeté s&#39;il est le seul.
+`grace_hash` est externe dès le premier bloc : la table de droite est partitionnée immédiatement, alors que `hash` et `parallel_hash` la collectent d&#39;abord en mémoire et ne la partitionnent qu&#39;une fois le seuil de déversement franchi. Choisissez-le lorsque vous savez déjà que le côté droit ne tiendra pas en mémoire et que vous souhaitez éviter la phase en mémoire. Le seuil de déversement lui-même est le même pour tous les algorithmes de hachage, [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), et l&#39;un des deux doit être non nul, sauf si `legacy_join_size_limits_trigger_spilling` est activé. Sans seuil, `grace_hash` est ignoré au profit de l&#39;algorithme suivant dans la liste, et rejeté s&#39;il est le seul.
 
 La première phase d&#39;une jointure grace lit la table de droite et la découpe en N buckets en fonction de la valeur de hachage des colonnes de clé (initialement, N vaut `grace_hash_join_initial_buckets`). Cela est fait de manière à garantir que chaque bucket puisse être traité indépendamment. Les lignes du premier bucket sont ajoutées à une table de hachage en mémoire tandis que les autres sont enregistrées sur disque. Si la table de hachage dépasse le seuil de déversement, le nombre de buckets est augmenté ainsi que le bucket affecté à chaque ligne. Toutes les lignes qui n&#39;appartiennent pas au bucket courant sont vidées et réaffectées.
 
@@ -63,7 +97,7 @@ Une variante de l&#39;[algorithme sort-merge](https://en.wikipedia.org/wiki/Sort
 
 Les `RIGHT JOIN` et `FULL JOIN` ne sont pris en charge qu&#39;avec la strictness `ALL` (`SEMI`, `ANTI`, `ANY` et `ASOF` ne sont pas pris en charge).
 
-Lors de l&#39;utilisation de l&#39;algorithme `partial_merge`, ClickHouse trie les données et les écrit sur le disque. L&#39;algorithme `partial_merge` de ClickHouse diffère légèrement de l&#39;implémentation classique. Tout d&#39;abord, ClickHouse trie la table de droite par clés de jointure en blocs et crée un index min-max pour les blocs triés. Il trie ensuite des parties de la table de gauche par `clé de jointure` et les joint à la table de droite. L&#39;index min-max est également utilisé pour ignorer les blocs inutiles de la table de droite.
+Lors de l&#39;utilisation de l&#39;algorithme `partial_merge`, ClickHouse trie les données et les écrit sur le disque. L&#39;algorithme `partial_merge` de ClickHouse diffère légèrement de l&#39;implémentation classique. Tout d&#39;abord, ClickHouse trie la table de droite par clés de jointure en blocs et crée un index min-max pour les blocs triés. Il trie ensuite des parties de la table de gauche par `join key` et les joint à la table de droite. L&#39;index min-max est également utilisé pour ignorer les blocs inutiles de la table de droite.
 
 * direct
 
@@ -82,17 +116,17 @@ Lorsqu&#39;il est défini sur `auto`, la jointure par hachage `hash` est essayé
 
 [Algorithme sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join) avec tri complet des tables jointes avant la jointure.
 
-* ie&#95;join
+* inequality
 
-L&#39;algorithme [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basé sur le tri est destiné aux `JOIN` dont la section `ON` comporte deux comparaisons d&#39;inégalité (`<`, `<=`, `>`, `>=`) entre des expressions des tables jointes. Prend en charge `ALL INNER/LEFT/RIGHT/FULL JOIN` et les `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+L&#39;algorithme de [jointure d&#39;inégalité](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) basé sur le tri est destiné aux `JOIN` dont la section `ON` comporte deux comparaisons d&#39;inégalité (`<`, `<=`, `>`, `>=`) entre des expressions des tables jointes. Prend en charge `ALL INNER/LEFT/RIGHT/FULL JOIN` et les `SEMI`/`ANTI` `LEFT/RIGHT JOIN`. L&#39;ancien nom `ie_join` est accepté comme alias.
 
-La position dans la liste définit la priorité. Placé après les autres algorithmes, comme dans la valeur par défaut, `ie_join` est utilisé uniquement lorsque la section `ON` ne comporte aucune condition d&#39;égalité. Placé en premier, il est utilisé chaque fois que la section `ON` comporte deux conditions d&#39;inégalité, et les conditions restantes sont appliquées comme filtre sur le résultat de la jointure. Lorsqu&#39;il y a plus de deux conditions d&#39;inégalité, les deux utilisées par l&#39;algorithme sont choisies selon leur sélectivité estimée à partir des [statistiques de colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) ; sans statistiques, les deux premières dans l&#39;ordre syntaxique sont utilisées. Sans `ie_join` dans la liste, une `INNER JOIN` ne comportant que des conditions d&#39;inégalité est exécutée comme une `CROSS JOIN` avec un filtre, et les autres types de jointure comme une [jointure par boucles imbriquées par blocs](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+La position dans la liste définit la priorité. Placé après d&#39;autres algorithmes, comme dans la valeur par défaut, `inequality` n&#39;est utilisé que lorsque la section `ON` ne contient aucune condition d&#39;égalité. Placé en premier, il est utilisé dès que la section `ON` contient deux conditions d&#39;inégalité, les éventuelles conditions restantes étant appliquées comme filtre sur le résultat de la jointure. Lorsqu&#39;il y a plus de deux conditions d&#39;inégalité, les deux retenues par l&#39;algorithme sont choisies selon leur sélectivité estimée à partir des [statistiques de colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) ; en l&#39;absence de statistiques, ce sont les deux premières dans l&#39;ordre syntaxique qui sont utilisées. Sans `inequality` dans la liste, un `INNER JOIN` ne comportant que des conditions d&#39;inégalité est exécuté comme un `CROSS JOIN` avec un filtre, et les autres types de jointure comme une [jointure par boucles imbriquées par blocs](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
-Les deux entrées sont accumulées en mémoire avant la jointure : [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) et [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitent l&#39;entrée accumulée des deux côtés ensemble (et non uniquement du côté droit), l&#39;action en cas de dépassement de capacité étant définie par [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode) ; les index de tri que l&#39;opérateur construit par-dessus l&#39;entrée accumulée ne sont pas comptabilisés dans la limite. L&#39;opérateur de jointure lui-même s&#39;exécute dans un seul thread ; seuls les tris des entrées précédant la jointure sont parallélisés.
+Les deux entrées sont accumulées en mémoire avant la jointure : [`max_rows_in_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_join) et [`max_bytes_in_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitent l&#39;entrée accumulée des deux côtés ensemble (et non uniquement du côté droit), l&#39;action en cas de dépassement de capacité étant définie par [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode) ; les index de tri que l&#39;opérateur construit par-dessus l&#39;entrée accumulée ne sont pas comptabilisés dans la limite. L&#39;opérateur de jointure lui-même s&#39;exécute dans un seul fil d’exécution ; seuls les tris des entrées précédant la jointure sont parallélisés.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-Identique à `full_sorting_merge`, mais les jointures d&#39;égalité compatibles avec le hachage sont partitionnées par le hachage des clés de jointure en jointures par fusion indépendantes par partition qui s&#39;exécutent en parallèle (jusqu&#39;à `max_threads`), au lieu d&#39;une seule jointure par fusion. Cela conserve la faible consommation mémoire en flux d&#39;une jointure par fusion tout en utilisant tous les threads, et le résultat n&#39;est pas ordonné.
+Identique à `full_sorting_merge`, mais les jointures d&#39;égalité compatibles avec le hachage sont partitionnées par le hachage des clés de jointure en jointures par fusion indépendantes par partition qui s&#39;exécutent en parallèle (jusqu&#39;à `max_threads`), au lieu d&#39;une seule jointure par fusion. Cela conserve la faible consommation mémoire en flux d&#39;une jointure par fusion tout en utilisant tous les fils d’exécution, et le résultat n&#39;est pas ordonné.
 
 Le partitionnement par hachage sur les clés de jointure n&#39;est appliqué qu&#39;aux jointures d&#39;égalité simples sur des types de clés dont le hachage concorde avec la comparaison de jointure par fusion, et uniquement lorsque aucun des deux côtés n&#39;est déjà trié. Il est ignoré dans les cas suivants :
 
@@ -177,11 +211,11 @@ Définit l’action effectuée par ClickHouse lorsqu’une jointure atteint l’
 * [max&#95;rows&#95;in&#95;join](/fr/reference/settings/session-settings/max-rows#max_rows_in_join)
 
 Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm)
-basées sur le hachage respectent ce paramètre, y compris celles qui effectuent un déversement sur disque : atteindre la
+hash-based respectent ce paramètre, y compris celles qui effectuent un déversement sur disque : atteindre la
 limite arrête la requête au lieu de déclencher un déversement. L’exception est
 `legacy_join_size_limits_trigger_spilling` : lorsqu’il est activé, la partie d’une jointure qui
 s’exécute déjà sur disque continue de se déverser au lieu d’appliquer ce paramètre.
-`ie_join` le respecte également, sur l’entrée qu’il accumule des deux côtés. `partial_merge` gère
+`inequality` le respecte également, sur l’entrée qu’il accumule des deux côtés. `partial_merge` gère
 toujours ces limites en changeant de stratégie — voir
 [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm).
 

@@ -94,14 +94,12 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
   有关如何配置异步插入的完整说明，请参见[这里](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)；更深入的介绍请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 </Note>
 
-<div id="use-official-clickhouse-clients">
-  ### 使用官方 ClickHouse 客户端 {#use-official-clickhouse-clients}
-</div>
+### 使用官方 ClickHouse 客户端 {#use-official-clickhouse-clients}
 
 ClickHouse 为最常用的编程语言提供了客户端。
 这些客户端经过优化，可确保插入操作正确执行，并原生支持异步插入：例如，可像 [Go 客户端](/zh/integrations/language-clients/go/clickhouse-api#async-insert) 那样直接支持；也可以在查询、用户或连接级别的设置中启用后间接支持。
 
-有关可用 ClickHouse 客户端和驱动程序的完整列表，请参阅[原生客户端和接口](/zh/concepts/features/interfaces/native-clients-interfaces-index)。
+有关可用 ClickHouse 客户端和驱动程序的完整列表，请参阅[连接到 ClickHouse](/zh/concepts/features/connect-to-clickhouse)。
 
 <div id="prefer-the-native-format">
   ### 优先使用 Native 格式 {#prefer-the-native-format}
@@ -130,7 +128,7 @@ ClickHouse 在插入 (以及查询) 时支持多种[输入格式](/zh/reference/
 现有客户端通常使用这两种协议中的一种 (在某些情况下也会同时使用两种，例如 Go 客户端) 。
 原生协议也更便于跟踪查询进度。
 
-更多详情，请参阅 [HTTP Interface](/zh/concepts/features/interfaces/http)。
+更多详情，请参阅 [HTTP 接口](/zh/concepts/features/connect-to-clickhouse/protocols/http)。
 
 <div id="basic-example">
   ## 基本示例 {#basic-example}
@@ -190,7 +188,7 @@ user_id message                                             timestamp           
 * `clickhouse-server` 正在运行
 * 你可访问已安装 `wget`、`zcat` 和 `curl` 的终端
 
-在本示例中，你将看到如何使用处于批次模式的 `clickhouse-client`，从命令行将一个 CSV 文件插入 ClickHouse。有关使用处于批次模式的 `clickhouse-client` 通过命令行插入数据的更多信息和示例，请参阅 [“批次模式”](/zh/concepts/features/interfaces/client#batch-mode)。
+在本示例中，你将看到如何使用处于批次模式的 `clickhouse-client`，从命令行将一个 CSV 文件插入 ClickHouse。有关使用处于批次模式的 `clickhouse-client` 通过命令行插入数据的更多信息和示例，请参阅 [“批次模式”](/zh/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode)。
 
 本示例将使用 [Hacker News dataset](/zh/get-started/sample-datasets/hacker-news)，其中包含 2800 万行 Hacker News 数据。
 

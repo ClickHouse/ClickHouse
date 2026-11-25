@@ -84,6 +84,15 @@ rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
+Sous Linux x86&#95;64 et aarch64, ClickHouse est lié statiquement à musl par défaut ; Rust doit donc également cibler musl.
+`rustup` n&#39;installe que la cible `*-unknown-linux-gnu` : ajoutez donc la cible musl, sinon `cmake` échoue avec l&#39;erreur `Target x86_64-unknown-linux-musl is not installed for toolchain nightly-2026-11-02` :
+
+```bash
+rustup target add --toolchain nightly-2026-11-02 "$(uname -m)-unknown-linux-musl"
+```
+
+Une construction avec `-DUSE_MUSL=OFF` (glibc) utilise la cible `*-unknown-linux-gnu`, que `rustup` installe par défaut.
+
 <Tip>
   ccache ne met pas Rust en cache : un nouveau répertoire de construction recompile donc toutes les crates Rust.
   Avec `-DRUST_BUILD_CACHE_DIR=<path>`, Cargo conserve les crates compilées dans ce répertoire, et les nouveaux répertoires de construction issus du même checkout et de la même configuration les réutilisent (à l&#39;exception de delta-kernel-rs). Ce cache occupe environ 7 Go par checkout et par configuration, n&#39;a pas de limite de taille et peut être supprimé à tout moment.

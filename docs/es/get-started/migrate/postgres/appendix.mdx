@@ -107,7 +107,7 @@ La consistencia secuencial en las bases de datos implica que las operaciones sob
 Desde la perspectiva del usuario, esto suele manifestarse como la necesidad de escribir datos en ClickHouse y, al leerlos, garantizar que se devuelvan las últimas filas insertadas.
 Esto se puede lograr de varias maneras (en orden de preferencia):
 
-1. **Leer/escribir en el mismo nodo** - Si estás usando el protocolo nativo, o una [sesión para realizar la escritura/lectura a través de HTTP](/es/concepts/features/interfaces/http#default-database), deberías estar conectado a la misma réplica: en este escenario, estás leyendo directamente desde el nodo en el que escribes, por lo que la lectura siempre será coherente.
+1. **Leer/escribir en el mismo nodo** - Si estás usando el protocolo nativo, o una [sesión para realizar la escritura/lectura a través de HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http#default-database), deberías estar conectado a la misma réplica: en este escenario, estás leyendo directamente desde el nodo en el que escribes, por lo que la lectura siempre será coherente.
 2. **Sincronizar réplicas manualmente** - Si escribes en una réplica y lees desde otra, puedes ejecutar `SYSTEM SYNC REPLICA LIGHTWEIGHT` antes de leer.
 3. **Habilitar la consistencia secuencial** - mediante la configuración de consulta [`select_sequential_consistency = 1`](/es/reference/settings/session-settings/other#select_sequential_consistency). En OSS, también debe especificarse la configuración `insert_quorum = 'auto'`.
 

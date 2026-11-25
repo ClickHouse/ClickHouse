@@ -143,10 +143,10 @@ SETTINGS format_csv_delimiter = ';'
 <Info>
   لمزيد من المعلومات حول خيارات الإعداد والاستدلال التلقائي للمخطط عند
   الاستعلام عن مصادر خارجية مثل Azure Blob Storage، راجع [الاستدلال التلقائي
-  على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
+  على المخطط من بيانات الإدخال](/ar/concepts/features/operations/insert/schema-inference)
 </Info>
 
-8. الآن أدخِل البيانات من Azure Blob Storage إلى جدول sensors:
+8. الآن أدرِج البيانات من Azure Blob Storage إلى جدول sensors:
    ```sql
    INSERT INTO sensors
    SELECT sensor_id, lat, lon, timestamp, temperature
@@ -169,4 +169,4 @@ SETTINGS format_csv_delimiter = ';'
 
 * [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
 * [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index)
-* [الاستدلال التلقائي على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
+* [الاستدلال التلقائي على المخطط من بيانات الإدخال](/ar/concepts/features/operations/insert/schema-inference)

@@ -75,6 +75,33 @@ Nous vous recommandons de consulter la documentation ClickHouse suivante avant d
 
 Toutes les optimisations décrites ci-dessous peuvent être appliquées directement aux tables sous-jacentes avec le langage ClickHouse SQL standard, soit via la [console SQL de ClickHouse Cloud](/fr/integrations/connectors/sql-clients/sql-console), soit via le [client ClickHouse](/fr/concepts/features/interfaces/client).
 
+## Identifier l&#39;origine de la charge de requêtes {#query-attribution}
+
+Avant toute optimisation, déterminez quels tableaux de bord, alertes et autres fonctionnalités génèrent le plus de travail. ClickStack étiquette chaque requête qu&#39;il envoie à ClickHouse, de sorte qu&#39;une requête présente dans [`system.query_log`](/fr/reference/system-tables/query_log) ou [`system.processes`](/fr/reference/system-tables/processes) peut être rattachée à ce qui l&#39;a émise :
+
+* Son `query_id` commence par `hdx-` suivi du nom de la surface qui l&#39;a émise, par exemple `hdx-alert-<uuid>` ou `hdx-mcp-<uuid>`. Utilisez-le pour retrouver une requête en cours d&#39;exécution dans `system.processes`, qui ne possède pas de colonne `log_comment` ; dans cette table, le commentaire se trouve dans `Settings['log_comment']`.
+* Son `log_comment` est un petit objet JSON. Le champ `surface` indique ce qui a émis la requête, par exemple `dashboard`, `search`, `chart-explorer`, `alert`, `mcp` ou `api`. Selon la surface, il contient également les ID du `dashboard` et de la `tile`, de la `search` enregistrée, de l&#39;`alert` et de la `source`, ainsi qu&#39;un `label`, tel que le nom de l&#39;outil MCP, la route de l&#39;API ou le nom d&#39;un tableau de bord intégré. Par exemple, `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+Le commentaire indique ce qui a été demandé, et non qui l&#39;a demandé : aucun identifiant d&#39;utilisateur ou d&#39;équipe n&#39;y est écrit. (Pour enregistrer l&#39;adresse e-mail de l&#39;utilisateur dans les journaux de requêtes, utilisez le paramètre **Query Log Setting Prefix** de la connexion ; voir [Connexions](/fr/clickstack/managing/config#connection-settings).) Quelques requêtes internes, comme la vérification de version, ont un identifiant de requête `hdx-` et un `log_comment` vide. Les requêtes PromQL sont attribuées de la même manière.
+
+La requête suivante montre d&#39;où provient la charge de lecture, par surface et par tableau de bord :
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+Sur ClickHouse Cloud, les tables `system.query_log` et `system.processes` sont locales à chaque réplique. Pour couvrir toutes les répliques du service, interrogez plutôt `clusterAllReplicas(default, system.query_log)` ou `clusterAllReplicas(default, system.processes)`. Sur un serveur unique sans cluster `default`, comme l&#39;image tout-en-un, interrogez directement les tables.
+
 <div id="materialize-frequently-queried-attributes">
   ## Optimisation 1. Matérialiser les attributs fréquemment interrogés {#materialize-frequently-queried-attributes}
 </div>

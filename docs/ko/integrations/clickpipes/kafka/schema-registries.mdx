@@ -16,10 +16,10 @@ Protobuf 레코드 값의 경우 스키마 레지스트리를 구성하지 않�
 
 ## 스트리밍 ClickPipes에서 지원하는 스키마 레지스트리 {#supported-schema-registries}
 
-Kafka ClickPipes는 두 가지 유형의 스키마 레지스트리를 지원합니다.
+Kafka ClickPipes는 두 가지 계열의 스키마 레지스트리를 지원합니다.
 
 * [Confluent 호환 레지스트리](#confluent-compatible-registries): Confluent 스키마 레지스트리와 API 호환되는 모든 레지스트리로, Confluent 스키마 레지스트리 및 Redpanda 스키마 레지스트리 등이 포함됩니다. Avro와 Protobuf를 지원합니다.
-* [AWS Glue 스키마 레지스트리](#aws-glue-schema-registry): 일반적으로 Amazon MSK에서 AWS Glue SerDe를 사용해 직렬화한 Avro 데이터용입니다.
+* [AWS Glue 스키마 레지스트리](#aws-glue-schema-registry): 일반적으로 Amazon MSK에서 AWS Glue SerDe를 사용해 직렬화한 Avro 및 Protobuf 데이터용입니다.
 
 Kinesis ClickPipes는 Avro 및 Protobuf 데이터에 대해 AWS Glue 스키마 레지스트리를 지원합니다.
 
@@ -61,12 +61,12 @@ ClickPipes는 구성된 스키마 레지스트리에서 스키마를 동적으�
 
 ## AWS Glue 스키마 레지스트리 {#aws-glue-schema-registry}
 
-producer가 AWS Glue SerDe를 사용해 Avro를 직렬화하는 경우(예: Amazon MSK 토픽에서 `AWSKafkaAvroSerializer` 사용), ClickPipes는 AWS Glue 스키마 레지스트리에서 해당 스키마를 직접 확인할 수 있습니다. Glue는 Confluent 호환 레지스트리와 wire 형식 및 API가 다르므로 별도로 구성합니다.
+producer가 AWS Glue SerDe를 사용해 Avro 또는 Protobuf를 직렬화하는 경우(예: Amazon MSK 토픽에서 `AWSKafkaAvroSerializer` 또는 `GlueSchemaRegistryKafkaSerializer` 사용), ClickPipes는 AWS Glue 스키마 레지스트리에서 해당 스키마를 직접 확인할 수 있습니다. Glue는 Confluent 호환 레지스트리와 wire 포맷 및 API가 다르므로 별도로 구성합니다.
 
 AWS Glue 스키마 레지스트리는 ClickHouse Cloud 콘솔, ClickPipes API, Terraform 프로바이더를 통해 구성할 수 있습니다.
 
 <Note>
-  **Kafka:** AWS Glue 레지스트리는 Avro 형식만 지원합니다. **Kinesis:** AWS Glue 레지스트리는 `AvroConfluent`와 `Protobuf`를 지원합니다. Glue SerDe를 통한 JSON은 지원되지 않습니다.
+  AWS Glue 레지스트리는 Kafka와 Kinesis 모두에서 `AvroConfluent` 및 `Protobuf` 포맷을 지원합니다. Glue SerDe를 통한 JSON은 지원되지 않습니다. Confluent 호환 레지스트리와 달리 레지스트리에서 포맷을 감지할 수 없으므로, ClickPipe를 생성할 때 포맷을 명시적으로 선택하십시오.
 </Note>
 
 ### 구성 {#glue-configuration}
@@ -87,6 +87,8 @@ ClickPipe 생성 마법사의 Kafka 또는 Kinesis 연결 단계에서 **스키�
 | IAM 역할 ARN | 조건부   | 레지스트리 액세스 전용 역할입니다. 브로커가 IAM 인증을 사용하는 경우에는 선택 사항이며, 그렇지 않으면 필수입니다.                 | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
 구성할 레지스트리 URL은 없습니다. Glue SerDe에서 생성되는 모든 레코드에는 해당 스키마 버전의 ID가 포함됩니다. ClickPipes는 `glue:GetSchemaVersion`을 사용해 이를 해석하고, 고유한 스키마 버전마다 API를 한 번 호출해 캐시합니다. 스키마 진화는 자동으로 처리됩니다. 스트림 중간에 레코드가 새 스키마 버전으로 전환되면 처음 발견될 때 해석됩니다. Kinesis의 경우 [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 통해 동일한 필드를 구성하십시오.
+
+Protobuf의 경우 레코드는 AWS Glue 직렬화기가 기록한 프레이밍을 사용해야 합니다. 즉, 18바이트 Glue 헤더, 부호 없는 varint 메시지 인덱스, 직렬화된 메시지 순으로 구성됩니다. 인덱스는 스키마 파일(schema file)에 정의된 모든 메시지(중첩 메시지 포함)를 정규화된 전체 이름 순으로 정렬했을 때 해당 메시지가 위치한 순번입니다. 메시지 인덱스 없이 Glue 헤더만 포함된 레코드는 지원되지 않습니다.
 
 ### IAM 설정 {#glue-iam-setup}
 
@@ -184,18 +186,19 @@ Kafka ClickPipe가 이미 IAM을 통해 MSK에 인증하는 경우, ClickPipes�
 
 ### 문제 해결 {#glue-troubleshooting}
 
-| 오류                                                                                           | 원인 및 해결 방법                                                                                                                             |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | 레지스트리 액세스에 사용되는 IAM 아이덴티티에 `glue:GetSchemaVersion` 권한이 없습니다. 역할 기반 접근에서는 역할의 신뢰 정책에 서비스 역할 ID가 지정되지 않았을 수도 있습니다. 위의 IAM 설정을 다시 확인하십시오. |
-| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | 신뢰 정책에 잘못된 주체가 지정되어 있습니다. 오류에는 역할 수임을 시도한 정확한 역할이 포함됩니다. 신뢰 정책에 해당 값을 사용하십시오.                                                          |
-| `schema version … not found in Glue schema registry`                                         | 레코드가 구성된 계정 또는 리전에 존재하지 않는 스키마 버전을 참조합니다. **AWS 리전**이 레지스트리의 리전과 일치하는지 확인하십시오.                                                         |
-| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | producer가 파이프에 지정된 레지스트리와 다른 레지스트리에 스키마를 등록하고 있습니다. **레지스트리 이름**을 수정하거나 producer가 올바른 레지스트리를 사용하도록 설정하십시오.                             |
-| `the AWS Glue schema registry only supports the Avro format`                                 | Glue 파이프는 Avro만 지원합니다. Glue SerDe를 통한 JSON 및 Protobuf는 지원되지 않습니다.                                                                      |
+| 오류                                                                                           | 원인 및 해결 방법                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access denied retrieving schema version …: check the IAM role grants glue:GetSchemaVersion` | 레지스트리 액세스에 사용되는 IAM 아이덴티티에 `glue:GetSchemaVersion` 권한이 없습니다. 역할 기반 접근에서는 역할의 신뢰 정책에 서비스 역할 ID가 지정되지 않았을 수도 있습니다. 위의 IAM 설정을 다시 확인하십시오.                                       |
+| `… is not authorized to perform: sts:AssumeRole on resource: …`                              | 신뢰 정책에 잘못된 주체가 지정되어 있습니다. 오류에는 역할 수임을 시도한 정확한 역할이 포함됩니다. 신뢰 정책에 해당 값을 사용하십시오.                                                                                                |
+| `schema version … not found in Glue schema registry`                                         | 레코드가 구성된 계정 또는 리전에 존재하지 않는 스키마 버전을 참조합니다. **AWS 리전**이 레지스트리의 리전과 일치하는지 확인하십시오.                                                                                               |
+| `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | producer가 파이프에 지정된 레지스트리와 다른 레지스트리에 스키마를 등록하고 있습니다. **레지스트리 이름**을 수정하거나 producer가 올바른 레지스트리를 사용하도록 설정하십시오.                                                                   |
+| `the AWS Glue schema registry only supports the Avro and Protobuf formats`                   | ClickPipe에서 Glue 레지스트리를 JSON 등 지원되지 않는 포맷과 함께 사용하고 있습니다. Avro 또는 Protobuf를 선택하십시오.                                                                                           |
+| `message index … out of range: Glue schema version … defines N messages`                     | 레코드에 Glue 헤더는 있지만 유효한 메시지 인덱스가 없습니다. 이는 주로 사용자 정의 직렬화기가 인덱스를 생략했기 때문입니다. 이 경우 ClickPipes는 메시지의 첫 번째 바이트를 인덱스로 읽습니다. AWS Glue 직렬화기와 마찬가지로 producer에서 인덱스를 기록하십시오. |
 
 ### 제한 사항 {#glue-limitations}
 
-* Kafka는 Avro만 지원합니다. Glue SerDe를 통한 JSON Schema 및 Protobuf 형식은 지원되지 않습니다.
-* Kinesis는 AWS Glue 스키마 레지스트리를 통해 `AvroConfluent` 및 `Protobuf`를 지원합니다. 업로드한 Protobuf 스키마는 스키마 레지스트리와 함께 사용할 수 없습니다.
+* Kafka와 Kinesis는 AWS Glue 스키마 레지스트리를 통해 `AvroConfluent` 및 `Protobuf`를 지원합니다. Glue SerDe를 통한 JSON Schema는 지원되지 않습니다.
+* 업로드한 Protobuf 스키마는 스키마 레지스트리와 함께 사용할 수 없습니다.
 
 ## 스키마 매핑 {#schema-mapping}
 

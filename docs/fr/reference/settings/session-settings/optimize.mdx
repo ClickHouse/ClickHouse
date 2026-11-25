@@ -80,7 +80,7 @@ Réécrit `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` en `dictGet('
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Active l’optimisation de DISTINCT si certaines colonnes de DISTINCT constituent un préfixe du tri. Par exemple, un préfixe de la clé de tri dans MergeTree ou de l’instruction ORDER BY
+Active l’optimisation de DISTINCT si certaines colonnes de DISTINCT constituent un préfixe du tri. Par exemple, un préfixe de la clé de tri dans MergeTree ou de l’instruction ORDER BY. Elle ne s’applique pas à une lecture `FINAL` utilisant le `FINAL` vertical (voir `enable_vertical_final`), sauf si une clause `LIMIT` permet au `DISTINCT` d’interrompre la lecture plus tôt ou si la lecture est déjà ordonnée pour une autre raison, par exemple en raison d’un `ORDER BY`.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

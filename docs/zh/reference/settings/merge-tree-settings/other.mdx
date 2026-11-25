@@ -88,7 +88,7 @@ profile events `AdaptiveCodecBlocksPriced`、`AdaptiveCodecBlocksRepriced` 和 `
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "在默认自动统计信息中弃用 `minmax` 统计类型，并以 `basic`（`minmax` 的超集）替代；同时将 `uniq` 替换为 `uniq_v2`，以减少插入和内存开销"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "默认启用自动统计信息"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "26.7 将 `minmax, uniq` 替换为 `basic, uniq_v2`（`basic` 是已弃用的 `minmax` 的超集，`uniq_v2` 在插入操作、合并和内存方面的开销更小）。该变更记录在 26.4 版本中，因此将 `compatibility` 设置为 26.4 至 26.6 时不会恢复为 `minmax, uniq`。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "basic, uniq_v2"},{"label": "默认启用自动统计信息。26.4 至 26.6 实际发布的是 `minmax, uniq`，但将 `compatibility` 设置为这些版本时会得到 `basic, uniq_v2`：统计信息只影响查询规划，不影响结果，而在较新版本中，合并每个分片的大型 `uniq` 状态会使查询规划慢很多倍。"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "新增设置"}]}]} />
 
 以逗号分隔的统计类型列表，用于在所有适用列上自动计算。
 支持的统计类型：basic、tdigest、countmin、uniq、uniq&#95;v2。
@@ -194,6 +194,22 @@ Keeper 往返通信即可检测重复项。
 例如 `FirstApplicable(PCO, ZSTD(3))` 会使用 `PCO` 压缩数值，使用 `ZSTD(3)` 压缩其他数据。其候选编解码器中
 必须至少有一个适用于任意数据类型，且不允许包含有损编解码器。
 默认值：空字符串 (未定义) 。
+
+## delay_merges_after_startup_seconds {#delay_merges_after_startup_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "60"},{"label": "新增设置，用于在服务器启动后延迟后台合并"}]}]} />
+
+对于服务器在启动时加载的表，其后台合并会在该表启动后延迟此设置指定的秒数才开始，
+以免重启后的首批查询与后台合并争抢资源。该表在此服务器上首次执行 `INSERT`、`OPTIMIZE`、
+变更或轻量级更新时，延迟即告结束。`ReplicatedMergeTree` 表的副本会推迟其
+复制队列中的合并，包括原本会以已合并的数据片段形式拉取的合并，因此
+`SYSTEM SYNC REPLICA` 以及在其他副本上发起的变更可能需要一直等待，
+直到延迟结束。通过 `CREATE TABLE` 创建、通过
+`ATTACH TABLE` 附加或通过 `UNDROP TABLE` 恢复的表不受延迟影响。当某个分区的活跃 parts
+数量不少于 `parts_to_delay_insert` 时，合并不会被延迟。
+设置为 0 表示禁用延迟。
 
 ## disk {#disk}
 
@@ -785,6 +801,17 @@ ClickHouse 在执行任何 ATTACH 或 CREATE 表操作时，都会扫描所有�
 在滚动升级期间，将其设置为 `basic`，以便新服务器生成
 与旧服务器兼容的数据分区片段。升级完成后，
 切换为 `with_types` (或 `with_missing_columns`) 以启用相应功能。
+
+## serialize_statistics_bounds_with_column_type {#serialize_statistics_bounds_with_column_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置"}]}]} />
+
+启用后，`minmax` 和 `basic` 统计信息中的最小值和最大值将按列类型的序列化方式写入，采用统计信息文件格式 `V5`，
+而不再使用 `V4` 的通用 `Field` 编码。
+旧版本无法读取 `V5` 格式的统计信息文件，因此请在所有副本完成升级后再启用此设置：
+一旦降级，启用该设置后写入的 parts 的统计信息都必须重新物化。
 
 ## share_nested_offsets {#share_nested_offsets}
 

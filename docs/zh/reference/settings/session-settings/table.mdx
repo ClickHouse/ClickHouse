@@ -18,11 +18,11 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "当其他读取操作使用分布式缓存时，对象存储表引擎和表函数也通过分布式缓存读取。"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "新增设置"}]}]} />
 
-仅在 ClickHouse Cloud 中生效。允许通过表引擎 / 表函数 (s3、azure 等) 从分布式缓存中读取。缓存以对象的 ETag 作为键，因此原地覆盖的对象不会返回过时数据。如果对象缺少 ETag，或其 ETag 并非强内容标识符，则直接从对象存储中读取该对象。
+仅在 ClickHouse Cloud 中生效。允许通过表引擎 / 表函数 (s3、azure、Iceberg、Delta Lake 等) 从分布式缓存读取数据。`auto` (默认值) 表示：当其他读取操作使用分布式缓存时 (由服务器设置 `enable_read_through_distributed_cache` 和设置 `force_read_through_distributed_cache` 决定) ，此类读取也通过分布式缓存进行。缓存以对象的 ETag 作为键，确保被原地覆盖的对象不会返回过时数据；或者以从表记录 (Iceberg、Delta Lake) 中获取的数据文件不可变身份作为键，从而无需发送 `HEAD` 请求。没有强 ETag 或此类身份的对象会直接从对象存储读取；缓存服务器无法重复执行的读取也是如此，包括：`url` 表、使用 `NOSIGN` 或 `headers` 的 `s3` 读取、使用完全限定路径的数据文件 (Delta Lake 浅克隆) ，以及 `azure` 读取 (除非该设置为 `1`) 。
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

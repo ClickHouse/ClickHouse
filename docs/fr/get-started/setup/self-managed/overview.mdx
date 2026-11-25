@@ -8,6 +8,10 @@ keywords: ['installation', 'autogéré', 'Linux', 'MacOS', 'Windows', 'Docker']
 
 Installez ClickHouse sur l’infrastructure que vous gérez.
 
+<Note>
+  Les binaires Linux pour `amd64` et `aarch64` sont liés statiquement à la bibliothèque C `musl`. Les noms d’hôte sont résolus uniquement à partir de `/etc/hosts` et des serveurs DNS indiqués dans `/etc/resolv.conf` : le Name Service Switch (`/etc/nsswitch.conf`) n’est pas utilisé. Les noms d’hôte fournis uniquement par des modules NSS tels que `sss`, `mdns` ou `ldap` ne peuvent donc pas être résolus.
+</Note>
+
 ## Développement local {#local-development}
 
 Exécutez ClickHouse sur votre machine pour compiler, tester et expérimenter.

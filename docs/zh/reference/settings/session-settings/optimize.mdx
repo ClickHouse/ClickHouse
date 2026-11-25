@@ -80,7 +80,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-如果 DISTINCT 中的某些列构成排序前缀，则启用 DISTINCT 优化。例如，MergeTree 中 sorting key 的前缀，或 ORDER BY 语句中的前缀。
+如果 DISTINCT 中的某些列构成排序前缀，则启用 DISTINCT 优化。例如，MergeTree 中 sorting key 的前缀，或 ORDER BY 语句中的前缀。对于使用 vertical `FINAL` (参见 `enable_vertical_final`) 的 `FINAL` 读取，该优化不会生效；除非 `LIMIT` 使 `DISTINCT` 能够提前停止读取，或者读取因其他原因 (例如 `ORDER BY`) 本身已按顺序进行。
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

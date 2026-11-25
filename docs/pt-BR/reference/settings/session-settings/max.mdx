@@ -72,6 +72,8 @@ O tamanho máximo dos blocos de dados não comprimidos antes de serem comprimido
 
 Não confunda blocos usados para compressão (um bloco de memória composto por bytes) com blocos usados no processamento de consultas (um conjunto de linhas de uma tabela).
 
+Um bloco comprimido contém no máximo 256 MiB de dados não comprimidos, portanto valores acima de 256 MiB são tratados como 256 MiB. O bloco é reduzido ainda mais quando o codec poderia comprimi-lo para mais de 512 MiB, o que só acontece com uma cadeia de codecs que expandem os dados. Dados gravados em blocos maiores por versões mais antigas não podem ser lidos.
+
 ## max_consume_snapshots {#max_consume_snapshots}
 
 <ExperimentalBadge />

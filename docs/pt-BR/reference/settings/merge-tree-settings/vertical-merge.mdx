@@ -49,8 +49,8 @@ Se true, a exclusão leve é otimizada durante a mesclagem vertical.
 
 Se true, uma mesclagem com TTL de linhas pode usar o algoritmo de mesclagem vertical em vez de recorrer a uma
 mesclagem horizontal. Aplica-se apenas aos modos de mesclagem `MergeTree`, `Replacing`, `Collapsing` ou `VersionedCollapsing`,
-a tabelas com TTL de linhas e sem TTL de coluna ou de `GROUP BY`, e somente quando nenhuma parte
-envolvida na mesclagem tiver uma exclusão leve. Qualquer outra mesclagem com TTL continua sendo horizontal.
+a tabelas com TTL de linhas e sem TTL de coluna ou de `GROUP BY`. Qualquer outra mesclagem com TTL continua sendo
+horizontal.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

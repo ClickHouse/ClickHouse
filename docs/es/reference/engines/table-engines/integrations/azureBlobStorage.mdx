@@ -13,8 +13,15 @@ Este motor ofrece integración con el ecosistema de [Azure Blob Storage](https:/
 ## CREATE TABLE {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -30,9 +37,9 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_key` - si se usa storage&#95;account&#95;url, aquí puede especificarse la clave de la cuenta
 * `format` — El [formato](/es/reference/formats/index) del archivo.
 * `compression` — Valores admitidos: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. De forma predeterminada, detectará automáticamente la compresión según la extensión del archivo. (equivale a establecer `auto`). Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
-* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados con estilo Hive, con ID de Snowflake como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa ninguna estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición.
-* `partition_columns_in_data_file` - Solo se usa con la estrategia de partición `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.
-* `extra_credentials` - Use `client_id` y `tenant_id` para la autenticación. Si se proporcionan extra&#95;credentials, tienen prioridad sobre `account_name` y `account_key`.
+* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados con estilo Hive, con ID de Snowflake como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa ninguna estrategia de particionamiento e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de particionamiento.
+* `partition_columns_in_data_file` - Solo se usa con la estrategia de particionamiento `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.
+* `extra_credentials` - Use `client_id` y `tenant_id` para la autenticación con Workload Identity de Azure. Es mutuamente excluyente con `account_name` / `account_key` y requiere `storage_account_url` (no `connection_string`).
 
 **Ejemplo**
 

@@ -95,7 +95,7 @@ TTL, 프로젝션, 보조 인덱스(secondary index), 패치 파트 또는 비�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "행 마스크 UPDATE 병합을 기본으로 활성화"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "행 마스크 UPDATE 병합을 기본으로 활성화"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "이 변경 사항은 26.8로 백포트되었으며 해당 버전에 기록되어 있습니다."}]}]} />
 
 Full 스토리지 형식을 사용하는 Wide 파트를 뮤테이션할 때 인접한 단일 `UPDATE _row_exists = 0` 명령을
 하나로 병합합니다. 영구 저장된 뮤테이션 명령과 해당

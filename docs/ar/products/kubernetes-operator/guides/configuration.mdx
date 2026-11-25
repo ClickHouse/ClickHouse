@@ -890,26 +890,23 @@ spec:
   ## إعدادات ClickHouse {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### كلمة مرور المستخدم `default` {#default-user-password}
-</div>
+### كلمة مرور المستخدم `default` {#default-user-password}
 
 يضبط `spec.settings.defaultUserPassword` كلمة مرور المستخدم المضمّن `default`.
-وفّر القيمة من مفتاح في Secret (مستحسن) أو في ConfigMap
-تنشئه، بدلًا من تضمينها مباشرةً داخل CR:
+وفّر القيمة من مفتاح في Secret تنشئه، بدلًا من
+تضمينها مباشرةً داخل CR:
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-حدِّد واحدًا فقط من `secret` أو `configMap`، على أن يشتمل أيٌّ منهما على كلٍّ من `name` (الكائن)
-و`key` (الإدخال الذي يحتوي على كلمة المرور).
+حدِّد كلًّا من `name` (الـ Secret) و`key` (الإدخال الذي يحتوي على كلمة المرور).
 
 <div id="password-types">
   #### أنواع كلمات المرور {#password-types}
@@ -970,14 +967,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### استخدام ConfigMap {#using-configmap-for-user-passwords}
-</div>
+#### استخدام ConfigMap (تم إهماله) {#using-configmap-for-user-passwords}
 
-يعمل ConfigMap بالطريقة نفسها، لكن محتوياته ليست محمية
-كما في Secret.
-استخدمه فقط للقيم غير الحساسة أو للقيم التي جرى تجزئتها بالفعل، مثل
-بصمة `password_sha256_hex`:
+<Warning>
+  تم إهمال المصدر `configMap` وأُزيل في `v1alpha2`. لا تتمتع ConfigMaps
+  بالحماية نفسها التي تتمتع بها Secret، ويمكن كسر تجزئات كلمات المرور غير المملّحة بهجمات brute-force.
+  لذا خزّن كلمة المرور، سواء كانت نصًا صريحًا أو قيمة مجزّأة، في Secret بدلًا من ذلك.
+</Warning>
+
+يعمل ConfigMap بالطريقة نفسها التي يعمل بها Secret، لكن محتوياته ليست محمية:
 
 ```yaml
 spec:
@@ -990,7 +988,7 @@ spec:
 ```
 
 <Note>
-  لا تضع كلمة مرور غير مشفّرة في ConfigMap. استخدم Secret لأي قيمة غير مشفّرة
+  لا تضع كلمة مرور بنص صريح في ConfigMap. استخدم Secret لأي قيمة بنص صريح
   (`passwordType: password`).
 </Note>
 

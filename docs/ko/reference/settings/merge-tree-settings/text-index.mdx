@@ -24,9 +24,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "텍스트 인덱스의 기본 딕셔너리 블록 크기 증가"}]}]} />
 
 텍스트 인덱스의 기본 딕셔너리 블록 크기입니다.
 명시적으로 지정한 `dictionary_block_size` 인덱스 인수로 재정의할 수 있습니다.

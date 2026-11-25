@@ -57,6 +57,10 @@ ClickHouse 테이블 컬럼의 데이터 타입은 삽입되는 Avro 데이터�
 
 데이터를 가져오는 중 스키마에서 필드를 찾을 수 없고 설정 [`input_format_avro_allow_missing_fields`](/ko/reference/settings/formats/input-format#input_format_avro_allow_missing_fields)가 활성화되어 있으면, 오류를 발생시키는 대신 기본값이 사용됩니다.
 
+### 병렬 파싱 {#parallel-parsing}
+
+[`input_format_parallel_parsing`](/ko/reference/settings/formats/input-format#input_format_parallel_parsing)이 활성화되어 있으면 Avro 객체 컨테이너 파일(object container file)은 블록(동기화 마커) 경계를 기준으로 분할되고, 각 블록(blocks)은 여러 스레드에서 파싱됩니다. 블록 전체가 버퍼에 저장된 상태로 동시에 디코딩되므로 최대 메모리 사용량은 파싱 스레드 수에 비례하여 증가합니다. 순차적으로 파싱하여 메모리 사용량을 낮게 유지하려면 `input_format_parallel_parsing = 0`으로 설정하십시오. 이 내용은 객체 컨테이너 파일이 아닌 [`AvroConfluent`](/ko/reference/formats/Avro/AvroConfluent)에는 적용되지 않습니다.
+
 ### Avro 파일에 데이터 쓰기 {#writing-avro-data}
 
 ClickHouse 테이블의 데이터를 Avro 파일에 쓰려면 다음과 같이 하십시오:

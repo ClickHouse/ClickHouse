@@ -165,7 +165,15 @@ SYSTEM RELOAD DELTA KERNEL TRACING level
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-清空向量相似度索引缓存。
+清空[向量相似度索引](/zh/reference/engines/table-engines/mergetree-family/annindexes)的缓存，该缓存用于在内存中保存已反序列化的向量索引粒度。
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+使用 `FOR TABLE` 时，只会移除指定 `MergeTree` 表的缓存条目。
+
+需要具有针对所有表或单个表的 `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` 特权。
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1030,6 +1038,29 @@ SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
   所有状态的 parts 都会被移到 `detached/` 文件夹中。数据丢失前处于活动状态 (committed) 的 parts 会被附加。
 </Note>
 
+该语句还会清空服务端级别的数据缓存：恢复后的 parts 会获得新名称，而这些名称可能与其他 parts 先前使用的名称和路径相同，因此与这些名称对应的已缓存条目将会失效。
+
+这会影响服务端上的所有表，而不仅是被恢复的表：针对这些表的查询需要重新填充缓存。使用 `ON CLUSTER` 时，每台恢复了该副本的服务端上的缓存都会被清空。
+
+被清空的缓存包括：
+
+* [标记](#drop-mark-cache)
+* [未压缩](#drop-uncompressed-cache)
+* [主索引](#drop-primary-index-cache)
+* [统计信息](#drop-statistics-cache)
+* [索引标记](#drop-index-mark-cache)
+* [索引未压缩](#drop-index-uncompressed-cache)
+* [向量相似度索引](#drop-vector-similarity-index-cache)
+* [文本索引](#drop-text-index-caches)
+* [mmap](#drop-mmap-cache)
+* [页](#drop-page-cache)
+* [列](#drop-columns-cache)
+* [查询条件](#drop-query-condition-cache)
+* [加密头](#drop-encryption-headers-cache)
+* `UNIQUE KEY` 删除 bitmap 缓存
+
+[查询缓存](#drop-query-cache)和[文件系统缓存](#drop-filesystem-cache)则会保留。
+
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
 在[可能]存在数据但 Zookeeper 元数据已丢失时，恢复副本。
@@ -1209,7 +1240,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-等待正在进行中的刷新完成。如果当前没有刷新在运行，则会立即返回。如果最近一次刷新尝试失败，则会报错。
+等待正在进行中的刷新完成，包括已到期但仍在等待 `refresh_coordination_jitter_ms` 延迟的刷新。如果当前没有刷新在运行或到期，则会立即返回。如果最近一次刷新尝试失败，则会报错。
 
 可在创建新的可刷新materialized view 后 (不带 EMPTY 关键字) 立即使用，以等待初始刷新完成。
 

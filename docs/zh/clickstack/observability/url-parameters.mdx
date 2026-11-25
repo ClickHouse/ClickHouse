@@ -76,14 +76,31 @@ keywords: ['ClickHouse Observability', 'URL 参数', '查询参数', '深度链�
 
 已保存的仪表盘。省略 `<dashboardId>`(即 `/dashboards`)可打开一个未保存的临时仪表盘。有关构建仪表盘的详细信息，请参阅[仪表盘](/zh/clickstack/observability/features/dashboards/overview)。
 
-| 参数                  | 格式                                                                                                                                  | 描述                                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `from`, `to`        | 自 Unix 纪元起的毫秒数                                                                                                                      | 应用于所有卡片的时间范围。省略时默认为最近 15 分钟。                    |
-| `where`             | 字符串                                                                                                                                 | 仪表盘级别的过滤查询文本，作用于所有卡片。                           |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where` 所使用的查询语言。                               |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 结构化的仪表盘筛选条件值。此示例表示在 `ServiceName` 筛选下拉菜单中选中了两项。 |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的桶大小。`auto` 会根据所选时间范围自动确定桶大小。             |
-| `highlightedTileId` | 字符串                                                                                                                                 | 滚动至指定卡片并将其高亮显示，适用于从告警链接跳转的场景。                   |
+| 参数                  | 格式                                                                                                                                  | 描述                                                                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `from`, `to`        | 自 Unix 纪元起的毫秒数                                                                                                                      | 应用于所有卡片的时间范围。省略时默认为最近 15 分钟。                                                                                                   |
+| `where`             | 字符串                                                                                                                                 | 仪表盘级别的过滤查询文本，作用于所有卡片。                                                                                                          |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where` 所使用的查询语言。                                                                                                              |
+| `filters`           | 由筛选值条目组成的 JSON 数组                                                                                                                   | 仪表盘中[自定义筛选器和变量](/zh/clickstack/observability/features/dashboards/overview#custom-filters)的选中值。请参阅[筛选值](#dashboard-filter-values)。 |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的桶大小。`auto` 会根据所选时间范围自动确定桶大小。                                                                                            |
+| `highlightedTileId` | 字符串                                                                                                                                 | 滚动至指定卡片并将其高亮显示，适用于从告警链接跳转的场景。                                                                                                  |
+
+### 筛选值 {#dashboard-filter-values}
+
+`filters` 参数是一个 JSON 数组。每个条目用于设置一个筛选条件的选中值，格式为以下几种之一：
+
+| 条目                                                                                                                | 适用对象                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | 属于变量的筛选条件：静态值、SQL 查询值、PromQL 标签值、数据源和连接变量，以及启用了 **Available as variable** 的 SQL 表达式值筛选条件。`name` 为该筛选条件的变量名。                                                                                                                        |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [临时过滤器](/zh/clickstack/observability/features/dashboards/overview#adhoc-filters)。`name` 为该筛选条件的唯一名称，`operator` 取值为 `=`、`!=`、`=~`、`!~`、`LIKE`、`NOT LIKE` 或 `IN` 之一。`LIKE` 和 `NOT LIKE` 仅适用于 SQL 数据源——Prometheus 临时过滤器会忽略使用这两个运算符的条件。 |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | 不属于变量的 SQL 表达式值筛选条件。条件中的表达式必须与该筛选条件的 **Filter expression** 一致。                                                                                                                                                                     |
+
+规则如下：
+
+* 当变量条目与 `sql` 条目指向同一筛选条件时，以变量条目为准。在引入变量之前创建的链接 (所有筛选条件均使用 `sql` 条目) 仍可正常使用。
+* 对于数据源和连接变量，值可以填写 source 或连接的**名称**，而不必使用其 ID。系统会先按名称精确匹配，再进行不区分大小写的匹配。这样，即使同一 source 在不同环境中的 ID 不同，链接也能保持有效。
+* 单选筛选条件仅使用第一个值。
+* 与仪表盘上任何筛选条件都不匹配或格式有误的条目将被忽略。
 
 ### 示例：打开指定时间范围的仪表盘并高亮某个卡片 {#example-dashboard-highlight}
 
@@ -91,6 +108,30 @@ keywords: ['ClickHouse Observability', 'URL 参数', '查询参数', '深度链�
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### 示例：在变量型筛选条件中选择值 {#example-dashboard-variables}
+
+在变量名为 `service` 的筛选条件中选中 `checkout` 和 `payments`，并在变量名为 `severity` 的筛选条件中选中 `ERROR`。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### 示例：按名称选择数据源和连接 {#example-dashboard-source-variable}
+
+在名为 `logs` 的数据源变量中选择 `Production Logs` source，并在名为 `cluster` 的连接变量中选择 `Production` 连接。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### 示例：添加临时过滤条件 {#example-dashboard-adhoc}
+
+向唯一名称为 `adhoc` 的临时过滤器添加两个条件：`ServiceName` 为 `checkout` 或 `payments`，且 `SeverityText` 不为 `DEBUG`。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## 仪表盘列表 — `/dashboards/list` {#dashboards-list}

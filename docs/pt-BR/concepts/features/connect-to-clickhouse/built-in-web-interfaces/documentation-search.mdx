@@ -1,0 +1,42 @@
+---
+description: 'Documentação da interface web integrada de busca na documentação, disponibilizada no caminho `/docs` da interface HTTP e baseada na tabela `system.documentation`'
+sidebarTitle: 'Busca na documentação'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search
+title: 'Busca na documentação'
+doc_type: 'reference'
+---
+
+A página de busca na documentação é uma pequena interface web autossuficiente que oferece busca instantânea na documentação de referência embutida. Ela é disponibilizada no caminho `/docs` de qualquer porta HTTP do ClickHouse.
+
+Para abri-la, acesse `/docs` em qualquer porta HTTP do ClickHouse (por exemplo, `http://localhost:8123/docs`).
+
+## O que ela faz {#what-it-does}
+
+A página consulta a tabela [`system.documentation`](/pt-BR/reference/system-tables/documentation) via HTTP à medida que você digita e renderiza o Markdown da entidade selecionada. Como lê `system.documentation`, ela abrange todas as entidades que essa tabela expõe — funções, funções de agregação, funções de tabela, motores de tabela, motores de banco de dados, tipos de dados, configurações, formatos, codecs de compressão, eventos de criação de perfil, métricas, as próprias tabelas de sistema e muito mais — e sempre corresponde à documentação embutida no servidor em execução.
+
+Ao digitar na caixa de busca, as correspondências aparecem em uma lista com cores por tipo; ao selecionar uma correspondência, sua documentação é renderizada. A renderização inclui:
+
+* um link com ícone de lápis ao lado do título da entidade que abre seu arquivo-fonte no GitHub, obtido da coluna `source` de `system.documentation`;
+* realce de sintaxe do SQL do ClickHouse em blocos de código, usando o mesmo analisador léxico embutido (`Lexer.wasm`) da UI [`/play`](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http);
+* fórmulas matemáticas em TeX via [KaTeX](https://katex.org/) (por exemplo, a fórmula na página `corr`);
+* avisos `:::note`/`:::tip`/…, âncoras de títulos com links compartilháveis e um botão &quot;Copiar&quot; exibido ao passar o mouse sobre blocos de código;
+* links relativos resolvidos para outra entidade documentada dentro da aplicação, quando ela existe, ou, caso contrário, para `https://clickhouse.com/docs`; as referências &quot;Related&quot; e &quot;Alias of&quot; viram links internos da aplicação.
+
+O termo de busca atual, a entidade aberta e a seção são refletidos no fragmento da URL, o que permite criar um link direto para uma página ou seção específica, restaurada pelos botões de voltar/avançar do navegador. Um seletor de tema claro/escuro (com detecção automática) segue o mesmo padrão do `/play`.
+
+## Conexão {#connecting}
+
+O cabeçalho tem os campos `URL`, `user` e `password`, exatamente como em `/play`. Quando a página é servida pelo ClickHouse, a `URL` assume por padrão a origem atual; quando a página é aberta como arquivo local, o padrão é `http://localhost:8123/`, o que permite abrir a página localmente e conectá-la a um servidor remoto. O cache de nomes de links cruzados é reconstruído automaticamente quando a conexão muda.
+
+## Ativos {#assets}
+
+Todos os ativos — incluindo o renderizador de Markdown ([Marked](https://marked.js.org/)), o renderizador de fórmulas matemáticas (KaTeX, com suas fontes) e o analisador léxico de SQL — são fornecidos pelo próprio binary do ClickHouse quando a página é servida via HTTP. Nenhuma CDN de terceiros é carregada na origem HTTP do ClickHouse; assim, a página é autossuficiente, funciona offline e não executa código de rede de terceiros junto com as credenciais que manipula.
+
+## Considerações de segurança {#security}
+
+A página envia consultas ao endpoint HTTP do ClickHouse usando as credenciais informadas no cabeçalho, portanto as mesmas ressalvas aplicáveis ao protocolo HTTP também valem aqui:
+
+* Em ambientes não confiáveis, sempre disponibilize `/docs` via HTTPS para proteger as credenciais.
+* Restrinja o acesso no nível de rede (firewall, proxy reverso ou a configuração `listen_host`) da mesma forma que você restringe o acesso ao protocolo HTTP.
+
+`system.documentation` contém apenas a documentação de referência estática embutida no servidor, portanto a página não expõe nenhum dado das suas tabelas.

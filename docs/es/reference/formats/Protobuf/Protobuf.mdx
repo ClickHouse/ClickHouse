@@ -347,7 +347,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 Inserte los datos en ClickHouse Cloud y especifique el esquema como una consulta que se ejecutará.
-Envíe esta inserción a través de la [interfaz HTTP](/es/concepts/features/interfaces/http#insert-protobuf), donde el servidor analiza los datos y ejecuta la consulta del esquema: `clickhouse client` analiza los datos de entrada en el lado del cliente, donde la consulta del esquema falla.
+Envíe esta inserción a través de la [interfaz HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf), donde el servidor analiza los datos y ejecuta la consulta del esquema: `clickhouse client` analiza los datos de entrada en el lado del cliente, donde la consulta del esquema falla.
 La opción `--url-query` de curl (curl 7.87 y versiones posteriores) codifica cada parámetro para URL, por lo que la consulta y la consulta del esquema pueden escribirse tal cual:
 
 ```bash

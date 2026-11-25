@@ -1081,7 +1081,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · q-error <ra
 
 * `rows estimated <estimated_rows>` — 조인 순서 최적화기가 추정한 해당 측면의 행 수이며, 옆에 표시되는 실제 `rows`와 비교할 수 있도록 출력됩니다. 최적화기가 추정치를 산출하지 못한 경우 `no stats`로 표시됩니다([추정 조인 메트릭과 실제 조인 메트릭](#explain-analyze-join-estimation) 참조).
 * `rows <rows>` — 해당 측면에서 조인을 거친 전체 행 수입니다.
-* `q-error <ratio>`: `Output rows`와 마찬가지로 해당 측면의 `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` 값이며, 두 값이 모두 0이 아닐 때 출력됩니다. 해당 측면이 필터링된 테이블 읽기인 경우, 이 값은 필터 추정치의 q-error입니다. JOIN 런타임 필터는 적용된 측면에서 행을 제거하지만, 이는 어떤 추정치에도 반영되지 않습니다. 추정치만 비교하려면 `enable_join_runtime_filters = 0`으로 설정하십시오.
+* `q-error <ratio>`: `Output rows`와 마찬가지로 해당 측면의 `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` 값이며, 두 값이 모두 0이 아닐 때 출력됩니다. 해당 측면이 필터링된 테이블 읽기인 경우, 이 값은 필터 추정치의 q-error입니다. JOIN 런타임 필터는 적용된 측면에서 행을 제거하지만, 이는 어떤 추정치에도 반영되지 않습니다. 추정치만 비교하려면 `enable_join_runtime_filters = 0`으로 설정하십시오. 마찬가지로, 프라이머리 키 범위 단위로 분할된 해시 조인(`query_plan_join_shard_by_pk_ranges`)은 빌드 측이 비어 있는 범위의 경우, 해당 범위의 프로브 측 행이 결과에 나타날 수 없으면 이 행을 읽지 않습니다. 추정치만 비교하려면 `query_plan_join_shard_by_pk_ranges = 0`으로 설정하십시오.
 * `matched <matched_rows>` — 반대 측면에서 하나 이상의 조인 파트너와 일치한 해당 측면의 행 수입니다. 키가 아닌 *행*을 계산합니다. 예를 들어 키가 오른쪽에 세 번 나타나 일치하는 경우, 오른쪽의 세 행 모두 일치한 것으로 계산됩니다.
 * `match rate <match_rate>%` — 해당 측면에서 일치한 행의 비율이며, `100 * <matched_rows> / <rows>`로 계산됩니다.
 * `fanout <fanout>` — 해당 측면에서 일치한 행 하나당 평균적으로 생성된 출력 행 수입니다.

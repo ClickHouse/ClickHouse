@@ -94,6 +94,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 
 `_path` または `_file` に対する述語は、各アドレスが生成されるたびに適用されます。そのため、述語によって除外されるアドレスも生成され、上限のカウントに含まれます。スキップされるのは、一致しなかったアドレスの読み取りだけです。
 
+### パターンはアドレスを生成するものであり、一覧をフィルタするものではない {#patterns-generate-addresses}
+
+プレーンな HTTP にはサーバー上のファイルを列挙する手段がないため、`url` におけるパターンは、実在するファイルに対する*フィルタ*ではなく、アドレスの*ジェネレーター*として機能します。クエリが読み取るアドレスはすべて生成したうえでリクエストする必要があり、その数は [glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings/other#glob_expansion_max_elements) によって制限されます。[http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/ja/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) が有効であれば、存在しないことが判明したアドレスは読み取り時にスキップされます。
+
+[s3](/ja/reference/functions/table-functions/s3) などのオブジェクトストレージ向けテーブル関数は、これとは逆の仕組みで動作します。パターンは正規表現にコンパイルされ、バケットの一覧と照合されるため、膨大なキー空間を表すパターンであっても余分なコストはかかりません。そのため、同じパターンでも `s3` では問題なくすべて読み取られる一方、`url` では拒否されます。
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+パターンを一覧表示の結果と照合したい場合は、`s3`(または他のオブジェクトストレージ用テーブル関数)を使用してください。`glob_expansion_max_elements` を引き上げるのは、生成されたすべてのアドレスに実際にリクエストを送る必要がある場合に限ってください。
+
 ## HTTPインデックスページでのワイルドカード {#wildcards-with-http-index-pages}
 
 `url` および `URL` テーブルエンジンでは、ClickHouse は HTTP インデックスページ (HTML または平文) を取得し、レスポンスボディから URL を抽出することでワイルドカードを展開できます。これにより、サーバーがディレクトリ一覧を公開している場合は、`/**/` のようなパターンを使用できます。

@@ -117,7 +117,7 @@ https://github.com/ClickHouse/ClickHouse/issues/751) 。
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-拒绝使用相同表达式的主索引/二级索引和排序键
+拒绝使用相同表达式的主索引/二级索引和 sorting key，以及 sorting key、主键或采样键、二级索引或投影的 sorting key 表达式直接使用已存储列名称的情况
 
 ## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
 

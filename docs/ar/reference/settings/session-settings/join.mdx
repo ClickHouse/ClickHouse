@@ -15,9 +15,43 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,inequality" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "أُضيف `ie_join` إلى القائمة الافتراضية، لذا يُنفَّذ الربط الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام IEJoin بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` اسم مستعار قديم لـ `hash` وقد أُزيل من القائمة الافتراضية، لكنه لا يزال مقبولًا. ولا يتحكم إدراج `hash` أو `parallel_hash` في درجة توازي الربط."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "تم إهمال 'default' لصالح تحديد خوارزميات الربط صراحةً، كما أصبحت parallel_hash الآن مفضلة على التجزئة"}]}]} />
+<VersionHistory
+  rows={[
+  {
+    id: "row-1",
+    items: [
+      { label: "26.8" },
+      { label: "direct,parallel_hash,hash,ie_join" },
+      {
+        label:
+          "أُضيف `ie_join` (أصبح اسمه الآن `inequality`) إلى القائمة الافتراضية، لذا يُنفَّذ الربط الذي لا يحتوي قسم `ON` فيه إلا على شروط لعدم المساواة باستخدام خوارزمية ربط عدم المساواة بدلًا من `CROSS JOIN` مع عامل تصفية. ولأنه الأخير، لا يُستخدم إلا عندما لا تنطبق الخوارزميات الأخرى."
+      }
+    ]
+  },
+  { id: "row-2", items: [{ label: "26.12" }, { label: "direct,hash,inequality" }, { label: "أُعيدت تسمية `ie_join` إلى `inequality`. ولا يزال الاسم السابق `ie_join` مقبولًا بوصفه اسمًا بديلًا." }] },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.11" },
+      { label: "direct,hash,ie_join" },
+      {
+        label:
+          "`parallel_hash` اسم بديل قديم لـ `hash` وقد أُزيل من القائمة الافتراضية، لكنه لا يزال مقبولًا. ولا يتحكم إدراج `hash` أو `parallel_hash` في درجة توازي الربط."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "24.12" },
+      { label: "direct,parallel_hash,hash" },
+      { label: "تم إهمال 'default' لصالح تحديد خوارزميات الربط صراحةً، كما أصبحت parallel_hash الآن مفضلة على التجزئة" }
+    ]
+  }
+  ]}
+/>
 
 يحدد خوارزمية [ربط](/ar/reference/statements/select/join) المستخدمة.
 
@@ -39,13 +73,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُستخدم [ربط Grace بالتجزئة](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). توفّر Grace بالتجزئة خيار خوارزمية يتيح تنفيذ عمليات ربط معقدة بكفاءة مع الحد من استهلاك الذاكرة.
 يُقصد من اختيار `grace_hash` صراحةً استخدامه أساسًا لأغراض التشخيص. لتمكين الكتابة لـ الربط، اضبط [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) أو [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) بدلًا من ذلك.
 
-يكون `grace_hash` خارجيًا بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن فورًا، بينما يجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا يقسمانه إلا بعد تجاوز عتبة الكتابة. اختره عندما تعرف مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تجاوز المرحلة داخل الذاكرة. عتبة الكتابة نفسها هي التي تستخدمها كل خوارزمية تجزئة، وهي [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحدى القيمتين غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. دون عتبة، يُتجاوز `grace_hash` إلى الخوارزمية التالية في القائمة، ويُرفض إذا كان الخوارزمية الوحيدة.
+تكون `grace_hash` خارجية بدءًا من الكتلة الأولى: إذ يُقسَّم الجدول الأيمن مباشرةً، في حين تجمعه `hash` و`parallel_hash` في الذاكرة أولًا ولا تقسّمه إلا بعد تجاوزه عتبة الكتابة. اخترها عندما تعلم مسبقًا أن الجانب الأيمن لن يتسع في الذاكرة وتريد تخطي مرحلة المعالجة في الذاكرة. أما عتبة الكتابة نفسها فهي العتبة ذاتها التي تستخدمها جميع خوارزميات التجزئة، [`max_bytes_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)، ويجب أن تكون إحداهما غير صفرية ما لم يكن `legacy_join_size_limits_trigger_spilling` مفعّلًا. ومن دون عتبة، تُتخطّى `grace_hash` لصالح الخوارزمية التالية في القائمة، وتُرفض إذا كانت الخوارزمية الوحيدة فيها.
 
 تقرأ المرحلة الأولى من ربط grace الجدول الأيمن وتقسّمه إلى N حاوية بحسب قيمة التجزئة لأعمدة المفتاح (يكون N في البداية `grace_hash_join_initial_buckets`). ويتم ذلك بطريقة تضمن إمكانية معالجة كل حاوية بشكل مستقل. تُضاف صفوف من الحاوية الأولى إلى جدول تجزئة في الذاكرة بينما تُحفظ البقية على القرص. وإذا تجاوز حجم جدول التجزئة عتبة الكتابة، يزداد عدد الحاويات مع إعادة تعيين الحاوية المخصصة لكل صف. وأي صفوف لا تنتمي إلى الحاوية الحالية تُفرَّغ ويُعاد تعيينها.
 
 يدعم `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
-* تجزئة
+* hash
 
 تُستخدم [خوارزمية الربط بالتجزئة](https://en.wikipedia.org/wiki/Hash_join). وهي التنفيذ الأكثر عمومية الذي يدعم جميع تركيبات النوع وصرامة ومفاتيح الربط المتعددة المجموعة باستخدام `OR` في قسم `JOIN ON`.
 
@@ -82,21 +116,21 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) مع فرز كامل للجداول الموصولة قبل تنفيذ الربط.
 
-* ie&#95;join
+* inequality
 
-خوارزمية [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) المعتمدة على الفرز، والمخصصة لـ `JOIN` يحتوي قسم `ON` فيه على مقارنتين لعدم المساواة (`<` و`<=` و`>` و`>=`) بين تعبيرات الجداول الموصولة. تدعم `ALL INNER/LEFT/RIGHT/FULL JOIN` و`SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+خوارزمية [الربط بعدم المساواة](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) المعتمدة على الفرز، والمخصصة لـ `JOIN` يحتوي قسم `ON` فيه على مقارنتين لعدم المساواة (`<` و`<=` و`>` و`>=`) بين تعبيرات الجداول الموصولة. تدعم `ALL INNER/LEFT/RIGHT/FULL JOIN` و`SEMI`/`ANTI` `LEFT/RIGHT JOIN`. ويُقبل الاسم السابق `ie_join` كاسم بديل.
 
-يحدد موضعها في القائمة الأولوية. فإذا أُدرجت بعد الخوارزميات الأخرى، كما في القيمة الافتراضية، فلا تُستخدم `ie_join` إلا عندما لا يحتوي قسم `ON` على شروط مساواة. وإذا أُدرجت أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطي عدم مساواة، وتُطبَّق أي شروط متبقية كعامل تصفية على نتيجة الربط. عندما يوجد أكثر من شرطي عدم مساواة، يُختار الشرطان اللذان تستخدمهما الخوارزمية بحسب انتقائيتهما المقدرة من [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)؛ وفي غياب الإحصاءات، يُستخدم أول شرطين بحسب ترتيب ورودهما في الصياغة. من دون `ie_join` في القائمة، يُنفَّذ `INNER JOIN` الذي لا يحتوي إلا على شروط عدم مساواة بوصفه `CROSS JOIN` مع عامل تصفية، وتُنفَّذ أنواع الربط الأخرى بوصفها [ربطًا بحلقات متداخلة على مستوى الكتل](/ar/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+يحدد الموضع في القائمة الأولوية. فعند إدراجها بعد الخوارزميات الأخرى، كما في القيمة الافتراضية، لا تُستخدم `inequality` إلا عندما لا يحتوي قسم `ON` على شروط المساواة. أما عند إدراجها أولًا، فتُستخدم كلما احتوى قسم `ON` على شرطين من شروط عدم المساواة، وتُطبَّق أي شروط متبقية بوصفها عامل تصفية على نتيجة الربط. وعندما يكون هناك أكثر من شرطين من شروط عدم المساواة، يُختار الشرطان اللذان تستخدمهما الخوارزمية بحسب انتقائيتهما المقدّرة من [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)؛ وفي غياب الإحصاءات، يُستخدم أول شرطين بحسب ترتيب الصياغة. وإذا لم تكن `inequality` مدرجة في القائمة، يُنفَّذ `INNER JOIN` الذي يحتوي على شروط عدم المساواة فقط بوصفه `CROSS JOIN` مع عامل تصفية، وتُنفَّذ أنواع الربط الأخرى بوصفها [ربط الحلقة المتداخلة على مستوى الكتل](/ar/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
-يُجمَّع كلا الإدخالين في memory قبل الربط: يحدّ كل من [`max_rows_in_join`](/ar/reference/settings/session-settings/max-rows#max_rows_in_join) و[`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join) الإدخال المتراكم لكلا الجانبين معًا (وليس right side فقط)، مع تحديد الإجراء عند overflow عبر [`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode)؛ ولا تُحتسب ضمن الحد فهارس الفرز التي يبنيها المشغّل فوق الإدخال المتراكم. ويعمل مشغّل الربط نفسه في خيط تنفيذ واحد؛ ولا يجري التوازي إلا في عمليات الفرز السابقة لـ الربط على الإدخالات.
+يُجمَّع كلا الإدخالين في memory قبل الربط: يحدّ كل من [`max_rows_in_join`](/ar/reference/settings/session-settings/max-rows#max_rows_in_join) و[`max_bytes_in_join`](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join) الإدخال المتراكم لكلا الجانبين معًا (وليس الجانب الأيمن فقط)، مع تحديد الإجراء عند overflow عبر [`join_overflow_mode`](/ar/reference/settings/session-settings/join#join_overflow_mode)؛ ولا تُحتسب ضمن الحد فهارس الفرز التي يبنيها المشغّل فوق الإدخال المتراكم. ويعمل مشغّل الربط نفسه في خيط تنفيذ واحد؛ ولا يجري التوازي إلا في عمليات الفرز السابقة لـ الربط على الإدخالات.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-مماثل لـ `full_sorting_merge`، لكن عمليات الربط القائمة على equality والمتوافقة مع hash تُقسَّم إلى shards بحسب hash الخاص بمفاتيح الربط إلى عمليات ربط merge مستقلة لكل shard تعمل بالتوازي (حتى `max_threads`)، بدلًا من عملية ربط merge واحدة. وهذا يحافظ على memory usage المنخفض والمتدفق الخاص بـ ربط merge مع استخدام جميع خيوط التنفيذ، ولا تكون النتيجة مرتبة.
+مماثل لـ `full_sorting_merge`، لكن عمليات الربط القائمة على equality والمتوافقة مع التجزئة تُقسَّم إلى shards بحسب التجزئة الخاصة بمفاتيح الربط إلى عمليات ربط merge مستقلة لكل shard تعمل بالتوازي (حتى `max_threads`)، بدلًا من عملية ربط merge واحدة. وهذا يحافظ على memory usage المنخفض والمتدفق الخاص بـ ربط merge مع استخدام جميع خيوط التنفيذ، ولا تكون النتيجة مرتبة.
 
-ولا يُطبَّق التقسيم إلى shards بحسب hash لمفاتيح الربط إلا على عمليات الربط القائمة على equality البسيطة على أنواع مفاتيح يتسق hash الخاص بها مع مقارنة ربط merge، وفقط عندما لا يكون أي من الجانبين مرتبًا مسبقًا. ويُتخطّى في الحالات التالية:
+ولا يُطبَّق التقسيم إلى shards بحسب التجزئة لمفاتيح الربط إلا على عمليات الربط القائمة على equality البسيطة على أنواع مفاتيح تتسق التجزئة الخاصة بها مع مقارنة ربط merge، وفقط عندما لا يكون أي من الجانبين مرتبًا مسبقًا. ويُتخطّى في الحالات التالية:
 
-* عمليات ربط من نوع `ASOF`، وأنواع المفاتيح floating-point و`JSON` و`Object` و`Dynamic`: إذ لا تتسق hashes الخاصة بها مع مقارنة ربط merge، ولذلك قد تصل المفاتيح المتساوية إلى shards مختلفة.
+* عمليات ربط من نوع `ASOF`، وأنواع المفاتيح floating-point و`JSON` و`Object` و`Dynamic`: إذ لا تتسق التجزئات الخاصة بها مع مقارنة ربط merge، ولذلك قد تصل المفاتيح المتساوية إلى shards مختلفة.
 * الجوانب المرتبة مسبقًا (قراءة MergeTree بالترتيب، أو أي إدخال مرتب مسبقًا): قد يؤدي scatter المحافظ على الترتيب إلى عمليات ربط merge لكل shard إلى حدوث deadlock في pipeline. ويُحتفَظ بدلًا من ذلك بالقراءة بالترتيب وتحسينها `read_in_order_use_virtual_row`.
 * أثناء قيام initiator ببناء distributed plan (`make_distributed_plan`)، لأن الفرز scattered غير قابل للتسلسل من أجل التنفيذ عن بُعد. تُعيد local single-fragment plan وfragments الخاصة بكل worker التحسين مع تعطيل ذلك الإعداد، ولذلك لا يزال بإمكانها التقسيم إلى shards.
 
@@ -109,7 +143,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * default (تم إهمال)
 
 قيمة قديمة، يُرجى عدم استخدامها بعد الآن.
-مماثلة لـ `direct,hash`، أي محاولة استخدام ربط direct ثم ربط hash (بهذا الترتيب).
+مماثلة لـ `direct,hash`، أي محاولة استخدام ربط direct ثم الربط بالتجزئة (بهذا الترتيب).
 
 ## join_any_take_last_row {#join_any_take_last_row}
 
@@ -171,7 +205,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
-يحدّد هذا الإعداد الإجراء الذي ينفّذه ClickHouse عندما تصل عملية join إلى أيٍّ من الحدود التالية:
+يحدّد هذا الإعداد الإجراء الذي ينفّذه ClickHouse عندما تصل عملية ربط إلى أيٍّ من الحدود التالية:
 
 * [max&#95;bytes&#95;in&#95;join](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 * [max&#95;rows&#95;in&#95;join](/ar/reference/settings/session-settings/max-rows#max_rows_in_join)
@@ -179,9 +213,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 تُراعي هذا الإعداد جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm)
 القائمة على التجزئة، بما فيها تلك التي تكتب إلى القرص: فبلوغ الحد يوقف الاستعلام بدلًا من أن
 يستدعي الكتابة إلى القرص. والاستثناء هو
-`legacy_join_size_limits_trigger_spilling`: فعند تفعيله، يواصل الجزء من عملية join الذي
+`legacy_join_size_limits_trigger_spilling`: فعند تفعيله، يواصل الجزء من عملية ربط الذي
 يعمل أصلًا على القرص الكتابة إليه بدلًا من التصرّف وفق هذا الإعداد.
-كما تراعيه `ie_join` على الإدخال الذي تجمعه من كلا الجانبين. أما `partial_merge` فلا تزال
+كما تراعيه `inequality` على الإدخال الذي تجمعه من كلا الجانبين. أما `partial_merge` فلا تزال
 تتعامل مع هذه الحدود بتبديل الاستراتيجية — راجع
 [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm).
 
@@ -194,8 +228,8 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 **انظر أيضًا**
 
-* [عبارة JOIN](/ar/reference/statements/select/join)
-* [محرك الجدول Join](/ar/reference/engines/table-engines/special/join)
+* [عبارة الربط](/ar/reference/statements/select/join)
+* [محرك الجدول ربط](/ar/reference/engines/table-engines/special/join)
 
 ## join_use_nulls {#join_use_nulls}
 

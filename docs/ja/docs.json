@@ -4,7 +4,7 @@
       "pages": [
         "ja/index"
       ],
-      "tab": "Home"
+      "tab": "ホーム"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "Databases"
+      "tab": "データベース"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Deployments"
+          "item": "デプロイメント"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -48,7 +48,7 @@
           ]
         },
         {
-          "item": "Private",
+          "item": "プライベート",
           "pages": [
             "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
@@ -56,7 +56,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Applications"
+          "item": "アプリケーション"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -67,17 +67,17 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI Engineering"
+          "item": "AI エンジニアリング"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "Security"
+          "item": "セキュリティ"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "Open source"
+          "item": "オープンソース"
         },
         {
           "item": "ClickStack",
@@ -96,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "Products"
+      "tab": "製品"
     },
     {
       "menu": [
         {
-          "item": "Ecosystem",
+          "item": "エコシステム",
           "pages": [
             "ja/integrations/home",
             "ja/integrations/data-catalogs"
@@ -117,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Integrations"
+      "tab": "インテグレーション"
     },
     {
       "menu": [
@@ -134,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Resources"
+      "tab": "リソース"
     }
   ]
 }

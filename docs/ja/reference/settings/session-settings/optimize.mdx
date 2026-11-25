@@ -80,7 +80,7 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-DISTINCT 内の一部のカラムがソート順のプレフィックスになっている場合、DISTINCT の最適化を有効にします。たとえば、MergeTree におけるソートキーのプレフィックスや、ORDER BY ステートメントのプレフィックスです。
+DISTINCT 内の一部のカラムがソート順のプレフィックスになっている場合、DISTINCT の最適化を有効にします。たとえば、MergeTree におけるソートキーのプレフィックスや、ORDER BY ステートメントのプレフィックスです。vertical `FINAL` (`enable_vertical_final` を参照) を使用する `FINAL` 読み取りには適用されません。ただし、`LIMIT` によって `DISTINCT` が読み取りを早期に終了できる場合や、`ORDER BY` などの別の理由ですでに順序どおりに読み取られている場合は除きます。
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

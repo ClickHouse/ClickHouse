@@ -884,26 +884,23 @@ spec:
   ## ClickHouse の設定 {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### `default` ユーザーのパスワード {#default-user-password}
-</div>
+### `default` ユーザーのパスワード {#default-user-password}
 
 `spec.settings.defaultUserPassword` は、組み込みの `default`
 ユーザーのパスワードを設定します。値は、CR に直接記述するのではなく、
-作成した Secret (推奨) または ConfigMap のキーから指定してください。
+作成した Secret のキーから指定してください。
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-`secret` または `configMap` のいずれか一方のみを指定し、どちらの場合も `name` (オブジェクト)
-と `key` (パスワードを保持するエントリ) の両方を指定してください。
+`name` (Secret) と `key` (パスワードを保持するエントリ) の両方を指定してください。
 
 <div id="password-types">
   #### パスワードの種類 {#password-types}
@@ -964,13 +961,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### ConfigMap を使用する {#using-configmap-for-user-passwords}
-</div>
+#### ConfigMap を使用する (非推奨) {#using-configmap-for-user-passwords} 
 
-ConfigMap も同じように機能しますが、その内容は Secret のように保護されません。
-機密性のない値、またはすでにハッシュ化されている値にのみ使用してください。たとえば、
-`password_sha256_hex` ダイジェストです。
+<Warning>
+  `configMap` ソースは非推奨であり、`v1alpha2` で削除されます。ConfigMap は Secrets のように保護されず、
+  ソルトなしのパスワードハッシュは総当たりで解読される可能性があります。
+  パスワードは、平文かハッシュ化済みかにかかわらず、Secret に保存してください。
+</Warning>
+
+ConfigMap は Secret と同じように機能しますが、その内容は保護されません。
 
 ```yaml
 spec:

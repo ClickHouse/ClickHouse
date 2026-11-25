@@ -162,7 +162,7 @@ Tempo limite, em segundos, para uma única requisição do Arrow Flight. Esse li
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Tenta novamente requisições S3 de backup e restauração após um token expirado; 0 restaura o comportamento anterior."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "Tenta novamente requisições s3 de backup e restauração após um token expirado; 0 restaura o comportamento anterior."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "A alteração recebeu backport para a 26.8, onde está registrada."}]}]} />
 
 Tempo máximo, em milissegundos, durante o qual se tenta novamente uma requisição s3 cuja resposta indique `ExpiredToken` durante o backup ou a restauração. As retentativas também são interrompidas ao atingir `backup_restore_s3_retry_attempts`. O valor zero desativa essas retentativas. Como as respostas `HEAD` do AWS S3 expõem apenas um status HTTP genérico, essa retentativa não se aplica a requisições de metadados `HEAD`.
 
@@ -998,6 +998,14 @@ Controla qual configuração a família de funções `JSONExtract` segue ao faze
 
 Quando o analisador sintático escolhido não consegue ler o valor, a função retorna o valor default do tipo (`1970-01-01 00:00:00`) sem gerar erro. Assim, uma divergência entre as duas configurações altera os valores extraídos de forma silenciosa.
 
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nova configuração para habilitar a conversão otimizada entre tipos JSON, que evita a serialização e a interpretação completas quando apenas um subconjunto de caminhos é alterado."}]}]} />
+
+Quando habilitada, as conversões entre tipos JSON com parâmetros diferentes (caminhos tipados, regras de omissão) usam um caminho otimizado, que reutiliza por ponteiro as subcolunas inalteradas e aplica CAST somente aos caminhos alterados. Isso evita o pipeline completo de serialização para string seguida de interpretação a partir da string. Desative para forçar a conversão legada, baseada em formatação e interpretação, em todas as alterações de tipo JSON.
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -1453,7 +1461,7 @@ Quantidade mínima de bytes necessária para que a leitura remota (url, s3) faç
 
 Esta configuração permite especificar o padrão de renomeação para arquivos processados pela função de tabela `file`. Quando essa opção é definida, todos os arquivos lidos pela função de tabela `file` serão renomeados de acordo com o padrão especificado com placeholders, somente se o processamento dos arquivos for bem-sucedido.
 
-A renomeação grava na fonte; portanto, uma consulta que lê os arquivos com essa opção definida requer o privilégio `WRITE ON FILE`, além de `READ ON FILE`. `DESCRIBE` não compila o pipeline de leitura de dados que realiza a renomeação e, portanto, requer apenas `READ ON FILE`.
+A renomeação grava na fonte; portanto, uma consulta que lê os arquivos com essa opção definida requer o privilégio `WRITE ON FILE`, além de `READ ON FILE`, e é recusada no modo readonly (`readonly` maior que 0, o que está implícito em toda requisição HTTP GET). `DESCRIBE` não compila o pipeline de leitura de dados que realiza a renomeação e, portanto, nenhuma dessas duas restrições se aplica a ele.
 
 ### Placeholders {#placeholders}
 
@@ -2046,6 +2054,19 @@ Resultado:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Percorre o diretório shadow ao consultar system.remote_data_paths."}]}]} />
 
 Percorre os dados congelados (diretório shadow), além dos dados da própria tabela, ao consultar system.remote&#95;data&#95;paths
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração. O `TRUNCATE` de uma tabela `MergeTree` mantém as partes removidas por `old_parts_lifetime` segundos em vez de removê-las imediatamente"}]}]} />
+
+Se habilitada, o `TRUNCATE` de uma tabela `MergeTree` non-replicated remove imediatamente do disco as partes truncadas. Caso contrário, elas se tornam inativas e são removidas após `old_parts_lifetime` segundos, assim como as partes de origem de uma mesclagem, para que consultas em execução e leitores com uma lista inativa de partes ainda possam lê-las. Tabelas replicadas sempre removem as partes imediatamente.
+
+Valores possíveis:
+
+* 0 - As partes truncadas são removidas após `old_parts_lifetime` segundos.
+* 1 - As partes truncadas são removidas imediatamente.
 
 ## union_default_mode {#union_default_mode}
 

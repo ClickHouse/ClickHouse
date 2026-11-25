@@ -2,9 +2,9 @@
 title: CLI de ClickPipes para Postgres
 ---
 
-Esta página explica cómo crear un ClickPipe de CDC de Postgres, monitorizarlo hasta que empiece a replicar y verificar los datos en ClickHouse, todo desde la línea de comandos con [clickhousectl](/es/concepts/features/interfaces/cli). Salvo el inicio de sesión opcional con `--interactive`, los comandos no son interactivos. `clickhousectl` devuelve JSON con `--json`, y también lo hace automáticamente cuando detecta un agente de programación; pase `--format` a `cloud service query` para obtener los valores sin formato.
+Esta página explica cómo crear un ClickPipe de CDC de Postgres, monitorizarlo hasta que empiece a replicar y verificar los datos en ClickHouse, todo desde la línea de comandos con [clickhousectl](/es/concepts/features/interfaces/cli). Salvo el inicio de sesión opcional con `--interactive`, los comandos no son interactivos. `clickhousectl` devuelve JSON con `--json`, y también lo hace automáticamente cuando detecta un agente de programación; pase `--format` a `cloud clickhouse query` para obtener los valores sin formato.
 
-## Prerequisitos {#cli-prerequisites}
+## Requisitos previos {#cli-prerequisites}
 
 Instale clickhousectl:
 
@@ -26,10 +26,10 @@ O bien pasa la clave y el secreto a `clickhousectl cloud auth login` con `--api-
 
 Tu base de datos Postgres de origen debe prepararse antes para CDC: replicación lógica habilitada, un usuario de replicación y las direcciones IP de ClickPipes permitidas en tu firewall. Sigue la guía de configuración correspondiente a tu proveedor; por ejemplo, [Amazon RDS](/es/integrations/clickpipes/postgres/source/rds), [Supabase](/es/integrations/clickpipes/postgres/source/supabase), [Neon](/es/integrations/clickpipes/postgres/source/neon-postgres) o la [guía genérica de origen Postgres](/es/integrations/clickpipes/postgres/source/generic) para despliegues autogestionados y otros proveedores. Conéctate directamente al host de Postgres: los proxies y poolers como PgBouncer, RDS Proxy y Supabase Pooler no son compatibles con CDC.
 
-También necesitas un servicio de ClickHouse Cloud de destino en ejecución. Obtén su ID con `clickhousectl cloud service list --json` o crea uno siguiendo el [inicio rápido de Cloud](/es/get-started/setup/cloud):
+También necesitas un servicio de ClickHouse Cloud de destino en ejecución. Obtén su ID con `clickhousectl cloud clickhouse list --json` o crea uno siguiendo el [inicio rápido de Cloud](/es/get-started/setup/cloud):
 
 ```bash
-CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
+CH_ID=$(clickhousectl cloud clickhouse get --name my-service --json | jq -r .id)
 ```
 
 Recopile en variables los datos de conexión del origen obtenidos en el paso de requisitos previos. Este tutorial replica una única tabla, `public.orders`; sustituya ese nombre, y todas las referencias posteriores a él (incluidos los nombres de columna en los pasos de verificación), por los de su propia tabla:
@@ -127,7 +127,7 @@ clickhousectl cloud clickpipe create postgres "$CH_ID" \
 Esa correspondencia deja `ssn` completamente fuera del destino y ordena `customers` por `(created_at, customer_id)` en lugar de por la primary key del origen:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" \
+clickhousectl cloud clickhouse query "$CH_ID" \
   --query "SHOW CREATE TABLE customers" --format TSVRaw
 ```
 
@@ -155,9 +155,11 @@ Notas:
 
 ### Configuración de CDC {#cdc-settings}
 
-Los ajustes de replicación son indicadores que solo se especifican en el momento de la creación: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots` y `--delete-on-merge`. Una vez creado el pipe, solo pueden modificarse `syncIntervalSeconds` y `pullBatchSize`; los ajustes de snapshot y de carga inicial quedan fijados en la creación, así que elígelos ahora.
+Los ajustes de replicación son indicadores que solo se especifican en el momento de la creación: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots`, `--delete-on-merge` y `--use-json-native-format`. Una vez creada la canalización, solo pueden modificarse `syncIntervalSeconds` y `pullBatchSize`; los ajustes de snapshot y de carga inicial quedan fijados en la creación, así que elígelos ahora.
 
-Un pipe de Postgres CDC conserva su configuración en el propio pipe, así que puedes consultarla con `clickpipe get`:
+`--use-json-native-format true` almacena las columnas `json` y `jsonb` con el tipo `JSON` nativo de ClickHouse en lugar de como `String`. Requiere ClickHouse 25.3 o posterior y que la funcionalidad esté habilitada para tu organización; de lo contrario, el JSON se almacena como `String`.
+
+Una canalización de CDC de Postgres conserva su configuración en la propia canalización, así que puedes consultarla con `clickpipe get`:
 
 ```bash
 clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
@@ -180,7 +182,7 @@ clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
 }
 ```
 
-`clickhousectl cloud clickpipe settings get` es un endpoint distinto que solo abarca los ajustes de ingestión de los pipes de streaming y de almacenamiento de objetos. Con un pipe de Postgres, termina con código 1 y le remite de nuevo a `clickpipe get`.
+`clickhousectl cloud clickpipe settings get` es un endpoint distinto que solo abarca los ajustes de ingestión de las canalizaciones de streaming y de almacenamiento de objetos. Con una canalización de Postgres, termina con código 1 y le remite de nuevo a `clickpipe get`.
 
 ### Permisos de destino {#destination-permissions}
 
@@ -247,7 +249,7 @@ Consulte el servicio de destino directamente desde la CLI. En la primera llamada
 La tabla de destino es una `ReplacingMergeTree`, por lo que las actualizaciones y eliminaciones del origen llegan como nuevas versiones de las filas. Lea el estado actual con `FINAL` y excluya las filas eliminadas con `WHERE _peerdb_is_deleted = 0`:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --json \
+clickhousectl cloud clickhouse query "$CH_ID" --json \
   --query "SELECT order_id, customer, amount FROM orders FINAL WHERE _peerdb_is_deleted = 0 ORDER BY order_id"
 ```
 
@@ -270,7 +272,7 @@ Pasa la contraseña mediante `PGPASSWORD` en lugar de un URI de conexión, así 
 PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
   -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM orders FINAL WHERE _peerdb_is_deleted = 0")" != "6" ]; do
   sleep 10
 done

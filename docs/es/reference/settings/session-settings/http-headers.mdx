@@ -14,20 +14,18 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
 <div id="http_headers_progress_interval_ms">
-  ## http_headers_progress_interval_ms
+  ## http_headers_progress_interval_ms {#http_headers_progress_interval_ms}
 </div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 No envíe las cabeceras HTTP X-ClickHouse-Progress con una frecuencia superior al intervalo especificado.
 
-<div id="http_headers_read_timeout">
-  ## http_headers_read_timeout
-</div>
+## http_headers_read_timeout {#http_headers_read_timeout}
 
-<SettingsInfoBlock type="Segundos" default_value="30" />
+<SettingsInfoBlock type="Seconds" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "Nueva configuración para limitar el tiempo total de lectura de los encabezados de la solicitud HTTP, como protección frente a ataques slowloris."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "El cambio se aplicó mediante backport a 26.1 y está registrado allí."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "30"},{"label": "Nueva configuración para limitar el tiempo total de lectura de los encabezados de la solicitud HTTP, como protección frente a ataques slowloris."}]}]} />
 
 Tiempo máximo, en segundos, para leer todos los encabezados de la solicitud HTTP. Es un plazo total para toda la fase de análisis de encabezados, no un tiempo de espera por lectura. Protege frente a ataques de tipo slowloris, en los que un cliente envía lentamente los datos de los encabezados para mantener abiertas las conexiones.
 

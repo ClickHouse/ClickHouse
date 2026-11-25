@@ -369,6 +369,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 <Note>
   查询参数并不是通用的文本替换机制，不能在任意 SQL 查询的任意位置使用。
   它们主要设计用于在 `SELECT` 语句中替代标识符或字面量。
+  在 DDL 语句中，它们也可以用来替代数据库名和表名 (例如 `CREATE TABLE {db:Identifier}.{tbl:Identifier}`) 。在 `ALTER TABLE` 中，它们还可用于 `DROP`、`CLEAR`、`MATERIALIZE`、`COMMENT`、`RENAME COLUMN` 和 `AFTER` (例如 `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`) 。
 </Note>
 
 ## 函数 {#functions}

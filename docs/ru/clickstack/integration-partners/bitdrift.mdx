@@ -62,14 +62,14 @@ ClickStack предоставляет инженерным командам ре
   * **ClickStack** хранит и позволяет запрашивать полученные распределённые трассировки в ClickHouse, а также отображает их в интерфейсе ClickStack.
 </Tip>
 
-<div id="prerequisites">
-  ## Предварительные требования {#prerequisites}
-</div>
+## Предварительные требования {#prerequisites}
 
-* Установленный ClickStack, доступный вашим backend-сервисам: самоуправляемый или в ClickHouse Cloud. См. [Начало работы с ClickStack с открытым исходным кодом](/ru/clickstack/getting-started/oss) или [Начало работы с самостоятельно управляемым ClickHouse Observability](/ru/clickstack/self-configured/getting-started/managed).
+* Установленный **ClickStack с открытым исходным кодом**, доступный вашим backend-сервисам. См. [Начало работы с ClickStack с открытым исходным кодом](/ru/clickstack/getting-started/oss).
 * Ваши backend-сервисы должны быть инструментированы с помощью **OpenTelemetry** и отправлять трассировки в ClickStack. См. [Приём данных с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
 * **bitdrift Capture SDK**, интегрированный в мобильное приложение. Инструкции по установке см. в [документации bitdrift SDK](https://docs.bitdrift.io/).
 * **Аккаунт bitdrift** с возможностью обратиться в [службу поддержки](https://bitdrift.io/contact-us), чтобы включить трассировку для вашего тенанта (трассировка — экспериментальная возможность, которую bitdrift включает для каждого тенанта отдельно).
+
+Для ClickHouse Observability воспользуйтесь отдельным [руководством по интеграции с bitdrift](/ru/clickstack/observability/integration-partners/bitdrift).
 
 ## Настройка трассировки {#configure-tracing}
 
@@ -95,7 +95,7 @@ ClickStack предоставляет инженерным командам ре
   ## Гибкость развертывания {#deployment-flexibility}
 </div>
 
-Интеграция работает как с самоуправляемым ClickStack, так и с ClickHouse Cloud, поскольку не влияет на способ поступления данных в ClickStack. bitdrift не экспортирует телеметрию мобильных устройств в ClickStack: он получает контекст трассировки OpenTelemetry запроса на устройстве и связывает его с backend-трассировкой, которую ваши сервисы с инструментированием OpenTelemetry уже отправляют в ClickStack. Для создания ссылки **View Trace** bitdrift нужен лишь адрес вашего интерфейса ClickStack, поэтому изменения в развертывании ClickStack или его конвейере ингестии не требуются.
+Интеграция работает с ClickStack с открытым исходным кодом независимо от того, где размещена его база данных — локально или в ClickHouse Cloud, поскольку не влияет на способ поступления данных в ClickStack. bitdrift не экспортирует телеметрию мобильных устройств в ClickStack: он получает контекст трассировки OpenTelemetry запроса на устройстве и связывает его с backend-трассировкой, которую ваши сервисы с инструментированием OpenTelemetry уже отправляют в ClickStack. Для создания ссылки **View Trace** bitdrift нужен лишь адрес вашего интерфейса ClickStack, поэтому изменения в развертывании ClickStack или его конвейере ингестии не требуются.
 
 <div id="next-steps">
   ## Дальнейшие шаги {#next-steps}

@@ -99,9 +99,9 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 </div>
 
 ClickHouseには、主要なプログラミング言語向けのクライアントが用意されています。
-これらはinsertが正しく実行されるよう最適化されており、たとえば [Go client](/ja/integrations/language-clients/go/clickhouse-api#async-insert) のように直接、またはクエリ、ユーザー、接続レベルの設定で有効にした場合に間接的に、非同期挿入をネイティブでサポートしています。
+これらは挿入が正しく実行されるよう最適化されており、たとえば [Go client](/ja/integrations/language-clients/go/clickhouse-api#async-insert) のように直接、またはクエリ、ユーザー、接続レベルの設定で有効にした場合に間接的に、非同期挿入をネイティブでサポートしています。
 
-利用可能なClickHouseクライアントとドライバーの一覧については、[Native Clients and Interfaces](/ja/concepts/features/interfaces/native-clients-interfaces-index)を参照してください。
+利用可能なClickHouseクライアントとドライバーの一覧については、[ClickHouse に接続する](/ja/concepts/features/connect-to-clickhouse)を参照してください。
 
 <div id="prefer-the-native-format">
   ### Native フォーマットを優先する {#prefer-the-native-format}
@@ -126,11 +126,11 @@ ClickHouse は、インサート時 (およびクエリ時) に多数の[入力�
 多くの従来型データベースとは異なり、ClickHouse は HTTPインターフェイスをサポートしています。
 これを使うと、上記のどのフォーマットでも、データの挿入とクエリの実行を行えます。
 HTTPインターフェイスは、ロードバランサーでトラフィックを簡単に切り替えられるため、ClickHouse のネイティブプロトコルより適していることがよくあります。
-一方、ネイティブプロトコルはオーバーヘッドがやや少ないため、insert のパフォーマンスはわずかに高くなることがあります。
+一方、ネイティブプロトコルはオーバーヘッドがやや少ないため、挿入 のパフォーマンスはわずかに高くなることがあります。
 既存のクライアントは、これらのプロトコルのいずれか、または場合によっては両方 (例: Go client) を使用しています。
 また、ネイティブプロトコルではクエリの進行状況を簡単に追跡できます。
 
-詳細については、[HTTPインターフェイス](/ja/concepts/features/interfaces/http) を参照してください。
+詳細については、[HTTPインターフェイス](/ja/concepts/features/connect-to-clickhouse/protocols/http) を参照してください。
 
 <div id="basic-example">
   ## 基本的な例 {#basic-example}
@@ -190,7 +190,7 @@ Postgres からデータを読み込むには、次の方法があります。
 * `clickhouse-server` が実行中である
 * `wget`、`zcat`、`curl` を使用できるターミナルにアクセスできる
 
-この例では、`clickhouse-client` をバッチモードで使用して、コマンドラインから CSV ファイルを ClickHouse に挿入する方法を説明します。`clickhouse-client` をバッチモードで使用してコマンドライン経由でデータを挿入する方法の詳細と例については、[&quot;Batch mode&quot;](/ja/concepts/features/interfaces/client#batch-mode) を参照してください。
+この例では、`clickhouse-client` をバッチモードで使用して、コマンドラインから CSV ファイルを ClickHouse に挿入する方法を説明します。`clickhouse-client` をバッチモードで使用してコマンドライン経由でデータを挿入する方法の詳細と例については、[&quot;バッチモード&quot;](/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode) を参照してください。
 
 この例では、2,800 万行の Hacker News データを含む [Hacker News dataset](/ja/get-started/sample-datasets/hacker-news) を使用します。
 

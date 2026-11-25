@@ -147,6 +147,10 @@ Número de tabelas hash de agregação de um nível cujas células foram indexad
 
 Para quantos blocos foi aplicada a otimização de intervalos iguais de chaves
 
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+Número de partições de hash que a mesclagem paralela de tabelas hash de agregação de um nível leu por meio dos índices de células das tabelas (consulte `AggregationIndexedTables`), em vez de fazer a varredura de todas as células de todas as tabelas para cada partição (consulte `enable_parallel_single_level_merge_by_index`).
+
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
 Número de elementos pré-alocados em tabelas hash para agregação.
@@ -445,7 +449,7 @@ Número de vezes em que o recurso de réplicas paralelas automáticas chegou ao 
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-Número de vezes em que o recurso de réplicas paralelas automáticas ainda não tinha estatísticas e, por isso, as coletou em vez de tomar uma decisão
+Número de vezes em que o recurso de réplicas paralelas automáticas ainda não tinha estatísticas e, por isso, as coletou em vez de tomar uma decisão. Também é contabilizado, junto com `AutoParallelReplicasRetryDeferred`, quando o plano com réplicas paralelas não é construído novamente por causa de uma coleta recente da qual uma etapa não pôde participar ou que não mediu nada
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -457,11 +461,11 @@ Tempo gasto na construção do plano com réplicas paralelas que o recurso de r�
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-Número de vezes em que as réplicas paralelas automáticas ignoraram uma consulta após construir o plano com réplicas paralelas, ou em um limite memorizado de uma construção anterior desse plano, por não conseguirem associar esse plano ao plano local o suficiente para compará-lo ou utilizá-lo: por exemplo, não conseguiram parear as leituras de ambos ou identificar qual leitura as réplicas dividiriam. O logger `AutoParallelReplicas` indica qual foi o caso
+Número de vezes em que as réplicas paralelas automáticas ignoraram uma consulta após construir o plano com réplicas paralelas, ou em um limite memorizado de uma construção anterior desse plano, por não conseguirem associar esse plano ao plano local o suficiente para compará-lo ou utilizá-lo: por exemplo, não conseguiram parear as leituras de ambos ou identificar qual leitura as réplicas dividiriam. O logger `AutoParallelReplicas` indica qual foi o caso. Também é contabilizado, junto com `AutoParallelReplicasRetryDeferred`, quando uma construção recente desse tipo é o motivo pelo qual o plano não é construído novamente
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-Número de vezes em que as réplicas paralelas automáticas ignoraram uma consulta após construir o plano com réplicas paralelas, porque o planejador acabou não usando réplicas paralelas nele, por exemplo, por haver poucas linhas por réplica ou uma subconsulta correlacionada. O logger `Planner` informa o motivo
+Número de vezes em que as réplicas paralelas automáticas ignoraram uma consulta após construir o plano com réplicas paralelas, porque o planejador acabou não usando réplicas paralelas nele, por exemplo, por haver poucas linhas por réplica ou uma subconsulta correlacionada. O logger `Planner` informa o motivo. Também é contabilizado, junto com `AutoParallelReplicasRetryDeferred`, quando uma construção recente desse tipo é o motivo pelo qual o plano não é construído novamente
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -474,6 +478,10 @@ Número de vezes em que as réplicas paralelas automáticas foram descartadas, e
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 Número de vezes em que o recurso de réplicas paralelas automáticas foi recusado, embora o modelo de custo favorecesse as réplicas paralelas, porque a leitura ficou abaixo de `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+Número de vezes em que as réplicas paralelas automáticas não montaram o plano com réplicas paralelas porque a montagem para o mesmo plano terminou recentemente sem uma decisão, e menos de `automatic_parallel_replicas_undecided_retry_after_executions` execuções a ignoraram desde então. O evento correspondente a esse resultado anterior, como `AutoParallelReplicasPlansNotComparable`, é contabilizado junto com este
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -826,6 +834,10 @@ Quantidade de dados carregados no cache do sistema de arquivos por threads dedic
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 Número de partes de dados que foram baixadas integralmente pelo CacheWarmer.
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+Número de partes de dados que o `CacheWarmer` não obteve porque o distributed cache era o único cache a ser aquecido e a parte foi gerada na zona de disponibilidade atual, ou seja, esse cache já a contém.
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1602,6 +1614,10 @@ Evento de conexão do Distributed Cache. Número de conexões abertas com o Dist
 
 Evento de conexão do Distributed Cache. O número de conexões abertas com o Distributed Cache sem passar pelo pool
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+Evento de cliente do Distributed Cache. Número de conexões em pool idle fechadas porque o servidor correspondente solicitou que este cliente reduzisse o ritmo
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 Evento do buffer de leitura do Distributed Cache. Tempo gasto para pré-calcular intervalos de leitura
@@ -1688,7 +1704,7 @@ Evento do cliente do Distributed Cache. Número total de pacotes Ok recebidos do
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-Evento de cliente do Distributed Cache. Número total de packets SlowDown recebidos do distributed cache (o servidor rejeitou uma nova connection porque este cliente tem connections abertas em excesso em relação ao seu peso)
+Evento de cliente do Distributed Cache. Número total de pacotes SlowDown recebidos de servidores do distributed cache: ou uma nova conexão foi rejeitada porque este cliente tem conexões abertas em excesso em relação ao seu peso, ou há requisições demais deste cliente travadas nesse servidor
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1782,17 +1798,29 @@ Evento do servidor Distributed Cache. Número de bytes gravados no cache do dist
 
 Evento do servidor Distributed Cache. Número de bytes lidos do armazenamento de objetos no Distributed Cache ao ler do cache do sistema de arquivos
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+Evento do servidor do Distributed Cache. Número de requisições `Read` que o servidor deixou de atender porque a conexão atingiu o fim do stream no meio da requisição: o cliente a encerrou ou o registro fechou o socket
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+Evento do servidor do Distributed Cache. Número de vezes em que a varredura de requisições travadas abriu a janela de desaceleração de um cliente, porque as requisições em andamento travadas desse cliente atingiram `distributed_cache_slow_down_min_stuck_requests` e uma parcela de `distributed_cache_slow_down_stuck_requests_ratio`
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 Evento do servidor do Distributed Cache. Tempo gasto aguardando o mutex de arquivos temporários confirmados quando há contention.
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-Evento do servidor do Distributed Cache. Tempo gasto aguardando o mutex do bucket de connection por cliente em caso de contention (register/unregister/identify/eviction)
+Evento do servidor do Distributed Cache. Tempo gasto aguardando o mutex do bucket de conexão por cliente em caso de contention (register/unregister/identify/eviction, a varredura de requisições travadas, retenções de dados temporários, `system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 Evento do servidor do Distributed Cache. Tempo gasto aguardando o mutex do registry global de conexões em caso de contenção (identify, setClientWeight, eviction e unregister quando uma reindexação ou remoção de bucket é necessária)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+Evento do servidor do Distributed Cache. Número de conexões encerradas pela varredura de requisições travadas porque a respectiva requisição em andamento ficou sem progresso por pelo menos `distributed_cache_stuck_request_no_progress_timeout_ms` ou excedeu `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1830,6 +1858,10 @@ Evento do servidor Distributed Cache. Número de pacotes RefreshCredentials do c
 
 Evento do servidor do Distributed Cache. Número de requisições cujo cliente encerrou a conexão sem enviar EndRequest (um cliente encerrado à força, um cliente cujo socket não estava gravável ou um cliente antigo), fazendo com que o servidor deixasse de atendê-las ao receber EOF. Encerramentos iniciados por este servidor (desligamento ou evicção de conexão) não são contabilizados
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+Evento do servidor do Distributed Cache. Número de requisições em andamento encerradas porque o servidor as estava processando havia mais tempo que `distributed_cache_max_request_processing_time_ms`: com um `Error` ou um `Stop`, ou com um `SlowDown` quando também se solicita ao cliente que reduza o ritmo
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Evento do servidor do Distributed Cache. O número de clientes S3 em cache reutilizados
@@ -1841,6 +1873,10 @@ Evento do servidor do Distributed Cache. Tempo gasto em shutdownAllConnections a
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 Evento do servidor do Distributed Cache. Número de vezes em que o servidor do Distributed Cache foi ignorado devido a tentativas anteriores de conexão malsucedidas
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+Evento do servidor do Distributed Cache. Número de requisições encerradas com um pacote SlowDown enquanto a janela de desaceleração do cliente estava aberta: no início de uma requisição de leitura ou de gravação, ou porque o servidor já estava processando uma requisição por mais tempo do que `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1889,6 +1925,10 @@ Evento do Distributed Cache. O número de trocas de servidor durante a leitura o
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 Evento do buffer de gravação do Distributed Cache. Número de write buffers que ignoraram a gravação no write-through cache porque nenhum slot de gravação em segundo plano estava livre (o limite definido pela configuração de servidor `distributed_cache_write_pool_size` foi atingido) ou porque não foi possível iniciar uma gravação em segundo plano. Os dados ainda assim são gravados no armazenamento de objetos
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+Evento de cliente do Distributed Cache. Número de vezes em que um servidor do distributed cache foi ignorado porque pediu a este cliente que reduzisse o ritmo
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2662,6 +2702,10 @@ Tentativa de reserva de espaço no cache do sistema de arquivos
 
 Tempo de reserva de espaço no cache do sistema de arquivos
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+Número de percursos de downgrade de uma promoção no cache do sistema de arquivos SLRU ignorados porque um processo de gravação mantinha ou aguardava o bloqueio de prioridade
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 Tempo de bloqueio do cache do sistema de arquivos durante o bloqueio de estado
@@ -2733,6 +2777,30 @@ Conta o número total de vezes que o pool global de threads foi reduzido com a r
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 Tempo total de espera para o início de novas threads.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Número de lotes de linhas enviados a uma GPU pela agregação experimental em GPU. Cada lote corresponde a uma transferência e a uma redução ou agrupamento.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+Tempo total gasto na transferência de lotes de linhas para uma GPU e na agregação desses lotes nela.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Número de linhas agregadas em uma GPU pela agregação experimental em GPU.
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+Número de marcas (grânulos de índice) excluídas da leitura de uma tabela MergeTree pela chave de particionamento e por seu índice min-max durante a análise de índice.
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+Número de marcas (grânulos de índice) excluídas da leitura de uma tabela MergeTree pela chave primária durante a análise de índice.
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+Número de marcas (grânulos de índice) excluídas da leitura de uma tabela MergeTree pelos data skipping indexes durante a análise de índice. Índices aplicados no momento da leitura (`use_skip_indexes_on_data_read`) não são contabilizados.
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2820,11 +2888,7 @@ Número de conexões HTTP do servidor reutilizadas
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-Número de vezes em que a remoção de arquivos de dados substituídos pela compactação Iceberg foi adiada porque uma consulta nesta ou em outra réplica ainda estava lendo um snapshot que faz referência a eles.
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-Número de vezes em que a remoção de arquivos de dados substituídos pela compactação Iceberg foi adiada porque a compactação, ou um snapshot substituído por ela, era mais recente que `iceberg_outdated_snapshot_lifetime_seconds`.
+Número de snapshots desatualizados que a limpeza de uma tabela Iceberg manteve até uma execução posterior porque uma consulta nesta ou em outra réplica ainda estava lendo esses snapshots.
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -4762,6 +4826,10 @@ Número de réplicas usadas para executar uma consulta com réplicas paralelas b
 
 O número total de grupos de linhas Parquet descartados por filtros de bloom.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+Número de fragmentos de coluna Parquet sem índice de offset cujas páginas com as linhas lidas pela materialização preguiçosa foram localizadas por meio dos respectivos cabeçalhos de página, de modo que apenas essas páginas foram lidas
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 Grupos de linhas cujos dados de coluna começaram a ser lidos por um leitor de Parquet de um arquivo em armazenamento de objetos ou em uma URL antes que sua decodificação fosse agendada, dentro da parcela de max&#95;download&#95;threads atribuída a esse leitor
@@ -4805,6 +4873,10 @@ Número de vezes em que os metadados do Parquet foram encontrados em cache.
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 Número de vezes em que os metadados do Parquet não foram encontrados no cache e precisaram ser lidos do disco.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+Número de fragmentos de coluna Parquet cujo índice de offsets foi obtido do cache de metadados parquet em vez de ser lido do arquivo.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4877,6 +4949,10 @@ Número de grupos de linhas Parquet cujo intervalo da coluna de ordenação de `
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 Número de grupos de linhas Parquet ignorados durante a leitura porque suas estatísticas de mínimo/máximo indicaram que eles não podem conter linhas do resultado de `ORDER BY ... LIMIT` (consulte `use_top_k_dynamic_filtering`)
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+Número de vezes em que uma parte de dados de uma tabela ReplicatedMergeTree cuja leitura falhou passou na verificação com direct I/O, contornando o cache de páginas do sistema operacional. O erro de leitura provavelmente foi causado por dados incorretos no cache de páginas, e não pelos dados no disco.
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -5622,6 +5698,10 @@ Número de compilações de filtro de Bloom do JOIN Runtime Filter ignoradas por
 
 Número de entregas de Filtro de Tempo de Execução de JOIN abandonadas porque o receptor se desconectou ou parou de ler; o destino afetado não recebe nenhum filtro, e suas linhas passam sem filtragem
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+Número de JOIN runtime filters em chaves (U)Int8 ou (U)Int16 que deixaram de usar o conjunto exato de chaves e passaram a usar um bitset denso em vez de um filtro de Bloom
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 Número de grânulos examinados para pruning em tempo de leitura pelos JOIN Runtime Filters
@@ -6149,6 +6229,10 @@ Quanto tempo leva para remover partes (executado em múltiplas threads)
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 Número de vezes que o parts killer foi executado
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+Eleições de líder para atualização de partes que não tentaram obter um bloqueio porque esta réplica já detém sua cota de bloqueios de líder
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
@@ -6802,6 +6886,10 @@ Número de segmentos ignorados porque a região de saída já havia sido determi
 
 Número de vezes em que uma varredura de dicionário por pattern do índice de texto foi ignorada porque uma varredura anterior da mesma parte excedeu o limiar da lista de postings.
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+Número de vezes em que uma varredura de dicionário por pattern do índice de texto em uma parte foi ignorada porque os blocos de dicionário a serem varridos ocupam mais bytes do que as linhas que ainda precisam ser lidas nas colunas indexadas após a aplicação da chave primária e dos índices de salto anteriores.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 Linhas candidatas (interseção de postings) examinadas pela busca de frase baseada em candidatos.
@@ -7129,6 +7217,10 @@ Número de chaves de novas linhas que substituíram uma linha ativa em uma parte
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 Número de chaves de novas linhas verificadas em relação às partes existentes no caminho de escrita do UNIQUE KEY INSERT.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+Número de linhas marcadas como mortas por um DELETE síncrono em tabelas com UNIQUE KEY.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 

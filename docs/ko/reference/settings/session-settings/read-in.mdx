@@ -13,13 +13,21 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [원본](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)을 기반으로 자동 생성됩니다.
 
-## read_in_order_two_level_merge_threshold
+## read_in_order_max_bytes_to_prefetch {#read_in_order_max_bytes_to_prefetch}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "134217728"},{"label": "단일 파트를 프라이머리 키 순서로 읽을 때, 순서대로 연결되는 스트림을 미리 읽는 데 사용되는 메모리를 제한하는 새로운 설정입니다."}]}]} />
+
+필터(filter)를 적용하여 단일 파트를 프라이머리 키 순서로 읽을 때 미리 버퍼에 저장되는 블록(blocks)의 최대 총 크기(바이트)입니다. 이 경우 파트는 여러 스트림으로 분할되며, 각 스트림은 머지되지 않고 순서대로 연결됩니다. 앞쪽 스트림이 소비되는 동안 순서상 뒤에 있는 스트림은 데이터를 메모리로 미리 읽으며, 이 한도는 가장 가까운 스트림부터 우선 할당됩니다. 값이 클수록 더 많은 스트림을 병렬로 읽을 수 있습니다. 현재 소비 중인 스트림은 이 제한을 초과하여 블록을 몇 개 더 버퍼에 저장할 수 있습니다. 0으로 설정하면 바이트 기준 제한이 적용되지 않으며, 각 스트림은 블록을 몇 개만 미리 읽습니다.
+
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 프라이머리 키 순서대로 멀티스레드 읽기를 수행할 때 사전 병합 단계를 실행하기 위해 읽어야 하는 최소 파트 수입니다.
 
-## read_in_order_use_buffering
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +35,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 프라이머리 키 순서로 읽을 때 병합 전에 버퍼링을 사용합니다. 이렇게 하면 쿼리 실행의 병렬성이 증가합니다
 
-## read_in_order_use_virtual_row
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,7 +43,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 프라이머리 키 또는 그 단조 함수 순서로 읽을 때 가상 행을 사용합니다. 여러 파트에 걸쳐 검색할 때 실제로 결과에 기여할 수 있는 파트만 읽으며, 읽기를 병렬로 유지하기 위해 최대 `max_threads`개 파트로 제한되는 사전 읽기 윈도우를 사용합니다.
 
-## read_in_order_use_virtual_row_per_block
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -365,20 +365,21 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 يمكن تحديد الإعدادات التالية في ملف التهيئة لـ endpoint معين (الذي سيُطابَق بالبادئة الدقيقة لعنوان URL):
 
 * `endpoint` — يحدد بادئة الـ endpoint. إلزامي.
-* `access_key_id` و`secret_access_key` — يحددان credentials للاستخدام مع الـ endpoint المحدد. اختياري.
-* `use_environment_credentials` — إذا كانت القيمة `true`، سيحاول S3 client الحصول على credentials من متغيرات البيئة ومن [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) metadata للـ endpoint المحدد. اختياري، والقيمة الافتراضية هي `false`.
+* `access_key_id` و`secret_access_key` — يحددان بيانات اعتماد للاستخدام مع الـ endpoint المحدد. اختياري.
+* `use_environment_credentials` — إذا كانت القيمة `true`، سيحاول S3 Client الحصول على بيانات اعتماد من متغيرات البيئة ومن [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) metadata للـ endpoint المحدد. اختياري، والقيمة الافتراضية هي `false`.
 * `region` — يحدد اسم S3 region. اختياري.
-* `use_insecure_imds_request` — إذا كانت القيمة `true`، سيستخدم S3 client طلب IMDS غير آمن عند الحصول على credentials من Amazon EC2 metadata. اختياري، والقيمة الافتراضية هي `false`.
-* `expiration_window_seconds` — فترة سماح للتحقق من انتهاء صلاحية credentials المستندة إلى وقت الانتهاء. اختياري، والقيمة الافتراضية هي `120`.
-* `no_sign_request` - تجاهل جميع credentials بحيث لا تُوقَّع الطلبات. مفيد للوصول إلى Public حاويات.
-* `header` — يضيف HTTP header محدداً إلى الطلبات الموجَّهة للـ endpoint المحدد. اختياري، ويمكن تحديده أكثر من مرة.
-* `access_header` - يضيف HTTP header محدداً إلى الطلبات الموجَّهة للـ endpoint المحدد، في الحالات التي لا تتوفر فيها credentials أخرى من أي source آخر.
-* `server_side_encryption_customer_key_base64` — عند تحديده، تُضبط headers المطلوبة للوصول إلى كائنات S3 باستخدام تشفير SSE-C. اختياري.
-* `server_side_encryption_kms_key_id` - عند تحديده، تُضبط headers المطلوبة للوصول إلى كائنات S3 باستخدام [تشفير SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). وإذا تم تحديد سلسلة نصية فارغة، سيُستخدم مفتاح S3 المُدار من AWS. اختياري.
-* `server_side_encryption_kms_encryption_context` - عند تحديده إلى جانب `server_side_encryption_kms_key_id`، يُضبط header سياق التشفير المحدد لـ SSE-KMS. اختياري.
-* `server_side_encryption_kms_bucket_key_enabled` - عند تحديده إلى جانب `server_side_encryption_kms_key_id`، يُضبط header تفعيل مفاتيح حاوية S3 لـ SSE-KMS. اختياري، يمكن أن تكون قيمته `true` أو `false`، ويُعدّ غير محدد افتراضياً (يطابق الإعداد على مستوى الـ حاوية).
+* `use_insecure_imds_request` — إذا كانت القيمة `true`، سيستخدم S3 Client طلب IMDS غير آمن عند الحصول على بيانات اعتماد من Amazon EC2 metadata. اختياري، والقيمة الافتراضية هي `false`.
+* `expiration_window_seconds` — فترة سماح للتحقق من انتهاء صلاحية بيانات الاعتماد المستندة إلى وقت الانتهاء. اختياري، والقيمة الافتراضية هي `120`.
+* `no_sign_request` - تجاهل جميع بيانات الاعتماد بحيث لا تُوقَّع الطلبات. مفيد للوصول إلى حاويات عامة.
+* `request_payer` - اضبطه على `requester` للوصول إلى حاوية من نوع requester-pays: يحمل كل طلب موجَّه إلى الـ endpoint المحدد الترويسة `x-amz-request-payer: requester`. اختياري. له الأسبقية على الإعداد [`s3_request_payer`](/ar/reference/settings/session-settings/s3#s3_request_payer).
+* `header` — يضيف ترويسة HTTP محددة إلى الطلبات الموجَّهة للـ endpoint المحدد. اختياري، ويمكن تحديده أكثر من مرة.
+* `access_header` - يضيف ترويسة HTTP محددة إلى الطلبات الموجَّهة للـ endpoint المحدد، في الحالات التي لا تتوفر فيها بيانات اعتماد أخرى من أي source آخر.
+* `server_side_encryption_customer_key_base64` — عند تحديده، تُضبط الترويسات المطلوبة للوصول إلى كائنات S3 باستخدام تشفير SSE-C. اختياري.
+* `server_side_encryption_kms_key_id` - عند تحديده، تُضبط الترويسات المطلوبة للوصول إلى كائنات S3 باستخدام [تشفير SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). وإذا تم تحديد سلسلة فارغة، سيُستخدم مفتاح S3 المُدار من AWS. اختياري.
+* `server_side_encryption_kms_encryption_context` - عند تحديده إلى جانب `server_side_encryption_kms_key_id`، تُضبط ترويسة سياق التشفير المحدد لـ SSE-KMS. اختياري.
+* `server_side_encryption_kms_bucket_key_enabled` - عند تحديده إلى جانب `server_side_encryption_kms_key_id`، تُضبط ترويسة تفعيل مفاتيح حاوية S3 لـ SSE-KMS. اختياري، يمكن أن تكون قيمته `true` أو `false`، ويُعدّ غير محدد افتراضياً (يطابق الإعداد على مستوى الـ حاوية).
 * `max_single_read_retries` — الحد الأقصى لعدد المحاولات خلال عملية قراءة واحدة. القيمة الافتراضية هي `4`. اختياري.
-* `max_put_rps` و`max_put_burst` و`max_get_rps` و`max_get_burst` - إعدادات throttling (انظر الوصف أعلاه) لاستخدامها مع endpoint محدد بدلاً من تطبيقها على كل query. اختياري.
+* `max_put_rps` و`max_put_burst` و`max_get_rps` و`max_get_burst` - إعدادات تقييد المعدل (انظر الوصف أعلاه) لاستخدامها مع endpoint محدد بدلاً من تطبيقها على كل استعلام. اختياري.
 
 **مثال:**
 

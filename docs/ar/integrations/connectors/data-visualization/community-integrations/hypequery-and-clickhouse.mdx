@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'hypequery'
+keywords: ['clickhouse', 'hypequery', 'connect', 'integrate', 'embedded', 'analytics', 'typescript', 'python', 'semantic', 'semantic layer', 'mcp', 'react']
+description: 'hypequery طبقة دلالية مفتوحة المصدر للتحليلات المضمّنة على ClickHouse. عرّف المقاييس مرة واحدة باستخدام TypeScript أو بايثون، ثم قدّمها إلى لوحات المعلومات وواجهات برمجة التطبيقات ووكلاء الذكاء الاصطناعي من خلال الخادم الخلفي الخاص بك.'
+title: 'ربط hypequery بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[hypequery](https://hypequery.com) هي طبقة دلالية مفتوحة المصدر مرخّصة بموجب Apache 2.0، مخصّصة للفرق التي تبني التحليلات المضمّنة ووكلاء الذكاء الاصطناعي على ClickHouse. تُعرّف مجموعات البيانات بلغة TypeScript أو بايثون، بما في ذلك الأبعاد والمقاييس (measures) والمقاييس (metrics) والعلاقات وقواعد المستأجرين الخاصة بها، ثم تستعلم عنها بأسمائها. ويمكن تقديم التعريفات نفسها على هيئة نقاط نهاية HTTP مُصادَق عليها مع OpenAPI، وخطافات React محددة النوع، وأدوات بروتوكول سياق النموذج (MCP) لوكلاء الذكاء الاصطناعي. كما تتضمّن حزمة TypeScript SDK منشئ استعلامات ClickHouse يتّسم بأنه type-safe.
+
+ليست hypequery أداة ذكاء أعمال مستضافة ولا خادم طبقة دلالية منفصلًا، بل هي مجموعة من المكتبات التي تثبّتها وتنشرها مع الخادم الخلفي لديك، بحيث تبقى بيانات اعتماد ClickHouse الخاصة بك على خوادمك. وتتصل بـ ClickHouse عبر واجهة HTTP، باستخدام [`@clickhouse/client`](/ar/integrations/language-clients/js/index) في TypeScript و[`clickhouse-connect`](/ar/integrations/language-clients/python/index) في بايثون.
+
+## متطلبات مسبقة {#prerequisites}
+
+* خدمة ClickHouse، إما مُدارة ذاتيًا أو مستضافة على [ClickHouse Cloud](/ar/get-started/setup/cloud).
+* Node.js لاستخدام حزمة SDK للغة TypeScript، أو بايثون 3.11 أو أحدث لاستخدام حزمة SDK للغة بايثون.
+
+<Steps>
+  <Step title="جهّز بيانات الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="ثبّت hypequery" id="2-install-hypequery">
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npm install @hypequery/datasets @hypequery/clickhouse
+        npm install -D @hypequery/cli
+        ```
+      </Tab>
+
+      <Tab title="بايثون">
+        ```bash
+        pip install "hypequery[clickhouse]"
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="تهيئة الاتصال" id="3-configure-the-connection">
+    أضف بيانات الاتصال من الخطوة 1 إلى متغيرات البيئة الخاصة بتطبيقك. لاحظ أن كل حزمة من حزمتَي SDK تقرأ متغيرات مختلفة.
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        CLICKHOUSE_URL=https://<your-service>.clickhouse.cloud:8443
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+      </Tab>
+
+      <Tab title="بايثون">
+        ```bash
+        CLICKHOUSE_HOST=<your-service>.clickhouse.cloud
+        CLICKHOUSE_PORT=8443
+        CLICKHOUSE_SECURE=true
+        CLICKHOUSE_DATABASE=analytics
+        CLICKHOUSE_USERNAME=<username>
+        CLICKHOUSE_PASSWORD=<password>
+        ```
+
+        اضبط `CLICKHOUSE_SECURE=true` عند استخدام ClickHouse Cloud أو أي خدمة أخرى تستخدم TLS.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="أنشئ مجموعات بيانات من مخططك" id="4-generate-datasets">
+    تتصل واجهة سطر الأوامر بـ ClickHouse، وتقرأ جداولك، ثم تكتب تعريف مجموعة بيانات لكل جدول منها:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```bash
+        npx hypequery generate:datasets
+        ```
+
+        يكتب هذا الأمر الملف `analytics/datasets.ts`.
+      </Tab>
+
+      <Tab title="بايثون">
+        ```bash
+        hypequery init
+        ```
+      </Tab>
+    </Tabs>
+
+    راجع التعريفات المُنشأة، وأعد تسمية الأبعاد والمقاييس لتتوافق مع المصطلحات المستخدمة في منتجك. وفيما يلي مثال على مجموعة بيانات بعد تنقيحها:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { dataset, dimension, measure } from '@hypequery/datasets';
+
+        export const Orders = dataset('orders', {
+          source: 'orders',
+          tenantKey: 'tenant_id',
+          timeKey: 'created_at',
+          dimensions: {
+            country: dimension.string(),
+            status: dimension.string(),
+            createdAt: dimension.timestamp({ column: 'created_at' }),
+          },
+          measures: {
+            revenue: measure.sum('amount'),
+            orderCount: measure.count('id'),
+          },
+        });
+        ```
+      </Tab>
+
+      <Tab title="بايثون">
+        ```python
+        from hypequery.datasets import dataset, dimension, measure
+
+        orders = dataset(
+            "orders",
+            source="orders",
+            tenant_key="tenant_id",
+            time_key="created_at",
+            dimensions={
+                "country": dimension.string(),
+                "status": dimension.string(),
+                "createdAt": dimension.timestamp(column="created_at"),
+            },
+            measures={
+                "revenue": measure.sum("amount"),
+                "orderCount": measure.count("id"),
+            },
+        )
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="استعلام عن مجموعة بيانات" id="5-query-a-dataset">
+    اختر الأبعاد والمقاييس بأسمائها. يتحقق hypequery من صحة الطلب، ويُنشئ SQL ذا معاملات، ثم ينفّذه على ClickHouse. ولأن مجموعة البيانات تُعرّف `tenantKey`، يجب أن يمرّر كل استعلام المستأجر الخاص بالمُستدعي، فيضيف hypequery عامل التصفية المطابق `WHERE tenant_id = ...`. ويُرفض أي استعلام لا يحدّد مستأجرًا:
+
+    <Tabs>
+      <Tab title="TypeScript">
+        ```typescript
+        import { createQueryBuilder } from '@hypequery/clickhouse';
+        import { createDatasetClient, eq } from '@hypequery/datasets';
+        import { Orders } from './analytics/datasets';
+
+        const db = createQueryBuilder({
+          url: process.env.CLICKHOUSE_URL!,
+          username: process.env.CLICKHOUSE_USERNAME!,
+          password: process.env.CLICKHOUSE_PASSWORD!,
+          database: process.env.CLICKHOUSE_DATABASE!,
+        });
+
+        const analytics = createDatasetClient({ queryBuilder: db });
+
+        const result = await analytics.execute(Orders, {
+          dimensions: ['country'],
+          measures: ['revenue', 'orderCount'],
+          filters: [eq('status', 'completed')],
+          orderBy: [{ field: 'revenue', direction: 'desc' }],
+          limit: 10,
+        }, {
+          runtime: { tenant: 'org_123' },
+        });
+
+        console.log(result.data);
+        ```
+      </Tab>
+
+      <Tab title="بايثون">
+        ```python
+        from hypequery.datasets import (
+            DatasetQuery,
+            ExecutionContext,
+            create_dataset_client,
+            filter,
+            order,
+            tenant,
+        )
+        from hypequery.execution import ClickHouseConnection, create_clickhouse_executor
+
+        analytics = create_dataset_client(
+            executor=create_clickhouse_executor(ClickHouseConnection.from_env()),
+        )
+
+        result = analytics.execute(
+            orders,
+            DatasetQuery(
+                dimensions=("country",),
+                measures=("revenue", "orderCount"),
+                filters=(filter.eq("status", "completed"),),
+                order_by=(order.desc("revenue"),),
+                limit=10,
+            ),
+            context=ExecutionContext(tenant=tenant("org_123")),
+        )
+
+        print(result.data)
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## إتاحة مجموعات البيانات لتطبيقك ووكلائك {#serve-datasets}
+
+بمجرد أن تعمل مجموعة البيانات داخل العملية، يمكنك إتاحتها دون كتابة المزيد من SQL:
+
+* **نقاط نهاية HTTP**: تحوّل `@hypequery/serve` في TypeScript، أو `hypequery.serve` في بايثون، كل مجموعة بيانات إلى نقطة نهاية تتطلب المصادقة، مع التحقق من صحة المدخلات ومستند OpenAPI. يمكن دمج واجهات برمجة تطبيقات بايثون في FastAPI أو Django أو Flask. راجع [الإتاحة](https://hypequery.com/docs/datasets/serve-integration) و[الإتاحة باستخدام بايثون](https://hypequery.com/docs/python/serving).
+* **خطافات React**: تُنشئ `@hypequery/react` خطافات TanStack Query ذات أنواع محددة لنقاط النهاية هذه، بحيث لا تحتوي شيفرة المتصفح أبدًا على بيانات اعتماد ClickHouse. راجع [React](https://hypequery.com/docs/react/getting-started).
+* **أدوات MCP لوكلاء الذكاء الاصطناعي**: يُشغّل `npx hypequery mcp` خادم MCP يتيح للوكلاء اكتشاف مجموعات بياناتك والاستعلام عن مقاييس مسماة، بدلًا من تنفيذ استعلامات SQL خام. راجع [MCP](https://hypequery.com/docs/mcp/overview).
+
+تستند جميع طرق الوصول إلى تعريف مجموعة البيانات نفسه، لذا تلتزم جميعها بنطاق المستأجر نفسه وتُعيد الأرقام نفسها.
+
+## التشغيل دون خادم ClickHouse {#run-without-a-server}
+
+لأغراض التطوير المحلي وCI، يستطيع hypequery تشغيل مجموعات البيانات نفسها على [chDB](/ar/chdb/index)، وهو محرك ClickHouse الذي يعمل داخل العملية، دون الحاجة إلى خادم أو بيانات اعتماد. راجع [chDB في TypeScript](https://hypequery.com/docs/chdb) و[chDB في بايثون](https://hypequery.com/docs/python/datasets/chdb).
+
+## مزيد من المعلومات {#learn-more}
+
+* [البدء السريع مع TypeScript](https://hypequery.com/docs/quick-start)
+* [حزمة SDK للغة بايثون](https://hypequery.com/docs/python)
+* [أمثلة](https://github.com/hypequery/hypequery-examples)
+* [hypequery على GitHub](https://github.com/hypequery/hypequery)

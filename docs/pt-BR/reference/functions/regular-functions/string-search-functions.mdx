@@ -429,6 +429,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+Introduzido em: v26.11.0
+
+Verifica se uma string fornecida corresponde integralmente ao pattern de expressão regular informado.
+
+Ao contrário de [`match`](#match), que procura uma correspondência em qualquer posição da string, esta função
+retorna `1` somente se o pattern corresponder à string inteira, como se estivesse ancorado em
+ambas as extremidades com `^` e `$`. Isso equivale a `RE2::FullMatch` da biblioteca RE2, a
+`re.fullmatch` em Python e a `regexp_full_match` no DuckDB.
+
+Esta função usa a biblioteca de expressões regulares RE2. Consulte [re2](https://github.com/google/re2/wiki/Syntax) para ver a sintaxe compatível.
+
+A correspondência funciona assumindo UTF-8; por exemplo, `¥` usa dois bytes internamente, mas a correspondência o trata como um único ponto de código.
+A expressão regular não deve conter bytes NULL.
+Se o haystack ou o pattern não forem UTF-8 válidos, o comportamento será indefinido.
+
+Ao contrário do comportamento padrão do re2, `.` corresponde a quebras de linha. Para desativar isso, prefixe o pattern com `(?-s)`.
+
+**Sintaxe**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Aliases**: `regexp_full_match`
+
+**Argumentos**
+
+* `haystack` — String na qual o pattern é buscado. [`String`](/pt-BR/reference/data-types/string)
+* `pattern` — Pattern de expressão regular. Pode ser uma constante ou vir de uma coluna. [`String`](/pt-BR/reference/data-types/string)
+
+**Valor retornado**
+
+Retorna `1` se o pattern corresponder à string inteira, `0` caso contrário. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Correspondência com a string inteira**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Pattern com alternância no nível superior**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 Introduzido em: v25.10.0
@@ -1533,7 +1595,7 @@ Se o haystack ou o padrão não forem UTF-8 válidos, o comportamento será inde
 
 Ao contrário do comportamento padrão do re2, `.` corresponde a quebras de linha. Para desativar isso, prefixe o padrão com `(?-s)`.
 
-O padrão não é ancorado. Para corresponder à string inteira, ancore o padrão usando `^` e `$`.
+O padrão não é ancorado. Para corresponder à string inteira, ancore o padrão usando `^` e `$` ou use a função [`fullMatch`](#fullMatch).
 
 Se você só quiser procurar substrings, use as funções [`like`](#like) ou [`position`](#position), que são muito mais rápidas do que esta função.
 

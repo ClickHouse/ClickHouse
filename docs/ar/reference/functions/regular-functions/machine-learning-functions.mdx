@@ -30,13 +30,13 @@ doc_type: 'reference'
 
 أُضيف في: v26.8.0
 
-تُعيد معرّف أقرب مركز (centroid) إلى متجه ما وفق مسافة L2. تُحدَّد المراكز إمّا كمصفوفة ثابتة من مصفوفات الأعداد العشرية، ويكون المعرّف فيها هو الموضع داخل تلك المصفوفة بدءًا من 0، أو باسم `Dictionary` يحتوي على السمتين `cid` و`vec`، ويكون المعرّف فيها هو `cid`.
+تُعيد معرّف أقرب مركز (centroid) إلى متجه ما وفق مسافة L2. تُحدَّد المراكز إمّا كمصفوفة ثابتة من المصفوفات، ويكون المعرّف فيها هو الموضع داخل تلك المصفوفة بدءًا من 0، أو باسم `Dictionary` يحتوي على السمتين `cid` و`vec`، ويكون المعرّف فيها هو `cid`.
 
 <Note>
   هذه الدالة غير حتمية: فقد تُعيد نتائج مختلفة لنفس الوسائط.
 </Note>
 
-**بنية**
+**الصيغة**
 
 ```sql
 assignCentroid(vec, centroids | dict_name)
@@ -44,8 +44,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **وسيطات الدالة**
 
-* `vec` — المتجه المراد إسناده. يجب أن يتطابق بُعده مع بُعد المراكز (centroids). أما الأنواع ذات عرض (width) مختلف عن `Float32` فتُحوَّل إلى `Float32`، وهو النوع الذي يستخدمه kernel التقييم. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array) أو [`Array(BFloat16)`](/ar/reference/data-types/array)
-* `centroids` — المراكز التي تُجرى المقارنة معها، ويجب أن تكون ثابتة. تُمرَّر كمصفوفة من مصفوفات أعداد عشرية غير فارغة ومتساوية الحجم، ويكون المعرّف عندئذٍ هو الموضع ضمن تلك المصفوفة بدءًا من 0؛ أو كاسم لـ `Dictionary` يحتوي على سمة باسم `cid` من نوع عدد صحيح غير مُوقَّع يتسع له `UInt32`، وسمة باسم `vec` من النوع `Array(Float32)`، ويكون المعرّف عندئذٍ هو `cid`. يُقرأ القاموس مرة واحدة ويُخزَّن مؤقتًا إلى أن يُعاد تحميله. [`Array(Array(Float32))`](/ar/reference/data-types/array) أو [`Array(Array(Float64))`](/ar/reference/data-types/array) أو [`Array(Array(BFloat16))`](/ar/reference/data-types/array) أو [`String`](/ar/reference/data-types/string)
+* `vec` — المتجه المراد إسناده. يجب أن يتطابق بُعده مع بُعد المراكز (centroids). أما أنواع العناصر المختلفة عن `Float32` فتُحوَّل إلى `Float32`، وهو النوع الذي يستخدمه kernel التقييم. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array) أو [`Array(BFloat16)`](/ar/reference/data-types/array) أو [`Array(Int8)`](/ar/reference/data-types/array) أو [`Array(UInt8)`](/ar/reference/data-types/array)
+* `centroids` — المراكز التي تُجرى المقارنة معها، ويجب أن تكون ثابتة. تُمرَّر كمصفوفة من مصفوفات غير فارغة ومتساوية الحجم بأيٍّ من أنواع العناصر المقبولة لـ `vec` (وليس بالضرورة النوع نفسه)، ويكون المعرّف عندئذٍ هو الموضع ضمن تلك المصفوفة بدءًا من 0؛ أو كاسم لـ `Dictionary` يحتوي على سمة باسم `cid` من نوع عدد صحيح غير مُوقَّع يتسع له `UInt32`، وسمة باسم `vec` من النوع `Array(Float32)`، ويكون المعرّف عندئذٍ هو `cid`. يُقرأ القاموس مرة واحدة ويُخزَّن مؤقتًا إلى أن يُعاد تحميله. [`Array(Array(Float32))`](/ar/reference/data-types/array) أو [`Array(Array(Float64))`](/ar/reference/data-types/array) أو [`Array(Array(BFloat16))`](/ar/reference/data-types/array) أو [`Array(Array(Int8))`](/ar/reference/data-types/array) أو [`Array(Array(UInt8))`](/ar/reference/data-types/array) أو [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 

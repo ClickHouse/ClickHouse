@@ -8,9 +8,7 @@ doc_type: 'guide'
 
 ClickHouse는 E2K(Elbrus-2000)를 실험적으로 지원하며, boost, jemalloc, libunwind, zstd 같은 E2K용 커스텀 빌드 라이브러리를 사용해 최소한의 구성으로 네이티브 모드에서만 컴파일할 수 있습니다.
 
-<div id="build-clickhouse">
-  ## ClickHouse 빌드
-</div>
+## ClickHouse 빌드 {#build-clickhouse}
 
 빌드에 필요한 LLVM 버전은 20.1.8 이상이어야 합니다.
 
@@ -21,7 +19,7 @@ cmake -DCMAKE_CROSSCOMPILING=OFF -DCOMPILER_CACHE=disabled \
  -DCMAKE_C_COMPILER=/usr/lib/llvm-20/bin/clang -DCMAKE_CXX_COMPILER=/usr/lib/llvm-20/bin/clang++ \
  -DLLD_PATH=/usr/lib/llvm-20/bin/ld.lld \
  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
- -DGLIBC_COMPATIBILITY=OFF -DENABLE_LIBRARIES=OFF -DWERROR=OFF \
+ -DGLIBC_COMPATIBILITY=OFF -DGLIBC_COMPATIBILITY=OFF -DENABLE_LIBRARIES=OFF -DWERROR=OFF \
  -DENABLE_SSL=OFF -DENABLE_OPENSSL_DYNAMIC=ON \
  -DUSE_SIMDJSON=OFF -DENABLE_JEMALLOC=OFF -DENABLE_TESTS=OFF \
  -DBOOST_USE_UCONTEXT=ON -DENABLE_NURAFT=ON -DENABLE_RAPIDJSON=ON -DUSE_LIBFIU=ON ..

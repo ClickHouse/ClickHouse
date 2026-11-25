@@ -1,0 +1,14 @@
+---
+description: 'Documentation de l’interface TCP native de ClickHouse'
+sidebarTitle: 'Interface native (TCP)'
+slug: /concepts/features/connect-to-clickhouse/protocols/native-tcp
+title: 'Interface native (TCP)'
+doc_type: 'reference'
+---
+
+Le protocole natif est utilisé par le [client en ligne de commande](/fr/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client), pour la communication interserveur lors du traitement distribué des requêtes, ainsi que par certaines bibliothèques clientes par langage (par exemple [clickhouse-go](/fr/integrations/go#connection-details)).
+
+ClickHouse fournit des spécifications officielles pour le protocole natif et pour le format en colonnes qu’il transporte :
+
+* [Protocole natif](/fr/resources/develop-contribute/native-protocol/protocol) — le tramage des paquets, la machine à états de la connexion, la négociation de version et le corps de chaque message autre que `Block`.
+* [Format Native](/fr/resources/develop-contribute/native-protocol/format) — la structure des `Block` et des colonnes, les encodages propres à chaque type et la trame de compression. Ce format est également utilisé en dehors du protocole TCP, par exemple avec `FORMAT Native` via HTTP.

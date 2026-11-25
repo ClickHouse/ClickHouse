@@ -42,14 +42,14 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
     ```
 
     <Accordion title="その他のインストール方法">
-      | ツール                         | コマンド                            |
-      | --------------------------- | ------------------------------- |
-      | npm                         | `npm install -g clickhousectl`  |
-      | uv                          | `uv tool install clickhousectl` |
-      | pipx                        | `pipx install clickhousectl`    |
-      | pip                         | `pip install clickhousectl`     |
-      | cargo-binstall              | `cargo binstall clickhousectl`  |
-      | Cargo (ソースコードから、Rust 1.94+) | `cargo install clickhousectl`   |
+      | ツール                           | コマンド                            |
+      | ----------------------------- | ------------------------------- |
+      | npm                           | `npm install -g clickhousectl`  |
+      | uv                            | `uv tool install clickhousectl` |
+      | pipx                          | `pipx install clickhousectl`    |
+      | pip                           | `pip install clickhousectl`     |
+      | cargo-binstall                | `cargo binstall clickhousectl`  |
+      | Cargo (ソースコードから、Rust 1.94.1+) | `cargo install clickhousectl`   |
 
       `chctl` という別名が作成されるのは、インストールスクリプトまたは npm を使用した場合のみです。
     </Accordion>
@@ -60,6 +60,9 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
     clickhousectl update --check
     clickhousectl update
     ```
+
+    `update` は、インストールスクリプト、ダウンロード、または Cargo でインストールしたものを置き換えます。npm、uv、
+    pipx、pip でインストールした場合は、代わりに実行すべきパッケージマネージャーのコマンドを表示します。
   </Step>
 
   <Step title="ClickHouse をインストール" id="cli-install-clickhouse">
@@ -100,12 +103,13 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
   </Step>
 
   <Step title="clickhouse-serverを起動する" id="cli-start-clickhouse-server">
-    `clickhousectl` は、ローカルサーバーを実行したディレクトリ単位で管理します。プロジェクト用の
-    ディレクトリを作成し、そこでサーバーを起動します:
+    `clickhousectl` は、ローカルサーバーをプロジェクト単位で管理します。プロジェクト用のディレクトリを作成し、
+    `local init` でそのディレクトリをプロジェクトのルートに指定してから、そこでサーバーを起動します。
 
     ```bash
     mkdir my-project && cd my-project
-    clickhousectl local server start
+    clickhousectl local init
+    clickhousectl local clickhouse start
     ```
 
     ```response
@@ -115,17 +119,18 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
       Version:   26.9.1.1312
     ```
 
-    サーバーはバックグラウンドで実行され、名前は `default` になります。データは
-    `./.clickhouse/` に保存されるため、以降の `clickhousectl local` コマンドは同じ
-    ディレクトリで実行してください。`clickhousectl` は親ディレクトリを検索しません。サーバーは
-    HTTP ポート `8123` と TCP ポート `9000` で待ち受けます。これらのポートが使用中の場合は、空いているポートが使われます。
+    サーバーはバックグラウンドで動作し、名前は `default` です。データはプロジェクトルートの
+    `.clickhouse/` に保存されます。Git と同様に、以降の `clickhousectl local`
+    コマンドはそのディレクトリ、またはその配下の任意のサブディレクトリから実行できます。サーバーは
+    HTTP ポート `8123` と TCP ポート `9000` で待ち受けます。これらのポートが使用中の場合は、空いているポートを使用します。
     ポートを指定するには、`--http-port` と `--tcp-port` を指定します。複数の
-    サーバーを実行する場合は、`clickhousectl local server start dev` のように、それぞれに名前を付けてください。
+    サーバーを実行するには、`clickhousectl local clickhouse start dev` のようにそれぞれに名前を付けます。
+    `local ch` は `local clickhouse` の省略形です。
 
-    サーバーが実行中であることを確認するには、次のコマンドを実行します。
+    実行中であることを確認するには、次を実行します。
 
     ```bash
-    clickhousectl local server list
+    clickhousectl local clickhouse list
     ```
 
     ```response
@@ -135,17 +140,19 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
 
     1 server, 1 running
     ```
+
+    `clickhousectl local status` は、プロジェクト内のすべての ClickHouseサーバーと Postgres インスタンスを、実行中・停止中を問わず一覧表示します。
   </Step>
 
   <Step title="clickhouse-client を起動する" id="cli-start-clickhouse-client">
-    同じディレクトリで `clickhouse-client` を使用してサーバーに接続します:
+    プロジェクト内の任意の場所で `clickhouse-client` を使用してサーバーに接続します:
 
     ```bash
     clickhousectl local client
     ```
 
-    `local client` は `default` という名前のサーバーに接続し、サーバーと同じ
-    ClickHouse バージョンを使用します。別のサーバーに接続するには、`clickhousectl local client dev` のようにサーバー名を指定します。次のような出力が表示されます。
+    `local client` は `default` という名前のサーバーに接続し (`default` という名前のサーバーがない場合は、プロジェクト内の唯一の
+    サーバーに接続します) 、サーバーと同じ ClickHouse バージョンを使用します。別のサーバーに接続するには、`clickhousectl local client dev` のようにサーバー名を指定します。次のような出力が表示されます。
 
     ```response
     ClickHouse client version 26.9.1.1312 (official build).
@@ -169,17 +176,17 @@ ClickHouse Cloud の管理を行えます。このページでは、CLI のイ�
   </Step>
 
   <Step title="サーバーを停止する" id="cli-stop-clickhouse-server">
-    サーバーは停止するまでバックグラウンドで動作し続けます。停止するには、同じディレクトリで
+    サーバーは停止するまでバックグラウンドで動作し続けます。停止するには、プロジェクト内の任意の場所で
     次のコマンドを実行します:
 
     ```bash
-    clickhousectl local server stop
+    clickhousectl local clickhouse stop
     ```
 
-    停止してもサーバーのデータは保持されるため、次回 `clickhousectl local server start` を実行した際にそのまま利用できます。
+    停止してもサーバーのデータは保持されるため、次回 `clickhousectl local clickhouse start` を実行した際にそのまま利用できます。
 
     <Warning>
-      `clickhousectl local server remove` を実行すると、停止したサーバーのデータは完全に削除されます。
+      `clickhousectl local clickhouse remove` を実行すると、停止したサーバーのデータは完全に削除されます。
     </Warning>
   </Step>
 </Steps>

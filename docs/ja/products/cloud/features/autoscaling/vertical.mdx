@@ -11,6 +11,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="自動垂直スケーリング" />
 
+<Note>
+  [Gen 2 コンピュート](/ja/products/cloud/features/compute-generations) は、プライベートプレビュー期間中は垂直オートスケーリングに対応していません。Gen 2 でサポートされているスケーリングオプションについては、Gen 2 のドキュメントを参照してください。
+</Note>
+
 標準 `1:4` プロファイルを使用する Scale ティアおよび Enterprise tier のサービスでは、CPU 使用率とメモリ使用量に基づくオートスケーリングを利用できます。スケーリングの判断には、ルックバックウィンドウ内のサービス使用状況が継続的に監視されます。使用状況が特定のしきい値を上回る、または下回ると、需要に合わせてサービスが適切にスケーリングされます。
 
 ## 垂直自動スケーリングの設定 {#configuring-vertical-auto-scaling}

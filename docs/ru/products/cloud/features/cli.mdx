@@ -13,7 +13,7 @@ ClickHouse CLI (`clickhousectl`, псевдоним `chctl`) позволяет 
 
 Команды `clickhousectl cloud` позволяют работать со следующим:
 
-* **Сервисы:** создание, масштабирование, запуск и остановка сервисов ClickHouse Cloud, а также выполнение SQL-запросов к ним через API запросов.
+* **Сервисы:** создание, масштабирование, запуск и остановка сервисов ClickHouse Cloud, защита их от удаления, запись их параметров подключения в файл `.env`, а также выполнение SQL-запросов к ним через API запросов или в интерактивном сеансе `clickhouse client`.
 * **[Managed Postgres](/ru/products/managed-postgres/overview):** создание сервисов Postgres, реплик для чтения и восстановление на определённый момент времени, а также изменение их конфигурации.
 * **[ClickPipes](/ru/integrations/clickpipes/home):** приём данных из объектного хранилища, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB и BigQuery.
 * **[ClickStack](/ru/clickstack/overview):** управление источниками, панелями мониторинга, оповещениями, вебхуками, сохранёнными поисками и ролями в сервисе [Самостоятельно управляемый ClickHouse Observability](/ru/clickstack/self-configured/deployment/managed).
@@ -21,7 +21,7 @@ ClickHouse CLI (`clickhousectl`, псевдоним `chctl`) позволяет 
 * **Резервные копии:** просмотр списка резервных копий, изменение расписания резервного копирования и восстановление резервной копии в новый сервис.
 * **Доступ к организации:** организации, участники, приглашения, ключи API и журнал действий.
 
-Чтобы узнать флаги любой команды и необходимые для неё разрешения ключа API, выполните `clickhousectl cloud <command> --help`.
+Команды для работы с сервисами находятся в группе `clickhousectl cloud clickhouse` (сокращённо — `cloud ch`). Чтобы узнать флаги любой команды и необходимые для неё разрешения ключа API, выполните `clickhousectl cloud <command> --help`.
 
 ## Установка {#installation}
 
@@ -53,20 +53,25 @@ clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 ### Создание сервиса и выполнение запросов к нему {#create-and-query-a-service}
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
+# Create a service. The initial password is shown only once, so --dotenv
+# writes it and the connection settings to .env.local.
 # Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
+clickhousectl cloud clickhouse create --name analytics \
   --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
+  --ip-allow '203.0.113.10/32=Office' \
+  --dotenv .env.local
 
 # Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+CH_ID=$(clickhousectl cloud clickhouse get --name analytics --json | jq -r .id)
+clickhousectl cloud clickhouse query "$CH_ID" --query "SELECT version()"
+
+# Open an interactive clickhouse client session
+clickhousectl cloud clickhouse client "$CH_ID"
 ```
 
-Команда создания завершается до того, как сервис будет запущен. Периодически выполняйте `clickhousectl cloud service get "$CH_ID"`, пока `state` не примет значение `running`.
+Команда создания завершается до того, как сервис будет запущен. Опрашивайте `clickhousectl cloud clickhouse get "$CH_ID"`, пока `state` не примет значение `running`. Для существующего сервиса команда `clickhousectl cloud clickhouse dotenv "$CH_ID" --local` записывает те же настройки в `.env.local`, но без пароля. Чтобы защитить сервис в продакшн-среде, включите защиту от удаления командой `clickhouse update "$CH_ID" --deletion-protection true`; после этого `clickhouse delete` будет отказывать в удалении, пока вы не установите `--deletion-protection false`.
 
-При первом запросе с ключом API clickhousectl добавляет ваш ключ API к конечной точке API запросов сервиса и при необходимости создаёт эту конечную точку; новый ключ при этом не создаётся. Чтобы вместо этого команда завершалась с ошибкой, передайте `--no-auto-enable`. При использовании OAuth команда `service query` выполняет операторы `SELECT` только в режиме только для чтения. Тайм-аут API запросов составляет около 30 секунд, поэтому для длительных запросов и массовых загрузок используйте `clickhouse client`.
+При использовании ключа API команда `clickhouse query` привязывает ваш ключ к конечной точке API запросов сервиса, если он ещё не привязан, и при необходимости создаёт эту конечную точку; новый ключ при этом не создаётся. Чтобы вместо этого команда завершалась с ошибкой, передайте `--no-auto-enable`. Ключ только для чтения не может привязать сам себя, поэтому один раз выполните привязку ключом с правом записи. При использовании OAuth команда `clickhouse query` выполняет только операторы `SELECT` в режиме только для чтения. Тайм-аут API запросов составляет около 30 секунд, и за один запрос выполняется только один оператор, поэтому для длительных запросов, скриптов и массовых загрузок используйте `cloud clickhouse client`. Эта команда открывает `clickhouse client` через нативное TLS-соединение и выполняет вход через браузер от имени вашего пользователя Cloud, без пароля сервиса. Для её работы нужен локально установленный ClickHouse версии 25.12 или новее (`clickhousectl local install latest`), а также пользователь, который выполнит вход в браузере.
 
 ### Создание управляемого сервиса Postgres {#create-a-managed-postgres-service}
 
@@ -101,7 +106,7 @@ clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 
 ## Вывод в формате JSON и агенты для программирования {#json-output}
 
-Команды Cloud поддерживают параметр `--json`, а CLI автоматически переключается на JSON, если обнаруживает агента для программирования. В этом случае `cloud service query` по умолчанию использует формат `JSONEachRow`, поэтому скрипты, которые разбирают его вывод, должны явно указывать `--format`, например `--format TabSeparated`. См. разделы [Вывод в формате JSON](/ru/concepts/features/interfaces/cli#json-output) и [Коды выхода](/ru/concepts/features/interfaces/cli#exit-codes). Чтобы установить ClickHouse agent skills, выполните `clickhousectl skills`.
+Команды Cloud поддерживают параметр `--json`, а CLI автоматически переключается на JSON, если обнаруживает агента для программирования. В этом случае `cloud clickhouse query` по умолчанию использует формат `JSONEachRow`, поэтому скрипты, которые разбирают его вывод, должны явно указывать `--format`, например `--format TabSeparated`. См. разделы [Вывод в формате JSON](/ru/concepts/features/interfaces/cli#json-output) и [Коды выхода](/ru/concepts/features/interfaces/cli#exit-codes). Чтобы установить ClickHouse agent skills, выполните `clickhousectl skills`.
 
 ## Дополнительные материалы {#learn-more}
 

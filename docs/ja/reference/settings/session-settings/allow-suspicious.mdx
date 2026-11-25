@@ -35,7 +35,7 @@ CREATE TABLE 文で、n &gt; 256 の FixedString(n) 型カラムの作成を許�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_suspicious_indices` の別名を追加しました。"}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "true の場合、同一の式を持つ索引を定義できます"}]}]} />
 
-同一の式を持つプライマリ索引、セカンダリ索引、およびソートキーを拒否します
+同一の式を持つプライマリ索引、セカンダリ索引、およびソートキーを拒否します。また、ソートキー、プライマリキー、サンプリングキー、セカンダリ索引、またはプロジェクションのソートキーの式に、保存済みカラムの名前がそのまま使われている場合も拒否します
 
 ## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 

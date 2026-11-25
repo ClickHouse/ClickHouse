@@ -10,6 +10,28 @@ rss: true
 
 Además de este registro de cambios de ClickHouse Cloud, consulte la página [Compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
 
+<Update label="2026-11-23">
+  Las versiones de esta semana refuerzan las salvaguardas para las bases de datos de producción, mejoran la comunicación de incidentes de seguridad y añaden una nueva opción para facturar el uso de Claude.
+
+  ## Nuevas funcionalidades {#2026-11-23-new-features}
+
+  ### Protección contra eliminación para Managed Postgres {#deletion-protection-for-managed-postgres}
+
+  Ahora puede habilitar la protección contra eliminación para un servicio de [ClickHouse Managed Postgres](/es/cloud/managed-postgres) desde su página **Settings** o a través de la OpenAPI. Mientras la protección esté habilitada, las solicitudes de eliminación desde la consola o la API se rechazan con `409` hasta que se desactive la protección, lo que ayuda a evitar la eliminación accidental de bases de datos de producción. La protección contra eliminación aún no está disponible para las réplicas de lectura.
+
+  ## Integraciones {#2026-11-23-integrations}
+
+  ### Facturación vinculada con Claude Platform de Anthropic {#linked-billing-with-anthropics-claude-platform}
+
+  Las organizaciones de ClickHouse Cloud ahora pueden vincular su organización de Claude Platform en **Organization settings → Claude organization**. Una vez vinculada, Anthropic factura directamente a esa organización el uso de Claude en los productos compatibles de ClickHouse Cloud, incluidos [ClickHouse Agents](/es/agents/index), con cargo al compromiso existente con Anthropic. Usted aprueba la vinculación en Claude sin compartir una clave de API, establece un límite de gasto mensual que puede modificar en la Claude Console y puede desvincularla desde cualquiera de los dos lados. Las organizaciones vinculadas pueden usar los modelos de Claude del catálogo de ClickHouse, incluidos Opus 5.5 y Haiku 5.5. Esta funcionalidad opcional está disponible para todas las organizaciones que cumplan los requisitos; consulte [facturación vinculada con Claude Platform](/es/products/cloud/features/ai-ml/linked-billing-claude-platform) para obtener más detalles.
+
+  ## Seguridad {#2026-11-23-security}
+
+  ### Designar contactos de seguridad para su organización {#designate-security-contacts-for-your-organization}
+
+  Los administradores de la organización ahora pueden designar hasta tres contactos de seguridad. Si se produce un incidente de seguridad, ClickHouse sabrá exactamente a quién contactar en su organización. Esta funcionalidad está disponible de forma general.
+</Update>
+
 <Update label="2026-11-16">
   Las actualizaciones de esta semana añaden salvaguardas para los servicios de Cloud y las sesiones de soporte, y presentan en versión preliminar una gestión de credenciales más segura. Además, ClickHouse Observability y ClickHouse Managed Postgres ya están disponibles.
 
@@ -36,7 +58,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
   * **Construir:** [ClickHouse Managed Postgres](/es/products/managed-postgres/overview) está disponible de forma general, con captura de datos de cambios nativa hacia ClickHouse y la extensión `pg_clickhouse`. La [adquisición de Xata](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) acelera la hoja de ruta hacia entornos con ramificación y clonación instantáneas y escalado a cero.
   * **Observar:** [ClickHouse Observability](https://clickhouse.com/blog/announcing-clickhouse-observability) está en Beta Pública. Envíe datos de OpenTelemetry a un endpoint gestionado e investigue logs, métricas y trazas en ClickStack o con agentes. Observability Apps está en vista previa privada y ofrece aplicaciones compartibles, basadas en prompts, sobre telemetría en tiempo real.
   * **Proteger:** ClickHouse Security está en vista previa privada y combina integraciones de datos de seguridad, detecciones gestionadas e investigaciones impulsadas por IA basadas en la [tecnología de RunReveal](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion). Los administradores también pueden configurar el acceso de cada rol a los paneles de monitorización de la consola.
-  * **Conectar:** El conector CDC de MongoDB para [ClickPipes](/es/integrations/clickpipes/mongodb) está disponible de forma general e incorpora snapshots en paralelo, ingestión estructurada y nuevas métricas de monitorización. La compatibilidad en vista previa privada con `remoteSecure` permite que los servicios de la misma organización, región y celda se consulten entre sí a través de la red privada de ClickHouse Cloud. Los dominios aprobados y la nueva página Previews permiten realizar en autoservicio la incorporación y la prueba de funcionalidades aptas.
+  * **Conectar:** El conector CDC de MongoDB para [ClickPipes](/es/integrations/clickpipes/mongodb) está disponible de forma general e incorpora creación de instantáneas en paralelo, ingestión estructurada y nuevas métricas de monitorización. La compatibilidad en vista previa privada con `remoteSecure` permite que los servicios de la misma organización, región y celda se consulten entre sí a través de la red privada de ClickHouse Cloud. Los dominios aprobados y la nueva página Previews permiten realizar en autoservicio la incorporación y la prueba de funcionalidades aptas.
   * **Construir con IA:** Langfuse AI Gateway está en Beta Pública para trazar el uso y los costes de los modelos. Langfuse también añade Habilidades de agente versionadas; las claves de API de proyecto ahora pueden limitarse a permisos de acceso completo, visualización, ingestión o ingestión de puntuaciones; y Experiments compara cada puntuación de una ejecución candidata con una referencia, destacando mejoras y regresiones. Consulte el [anuncio de la plataforma](https://clickhouse.com/blog/announcing-clickhouse-platform-largest-expansion) para obtener más detalles.
 </Update>
 
@@ -179,7 +201,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
 
   <a id="security" />
 
-  ## Security {#security}
+  ## Seguridad {#security}
 
   <a id="hipaa-and-pci-support-in-aws-seoul-and-sydney" />
 
@@ -201,7 +223,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulte la página [Co
 
   ### Compatibilidad con PromQL en vista previa privada {#promql-support-in-private-preview}
 
-  Ahora puedes almacenar métricas de Prometheus en el motor de tablas `TimeSeries` y consultarlas con PromQL directamente contra tu ClickHouse servicio, sin necesidad de transpilador ni proxy, de modo que los colectores existentes, los dashboards de Grafana y las herramientas de Prometheus siguen funcionando sin cambios. Escribe con Prometheus remote-write v1 y lee mediante la Prometheus HTTP API, o ejecuta PromQL desde una sesión SQL usando las funciones de tabla `prometheusQuery` y `prometheusQueryRange`. Disponible para clientes seleccionados de ClickHouse Cloud y BYOC a través de la [lista de espera de vista previa privada](https://clickhouse.com/cloud/promql-support-waitlist) en AWS, GCP y Azure. Consulta la [documentación de la interfaz de Prometheus](/es/concepts/features/interfaces/prometheus) y el [anuncio](https://clickhouse.com/blog/introducing-promql).
+  Ahora puedes almacenar métricas de Prometheus en el motor de tablas `TimeSeries` y consultarlas con PromQL directamente contra tu servicio de ClickHouse, sin necesidad de transpilador ni proxy, de modo que los colectores existentes, los dashboards de Grafana y las herramientas de Prometheus siguen funcionando sin cambios. Escribe con Prometheus remote-write v1 y lee mediante la Prometheus HTTP API, o ejecuta PromQL desde una sesión SQL usando las funciones de tabla `prometheusQuery` y `prometheusQueryRange`. Disponible para clientes seleccionados de ClickHouse Cloud y BYOC a través de la [lista de espera de vista previa privada](https://clickhouse.com/cloud/promql-support-waitlist) en AWS, GCP y Azure. Consulta la [documentación de la interfaz de Prometheus](/es/concepts/features/connect-to-clickhouse/prometheus) y el [anuncio](https://clickhouse.com/blog/introducing-promql).
 
   <a id="on-demand-compute-now-in-private-preview" />
 

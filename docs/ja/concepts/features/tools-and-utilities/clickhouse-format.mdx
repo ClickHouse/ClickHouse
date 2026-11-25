@@ -12,8 +12,9 @@ doc_type: 'reference'
 * `--help` or`-h` — ヘルプメッセージを表示します。
 * `--query` — 長さや複雑さを問わずクエリをフォーマットします。
 * `--hilite` or `--highlight` — ANSI 端末のエスケープシーケンスによるシンタックスハイライトを追加します。
-* `--oneline` — 1 行でフォーマットします。
-* `--max_line_length` — 指定した長さ未満のクエリを 1 行でフォーマットします。
+* `--oneline` — 単一行でフォーマットします。
+* `--max_line_length` — 指定した長さ未満のクエリを 単一行でフォーマットします。
+* `--wrap_width` — 複数行のクエリを指定した表示幅で折り返します。折り返しはデフォルトで無効です (`0`) 。`--oneline` または `--max_line_length` によって単一行にフォーマットされたクエリは折り返されません。
 * `--comments` — 出力内のコメントを保持します。
 * `--quiet` or `-q` — 構文チェックのみを行い、成功時は何も出力しません。
 * `--multiquery` or `-n` — 同じファイル内で複数のクエリを許可します。
@@ -22,9 +23,9 @@ doc_type: 'reference'
 * `--backslash` — フォーマット済みクエリの各行末にバックスラッシュを追加します。Web などから複数行のクエリをコピーしてコマンドラインで実行したい場合に便利です。
 * `--semicolons_inline` — マルチクエリモードでは、セミコロンを新しい行ではなくクエリの最終行に記述します。
 
-<div id="examples">
-  ## 例
-</div>
+関数呼び出し、配列またはタプル、`AND`/`OR` の連鎖、ウィンドウ定義、`INSERT` のカラムリストのいずれかが幅に収まらない場合、その要素は改行され、より深いインデントで配置されます。単純な値 (カラム名やリテラル) である関数の引数や配列要素は、1 行に複数まとめて配置されます。フォーマット後の各行がすでに幅に収まっているクエリは変更されません。幅はソフトリミットであり、文字列、識別子、その他の分割できないフラグメントは幅を超えることがあります。Unicode 文字の表示幅も考慮されます。`--comments` によって保持されたコメントや、`INSERT ... VALUES` に続くデータは折り返されません。
+
+## 例 {#examples}
 
 1. クエリをフォーマットする:
 
@@ -39,7 +40,7 @@ WHERE number % 2
 ORDER BY number DESC
 ```
 
-2. 強調表示と1 行:
+2. 強調表示と単一行:
 
 ```bash title="Query"
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. 長い式の折り返し:
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

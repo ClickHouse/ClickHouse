@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-Versão de compatibilidade para consultas de DDL distribuído (ON CLUSTER)
+Versão de compatibilidade das consultas de DDL distribuído (ON CLUSTER). Use um valor menor para que os servidores mais antigos do
+cluster continuem capazes de executar as consultas.
 
-Valor padrão no Cloud: `6`.
+Os servidores não executam entradas com as versões `1` e `2`. Servidores mais antigos gravam essas versões para os valores de configuração `1`, `2`
+e `3`; portanto, antes de fazer o upgrade, defina esta configuração como no mínimo `4` em todos os servidores e aguarde até que a fila de DDL distribuído
+seja processada.
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+Valores possíveis:
+
+* `3` — Equivale a `4`. É gravado como `4`, porque servidores mais antigos rejeitam entradas com a versão `3`.
+* `4` — A entrada inclui as configurações alteradas na sessão e o contexto de rastreamento do OpenTelemetry, e as consultas `CREATE` são normalizadas no iniciador.
+* `5` — Também preserva o `initial_query_id` da consulta.
+* `6` — Também indica se a consulta faz parte de um `BACKUP` ou `RESTORE`.
+* `7` — Também inclui o UUID da tabela pai, que um banco de dados `Replicated` usa para executar a consulta somente se a tabela existir.
+* `8` — Também inclui o usuário e as funções do iniciador, que os hosts usam com a configuração do servidor `distributed_ddl_use_initial_user_and_roles`.
+
+Valor padrão na nuvem: `6`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ Valores possíveis:
 
 Valor padrão no Cloud: `none_only_active`.
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

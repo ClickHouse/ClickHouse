@@ -96,6 +96,60 @@ ORDER BY name ASC
 * `SourceFromSingleChunk` должен ждать, поскольку `ExpressionTransform` не принимает данные во время выполнения `sleep(1)`, поэтому он будет находиться в состоянии `PortFull` в течение 1e6 мкс, и, следовательно, `output_wait_elapsed_us` &gt; 1e6.
 * `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` должны ждать, пока `ExpressionTransform` выполнит `sleep(1)`, чтобы обработать результат, поэтому `input_wait_elapsed_us` &gt; 1e6.
 
+### Профилирование JOIN {#profiling-a-join}
+
+Когда запрос читает данные из нескольких таблиц, у каждой таблицы есть собственный конвейер чтения, а строки на пути к результату проходят через множество процессоров.
+Поэтому сумма `input_rows` или `output_rows` по всем процессорам учитывает одни и те же строки по несколько раз и не показывает, сколько данных прочитано из каждой таблицы.
+В следующем примере используются две таблицы `MergeTree` разного размера на одном сервере.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` показывает по одному конвейеру чтения для каждой стороны JOIN (`ReadFromMergeTree` с источниками `MergeTreeSelect` под ним), которые соединяются процессорами JOIN. Параметры `join_algorithm = 'hash'` и `enable_join_runtime_filters = 0` делают этот пример воспроизводимым: фильтр времени выполнения JOIN не может отсечь данные `big` до того, как её источник начнёт выдавать строки.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+Как интерпретировать результат:
+
+* Найдите процессоры-источники, у которых `name` имеет значение `MergeTreeSelect(...)` (или `MergeTreeSource`), а `plan_step_name` — `ReadFromMergeTree`. Их `output_rows` — это количество строк, сформированных каждым источником. Суммируйте это значение по каждому шагу чтения (`plan_step`), а не по всему запросу. Полученное значение — это количество строк, которые шаг чтения передал дальше по конвейеру.
+* У каждой стороны JOIN есть собственный шаг `ReadFromMergeTree` со своим значением `plan_step`. В строках этого выполнения `parent_ids` содержит ID нижестоящих процессоров. Начиная с источника, рекурсивно сопоставляйте каждое значение `parent_ids` с `id` в рамках того же `query_id`, чтобы проследить ветку до JOIN. Так можно, например, определить ветку, которая передаёт данные в `FillingRightJoinSide`.
+* Процессоры выше источников (например, `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor` или сам процессор преобразования JOIN) принимают и формируют строки, производные от данных источников. Не прибавляйте их счётчики к счётчикам источников, иначе одни и те же строки будут подсчитаны повторно.
+* Информации о шагах не всегда достаточно, чтобы идентифицировать источник. `EXPLAIN PIPELINE` — это отдельный план: он помогает сравнить имена процессоров и структуру веток, но в его текстовом выводе нет ни записанных в журнал значений `id`, ни `parent_ids`. Если у обеих таблиц похожие описания шагов, используйте граф выполненного запроса и известное количество строк. В этом примере источники чтения для `big` в сумме дают 1,000,000 строк, а для `small` — 1,000 строк.
+* Счётчики строк и байтов процессоров описывают данные, проходящие через конвейер, а не физические чтения из хранилища. Они не учитывают гранулы или метки, которые были прочитаны, а затем отфильтрованы; на них влияют фильтрация по первичному ключу и другим индексам, `PREWHERE` и отсечение столбцов; кроме того, они не отражают байты сжатых данных, прочитанные с диска. `SelectedRows`, `SelectedBytes` и `SelectedMarks` в `system.query_log` — это логическая статистика выборки: они могут быть ненулевыми, даже если все данные получены из кэша. Для анализа чтения файлов используйте `ReadBufferFromFileDescriptorReadBytes`: этот счётчик учитывает и чтения, обслуженные страничным кэшем ОС. Для анализа чтений с локального диска или блочного устройства без учёта страничного кэша ОС используйте `OSReadBytes`.
+
 ## См. также {#see-also}
 
 * [`EXPLAIN PIPELINE`](/ru/reference/statements/explain#explain-pipeline)

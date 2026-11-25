@@ -4,11 +4,33 @@ sidebarTitle: '2026'
 title: 'Histórico de alterações do Cloud - 2026'
 description: 'Registro de alterações do ClickHouse Cloud com descrições das novidades de cada lançamento do ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['registro de alterações', 'notas de lançamento', 'atualizações', 'novas funcionalidades', 'mudanças no cloud']
+keywords: ['registro de alterações', 'notas de lançamento', 'atualizações', 'Novos Recursos', 'mudanças no cloud']
 rss: true
 ---
 
 Além deste registro de alterações do ClickHouse Cloud, consulte também a página [Compatibilidade do Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-11-23">
+  Os lançamentos desta semana reforçam as proteções para bancos de dados de produção, aprimoram a comunicação sobre incidentes de segurança e adicionam uma nova opção de faturamento para o uso do Claude.
+
+  ## Novos Recursos {#2026-11-23-new-features}
+
+  ### Proteção contra exclusão para o Managed Postgres {#deletion-protection-for-managed-postgres}
+
+  Agora você pode habilitar a proteção contra exclusão para um serviço do [ClickHouse Managed Postgres](/pt-BR/cloud/managed-postgres) na página **Settings** ou via OpenAPI. Enquanto a proteção estiver habilitada, solicitações de exclusão feitas pelo console ou pela API são rejeitadas com `409` até que a proteção seja desativada, o que ajuda a evitar a exclusão acidental de bancos de dados de produção. A proteção contra exclusão ainda não está disponível para réplicas de leitura.
+
+  ## Integrações {#2026-11-23-integrations}
+
+  ### Faturamento vinculado à Claude Platform da Anthropic {#linked-billing-with-anthropics-claude-platform}
+
+  As organizações do ClickHouse Cloud agora podem vincular sua organização da Claude Platform em **Organization settings → Claude organization**. Após a vinculação, a Anthropic fatura o uso do Claude nos produtos compatíveis do ClickHouse Cloud, incluindo os [ClickHouse Agents](/pt-BR/agents/index), diretamente para essa organização, abatendo do compromisso já firmado com a Anthropic. Você aprova o vínculo no Claude sem compartilhar uma chave de API, define um limite de gastos mensal que pode ser alterado no Claude Console e pode desfazer o vínculo a partir de qualquer um dos lados. Organizações vinculadas podem usar os modelos Claude do catálogo do ClickHouse, incluindo Opus 5.5 e Haiku 5.5. Essa funcionalidade opcional está disponível para todas as organizações elegíveis; consulte [faturamento vinculado à Claude Platform](/pt-BR/products/cloud/features/ai-ml/linked-billing-claude-platform) para mais detalhes.
+
+  ## Segurança {#2026-11-23-security}
+
+  ### Designação de contatos de segurança para sua organização {#designate-security-contacts-for-your-organization}
+
+  Administradores da organização agora podem designar até três contatos de segurança. Caso ocorra um incidente de segurança, o ClickHouse saberá exatamente quem contatar na sua organização. Essa funcionalidade já está geralmente disponível.
+</Update>
 
 <Update label="2026-11-16">
   As atualizações desta semana trazem proteções para serviços do Cloud e sessões de suporte, além de uma prévia de um gerenciamento de credenciais mais seguro. O ClickHouse Observability e o ClickHouse Managed Postgres também já estão disponíveis.
@@ -177,43 +199,27 @@ Além deste registro de alterações do ClickHouse Cloud, consulte também a pá
 <Update label="Sep 22, 2026">
   As atualizações desta semana ampliam a cobertura de compliance do ClickHouse Cloud para novas regiões da APAC, adicionam roteamento com reconhecimento de réplicas em beta pública e trazem novos recursos para métricas, compute e dbt. As cells reguladas por HIPAA e PCI já estão disponíveis em AWS Seoul e Sydney; clientes elegíveis podem avaliar cargas de trabalho de métricas compatíveis com Prometheus e o On-Demand Compute; e o ClickHouse está disponível por meio do dbt Core v2 e do dbt Platform.
 
-  <a id="security" />
-
-  ## Security {#security}
-
-  <a id="hipaa-and-pci-support-in-aws-seoul-and-sydney" />
+  ## Segurança {#security}
 
   ### Suporte a HIPAA e PCI em AWS Seoul e Sydney {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
 
   As cells reguladas por HIPAA e PCI já estão disponíveis nas regiões AWS Seoul (`ap-northeast-2`) e AWS Sydney (`ap-southeast-2`). Selecione HIPAA ou PCI na criação do serviço para executar cargas de trabalho em conformidade nessas regiões; consulte a [visão geral de compliance](/pt-BR/products/cloud/reference/security/compliance-overview#hipaa-since-2024) e as [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) para mais detalhes.
 
-  <a id="new-features" />
-
-  ## Novos recursos {#new-features}
-
-  <a id="replica-aware-routing-now-in-public-beta" />
+  ## Novos Recursos {#new-features}
 
   ### Roteamento com reconhecimento de réplicas agora em beta pública {#replica-aware-routing-now-in-public-beta}
 
   O [roteamento com reconhecimento de réplicas](/pt-BR/products/cloud/features/infrastructure/replica-aware-routing) está disponível em beta pública para clientes Enterprise, com suporte a implantações nativas do ClickHouse Cloud e BYOC. Depois de habilitado em sua conta, você pode ativá-lo diretamente nas configurações do serviço. Veja o [anúncio](https://clickhouse.com/blog/replica-aware-routing-public-beta).
 
-  <a id="promql-support-in-private-preview" />
-
   ### Suporte a PromQL em prévia privada {#promql-support-in-private-preview}
 
-  Agora você pode armazenar métricas do Prometheus no motor de tabela `TimeSeries` e consultá-las com PromQL diretamente no seu serviço ClickHouse — sem transpilador nem proxy, de modo que coletores, dashboards do Grafana e ferramentas Prometheus já existentes continuam funcionando sem nenhuma alteração. Escreva com o Prometheus remote-write v1 e leia pela Prometheus HTTP API, ou execute PromQL em uma sessão SQL usando as funções de tabela `prometheusQuery` e `prometheusQueryRange`. Disponível para clientes selecionados do ClickHouse Cloud e BYOC por meio da [lista de espera da prévia privada](https://clickhouse.com/cloud/promql-support-waitlist) na AWS, GCP e Azure. Consulte a [documentação da interface Prometheus](/pt-BR/concepts/features/interfaces/prometheus) e o [anúncio](https://clickhouse.com/blog/introducing-promql).
-
-  <a id="on-demand-compute-now-in-private-preview" />
+  Agora você pode armazenar métricas do Prometheus no motor de tabela `TimeSeries` e consultá-las com PromQL diretamente no seu serviço ClickHouse — sem transpilador nem proxy, de modo que coletores, dashboards do Grafana e ferramentas Prometheus já existentes continuam funcionando sem nenhuma alteração. Escreva com o Prometheus remote-write v1 e leia pela Prometheus HTTP API, ou execute PromQL em uma sessão SQL usando as funções de tabela `prometheusQuery` e `prometheusQueryRange`. Disponível para clientes selecionados do ClickHouse Cloud e BYOC por meio da [lista de espera da prévia privada](https://clickhouse.com/cloud/promql-support-waitlist) na AWS, GCP e Azure. Consulte a [documentação da interface Prometheus](/pt-BR/concepts/features/connect-to-clickhouse/prometheus) e o [anúncio](https://clickhouse.com/blog/introducing-promql).
 
   ### On-Demand Compute agora em prévia privada {#on-demand-compute-now-in-private-preview}
 
   O On-Demand Compute permite que consultas `SELECT` elegíveis e intensivas em compute utilizem workers adicionais do ClickHouse por meio do serviço e do endpoint que você já usa — sem necessidade de redimensionamento ou provisionamento extra. Você habilita consultas individuais pelas configurações de consulta, enquanto seu serviço continua responsável por autenticação, planejamento, coordenação e resultados; nos bastidores, o recurso introduz um cost-based optimizer e a execução de consultas em múltiplos estágios. É indicado para leituras ad hoc pesadas e ocasionais, grandes varreduras, junções e agregações sobre dados em `SharedMergeTree`, Apache Iceberg ou Delta Lake. Está disponível para clientes selecionados por meio da [lista de espera da prévia privada](https://clickhouse.com/cloud/on-demand-compute-waitlist). Consulte a [documentação do On-Demand Compute](/pt-BR/products/cloud/features/infrastructure/on-demand-compute) e o [anúncio](https://clickhouse.com/blog/on-demand-compute).
 
-  <a id="integrations" />
-
   ## Integrações {#integrations}
-
-  <a id="clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform" />
 
   ### Adaptador ClickHouse para dbt v2 e ClickHouse no dbt Platform {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
 

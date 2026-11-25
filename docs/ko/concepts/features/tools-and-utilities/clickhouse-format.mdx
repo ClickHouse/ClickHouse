@@ -14,6 +14,7 @@ doc_type: 'reference'
 * `--hilite` or `--highlight` — ANSI 터미널 이스케이프 시퀀스를 사용해 구문 강조를 추가합니다.
 * `--oneline` — 한 줄로 포맷합니다.
 * `--max_line_length` — 지정한 길이보다 짧은 쿼리를 한 줄로 포맷합니다.
+* `--wrap_width` — 여러 줄 쿼리를 지정한 표시 너비에 맞춰 줄바꿈합니다. 줄바꿈은 기본적으로 비활성화되어 있습니다(`0`). `--oneline` 또는 `--max_line_length`로 한 줄로 포맷된 쿼리는 줄바꿈되지 않습니다.
 * `--comments` — 출력에 주석을 유지합니다.
 * `--quiet` or `-q` — 구문만 검사하며, 성공하면 아무 출력도 하지 않습니다.
 * `--multiquery` or `-n` — 같은 파일에서 여러 쿼리를 허용합니다.
@@ -22,9 +23,9 @@ doc_type: 'reference'
 * `--backslash` — 포맷된 쿼리의 각 줄 끝에 백슬래시를 추가합니다. 웹이나 다른 곳에서 여러 줄 쿼리를 복사한 뒤 명령줄에서 실행하려는 경우 유용할 수 있습니다.
 * `--semicolons_inline` — multiquery 모드에서는 세미콜론을 새 줄이 아니라 쿼리의 마지막 줄에 작성합니다.
 
-<div id="examples">
-  ## 예시
-</div>
+함수 호출, 배열 또는 튜플, `AND`/`OR` 체인, 윈도우 정의 또는 `INSERT`의 열 목록(column list)이 지정한 너비를 넘으면, 해당 원소는 한 단계 더 들여쓰기되어 새 줄에서 시작합니다. 단순 값(컬럼 이름(Column Names) 및 리터럴(literals))으로 이루어진 함수 인수와 배열 요소(array elements)는 한 줄에 여러 개씩 패킹됩니다. 서식이 적용된 줄이 이미 너비 안에 들어오는 쿼리는 변경되지 않습니다. 너비는 소프트 리밋이므로 문자열(strings), 식별자(identifiers) 및 기타 나눌 수 없는 조각은 이 너비를 초과할 수 있습니다. 유니코드 문자의 너비도 고려됩니다. `--comments`로 유지된 주석과 `INSERT ... VALUES` 뒤에 오는 데이터는 줄바꿈되지 않습니다.
+
+## 예시 {#examples}
 
 1. 쿼리 포맷 지정:
 
@@ -102,4 +103,19 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
+```
+
+6. 긴 표현식(Expressions) 줄바꿈:
+
+```bash title="Query"
+$ clickhouse-format --wrap_width 40 --query "SELECT concat(first_name, ' ', middle_name, ' ', last_name) FROM people"
+```
+
+```sql title="Response"
+SELECT
+    concat(
+        first_name, ' ', middle_name,
+        ' ', last_name
+    )
+FROM people
 ```

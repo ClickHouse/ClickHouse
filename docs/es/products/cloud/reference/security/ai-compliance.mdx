@@ -30,14 +30,17 @@ La configuración para habilitar el intercambio de datos para mejorar el product
 
 Cuando la configuración de nivel de administrador para compartir datos con ClickHouse con fines de mejora del producto está activada en su organización, ClickHouse puede usar los datos generados o recopilados a través del uso que sus usuarios hagan de una funcionalidad de IA, incluidas las entradas, salidas, logs y metadatos (pero excluidos los resultados directos de las consultas a ClickHouse Cloud), para fines como la evaluación de modelos (precisión, rendimiento y pruebas de seguridad/cumplimiento), la mejora de la fiabilidad del servicio, la seguridad, la experiencia del usuario y la realización de análisis. No utilizaremos estos datos para entrenar, reentrenar ni ajustar modelos.
 
-## Assistant {#clickhouse-assistant}
+## SQL AI, Assistant y ClickHouse Agents {#clickhouse-assistant}
 
-El parámetro de configuración para habilitar [Assistant](/es/agents/assistant/using-ai-chat) puede ser revisado y modificado por un usuario con permisos `service:manage-generative-ai`. Está disponible en la página de configuración del servicio. Esta funcionalidad habilita dos capacidades diferenciadas:
+Un usuario con permisos `service:manage-generative-ai` puede revisar y modificar el parámetro de configuración que habilita [Assistant](/es/agents/assistant/using-ai-chat). Este parámetro está disponible en la página de configuración del servicio.
 
-| Funcionalidad | Descripción                                                                     | Datos utilizados                                                                           | Validación del usuario                                                                  |
-| :------------ | :------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
-| SQL AI        | Escribe, analiza y recomienda mejoras para consultas                            | Metadatos del servicio, texto de la consulta e instrucciones del prompt                    | El resultado se muestra al usuario para su revisión antes de ejecutar la consulta       |
-| Assistant     | Permite a los usuarios hacer preguntas en lenguaje natural y obtener respuestas | Metadatos y contenido del servicio, documentación de ClickHouse e instrucciones del prompt | El resultado se presenta para su revisión; los usuarios deben validarlo antes de usarlo |
+[ClickHouse Agents](/es/agents) permite a los usuarios explorar sus datos de ClickHouse mediante conversaciones en lenguaje natural y crear agentes personalizados con herramientas configuradas.
+
+| Funcionalidad     | Descripción                                                                                          | Datos utilizados                                                                     | Validación por parte del usuario                                                          |
+| :---------------- | :--------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------- |
+| SQL AI            | Genera SQL, ofrece autocompletado en línea y sugiere correcciones y mejoras para las consultas       | Metadata del servicio, texto de la consulta y entradas del prompt                    | Los usuarios deben revisar el SQL generado y las sugerencias para comprobar su corrección |
+| Assistant         | Responde preguntas sobre ClickHouse y ayuda a analizar datos mediante conversaciones                 | Metadata y contenido del servicio, documentación de ClickHouse y entradas del prompt | Los usuarios deben validar las respuestas y los análisis                                  |
+| ClickHouse Agents | Admite agentes personalizados que utilizan herramientas configuradas para consultar y analizar datos | Metadata y contenido del servicio, instrucciones del agente y entradas del prompt    | Los usuarios deben validar las respuestas y los análisis                                  |
 
 ## Protocolo de contexto del modelo {#model-comtext-protocol}
 

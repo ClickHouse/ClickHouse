@@ -632,7 +632,7 @@ ORDER BY tuple();
   以下の詳細パラメータのデフォルト値は、ほぼあらゆる状況で適切に機能します。
   これらの値を変更することは推奨していません。
 
-  任意のパラメータ `dictionary_block_size` (デフォルト: 512) は、辞書ブロックのサイズを行数で指定します。
+  任意のパラメータ `dictionary_block_size` (デフォルト: 8192) は、辞書ブロックのサイズを行数で指定します。
 
   任意のパラメータ `dictionary_block_frontcoding_compression` (デフォルト: 1) は、辞書ブロックで圧縮として front coding を使用するかどうかを指定します。
 
@@ -918,7 +918,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `arrayJoin` {#functions-example-arrayjoin}
 
-索引対象の配列の1つの要素に対する条件では、`has` および `hasAny` と同じように索引が使用されます。`arrayJoin(tags) = 'clickhouse'` は `has(tags, 'clickhouse')` と同様に、`arrayJoin(tags) IN (set)` は `hasAny(tags, set)` と同様に索引を使用します。これは `GLOBAL IN`、`transform_null_in = 1` を指定した `IN`(集合に `NULL` が含まれない場合)、および `ARRAY JOIN` 句にも当てはまります。索引はグラニュールをスキップするだけであり、ClickHouse は引き続き各要素に対して条件をチェックします。`LEFT ARRAY JOIN` では索引は使用されません。
+索引対象の配列の1つの要素に対する条件では、`has` および `hasAny` と同じように索引が使用されます。`arrayJoin(tags) = 'clickhouse'` は `has(tags, 'clickhouse')` と同様に、`arrayJoin(tags) IN (set)` は `hasAny(tags, set)` と同様に索引を使用します。これは `GLOBAL IN`、`transform_null_in = 1` を指定した `IN`(集合に `NULL` が含まれない場合)、および `ARRAY JOIN` 句にも当てはまります。索引はグラニュールをスキップするだけであり、ClickHouse は引き続き各要素に対して条件をチェックします。`LEFT ARRAY JOIN` でも索引は使用されます。ただし、空の配列に対して追加される要素(空文字列)を条件が受け入れる場合は除きます。
 
 例:
 
@@ -1680,7 +1680,7 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 
 各テキスト索引は、 (抽象的には) 2つのデータ構造で構成されます。
 
-* 各トークンをポスティングリストに対応付けるDictionary
+* 各トークンをポスティングリストに対応付ける辞書
 * それぞれが行番号の集合を表す、ポスティングリストの集合
 
 テキスト索引は、パーツ全体に対して構築されます。
@@ -1688,14 +1688,14 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 
 索引の作成時には、 (パーツごとに) 3つのファイルが作成されます。
 
-**Dictionaryブロックファイル (.dct)**
+**辞書ブロックファイル (.dct)**
 
-テキスト索引内のトークンはソートされ、512トークンごとのDictionaryブロックに格納されます (ブロックサイズはパラメータ `dictionary_block_size` で設定できます) 。
-Dictionaryブロックファイル (.dct) には、パーツ内のすべてのインデックスグラニュールに含まれるすべてのDictionaryブロックが格納されます。
+テキスト索引内のトークンはソートされ、8192トークンごとの辞書ブロックに格納されます (ブロックサイズはパラメータ `dictionary_block_size` で設定できます) 。
+辞書ブロックファイル (.dct) には、パーツ内のすべてのインデックスグラニュールに含まれるすべての辞書ブロックが格納されます。
 
 **索引ヘッダーファイル (.idx)**
 
-索引ヘッダーファイルには、各Dictionaryブロックについて、そのブロックの先頭トークンと、Dictionaryブロックファイル内での相対オフセットが格納されます。
+索引ヘッダーファイルには、各辞書ブロックについて、そのブロックの先頭トークンと、辞書ブロックファイル内での相対オフセットが格納されます。
 
 このスパースインデックス構造は、ClickHouse の[スパース主キー索引](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)) に似ています。
 
@@ -1713,14 +1713,14 @@ Dictionaryブロックファイル (.dct) には、パーツ内のすべての�
 **テキスト索引のマージ**
 
 データパーツがマージされる際、テキスト索引を最初から再構築する必要はありません。代わりに、マージ処理内の別ステップで効率的にマージできます。
-このステップでは、各入力パーツのテキスト索引にあるソート済みDictionaryを読み込み、新しい統合Dictionaryへ結合します。
+このステップでは、各入力パーツのテキスト索引にあるソート済み辞書を読み込み、新しい統合辞書へ結合します。
 また、ポスティングリスト内の行番号も、初期マージフェーズで作成された旧行番号から新行番号への対応関係を用いて、マージ後のデータパーツ内での新しい位置を反映するよう再計算されます。
 このテキスト索引のマージ方法は、`_part_offset` カラムを持つ [projections](/ja/reference/statements/alter/projection#projection-indexes) のマージ方法に似ています。
 ソースパーツ内で索引がマテリアライズされていない場合は、索引を構築して一時ファイルに書き込み、その後、ほかのパーツの索引およびほかの一時索引ファイルの索引とともにマージされます。
 
 **デバッグ**
 
-テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) を使用すると、テキスト索引の内部 (Dictionary、ポスティングリスト、位置) を調査できます。
+テーブル関数 [mergeTreeTextIndex](/ja/reference/functions/table-functions/mergeTreeTextIndex) を使用すると、テキスト索引の内部 (辞書、ポスティングリスト、位置) を調査できます。
 
 ## 例: Hacker News データセット {#hacker-news-dataset}
 

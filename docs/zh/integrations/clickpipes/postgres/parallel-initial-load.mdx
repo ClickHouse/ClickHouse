@@ -27,7 +27,7 @@ integration:
 
 ### 逻辑分区 {#logical-partitioning-pg-snapshot}
 
-Postgres ClickPipe 使用 CTID 列对源表进行逻辑分区。它会先对源表执行 COUNT(*)，再通过窗口函数分区查询获取各个分区的 CTID 范围。这样，ClickPipe 就能并行读取源表，并由独立线程分别处理每个分区。
+Postgres ClickPipe 使用 CTID 列对源表进行逻辑分区。它会先根据表统计信息估算源表的行数，然后将表的块划分为大小相等的 CTID 范围，每个分区对应一个范围。这样，ClickPipe 就能并行读取源表，并由独立线程分别处理每个分区。
 
 下面来看看这些设置：
 
@@ -53,17 +53,10 @@ Postgres ClickPipe 使用 CTID 列对源表进行逻辑分区。它会先对源�
   #### 并行快照中的表数量 {#tables-parallel-pg-snapshot}
 </div>
 
-虽然这并不完全属于并行快照本身的范畴，但此设置控制的是在初始加载期间并行处理的表数量。默认值为 1。请注意，这一层并行度是叠加在分区并行度之上的，因此如果你有 4 个分区和 2 张表，ClickPipe 将并行读取 8 个分区。
+虽然这并不完全属于并行快照本身的范畴，但此设置控制的是在初始加载期间并行处理的表数量。默认值为 1。请注意，这一层并行度是叠加在分区并行度之上的，因此如果初始加载并行度为 4 且你有 2 张表，ClickPipe 将并行读取 8 个分区。
 
 <div id="monitoring-parallel-pg-snapshot">
   ### 在 Postgres 中监控并行快照 {#monitoring-parallel-pg-snapshot}
 </div>
 
-你可以通过分析 **pg&#95;stat&#95;activity** 来观察并行快照的运行情况。ClickPipe 会建立多个到源数据库的连接，每个连接读取源表的不同分区。如果你看到带有不同 CTID 范围的 **FETCH** 查询，就说明 ClickPipe 正在读取源表。你还可以在这里看到 COUNT(*) 和分区查询。
-
-<div id="limitations-parallel-pg-snapshot">
-  ### 限制 {#limitations-parallel-pg-snapshot}
-</div>
-
-* 管道创建后，无法再编辑快照参数。如需更改这些参数，必须创建一个新的 ClickPipe。
-* 向现有 ClickPipe 添加表时，无法更改快照参数。新表将沿用现有参数。
+你可以通过分析 **pg&#95;stat&#95;activity** 来观察并行快照的运行情况。ClickPipe 会建立多个到源数据库的连接，每个连接读取源表的不同分区。每个连接都会为其 CTID 范围声明一个游标，然后从该游标读取数据；因此，如果你看到形如 `FETCH <n> FROM peerdb_cursor_<id>` 的 **FETCH** 查询，就说明 ClickPipe 正在读取源表。

@@ -24,12 +24,12 @@ Peut être surchargée par l’argument d’index explicite `dictionary_block_fr
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "Augmentation de la taille de bloc de dictionnaire par défaut des index textuels"}]}]} />
 
-Taille de bloc de dictionnaire par défaut pour les index de texte.
-Peut être redéfinie par l’argument d’index explicite `dictionary_block_size`.
+Taille de bloc de dictionnaire par défaut pour les index textuels.
+Peut être surchargée par l’argument d’index explicite `dictionary_block_size`.
 
 ## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}
 

@@ -418,9 +418,9 @@ CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO st
 SYSTEM REFRESH VIEW current_batch_v;
 ```
 
-更长的事件链也同样适用。
+更长的链也同样适用。
 
-只有在启用刷新协调时，这种方式才能正常工作，也就是说，这些视图位于 Replicated 或 Shared database 中。如果没有协调机制，服务器重启会中断这一循环，因此每次重启后都需要手动执行一次 `SYSTEM REFRESH VIEW`，而不是只在创建视图后执行一次。
+只有在启用刷新协调时，这种方式才能正常工作，也就是说，这些视图位于 Replicated 或 Shared 数据库 中。如果没有协调机制，服务器重启会中断这一循环，因此每次重启后都需要手动执行一次 `SYSTEM REFRESH VIEW`，而不是只在创建视图后执行一次。
 
 ### 刷新设置 {#refresh-settings}
 
@@ -429,7 +429,8 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retries` - 刷新查询因异常失败时的重试次数。如果所有重试都失败，则跳过并等待下一个计划刷新时间。0 表示不重试，-1 表示无限重试。默认值：2。
 * `refresh_retry_initial_backoff_ms` - 如果 `refresh_retries` 不为 0，首次重试前的延迟时间。此后每次重试的延迟都会翻倍，直到达到 `refresh_retry_max_backoff_ms`。默认值：100 毫秒。
 * `refresh_retry_max_backoff_ms` - 刷新尝试之间延迟时间指数增长的上限。默认值：60000 毫秒 (1 分钟) 。
-* `all_replicas` - 在带有 `APPEND` 的 [Replicated database](/zh/reference/engines/database-engines/replicated) 中，控制是让所有副本独立刷新，还是在每个计划时间点仅由一个副本刷新。视图创建后不可更改。默认值：`false`。
+* `all_replicas` - 在带有 `APPEND` 的 [Replicated 数据库](/zh/reference/engines/database-engines/replicated) 中，控制是让所有副本独立刷新，还是在每个计划时间点仅由一个副本刷新。视图创建后不可更改。默认值：`false`。
+* `refresh_coordination_jitter_ms` - 如果刷新由各副本协调执行，每个副本在执行到期的刷新任务前都会随机等待一段时间，最长不超过此设置值。这样，即使未使用 `RANDOMIZE FOR`，刷新任务也能分散到各个副本上执行。此延迟不会体现在 `next_refresh_time` 中。0 表示禁用延迟。默认值：1000 毫秒。
 
 ### 更改刷新参数 {#changing-refresh-parameters}
 

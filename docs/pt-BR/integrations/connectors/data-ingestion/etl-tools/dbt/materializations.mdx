@@ -91,7 +91,7 @@ models:
 
 #### Adicionando tipos complexos {#adding-complex-types}
 
-O dbt determina automaticamente o tipo de dado de cada coluna ao analisar o SQL usado para criar o model. No entanto, em alguns casos, esse processo pode não identificar corretamente o tipo de dado, o que gera conflitos com os tipos especificados na propriedade de contrato `data_type`. Para resolver isso, recomendamos usar a função `CAST()` no SQL do model para definir explicitamente o tipo desejado. Por exemplo:
+O dbt determina automaticamente o tipo de dado de cada coluna ao analisar o SQL usado para criar o modelo. No entanto, em alguns casos, esse processo pode não identificar corretamente o tipo de dado, o que gera conflitos com os tipos especificados na propriedade de contrato `data_type`. Para resolver isso, recomendamos usar a função `CAST()` no SQL do modelo para definir explicitamente o tipo desejado. Por exemplo:
 
 ```sql
 {{
@@ -103,11 +103,11 @@ O dbt determina automaticamente o tipo de dado de cada coluna ao analisar o SQL 
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -235,9 +235,9 @@ dbt-clickhouse gera automaticamente DDL adequada à versão:
 
 ## Materialização: incremental {#materialization-incremental}
 
-O modelo de tabela será reconstruído a cada execução do dbt. Isso pode ser inviável e extremamente custoso para conjuntos de resultados maiores ou transformações complexas. Para enfrentar esse desafio e reduzir o tempo de compilação, um modelo do dbt pode ser criado como uma tabela incremental do ClickHouse e configurado com a seguinte sintaxe:
+O model de tabela será reconstruído a cada execução do dbt. Isso pode ser inviável e extremamente custoso para conjuntos de resultados maiores ou transformações complexas. Para enfrentar esse desafio e reduzir o tempo de compilação, um model do dbt pode ser criado como uma tabela incremental do ClickHouse e configurado com a seguinte sintaxe:
 
-Definição do modelo em `dbt_project.yml`:
+Definição do model em `dbt_project.yml`:
 
 ```yaml
 models:
@@ -247,7 +247,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 Ou o bloco de configuração em `models/<model_name>.sql`:
@@ -259,7 +258,6 @@ Ou o bloco de configuração em `models/<model_name>.sql`:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -269,12 +267,12 @@ Ou o bloco de configuração em `models/<model_name>.sql`:
 
 As configurações específicas deste tipo de materialização estão listadas abaixo:
 
-| Option                   | Description                                                                                                                                                                                                                                                                                                                           | Required?                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `unique_key`             | Uma tupla de nomes de colunas que identificam exclusivamente as linhas. Para mais detalhes sobre restrições de unicidade, veja [aqui](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                          | Obrigatório. Se não for fornecido, linhas alteradas serão adicionadas duas vezes à tabela incremental. |
-| `inserts_only`           | Foi descontinuado em favor da `strategy` incremental `append`, que funciona da mesma forma. Se definido como True para um modelo incremental, as atualizações incrementais serão inseridas diretamente na tabela de destino sem criar uma tabela intermediária. Se `inserts_only` for definido, `incremental_strategy` será ignorado. | Opcional (padrão: `False`)                                                                             |
-| `incremental_strategy`   | A estratégia a ser usada para a materialização incremental. `delete+insert`, `append`, `insert_overwrite` ou `microbatch` são compatíveis. Para mais detalhes sobre as estratégias, veja [aqui](#incremental-model-strategies)                                                                                                        | Opcional (padrão: &#39;default&#39;)                                                                   |
-| `incremental_predicates` | Condições adicionais a serem aplicadas à materialização incremental (aplicadas apenas à estratégia `delete+insert`                                                                                                                                                                                                                    | Opcional                                                                                               |
+| Option                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                 | Required?                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `unique_key`             | Uma tupla de nomes de colunas que identificam exclusivamente as linhas. Para mais detalhes sobre restrições de unicidade, veja [aqui](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                                                                                                                | Obrigatório para `legacy`, `delete+insert` e `microbatch`. Sem ela, a estratégia padrão é `append`.                                |
+| `inserts_only`           | Foi descontinuado em favor da `strategy` incremental `append`, que funciona da mesma forma. Se definido como True para um model incremental, as atualizações incrementais serão inseridas diretamente na tabela de destino sem criar uma tabela intermediária. Se `inserts_only` for definido, `incremental_strategy` será ignorado. Defini-lo registra no log um aviso de descontinuação, o que faz a execução falhar com `--warn-error`. | Opcional (padrão: `False`)                                                                                                         |
+| `incremental_strategy`   | A estratégia a ser usada para a materialização incremental. `delete+insert`, `append`, `insert_overwrite` ou `microbatch` são compatíveis. Para mais detalhes sobre as estratégias, veja [aqui](#incremental-model-strategies)                                                                                                                                                                                                              | Opcional (padrão: `append` sem `unique_key`; caso contrário, `delete+insert` se `use_lw_deletes` estiver definido, senão `legacy`) |
+| `incremental_predicates` | Condições adicionais a serem aplicadas à materialização incremental. Compatível apenas com as estratégias `delete+insert` e `microbatch`; qualquer outra estratégia falha quando esta opção é definida, incluindo a estratégia padrão `append` para models sem `unique_key`.                                                                                                                                                               | Opcional                                                                                                                           |
 
 ### Estratégias de modelos incrementais {#incremental-model-strategies}
 
@@ -282,27 +280,28 @@ As configurações específicas deste tipo de materialização estão listadas a
 
 #### A Estratégia Padrão (Legada) {#default-legacy-strategy}
 
+Esta é a estratégia padrão para models com uma `unique_key` (consulte [`incremental_strategy`](#incremental-configurations)).
 Historicamente, o ClickHouse oferecia apenas suporte limitado a atualizações e exclusões, na forma de &quot;mutações&quot; assíncronas.
 Para emular o comportamento esperado do dbt,
-o dbt-clickhouse, por padrão, cria uma nova tabela temporária contendo todos os registros &quot;antigos&quot; não afetados (não excluídos, não alterados),
+o dbt-clickhouse cria uma nova tabela temporária contendo todos os registros &quot;antigos&quot; não afetados (não excluídos, não alterados),
 além de quaisquer registros novos ou atualizados,
-e então troca essa tabela temporária pela relação incremental existente do modelo. Esta é a única estratégia
+e então troca essa tabela temporária pela relação incremental existente do model. Esta é a única estratégia
 que preserva a relação original caso algo
 dê errado antes da conclusão da operação; no entanto, como envolve uma cópia completa da tabela original, sua execução pode ser bastante
 cara e lenta.
 
 #### A estratégia Delete+Insert {#delete-insert-strategy}
 
-A estratégia `delete+insert` usa [exclusões leves](/pt-BR/concepts/features/operations/delete/lightweight-delete) para remover as linhas afetadas e inserir as novas. Como não copia a tabela inteira, apresenta um desempenho significativamente melhor que a estratégia &quot;legado&quot;. Definir `use_lw_deletes: true` no perfil torna `delete+insert` a estratégia incremental padrão.
+A estratégia `delete+insert` usa [exclusões leves](/pt-BR/concepts/features/operations/delete/lightweight-delete) para remover as linhas afetadas e inserir as novas. Como não copia a tabela inteira, apresenta um desempenho significativamente melhor que a estratégia &quot;legado&quot;. Definir `use_lw_deletes: true` no perfil torna `delete+insert` a estratégia incremental padrão para models com uma `unique_key`.
 
 Há ressalvas importantes ao usar essa estratégia:
 
 * Ela opera diretamente na tabela afetada, sem criar tabelas intermediárias ou temporárias. Portanto, se ocorrer um
-  problema durante a operação, os dados no modelo incremental provavelmente ficarão em um estado inválido.
+  problema durante a operação, os dados no model incremental provavelmente ficarão em um estado inválido.
 * Ela exige a configuração `allow_nondeterministic_mutations` do ClickHouse. O adaptador a habilita automaticamente em suas
   próprias sessões, quando possível. Quando não é possível habilitá-la (por exemplo, se ela for somente leitura para seu usuário do dbt), o comportamento
-  depende de como a estratégia foi escolhida: os modelos que usam a estratégia padrão recorrem silenciosamente à estratégia
-  legado; os modelos que definem explicitamente `delete+insert` ou `microbatch` falham em tempo de execução; e `use_lw_deletes: true` no
+  depende de como a estratégia foi escolhida: os models que usam a estratégia padrão recorrem silenciosamente à estratégia
+  legado; os models que definem explicitamente `delete+insert` ou `microbatch` falham em tempo de execução; e `use_lw_deletes: true` no
   perfil falha no momento da conexão.
 * Em casos muito raros, o uso de `incremental_predicates` não determinísticos pode resultar em uma condição de corrida nos
   itens atualizados/excluídos. Para garantir resultados consistentes, os predicados incrementais devem incluir apenas subconsultas sobre
@@ -310,7 +309,7 @@ Há ressalvas importantes ao usar essa estratégia:
 
 #### A estratégia microbatch (requer dbt-core &gt;= 1.9) {#microbatch-strategy}
 
-A estratégia incremental `microbatch` é um recurso do dbt-core desde a versão 1.9, projetado para lidar com transformações de grandes volumes de dados de séries temporais com eficiência. No dbt-clickhouse, ela se baseia na estratégia incremental `delete_insert` já existente, dividindo o processamento incremental em lotes predefinidos de séries temporais com base nas configurações do modelo `event_time` e `batch_size`.
+A estratégia incremental `microbatch` é um recurso do dbt-core desde a versão 1.9, projetado para lidar com transformações de grandes volumes de dados de séries temporais com eficiência. No dbt-clickhouse, ela se baseia na estratégia incremental `delete_insert` já existente, dividindo o processamento incremental em lotes predefinidos de séries temporais com base nas configurações do model `event_time` e `batch_size`.
 
 Além de lidar com grandes transformações, o microbatch oferece a capacidade de:
 
@@ -319,6 +318,8 @@ Além de lidar com grandes transformações, o microbatch oferece a capacidade d
 * Eliminar a necessidade de lógica condicional complexa em [cargas retroativas](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
 
 Para mais detalhes sobre o uso de microbatch, consulte a [documentação oficial](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+Os limites dos lotes são definidos em UTC, independentemente do fuso horário do servidor ou da coluna `event_time`.
 
 ##### Configurações de Microbatch disponíveis {#available-microbatch-configurations}
 
@@ -569,6 +570,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 Para um exemplo prático com o Jaffle Shop, consulte a [seção sobre snapshot nos guias](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). Para conhecer todas as opções, confira a página de referência [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+
+## Funções (UDFs) {#functions}
+
+As [funções](https://docs.getdbt.com/docs/build/udfs) do dbt foram introduzidas no `dbt-core v1.11+` e permitem que os usuários definam e referenciem UDFs diretamente no dbt.
+O adaptador do ClickHouse oferece suporte à definição de UDFs SQL dos tipos `scalar` e `aggregate` (consulte a [especificação de tipo](https://docs.getdbt.com/reference/resource-configs/type?version=1)), embora, internamente, ambos os tipos sejam tratados da mesma forma no ClickHouse.
+
+A seguir, apresentamos dois exemplos de como criar e referenciar funções do tipo `scalar` ou `aggregate`:
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+O corpo da função é uma única expressão sobre os argumentos, e não um `SELECT`:
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+O dbt as cria como `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2`. Os models as chamam com
+`function()`:
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+O ClickHouse expande UDFs em linha na consulta que as chama; por isso, combinadores de agregação (como `-If` ou `-State`) e cláusulas de janela (`OVER (...)`) não podem ser aplicados a UDFs de agregação.
+
+Consulte a [documentação de propriedades de funções](https://docs.getdbt.com/reference/function-properties?version=1) para ver a lista completa de configurações.
+Observe que algumas configurações podem não se aplicar ao adaptador do ClickHouse ou causar falhas nele (consulte a [seção de configurações de funções sem suporte](#unsupported-function-configurations)).
+
+### Escopo das funções {#functions-scope}
+
+As UDFs não fazem parte de um banco de dados: um nome é compartilhado por todos os bancos de dados do mesmo serviço do ClickHouse ou cluster. Se precisar diferenciar ambientes que compartilham o mesmo serviço ou cluster, use `alias`, por exemplo:
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+Assim, `{{ function('price_for_xlarge') }}` é resolvido como `price_for_xlarge_dev`, `price_for_xlarge_prod` e assim por diante.
+
+### UDFs em Python e JavaScript {#python-and-javascript-udfs}
+
+No momento, UDFs em Python e JavaScript não são suportadas pelo adaptador do ClickHouse.
+
+### Configurações de função sem suporte {#unsupported-function-configurations}
+
+As seguintes propriedades de função não são suportadas no ClickHouse:
+
+* `overloads`: uma UDF pode ter apenas uma assinatura. Definir `overloads` faz a compilação falhar.
+* argumento `default_value`: não pode ser definido em UDFs do ClickHouse. Definir `default_value` faz a compilação falhar.
+* `volatility`: não pode ser definido em UDFs do ClickHouse. É ignorado e gera um aviso.
+* `data_type` de argumento e de retorno: exigido pelo dbt, mas, como as UDFs do ClickHouse não são tipadas, ele não é aplicado. Use CAST no corpo da função se precisar de um tipo fixo.
+
+Além disso, as seguintes configurações de model não têm suporte no ClickHouse:
+
+* `grants`: não existem concessões de uso de UDF no ClickHouse. Qualquer usuário pode chamar UDFs. Definir `grants` faz a compilação falhar.
+* `persist_docs`: as descrições não podem ser persistidas em UDFs e são ignoradas silenciosamente. Elas continuam aparecendo na documentação do dbt.
 
 ## Contratos e restrições {#contracts-and-constraints}
 

@@ -73,17 +73,19 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-**별칭(Aliases)**: `allow_experimental_cleanup_old_data_files_compaction`
+**별칭**: `allow_experimental_cleanup_old_data_files_compaction`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "`allow_experimental_cleanup_old_data_files_compaction` 설정 별칭이 추가되었습니다."}]}]} />
 
-Iceberg 압축 병합 중에 오래된 데이터 파일을 정리할 수 있도록 허용합니다.
+백그라운드 컴팩션을 통해 Iceberg 테이블의 오래된 데이터 파일을 정리할 수 있도록 허용합니다.
 
-정리 작업은 컴팩션이 끝난 후 `iceberg_compaction_data_cleanup`을 실행합니다. 이 작업은 `expire_snapshots`와 동일한
-방식으로 컴팩션으로 인해 더 이상 필요 없어진 스냅샷을 만료시킵니다. 즉, 테이블 메타데이터에서 해당 스냅샷을 제거하고 다른 스냅샷이 참조하지 않는 파일을 삭제합니다. 형식 버전 1 테이블
-이거나 트랜잭션 방식의 카탈로그(Catalog)를 사용하는 테이블이면 파일만 삭제하고 스냅샷은 메타데이터에 그대로 남습니다.
+테이블의 백그라운드 작업은 더 새로운 스냅샷으로 대체된 지 `iceberg_compaction_data_cleanup` 이상 지난 스냅샷을 만료시키며,
+분기와 태그가 참조하는 스냅샷은 제외합니다. 이 작업은 `expire_snapshots`와 동일한 방식으로 테이블 메타데이터에서 해당 스냅샷을 제거하고
+다른 스냅샷이 참조하지 않는 파일을 삭제합니다. 또한 같은 기간 이상 전에 대체된 메타데이터 파일을 메타데이터 로그에서 폐기하고 삭제합니다.
+단, 트랜잭션 방식의 카탈로그(Catalog)가 테이블의 메타데이터를 기록하는 경우는 제외합니다. 어느 레플리카에서든 쿼리가 읽고 있는 스냅샷은
+다음 실행 때까지 유지됩니다. 형식 버전 1 테이블에서는 아무 작업도 수행하지 않습니다.
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -180,6 +182,15 @@ Possible values:
 | `toStartOfMinute`         | `DateTime`을 반환<br />*참고: 1970-2149 범위를 벗어나는 값에는 잘못된 결과를 반환합니다*        | `Date`/`DateTime` 입력에는 `DateTime`을 반환합니다<br />`Date32`/`DateTime64` 입력에는 `DateTime64`를 반환합니다                     |
 | `timeSlot`                | `DateTime`을 반환합니다<br />*참고: 1970-2149 범위를 벗어나는 값에는 잘못된 결과가 반환됩니다*     | `Date`/`DateTime` 입력의 경우 `DateTime`을 반환<br />`Date32`/`DateTime64` 입력의 경우 `DateTime64`를 반환                       |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "합계 16바이트 이하의 고정 폭 키와 NULL을 허용하지 않는 `String` 키 1개로 구성된 `GROUP BY`에 전용 해시 테이블을 사용하는 새로운 설정입니다. 비활성화하면 serialized 메서드가 사용됩니다."}]}]} />
+
+합계 16바이트 이하의 고정 폭 키와 NULL을 허용하지 않는 `String` 키 1개로 구성된 `GROUP BY`에 전용 해시 테이블을 사용합니다. 이 키들은 모두 `LowCardinality`일 수 있습니다. 문자열이 빈 문자열인 키는 고정 폭 값만으로 저장되므로 고정 폭 키와 같은 크기의 작은 셀에 저장됩니다. 그 외의 키는 고정 폭 값과 문자열에 대한 패킹된 참조로 저장됩니다. 이 참조는 최대 11바이트의 문자열을 인라인으로 저장하며, 고정 폭 값이 4바이트 이하이면 최대 15바이트까지 인라인으로 저장합니다. 집계 함수(aggregate functions)가 없는 `GROUP BY`는 집계 상태(aggregate states)를 위한 공간 없이 키만 저장하므로 메모리 사용량이 더 적습니다.
+비활성화하면 serialized 메서드가 사용됩니다.
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **별칭**: `allow_experimental_full_text_index`
@@ -235,7 +246,7 @@ WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새로운 설정: `GROUP BY key [ORDER BY key] LIMIT n`이 top-K 힙 경계를 `MergeTree` 읽기 단계에 발행하면, 읽기 단계는 이 경계를 기준으로 행을 필터링하고 그래뉼을 건너뜁니다. `compatibility`가 26.10 미만이면 비활성화됩니다."}]}]} />
 
-[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)과 함께 동작하는 설정입니다. 정렬 기준이 되는 첫 번째 `GROUP BY` 키가 `MergeTree` 테이블에서 읽는 컬럼이면, 집계 단계는 top-K 힙에 `LIMIT`개의 키가 채워지는 즉시 힙의 경계를 읽기 단계에 발행합니다. 그러면 읽기 단계는 다른 컬럼을 읽기 전에 키가 경계를 벗어나는 행을 제거하고(`PREWHERE`), 해당 컬럼의 프라이머리 키 또는 `minmax` 스킵 인덱스를 사용하여 경계를 벗어나는 그래뉼 전체를 건너뜁니다.
+[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)과 함께 동작하는 설정입니다. 정렬 기준이 되는 첫 번째 `GROUP BY` 키가 `MergeTree` 테이블에서 읽는 컬럼이면, 집계 단계는 top-K 힙에 `LIMIT`개의 키가 채워지는 즉시 힙의 경계를 읽기 단계에 발행합니다. 그러면 읽기 단계는 다른 컬럼을 읽기 전에 키가 경계를 벗어나는 행을 제거하고(`PREWHERE`), 해당 컬럼의 프라이머리 키 또는 `minmax` 스킵 인덱스를 사용하여 경계를 벗어나는 그래뉼 전체를 건너뜁니다. 컬럼을 `Parquet` 파일에서 읽는 경우(`file`, `s3`, `azureBlobStorage`, `hdfs` 및 데이터 레이크 테이블 함수(table functions)와 엔진), Parquet 리더가 이러한 행을 직접 제거하고, 통계를 기준으로 경계를 벗어나는 행 그룹(row groups) 전체를 건너뜁니다.
 
 이 설정은 `GROUP BY key ORDER BY key LIMIT n`뿐만 아니라, `ORDER BY` 없이 임의의 `n`개 그룹을 반환해도 되는 `GROUP BY key LIMIT n`에도 적용됩니다.
 
@@ -552,7 +563,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 해시 테이블의 크기가 작아지므로 조인이 `max_bytes_in_join` 및 `max_bytes_before_external_join` 한도에 더 늦게 도달합니다.
 
-이 설정은 `FixedString` 또는 `LowCardinality(Nullable(String))` 키, `Join` 엔진을 사용하는 테이블, `joinGet`에는 적용되지 않습니다. `LowCardinality(String)` 키를 사용하는 조인에서는 이 설정 대신 해당 키의 딕셔너리(dictionary)를 사용할 수 있습니다. 또한 조인의 오른쪽 입력이 `min_rows_for_packed_string_keys_in_hash_join`보다 적은 행(rows)으로 추정되는 경우에도 이 설정은 영향을 주지 않습니다.
+이 설정은 `FixedString` 또는 `LowCardinality(Nullable(String))` 키, `Join` 엔진을 사용하는 테이블, `joinGet`에는 적용되지 않습니다. `LowCardinality(String)` 키를 사용하는 조인에서는 이 설정 대신 해당 키의 딕셔너리(dictionary)를 사용할 수 있습니다. 조인의 해시 테이블이 CPU의 L2 캐시에 들어갈 만큼 작으면 원본 키를 그대로 유지합니다. 또한 왼쪽의 모든 키를 해싱해야 하고 오른쪽의 행(rows) 수가 `min_rows_for_packed_string_keys_in_hash_join`보다 적을 때도 원본 키를 그대로 유지합니다. 해당 설정이 0이면 해시 테이블이 L2 캐시에 들어가는 조인을 포함하여 모든 조인에 패킹이 적용됩니다.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 

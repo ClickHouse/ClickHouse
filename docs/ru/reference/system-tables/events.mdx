@@ -147,6 +147,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество блоков, для которых была применена оптимизация равных диапазонов ключей
 
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+Количество хеш-партиций, которые при параллельном слиянии single-level хеш-таблиц агрегации были прочитаны с помощью индексов ячеек таблиц (см. `AggregationIndexedTables`), а не путём сканирования каждой ячейки каждой таблицы для каждой партиции (см. `enable_parallel_single_level_merge_by_index`).
+
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
 Сколько элементов было заранее выделено в хеш-таблицах для агрегации.
@@ -445,7 +449,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-Количество случаев, когда у механизма автоматических параллельных реплик ещё не было статистики, и вместо принятия решения он собирал её
+Количество случаев, когда у механизма автоматических параллельных реплик ещё не было статистики, и вместо принятия решения он собирал её. Также учитывается (наряду с `AutoParallelReplicasRetryDeferred`) в случаях, когда план с параллельными репликами не строится повторно из-за недавнего сбора статистики, в котором шаг не мог участвовать или который ничего не измерил
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -457,11 +461,11 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами (или на границе, запомненной при его предыдущем построении), поскольку не смог сопоставить этот план с локальным настолько, чтобы сравнить или использовать его: например, не удалось сопоставить их операции чтения или определить, какое чтение реплики будут разделять между собой. Какой именно это был случай, указывает логгер `AutoParallelReplicas`
+Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами (или на границе, запомненной при его предыдущем построении), поскольку не смог сопоставить этот план с локальным настолько, чтобы сравнить или использовать его: например, не удалось сопоставить их операции чтения или определить, какое чтение реплики будут разделять между собой. Какой именно это был случай, указывает логгер `AutoParallelReplicas`. Также учитывается (наряду с `AutoParallelReplicasRetryDeferred`) в случаях, когда план не строится повторно именно из-за такого недавнего построения
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами, поскольку планировщик не задействовал в нём параллельные реплики — например, из-за слишком малого числа строк на реплику или наличия коррелированного подзапроса. Причина записывается логгером `Planner`
+Количество случаев, когда механизм автоматических параллельных реплик пропустил запрос после построения плана с параллельными репликами, поскольку планировщик не задействовал в нём параллельные реплики — например, из-за слишком малого числа строк на реплику или наличия коррелированного подзапроса. Причина записывается логгером `Planner`. Также учитывается (наряду с `AutoParallelReplicasRetryDeferred`), когда план не строится повторно именно из-за такого недавнего построения
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -474,6 +478,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 Количество случаев, когда механизм автоматических параллельных реплик отказался от их использования, хотя модель стоимости оценивала параллельные реплики как более выгодные, поскольку объём чтения был ниже порога `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+Количество случаев, когда механизм автоматических параллельных реплик не построил план с параллельными репликами, поскольку недавняя попытка построить его для того же плана завершилась без принятия решения и с тех пор было пропущено менее `automatic_parallel_replicas_undecided_retry_after_executions` выполнений. Событие, соответствующее тому предыдущему результату (например, `AutoParallelReplicasPlansNotComparable`), учитывается отдельно рядом с этим
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -826,6 +834,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 Количество частей данных, которые CacheWarmer получил полностью.
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+Количество частей данных, для которых `CacheWarmer` не выполнил fetch, поскольку прогреву подлежал только distributed cache, а часть данных была создана в текущей зоне доступности и потому уже находится в этом кэше.
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1602,6 +1614,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие подключения к распределённому кэшу. Количество открытых соединений с распределённым кэшем, минующих пул
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+Событие клиента распределённого кэша. Количество бездействующих соединений из пула, закрытых потому, что их сервер попросил этот клиент снизить интенсивность запросов
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 Событие буфера чтения в распределённом кэше. Время, затраченное на предварительный расчёт диапазонов чтения
@@ -1688,7 +1704,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-событие клиента распределённого кэша. Общее количество пакетов SlowDown, полученных от distributed cache (сервер отклонил новое соединение, так как у этого клиента слишком много открытых соединений относительно его веса)
+событие клиента распределённого кэша. Общее количество пакетов SlowDown, полученных от серверов distributed cache: либо новое соединение было отклонено, так как у этого клиента слишком много открытых соединений относительно его веса, либо слишком много запросов этого клиента зависло на данном сервере
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1782,17 +1798,29 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Событие сервера распределённого кэша. Количество байтов, прочитанных из объектного хранилища в рамках распределённого кэша при чтении из файлового кэша
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+Событие сервера Distributed Cache. Количество запросов `Read`, которые сервер перестал обслуживать, поскольку соединение достигло конца потока во время выполнения запроса: клиент закрыл соединение или registry закрыл сокет
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+Событие сервера Distributed Cache. Количество случаев, когда при сканировании зависших запросов для клиента открывалось окно замедления, поскольку число зависших незавершённых запросов этого клиента достигло `distributed_cache_slow_down_min_stuck_requests`, а их доля — `distributed_cache_slow_down_stuck_requests_ratio`
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 Событие сервера Distributed Cache. Время ожидания мьютекса закоммиченных временных файлов при конкуренции.
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-Distributed Cache server event. Время ожидания мьютекса бакета соединений отдельного клиента при contention (register/unregister/identify/eviction)
+Событие сервера Distributed Cache. Время ожидания мьютекса бакета соединений отдельного клиента при конкуренции (register/unregister/identify/вытеснение, сканирование зависших запросов, удержание временных данных, `system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 Событие сервера Distributed Cache. Время, затраченное на ожидание глобального мьютекса реестра соединений при конкуренции (identify, setClientWeight, вытеснение и отмена регистрации, когда необходима переиндексация или удаление бакета)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+Событие сервера Distributed Cache. Количество соединений, закрытых при сканировании зависших запросов, поскольку их незавершённый запрос не продвигался в ходе выполнения как минимум `distributed_cache_stuck_request_no_progress_timeout_ms` или выполнялся дольше `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1830,6 +1858,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Событие сервера Distributed Cache. Количество запросов, клиент которых закрыл соединение, не отправив EndRequest (клиент был принудительно завершён, его сокет был недоступен для записи или это устаревший клиент), из-за чего сервер прекратил их обслуживание при получении EOF. Закрытия по инициативе самого сервера (остановка или вытеснение соединения) не учитываются
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+Событие сервера Distributed Cache. Количество незавершённых запросов, прерванных из-за того, что сервер обрабатывал их дольше `distributed_cache_max_request_processing_time_ms`: с ответом `Error` или `Stop` либо с `SlowDown`, если клиенту также предлагается снизить интенсивность запросов
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Событие сервера Distributed Cache. Количество повторно использованных кэшированных клиентов S3
@@ -1841,6 +1873,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 Событие сервера распределённого кэша. Число случаев, когда сервер распределённого кэша был пропущен из-за предыдущих неудачных попыток подключения
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+Событие сервера Distributed Cache. Количество запросов, завершившихся пакетом SlowDown, пока у их клиента было открыто окно замедления: в начале запроса на чтение или запись либо из-за того, что сервер обрабатывал такой запрос дольше `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1889,6 +1925,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 Событие буфера записи distributed cache. Количество буферов записи, пропустивших запись в write-through cache из-за того, что не оказалось свободного слота фоновой записи (достигнут лимит, заданный настройкой сервера `distributed_cache_write_pool_size`) либо фоновую запись не удалось запустить. Данные при этом всё равно записываются в объектное хранилище
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+Событие клиента распределённого кэша. Количество случаев, когда сервер distributed cache был пропущен, поскольку запросил у этого клиента снизить нагрузку
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2662,6 +2702,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Время резервирования места в файловом кэше
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+Количество пропущенных обходов для понижения при продвижении в SLRU-файловом кэше из-за того, что пишущий поток удерживал блокировку приоритета или ожидал её
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 Время блокировки файлового кэша при установке блокировки состояния
@@ -2733,6 +2777,30 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 Общее время, затраченное на ожидание запуска новых потоков.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Количество пакетов строк, отправленных на GPU экспериментальным механизмом GPU aggregation. Один пакет соответствует одной передаче данных и одной операции редукции или группировки.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+Общее время, затраченное на передачу пакетов строк на GPU и их агрегирование на нём.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Количество строк, агрегированных на GPU в рамках экспериментальной GPU aggregation.
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+Количество меток (гранул индекса), исключённых из чтения таблицы семейства MergeTree по ключу партиционирования и его индексу минимумов и максимумов в ходе анализа индексов.
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+Количество меток (гранул индекса), исключённых по первичному ключу из чтения таблицы семейства MergeTree в ходе анализа индексов.
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+Количество меток (гранул индекса), которые индексы пропуска данных исключили из чтения таблицы семейства MergeTree в ходе анализа индексов. Индексы, применяемые непосредственно при чтении данных (`use_skip_indexes_on_data_read`), не учитываются.
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2820,11 +2888,7 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-Количество случаев, когда удаление файлов данных, замещённых в результате компактации Iceberg, было отложено, поскольку запрос на этой или другой реплике всё ещё читал снимок, который на них ссылается.
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-Количество случаев, когда удаление файлов данных, замещённых в результате компактации Iceberg, было отложено, поскольку компактация или замещённый ею снимок оказались новее порога `iceberg_outdated_snapshot_lifetime_seconds`.
+Количество устаревших снимков, которые при очистке таблицы Iceberg были сохранены до следующего запуска, поскольку запрос на этой или другой реплике всё ещё их читал.
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -4762,6 +4826,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Общее количество групп строк Parquet, отсечённых bloom-фильтрами.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+Количество блоков столбцов Parquet без индекса смещений (offset index), в которых страницы со строками, прочитанными при ленивой материализации, были найдены по заголовкам страниц, благодаря чему были прочитаны только эти страницы
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 Группы строк, данные столбцов которых ридер Parquet для файла в объектном хранилище или по URL начал читать ещё до того, как было запланировано их декодирование, в пределах своей доли max&#95;download&#95;threads
@@ -4805,6 +4873,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 Количество случаев, когда метаданные Parquet не находились в кэше и их приходилось считывать с диска.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+Количество блоков столбцов Parquet, индекс смещений которых был взят из кэша метаданных Parquet, а не прочитан из файла.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4877,6 +4949,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 Количество групп строк Parquet, пропущенных при чтении, поскольку их статистика min/max показала, что в них не может быть строк, входящих в результат `ORDER BY ... LIMIT` (см. `use_top_k_dynamic_filtering`)
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+Количество случаев, когда часть данных таблицы ReplicatedMergeTree, которую не удалось прочитать, успешно прошла проверку с прямым вводом-выводом (direct I/O) в обход кэша страниц ОС. Вероятно, ошибка чтения была вызвана некорректными данными в страничном кэше, а не данными на диске.
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -5622,6 +5698,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество доставок фильтра времени выполнения JOIN, прерванных из-за того, что получатель отключился или прекратил чтение; затронутый пункт назначения не получает фильтр, и его строки проходят без фильтрации
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+Количество JOIN Runtime Filters по ключам типа (U)Int8 или (U)Int16, которые вместо Фильтра Блума перешли с точного множества ключей на плотный битсет
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 Количество гранул, рассмотренных для отсечения при чтении с помощью JOIN Runtime Filters
@@ -6149,6 +6229,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 Сколько раз запускался процесс удаления частей
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+Число выборов лидера для обновления частей, в ходе которых не предпринималась попытка получить блокировку, поскольку эта реплика уже удерживает максимально допустимое количество блокировок лидера
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
@@ -6802,6 +6886,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 Количество случаев, когда сканирование по словарю текстового индекса для шаблона было пропущено, поскольку при предыдущем сканировании той же части был превышен порог для списка вхождений (posting list).
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+Количество случаев, когда сканирование по словарю текстового индекса для шаблона в части данных было пропущено, поскольку сканируемые блоки словаря занимают больше байтов, чем строки индексируемых столбцов, которые остаются доступными для чтения после применения первичного ключа и ранее применённых индексов пропуска данных.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 Строки-кандидаты (пересечение postings), проверенные при фразовом поиске на основе кандидатов.
@@ -7129,6 +7217,10 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 Количество ключей новых строк, проверенных на наличие в существующих частях на пути записи UNIQUE KEY INSERT.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+Количество строк, помеченных как удалённые синхронной операцией DELETE в таблицах с UNIQUE KEY.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 

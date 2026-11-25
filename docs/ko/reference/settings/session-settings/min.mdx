@@ -120,13 +120,19 @@ String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "새로운 설정: `enable_packed_string_keys_in_hash_join`은 조인의 오른쪽이 100000개 이상의 행으로 추정되거나 추정값이 없는 경우에만 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "새로운 설정: 런타임 필터(runtime filter) 없이 모든 왼쪽 키(평균 길이가 15바이트를 초과하거나 길이를 알 수 없는 키)를 해시하는 해시 조인에 필요한 오른쪽 행의 최소 개수입니다. `enable_packed_string_keys_in_hash_join`을 적용하려면 해시 테이블이 L2 캐시보다 커야 합니다. 0이면 모든 조인에서 키를 패킹합니다."}]}]} />
 
-`enable_packed_string_keys_in_hash_join`이 적용되는 데 필요한 조인 오른쪽의 최소 추정 행 수입니다. 규모가 작은 조인에서는 이 설정으로 얻는 이점이 거의 없으며, 키가 길면 오히려 더 느려질 수 있습니다.
+오른쪽 행 수 추정치가 있는 해시 조인은 정확한 키를 사용하는 해시 테이블이 CPU의 L2 캐시보다 대략 클 때, 또는 이 설정이 0일 때에만 `String` 키를 패킹합니다(`enable_packed_string_keys_in_hash_join` 참조). 테이블 크기는 오른쪽 행 수에 행 하나의 바이트 수를 곱한 값입니다. 행 하나의 크기는 32바이트 셀에 키의 평균 길이를 더한 값이며, 길이를 알 수 없으면 0을 더합니다. 규모가 작은 조인은 키를 패킹해도 얻는 이점이 적으며, 오히려 느려질 수 있습니다.
 
-`collect_hash_table_stats_during_joins`가 활성화되어 있으면, 추정값은 동일한 조인을 이전에 실행했을 때의 오른쪽 행 수입니다. 그렇지 않으면 쿼리 최적화 도구(Query Optimizer)의 추정값을 사용합니다. `parallel_hash_join_threshold`도 동일한 추정값을 사용합니다. 추정값이 없는 조인에는 항상 `enable_packed_string_keys_in_hash_join`이 적용됩니다.
+15바이트를 초과하는 패킹된 키는 왼쪽의 모든 행에 대해 해시됩니다. 일치 항목이 있는 행을 주로 통과시키는 런타임 필터를 사용하는 조인(`enable_join_runtime_filters` 참조)은 일치하는 행만 해시하므로 최솟값이 필요하지 않습니다. 이러한 필터가 없으면 이 설정이 오른쪽 행의 최소 개수가 됩니다. 이 설정은 키의 평균 길이가 15바이트를 초과할 때와 길이를 알 수 없을 때 적용됩니다. 길이를 알 수 없으면 긴 키로 간주하기 때문입니다. 길이는 키의 `basic` 컬럼 통계(Column Statistics)로 알 수 있습니다. `MergeTree` 테이블은 기본적으로 이 통계를 수집합니다(`auto_statistics_types` 참조).
 
-0으로 설정하면 최솟값 제한이 없습니다.
+키가 `Memory` 테이블의 컬럼이거나, 서브쿼리의 집계 함수 결과이거나, `concat(k, 'x')` 또는 `hex(k)`처럼 `ON` 안의 표현식 결과이면 통계가 없습니다. `OR`를 사용하는 조인은 통계를 사용하지 않습니다. 컬럼을 그대로 전달하기만 하거나 해당 컬럼으로 그룹화하는 서브쿼리는 통계를 유지합니다.
+
+`SEMI` 및 `ANTI`를 제외한 `LEFT` 조인과 `FULL` 조인은 왼쪽의 모든 행을 유지하므로 런타임 필터가 적용되지 않습니다. `LEFT ANTI` 조인의 필터는 일치 항목이 없는 행을 통과시키므로 여기에 해당하지 않습니다.
+
+`collect_hash_table_stats_during_joins`가 활성화되어 있으면 행 수는 동일한 조인을 이전에 실행했을 때의 오른쪽 행 수입니다. 그렇지 않으면 쿼리 최적화 도구(Query Optimizer)의 추정치를 사용하며, 이 추정치는 `parallel_hash_join_threshold`에서도 사용됩니다. 최적화기 추정치가 없으면 이 서버가 오른쪽 테이블(right table)을 직접 읽을 때의 추정치를 사용합니다. 둘 다 없는 조인은 쿼리를 계획한 서버가 오른쪽 행 수를 이 최솟값보다 작게 추정하지 않는 한 키를 패킹합니다. 분산 쿼리(Distributed Query)의 각 서버는 자체 추정치, 통계, 캐시 크기를 기준으로 결정합니다.
+
+0이면 모든 조인의 키를 패킹합니다.
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 

@@ -57,6 +57,10 @@ Un enregistrement composé exactement de deux champs `bytes` nommés `metadata` 
 
 Lors de l’importation des données, si un champ est introuvable dans le schéma et que le paramètre [`input_format_avro_allow_missing_fields`](/fr/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) est activé, la valeur par défaut est utilisée au lieu de générer une erreur.
 
+### Analyse syntaxique parallèle {#parallel-parsing}
+
+Lorsque [`input_format_parallel_parsing`](/fr/reference/settings/formats/input-format#input_format_parallel_parsing) est activé, un fichier conteneur d’objets Avro est divisé aux limites de ses blocs (marqueurs de synchronisation), et les blocs sont analysés sur plusieurs fils d’exécution. Comme des blocs entiers sont mis en mémoire tampon et décodés de manière concurrente, le pic d’utilisation de la mémoire augmente avec le nombre de fils d’exécution d’analyse ; définissez `input_format_parallel_parsing = 0` pour analyser séquentiellement et limiter la consommation de mémoire. Cela ne s’applique pas à [`AvroConfluent`](/fr/reference/formats/Avro/AvroConfluent), qui n’est pas un fichier conteneur d’objets.
+
 ### Écrire des données Avro {#writing-avro-data}
 
 Pour écrire des données d&#39;une table ClickHouse dans un fichier Avro :

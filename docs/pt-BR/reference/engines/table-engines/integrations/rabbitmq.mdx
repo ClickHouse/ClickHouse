@@ -15,9 +15,7 @@ Este motor permite integrar o ClickHouse ao [RabbitMQ](https://www.rabbitmq.com)
 * Publicar ou assinar fluxos de dados.
 * Processar streams à medida que ficam disponíveis.
 
-<div id="creating-a-table">
-  ## Criando uma tabela
-</div>
+## Criando uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -48,6 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -78,14 +77,13 @@ Parâmetros opcionais:
 * `reject_unhandled_messages` - Rejeita mensagens (envia confirmação negativa ao RabbitMQ) em caso de erro. Essa configuração é ativada automaticamente se houver um `x-dead-letter-exchange` definido em `rabbitmq_queue_settings_list`.
 * `rabbitmq_commit_on_select` - Faz o commit das mensagens quando uma consulta select é executada. Padrão: `false`.
 * `rabbitmq_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem do RabbitMQ para formatos baseados em linhas. Padrão: `1`.
+* `rabbitmq_max_idle_producer_connections` - O número máximo de conexões idle, cada uma com um canal aberto, que a tabela mantém para consultas `INSERT` subsequentes. Reutilizá-las evita o custo de conectar ao RabbitMQ (e do handshake TLS) a cada `INSERT`, por exemplo, quando uma view materializada grava na tabela a cada insert na tabela de origem. As conexões idle são verificadas a cada poucos segundos: uma conexão que permaneceu idle por metade do tempo limite de heartbeat negociado com o servidor é encerrada, pois o servidor a encerra quando esse tempo limite expira; o mesmo ocorre com uma conexão que foi perdida. `0` desativa a reutilização: cada `INSERT` abre e fecha sua própria conexão. Padrão: `0`.
 * `rabbitmq_empty_queue_backoff_start_ms` — Ponto inicial de backoff para reprogramar a leitura se a fila do RabbitMQ estiver vazia.
 * `rabbitmq_empty_queue_backoff_end_ms` — Ponto final de backoff para reprogramar a leitura se a fila do RabbitMQ estiver vazia.
 * `rabbitmq_empty_queue_backoff_step_ms` — Passo de backoff para reprogramar a leitura se a fila do RabbitMQ estiver vazia.
 * `rabbitmq_handle_error_mode` — Como tratar erros no motor RabbitMQ. Valores possíveis: default (a exceção será lançada se não conseguirmos analisar uma mensagem), stream (a mensagem de exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`), dead&#95;letter&#95;queue (os dados relacionados ao erro serão salvos em system.dead&#95;letter&#95;queue).
 
-<div id="ssl-connection">
-  ### Conexão SSL
-</div>
+### Conexão SSL {#ssl-connection}
 
 Com a forma `rabbitmq_host_port`, defina `rabbitmq_secure = 1` para usar TLS.
 Com a forma `rabbitmq_address`, o transporte é definido pelo esquema de URI; portanto, use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` é ignorado para a forma de endereço, e `rabbitmq_secure = 1` junto com um endereço `amqp://` em texto simples é rejeitado em vez de conectar silenciosamente sem criptografia.
@@ -126,9 +124,7 @@ Configuração adicional:
 </rabbitmq>
 ```
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 `SELECT` não é particularmente útil para ler mensagens (exceto para depuração), porque cada mensagem só pode ser lida uma vez. É mais prático criar fluxos em tempo real usando [visões materializadas](/pt-BR/reference/statements/create/view). Para isso:
 
@@ -189,9 +185,7 @@ CREATE MATERIALIZED VIEW consumer TO daily
 SELECT key, value FROM daily ORDER BY key;
 ```
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_exchange_name` - Nome do exchange do RabbitMQ. Tipo de dado: `String`.
 * `_channel_id` - ChannelID no qual o consumidor que recebeu a mensagem foi declarado. Tipo de dado: `String`.
@@ -207,15 +201,11 @@ Colunas virtuais adicionais quando `rabbitmq_handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_message` e `_error` são preenchidas apenas em caso de exceção durante a análise; elas são sempre `NULL` quando a mensagem é analisada com sucesso.
 
-<div id="caveats">
-  ## Ressalvas
-</div>
+## Ressalvas {#caveats}
 
 Embora seja possível especificar [expressões padrão de coluna](/pt-BR/reference/statements/create/table#default_values) (como `DEFAULT`, `MATERIALIZED` e `ALIAS`) na definição da tabela, elas serão ignoradas. Em vez disso, as colunas serão preenchidas com os respectivos valores padrão de seus tipos.
 
-<div id="data-formats-support">
-  ## Suporte a formatos de dados
-</div>
+## Suporte a formatos de dados {#data-formats-support}
 
 A motor RabbitMQ oferece suporte a todos os [formatos](/pt-BR/reference/formats/index) compatíveis com o ClickHouse.
 O número de linhas em uma mensagem do RabbitMQ depende de o formato ser baseado em linhas ou em blocos:
@@ -223,9 +213,7 @@ O número de linhas em uma mensagem do RabbitMQ depende de o formato ser baseado
 * Para formatos baseados em linhas, o número de linhas em uma mensagem do RabbitMQ pode ser controlado pela configuração `rabbitmq_max_rows_per_message`.
 * Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
-<div id="data-durability">
-  ## Durabilidade dos dados em caso de perda de energia
-</div>
+## Durabilidade dos dados em caso de perda de energia {#data-durability}
 
 O motor `RabbitMQ` pode perder silenciosamente linhas já consumidas se o cache de páginas do SO for descartado antes que os dados inseridos sejam gravados em disco. Depois que um lote é enviado às visões materializadas dependentes, o consumidor envia `basic.ack` ao broker, permitindo que ele exclua essas mensagens. No entanto, as linhas inseridas só se tornam duráveis quando a parte de destino é sincronizada com o disco por fsync, o que, por padrão, não ocorre de forma síncrona (`fsync_after_insert = 0`). Se o cache de páginas for perdido após a confirmação, mas antes que a parte de destino seja sincronizada por fsync, o broker já terá descartado as mensagens, e o consumidor as ignorará ao se reconectar. Assim, as linhas serão perdidas sem nenhum erro, e `count()` será simplesmente menor. O simples encerramento de um processo não expõe esse problema, porque o kernel mantém o cache de páginas e, eventualmente, grava seu conteúdo em disco. Já a perda do cache de páginas o expõe; exemplos incluem perda de energia no nível do dispositivo e uma reinicialização abrupta do host ou do kernel.
 

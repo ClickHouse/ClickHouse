@@ -90,6 +90,16 @@ La taille minimale de la partie à téléverser lors d’un téléversement mult
 Nombre maximal de valeurs `_path` pouvant être extraites des filtres de requête pour parcourir les fichiers
 au lieu d’utiliser un listage par glob. 0 signifie désactivé.
 
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "Nouveau paramètre permettant d’accéder aux buckets S3 de type « requester-pays »."}]}]} />
+
+Définissez ce paramètre sur `requester` pour accéder à un bucket `S3` de type « requester-pays » : chaque requête inclut alors l’en-tête `x-amz-request-payer: requester`, de sorte que les frais de requête et de transfert de données sont à la charge du demandeur. Valeurs possibles : `none` (valeur par défaut, l’en-tête n’est pas envoyé), `requester`.
+
+Ce paramètre est pris en compte lors de la création du client `S3` ; il s’applique donc aux usages limités à la portée d’une requête, comme la fonction de table `s3` et `BACKUP ... TO S3`. Un `SET` ultérieur au niveau d’une requête ne reconfigure pas un client à longue durée de vie déjà créé, comme un disque `S3` ou une table `S3` disposant de ses propres identifiants. Dans ces cas, utilisez la clé `request_payer` d’une section d’endpoint de la configuration du serveur `<s3>` ou de la définition du disque, qui a par ailleurs préséance sur ce paramètre.
+
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />

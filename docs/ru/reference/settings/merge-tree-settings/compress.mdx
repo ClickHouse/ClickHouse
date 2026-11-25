@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Для marks поддерживается сжатие, что уменьшает размер файла marks и ускоряет передачу
 по сети.
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +32,21 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 что повышает коэффициент сжатия, но требует распаковки большего объёма данных при чтении.
 Это полезно для рабочих нагрузок, которые всегда читают все столбцы (например, проекции).
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Новая настройка: начинать новый сжатый блок на границах подпотоков столбца в компактных частях для ускорения чтения подстолбцов"}]}]} />
+
+Управляет физической структурой компактных частей. Если `true` (по умолчанию), подпоток столбца в грануле начинает
+новый сжатый блок, как только текущий блок достигает размера `min_compress_block_size`. Благодаря этому при чтении отдельного
+подстолбца (например, размера `Array`, элемента `Tuple` или JSON-пути) распаковывается только этот подпоток,
+а небольшие подпотоки по-прежнему хранятся в общем блоке. Если `false`, все подпотоки столбца в грануле упаковываются
+в один сжатый блок: это улучшает коэффициент сжатия, но при чтении подстолбца приходится распаковывать больший объём данных.
+Действует только в том случае, если включены настройки `write_marks_for_substreams_in_compact_parts` и
+`compress_per_column_in_compact_parts`.
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

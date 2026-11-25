@@ -77,6 +77,33 @@ import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 
 يمكن تطبيق جميع التحسينات الموضَّحة أدناه مباشرةً على الجداول الأساسية باستخدام ClickHouse SQL القياسي، سواء عبر [SQL Console في ClickHouse Cloud](/ar/integrations/connectors/sql-clients/sql-console) أو من خلال [ClickHouse client](/ar/concepts/features/interfaces/client).
 
+## اكتشاف مصادر حمل الاستعلامات {#query-attribution}
+
+قبل البدء في التحسين، حدّد لوحات المعلومات والتنبيهات والميزات الأخرى التي تُولّد القدر الأكبر من العمل. يضع ClickStack وسمًا على كل استعلام يرسله إلى ClickHouse، بحيث يمكن تتبّع أي استعلام في [`system.query_log`](/ar/reference/system-tables/query_log) أو [`system.processes`](/ar/reference/system-tables/processes) وصولًا إلى الجهة التي أصدرته:
+
+* يبدأ `query_id` الخاص به بـ `hdx-` متبوعًا باسم الواجهة التي أصدرته، مثل `hdx-alert-<uuid>` أو `hdx-mcp-<uuid>`. استخدمه للعثور على استعلام قيد التشغيل في `system.processes`، الذي لا يحتوي على العمود `log_comment`؛ إذ يوجد التعليق هناك في `Settings['log_comment']`.
+* أما `log_comment` الخاص به فهو كائن JSON صغير. يحدد الحقل `surface` الجهة التي أصدرت الاستعلام، مثل `dashboard` أو `search` أو `chart-explorer` أو `alert` أو `mcp` أو `api`. وبحسب الواجهة، يتضمن أيضًا معرّفات `dashboard` و`tile`، و`search` المحفوظ، و`alert`، و`source`، بالإضافة إلى `label`، مثل اسم أداة MCP، أو مسار واجهة برمجة التطبيقات، أو اسم لوحة معلومات مدمجة. مثال: `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+يسجّل التعليق ما طُلب، لا مَن طلبه، إذ لا تُكتب أي معرّفات للمستخدمين أو الفرق. (لتسجيل البريد الإلكتروني للمستخدم في سجلات الاستعلامات، استخدم إعداد **Query Log Setting Prefix** الخاص بالاتصال؛ راجع [الاتصالات](/ar/clickstack/managing/config#connection-settings).) وتحمل بعض الاستعلامات الداخلية، مثل فحص الإصدار، معرّف استعلام يبدأ بـ `hdx-` وقيمة `log_comment` فارغة. كما تحمل استعلامات PromQL معلومات الإسناد نفسها.
+
+يوضّح الاستعلام التالي مصدر حمل القراءة، مصنّفًا حسب الواجهة ولوحة المعلومات:
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+في ClickHouse Cloud، يكون كلٌّ من `system.query_log` و`system.processes` محليًا على كل نسخة متماثلة. ولتشمل النتائج جميع النسخ المتماثلة للخدمة، اقرأ من `clusterAllReplicas(default, system.query_log)` أو `clusterAllReplicas(default, system.processes)` بدلًا من ذلك. أما على خادم واحد لا يتضمن عنقود `default`، كصورة all-in-one، فاستعلم عن الجداول مباشرةً.
+
 <div id="materialize-frequently-queried-attributes">
   ## التحسين 1. تحويل السمات التي يُستعلَم عنها كثيرًا إلى أعمدة مُجسَّدة {#materialize-frequently-queried-attributes}
 </div>

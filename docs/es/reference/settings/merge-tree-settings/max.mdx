@@ -53,6 +53,8 @@ de esta configuración.
 
 En una columna de valores de tamaño fijo, el tamaño de bloque se redondea hacia abajo al múltiplo más cercano del tamaño del valor en bytes, aunque nunca queda por debajo de un único valor.
 
+Un bloque comprimido contiene como máximo 256 MiB de datos sin comprimir, por lo que los valores superiores a 256 MiB se tratan como 256 MiB.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

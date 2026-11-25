@@ -77,6 +77,13 @@ Cloud 기본값: `50`.
 
 이 설정은 `INSERT SELECT`와 `clickhouse-client` 또는 HTTP 인터페이스를 통해 데이터를 전송하는 일반 `INSERT` 모두에 적용됩니다. 파이프라인의 쓰기 측(블록을 합치고 대상 테이블에 쓰는 작업)은 최대 이 수의 스레드로 병렬 실행됩니다.
 
+결과가 삽입 순서에 따라 달라지는 대상은 입력 스트림이 하나이면 단일 쓰기 스트림을 유지합니다. 이러한 대상에는
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(각각의 복제 버전 포함), `UNIQUE KEY`가 있는 `MergeTree` 테이블, `EmbeddedRocksDB`, `Distributed`
+(샤드에 있는 테이블의 엔진을 알 수 없기 때문)가 있습니다. 출력 스트림이 여러 개인 `SELECT`에는 유지해야 할 입력 순서가 없으므로
+이러한 대상에서도 병렬 싱크를 유지할 수 있습니다. `KeeperMap`은 항상 단일 쓰기 스트림을 유지합니다.
+이러한 제한 사항은 materialized view 또는 `Alias` 테이블을 거쳐 쓰는 대상에도 적용됩니다.
+
 가능한 값:
 
 * 0 — 자동. 서버에서 사용할 수 있는 CPU 코어 수([`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads)와 동일한 자동 값)를 사용하며, [`max_insert_threads_min_free_memory_per_thread`](/ko/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread)에 따라 메모리 부족 시 감소합니다.
@@ -92,7 +99,7 @@ Cloud 기본값:
 * 더 큰 노드: `4`
 
 병렬 `INSERT SELECT`는 `SELECT` 부분도 병렬로 실행되는 경우에만 적용됩니다. [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads) 설정을 참조하십시오.
-일반 `INSERT`에서는 입력 데이터를 단일 스트림으로 읽고 구문 분석한 다음, 쓰기 작업을 위해 파이프라인을 이 수만큼의 스트림으로 조정합니다.
+일반 `INSERT`에서는 입력 데이터를 단일 스트림으로 읽고 파싱한 다음, 쓰기 작업을 위해 파이프라인을 이 수만큼의 스트림으로 조정합니다.
 쓰기 측 병렬화는 동기식 일반 `INSERT`에만 적용됩니다. 비동기 삽입([`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert) `= 1`)은 큐에 저장되고 백그라운드에서 플러시되므로 이 설정의 영향을 받지 않으며 항상 단일 스트림으로 유지됩니다.
 안전한 경우에만 쓰기 측이 병렬 실행됩니다. 그렇지 않으면 단일 스트림으로 유지되며 이 설정은 적용되지 않습니다. 특히 [`use_strict_insert_block_limits`](/ko/reference/settings/session-settings/use#use_strict_insert_block_limits)가 활성화되어 있고 대상 테이블(또는 대상이 데이터를 전달하는 테이블)에서 삽입된 블록의 중복을 제거하며 쿼리에 삽입 중복 제거가 활성화된 경우([`deduplicate_insert`](/ko/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 참조), 또는 대상에 종속 materialized view가 있는 경우(예: `Alias` 뒤에 있는 대상이 데이터를 전달하는 테이블의 view 포함)에는 쓰기가 단일 스트림으로 유지됩니다. 단, [`parallel_view_processing`](/ko/reference/settings/session-settings/parallel#parallel_view_processing)이 활성화되어 있고 종속 view 체인에 중복 제거 위험이 없는 경우(views의 중복 제거가 비활성화됨([`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) 또는 어떤 종속 view 경로에서도 중복을 제거할 수 없음)는 예외입니다. 또한 `Buffer` 및 `Distributed` 대상에서는 항상 단일 스트림으로 유지됩니다. `Buffer`는 자체 Context에서 플러시하고 `Distributed`는 쓰기 작업을 원격 샤드로 전달합니다(원격 샤드에서 데이터를 버퍼링할 수 있음). 따라서 이 쿼리의 중복 제거 설정은 최종 쓰기에 적용되지 않으며, 해당 설정과 관계없이 단일 스트림으로 유지됩니다. 병렬이 아닌 쿼럼 삽입([`insert_quorum`](/ko/reference/settings/session-settings/insert-quorum#insert_quorum)이 `2` 이상이거나 `'auto'`이고 [`insert_quorum_parallel`](/ko/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)이 비활성화된 경우)도 테이블당 진행 중인 쿼럼 파트를 하나만 허용하므로 단일 스트림으로 유지됩니다.
 값이 클수록 메모리 사용량이 증가합니다.

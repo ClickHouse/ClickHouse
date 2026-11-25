@@ -110,7 +110,7 @@ Observe que será necessário alterar manualmente a coluna de destino para o tip
 
 #### Tipos de dados Avro compatíveis {#supported-avro-data-types}
 
-O ClickPipes oferece suporte a todos os tipos Primitive e Complex do Avro, bem como a todos os tipos lógicos do Avro, exceto `local-timestamp-millis` e `local_timestamp-micros`. Os tipos `record` do Avro são convertidos em Tuple, os tipos `array` em Array e `map` em Map (apenas chaves do tipo string). Em geral, as conversões listadas [aqui](/pt-BR/concepts/features/interfaces/schema-inference#avro) estão disponíveis. Recomendamos usar correspondência exata de tipos para os tipos numéricos do Avro, pois o ClickPipes não verifica overflow nem perda de precisão na conversão de tipos. Como alternativa, todos os tipos do Avro podem ser inseridos em uma coluna `String` e, nesse caso, serão representados como uma string JSON válida.
+O ClickPipes oferece suporte a todos os tipos Primitivos e Complex do Avro, bem como a todos os tipos lógicos do Avro, exceto `local-timestamp-millis` e `local_timestamp-micros`. Os tipos `record` do Avro são convertidos em Tuple, os tipos `array` em Array e `map` em Map (apenas chaves do tipo string). Em geral, as conversões listadas [aqui](/pt-BR/concepts/features/operations/insert/schema-inference#avro) estão disponíveis. Recomendamos usar correspondência exata de tipos para os tipos numéricos do Avro, pois o ClickPipes não verifica overflow nem perda de precisão na conversão de tipos. Como alternativa, todos os tipos do Avro podem ser inseridos em uma coluna `String` e, nesse caso, serão representados como uma string JSON válida.
 
 #### Tipos Nullable e unions do Avro {#nullable-types-and-avro-unions}
 

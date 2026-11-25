@@ -101,7 +101,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 У ClickHouse есть клиенты для самых популярных языков программирования.
 Они оптимизированы для корректного выполнения вставок и изначально поддерживают асинхронные вставки — либо напрямую, как, например, [клиент Go](/ru/integrations/language-clients/go/clickhouse-api#async-insert), либо косвенно, если они включены в настройках на уровне запроса, пользователя или соединения.
 
-Полный список доступных клиентов и драйверов ClickHouse см. в разделе [Native Clients and Interfaces](/ru/concepts/features/interfaces/native-clients-interfaces-index).
+Полный список доступных клиентов и драйверов ClickHouse см. в разделе [Подключение к ClickHouse](/ru/concepts/features/connect-to-clickhouse).
 
 <div id="prefer-the-native-format">
   ### Предпочитайте формат Native {#prefer-the-native-format}
@@ -119,9 +119,7 @@ ClickHouse поддерживает множество [форматов вво�
 С точки зрения сжатия, сетевых накладных расходов и обработки на сервере он эффективнее, чем другие построчные форматы, такие как [JSON](/ru/reference/formats/JSON/JSON).
 Формат [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) можно рассмотреть, если у вас невысокая пропускная способность записи и нужно быстро выполнить интеграцию. Однако учитывайте, что из-за парсинга этот формат создает дополнительную нагрузку на CPU в ClickHouse.
 
-<div id="use-the-http-interface">
-  ### Использование HTTP-интерфейса {#use-the-http-interface}
-</div>
+### Использование HTTP-интерфейса {#use-the-http-interface}
 
 В отличие от многих традиционных баз данных, ClickHouse поддерживает HTTP-интерфейс.
 Его можно использовать как для вставки данных, так и для выполнения запросов, применяя любой из перечисленных выше форматов.
@@ -130,7 +128,7 @@ ClickHouse поддерживает множество [форматов вво�
 Существующие клиенты используют либо один из этих протоколов, либо оба сразу (например, клиент Go).
 Собственный протокол также позволяет легко отслеживать прогресс выполнения запроса.
 
-См. [HTTP-интерфейс](/ru/concepts/features/interfaces/http), чтобы узнать подробности.
+См. [HTTP-интерфейс](/ru/concepts/features/connect-to-clickhouse/protocols/http), чтобы узнать подробности.
 
 <div id="basic-example">
   ## Базовый пример {#basic-example}
@@ -180,9 +178,7 @@ user_id message                                             timestamp           
   Если вам нужна помощь со вставкой больших наборов данных или вы столкнулись с ошибками при импорте данных в ClickHouse Cloud, свяжитесь с нами по адресу support@clickhouse.com, и мы поможем.
 </Info>
 
-<div id="inserting-data-from-command-line">
-  ## Вставка данных из командной строки {#inserting-data-from-command-line}
-</div>
+## Вставка данных из командной строки {#inserting-data-from-command-line}
 
 **Предварительные требования**
 
@@ -190,7 +186,7 @@ user_id message                                             timestamp           
 * `clickhouse-server` запущен
 * У вас есть доступ к терминалу, где доступны `wget`, `zcat` и `curl`
 
-В этом примере показано, как вставить CSV-файл в ClickHouse из командной строки с помощью clickhouse-client в батч-режиме. Дополнительные сведения и примеры вставки данных через командную строку с помощью clickhouse-client в батч-режиме см. в разделе [&quot;Батч-режим&quot;](/ru/concepts/features/interfaces/client#batch-mode).
+В этом примере показано, как вставить CSV-файл в ClickHouse из командной строки с помощью клиента ClickHouse в пакетном режиме. Дополнительные сведения и примеры вставки данных через командную строку с помощью клиента ClickHouse в пакетном режиме см. в разделе [«Пакетный режим»](/ru/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
 В качестве примера мы будем использовать [набор данных Hacker News](/ru/get-started/sample-datasets/hacker-news), который содержит 28 миллионов строк с данными Hacker News.
 

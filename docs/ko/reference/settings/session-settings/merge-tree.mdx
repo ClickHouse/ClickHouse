@@ -188,6 +188,14 @@ ClickHouse가 하나의 쿼리에서 `merge_tree_max_rows_to_use_cache`보다 �
 
 `SHARED` 타입이 지정된 경로의 데이터 서브스트림을 포함하여, 마크를 탐색해 읽는 Wide 파트의 JSON 공유 데이터 서브스트림에 대한 프리페치를 활성화합니다. 이러한 프리페치는 그래뉼의 시작 부분부터 읽지만, 일반적으로 서브스트림을 읽는 위치와는 다르므로 불필요할 수 있습니다. 이러한 프리페치를 건너뛰려면 비활성화하십시오.
 
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "새로운 설정: 모든 스레드가 거의 동시에 끝나도록 `MergeTree` 읽기의 마지막 작업을 더 작게 나눕니다."}]}]} />
+
+모든 스레드가 거의 동시에 끝나도록 `MergeTree` 읽기의 마지막 작업 크기를 스레드 하나가 맡은 데이터 분량의 1/N로 설정합니다(단, `merge_tree_min_read_task_size`보다 작아지지는 않습니다). 값이 클수록 스레드 간 부하가 더 고르게 분산되지만, 작업별 오버헤드가 증가합니다. 0으로 설정하면 이 기능이 비활성화됩니다.
+
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />

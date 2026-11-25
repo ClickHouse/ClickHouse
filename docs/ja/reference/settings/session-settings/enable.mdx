@@ -79,11 +79,13 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定 `allow_experimental_cleanup_old_data_files_compaction` の別名を追加しました。"}]}]} />
 
-Iceberg のコンパクション時に古いデータファイルをクリーンアップできるようにします。
+バックグラウンドコンパクションによって Iceberg テーブルの古いデータファイルをクリーンアップできるようにします。
 
-クリーンアップでは、コンパクションの後に `iceberg_compaction_data_cleanup` が実行されます。これにより、コンパクションによって不要になったスナップショットが `expire_snapshots` と同じ
-方法で失効します。つまり、それらのスナップショットをテーブルのメタデータから削除し、他のどのスナップショットからも参照されていないファイルを削除します。フォーマットバージョン 1 のテーブル、
-またはトランザクション対応のカタログで管理されているテーブルでは、ファイルのみが削除され、スナップショットはメタデータに残ります。
+テーブルのバックグラウンドタスクは、新しいスナップショットに置き換えられてから `iceberg_compaction_data_cleanup` を超える時間が経過したスナップショットを失効させます。
+ただし、ブランチやタグが参照するものは除きます。`expire_snapshots` と同じ方法で、それらのスナップショットをテーブルのメタデータから削除し、
+他のどのスナップショットからも参照されていないファイルを削除します。また、置き換えられてから同じ期間を超える時間が経過したメタデータファイルも、メタデータログから除去して削除します。
+ただし、トランザクション対応のカタログがテーブルのメタデータを書き込む場合、メタデータファイルは削除しません。いずれかのレプリカでクエリが読み取り中のスナップショットは、
+後続の実行まで保持されます。フォーマットバージョン 1 のテーブルでは何も行いません。
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -180,6 +182,15 @@ Iceberg のコンパクション時に古いデータファイルをクリーン
 | `toStartOfMinute`         | `DateTime` を返します<br />*注: 1970～2149 の範囲外の値では正しい結果が得られません*      | `Date`/`DateTime` 型の入力では `DateTime` を返します<br />`Date32`/`DateTime64` 型の入力では `DateTime64` を返します                       |
 | `timeSlot`                | 戻り値は `DateTime`<br />*注: 1970〜2149 の範囲外の値では正しい結果が得られません*       | `Date`/`DateTime` 型の入力に対しては `DateTime` を返します<br />`Date32`/`DateTime64` 型の入力に対しては `DateTime64` を返します                 |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "合計 16 バイトまでの固定幅キーと、NULL 非許容の `String` キー 1 つを持つ `GROUP BY` に専用のハッシュテーブルを使用する新しい設定です。無効の場合は、シリアル化メソッドが使用されます。"}]}]} />
+
+合計 16 バイトまでの固定幅キーと、NULL 非許容の `String` キー 1 つを持つ `GROUP BY` に専用のハッシュテーブルを使用します。これらのキーはいずれも `LowCardinality` でも構いません。空文字列を含むキーは固定幅の値のみで保存され、固定幅キーのみの場合と同程度に小さいセルに格納されます。それ以外のキーは、固定幅の値と文字列へのパックされた参照として保存されます。この参照には、11 バイトまでの文字列 (固定幅の値が 4 バイト以下の場合は 15 バイトまで) をインラインで保持できます。集約関数を含まない `GROUP BY` では、集約状態用の領域を確保せずにキーのみを保存するため、メモリ使用量を抑えられます。
+無効の場合は、シリアル化メソッドが使用されます。
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **別名**: `allow_experimental_full_text_index`
@@ -235,7 +246,7 @@ WITH ステートメントを UNION クエリおよびすべてのサブクエ�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: `GROUP BY key [ORDER BY key] LIMIT n` は top-K ヒープの境界を `MergeTree` の読み取りステップにパブリッシュし、読み取りステップはその境界に基づいて行をフィルタし、グラニュールをスキップします。`compatibility` が 26.10 未満の場合は無効になります。"}]}]} />
 
-[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の補助設定です。ランク付けに使われる最初の `GROUP BY` キーが `MergeTree` テーブルから読み取られるカラムである場合、集約処理は top-K ヒープが `LIMIT` 個のキーを保持した時点で、そのヒープの境界を読み取りステップにパブリッシュします。読み取りステップは、他のカラムを読み取る前に (`PREWHERE`) キーが境界外にある行を除外し、さらにそのカラムの主キーまたは `minmax` スキップ索引を使用して、境界外にあるグラニュールをまるごとスキップします。
+[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の補助設定です。ランク付けに使われる最初の `GROUP BY` キーが `MergeTree` テーブルから読み取られるカラムである場合、集約処理は top-K ヒープが `LIMIT` 個のキーを保持した時点で、そのヒープの境界を読み取りステップにパブリッシュします。読み取りステップは、他のカラムを読み取る前に (`PREWHERE`) キーが境界外にある行を除外し、さらにそのカラムの主キーまたは `minmax` スキップ索引を使用して、境界外にあるグラニュールをまるごとスキップします。カラムを `Parquet` ファイルから読み取る場合 (`file`、`s3`、`azureBlobStorage`、`hdfs`、およびデータレイクのテーブル関数とエンジン) 、リーダー自体が該当する行を除外し、統計情報に基づいて境界外にある行グループをまるごとスキップします。
 
 これは `GROUP BY key ORDER BY key LIMIT n` に加え、`ORDER BY` を伴わない `GROUP BY key LIMIT n` (任意の `n` 個のグループを返せばよいクエリ) にも適用されます。
 
@@ -549,7 +560,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 ハッシュテーブルが小さくなるため、結合が `max_bytes_in_join` および `max_bytes_before_external_join` の上限に達するまでの余裕が大きくなります。
 
-この設定は、`FixedString` キーや `LowCardinality(Nullable(String))` キー、`Join` エンジンを使用するテーブル、および `joinGet` には適用されません。`LowCardinality(String)` キーによる結合では、代わりにキーの辞書が使用される場合があります。また、右側の推定行数が `min_rows_for_packed_string_keys_in_hash_join` 未満の結合も対象外です。
+この設定は、`FixedString` キーや `LowCardinality(Nullable(String))` キー、`Join` エンジンを使用するテーブル、および `joinGet` には適用されません。`LowCardinality(String)` キーによる結合では、代わりにキーの辞書が使用される場合があります。ハッシュテーブルが CPU の L2 キャッシュに収まる場合は、元のキーがそのまま保持されます。また、左側のすべてのキーをハッシュする必要があり、かつ右側の行数が `min_rows_for_packed_string_keys_in_hash_join` 未満の場合も同様です。`min_rows_for_packed_string_keys_in_hash_join` が 0 の場合、ハッシュテーブルが L2 キャッシュに収まる結合も含め、すべての結合でキーがパックされます。
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 

@@ -901,6 +901,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+Добавлено в: v26.11.0
+
+Аналогична [`JSONExtractLeafValues`](#JSONExtractLeafValues), но возвращает Tuple `(path, value)` для каждого скалярного листового узла.
+Правила формирования путей и описание аргументов `skip_regex` и `arrays` см. в описании `JSONExtractLeafValues`.
+
+<Note>
+  Результат не зависит от настроек, таких как `allow_simdjson`, `input_format_json_max_depth` и `json_type_escape_dots_in_keys`.
+  Поэтому использование индекса по этой функции даёт те же строки, что и полное сканирование.
+</Note>
+
+**Синтаксис**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**Аргументы**
+
+* `json` — JSON-строка для разбора. [`String`](/ru/reference/data-types/string)
+* `skip_regex` — Необязательно. Константное регулярное выражение (синтаксис [re2](https://github.com/google/re2/wiki/Syntax)). Пути, соответствующие выражению, пропускаются вместе со всеми вложенными узлами. Пустая строка (по умолчанию) ничего не исключает. [`const String`](/ru/reference/data-types/string)
+* `arrays` — Необязательно. Константное значение с учётом регистра. Определяет способ обработки массивов: `'skip'`, `'string'` или `'elements'` (по умолчанию). [`const String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает пути и значения скалярных листовых узлов. [`Array(Tuple(path String, value String))`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Пути и значения**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+Добавлено в: v26.11.0
+
+Разбирает JSON-строку и возвращает значения всех скалярных листовых узлов объекта top-level в виде массива строк в порядке их следования в документе.
+Листовой узел — это строка, число или логическое значение. `null`, пустые объекты и пустые массивы не добавляют значений в результат.
+Строки возвращаются без экранирования, числа и логические значения — в виде JSON-текста (так же, как их возвращает [`JSONExtractRaw`](#JSONExtractRaw)).
+Если JSON недопустим или на его верхнем уровне находится не объект, возвращается пустой массив.
+Если ключ встречается несколько раз, возвращаются все его значения.
+
+Путь к значению формируется из ключей, соединённых символом `.`, и индексов элементов массива в формате `[i]`, например `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
+Ключи не экранируются: ключ `a.b` и вложенный ключ `b` внутри `a` дают один и тот же путь `a.b`.
+В отличие от типа данных `JSON`, здесь настройка [`json_type_escape_dots_in_keys`](/ru/reference/settings/formats/other#json_type_escape_dots_in_keys) не применяется.
+
+Регулярное выражение `skip_regex` сопоставляется с каждым путём, встречающимся при обходе (путями к членам объектов на любой глубине, в том числе внутри массивов, и путями к элементам массивов, такими как `a[0]`).
+При совпадении пропускаются само значение и всё его содержимое.
+Достаточно частичного совпадения, как в [`match`](/ru/reference/functions/regular-functions/string-search-functions#match): для сопоставления со всем путём используйте `^` и `$`.
+В отличие от `SKIP REGEXP` типа данных `JSON`, здесь настройка [`type_json_use_partial_match_to_skip_paths_by_regexp`](/ru/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) не применяется.
+
+В режиме `'string'` массив возвращается целиком, без ограничения глубины.
+
+<Note>
+  Результат не зависит от настроек, таких как `allow_simdjson`, `input_format_json_max_depth` и `json_type_escape_dots_in_keys`.
+  Поэтому использование индекса по этой функции возвращает те же строки, что и полное сканирование.
+</Note>
+
+Для столбцов типа данных `JSON` используйте [`JSONAllValues`](/ru/reference/functions/regular-functions/json-functions#JSONAllValues).
+
+**Синтаксис**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**Аргументы**
+
+* `json` — JSON-строка для разбора. [`String`](/ru/reference/data-types/string)
+* `skip_regex` — Необязательно. Константное регулярное выражение (синтаксис [re2](https://github.com/google/re2/wiki/Syntax)). Пути, соответствующие выражению, пропускаются вместе со всем их содержимым. Если указана пустая строка (по умолчанию), ничего не пропускается. [`const String`](/ru/reference/data-types/string)
+* `arrays` — Необязательно. Константный параметр, чувствительный к регистру. Определяет способ обработки массивов: `'skip'` не возвращает ничего для массивов, `'string'` возвращает каждый массив как одно значение в компактном формате JSON, `'elements'` (по умолчанию) обходит элементы, при этом пути к ним имеют вид `a[0]`, `a[1]` и так далее. [`const String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает значения скалярных листовых узлов. [`Array(String)`](/ru/reference/data-types/array)
+
+**Примеры**
+
+**Вложенные объекты и массивы**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**Пропуск путей**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**Массивы в виде строк**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 Добавленный в: v20.1.0

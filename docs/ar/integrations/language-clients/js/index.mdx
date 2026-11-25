@@ -38,7 +38,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 </Info>
 
 <div id="environment-requirements-nodejs">
-  ## متطلبات البيئة (node.js)
+  ## متطلبات البيئة (node.js) {#environment-requirements-nodejs}
 </div>
 
 يجب أن يكون Node.js متاحًا في البيئة لتشغيل العميل.
@@ -56,13 +56,13 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 | 18.x          | أفضل جهد |
 
 <div id="environment-requirements-web">
-  ## متطلبات البيئة (الويب)
+  ## متطلبات البيئة (الويب) {#environment-requirements-web}
 </div>
 
 يُختبَر إصدار الويب من العميل رسميًا على أحدث إصدارات متصفحات Chrome وFirefox، ويمكن استخدامه كتبعية، على سبيل المثال، في تطبيقات React/Vue/Angular أو في Cloudflare workers.
 
 <div id="installation">
-  ## التثبيت
+  ## التثبيت {#installation}
 </div>
 
 لتثبيت أحدث إصدار مستقر من عميل Node.js، شغّل:
@@ -78,7 +78,7 @@ npm i @clickhouse/client-web
 ```
 
 <div id="compatibility-with-clickhouse">
-  ## التوافق مع ClickHouse
+  ## التوافق مع ClickHouse {#compatibility-with-clickhouse}
 </div>
 
 | إصدار العميل | ClickHouse |
@@ -88,7 +88,7 @@ npm i @clickhouse/client-web
 من المرجّح أن يعمل العميل أيضًا مع الإصدارات الأقدم؛ ومع ذلك، فهذا الدعم يُقدَّم على أساس بذل أفضل جهد وليس مضمونًا. إذا كان لديك إصدار من ClickHouse أقدم من 23.3، فيُرجى الرجوع إلى [سياسة الأمان في ClickHouse](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) والنظر في الترقية.
 
 <div id="examples">
-  ## أمثلة
+  ## أمثلة {#examples}
 </div>
 
 نسعى إلى تغطية سيناريوهات متنوعة لاستخدام العميل من خلال [الأمثلة](https://github.com/ClickHouse/clickhouse-js/blob/main/examples) الموجودة في مستودع العميل.
@@ -98,13 +98,13 @@ npm i @clickhouse/client-web
 إذا كان هناك شيء غير واضح أو مفقود في الأمثلة أو في الوثائق التالية، فلا تتردد في [التواصل معنا](/ar/integrations/language-clients/js/index#contact-us).
 
 <div id="client-api">
-  ### واجهة برمجة تطبيقات العميل
+  ### واجهة برمجة تطبيقات العميل {#client-api}
 </div>
 
 يجب أن تكون معظم الأمثلة متوافقة مع كلٍّ من إصدار Node.js وإصدار الويب من العميل، ما لم يُذكر صراحةً خلاف ذلك.
 
 <div id="creating-a-client-instance">
-  #### إنشاء مثيل للعميل
+  #### إنشاء مثيل للعميل {#creating-a-client-instance}
 </div>
 
 يمكنك إنشاء أي عدد تحتاج إليه من مثيلات العميل باستخدام دالة المصنع `createClient`:
@@ -130,30 +130,30 @@ const client = createClient({
 يمكن [تهيئة مثيل العميل مسبقًا](/ar/integrations/language-clients/js/index#configuration) عند إنشائه.
 
 <div id="configuration">
-  #### التهيئة
+  #### التهيئة {#configuration}
 </div>
 
 عند إنشاء مثيل عميل، يمكن تعديل إعدادات الاتصال التالية:
 
-| الإعداد                                                                  | الوصف                                                                      | القيمة الافتراضية       | انظر أيضًا                                                                                                   |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **url**?: string                                                         | عنوان URL لمثيل ClickHouse.                                                | `http://localhost:8123` | [وثائق تهيئة URL](/ar/integrations/language-clients/js/index#url-configuration)                                 |
-| **pathname**?: string                                                    | مسار اختياري يُضاف إلى عنوان URL الخاص بـ ClickHouse بعد أن يعالجه العميل. | `''`                    | [وثائق الوكيل مع pathname](/ar/integrations/language-clients/js/index#proxy-with-a-pathname)                    |
-| **request&#95;timeout**?: number                                         | مهلة الطلب بالمللي ثانية.                                                  | `30_000`                | -                                                                                                            |
-| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | تفعيل الضغط.                                                               | -                       | [وثائق الضغط](/ar/integrations/language-clients/js/index#compression)                                           |
-| **username**?: string                                                    | اسم المستخدم الذي تُرسل الطلبات نيابةً عنه.                                | `default`               | -                                                                                                            |
-| **password**?: string                                                    | كلمة مرور المستخدم.                                                        | `''`                    | -                                                                                                            |
-| **application**?: string                                                 | اسم التطبيق الذي يستخدم عميل Node.js.                                      | `clickhouse-js`         | -                                                                                                            |
-| **database**?: string                                                    | اسم قاعدة البيانات المراد استخدامها.                                       | `default`               | -                                                                                                            |
-| **clickhouse&#95;settings**?: ClickHouseSettings                         | إعدادات ClickHouse التي تُطبَّق على جميع الطلبات.                          | `{}`                    | -                                                                                                            |
-| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | إعدادات سجلات العميل الداخلية.                                             | -                       | [وثائق التسجيل](/ar/integrations/language-clients/js/index#logging-nodejs-only)                                 |
-| **session&#95;id**?: string                                              | معرّف جلسة ClickHouse اختياري يُرسل مع كل طلب.                             | -                       | -                                                                                                            |
-| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | مفعّل افتراضيًا في كلٍّ من إصداري Node.js والويب.                          | -                       | -                                                                                                            |
-| **http&#95;headers**?: `Record<string, string>`                          | رؤوس HTTP إضافية لطلبات ClickHouse الصادرة.                                | -                       | [وثائق الوكيل العكسي مع المصادقة](/ar/integrations/language-clients/js/index#reverse-proxy-with-authentication) |
-| **roles**?: string |  string[]                                           | أسماء أدوار ClickHouse المطلوب إرفاقها بالطلبات الصادرة.                   | -                       | [استخدام الأدوار مع واجهة HTTP](/ar/concepts/features/interfaces/http#setting-role-with-query-parameters)       |
+| الإعداد                                                                  | الوصف                                                                      | القيمة الافتراضية       | انظر أيضًا                                                                                                                     |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **url**?: string                                                         | عنوان URL لمثيل ClickHouse.                                                | `http://localhost:8123` | [وثائق إعداد URL](/ar/integrations/language-clients/js/index#url-configuration)                                                |
+| **pathname**?: string                                                    | مسار اختياري يُضاف إلى عنوان URL الخاص بـ ClickHouse بعد أن يعالجه العميل. | `''`                    | [وثائق الوكيل مع pathname](/ar/integrations/language-clients/js/index#proxy-with-a-pathname)                                   |
+| **request&#95;timeout**?: number                                         | مهلة الطلب بالمللي ثانية.                                                  | `30_000`                | -                                                                                                                              |
+| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | تفعيل الضغط.                                                               | -                       | [وثائق الضغط](/ar/integrations/language-clients/js/index#compression)                                                          |
+| **username**?: string                                                    | اسم المستخدم الذي تُرسل الطلبات نيابةً عنه.                                | `default`               | -                                                                                                                              |
+| **password**?: string                                                    | كلمة مرور المستخدم.                                                        | `''`                    | -                                                                                                                              |
+| **application**?: string                                                 | اسم التطبيق الذي يستخدم عميل Node.js.                                      | `clickhouse-js`         | -                                                                                                                              |
+| **database**?: string                                                    | اسم قاعدة البيانات المراد استخدامها.                                       | `default`               | -                                                                                                                              |
+| **clickhouse&#95;settings**?: ClickHouseSettings                         | إعدادات ClickHouse التي تُطبَّق على جميع الطلبات.                          | `{}`                    | -                                                                                                                              |
+| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | إعدادات سجلات العميل الداخلية.                                             | -                       | [وثائق التسجيل](/ar/integrations/language-clients/js/index#logging-nodejs-only)                                                |
+| **session&#95;id**?: string                                              | معرّف جلسة ClickHouse اختياري يُرسل مع كل طلب.                             | -                       | -                                                                                                                              |
+| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | مفعّل افتراضيًا في كلٍّ من إصداري Node.js والويب.                          | -                       | -                                                                                                                              |
+| **http&#95;headers**?: `Record<string, string>`                          | رؤوس HTTP إضافية لطلبات ClickHouse الصادرة.                                | -                       | [وثائق الوكيل العكسي مع المصادقة](/ar/integrations/language-clients/js/index#reverse-proxy-with-authentication)                |
+| **roles**?: string |  string[]                                           | أسماء أدوار ClickHouse المطلوب إرفاقها بالطلبات الصادرة.                   | -                       | [استخدام الأدوار مع واجهة HTTP](/ar/concepts/features/connect-to-clickhouse/protocols/http#setting-role-with-query-parameters) |
 
 <div id="nodejs-specific-configuration-parameters">
-  #### معلمات التكوين الخاصة بـ Node.js
+  #### معلمات التكوين الخاصة بـ Node.js {#nodejs-specific-configuration-parameters}
 </div>
 
 | الإعداد                                                                                                | الوصف                                                                  | القيمة الافتراضية | راجع أيضًا                                                                                                                         |
@@ -165,7 +165,7 @@ const client = createClient({
 | **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">تجريبي</Badge> | يعيّن ترويسة `Authorization` باستخدام بيانات اعتماد المصادقة الأساسية. | `true`            | [استخدام هذا الإعداد في وثائق HTTP agent](/ar/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
-  ### إعداد URL
+  ### إعداد URL {#url-configuration}
 </div>
 
 <Warning>
@@ -214,17 +214,17 @@ createClient({
 ```
 
 <div id="connecting">
-  ### الاتصال
+  ### الاتصال {#connecting}
 </div>
 
 <div id="gather-your-connection-details">
-  #### جهّز تفاصيل الاتصال الخاصة بك
+  #### جهّز تفاصيل الاتصال الخاصة بك {#gather-your-connection-details}
 </div>
 
 <ConnectionDetails />
 
 <div id="connection-overview">
-  #### نظرة عامة على الاتصال
+  #### نظرة عامة على الاتصال {#connection-overview}
 </div>
 
 يدعم العميل الاتصال عبر بروتوكول HTTP أو HTTPS. ويجري العمل حاليًا على دعم RowBinary، راجع [المشكلة ذات الصلة](https://github.com/ClickHouse/clickhouse-js/issues/216).
@@ -247,7 +247,7 @@ const client = createClient({
 يحتوي مستودع العميل على أمثلة متعددة تستخدم متغيرات البيئة، مثل [إنشاء جدول في ClickHouse Cloud](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts)، و[استخدام عمليات الإدراج غير المتزامنة](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/async_insert.ts)، وغيرها الكثير.
 
 <div id="connection-pool-nodejs-only">
-  #### مجمع الاتصالات (لـ Node.js فقط)
+  #### مجمع الاتصالات (لـ Node.js فقط) {#connection-pool-nodejs-only}
 </div>
 
 لتجنّب العبء الإضافي الناتج عن إنشاء اتصال مع كل طلب، ينشئ العميل مجمعًا من الاتصالات إلى ClickHouse لإعادة استخدامها، بالاستفادة من آلية Keep-Alive. تكون Keep-Alive مفعّلة افتراضيًا، ويُضبط حجم مجمع الاتصالات على `10`، ولكن يمكنك تغييره باستخدام [خيار الإعداد](/ar/integrations/language-clients/js/index#configuration) `max_open_connections`.
@@ -257,7 +257,7 @@ const client = createClient({
 انظر أيضًا: [إعداد Keep-Alive](/ar/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only).
 
 <div id="query-id">
-  ### معرّف الاستعلام
+  ### معرّف الاستعلام {#query-id}
 </div>
 
 ستوفّر كل طريقة تُرسل استعلامًا أو عبارة (`command`, `exec`, `insert`, `select`) قيمة `query_id` في النتيجة. يُسنِد العميل هذا المعرّف الفريد لكل استعلام، وقد يكون مفيدًا لاسترجاع البيانات من `system.query_log`،
@@ -268,7 +268,7 @@ const client = createClient({
 </Tip>
 
 <div id="base-parameters-for-all-client-methods">
-  ### المعلمات الأساسية لجميع طرق العميل
+  ### المعلمات الأساسية لجميع طرق العميل {#base-parameters-for-all-client-methods}
 </div>
 
 توجد عدة معلمات يمكن تطبيقها على جميع طرق العميل ([query](/ar/integrations/language-clients/js/index#query-method)/[command](/ar/integrations/language-clients/js/index#command-method)/[insert](/ar/integrations/language-clients/js/index#insert-method)/[exec](/ar/integrations/language-clients/js/index#exec-method)).
@@ -293,7 +293,7 @@ interface BaseQueryParams {
 ```
 
 <div id="query-method">
-  ### طريقة الاستعلام
+  ### طريقة الاستعلام {#query-method}
 </div>
 
 تُستخدم هذه الطريقة لمعظم العبارات التي يمكن أن تُرجع استجابة، مثل `SELECT`، أو لإرسال عبارات DDL مثل `CREATE TABLE`، ويجب انتظار اكتمالها. ويُفترض أن يستهلك التطبيق مجموعة النتائج المُعادة.
@@ -322,7 +322,7 @@ interface ClickHouseClient {
 </Tip>
 
 <div id="result-set-and-row-abstractions">
-  #### تجريدات مجموعة النتائج والصفوف
+  #### تجريدات مجموعة النتائج والصفوف {#result-set-and-row-abstractions}
 </div>
 
 يوفّر `ResultSet` عدة طرق ميسّرة لمعالجة البيانات في تطبيقك.
@@ -466,7 +466,7 @@ while (true) {
 ```
 
 <div id="insert-method">
-  ### طريقة insert
+  ### طريقة insert {#insert-method}
 </div>
 
 هذه هي الطريقة الأساسية لإدراج البيانات.
@@ -489,7 +489,7 @@ interface ClickHouseClient {
 إذا أُرسلت عبارة `insert` إلى الخادم، فستكون العلامة `executed` هي `true`.
 
 <div id="insert-method-and-streaming-in-nodejs">
-  #### طريقة `insert` والدفق في Node.js
+  #### طريقة `insert` والدفق في Node.js {#insert-method-and-streaming-in-nodejs}
 </div>
 
 يمكن أن تعمل هذه الطريقة إما مع `Stream.Readable` أو مع `Array<T>` عادي، وذلك بحسب [تنسيق البيانات](/ar/integrations/language-clients/js/index#supported-data-formats) المحدد لطريقة `insert`. راجع أيضًا هذا القسم حول [دفق الملفات](/ar/integrations/language-clients/js/index#streaming-files-nodejs-only).
@@ -603,7 +603,7 @@ await client.insert({
 ```
 
 <div id="web-version-limitations">
-  #### قيود إصدار الويب
+  #### قيود إصدار الويب {#web-version-limitations}
 </div>
 
 حاليًا، لا تعمل عمليات الإدراج في `@clickhouse/client-web` إلا مع التنسيقات `Array<T>` و`JSON*`.
@@ -631,15 +631,13 @@ interface InsertParams<T> extends BaseQueryParams {
 
 هذا عرضة للتغيير مستقبلًا. انظر أيضًا: [Base parameters for all client methods](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
 
-<div id="command-method">
-  ### طريقة command
-</div>
+### طريقة command {#command-method}
 
 يمكن استخدامها مع العبارات التي لا تُرجع أي مخرجات، عندما لا تكون عبارة `format` قابلة للتطبيق، أو عندما لا تكون مهتمًا بالاستجابة على الإطلاق. ومن أمثلة هذه العبارات `CREATE TABLE` أو `ALTER TABLE`.
 
 يجب استخدام `await` معها.
 
-يتم إتلاف تدفق الاستجابة فورًا، ما يعني تحرير socket الأساسي.
+يتم إتلاف تدفق الاستجابة فورًا، ما يعني تحرير المقبس الأساسي.
 
 ```ts
 interface CommandParams extends BaseQueryParams {
@@ -656,7 +654,7 @@ interface ClickHouseClient {
 }
 ```
 
-انظر أيضًا: [Base parameters for all client methods](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
+انظر أيضًا: [المعلمات الأساسية لجميع أساليب العميل](/ar/integrations/language-clients/js/index#base-parameters-for-all-client-methods).
 
 **مثال:** (Node.js/Web) أنشئ جدولًا في ClickHouse Cloud.
 [الشيفرة المصدرية](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts).
@@ -670,7 +668,7 @@ await client.command({
   `,
   // Recommended for cluster usage to avoid situations where a query processing error occurred after the response code,
   // and HTTP headers were already sent to the client.
-  // See https://clickhouse.com/docs/interfaces/http/#response-buffering
+  // See https://clickhouse.com/docs/concepts/features/connect-to-clickhouse/protocols/http#response-buffering
   clickhouse_settings: {
     wait_end_of_query: 1,
   },
@@ -700,11 +698,11 @@ await client.command({
 ```
 
 <Warning>
-  إن إلغاء طلب باستخدام `abort_signal` لا يضمن أن الخادم لم ينفّذ التعليمة.
+  إن إلغاء طلب باستخدام `abort_signal` لا يضمن أن الخادم لم ينفّذ العبارة.
 </Warning>
 
 <div id="exec-method">
-  ### طريقة `Exec`
+  ### طريقة `Exec` {#exec-method}
 </div>
 
 إذا كان لديك استعلام مخصّص لا يندرج ضمن `query`/`insert`،
@@ -746,7 +744,7 @@ export interface QueryResult {
 ```
 
 <div id="ping">
-  ### Ping
+  ### Ping {#ping}
 </div>
 
 تُرجِع الطريقة `ping` المخصّصة للتحقق من حالة الاتصال القيمة `true` إذا أمكن الوصول إلى الخادم.
@@ -805,7 +803,7 @@ const result = await client.ping({ select: true, /* query_id, abort_signal, http
 ستدعم الطريقة ping معظم معلمات الطريقة `query` القياسية - راجع تعريف النوع `PingParamsWithSelectQuery`.
 
 <div id="close-nodejs-only">
-  ### Close (Node.js فقط)
+  ### Close (Node.js فقط) {#close-nodejs-only}
 </div>
 
 يُغلق جميع الاتصالات المفتوحة ويُحرِّر الموارد. لا يُحدث أي تأثير في إصدار الويب.
@@ -815,7 +813,7 @@ await client.close()
 ```
 
 <div id="streaming-files-nodejs-only">
-  ## تدفّق الملفات (Node.js فقط)
+  ## تدفّق الملفات (Node.js فقط) {#streaming-files-nodejs-only}
 </div>
 
 تتوفر عدة أمثلة على تدفّق الملفات باستخدام تنسيقات البيانات الشائعة (NDJSON وCSV وParquet) في مستودع العميل.
@@ -829,7 +827,7 @@ await client.close()
 وسيكون الاختلاف الوحيد في التنسيق المستخدم في استدعاء `query` (`JSONEachRow` و`CSV` وما إلى ذلك) واسم ملف الإخراج.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## تنسيقات البيانات المدعومة {#supported-data-formats}
 </div>
 
 يتعامل العميل مع تنسيقات البيانات بصيغة JSON أو كنص.
@@ -883,7 +881,7 @@ await client.close()
 [هنا](/ar/reference/formats/index).
 
 <div id="supported-clickhouse-data-types">
-  ## أنواع بيانات ClickHouse المدعومة
+  ## أنواع بيانات ClickHouse المدعومة {#supported-clickhouse-data-types}
 </div>
 
 <Note>
@@ -932,7 +930,7 @@ await client.close()
 * [أمثلة على العمل مع Time/Time64](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/time_time64.ts)
 
 <div id="datedate32-types-caveats">
-  ### محاذير أنواع Date/Date32
+  ### محاذير أنواع Date/Date32 {#datedate32-types-caveats}
 </div>
 
 نظرًا لأن العميل يُدرج القيم من دون أي تحويل إضافي للنوع، فلا يمكن إدراج الأعمدة من النوع `Date`/`Date32` إلا
@@ -952,7 +950,7 @@ await client.insert({
 ومع ذلك، إذا كنت تستخدم أعمدة `DateTime` أو `DateTime64`، يمكنك استخدام كلٍّ من السلاسل النصية وكائنات JS Date. ويمكن تمرير كائنات JS Date إلى `insert` كما هي مع ضبط `date_time_input_format` على `best_effort`. راجع هذا [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_js_dates.ts) لمزيد من التفاصيل.
 
 <div id="decimal-types-caveats">
-  ### محاذير أنواع Decimal*
+  ### محاذير أنواع Decimal* {#decimal-types-caveats}
 </div>
 
 يمكن إدراج قيم Decimal باستخدام تنسيقات من عائلة `JSON*`. بافتراض أن لدينا جدولًا معرّفًا كما يلي:
@@ -1004,7 +1002,7 @@ await client.query({
 راجع [هذا المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts) لمزيد من التفاصيل.
 
 <div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
-  ### Integral types: Int64, Int128, Int256, UInt64, UInt128, UInt256
+  ### Integral types: Int64, Int128, Int256, UInt64, UInt128, UInt256 {#integral-types-int64-int128-int256-uint64-uint128-uint256}
 </div>
 
 على الرغم من أن الخادم يمكنه قبولها كأرقام، فإنها تُعاد كسلاسل نصية في تنسيقات الإخراج من عائلة `JSON*` لتجنب
@@ -1036,7 +1034,7 @@ expect(await resultSet.json()).toEqual([ { number: 0 } ])
 ```
 
 <div id="clickhouse-settings">
-  ## إعدادات ClickHouse
+  ## إعدادات ClickHouse {#clickhouse-settings}
 </div>
 
 يمكن للعميل تعديل سلوك ClickHouse من خلال آلية
@@ -1066,12 +1064,10 @@ client.query({
 </Warning>
 
 <div id="advanced-topics">
-  ## موضوعات متقدمة
+  ## موضوعات متقدمة {#advanced-topics}
 </div>
 
-<div id="queries-with-parameters">
-  ### الاستعلامات ذات المعلمات
-</div>
+### الاستعلامات ذات المعلمات {#queries-with-parameters}
 
 يمكنك إنشاء استعلامٍ بمعلمات وتمرير قيَم إليها من تطبيق العميل. يتيح لك ذلك تجنب تنسيق
 الاستعلام بقيَم ديناميكية محددة على جهة العميل.
@@ -1103,10 +1099,10 @@ await client.query({
 })
 ```
 
-اطّلع على https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax لمزيد من التفاصيل.
+اطّلع على https://clickhouse.com/docs/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#cli-queries-with-parameters-syntax لمزيد من التفاصيل.
 
 <div id="compression">
-  ### الضغط
+  ### الضغط {#compression}
 </div>
 
 ملاحظة: ضغط الطلبات غير متاح حاليًا في إصدار الويب. أما ضغط الاستجابات فيعمل بشكل طبيعي. ويدعم إصدار Node.js الاثنين معًا.
@@ -1128,7 +1124,7 @@ createClient({
 * `request: true` يفعّل الضغط في جسم طلب العميل. القيمة الافتراضية: `request: false`
 
 <div id="logging-nodejs-only">
-  ### التسجيل (Node.js فقط)
+  ### التسجيل (Node.js فقط) {#logging-nodejs-only}
 </div>
 
 <Warning>
@@ -1187,7 +1183,7 @@ const client = createClient({
 يمكنك العثور على تطبيق Logger الافتراضي [هنا](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/logger.ts).
 
 <div id="tls-certificates-nodejs-only">
-  ### شهادات TLS ‏(Node.js فقط)
+  ### شهادات TLS ‏(Node.js فقط) {#tls-certificates-nodejs-only}
 </div>
 
 يوفّر عميل Node.js دعمًا اختياريًا لكلٍّ من TLS الأساسي (Certificate Authority فقط)
@@ -1224,7 +1220,7 @@ const client = createClient({
 اطّلع على الأمثلة الكاملة لـ TLS [الأساسي](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/basic_tls.ts) و[المتبادل](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/mutual_tls.ts) في المستودع.
 
 <div id="keep-alive-configuration-nodejs-only">
-  ### إعداد Keep-Alive (Node.js فقط)
+  ### إعداد Keep-Alive (Node.js فقط) {#keep-alive-configuration-nodejs-only}
 </div>
 
 يُفعّل العميل Keep-Alive في وكيل HTTP الأساسي افتراضيًا، ما يعني إعادة استخدام المقابس المتصلة للطلبات اللاحقة، مع إرسال الترويسة `Connection: keep-alive`. وتبقى المقابس الخاملة ضمن مجموعة الاتصالات لمدة 2500 مللي ثانية افتراضيًا (راجع [الملاحظات حول ضبط هذا الخيار](/ar/integrations/language-clients/js/index#adjusting-idle_socket_ttl)).
@@ -1234,7 +1230,7 @@ const client = createClient({
 إذا كنت تعدّل `keep_alive.idle_socket_ttl`، فضع في اعتبارك أنه يجب أن يظل متوافقًا دائمًا مع إعدادات Keep-Alive الخاصة بالخادم/موازن التحميل، وأن يكون **أقل منها دائمًا**، بما يضمن ألا يغلق الخادم الاتصال المفتوح أولًا.
 
 <div id="adjusting-idle_socket_ttl">
-  #### ضبط `idle_socket_ttl`
+  #### ضبط `idle_socket_ttl` {#adjusting-idle_socket_ttl}
 </div>
 
 يضبط العميل `keep_alive.idle_socket_ttl` على 2500 ملّي ثانية، إذ يمكن اعتبارها القيمة الافتراضية الأكثر أمانًا؛ وعلى جانب الخادم، قد يُضبط `keep_alive_timeout` [على قيمة منخفضة تصل إلى 3 ثوانٍ في إصدارات ClickHouse الأقدم من 23.11](https://github.com/ClickHouse/ClickHouse/commit/1685cdcb89fe110b45497c7ff27ce73cc03e82d1) من دون أي تعديلات على `config.xml`.
@@ -1259,7 +1255,7 @@ Keep-Alive: timeout=10
 في هذه الحالة، تكون قيمة `keep_alive_timeout` 10 ثوانٍ، ويمكنك محاولة زيادة `keep_alive.idle_socket_ttl` إلى 9000 أو حتى 9500 مللي ثانية للإبقاء على المقابس الخاملة مفتوحة لفترة أطول قليلًا من الوضع الافتراضي. راقب أي أخطاء محتملة من نوع &quot;Socket hang-up&quot;، إذ تشير إلى أن الخادم يغلق الاتصالات قبل أن يغلقها العميل، وخفِّض القيمة حتى تختفي الأخطاء.
 
 <div id="troubleshooting">
-  #### استكشاف الأخطاء وإصلاحها
+  #### استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 إذا كنت تواجه أخطاء `socket hang up` حتى عند استخدام أحدث إصدار من العميل، فهناك الخيارات التالية لحل هذه المشكلة:
@@ -1332,7 +1328,7 @@ Keep-Alive: timeout=10
 * جرّب فحص شيفرة التطبيق مع تفعيل قاعدة ESLint ‏[no-floating-promises](https://typescript-eslint.io/rules/no-floating-promises/)، إذ يساعد ذلك في تحديد الوعود غير المُعالجة التي قد تؤدي إلى تدفقات ومقابس معلّقة.
 
 <div id="read-only-users">
-  ### المستخدمون ذوو صلاحية القراءة فقط
+  ### المستخدمون ذوو صلاحية القراءة فقط {#read-only-users}
 </div>
 
 عند استخدام العميل مع [مستخدم `readonly=1`](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly)، لا يمكن تمكين ضغط الاستجابة، لأنه يتطلب الإعداد `enable_http_compression`. سيؤدي التكوين التالي إلى حدوث خطأ:
@@ -1348,7 +1344,7 @@ const client = createClient({
 اطّلع على [المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/read_only_user.ts) الذي يسلّط الضوء بشكل أكبر على القيود المفروضة على المستخدم ذي `readonly=1`.
 
 <div id="proxy-with-a-pathname">
-  ### وكيل مع اسم مسار
+  ### وكيل مع اسم مسار {#proxy-with-a-pathname}
 </div>
 
 إذا كان مثيل ClickHouse لديك خلف وكيل، وكانت هناك قيمة لاسم المسار ضمن عنوان URL، كما في المثال http://proxy:8123/clickhouse&#95;server، فحدِّد `clickhouse_server` كخيار الإعداد `pathname` (مع أو بدون شرطة مائلة في البداية)؛ وإلا، فإذا أُدرج مباشرةً في `url` فسيُعامل على أنه الخيار `database`. كما أن أسماء المسارات متعددة المقاطع مدعومة، مثل `/my_proxy/db`.
@@ -1361,7 +1357,7 @@ const client = createClient({
 ```
 
 <div id="reverse-proxy-with-authentication">
-  ### وكيل عكسي مع المصادقة
+  ### وكيل عكسي مع المصادقة {#reverse-proxy-with-authentication}
 </div>
 
 إذا كان لديك وكيل عكسي مع مصادقة أمام نشر ClickHouse لديك، فيمكنك استخدام الإعداد `http_headers` لتوفير الترويسات اللازمة هناك:
@@ -1375,7 +1371,7 @@ const client = createClient({
 ```
 
 <div id="custom-httphttps-agent-experimental-nodejs-only">
-  ### وكيل HTTP/HTTPS مخصص (تجريبي، Node.js فقط)
+  ### وكيل HTTP/HTTPS مخصص (تجريبي، Node.js فقط) {#custom-httphttps-agent-experimental-nodejs-only}
 </div>
 
 <Warning>
@@ -1391,7 +1387,7 @@ const client = createClient({
 * مع أن إدارة مقابس keep-alive الخاملة ستستمر في العمل (لأنها لا ترتبط بالوكيل، بل بالمقبس نفسه)، فقد أصبح من الممكن الآن تعطيلها بالكامل بضبط قيمة `keep_alive.idle_socket_ttl` على `0`.
 
 <div id="custom-agent-usage-examples">
-  #### أمثلة على استخدام وكيل مخصّص
+  #### أمثلة على استخدام وكيل مخصّص {#custom-agent-usage-examples}
 </div>
 
 استخدام وكيل HTTP أو HTTPS مخصّص من دون شهادات:
@@ -1460,7 +1456,7 @@ const client = createClient({
 عند استخدام الشهادات *و* وكيل *HTTPS* مخصّص، يُرجَّح أن يلزم تعطيل ترويسة التفويض الافتراضية عبر الإعداد `set_basic_auth_header` (أُضيف في الإصدار 1.2.0)، لأنها تتعارض مع ترويسات TLS. ويجب توفير جميع ترويسات TLS يدويًا.
 
 <div id="known-limitations-nodejsweb">
-  ## القيود المعروفة (Node.js/web)
+  ## القيود المعروفة (Node.js/web) {#known-limitations-nodejsweb}
 </div>
 
 * لا توجد مُحوِّلات بيانات لمجموعات النتائج، لذا لا تُستخدم سوى الأنواع البدائية في اللغة. ومن المخطط إضافة بعض مُحوِّلات أنواع البيانات مع دعم [RowBinary format](https://github.com/ClickHouse/clickhouse-js/issues/216).
@@ -1468,7 +1464,7 @@ const client = createClient({
 * عند استخدام تنسيقات عائلة JSON*، تُمثَّل الأرقام الأكبر من Int32 كسلاسل نصية، لأن القيم القصوى لأنواع Int64+ أكبر من `Number.MAX_SAFE_INTEGER`. راجع قسم [Integral types](/ar/integrations/language-clients/js/index#integral-types-int64-int128-int256-uint64-uint128-uint256) لمزيد من التفاصيل.
 
 <div id="known-limitations-web">
-  ## القيود المعروفة (الويب)
+  ## القيود المعروفة (الويب) {#known-limitations-web}
 </div>
 
 * يعمل التدفّق مع استعلامات select، لكنه معطّل لعمليات insert (وعلى مستوى النوع أيضًا).
@@ -1476,7 +1472,7 @@ const client = createClient({
 * لا يتوفر دعم للتسجيل حتى الآن.
 
 <div id="tips-for-performance-optimizations">
-  ## نصائح لتحسين الأداء
+  ## نصائح لتحسين الأداء {#tips-for-performance-optimizations}
 </div>
 
 * لتقليل استهلاك ذاكرة التطبيق، يُنصح باستخدام التدفقات في عمليات الإدراج الكبيرة (مثلًا من الملفات) واستعلامات `SELECT` عند الحاجة. وبالنسبة إلى مستمعي الأحداث وحالات الاستخدام المشابهة، قد تكون [الإدراجات غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) خيارًا جيدًا آخر، إذ تتيح تقليل التجميع على جهة العميل أو حتى الاستغناء عنه تمامًا. تتوفر أمثلة على الإدراج غير المتزامن في [مستودع العميل](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node)، حيث تأتي أسماء الملفات بالبادئة `async_insert_`.
@@ -1484,7 +1480,7 @@ const client = createClient({
 * يفرض الضغط أثرًا ملحوظًا على الأداء. فتفعيله لـ `request` أو `response` سيؤثر سلبًا في سرعة استعلامات `SELECT` أو عمليات الإدراج، على التوالي، لكنه سيقلل حجم حركة مرور الشبكة التي ينقلها التطبيق.
 
 <div id="contact-us">
-  ## تواصل معنا
+  ## تواصل معنا {#contact-us}
 </div>
 
 إذا كانت لديك أي أسئلة أو احتجت إلى مساعدة، فلا تتردد في التواصل معنا على [Community Slack](https://clickhouse.com/slack) (قناة `#clickhouse-js`) أو عبر [GitHub issues](https://github.com/ClickHouse/clickhouse-js/issues).

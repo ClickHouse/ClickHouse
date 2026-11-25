@@ -388,13 +388,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## 访问请求方付费桶 {#accessing-requester-pays-buckets}
 
-要访问请求方付费桶，必须在所有请求中传递请求头 `x-amz-request-payer = requester`。这可以通过向 s3 函数传入参数 `headers('x-amz-request-payer' = 'requester')` 来实现。例如：
+要访问请求方付费桶，必须在所有请求中传递请求头 `x-amz-request-payer = requester`。这可以通过将设置 [`s3_request_payer`](/zh/reference/settings/session-settings/s3#s3_request_payer) 设为 `requester` 来实现，也可以在服务器配置的端点部分中设置 `request_payer` 键来实现。例如：
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -403,6 +404,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+向 `s3` 函数传入参数 `headers('x-amz-request-payer' = 'requester')` 同样可行。
 
 ## 解析相对 URL {#resolving-relative-urls}
 

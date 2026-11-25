@@ -89,7 +89,7 @@ true の場合、マージ時にパッチパーツが適用されます
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "デフォルトの自動統計で、`minmax` 統計タイプを非推奨とし、`basic`（`minmax` の上位互換）に置き換えました。また、INSERT 時およびメモリのオーバーヘッドを減らすため、`uniq` も `uniq_v2` に置き換えました"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "デフォルトで自動統計を有効化"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "26.7 では `minmax, uniq` を `basic, uniq_v2` に置き換えました（`basic` は非推奨の `minmax` の上位集合であり、`uniq_v2` は挿入処理、マージ、メモリのオーバーヘッドが少なくなっています）。`compatibility` を 26.4 から 26.6 のいずれかに設定しても `minmax, uniq` に戻らないよう、この変更は 26.4 の変更として記録されています。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "basic, uniq_v2"},{"label": "デフォルトで自動統計を有効化。26.4 から 26.6 では `minmax, uniq` がデフォルトでしたが、`compatibility` をこれらのバージョンに設定すると `basic, uniq_v2` が使用されます。これは、統計がクエリプランの作成にのみ影響し、結果には影響しないことに加え、新しいバージョンでは、すべてのデータパーツの大きな `uniq` 状態をマージすると、クエリプランの作成が何倍も遅くなるためです。"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
 
 適切なすべてのカラムに対して自動的に計算する統計タイプのカンマ区切りリストです。
 サポートされている統計タイプ: basic, tdigest, countmin, uniq, uniq&#95;v2。
@@ -198,6 +198,24 @@ Keeper との往復変換なしで重複を検出できます。
 たとえば `FirstApplicable(PCO, ZSTD(3))` は、数値を `PCO` で、その他のデータを `ZSTD(3)` で圧縮します。候補のうち少なくとも 1 つは
 あらゆるデータ型に適用可能でなければならず、また非可逆コーデックを候補に含めることはできません。
 デフォルト値: 空文字列 (未定義) 。
+
+## delay_merges_after_startup_seconds {#delay_merges_after_startup_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "60"},{"label": "サーバー起動後のバックグラウンドマージを遅延させる新しい設定"}]}]} />
+
+サーバーが起動時に読み込むテーブルのバックグラウンドマージは、
+テーブルの起動からこの秒数が経過するまで開始されません。これにより、再起動直後のクエリが
+バックグラウンドマージとリソースを奪い合うことを防ぎます。このサーバー上でテーブルに対して最初の `INSERT`、`OPTIMIZE`、
+ミューテーション、または論理更新が実行された時点で、遅延は終了します。
+`ReplicatedMergeTree` テーブルのレプリカは、レプリケーションキュー内のマージ
+(マージ済みパーツとしてフェッチするものも含む) を延期します。そのため、
+`SYSTEM SYNC REPLICA` や別のレプリカで開始されたミューテーションは、
+遅延が終了するまで待たされる場合があります。`CREATE TABLE` で作成されたテーブル、
+`ATTACH TABLE` でアタッチされたテーブル、`UNDROP TABLE` で復元されたテーブルは遅延の対象外です。
+また、パーティション内のアクティブなデータパーツが `parts_to_delay_insert` 個以上ある間は、マージは遅延されません。
+0 を指定すると遅延は無効になります。
 
 ## ディスク {#disk}
 
@@ -791,6 +809,16 @@ ATTACH または CREATE table のたびに、孤立したパーツがないか�
 ローリングアップグレード中は、これを `basic` に設定し、新しいサーバーが
 古いサーバーと互換性のあるデータパーツを生成するようにします。アップグレード完了後は、
 対応する機能を有効にするため、`with_types` (または `with_missing_columns`) に切り替えます。
+
+## serialize_statistics_bounds_with_column_type {#serialize_statistics_bounds_with_column_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、`minmax` および `basic` 統計の最小値と最大値は、`V4` の汎用的な `Field` エンコーディングではなく、列の型のシリアライゼーションを用いて統計ファイルフォーマット `V5` で書き込まれます。
+古いバージョンでは `V5` の統計ファイルを読み取れないため、すべてのレプリカのアップグレードが完了するまでは有効にしないでください。
+ダウングレードした場合、この設定を有効にした状態で書き込まれたパーツの統計は、再度マテリアライズする必要があります。
 
 ## share_nested_offsets {#share_nested_offsets}
 

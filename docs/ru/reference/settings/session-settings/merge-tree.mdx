@@ -188,6 +188,16 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Включает предварительную выборку под-потоков общих данных JSON в частях Wide, которые считываются с seek к метке, в том числе под-потока данных типизированных путей `SHARED`. Такая предварительная выборка начинается с начала гранулы, тогда как под-поток обычно считывается не с этой позиции, поэтому она может оказаться бесполезной. Отключите настройку, чтобы пропустить эти операции предварительной выборки.
 
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "Новая настройка: размер задач на завершающем этапе чтения из `MergeTree` уменьшается, чтобы все потоки завершали работу примерно одновременно."}]}]} />
+
+Устанавливает размер задач на завершающем этапе чтения из `MergeTree` равным 1/N объёма данных, приходящегося на один поток (но не меньше
+`merge_tree_min_read_task_size`), чтобы все потоки завершали работу примерно одновременно. Более высокие значения обеспечивают более равномерное распределение
+нагрузки между потоками, но увеличивают накладные расходы на каждую задачу. Значение 0 отключает эту возможность.
+
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />

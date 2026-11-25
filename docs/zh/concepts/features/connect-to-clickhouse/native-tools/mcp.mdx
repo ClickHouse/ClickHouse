@@ -1,0 +1,50 @@
+---
+description: 'Model Context Protocol 与 ClickHouse MCP 服务器概览'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'AI', 'interfaces']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /concepts/features/connect-to-clickhouse/native-tools/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) (MCP) 是一项开放标准，可让 AI 助手连接到外部系统。
+它为模型访问数据源、API、数据库和工具提供了统一的接口，无需为每一种模型与服务的组合单独构建自定义集成。
+
+AI 应用程序只需实现一次 MCP，即可连接到任何兼容的服务器。
+同样，MCP 服务器也可以向任何兼容的客户端开放其功能。
+
+## 架构 {#architecture}
+
+MCP 采用客户端-服务器架构：
+
+* MCP 客户端 (如 Claude Desktop、Cursor 或 VS Code) 与 MCP 服务器建立连接。
+* MCP 服务器通过标准化接口对外提供工具和能力。
+* AI 模型在需要时调用这些工具，以访问外部数据和功能。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![MCP 客户端-服务器架构](/images/use-cases/AI_ML/MCP/mcp_overview.webp)
+  </Frame>
+</div>
+
+您可以在 GitHub 上找到由社区维护的 [MCP 客户端](https://github.com/punkpeye/awesome-mcp-clients)和 [MCP 服务器](https://github.com/punkpeye/awesome-mcp-servers)合集。
+
+[ClickHouse Loom 通过自托管的 MCP 服务器，为编程智能体提供共享记忆](https://loom.clickhouse.com/docs/use-cases/agent-memory)。
+它能够跨会话保留项目决策，并将已保存的经验关联到已建立索引的代码。
+
+## ClickHouse MCP 服务器 {#clickhouse-mcp-server}
+
+[ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 使 AI 助手能够发现 ClickHouse 集群中的数据库和表、查看 schema，并对集群运行 SQL 查询。
+该服务器提供的工具可能因版本而异，请参阅相应的集成指南，了解其示例中使用的工具名称。
+
+默认情况下，该服务器仅允许只读查询。
+请为助手使用专用的 ClickHouse 用户，并仅授予其所需的权限。
+
+如需连接本地 MCP 客户端，请参阅[设置 ClickHouse MCP 服务器](/zh/guides/use-cases/ai-ml/MCP/claude-desktop)。
+如需使用托管的远程服务器，请参阅 [ClickHouse Cloud 中的远程 MCP 服务器](/zh/products/cloud/features/ai-ml/remote-mcp)。
+
+<Tip>
+  **Agent Skills**
+
+  [ClickHouse Agent Skills 代码仓库](https://github.com/ClickHouse/agent-skills)提供打包好的指令，为 AI 编程智能体补充 ClickHouse 特有的专业知识，涵盖 schema 设计、查询优化和数据摄取模式等方面。
+</Tip>

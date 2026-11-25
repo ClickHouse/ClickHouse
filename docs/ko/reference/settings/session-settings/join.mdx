@@ -15,9 +15,43 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,inequality" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "`ie_join`이 기본 목록에 추가되어 `ON` 절에 부등 조건만 있는 조인은 필터가 있는 `CROSS JOIN` 대신 IEJoin으로 실행됩니다. 마지막에 있으므로 다른 알고리즘이 적용되지 않을 때만 사용됩니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash`는 `hash`의 더 이상 사용되지 않는 별칭이므로 기본 목록에서 제거되었지만, 여전히 사용할 수 있습니다. `hash` 또는 `parallel_hash`를 나열하더라도 조인의 병렬 처리 정도는 제어되지 않습니다."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다"}]}]} />
+<VersionHistory
+  rows={[
+  {
+    id: "row-1",
+    items: [
+      { label: "26.8" },
+      { label: "direct,parallel_hash,hash,ie_join" },
+      {
+        label:
+          "`ie_join`(현재 이름은 `inequality`)이 기본 목록에 추가되어 `ON` 부분에 비동등 조건만 있는 조인은 필터가 있는 `CROSS JOIN` 대신 부등 조인 알고리즘으로 실행됩니다. 마지막에 있으므로 다른 알고리즘이 적용되지 않을 때만 사용됩니다."
+      }
+    ]
+  },
+  { id: "row-2", items: [{ label: "26.12" }, { label: "direct,hash,inequality" }, { label: "`ie_join`의 이름이 `inequality`로 변경되었습니다. 이전 이름인 `ie_join`도 별칭으로 계속 사용할 수 있습니다." }] },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.11" },
+      { label: "direct,hash,ie_join" },
+      {
+        label:
+          "`parallel_hash`는 `hash`의 더 이상 사용되지 않는 별칭이므로 기본 목록에서 제거되었지만, 여전히 사용할 수 있습니다. `hash` 또는 `parallel_hash`를 나열하더라도 조인의 병렬 처리 정도는 제어되지 않습니다."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "24.12" },
+      { label: "direct,parallel_hash,hash" },
+      { label: "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다" }
+    ]
+  }
+  ]}
+/>
 
 어떤 [JOIN](/ko/reference/statements/select/join) 알고리즘을 사용할지 지정합니다.
 
@@ -39,7 +73,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 [Grace hash 조인](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join)을 사용합니다. Grace hash는 메모리 사용을 제한하면서도 복잡한 조인을 고성능으로 처리할 수 있는 알고리즘 옵션입니다.
 `grace_hash`를 명시적으로 선택하는 것은 주로 진단 용도입니다. 조인 스필을 활성화하려면 대신 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 또는 [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)을 설정하십시오.
 
-`grace_hash`는 첫 번째 블록부터 외부 처리됩니다. `hash`와 `parallel_hash`가 먼저 메모리에 수집한 후 스필 임계값을 초과할 때만 파티션으로 나누는 것과 달리, 오른쪽 테이블을 즉시 파티션으로 나눕니다. 오른쪽 측이 메모리에 맞지 않을 것을 이미 알고 있고 메모리 내 단계를 건너뛰려면 이를 선택하십시오. 스필 임계값 자체는 모든 해시 알고리즘이 사용하는 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)와 동일하며, `legacy_join_size_limits_trigger_spilling`이 켜져 있지 않다면 둘 중 하나가 0이 아니어야 합니다. 임계값이 없으면 `grace_hash`는 목록의 다음 알고리즘으로 넘어가며, 이것만 지정된 경우 거부됩니다.
+`grace_hash`는 첫 번째 블록부터 외부 방식으로 동작합니다. 즉, 오른쪽 테이블을 곧바로 파티션으로 나누는 반면, `hash`와 `parallel_hash`는 먼저 메모리에 수집한 뒤 스필 임계값을 넘어설 때에만 파티션으로 나눕니다. 오른쪽 데이터가 메모리에 다 들어가지 않을 것을 이미 알고 있어 인메모리 단계를 건너뛰려는 경우 이 알고리즘을 선택하십시오. 스필 임계값은 모든 해시 알고리즘이 공통으로 사용하는 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)이며, `legacy_join_size_limits_trigger_spilling`이 활성화되어 있지 않다면 둘 중 하나는 0이 아니어야 합니다. 임계값이 없으면 `grace_hash`는 건너뛰고 목록의 다음 알고리즘이 사용되며, 목록에 `grace_hash`만 있으면 거부됩니다.
 
 grace 조인의 첫 번째 단계에서는 오른쪽 테이블을 읽고 키 컬럼의 해시 값에 따라 N개의 버킷으로 나눕니다(초기 N은 `grace_hash_join_initial_buckets`입니다). 각 버킷을 독립적으로 처리할 수 있도록 나눕니다. 첫 번째 버킷의 행은 메모리 내 해시 테이블에 추가하고, 나머지는 디스크에 저장합니다. 해시 테이블이 스필 임계값을 초과할 정도로 커지면 버킷 수를 늘리고 각 행에 할당된 버킷도 함께 변경합니다. 현재 버킷에 속하지 않는 모든 행은 플러시하고 다시 할당합니다.
 
@@ -82,11 +116,11 @@ MergeTree 테이블의 경우 이 알고리즘은 조인 키 필터를 스토리
 
 조인 전에 조인 대상 테이블을 완전히 정렬하는 [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join)입니다.
 
-* ie&#95;join
+* inequality
 
-조인 대상 테이블의 표현식 간 부등식 비교(`<`, `<=`, `>`, `>=`)가 2개 있는 `ON` 절을 포함하는 `JOIN`을 위한 정렬 기반 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 알고리즘입니다. `ALL INNER/LEFT/RIGHT/FULL JOIN` 및 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`을 지원합니다.
+조인 대상 테이블의 표현식 간 부등식 비교(`<`, `<=`, `>`, `>=`)가 2개 있는 `ON` 부분을 포함하는 `JOIN`을 위한 정렬 기반 [부등 조인](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 알고리즘입니다. `ALL INNER/LEFT/RIGHT/FULL JOIN` 및 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`을 지원합니다. 이전 이름인 `ie_join`도 별칭으로 사용할 수 있습니다.
 
-목록 내 위치가 우선순위를 결정합니다. 기본값처럼 다른 알고리즘 뒤에 나열하면 `ie_join`은 `ON` 절에 동등 조건이 없을 때만 사용됩니다. 첫 번째로 나열하면 `ON` 절에 부등 조건이 2개 있을 때마다 사용되며, 나머지 조건은 조인 결과에 대한 필터로 적용됩니다. 부등 조건이 2개를 초과하면, 알고리즘에서 사용할 2개는 [컬럼 통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)의 추정 선택도를 기준으로 선택합니다. 통계가 없으면 구문 순서상 처음 2개를 사용합니다. 목록에 `ie_join`이 없으면 부등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되며, 다른 조인 유형은 [블록 중첩 루프 조인](/ko/reference/statements/select/join#join-with-an-arbitrary-on-condition)으로 실행됩니다.
+목록에서의 위치가 우선순위를 결정합니다. 기본값처럼 다른 알고리즘 뒤에 나열하면 `inequality`는 `ON` 부분에 동등 조건이 없을 때만 사용됩니다. 맨 앞에 나열하면 `ON` 부분에 비동등 조건이 2개 있을 때마다 사용되며, 나머지 조건은 조인 결과(result)에 대한 필터(filter)로 적용됩니다. 비동등 조건이 2개를 초과하면 알고리즘이 사용할 2개의 조건은 [컬럼 통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)를 바탕으로 추정한 선택도에 따라 선택되며, 통계가 없으면 구문 순서상 처음 2개가 사용됩니다. 목록에 `inequality`가 없으면 비동등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되고, 그 밖의 조인 유형은 [블록 중첩 루프 조인](/ko/reference/statements/select/join#join-with-an-arbitrary-on-condition)으로 실행됩니다.
 
 두 입력은 조인 전에 메모리에 누적됩니다. [`max_rows_in_join`](/ko/reference/settings/session-settings/max-rows#max_rows_in_join) 및 [`max_bytes_in_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_join)은 양쪽 입력의 누적량을 함께 제한하며(오른쪽만 제한하는 것이 아님), 오버플로우 시 동작은 [`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)로 설정합니다. 연산자가 누적된 입력을 기반으로 구축하는 정렬 인덱스는 이 제한에 포함되지 않습니다. 조인 연산자 자체는 단일 스레드에서 실행되며, 입력의 조인 전 정렬만 병렬화됩니다.
 
@@ -181,7 +215,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려 시도�
 도달하면 스필이 발생하는 대신 쿼리가 중지됩니다. 예외는
 `legacy_join_size_limits_trigger_spilling`으로, 이 설정을 켜면 이미 디스크에서
 실행 중인 조인 부분은 이 설정을 따르는 대신 계속 스필합니다.
-`ie_join` 또한 양쪽에서 누적한 입력에 대해 이 설정을 따릅니다. `partial_merge`는 여전히
+`inequality` 또한 양쪽에서 누적한 입력에 대해 이 설정을 따릅니다. `partial_merge`는 여전히
 전략을 전환하는 방식으로 제한을 처리합니다. 자세한 내용은
 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)을 참조하십시오.
 

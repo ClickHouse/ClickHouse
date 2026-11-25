@@ -13,7 +13,7 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)를 사용하면 터미널, 스�
 
 `clickhousectl cloud` 명령어로 다음 항목을 관리할 수 있습니다.
 
-* **서비스:** ClickHouse Cloud 서비스를 생성, 확장, 시작 및 중지하고, 쿼리 API를 통해 해당 서비스에서 SQL을 실행합니다.
+* **서비스:** ClickHouse Cloud 서비스를 생성, 확장, 시작 및 중지하고, 삭제 방지를 설정하며, 연결 설정을 `.env` 파일에 기록하고, 쿼리 API 또는 대화형 `clickhouse client` 세션을 통해 해당 서비스에서 SQL을 실행합니다.
 * **[Managed Postgres](/ko/products/managed-postgres/overview):** Postgres 서비스, 읽기 복제본(Read Replicas), 특정 시점 복원을 생성하고 구성을 변경합니다.
 * **[ClickPipes](/ko/integrations/clickpipes/home):** 객체 스토리지, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB, BigQuery에서 데이터를 수집합니다.
 * **[ClickStack](/ko/clickstack/overview):** [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/deployment/managed) 서비스의 소스, 대시보드, 알림, 웹훅, 저장된 검색 및 역할을 관리합니다.
@@ -21,7 +21,7 @@ ClickHouse CLI(`clickhousectl`, 별칭 `chctl`)를 사용하면 터미널, 스�
 * **백업:** 백업 목록을 조회하고, 백업 일정을 변경하며, 백업을 새 서비스로 복원합니다.
 * **조직 액세스:** 조직, 구성원, 초대, API 키 및 활동 로그를 관리합니다.
 
-각 명령의 플래그와 필요한 API Key 권한을 확인하려면 `clickhousectl cloud <command> --help`를 실행하십시오.
+서비스 관련 명령은 `clickhousectl cloud clickhouse`(줄여서 `cloud ch`) 아래에 있습니다. 각 명령의 플래그와 필요한 API Key 권한을 확인하려면 `clickhousectl cloud <command> --help`를 실행하십시오.
 
 ## 설치 {#installation}
 
@@ -50,23 +50,28 @@ clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 
 ## 예시 {#examples}
 
-### 서비스 생성 및 쿼리 {#create-and-query-a-service}
+### 서비스 생성 및 쿼리 실행 {#create-and-query-a-service}
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
+# Create a service. The initial password is shown only once, so --dotenv
+# writes it and the connection settings to .env.local.
 # Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
+clickhousectl cloud clickhouse create --name analytics \
   --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
+  --ip-allow '203.0.113.10/32=Office' \
+  --dotenv .env.local
 
 # Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+CH_ID=$(clickhousectl cloud clickhouse get --name analytics --json | jq -r .id)
+clickhousectl cloud clickhouse query "$CH_ID" --query "SELECT version()"
+
+# Open an interactive clickhouse client session
+clickhousectl cloud clickhouse client "$CH_ID"
 ```
 
-서비스 생성 명령은 서비스가 실행 상태가 되기 전에 반환됩니다. `state`가 `running`이 될 때까지 `clickhousectl cloud service get "$CH_ID"`를 폴링하십시오.
+생성 명령은 서비스가 실행 상태가 되기 전에 반환됩니다. `state`가 `running`이 될 때까지 `clickhousectl cloud clickhouse get "$CH_ID"`를 폴링하십시오. 기존 서비스에서는 `clickhousectl cloud clickhouse dotenv "$CH_ID" --local`을 실행하면 동일한 설정이 비밀번호 없이 `.env.local`에 기록됩니다. 운영 환경 서비스를 보호하려면 `clickhouse update "$CH_ID" --deletion-protection true`로 삭제 보호를 활성화하십시오. 이후에는 `--deletion-protection false`로 설정할 때까지 `clickhouse delete`가 해당 서비스의 삭제를 거부합니다.
 
-API Key로 처음 쿼리를 실행하면 clickhousectl이 서비스의 쿼리 API 엔드포인트에 사용자의 API Key를 추가하며, 엔드포인트가 없으면 새로 생성합니다. 이때 새 키는 생성되지 않습니다. 이렇게 하는 대신 오류가 발생하도록 하려면 `--no-auto-enable`을 지정하십시오. OAuth를 사용하면 `service query`는 읽기 전용 `SELECT` SQL 문만 실행합니다. 쿼리 API는 약 30초가 지나면 시간 초과되므로, 오래 걸리는 쿼리나 대량 적재(bulk loads)에는 `clickhouse client`를 사용하십시오.
+API Key를 사용하면 `clickhouse query`는 키가 아직 바인드되지 않은 경우 서비스의 Query API 엔드포인트에 해당 키를 추가하며, 필요하면 엔드포인트도 생성합니다. 새 키는 생성되지 않습니다. 이 동작 대신 오류로 종료되게 하려면 `--no-auto-enable`을 지정하십시오. 읽기 전용 키는 스스로를 바인드할 수 없으므로, 쓰기 액세스 권한이 있는 키로 한 번 바인드해 두십시오. OAuth를 사용하면 `clickhouse query`는 읽기 전용 `SELECT` SQL 문만 실행합니다. 쿼리 API는 약 30초가 지나면 시간 초과되며 요청당 SQL 문 하나만 실행하므로, 오래 걸리는 쿼리, 스크립트, 대량 적재(bulk loads)에는 `cloud clickhouse client`를 사용하십시오. 이 명령은 네이티브 TLS로 `clickhouse client`를 실행하고, 서비스 비밀번호 없이 브라우저를 통해 Cloud 사용자로 로그인합니다. 이를 사용하려면 로컬에 ClickHouse 25.12 이상이 설치되어 있어야 하며(`clickhousectl local install latest`), 브라우저에서 직접 로그인을 진행할 사람이 있어야 합니다.
 
 ### 관리형 Postgres 서비스 생성 {#create-a-managed-postgres-service}
 
@@ -101,7 +106,7 @@ clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 
 ## JSON 출력과 코딩 에이전트 {#json-output}
 
-Cloud 명령어는 `--json` 옵션을 지원하며, CLI는 코딩 에이전트를 감지하면 자동으로 JSON 출력을 사용합니다. 이때 `cloud service query`의 기본 포맷은 `JSONEachRow`가 되므로, 출력을 파싱하는 스크립트에서는 `--format TabSeparated`와 같이 `--format`을 명시적으로 지정하십시오. 자세한 내용은 [JSON 출력](/ko/concepts/features/interfaces/cli#json-output) 및 [종료 코드](/ko/concepts/features/interfaces/cli#exit-codes)를 참조하십시오. ClickHouse agent skills는 `clickhousectl skills`로 설치할 수 있습니다.
+Cloud 명령어는 `--json` 옵션을 지원하며, CLI는 코딩 에이전트를 감지하면 자동으로 JSON 출력을 사용합니다. 이때 `cloud clickhouse query`의 기본 포맷은 `JSONEachRow`가 되므로, 출력을 파싱하는 스크립트에서는 `--format TabSeparated`와 같이 `--format`을 명시적으로 지정하십시오. 자세한 내용은 [JSON 출력](/ko/concepts/features/interfaces/cli#json-output) 및 [종료 코드](/ko/concepts/features/interfaces/cli#exit-codes)를 참조하십시오. ClickHouse agent skills는 `clickhousectl skills`로 설치할 수 있습니다.
 
 ## 더 알아보기 {#learn-more}
 

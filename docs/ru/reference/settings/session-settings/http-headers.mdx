@@ -13,21 +13,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="http_headers_progress_interval_ms">
-  ## http_headers_progress_interval_ms
-</div>
+## http_headers_progress_interval_ms {#http_headers_progress_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Не отправлять HTTP-заголовки X-ClickHouse-Progress чаще указанного интервала.
 
-<div id="http_headers_read_timeout">
-  ## http_headers_read_timeout
-</div>
+## http_headers_read_timeout {#http_headers_read_timeout}
 
-<SettingsInfoBlock type="Секунды" default_value="30" />
+<SettingsInfoBlock type="Seconds" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "Новая настройка для ограничения общего времени чтения всех заголовков HTTP-запроса, защищающая от атак типа slowloris."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "Изменение бэкпортировано в 26.1 и отражено в истории этой версии."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "30"},{"label": "Новая настройка для ограничения общего времени чтения всех заголовков HTTP-запроса, защищающая от атак типа slowloris."}]}]} />
 
 Максимальное время в секундах для чтения всех заголовков HTTP-запроса. Это общее ограничение по времени для всего этапа разбора заголовков, а не тайм-аут для отдельной операции чтения. Защищает от атак типа slowloris, при которых клиент медленно передаёт данные заголовков, чтобы удерживать соединения открытыми.
 

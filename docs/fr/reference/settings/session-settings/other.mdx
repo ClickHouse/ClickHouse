@@ -162,7 +162,7 @@ Délai d’expiration, en secondes, d’une requête Arrow Flight individuelle. 
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Effectue une nouvelle tentative pour les requêtes S3 de sauvegarde et de restauration après l’expiration d’un jeton ; 0 rétablit le comportement précédent."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "Effectue une nouvelle tentative pour les requêtes S3 de sauvegarde et de restauration après l’expiration d’un jeton ; 0 rétablit le comportement précédent."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "La modification a été rétroportée vers la version 26.8 et y est consignée."}]}]} />
 
 Durée maximale, en millisecondes, pendant laquelle une requête S3 fait l’objet d’une nouvelle tentative lorsque sa réponse indique `ExpiredToken` au cours d’une sauvegarde ou d’une restauration. Les nouvelles tentatives s’arrêtent également une fois la limite `backup_restore_s3_retry_attempts` atteinte. La valeur zéro désactive ces nouvelles tentatives. Les réponses `HEAD` d’AWS S3 n’exposent qu’un statut HTTP générique : ces nouvelles tentatives ne s’appliquent donc pas aux requêtes de métadonnées `HEAD`.
 
@@ -998,6 +998,14 @@ Détermine le paramètre suivi par la famille de fonctions `JSONExtract` lors de
 
 Lorsque le parseur choisi ne parvient pas à lire la valeur, la fonction renvoie la valeur par défaut du type (`1970-01-01 00:00:00`) sans lever d&#39;erreur : une incohérence entre les deux paramètres modifie donc silencieusement les valeurs extraites.
 
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer une conversion optimisée d’un type JSON vers un autre type JSON, qui évite une sérialisation et une analyse complètes lorsque seul un sous-ensemble de chemins change."}]}]} />
+
+Lorsque ce paramètre est activé, les conversions entre types JSON dotés de paramètres différents (chemins typés, règles d’exclusion) passent par un chemin d’exécution optimisé : les sous-colonnes inchangées sont réutilisées par pointeur et CAST n’est appliqué qu’aux chemins modifiés. On évite ainsi le pipeline complet de sérialisation en string puis d’analyse de cette string. Désactivez-le pour forcer la conversion legacy (format + analyse) pour toutes les modifications de type JSON.
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -1451,9 +1459,9 @@ Nombre minimal d’octets requis pour qu’une lecture distante (URL, S3) effect
 
 * **Valeur par défaut :** Chaîne vide
 
-Ce paramètre permet de spécifier un modèle de renommage pour les fichiers traités par la fonction de table `file`. Lorsque cette option est définie, tous les fichiers lus par la fonction de table `file` sont renommés selon le modèle spécifié et ses marqueurs de substitution, uniquement si leur traitement a réussi.
+Ce paramètre permet de spécifier un motif de renommage pour les fichiers traités par la fonction de table `file`. Lorsque cette option est définie, tous les fichiers lus par la fonction de table `file` sont renommés selon le motif spécifié et ses marqueurs de substitution, uniquement si leur traitement a réussi.
 
-Le renommage constitue une écriture sur la source : une requête qui lit les fichiers avec cette option définie nécessite donc le privilège `WRITE ON FILE` en plus de `READ ON FILE`. `DESCRIBE` ne construit pas le pipeline de lecture des données qui effectue le renommage, et ne nécessite donc que `READ ON FILE`.
+Le renommage constitue une écriture sur la source : une requête qui lit les fichiers avec cette option définie nécessite donc le privilège `WRITE ON FILE` en plus de `READ ON FILE`, et est refusée en mode readonly (`readonly` supérieur à 0, ce qu’implique toute requête HTTP GET). `DESCRIBE` ne construit pas le pipeline de lecture des données qui effectue le renommage : aucune de ces deux restrictions ne s’y applique donc.
 
 ### Marqueurs de substitution {#placeholders}
 
@@ -2047,6 +2055,19 @@ Résultat :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Parcourir le répertoire shadow lors de l'interrogation de system.remote_data_paths."}]}]} />
 
 Parcourir les données gelées (répertoire shadow) en plus des données réelles de la table lors de l&#39;interrogation de system.remote&#95;data&#95;paths
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nouveau paramètre. Un `TRUNCATE` sur une table `MergeTree` conserve les parts supprimées pendant `old_parts_lifetime` secondes au lieu de les supprimer immédiatement"}]}]} />
+
+Lorsque ce paramètre est activé, un `TRUNCATE` sur une table `MergeTree` non répliquée supprime immédiatement du disque les parts tronquées. Dans le cas contraire, elles deviennent inactives et sont supprimées au bout de `old_parts_lifetime` secondes, comme les parts sources d’une fusion, afin que les requêtes en cours d’exécution et les lecteurs disposant d’une liste de parts obsolète puissent encore les lire. Les tables Replicated suppriment toujours les parts immédiatement.
+
+Valeurs possibles :
+
+* 0 - Les parts tronquées sont supprimées au bout de `old_parts_lifetime` secondes.
+* 1 - Les parts tronquées sont supprimées immédiatement.
 
 ## union_default_mode {#union_default_mode}
 

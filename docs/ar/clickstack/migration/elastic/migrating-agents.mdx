@@ -375,17 +375,17 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-### شغّل Elastic Agent كمُجمِّع OpenTelemetry {#run-agent-as-otel}
+### شغّل Elastic Agent كجامع البيانات OpenTelemetry {#run-agent-as-otel}
 
-يتضمن Elastic Agent جامع EDOT مضمّنًا يتيح لك تزويد تطبيقاتك وبنيتك التحتية بأدوات جمع بيانات الرصد مرة واحدة، ثم إرسال البيانات إلى عدة مزوّدين وأنظمة التخزين الخلفية.
+يتضمن Elastic Agent جامع البيانات EDOT مضمّنًا يتيح لك تزويد تطبيقاتك وبنيتك التحتية بأدوات جمع بيانات الرصد مرة واحدة، ثم إرسال البيانات إلى عدة مزوّدين وأنظمة التخزين الخلفية.
 
 <Info>
   **تكاملات الوكيل والتنسيق**
 
-  لن يتمكن المستخدمون الذين يشغّلون جامع EDOT الموزّع مع Elastic Agent من الاستفادة من [التكاملات الحالية التي يوفّرها الوكيل](https://www.elastic.co/docs/reference/fleet/manage-integrations). بالإضافة إلى ذلك، لا يمكن إدارة الجامع مركزيًا عبر Fleet، ما يفرض على المستخدم تشغيل [الوكيل في الوضع المستقل](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) وإدارة التهيئة بنفسه.
+  لن يتمكن المستخدمون الذين يشغّلون جامع البيانات EDOT الموزّع مع Elastic Agent من الاستفادة من [التكاملات الحالية التي يوفّرها الوكيل](https://www.elastic.co/docs/reference/fleet/manage-integrations). بالإضافة إلى ذلك، لا يمكن إدارة جامع البيانات مركزيًا عبر Fleet، ما يفرض على المستخدم تشغيل [الوكيل في الوضع المستقل](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) وإدارة الإعدادات بنفسه.
 </Info>
 
-لتشغيل Elastic Agent مع جامع EDOT، راجع [دليل Elastic الرسمي](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). وبدلًا من تهيئة نقطة نهاية Elastic كما هو موضح في الدليل، أزل `exporters` الحالية وهيّئ خرج OTLP لإرسال البيانات إلى ClickStack مُجمِّع OpenTelemetry. على سبيل المثال، تصبح تهيئة المصدّرات كما يلي:
+لتشغيل Elastic Agent مع جامع البيانات EDOT، راجع [دليل Elastic الرسمي](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). وبدلًا من تهيئة نقطة نهاية Elastic كما هو موضح في الدليل، أزل `exporters` الحالية وهيّئ خرج OTLP لإرسال البيانات إلى مُجمِّع OpenTelemetry الخاص بـ ClickStack. على سبيل المثال، تصبح إعدادات المصدّرات كما يلي:
 
 ```yaml
 exporters:
@@ -397,12 +397,6 @@ exporters:
     tls:
       insecure: true
 ```
-
-<Info>
-  **Managed ClickStack**
-
-  افتراضيًا، لا يلزم مفتاح API للإدخال عند تشغيل مُجمِّع OpenTelemetry في الوضع المستقل مع Managed ClickStack. ومع ذلك، يمكن تأمين الإدخال عبر تحديد رمز مصادقة OTLP. راجع [&quot;تأمين الـ جامع&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector).
-</Info>
 
 يُنشئ ClickStack القيمة `YOUR_INGESTION_API_KEY` المستخدمة هنا. يمكنك العثور على المفتاح في ClickStack UI ضمن `Team Settings → API Keys`.
 

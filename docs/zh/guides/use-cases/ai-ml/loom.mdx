@@ -1,0 +1,162 @@
+---
+title: '使用 ClickHouse Loom 实现智能体共享记忆'
+sidebarTitle: '使用 Loom 实现智能体记忆'
+slug: /use-cases/AI/loom
+description: '运行 ClickHouse Loom：一个开源 MCP 服务器，可在 ClickHouse 中为 AI 智能体存储共享的长期记忆、文档和代码索引。'
+doc_type: 'guide'
+keywords: ['loom', 'agent memory', 'mcp', 'ai agents', 'rag', 'claude code', 'codex', 'cursor']
+---
+
+本指南将介绍如何安装 [ClickHouse Loom](https://loom.clickhouse.com/)。Loom 是一个开源 (Apache-2.0) 的 MCP 服务器和 HTTP API，可为 AI 智能体提供共享的长期记忆、带引用来源的文档搜索，以及代码仓库的代码索引。完成本指南后，Loom 将基于 ClickHouse 运行，存有第一条记忆，并为已连接的编程智能体提供服务。
+
+## 开始之前 {#before-you-begin}
+
+* Docker 及 Compose 2.20 或更高版本，运行在 Linux `amd64` 或 `arm64` 上 (也支持 Apple Silicon 上的 Docker Desktop) ，且端口 7777 未被占用。
+* 一个供 Loom 使用的 ClickHouse。Loom 技术栈可以运行自带的 ClickHouse 容器。如需改用 ClickHouse Cloud 服务或自管理的 ClickHouse 服务器，则需满足以下条件：
+
+  * 版本为 26.4 或更高 (在 Cloud 上，以该服务中最旧副本的版本为准) ；
+  * 一个 Keeper：Cloud 已自带；自管理服务器则需将 Loom 的 `keeper.xml` 添加到其 `config.d/` 中，或添加一个指向您的 Keeper 的 `<zookeeper>` 配置段；
+  * 一个用户，需拥有 `loom.*` 和 `loom_telemetry.*` 上的全部权限 (`GRANT ALL`，在 Cloud 上则为 `GRANT CURRENT GRANTS`) 、Loom 所读取系统表的 `SELECT` 权限，以及 `READ ON REMOTE` 权限。
+
+  请参阅 [ClickHouse 要求](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#clickhouse-requirements)。
+
+## 工作原理 {#how-it-works}
+
+1. 安装程序会下载该发行版的 Compose 包并验证其校验和，然后使用已发布的镜像启动 Loom 服务器及其文档提取器。
+2. 内置的 ClickHouse 容器启动时会自带 `loom` 数据库。如果使用您自己的 ClickHouse，安装程序会创建该数据库，或输出供管理员执行的 SQL。Loom 会在首次启动时创建所需的表。记忆条目、文档和代码索引在其中都是普通表。
+3. 智能体通过 MCP 或 HTTP API 进行读写。Python SDK、TypeScript SDK 以及 Claude Code 和 Codex 插件都使用同一套 API。
+
+## 安装 Loom {#install-loom}
+
+<Steps>
+  <Step title="运行安装程序" id="run-the-installer">
+    请在您的主目录或其他仅您本人有写入权限的目录中运行：安装程序会先将 `loom-install.sh` 保存到该目录，然后再运行它。
+
+    <Tabs>
+      <Tab title="内置 ClickHouse" id="bundled-clickhouse">
+        该技术栈会运行自己的 ClickHouse 容器：
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh && rm loom-install.sh
+        ```
+      </Tab>
+
+      <Tab title="ClickHouse Cloud" id="clickhouse-cloud">
+        在您的服务上为 Loom 创建一个专用用户 (不要使用 `default`) ，并将 Loom 主机的 IP 添加到该服务的 IP 访问列表中。将服务 URL 传给安装程序。如果 URL 或 `LOOM_CH_PASSWORD` 中未提供密码，安装程序会提示您输入。随后，它会创建 `loom` 数据库以及一个只读的 reader 用户。如果该用户权限不足，安装程序会改为输出需要由管理员执行的 SQL：
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse https://loom@<service-host>:8443 \
+          && rm loom-install.sh
+        ```
+
+        如需在 Kubernetes 上搭配 ClickHouse Cloud 和 ClickHouse Managed Postgres 使用，请参阅 [ClickHouse Cloud 和 Managed Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/clickhouse-cloud.md)。
+      </Tab>
+
+      <Tab title="自管理 ClickHouse" id="self-managed-clickhouse">
+        传入您服务器的 URL；安装程序的行为与 Cloud 选项卡中所述相同。`http://` 默认使用端口 8123。如果服务器就运行在 Docker 主机上，应使用 `host.docker.internal`，因为在 Loom 容器内部，`localhost` 指向的是容器本身：
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse http://loom@host.docker.internal:8123 && rm loom-install.sh
+        ```
+      </Tab>
+    </Tabs>
+
+    安装程序会一直等待，直到 `http://localhost:7777/v1/health` 返回的 `status` 为 `ok`。此安装为单用户模式：无需登录，仅可从 localhost 访问，并使用默认的 `dev/local` 命名空间，因此 MCP 和 SDK 调用无需令牌。团队部署则会启用登录，并为每个 agent 分配一个带有命名空间授权的令牌；请参阅[身份模式](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#identity-modes)。
+  </Step>
+
+  <Step title="保存并召回一条记忆" id="save-and-recall">
+    ```bash
+    curl -sX POST http://localhost:7777/v1/memory.set -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart",
+           "memory_key":"deploy_window","value":"Tue and Thu only; never Friday."}'
+    curl -sX POST http://localhost:7777/v1/memory.get -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart","memory_key":"deploy_window"}'
+    ```
+
+    `memory.get` 的响应中包含 `found: true`，且 `value` 与写入时一致。
+  </Step>
+
+  <Step title="连接编程智能体" id="connect-a-coding-agent">
+    <Tabs>
+      <Tab title="Claude Code" id="claude-code">
+        ```bash
+        claude plugin marketplace add ClickHouse/loom
+        claude plugin install loom@loom
+        ```
+
+        当 Claude Code 询问插件设置时，保留默认的服务器 URL，并将令牌留空。
+      </Tab>
+
+      <Tab title="Codex" id="codex">
+        ```bash
+        codex plugin marketplace add ClickHouse/loom
+        codex plugin add loom@loom
+        ```
+
+        然后以交互式方式运行一次 `codex`，并批准该插件的 hooks；在此之前，工具虽可正常使用，但不会捕获任何内容。
+      </Tab>
+
+      <Tab title="Cursor" id="cursor">
+        将以下条目合并到 `~/.cursor/mcp.json` 中，然后重启 Cursor：
+
+        ```json
+        { "mcpServers": { "loom": { "url": "http://localhost:7777/mcp?toolset=coding" } } }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## 验证 {#verify}
+
+| 操作                                                                                                                                                                                                                                          | 预期结果                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `curl -s http://localhost:7777/v1/health`                                                                                                                                                                                                   | `status` 为 `ok`                          |
+| 打开 `http://localhost:7777/`                                                                                                                                                                                                                 | 显示 Loom 仪表盘，其中包含已保存的记忆                   |
+| 上文的 `memory.get` 调用                                                                                                                                                                                                                         | `found` 为 `true`，并返回通过 `memory.set` 保存的值 |
+| 在内置的 ClickHouse 上运行：`docker compose --project-directory "$HOME/.loom" exec clickhouse clickhouse-client --user loom --password loomdev --query "SELECT memory_key, value FROM loom.memory FINAL WHERE org = 'dev' AND namespace = 'local'"` | 返回 `deploy_window` 这一行                   |
+
+## 最佳实践 {#best-practices}
+
+### 为每个团队分配独立的命名空间 {#namespace-per-team}
+
+记忆条目、文档和授权均以命名空间为作用域。需要共享所学知识的智能体应写入同一命名空间；令牌则限定每个智能体只能读写其获准访问的命名空间。请参阅[令牌与授权](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/guides/tokens-and-grants.md)。
+
+### 为提取和回答配置 LLM 提供商 {#configure-an-llm}
+
+已发布的技术栈使用本地 CPU 模型生成嵌入向量，并使用一个占位 LLM。因此，在仪表盘的 **Settings → Models &amp; keys** 中设置模型提供商之前，提取、摘要和 `memory.ask` 都无法返回有意义的结果。只需一个 OpenAI 密钥即可同时满足模型和嵌入向量的需求；若使用 Anthropic，则需另外配置嵌入向量提供商。请参阅 [Models and keys](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/models-and-keys.md)。
+
+## 故障排查 {#troubleshooting}
+
+<Accordion title="安装程序在 ClickHouse 检查步骤停止">
+  Loom 要求 ClickHouse 26.4 或更高版本、一个 Keeper，以及[开始之前](#before-you-begin)中列出的授权。如果自管理服务器上没有 Keeper，请添加一个，或者使用 `--bundled` 运行安装程序，以改用该技术栈自带的 ClickHouse。`docker compose --project-directory "$HOME/.loom" run --rm loom loom ch-setup --print-sql` 无需建立连接即可输出供管理员执行的 SQL。
+</Accordion>
+
+<Accordion title="Loom 未能进入健康状态">
+  使用 `docker compose --project-directory "$HOME/.loom" logs --tail 100 loom clickhouse` 查看日志。[故障排查](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md)文档列出了每个问题的症状、用于确认问题的检查方法以及解决办法。
+</Accordion>
+
+## 常见问题 {#faq}
+
+<Accordion title="Loom 会运行智能体吗？">
+  不会。Loom 负责为智能体存储、排序和检索上下文，它本身并不是智能体框架。
+</Accordion>
+
+<Accordion title="能否将实时记忆保存在 Postgres 中？">
+  可以。新部署可以在首次启动时选择以 Postgres 作为实时记忆和知识文档 head 的权威数据源，而向量、搜索和历史记录仍保留在 ClickHouse 中。参见 [Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/postgres.md)。
+</Accordion>
+
+## 后续步骤 {#next-steps}
+
+* [Loom 文档](https://loom.clickhouse.com/docs)：介绍部署、客户端和运维。
+* [评估面向编程智能体的共享记忆](https://loom.clickhouse.com/docs/use-cases/agent-memory)，实现跨会话、跨工具共享。
+* [试用与代码关联的智能体记忆](https://loom.clickhouse.com/docs/use-cases/memory-linked-to-code#check-a-lesson-after-a-code-edit)，了解当已保存经验所引用的代码发生变更时，Loom 如何标记该经验。
+* [为软件工厂测试智能体记忆](https://loom.clickhouse.com/docs/use-cases/multi-agent#choosing-memory-for-a-software-factory)：在同一个代码仓库中为实现者和审阅者分别配置独立的凭证。
+* [为 AI 智能体构建知识工厂](https://loom.clickhouse.com/docs/use-cases/knowledge-factory)：发布运行手册、检索带引用的修订版本，并更新已保存的经验。
+* [使用 SQL 审计智能体记忆](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#query-agent-memory-with-sql)：借助限定在命名空间范围内的读取器查看决策历史记录，并将已保存的记忆追溯到对应的智能体运行。
+* [Loom 快速入门](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
+* [连接编程智能体](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
+* [在 MCP 中使用 ClickHouse](/zh/guides/use-cases/ai-ml/MCP/index)

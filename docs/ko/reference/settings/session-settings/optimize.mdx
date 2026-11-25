@@ -80,7 +80,7 @@ SELECT 절에서 GROUP BY 키의 min/max/any/anyLast 집계 함수를 제거합�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-DISTINCT에 포함된 일부 컬럼이 정렬의 접두사를 이루는 경우 DISTINCT 최적화를 활성화합니다. 예를 들어 MergeTree의 정렬 키(sorting key) 접두사나 ORDER BY 문의 접두사가 이에 해당합니다.
+DISTINCT에 포함된 일부 컬럼이 정렬의 접두사를 이루는 경우 DISTINCT 최적화를 활성화합니다. 예를 들어 MergeTree의 정렬 키(sorting key) 접두사나 ORDER BY 문의 접두사가 이에 해당합니다. 수직 `FINAL`(`enable_vertical_final` 참조)을 사용하는 `FINAL` 읽기에는 적용되지 않습니다. 단, `LIMIT`으로 인해 `DISTINCT`가 읽기를 조기에 중단할 수 있거나 `ORDER BY` 등 다른 이유로 이미 순서대로 읽고 있는 경우에는 적용됩니다.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

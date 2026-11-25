@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />حجم ذاكرة التخزين المؤقت لفهرس تشابه المتجهات، بعدد الإدخالات. تعني القيمة صفر أنه معطّل.
+<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لفهرس تشابه المتجهات، بعدد الإدخالات. تعني القيمة صفر أنه معطّل.
 
 ## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
@@ -26,6 +26,10 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <Note>
   يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
+</Note>
+
+<Note>
+  في ClickHouse Cloud، يعتمد الحد الأقصى لحجم ذاكرة التخزين المؤقت على حجم pod. يمكن التحقق من الحجم الدقيق في `system.server_settings`. ولأن إعدادات الخادم لا يمكن تغييرها عبر SQL أو وحدة التحكم، تواصل مع الدعم لتهيئة حجم أكبر.
 </Note>
 
 ## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}

@@ -349,18 +349,18 @@ Com `LowCardinality(Nullable(String))`, o índice 0 é `NULL`:
 
 Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#array), em que cada array é precedido por uma contagem de elementos em LEB128, o formato Native codifica arrays como dois subfluxos colunares:
 
-* N offsets cumulativos `UInt64` (little-endian, 8 bytes cada). A linha `i` tem `offset[i] - offset[i-1]` elementos, com `offset[-1]` implicitamente igual a 0.
-* Todos os elementos aninhados de todas as linhas, serializados em bloco de forma contígua.
+* N offsets cumulativos `UInt64` (little-endian, 8 bytes cada). A linha `i` tem `offset[i] - offset[static_cast<ssize_t>(i) - 1]` elementos, com `offset[-1]` implicitamente igual a 0.
+* Todos os elementos aninhados de todas as linhas, serializados em lote de forma contígua.
 
 Por exemplo, `Array(UInt32)` com 3 linhas `[[0, 10], [1, 11], [2, 12]]`:
 
 ```text
-// Deslocamentos
-02 00 00 00 00 00 00 00    // 2 (linha 0: 2 elementos)
-04 00 00 00 00 00 00 00    // 4 (linha 1: 2 elementos)
-06 00 00 00 00 00 00 00    // 6 (linha 2: 2 elementos)
+// Offsets
+02 00 00 00 00 00 00 00    // 2 (row 0: 2 elements)
+04 00 00 00 00 00 00 00    // 4 (row 1: 2 elements)
+06 00 00 00 00 00 00 00    // 6 (row 2: 2 elements)
 
-// Valores UInt32 aninhados (6 no total)
+// Nested UInt32 values (6 total)
 00 00 00 00                 // 0
 0a 00 00 00                 // 10
 01 00 00 00                 // 1
@@ -372,7 +372,7 @@ Por exemplo, `Array(UInt32)` com 3 linhas `[[0, 10], [1, 11], [2, 12]]`:
 Um array vazio tem o mesmo offset da linha anterior. Por exemplo, `Array(String)` com 4 linhas `[[], ['0'], ['0','1'], ['0','1','2']]`:
 
 ```text
-00 00 00 00 00 00 00 00    // 0 (vazio)
+00 00 00 00 00 00 00 00    // 0 (empty)
 01 00 00 00 00 00 00 00    // 1
 03 00 00 00 00 00 00 00    // 3
 06 00 00 00 00 00 00 00    // 6

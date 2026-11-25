@@ -1,0 +1,162 @@
+---
+title: 'Mémoire partagée des agents avec ClickHouse Loom'
+sidebarTitle: 'Mémoire des agents avec Loom'
+slug: /use-cases/AI/loom
+description: 'Exécutez ClickHouse Loom, un serveur MCP open source qui conserve dans ClickHouse une mémoire partagée à long terme, des documents et un index de code pour les agents d’IA.'
+doc_type: 'guide'
+keywords: ['loom', 'agent memory', 'mcp', 'ai agents', 'rag', 'claude code', 'codex', 'cursor']
+---
+
+Ce guide vous explique comment installer [ClickHouse Loom](https://loom.clickhouse.com/), un serveur MCP open source (Apache-2.0) et une API HTTP qui offrent aux agents d’IA une mémoire partagée à long terme, une recherche documentaire avec citations et un index du code de vos dépôts. À l’issue de ce guide, Loom fonctionnera avec ClickHouse, contiendra un premier élément en mémoire et répondra aux requêtes d’un agent de code connecté.
+
+## Avant de commencer {#before-you-begin}
+
+* Docker avec Compose 2.20 ou version ultérieure, sous Linux `amd64` ou `arm64` (Docker Desktop sur Apple Silicon est pris en charge), et le port 7777 disponible.
+* Une instance ClickHouse pour Loom. La pile technologique Loom peut exécuter son propre conteneur ClickHouse. Pour utiliser à la place un service ClickHouse Cloud ou un serveur autogéré :
+
+  * version 26.4 ou ultérieure (sur Cloud, c’est la version de la réplique la plus ancienne du service qui fait foi) ;
+  * un Keeper : Cloud en fournit un ; pour un serveur autogéré, ajoutez le fichier `keeper.xml` de Loom à son répertoire `config.d/`, ou une section `<zookeeper>` pointant vers votre Keeper ;
+  * un utilisateur disposant de tous les privilèges sur `loom.*` et `loom_telemetry.*` (`GRANT ALL`, ou `GRANT CURRENT GRANTS` sur Cloud), du privilège `SELECT` sur les tables système lues par Loom, ainsi que de `READ ON REMOTE`.
+
+  Consultez les [prérequis ClickHouse](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#clickhouse-requirements).
+
+## Fonctionnement {#how-it-works}
+
+1. Le programme d&#39;installation télécharge l&#39;archive Compose de la version, vérifie sa somme de contrôle, puis démarre le serveur Loom et son extracteur de documents à partir des images publiées.
+2. Le conteneur ClickHouse fourni démarre avec la base de données `loom`. Sur votre propre instance ClickHouse, le programme d&#39;installation la crée ou affiche le SQL qu&#39;un administrateur doit exécuter. Loom crée ses tables au premier démarrage. Les mémoires, les documents et l&#39;index de code y sont stockés sous forme de tables ordinaires.
+3. Les agents lisent et écrivent via MCP ou l&#39;API HTTP. Le SDK Python, le SDK TypeScript ainsi que les plugins Claude Code et Codex s&#39;appuient sur cette même API.
+
+## Installer Loom {#install-loom}
+
+<Steps>
+  <Step title="Exécuter le programme d’installation" id="run-the-installer">
+    Exécutez-le depuis votre répertoire personnel, ou depuis un autre répertoire où vous êtes seul à pouvoir écrire : il y enregistre `loom-install.sh` avant de l’exécuter.
+
+    <Tabs>
+      <Tab title="ClickHouse intégré" id="bundled-clickhouse">
+        La pile technologique exécute son propre conteneur ClickHouse :
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh && rm loom-install.sh
+        ```
+      </Tab>
+
+      <Tab title="ClickHouse Cloud" id="clickhouse-cloud">
+        Créez un utilisateur dédié à Loom sur votre service (autre que `default`) et autorisez l’adresse IP de l’hôte Loom dans la liste d’accès IP du service. Transmettez l’URL du service au programme d’installation. Si ni l’URL ni `LOOM_CH_PASSWORD` ne fournissent le mot de passe, celui-ci vous est demandé. Le programme crée ensuite la base de données `loom` avec un utilisateur en lecture seule. Si l’utilisateur ne dispose pas des droits nécessaires, il affiche à la place les instructions SQL qu’un administrateur doit exécuter :
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse https://loom@<service-host>:8443 \
+          && rm loom-install.sh
+        ```
+
+        Pour Kubernetes avec ClickHouse Cloud et ClickHouse Managed Postgres, consultez [ClickHouse Cloud et Managed Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/clickhouse-cloud.md).
+      </Tab>
+
+      <Tab title="ClickHouse autogéré" id="self-managed-clickhouse">
+        Transmettez l’URL de votre serveur ; le programme d’installation fonctionne comme dans l’onglet Cloud. Avec `http://`, le port par défaut est 8123. Un serveur situé sur l’hôte Docker lui-même est accessible via `host.docker.internal`, car `localhost` désigne, à l’intérieur du conteneur Loom, le conteneur lui-même :
+
+        ```bash
+        curl -fsSL https://github.com/ClickHouse/loom/releases/latest/download/install.sh -o loom-install.sh \
+          && sh loom-install.sh --clickhouse http://loom@host.docker.internal:8123 && rm loom-install.sh
+        ```
+      </Tab>
+    </Tabs>
+
+    Le programme d’installation attend que `http://localhost:7777/v1/health` renvoie `status` `ok`. L’installation est mono-utilisateur : pas d’authentification, accès depuis localhost uniquement et namespace par défaut `dev/local`, de sorte que les appels MCP et SDK ne nécessitent aucun jeton. Un déploiement en équipe active l’authentification et attribue à chaque agent un jeton assorti de privilèges accordés sur les namespaces ; voir [Modes d’identité](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/deployment.md#identity-modes).
+  </Step>
+
+  <Step title="Enregistrer et rappeler une mémoire" id="save-and-recall">
+    ```bash
+    curl -sX POST http://localhost:7777/v1/memory.set -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart",
+           "memory_key":"deploy_window","value":"Tue and Thu only; never Friday."}'
+    curl -sX POST http://localhost:7777/v1/memory.get -H 'Content-Type: application/json' \
+      -d '{"org":"dev","namespace":"local","agent":"quickstart","memory_key":"deploy_window"}'
+    ```
+
+    La réponse de `memory.get` contient `found: true` et la `value` telle qu’elle a été enregistrée.
+  </Step>
+
+  <Step title="Connecter un agent de code" id="connect-a-coding-agent">
+    <Tabs>
+      <Tab title="Claude Code" id="claude-code">
+        ```bash
+        claude plugin marketplace add ClickHouse/loom
+        claude plugin install loom@loom
+        ```
+
+        Lorsque Claude Code demande les paramètres du plugin, conservez l’URL du serveur par défaut et laissez le jeton vide.
+      </Tab>
+
+      <Tab title="Codex" id="codex">
+        ```bash
+        codex plugin marketplace add ClickHouse/loom
+        codex plugin add loom@loom
+        ```
+
+        Exécutez ensuite `codex` une fois en mode interactif et approuvez les hooks du plugin ; d’ici là, les outils fonctionnent, mais rien n’est capturé.
+      </Tab>
+
+      <Tab title="Cursor" id="cursor">
+        Fusionnez cette entrée dans `~/.cursor/mcp.json`, puis redémarrez Cursor :
+
+        ```json
+        { "mcpServers": { "loom": { "url": "http://localhost:7777/mcp?toolset=coding" } } }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Vérifier {#verify}
+
+| Action                                                                                                                                                                                                                                                      | Résultat attendu                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `curl -s http://localhost:7777/v1/health`                                                                                                                                                                                                                   | `status` vaut `ok`                                               |
+| Ouvrir `http://localhost:7777/`                                                                                                                                                                                                                             | Le tableau de bord Loom, avec la mémoire enregistrée             |
+| L’appel `memory.get` ci-dessus                                                                                                                                                                                                                              | `found` vaut `true`, avec la valeur enregistrée par `memory.set` |
+| Sur l’instance ClickHouse fournie : `docker compose --project-directory "$HOME/.loom" exec clickhouse clickhouse-client --user loom --password loomdev --query "SELECT memory_key, value FROM loom.memory FINAL WHERE org = 'dev' AND namespace = 'local'"` | La ligne `deploy_window`                                         |
+
+## Bonnes pratiques {#best-practices}
+
+### Donner à chaque équipe son propre namespace {#namespace-per-team}
+
+Les mémoires, les documents et les privilèges accordés sont définis par namespace. Les agents censés partager ce qu&#39;ils apprennent écrivent dans le même namespace ; les jetons restreignent chaque agent aux namespaces qu&#39;il est autorisé à lire et dans lesquels il peut écrire. Consultez [Jetons et privilèges accordés](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/guides/tokens-and-grants.md).
+
+### Configurer un fournisseur de LLM pour l&#39;extraction et les réponses {#configure-an-llm}
+
+La pile technologique publiée calcule les plongements vectoriels à l&#39;aide d&#39;un modèle local exécuté sur CPU et s&#39;appuie sur un LLM de substitution : l&#39;extraction, les résumés et `memory.ask` ne produisent donc aucun résultat exploitable tant qu&#39;aucun fournisseur de modèle n&#39;est configuré dans le tableau de bord, sous **Settings → Models &amp; keys**. Une seule clé OpenAI suffit pour le modèle et les plongements vectoriels ; avec Anthropic, un fournisseur distinct est nécessaire pour les plongements vectoriels. Consultez [Modèles et clés](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/models-and-keys.md).
+
+## Dépannage {#troubleshooting}
+
+<Accordion title="Le programme d'installation s'arrête lors de la vérification de ClickHouse">
+  Loom nécessite ClickHouse 26.4 ou une version ultérieure, un Keeper et les privilèges accordés indiqués dans [Avant de commencer](#before-you-begin). Sur un serveur autogéré sans Keeper, ajoutez-en un ou exécutez le programme d&#39;installation avec `--bundled` pour utiliser l&#39;instance ClickHouse de la pile technologique. La commande `docker compose --project-directory "$HOME/.loom" run --rm loom loom ch-setup --print-sql` affiche les instructions SQL destinées à un administrateur, sans établir de connexion.
+</Accordion>
+
+<Accordion title="Loom n'atteint pas un état de santé satisfaisant">
+  Consultez les logs avec `docker compose --project-directory "$HOME/.loom" logs --tail 100 loom clickhouse`. La section [Dépannage](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/troubleshooting.md) présente, pour chaque problème, le symptôme, la vérification permettant de confirmer le diagnostic et la solution.
+</Accordion>
+
+## Questions fréquentes {#faq}
+
+<Accordion title="Loom exécute-t-il des agents ?">
+  Non. Loom stocke, classe et récupère le contexte destiné aux agents ; ce n&#39;est pas un framework d&#39;agents.
+</Accordion>
+
+<Accordion title="La mémoire active peut-elle être conservée dans Postgres ?">
+  Oui. Lors de son premier démarrage, un nouveau déploiement peut désigner Postgres comme source de référence pour la mémoire active et les têtes des documents de connaissances, tandis que les vecteurs, la recherche et l&#39;historique restent dans ClickHouse. Consultez [Postgres](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/operations/postgres.md).
+</Accordion>
+
+## Étapes suivantes {#next-steps}
+
+* [Documentation de Loom](https://loom.clickhouse.com/docs) pour le déploiement, les clients et les opérations.
+* [Évaluez une mémoire partagée pour les agents de code](https://loom.clickhouse.com/docs/use-cases/agent-memory), commune à plusieurs sessions et outils.
+* [Essayez la mémoire d’agent liée au code](https://loom.clickhouse.com/docs/use-cases/memory-linked-to-code#check-a-lesson-after-a-code-edit) et découvrez comment Loom signale une leçon enregistrée lorsque le code auquel elle se rapporte est modifié.
+* [Testez la mémoire d’agent dans une usine logicielle](https://loom.clickhouse.com/docs/use-cases/multi-agent#choosing-memory-for-a-software-factory) sur un seul dépôt, avec des identifiants distincts pour l’implémenteur et le relecteur.
+* [Construisez une usine de connaissances pour les agents d’IA](https://loom.clickhouse.com/docs/use-cases/knowledge-factory) en publiant un runbook, en récupérant une révision citée et en mettant à jour une leçon enregistrée.
+* [Auditez la mémoire des agents avec SQL](https://loom.clickhouse.com/docs/use-cases/self-hosted-clickhouse#query-agent-memory-with-sql) pour examiner l’historique des décisions et rattacher une mémoire enregistrée à l’exécution d’agent dont elle provient, à l’aide d’un lecteur limité à un namespace.
+* [Guide de démarrage rapide de Loom](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
+* [Connecter un agent de code](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
+* [Utiliser ClickHouse avec MCP](/fr/guides/use-cases/ai-ml/MCP/index)

@@ -31,11 +31,11 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "객체 스토리지 테이블 함수에서 사용자 공간 페이지 캐시를 사용하기 위한 새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "객체 스토리지 테이블 함수에서 사용자 공간 페이지 캐시를 사용하기 위한 새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "서버에 페이지 캐시가 구성되어 있으면 객체 스토리지 테이블 엔진과 테이블 함수에서 기본적으로 사용자 공간 페이지 캐시를 사용합니다."}]}]} />
 
-객체 스토리지 테이블 함수(s3, azure, hdfs)와 테이블 엔진(S3, Azure, HDFS)에서 읽을 때 사용자 공간 페이지 캐시를 사용합니다.
+객체 스토리지 테이블 함수(s3, azure, hdfs, Iceberg, Delta Lake 등)와 테이블 엔진(S3, Azure, HDFS, Iceberg, Delta Lake 등)에서 데이터를 읽을 때 사용자 공간 페이지 캐시(사용자 공간 페이지 캐시)를 사용합니다. 이 설정은 서버에 사용자 공간 페이지 캐시가 구성되어 있을 때(`page_cache_max_size`)만 적용되며, 강한 ETag가 있는 객체 또는 테이블 레코드에서 가져온 변경 불가능한 아이덴티티가 있는 객체(Iceberg 및 Delta Lake의 데이터 파일)에만 적용됩니다. 파일 시스템 캐시와는 함께 사용되지 않습니다. Distributed Cache와 함께 사용하려면 `use_page_cache_with_distributed_cache`도 활성화되어 있어야 합니다.
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

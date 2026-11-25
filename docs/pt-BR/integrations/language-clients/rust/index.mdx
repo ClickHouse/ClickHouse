@@ -143,7 +143,7 @@ while let Some(row) = cursor.next().await? { .. }
 * Os métodos convenientes `fetch_one::<Row>()` e `fetch_all::<Row>()` podem ser usados para obter a primeira linha ou todas as linhas, respectivamente.
 * `sql::Identifier` pode ser usado para vincular nomes de tabelas.
 
-NB: como toda a resposta é transmitida em streaming, os cursores podem retornar um erro mesmo depois de produzir algumas linhas. Se isso acontecer no seu caso de uso, você pode tentar `query(...).with_option("wait_end_of_query", "1")` para ativar a bufferização de resposta no servidor. [Mais detalhes](/pt-BR/concepts/features/interfaces/http#response-buffering). A opção `buffer_size` também pode ser útil.
+NB: como toda a resposta é transmitida em streaming, os cursores podem retornar um erro mesmo depois de produzir algumas linhas. Se isso acontecer no seu caso de uso, você pode tentar `query(...).with_option("wait_end_of_query", "1")` para ativar a bufferização de resposta no servidor. [Mais detalhes](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http#response-buffering). A opção `buffer_size` também pode ser útil.
 
 <Warning>
   Use `wait_end_of_query` com cautela ao selecionar linhas, pois isso pode aumentar o consumo de memória no servidor e provavelmente reduzir o desempenho geral.
@@ -168,8 +168,8 @@ insert.end().await?;
 ```
 
 * Se `end()` não for chamado, o `INSERT` é abortado.
-* As linhas são enviadas progressivamente em stream para distribuir a carga na rede.
-* O ClickHouse realiza inserts em lote de forma atômica somente se todas as linhas couberem na mesma partição e se o número delas for menor que [`max_insert_block_size`](/pt-BR/reference/settings/session-settings#max_insert_block_size).
+* As linhas são enviadas progressivamente em fluxo para distribuir a carga na rede.
+* O ClickHouse realiza inserts em lote de forma atômica somente se todas as linhas couberem na mesma partição e se o número delas for menor que [`max_insert_block_size`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 
 ### Async insert (batching no servidor) {#async-insert-server-side-batching}
 

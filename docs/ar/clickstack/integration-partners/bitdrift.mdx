@@ -66,10 +66,12 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   ## المتطلبات الأساسية {#prerequisites}
 </div>
 
-* تثبيت **ClickStack** وإمكانية الوصول إليه من الخدمات الخلفية لديك، سواء كان مُدارًا ذاتيًا أو على ClickHouse Cloud. راجع [بدء استخدام ClickStack مفتوح المصدر](/ar/clickstack/getting-started/oss) أو [بدء استخدام Self-managed ClickHouse Observability](/ar/clickstack/self-configured/getting-started/managed).
+* تثبيت **ClickStack Open Source** وإمكانية الوصول إليه من الخدمات الخلفية لديك. راجع [بدء استخدام ClickStack مفتوح المصدر](/ar/clickstack/getting-started/oss).
 * الخدمات الخلفية لديك مزوّدة بأدوات الرصد باستخدام **OpenTelemetry** لإرسال التتبعات إلى ClickStack. راجع [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
 * دمج **bitdrift Capture SDK** في تطبيقك للأجهزة المحمولة. راجع [وثائق bitdrift SDK](https://docs.bitdrift.io/) للحصول على إرشادات التثبيت.
 * امتلاك **حساب bitdrift**، مع توفر [الدعم](https://bitdrift.io/contact-us) لتفعيل التتبع لمستأجرك (التتبع ميزة تجريبية تفعّلها bitdrift لكل مستأجر).
+
+أما بالنسبة إلى ClickHouse Observability، فاتبع [دليل التكامل مع bitdrift](/ar/clickstack/observability/integration-partners/bitdrift) المخصص لها.
 
 ## تهيئة التتبّع {#configure-tracing}
 
@@ -95,7 +97,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   ## مرونة النشر {#deployment-flexibility}
 </div>
 
-يعمل التكامل سواء أكان ClickStack مُدارًا ذاتيًا أم يُشغَّل كخدمة مُدارة على ClickHouse Cloud، لأنه لا يغيّر طريقة وصول البيانات إلى ClickStack. لا يرسل bitdrift بيانات القياس عن بُعد للأجهزة المحمولة إلى ClickStack، بل يلتقط سياق التتبّع في OpenTelemetry لطلبٍ على الجهاز ويربطه بتتبّع الواجهة الخلفية الذي ترسله بالفعل خدماتك المُزوَّدة بأدوات الرصد باستخدام OpenTelemetry إلى ClickStack. لا يحتاج bitdrift سوى إلى عنوان واجهة مستخدم ClickStack لإنشاء رابط **View Trace**، لذا لا يلزم إجراء أي تغييرات على نشر ClickStack أو مسار استيعاب البيانات فيه.
+يعمل التكامل مع ClickStack Open Source سواء أكانت قاعدة بياناته تعمل محليًا أم على ClickHouse Cloud، لأنه لا يغيّر طريقة وصول البيانات إلى ClickStack. لا يُصدِّر bitdrift بيانات القياس عن بُعد للأجهزة المحمولة إلى ClickStack، بل يلتقط سياق التتبّع في OpenTelemetry لطلبٍ على الجهاز ويربطه بتتبّع الواجهة الخلفية الذي ترسله بالفعل خدماتك المُزوَّدة بأدوات الرصد باستخدام OpenTelemetry إلى ClickStack. لا يحتاج bitdrift سوى إلى عنوان واجهة مستخدم ClickStack لإنشاء رابط **View Trace**، لذا لا يلزم إجراء أي تغييرات على نشر ClickStack أو مسار استيعاب البيانات فيه.
 
 <div id="next-steps">
   ## الخطوات التالية {#next-steps}

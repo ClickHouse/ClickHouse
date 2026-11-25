@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 标记支持压缩，可减小标记文件的大小并加快网络传输。
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 这样可以提高压缩率，但在读取时需要解压更多数据。
 这对于始终读取所有列的工作负载很有帮助 (例如投影) 。
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "新增设置：在紧凑数据部件中，于列子流边界处开启新的压缩块，以加快子列读取"}]}]} />
+
+控制紧凑数据部件的物理布局。若为 true (默认值) ，当当前块已达到 `min_compress_block_size` 时，粒度中的列子流会开启一个新的压缩块，
+这样读取单个子列 (例如 `Array` 的大小、`Tuple` 的元素或某个 JSON 路径) 时只需解压缩该子流，
+而较小的子流仍可共享同一个块。若为 false，则粒度中某一列的所有子流都会被打包到同一个压缩块中，
+这样可以提高压缩率，但读取子列时需要让更多数据处于已解压状态。仅当 `write_marks_for_substreams_in_compact_parts` 和
+`compress_per_column_in_compact_parts` 均已启用时，此设置才会生效。
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

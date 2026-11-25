@@ -20,6 +20,30 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Float" default_value="0.1" changeable_without_restart="No" />分散キャッシュが空き接続として維持しようとする接続数のソフト制限です。空き接続数が distributed&#95;cache&#95;keep&#95;up&#95;free&#95;connections&#95;ratio * max&#95;connections を下回ると、その数がこの制限を再び上回るまで、最後のアクティビティが最も古い接続から順に閉じられます。
 
+## distributed_cache_max_request_processing_time_ms {#distributed_cache_max_request_processing_time_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="60000" changeable_without_restart="No" />分散キャッシュサーバーは、リクエストの直近の `StartRequest` または `ContinueRequest` から、このミリ秒数を超えて処理が続いているリクエストを終了します。クライアントの待機に費やした時間はカウントされません。新しい読み取り範囲が開始されるたびに、持ち時間はリセットされます。リクエストはサーバーが報告可能になった時点で直ちに終了され、報告可能な状態に至らないリクエストについては、`distributed_cache_stuck_request_scan_interval_ms` 経過後に接続がクローズされます。値 0 は無制限を意味します。
+
+## distributed_cache_slow_down_min_stuck_requests {#distributed_cache_slow_down_min_stuck_requests}
+
+<SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />分散キャッシュサーバーは、クライアントのリクエストのうち停滞しているものがこの数以上になった場合にのみ、そのクライアントに速度を落とすよう要求します。これにより、処理中のリクエストが数件しかないクライアントが、1件停滞しただけで速度低下を要求されることを防ぎます。値が 0 または 1 の場合、判断は `distributed_cache_slow_down_stuck_requests_ratio` のみに委ねられます。
+
+## distributed_cache_slow_down_stuck_requests_ratio {#distributed_cache_slow_down_stuck_requests_ratio}
+
+<SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />処理中のリクエストのうち、停滞しているものの割合がこの値以上になると、分散キャッシュサーバーはクライアントに処理速度を落とすよう要求します。アイドル状態の接続は対象外です。値を 0 にすると、この要求は行われません。
+
+## distributed_cache_slow_down_window_ms {#distributed_cache_slow_down_window_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />分散キャッシュサーバーで停滞しているリクエストが多くなりすぎた際に、サーバーがクライアントに対してアクセスを控えるよう求める期間 (ミリ秒単位)。`distributed_cache_stuck_request_scan_interval_ms` の 2 倍以上の値を指定する必要があります。これにより、ウィンドウはスキャンによって更新されなかった場合にのみ失効します。値 0 は拒否されます。
+
+## distributed_cache_stuck_request_no_progress_timeout_ms {#distributed_cache_stuck_request_no_progress_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />分散キャッシュサーバーは、リクエストがこの設定値(ミリ秒)の間まったくデータをやり取りしなかった場合、その接続を閉じます。クライアントの応答を待っている時間はこれに含まれません。値を 0 にするとこの制限は無効化されます。ただし、停止したリクエストのスキャン自体が停止するのは、`distributed_cache_max_request_processing_time_ms` も 0 の場合に限られます。
+
+## distributed_cache_stuck_request_scan_interval_ms {#distributed_cache_stuck_request_scan_interval_ms}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="5000" changeable_without_restart="No" />分散キャッシュサーバーが停滞したリクエストをスキャンする間隔(ミリ秒)。
+
 ## distributed_cache_temporary_data_background_retry_delay_milliseconds {#distributed_cache_temporary_data_background_retry_delay_milliseconds}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="30000" changeable_without_restart="No" />コミット済み一時データのバックグラウンド再試行を行うまでの遅延時間 (ミリ秒単位) 。
@@ -75,6 +99,10 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 ## distributed_cache_warmer_max_segments_in_queue {#distributed_cache_warmer_max_segments_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />ClickHouse Cloud でのみ有効。ローカルのファイルシステムキャッシュを持たないディスクについて、キャッシュウォーマーがキューに保持する範囲の最大数です。この上限を超えると、古い範囲から順に破棄されます (ローカルキャッシュがある場合、ウォーマーはその `max_elements` を使用します) 。0 を指定すると無制限になります。
+
+## distributed_cache_warmer_skip_parts_produced_in_current_availability_zone {#distributed_cache_warmer_skip_parts_produced_in_current_availability_zone}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />ClickHouse Cloud でのみ有効。キャッシュウォーマーが分散キャッシュのみをウォームアップする場合 (パーツのディスクにローカルファイルシステムキャッシュがない場合、または読み取り時のキャッシュが無効化されている場合) 、現在のアベイラビリティゾーン内のレプリカが生成したパーツをスキップします。これらのパーツは分散キャッシュ経由で書き込まれているため、すでにこのゾーンのキャッシュに存在しています。由来が不明なパーツは常にウォームアップされます。
 
 ## distributed_cache_write_pool_size {#distributed_cache_write_pool_size}
 

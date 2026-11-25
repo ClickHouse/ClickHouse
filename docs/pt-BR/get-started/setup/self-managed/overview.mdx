@@ -8,6 +8,10 @@ keywords: ['instalar', 'autogerenciado', 'linux', 'macOS', 'windows', 'docker']
 
 Instale o ClickHouse na plataforma que você administra.
 
+<Note>
+  Os binários Linux para `amd64` e `aarch64` são vinculados estaticamente à biblioteca C `musl`. Os hostnames são resolvidos somente a partir de `/etc/hosts` e dos servidores DNS listados em `/etc/resolv.conf`: o Name Service Switch (`/etc/nsswitch.conf`) não é usado, portanto hostnames fornecidos apenas por módulos NSS, como `sss`, `mdns` ou `ldap`, não podem ser resolvidos.
+</Note>
+
 ## Desenvolvimento local {#local-development}
 
 Execute o ClickHouse na sua própria máquina para compilar, testar e experimentar.

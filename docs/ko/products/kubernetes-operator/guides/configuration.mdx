@@ -885,26 +885,23 @@ spec:
   ## ClickHouse 설정 {#clickhouse-settings}
 </div>
 
-<div id="default-user-password">
-  ### 기본 `default` 사용자 비밀번호 {#default-user-password}
-</div>
+### 기본 `default` 사용자 비밀번호 {#default-user-password}
 
 `spec.settings.defaultUserPassword`는 내장된 `default`
 사용자의 비밀번호를 설정합니다. CR에 직접 인라인으로 지정하지 말고,
-생성한 시크릿(권장) 또는 ConfigMap의 키에 저장된 값을 사용하십시오:
+생성한 Secret의 키에 저장된 값을 사용하십시오:
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-`secret` 또는 `configMap` 중 정확히 하나만 지정하십시오. 선택한 항목에는 `name`(객체 이름)
-및 `key`(비밀번호가 들어 있는 항목)가 모두 포함되어야 합니다.
+`name`(Secret)과 `key`(비밀번호가 들어 있는 항목)를 모두 설정하십시오.
 
 <div id="password-types">
   #### 비밀번호 유형 {#password-types}
@@ -965,13 +962,15 @@ spec:
         key: password
 ```
 
-<div id="using-configmap-for-user-passwords">
-  #### ConfigMap 사용하기 {#using-configmap-for-user-passwords}
-</div>
+#### ConfigMap 사용하기 (사용 중단 권고) {#using-configmap-for-user-passwords}
 
-ConfigMap도 같은 방식으로 작동하지만, 내용은 시크릿처럼 보호되지 않습니다.
-민감하지 않거나 이미 해시된 값에만 사용하십시오. 예를 들어
-`password_sha256_hex` 다이제스트가 있습니다:
+<Warning>
+  `configMap` 소스는 사용 중단 권고 상태이며 `v1alpha2`에서 제거됩니다. ConfigMap은
+  Secret처럼 보호되지 않으며, 솔트가 적용되지 않은 비밀번호 해시는 완전 탐색으로 해독될 수 있습니다.
+  비밀번호는 평문이든 해시된 값이든 Secret에 저장하십시오.
+</Warning>
+
+ConfigMap은 Secret과 같은 방식으로 작동하지만, 내용은 보호되지 않습니다:
 
 ```yaml
 spec:
@@ -985,7 +984,7 @@ spec:
 
 <Note>
   ConfigMap에 평문 비밀번호를 넣지 마십시오. 평문
-  (`passwordType: password`) 값을 사용할 때는 시크릿을 사용하십시오.
+  (`passwordType: password`) 값을 사용할 때는 Secret을 사용하십시오.
 </Note>
 
 ### 구성의 사용자 지정 사용자 {#custom-users-in-configuration}

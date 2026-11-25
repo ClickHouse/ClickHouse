@@ -143,7 +143,7 @@ while let Some(row) = cursor.next().await? { .. }
 * يمكن استخدام الطريقتين المناسبتين `fetch_one::<Row>()` و`fetch_all::<Row>()` للحصول على الصف الأول أو جميع الصفوف، على الترتيب.
 * يمكن استخدام `sql::Identifier` لربط أسماء الجداول.
 
-ملاحظة: بما أن الاستجابة تُرسل بالكامل على شكل تدفق، فقد تُرجِع المؤشرات خطأ حتى بعد إرجاع بعض الصفوف. إذا حدث ذلك في حالة الاستخدام لديك، فيمكنك تجربة `query(...).with_option("wait_end_of_query", "1")` لتمكين تخزين الاستجابة مؤقتًا على جهة الخادم. [مزيد من التفاصيل](/ar/concepts/features/interfaces/http#response-buffering). وقد يكون الخيار `buffer_size` مفيدًا أيضًا.
+ملاحظة: بما أن الاستجابة تُرسل بالكامل على شكل تدفق، فقد تُرجِع المؤشرات خطأ حتى بعد إرجاع بعض الصفوف. إذا حدث ذلك في حالة الاستخدام لديك، فيمكنك تجربة `query(...).with_option("wait_end_of_query", "1")` لتمكين تخزين الاستجابة مؤقتًا على جهة الخادم. [مزيد من التفاصيل](/ar/concepts/features/connect-to-clickhouse/protocols/http#response-buffering). وقد يكون الخيار `buffer_size` مفيدًا أيضًا.
 
 <Warning>
   استخدم `wait_end_of_query` بحذر عند تحديد الصفوف، إذ قد يؤدي ذلك إلى زيادة استهلاك الذاكرة على جانب الخادم، ومن المرجح أن يقلل من الأداء العام.
@@ -169,7 +169,7 @@ insert.end().await?;
 
 * إذا لم يتم استدعاء `end()`، فسيتم إلغاء `INSERT`.
 * تُرسَل الصفوف تدريجيًا على شكل تدفّق لتوزيع حمل الشبكة.
-* يُدرِج ClickHouse الدُفعات بصورة ذرّية فقط إذا كانت جميع الصفوف تقع ضمن partition نفسها وكان عددها أقل من [`max_insert_block_size`](/ar/reference/settings/session-settings#max_insert_block_size).
+* يُدرِج ClickHouse الدُفعات بصورة ذرّية فقط إذا كانت جميع الصفوف تقع ضمن partition نفسها وكان عددها أقل من [`max_insert_block_size`](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
 
 ### الإدراج غير المتزامن (التجميع من جهة الخادم) {#async-insert-server-side-batching}
 

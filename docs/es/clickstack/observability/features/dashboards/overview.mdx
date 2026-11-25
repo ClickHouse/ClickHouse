@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualización', 'monitorización', 'observabilidad']
 ---
 
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 ClickHouse Observability permite visualizar eventos e incluye compatibilidad nativa con la creación de gráficos en la interfaz de usuario. Estos gráficos pueden añadirse a dashboards para compartirlos con otros usuarios.
 
 Es posible crear visualizaciones a partir de trazas, métricas, logs o cualquier esquema de eventos amplios definido por el usuario.
@@ -383,7 +385,7 @@ Abra el menú **Tags** del dashboard para seleccionar o crear etiquetas. Puede a
 
 ## Filtros personalizados y variables {#custom-filters}
 
-Además de los [filtros de texto libre](#filter-dashboards) disponibles en todos los dashboards, los dashboards guardados admiten filtros personalizados de lista desplegable que se rellenan con datos consultados en ClickHouse. Estos filtros ofrecen controles reutilizables basados en clics, de modo que quienes consultan el dashboard puedan filtrar sin tener que escribir expresiones manualmente.
+Además de los [filtros de texto libre](#filter-dashboards) disponibles en todos los dashboards, los dashboards guardados admiten filtros personalizados y variables. Estos ofrecen controles reutilizables basados en clics, de modo que quienes consultan el dashboard puedan filtrar sin tener que escribir expresiones manualmente. Sus valores pueden proceder de una columna consultada desde una fuente, de una lista escrita a mano, de una consulta SQL, de valores de etiquetas de Prometheus o de condiciones clave-valor elegidas libremente. Las variables también pueden determinar qué origen de datos o conexión consulta un bloque. Consulte [Tipos de filtro](#filter-types) para ver la lista completa.
 
 <div className="ch-image-lg">
   <Frame>
@@ -396,13 +398,13 @@ Cada filtro permite al usuario elegir uno o varios valores y hacer con ellos una
 * **Difusión** — aplica la selección como condición de filtrado en los bloques coincidentes. No es necesario modificar los bloques para que hagan referencia al filtro.
 * **Variable** — expone la selección a las consultas de los bloques como `$variableName`, de modo que cada bloque decide dónde y cómo se usa el valor.
 
-Todo filtro debe realizar al menos una de las dos. La difusión está habilitada de forma predeterminada al crear un filtro.
+Las opciones que admite un filtro dependen de su [tipo](#filter-types). Un filtro **SQL expression values** debe realizar al menos una de las dos y se difunde de forma predeterminada.
 
 Los siguientes pasos muestran cómo añadir un filtro al dashboard creado en la sección [&quot;Creación de dashboards&quot;](#creating-dashboards).
 
 <Steps>
   <Step title="Abrir el diálogo Editar Filtros" id="open-edit-filters">
-    Abra un dashboard guardado y seleccione **Edit Filters and Variables** en la barra de herramientas.
+    Abra un dashboard guardado y seleccione **Edit filters and variables** en la barra de herramientas.
 
     <div className="ch-image-lg">
       <Frame>
@@ -412,7 +414,7 @@ Los siguientes pasos muestran cómo añadir un filtro al dashboard creado en la 
   </Step>
 
   <Step title="Añadir un nuevo filtro" id="add-new-filter">
-    Haga clic en **Add new filter**. Para configurar el filtro, indique un **Display Name**, seleccione un **Data source** e introduzca una **Filter expression**: una columna o expresión SQL cuyos valores distintos poblarán la lista desplegable. Haga clic en **Save filter**.
+    Haga clic en **Add new filter**. Elija un **Type** (este ejemplo usa el predeterminado, **SQL expression values**) y, a continuación, configure el filtro: indique un **Display name**, seleccione un **Data source** e introduzca una **Filter expression**, es decir, una columna o expresión SQL cuyos valores distintos poblarán la lista desplegable. Haga clic en **Save filter**.
 
     Por ejemplo, para añadir un filtro de servicio para datos de trazas, use `ServiceName` como expresión de filtrado con el origen de datos `Traces`. El &quot;Dropdown values filter&quot; es opcional y permite restringir qué valores aparecen en la lista desplegable.
 
@@ -458,15 +460,136 @@ Los siguientes pasos muestran cómo añadir un filtro al dashboard creado en la 
   Los filtros personalizados de lista desplegable están disponibles en los dashboards guardados. Para ver un ejemplo práctico de este patrón, consulte el [Panel de Kubernetes](#kubernetes-dashboard), que incluye filtros desplegables integrados para Pod, Implementación, nombre de nodo, Espacio de nombres y Clúster.
 </Note>
 
+### Tipos de filtro {#filter-types}
+
+El selector **Tipo** del cuadro de diálogo del filtro determina de dónde provienen los valores de un filtro y cómo llegan a los bloques.
+
+| Tipo                                                       | Origen de los valores                                                                                     | Difusión                                     | Variable                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| [Valores de expresión SQL](#sql-expression-values-filters) | Los valores distintos de una expresión, consultados en una fuente                                         | Opcional, habilitada de forma predeterminada | Opcional                                                             |
+| [Valores estáticos](#static-values-filters)                | Una lista escrita manualmente                                                                             | No                                           | Siempre                                                              |
+| [Valores de consulta SQL](#sql-query-filters)              | La primera columna de una consulta SQL                                                                    | No                                           | Siempre                                                              |
+| [Valores de etiqueta PromQL](#promql-label-filters)        | Los valores de una etiqueta de Prometheus                                                                 | No                                           | Siempre                                                              |
+| [Claves y valores ad hoc](#adhoc-filters)                  | Condiciones `key operator value` construidas a partir de las claves y los valores de una o varias fuentes | Siempre                                      | No                                                                   |
+| [Origen de datos](#data-source-variables)                  | Las fuentes del equipo                                                                                    | No                                           | Siempre, como [referencia de fuente](#source-connection-variables)   |
+| [Conexión](#connection-variables)                          | Las conexiones de ClickHouse del equipo                                                                   | No                                           | Siempre, como [referencia de conexión](#source-connection-variables) |
+
+#### Valores de expresión SQL {#sql-expression-values-filters}
+
+Su lista desplegable muestra los valores distintos de la **Expresión de filtrado** en el **Origen de datos** seleccionado, que pueden acotarse opcionalmente mediante un **Filtro de valores de la lista desplegable**. Para las fuentes de métricas, elija también un **Tipo de métrica**. Un filtro de valores de expresión SQL puede [difundir](#broadcast-filters) su selección, estar [disponible como variable](#dashboard-variables) o ambas cosas.
+
+#### Valores estáticos {#static-values-filters}
+
+Su lista desplegable ofrece una lista de valores introducidos manualmente. Escriba cada valor en **Options** y pulse Intro. Un filtro puede contener hasta 1000 opciones.
+
+Un filtro de valores estáticos siempre es una variable y nunca se aplica por difusión, por lo que los bloques lo usan haciendo referencia a su variable, por ejemplo, `$__filter(SeverityText, $severity)`. Resulta útil para valores que no están almacenados en una columna o para una lista fija y seleccionada a medida.
+
+#### Valores de consulta SQL {#sql-query-filters}
+
+Su lista desplegable muestra la primera columna devuelta por una consulta en SQL de ClickHouse, en el orden en que la consulta devuelve las filas, hasta un máximo de 10,000 valores. Configure:
+
+* **Conexión**: la conexión de ClickHouse en la que se ejecuta la consulta, o una [variable de conexión](#connection-variables).
+* **Fuente**: opcional. Una fuente de la misma conexión, o una [variable de origen de datos](#data-source-variables). Si se selecciona una fuente, la consulta puede usar `$__sourceTable` y `$__filters`, que aplica a esa fuente las selecciones de los filtros de difusión del dashboard, del mismo modo que los [bloques de SQL directo](/es/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro).
+* **Consulta SQL**: la consulta en sí. Puede usar las [macros de tiempo](/es/clickstack/observability/features/dashboards/sql-visualizations#time-filter-macros) y hacer referencia a las demás variables del dashboard. El editor muestra una vista previa de los valores que devuelve la consulta para el intervalo de tiempo actual del dashboard.
+
+Por ejemplo, la siguiente consulta muestra los servicios que registraron eventos en el intervalo de tiempo del dashboard, limitados a los entornos seleccionados en un filtro `environment`:
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+Un filtro de valores de consulta SQL siempre es una variable y nunca se aplica por difusión.
+
+#### Valores de etiqueta de PromQL {#promql-label-filters}
+
+<PrivatePreviewBadge />
+
+Su lista desplegable muestra los valores de una etiqueta de Prometheus. Seleccione un **Origen de datos** de PromQL e introduzca la **Etiqueta** cuyos valores aparecerán en la lista desplegable, como `job`, `instance` o `__name__`. Opcionalmente, introduzca **Comparadores de series**: un selector de series de Prometheus, como `up{job="api"}`, que limita las series de las que se leen los valores. Los comparadores de series pueden hacer referencia a las demás variables del panel de control.
+
+Un filtro de valores de etiqueta de PromQL siempre es una variable y nunca se aplica por difusión. En los bloques de PromQL, haga referencia a él dentro de un comparador de etiquetas, por ejemplo `rate(http_requests_total{job=~"$job"}[$__rate_interval])`. Consulte [Hacer referencia a una variable](#referencing-variables) para saber cómo se generan los valores.
+
+#### Claves y valores ad hoc {#adhoc-filters}
+
+En lugar de ofrecer una única lista desplegable, un filtro ad hoc permite al usuario crear una lista de condiciones `key operator value` a partir de las claves de sus fuentes: columnas y claves de mapas en las fuentes SQL, o etiquetas en las fuentes de Prometheus. Las claves y los valores se sugieren a medida que el usuario escribe. Opciones de configuración:
+
+* **Tipo de fuente**: SQL (fuentes de logs, trazas o sesiones) o Prometheus.
+* **Fuentes de datos**: las fuentes cuyas claves y valores sugiere el filtro.
+* **Filtro de claves y valores**: opcional, solo para fuentes SQL. Una condición SQL o Lucene que restringe las filas a partir de las cuales se sugieren claves y valores. Puede hacer referencia a las demás variables del dashboard.
+* **Se aplica a las fuentes**: las fuentes a las que se difunden las condiciones. Déjelo vacío para difundirlas a todos los bloques que usen alguna de las fuentes de datos del filtro.
+* **Nombre único**: identifica las condiciones del filtro en la [URL del dashboard](/es/clickstack/observability/url-parameters#dashboard-filter-values).
+
+Las condiciones sobre fuentes SQL admiten los siguientes operadores: `=`, `!=`, `=~` (regex), `!~` (regex), `LIKE`, `NOT LIKE`, `IN`. Las condiciones sobre fuentes de Prometheus admiten `=`, `!=`, `=~` (regex), `!~` (regex) e `IN`; `LIKE` y `NOT LIKE` son exclusivos de SQL.
+
+Los usuarios también pueden añadir una condición haciendo clic en un valor de un bloque de tabla, serie temporal o búsqueda del dashboard.
+
+Las condiciones ad hoc siempre se difunden y no se pueden referenciar como variables. Los bloques del creador de gráficos y los bloques PromQL que usan las fuentes correspondientes las aplican automáticamente, y los bloques de SQL directo las aplican mediante la [macro `$__filters`](/es/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro).
+
+#### Origen de datos {#data-source-variables}
+
+Una variable de origen de datos permite que el usuario elija qué fuente consulta un bloque. Seleccione los **Source kinds** que se ofrecen en su lista desplegable (por ejemplo, solo fuentes de logs) y, opcionalmente, restrínjalos a una única **Connection**, que a su vez puede ser una variable de conexión. Consulte [Variables de origen de datos y de conexión](#source-connection-variables) para ver cómo la utilizan los bloques y los filtros.
+
+#### Conexión {#connection-variables}
+
+Una variable de conexión permite al usuario elegir qué conexión de ClickHouse utilizan los bloques de SQL directo, los filtros de valores de consulta SQL y las variables de origen de datos. No tiene más ajustes que su nombre.
+
+### Variables de origen de datos y de conexión {#source-connection-variables}
+
+Las variables de origen de datos y de conexión sustituyen a una fuente o a un ID de conexión, en lugar de a un valor dentro del texto de la consulta. Allí donde un selector de fuente o de conexión las admite, las variables del panel de control aparecen en un grupo **Variables**. Al elegir una, se almacena una referencia `$name` que se resuelve según la selección actual de quien visualiza el panel. Esto permite crear un único panel de control que alterne, por ejemplo, entre los logs de varios entornos o entre varios clústeres de ClickHouse.
+
+| Se usa en                                | Admite una variable de origen de datos | Admite una variable de conexión |
+| ---------------------------------------- | -------------------------------------- | ------------------------------- |
+| Bloques del creador de gráficos          | Fuente                                 | —                               |
+| Bloques de SQL directo                   | Fuente                                 | Conexión                        |
+| Bloques de PromQL                        | Fuente                                 | —                               |
+| Filtros de valores de expresión SQL      | Origen de datos, Se aplica a fuentes   | —                               |
+| Filtros de valores de etiqueta de PromQL | Origen de datos                        | —                               |
+| Filtros ad hoc                           | Fuentes de datos, Se aplica a fuentes  | —                               |
+| Filtros de valores de consulta SQL       | Fuente                                 | Conexión                        |
+| Variables de origen de datos             | —                                      | Conexión                        |
+
+Una variable de origen de datos solo se ofrece cuando al menos uno de sus tipos de fuente es compatible. Por ejemplo, un bloque de PromQL solo ofrece variables de origen de datos que admitan fuentes de PromQL.
+
+Las variables de origen de datos y de conexión son siempre de selección única y obligatorias, ya que un bloque no puede ejecutar consultas sin una fuente o una conexión. Hasta que se selecciona un valor, los bloques y filtros que hacen referencia a la variable quedan a la espera. Si prefiere que espere todo el panel de control, active **Block every tile**. Un [enlace al panel de control](/es/clickstack/observability/url-parameters#dashboard-filter-values) puede seleccionar una fuente o conexión tanto por nombre como por ID.
+
+<Note>
+  Las alertas no están disponibles en los bloques que usan una variable de origen de datos o de conexión. Al guardar un bloque de este tipo, se elimina su alerta.
+</Note>
+
+### Opciones de selección {#filter-selection-options}
+
+Los filtros de tipo valores de expresión SQL, valores estáticos, valores de consulta SQL y valores de etiqueta de PromQL tienen estas opciones adicionales:
+
+* **Selección única**: solo se puede seleccionar un valor a la vez.
+* **Obligatorio**: los bloques que usan el filtro, ya sea a través de su variable o mediante difusión, no se cargan hasta que el filtro tenga una selección.
+  * **Bloquear todos los bloques**: bloquea todos los bloques del panel de control hasta que el filtro tenga una selección, no solo los que lo usan.
+
+### Filtros encadenados {#chained-filters}
+
+La configuración de un filtro puede hacer referencia a otras variables del panel de control, de modo que sus valores dependan de la selección de otro filtro. Por ejemplo, un filtro de servicios puede mostrar solo los servicios del entorno seleccionado en un filtro `environment`. Las variables se pueden referenciar en:
+
+* El campo **Dropdown values filter** de un filtro de valores de expresión SQL, por ejemplo `$__filter(ResourceAttributes['deployment.environment'], $environment)`.
+* El campo **SQL query** de un filtro de valores de consulta SQL.
+* El campo **Series matchers** de un filtro de valores de etiqueta de PromQL, por ejemplo `up{env="$env"}`.
+* El campo **Keys and values filter** de un filtro ad hoc.
+* Los campos de fuente y de conexión, mediante las [variables de origen de datos y de conexión](#source-connection-variables).
+
+Cuando cambia la selección del filtro referenciado, los valores del filtro dependiente se vuelven a consultar. Mientras un filtro obligatorio referenciado no tenga ninguna selección, un filtro ad hoc que dependa de él no podrá añadir ni editar condiciones, e indicará el nombre del filtro del que está a la espera.
+
 ### Difusión {#broadcast-filters}
 
-Con **Broadcast filter condition** habilitado, los valores seleccionados se aplican como condición de filtrado en los bloques del dashboard, sin que ningún bloque tenga que hacer referencia explícita al filtro. De forma predeterminada, la condición se aplica a todos los bloques. Utilice **Applies to sources** para limitarla a los bloques que usan un conjunto determinado de fuentes, algo útil cuando la expresión del filtro solo tiene sentido para una parte de los datos del dashboard.
+Los filtros de valores de expresión SQL pueden difundir su selección, y los filtros ad hoc siempre difunden sus condiciones. Con **Broadcast filter condition** habilitado en un filtro de valores de expresión SQL, los valores seleccionados se aplican como condición de filtrado en los bloques del dashboard, sin que ningún bloque tenga que hacer referencia explícita al filtro. De forma predeterminada, la condición se aplica a todos los bloques. Utilice **Applies to sources** para limitarla a los bloques que usan un conjunto determinado de fuentes, algo útil cuando la expresión del filtro solo tiene sentido para una parte de los datos del dashboard.
 
 Los bloques del creador de gráficos aplican automáticamente los filtros de difusión. Los bloques de SQL directo deben incluir la [macro `$__filters`](/es/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro) y tener una fuente seleccionada, ya que la interfaz de usuario no puede inferir en qué punto de una consulta escrita manualmente debe ir la condición.
 
 ### Variables {#dashboard-variables}
 
-Con **Available as variable** habilitado, la selección del filtro también se expone a las consultas de los bloques como `$variableName`. De forma predeterminada, **Variable name** toma el nombre visible del filtro sin los caracteres no válidos, y se puede sobrescribir. Los nombres deben comenzar con una letra y solo pueden contener letras, dígitos y guiones bajos.
+Los filtros de valores estáticos, de valores de consulta SQL y de valores de etiquetas PromQL son siempre variables. Un filtro de valores de expresión SQL se convierte en variable cuando **Available as variable** está habilitado. Una variable expone la selección del filtro a las consultas de los bloques como `$variableName`. De forma predeterminada, **Variable name** toma el nombre visible del filtro sin los caracteres no válidos, y se puede sobrescribir. Los nombres deben comenzar con una letra y solo pueden contener letras, dígitos y guiones bajos.
+
+Los filtros ad hoc nunca son variables, y las variables de origen de datos y de conexión son [referencias a una fuente o conexión](#source-connection-variables), no valores en el texto de la consulta.
 
 Use una variable cuando no le interese difundir una condición `WHERE`; por ejemplo, para incluir el valor en una expresión `SELECT`, en una cláusula `HAVING` o en una join key, o para filtrar un bloque por una columna distinta de la expresión del propio filtro.
 
@@ -474,13 +597,14 @@ Use una variable cuando no le interese difundir una condición `WHERE`; por ejem
 
 Una variable se expande a los valores seleccionados en ese momento en su lista desplegable. La forma de la referencia determina el resultado generado:
 
-| Referencia          | Se expande a                                                                                                                                                                         | Selección vacía |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
-| `$name`, `${name}`  | Los valores seleccionados, en formato `sqlstring` o `lucene`, según el contexto. Las llaves delimitan el nombre cuando va seguido de caracteres de palabra, como en `${name}_total`. | `NULL`          |
-| `${name:sqlstring}` | Los valores seleccionados, entre comillas simples, separados por comas y escapados como valores SQL, p. ej., `'a', 'b'`                                                              | `NULL`          |
-| `${name:csv}`       | Sin comillas y separados por comas: `a,b`. No se escapan para SQL.                                                                                                                   | cadena vacía    |
-| `${name:regex}`     | Una alternancia de expresión regular, con escapado de expresión regular: `(a\|b)`.                                                                                                   | `.*`            |
-| `${name:lucene}`    | Un `OR` de términos entre comillas, para entradas Lucene: `("a" OR "b")`.                                                                                                            | `("")`          |
+| Referencia          | Se expande a                                                                                                                                                                                                                       | Selección vacía                         |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `$name`, `${name}`  | Los valores seleccionados, en formato `sqlstring` o `lucene`, según el contexto. Las llaves delimitan el nombre cuando va seguido de caracteres de palabra, como en `${name}_total`.                                               | `NULL`                                  |
+| `${name:sqlstring}` | Los valores seleccionados, entre comillas simples, separados por comas y escapados como valores SQL, p. ej., `'a', 'b'`                                                                                                            | `NULL`                                  |
+| `${name:csv}`       | Sin comillas y separados por comas: `a,b`. No se escapan para SQL.                                                                                                                                                                 | cadena vacía                            |
+| `${name:regex}`     | Una alternancia de expresión regular, con escapado de expresión regular: `(a\|b)`.                                                                                                                                                 | `.*`                                    |
+| `${name:lucene}`    | Un `OR` de términos entre comillas, para entradas Lucene: `("a" OR "b")`.                                                                                                                                                          | `("")`                                  |
+| `${name:promql}`    | La forma predeterminada en los bloques PromQL. Para un filtro de selección única, el valor seleccionado, para usarlo en `label="$name"`. En caso contrario, una alternancia de expresión regular, para usarla en `label=~"$name"`. | `.*` (cadena vacía con selección única) |
 
 Dado que `$name` se genera como `NULL` mientras no haya nada seleccionado, es preferible usar las siguientes macros siempre que se espere un predicado SQL. Ambas macros se expanden a `1=1` mientras su variable no tenga ninguna selección, de modo que la consulta sigue siendo válida:
 

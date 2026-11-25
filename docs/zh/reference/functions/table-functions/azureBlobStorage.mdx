@@ -30,6 +30,16 @@ doc_type: 'reference'
     ```
   </Tab>
 
+  <Tab title="Workload identity">
+    通过 `extra_credentials` 使用 Azure Workload Identity；它与 `account_name` / `account_key` 互斥，且必须使用 `storage_account_url` (而非 `connection_string`) ：
+
+    ```sql
+    azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+    ```
+
+    Workload Identity 使用的是服务器自身的身份，因此默认会被拒绝：请在执行查询的会话或其设置配置文件中启用 `allow_server_credentials_in_user_queries`。
+  </Tab>
+
   <Tab title="命名集合">
     有关支持的键完整列表，请参见下文的[命名集合](#named-collections)：
 
@@ -41,38 +51,38 @@ doc_type: 'reference'
 
 ## 参数 {#arguments}
 
-| 参数                               | 说明                                                                                                                                                                                                                                                                                                                                                            |
+| 参数                               | 描述                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection_string`              | 包含内嵌凭据 (账户名 + 账户密钥或 SAS token) 的连接字符串。使用这种形式时，**不应**再单独传递 `account_name` 和 `account_key`。参见[配置连接字符串](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)。 |
-| `storage_account_url`            | 存储账户端点 URL，例如 `https://myaccount.blob.core.windows.net/`。使用这种形式时，**必须**同时传递 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                   |
+| `storage_account_url`            | 存储账户端点 URL，例如 `https://<account>.blob.core.windows.net/`。使用这种形式时，需传递 `account_name` 和 `account_key`，或者传递用于 Workload Identity 的 `extra_credentials(client_id=, tenant_id=)`。                                                                                                                                                                                   |
 | `container_name`                 | 容器名称。                                                                                                                                                                                                                                                                                                                                                         |
 | `blobpath`                       | 文件路径。在只读模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 为数字，`'abc'`、`'def'` 为字符串。                                                                                                                                                                                                                                                                   |
 | `account_name`                   | 存储账户名称。使用不带 SAS 的 `storage_account_url` 时**必需**；使用 `connection_string` 时**不得**传递。                                                                                                                                                                                                                                                                             |
 | `account_key`                    | 存储账户密钥。使用不带 SAS 的 `storage_account_url` 时**必需**；使用 `connection_string` 时**不得**传递。                                                                                                                                                                                                                                                                             |
-| `format`                         | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                                                                            |
-| `compression`                    | 支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方式 (等同于设置为 `auto`) 。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。                                                                                                                    |
+| `format`                         | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                                                                         |
+| `compression`                    | 支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方式 (等同于设置为 `auto`) 。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。                                                                                                                 |
 | `structure`                      | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                                       |
 | `partition_strategy`             | 可选。支持的值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，该占位符会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、以文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `WILDCARD`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。                  |
 | `partition_columns_in_data_file` | 可选。仅在 `HIVE` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。                                                                                                                                                                                                                                                                                            |
-| `extra_credentials`              | 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 `extra_credentials`，其优先级高于 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                          |
+| `extra_credentials`              | 使用 `client_id` 和 `tenant_id` 进行 Azure Workload Identity 身份验证。与 `account_name` / `account_key` 互斥，且需要配合 `storage_account_url` 使用 (而非 `connection_string`) 。                                                                                                                                                                                                    |
 
 ## 命名集合 {#named-collections}
 
 参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。此时支持以下键：
 
-| 键                     | 必需 | 描述                                                                   |
-| --------------------- | -- | -------------------------------------------------------------------- |
-| `container`           | 是  | Container 名称。对应位置参数 `container_name`。                                |
-| `blob_path`           | 是  | 文件路径 (可选使用通配符) 。对应位置参数 `blobpath`。                                   |
-| `connection_string`   | 否* | 包含内嵌凭据的连接字符串。*必须提供 `connection_string` 或 `storage_account_url` 其中之一。 |
-| `storage_account_url` | 否* | 存储账户端点 URL。*必须提供 `connection_string` 或 `storage_account_url` 其中之一。   |
-| `account_name`        | 否  | 使用 `storage_account_url` 时为必需                                        |
-| `account_key`         | 否  | 使用 `storage_account_url` 时为必需                                        |
-| `format`              | 否  | 文件格式。                                                                |
-| `compression`         | 否  | 压缩类型。                                                                |
-| `structure`           | 否  | 表结构。                                                                 |
-| `client_id`           | 否  | 用于身份验证的客户端 ID。                                                       |
-| `tenant_id`           | 否  | 用于身份验证的租户 ID。                                                        |
+| 键                     | 必需 | 描述                                                                                                           |
+| --------------------- | -- | ------------------------------------------------------------------------------------------------------------ |
+| `container`           | 是  | 容器名称。对应位置参数 `container_name`。                                                                        |
+| `blob_path`           | 是  | 文件路径 (可选使用通配符) 。对应位置参数 `blobpath`。                                                                           |
+| `connection_string`   | 否* | 包含内嵌凭据的连接字符串。*必须提供 `connection_string` 或 `storage_account_url` 其中之一。不能与 `client_id` / `tenant_id` 同时使用。      |
+| `storage_account_url` | 否* | 存储账户端点 URL。*必须提供 `connection_string` 或 `storage_account_url` 其中之一。使用工作负载身份 (`client_id` / `tenant_id`) 时为必需。 |
+| `account_name`        | 否  | 使用 `storage_account_url` 并采用账户密钥身份验证时为必需。不能与 `client_id` / `tenant_id` 同时使用。                                 |
+| `account_key`         | 否  | 使用 `storage_account_url` 并采用账户密钥身份验证时为必需。不能与 `client_id` / `tenant_id` 同时使用。                                 |
+| `format`              | 否  | 文件格式。                                                                                                        |
+| `compression`         | 否  | 压缩类型。                                                                                                        |
+| `structure`           | 否  | 表结构。                                                                                                         |
+| `client_id`           | 否  | 用于 Azure 工作负载身份的客户端 ID。需要同时提供 `tenant_id` 和 `storage_account_url`；服务器进程必须设置 `AZURE_FEDERATED_TOKEN_FILE`。    |
+| `tenant_id`           | 否  | 用于 Azure 工作负载身份的租户 ID。需要同时提供 `client_id` 和 `storage_account_url`；服务器进程必须设置 `AZURE_FEDERATED_TOKEN_FILE`。     |
 
 <Note>
   命名集合的键名与函数的位置参数名不同：`container` (不是 `container_name`) 和 `blob_path` (不是 `blobpath`) 。
@@ -94,7 +104,7 @@ FROM azureBlobStorage(azure_my_data)
 LIMIT 5;
 ```
 
-你也可以在查询时覆盖 named collection 中的值：
+你也可以在查询时覆盖 命名集合 中的值：
 
 ```sql
 SELECT *

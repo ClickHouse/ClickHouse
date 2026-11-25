@@ -1,0 +1,89 @@
+---
+description: 'Web 终端文档：一个基于 WebSocket、在浏览器中运行的 `clickhouse-client` 会话'
+sidebarTitle: 'Web 终端'
+slug: /concepts/features/connect-to-clickhouse/native-tools/web-terminal
+title: 'Web 终端'
+doc_type: 'reference'
+---
+
+Web 终端是一个在浏览器中运行的界面，通过 WebSocket 提供交互式 `clickhouse-client` 会话。任何 ClickHouse HTTP 端口都会在 `/webterminal` 路径下提供该终端。
+
+在任意 ClickHouse HTTP 端口上访问 `/webterminal` (例如 `http://localhost:8123/webterminal`) ，即可打开该终端。
+
+## 启用和禁用该功能 {#enabling-the-feature}
+
+`/webterminal` 端点默认处于已启用状态，由服务器设置 `enable_webterminal` 控制。如需禁用，请将该设置设为 `false`，此后对 `/webterminal` 的请求将返回 HTTP 状态码 `403 Forbidden`。
+
+```xml
+<clickhouse>
+    <enable_webterminal>false</enable_webterminal>
+</clickhouse>
+```
+
+<Note>
+  `enable_webterminal` 取代了原先的 `allow_experimental_webterminal` 设置。出于向后兼容性考虑，在未设置 `enable_webterminal` 时，旧名称仍然生效。
+</Note>
+
+## 身份验证 {#authentication}
+
+Web 终端对用户进行身份验证时，采用与 HTTP 协议相同的 `Session` 和访问控制检查，但凭证是通过已建立的 WebSocket 连接以带内方式交换的，而非通过 HTTP 升级请求传递。WebSocket 握手完成后，浏览器会以 JSON 格式发送第一条消息：
+
+```json
+{"type": "auth", "user": "<user>", "password": "<password>"}
+```
+
+`user` 字段为可选项：若省略或为空，用户名将回退为 `default_session_user` [服务器设置](/zh/reference/settings/server-settings/settings)的值 (或在[可组合协议](/zh/concepts/features/configuration/server-config/composable-protocols)配置中针对各端点的覆盖值) ，未另行配置时即为 `default`。如果将 `default_session_user` 设置为空字符串，则禁止不带用户名的连接：`user` 省略或为空的 `auth` 消息将无法通过身份验证，服务器会以代码 `1008` 关闭 WebSocket；若服务器配置中已启用 `session_log` 配置段，该拒绝事件还会以 `LoginFailure` 事件 (`user` 为空) 的形式记录到 [`system.session_log`](/zh/reference/system-tables/session_log) 中。
+
+这样可以避免将凭证放在 URL 查询参数中，或放在升级请求附带的 `Authorization` 请求头中，否则凭证可能会出现在浏览器历史记录、服务器访问日志以及反向代理日志中。`/webterminal` 有意**不**读取升级请求中的 URL 参数、HTTP Basic 以及 `X-ClickHouse-User`/`X-ClickHouse-Key` 请求头。
+
+凭证无效时，服务器会以代码 `1008` 关闭 WebSocket；浏览器 UI 会再次提示输入凭证。
+
+## 会话界面概览 {#session}
+
+身份验证通过后，服务器会运行一个连接到伪终端的 `clickhouse-client`，并通过 WebSocket 桥接其输入和输出。该会话提供完整的 `clickhouse-client` 使用体验，包括：
+
+* 语法高亮。
+* 自动补全。
+* 多行查询。
+* 命令历史记录 (在会话期间保存在服务器端) 。
+
+该终端使用 [xterm.js](https://xtermjs.org/) 进行渲染。所有静态资源均由 ClickHouse 二进制文件本身直接提供，不会加载任何第三方 CDN。
+
+## 与 `/play` 的集成 {#play-integration}
+
+[`/play`](/zh/concepts/features/connect-to-clickhouse/protocols/http) Web SQL 界面以可停靠面板的形式内嵌了 Web 终端。点击侧边栏中的终端图标即可显示或隐藏该面板；在查询编辑器为空时，也可以按 `~` 键进行切换。`/play` 页面会在加载时检测 `/webterminal` 是否可用，若该端点不可用 (例如 `enable_webterminal` 设置为 `false` 时) ，则会隐藏终端相关控件。
+
+## 与文档网站的集成 {#docs-integration}
+
+本文档网站在页面底部的窄型开发者托盘中嵌入了同一个终端，并以只读的 `play` 用户身份连接到 [ClickHouse 试验场](https://play.clickhouse.com)，因此无需离开当前页面即可试用任意页面上的示例。该托盘固定在底部，并会在页面末尾预留相应空间，以免遮挡页脚中的控件。终端打开时，文档页面会被锁定，滚动条也会隐藏。在终端上滚动时，滚动仅作用于终端的回滚缓冲区，不会带动其后方的文档页面。点击 “ClickHouse terminal” 栏或按 `~` 键，即可在该栏上方打开带内边距的面板。再次点击该栏、点击其折叠箭头、按 `~` 或 `Escape`，或将面板上边缘向下拖动，均可折叠面板；拖动上边缘还可调整面板高度。结束会话 (`exit` 或 `Ctrl+D`) 同样会折叠面板。
+
+关闭面板不会丢失会话及其回滚内容：重新打开终端后，仍会回到同一个提示符。会话保存在页面中，因此在文档页面之间切换时会保留，但重新加载浏览器选项卡后则不会保留——重新加载后，面板会以新会话重新出现。
+
+终端托盘属于网站桌面端布局，在窄视口中不可用。
+
+## 安全方面的考虑 {#security}
+
+任何能够通过 ClickHouse HTTP 端点身份验证的用户，都可以借助 Web 终端使用一个类似命令行环境的交互式会话，因此适用于 HTTP 协议的注意事项在此同样适用：
+
+* 在不受信任的环境中，务必通过 HTTPS 提供 `/webterminal`，以保护凭证和会话流量。
+* 在网络层面限制访问 (通过防火墙、反向代理或 `listen_host` 配置) ，方式与限制 HTTP 协议访问相同。
+* 该端点会将 `Origin` 请求头与 `Host` 进行比对验证，以防范跨源 WebSocket 劫持；如果在外部终止 TLS，请相应地配置反向代理。
+* 在终止 TLS 的反向代理之后，即使浏览器使用的是 `https`，到 ClickHouse 的上游连接仍是普通的 `http`，因此严格的同源检查会拒绝合法连接。对于此类部署，请将 `webterminal_allowed_origins` 设置为以逗号分隔的完整源列表，列出允许建立 WebSocket 会话的源；当该设置非空时，它将替换默认的同源检查。示例：`<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`。
+
+## 会话限制 {#session-limits}
+
+每个 Web 终端会话都会运行一个嵌入式 `clickhouse-client`，并拥有独立的线程和伪终端，因此服务器会对其施加与其他接口会话相同的限制，具体取值来自已通过身份验证的用户的设置：
+
+* [`max_sessions_for_user`](/zh/reference/settings/session-settings/max#max_sessions_for_user) 限制该用户的并发会话数。超出限制的会话会在嵌入式客户端启动前被拒绝，服务器会以代码 `1008` 关闭 WebSocket。
+* [`idle_connection_timeout`](/zh/reference/settings/session-settings/other#idle_connection_timeout)：嵌入式客户端等待下一个查询期间，若双向均无流量的时长超过指定秒数，则关闭会话，行为与原生协议一致。正在运行的查询不受该超时影响，即使它没有产生任何输出也不会被中断。
+* [`receive_timeout`](/zh/reference/settings/session-settings/receive#receive_timeout) 和 [`send_timeout`](/zh/reference/settings/session-settings/send#send_timeout) 分别限制从客户端读取 WebSocket 帧以及向客户端发送数据的时间。值为 `0` 时禁用超时。
+
+在终端中通过 `SET` 查询修改这些设置后，新值会在该查询执行完毕、嵌入式客户端回到提示符时生效。
+
+这些会话还会与其他接口的连接一并计入服务器级的 [`max_connections`](/zh/reference/settings/server-settings/settings/max#max_connections) 限制。
+
+该处理器还会依据 RFC 6455 强制校验 WebSocket 协议合规性：未掩码的客户端帧、预留操作码、超长或分片的控制帧以及预留的 RSV 位均会被拒绝，并以协议错误关闭码关闭连接。
+
+## 平台可用性 {#platform}
+
+该处理器在 ClickHouse 支持的所有平台上均会编译。嵌入式 `clickhouse-client` 运行器所用的伪终端层基于可移植的 POSIX 原语 (`posix_openpt`/`grantpt`/`unlockpt`) 实现，并在 Linux 上提供专用代码路径，使用线程安全的 `ptsname_r`。当该端点不可用时 (例如 `enable_webterminal` 设置为 `false`) ，ClickHouse 起始页和 `/play` 中指向 `/webterminal` 的链接会自动隐藏。

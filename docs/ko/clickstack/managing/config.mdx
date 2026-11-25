@@ -61,14 +61,14 @@ helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
 
 팀 설정에서 소스가 사용하는 데이터베이스 연결(database connection)을 구성하십시오.
 
-| 설정                         | 설명                                                                                                                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Connection Name`          | 소스 설정에서 이 연결을 식별하는 데 사용하는 이름입니다.                                                                                                                           |
-| `Host`                     | 포트를 포함한 ClickHouse HTTP(S) 엔드포인트입니다. collector의 내보내기 엔드포인트와는 별개입니다.                                                                                        |
-| `Username`                 | ClickHouse 사용자 이름입니다. 기본값은 `default`입니다.                                                                                                                   |
-| `Password`                 | ClickHouse 비밀번호입니다. 기본값은 빈 값입니다.                                                                                                                           |
-| `Query Log Setting Prefix` | 현재 사용자의 이메일을 쿼리 로그(query logs)에 기록하는 사용자 정의 ClickHouse 설정의 접두사입니다(선택 사항). ClickHouse의 `custom_settings_prefixes` 구성에도 동일한 접두사를 포함해야 하며, 그렇지 않으면 쿼리가 거부됩니다. |
-| `Prometheus compatible`    | 사용 가능한 경우 Host를 PromQL 쿼리 프록시용 Prometheus 호환 API 엔드포인트로 취급합니다. 이 연결은 ClickHouse 기반 로그, 트레이스 또는 OTel 메트릭 소스에는 사용할 수 없습니다.                                  |
+| 설정                         | 설명                                                                                                                                                                                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Connection Name`          | 소스 설정에서 이 연결을 식별하는 데 사용하는 이름입니다.                                                                                                                                                                                                                                                                          |
+| `Host`                     | 포트를 포함한 ClickHouse HTTP(S) 엔드포인트입니다. collector의 내보내기 엔드포인트와는 별개입니다.                                                                                                                                                                                                                                       |
+| `Username`                 | ClickHouse 사용자 이름입니다. 기본값은 `default`입니다.                                                                                                                                                                                                                                                                  |
+| `Password`                 | ClickHouse 비밀번호입니다. 기본값은 빈 값입니다.                                                                                                                                                                                                                                                                          |
+| `Query Log Setting Prefix` | 현재 사용자의 이메일을 쿼리 로그(query logs)에 기록하는 사용자 정의 ClickHouse 설정의 접두사입니다(선택 사항). ClickHouse의 `custom_settings_prefixes` 구성에도 동일한 접두사를 포함해야 하며, 그렇지 않으면 쿼리가 거부됩니다. 사용자 식별자 없이 어떤 대시보드, 알림 또는 기타 ClickStack 기능이 쿼리를 실행했는지 확인하려면 [쿼리 부하의 원인 찾기](/ko/clickstack/managing/performance-tuning#query-attribution)를 참조하십시오. |
+| `Prometheus compatible`    | 사용 가능한 경우 Host를 PromQL 쿼리 프록시용 Prometheus 호환 API 엔드포인트로 취급합니다. 이 연결은 ClickHouse 기반 로그, 트레이스 또는 OTel 메트릭 소스에는 사용할 수 없습니다.                                                                                                                                                                                  |
 
 <div id="datasource-settings">
   ### 데이터 소스 설정 {#datasource-settings}
@@ -184,21 +184,21 @@ ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/gu
   #### 메트릭 {#metrics}
 </div>
 
-| 설정                            | 설명                                                                                                           | 필수 여부 | 기본 스키마에서 추론됨 | 추론된 값                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ----- | ------------ | ------------------------------------ |
-| `Name`                        | 소스 이름입니다.                                                                                                    | 예     | 아니요          | –                                    |
-| `Section`                     | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.             | 아니요   | 아니요          | –                                    |
-| `Server Connection`           | 서버 연결 이름입니다.                                                                                                 | 예     | 아니요          | `Default`                            |
-| `Database`                    | ClickHouse 데이터베이스 이름입니다.                                                                                     | 예     | 예            | `default`                            |
-| `Query Settings`              | 이 소스에 대해 실행되는 모든 쿼리에 추가되는, 설정 이름과 값으로 지정된 최대 10개의 쿼리 수준 [세션 설정](/ko/reference/settings/session-settings)입니다. | 아니요   | 아니요          | –                                    |
-| `Enabled`                     | 소스 양식 상단의 토글입니다. 비활성화된 소스는 유지되지만 소스 셀렉터에서는 숨겨지고 자동으로 선택되지 않습니다. 기존 소스를 편집할 때만 표시됩니다.                         | 아니요   | 아니요          | 활성화됨                                 |
-| `Gauge Table`                 | Gauge 유형의 메트릭을 저장하는 테이블입니다.                                                                                  | 아니요   | 예            | `otel_metrics_gauge`                 |
-| `Histogram Table`             | 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                                  | 아니요   | 예            | `otel_metrics_histogram`             |
-| `Sum Table`                   | 합계 유형(Counter)의 메트릭을 저장하는 테이블입니다.                                                                            | 아니요   | 예            | `otel_metrics_sum`                   |
-| `Exponential Histogram Table` | 지수 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                               | 아니요   | 예            | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`       | 선택 사항입니다. 상관관계 로그 소스(예: ClickStack UI 로그)입니다.                                                                | 아니요   | 아니요          | –                                    |
-| `Summary Table`               | Summary 유형의 메트릭을 저장하는 테이블입니다. Summary 및 지수 히스토그램 지원은 아직 완전하지 않습니다.                                           | 아니요   | 예            | `otel_metrics_summary`               |
-| `Minimum auto granularity`    | 자동으로 선택되는 차트 세분화 수준의 최소 버킷 크기입니다. 명시적으로 지정한 차트 세분화 수준은 재정의하지 않습니다.                                           | 아니요   | 아니요          | 최솟값 없음                               |
+| 설정                            | 설명                                                                                                                                            | 필수 여부 | 기본 스키마에서 추론됨 | 추론된 값                                |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------ | ------------------------------------ |
+| `Name`                        | 소스 이름입니다.                                                                                                                                     | 예     | 아니요          | –                                    |
+| `Section`                     | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다.                                              | 아니요   | 아니요          | –                                    |
+| `Server Connection`           | 서버 연결 이름입니다.                                                                                                                                  | 예     | 아니요          | `Default`                            |
+| `Database`                    | ClickHouse 데이터베이스 이름입니다.                                                                                                                      | 예     | 예            | `default`                            |
+| `Query Settings`              | 이 소스에 대해 실행되는 모든 쿼리에 추가되는, 설정 이름과 값으로 지정된 최대 10개의 쿼리 수준 [세션 설정](/ko/reference/settings/session-settings)입니다.                                  | 아니요   | 아니요          | –                                    |
+| `Enabled`                     | 소스 양식 상단의 토글입니다. 비활성화된 소스는 유지되지만 소스 셀렉터에서는 숨겨지고 자동으로 선택되지 않습니다. 기존 소스를 편집할 때만 표시됩니다.                                                          | 아니요   | 아니요          | 활성화됨                                 |
+| `Gauge Table`                 | Gauge 유형의 메트릭을 저장하는 테이블입니다.                                                                                                                   | 아니요   | 예            | `otel_metrics_gauge`                 |
+| `Histogram Table`             | 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                                                                   | 아니요   | 예            | `otel_metrics_histogram`             |
+| `Sum Table`                   | 합계 유형(Counter)의 메트릭을 저장하는 테이블입니다.                                                                                                             | 아니요   | 예            | `otel_metrics_sum`                   |
+| `Exponential Histogram Table` | 지수 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                                                                | 아니요   | 예            | `otel_metrics_exponential_histogram` |
+| `Correlated Log Source`       | 선택 사항입니다. 상관관계 로그 소스(예: ClickStack UI 로그)입니다.                                                                                                 | 아니요   | 아니요          | –                                    |
+| `Summary Table`               | Summary 유형의 메트릭을 저장하는 테이블입니다. Summary 및 지수 히스토그램 지원은 아직 완전하지 않습니다.                                                                            | 아니요   | 예            | `otel_metrics_summary`               |
+| `최소 자동 세분화 수준`    | 자동으로 선택되는 차트 세분화 수준의 최소 버킷 크기입니다. 명시적으로 지정한 차트 세분화 수준은 재정의하지 않습니다. 대시보드 타일 등 UI의 차트에 적용됩니다. 알림, 외부 API를 통해 쿼리하는 차트, MCP 쿼리 도구에는 아직 적용되지 않습니다. | 아니요   | 아니요          | 최솟값 없음                               |
 
 메트릭 소스에는 타임스탬프 및 리소스 속성 매핑(일반적으로 `TimeUnix` 및 `ResourceAttributes`)도 저장됩니다. 통합 `series Table` 필드는 metrics-series-table 지원이 활성화된 팀에만 표시됩니다.
 

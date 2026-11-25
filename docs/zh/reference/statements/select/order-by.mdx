@@ -236,9 +236,9 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## 实现细节 {#implementation-details}
 
-如果在 `ORDER BY` 之外还指定了足够小的 [LIMIT](/zh/reference/statements/select/limit)，内存占用就会更少。否则，排序消耗的内存量与待排序数据量成正比。[`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围不会减少内存占用，因为在数据完成排序之前，范围大小未知。对于分布式查询处理，如果省略了 [GROUP BY](/zh/reference/statements/select/group-by)，排序会在远程服务器上部分完成，并在发起请求的服务器上合并结果。这意味着在分布式排序中，待排序的数据量可能会超过单台服务器的内存容量。
+如果在 `ORDER BY` 之外还指定了足够小的 [LIMIT](/zh/reference/statements/select/limit)，内存占用就会更少。否则，排序消耗的内存量与待排序数据量成正比。[`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围不会减少内存占用，因为在数据完成排序之前，范围大小未知。对于分布式查询处理，如果省略了 [GROUP BY](/zh/reference/statements/select/group-by)，排序会在远程服务器上部分完成，并在发起请求的服务器上合并结果。这意味着在分布式排序中，待排序的数据量可能会超过单台服务器的 RAM 容量。
 
-如果 RAM 不足，可以在外部内存中执行排序 (即在磁盘上创建临时 File) 。为此，请使用设置 `max_bytes_before_external_sort`。如果将其设为 0 (默认值) ，则外部排序会被禁用。如果启用该功能，当待排序数据量达到指定字节数时，已收集的数据会先排序并转储到临时文件中。读取完所有数据后，再将所有已排序的文件合并并输出结果。文件会写入配置中的 `/var/lib/clickhouse/tmp/` 目录 (默认如此，但你也可以使用 `tmp_path` 参数更改此设置) 。你还可以仅在查询超出内存限制时启用落盘，也就是说，`max_bytes_ratio_before_external_sort=0.6` 会仅在查询达到内存限制 (用户/服务器) 的 `60%` 后启用落盘。
+如果 RAM 不足，可以在外部内存中执行排序 (即在磁盘上创建临时 File) 。为此，请使用设置 `max_bytes_before_external_sort`。如果将其设为 0 (默认值) ，则外部排序会被禁用。如果启用该功能，当待排序数据量达到指定字节数时，已收集的数据会先排序并转储到临时 File 中。读取完所有数据后，再将所有已排序的文件合并并输出结果。文件会写入配置中的 `/var/lib/clickhouse/tmp/` 目录 (默认如此，但你也可以使用 `tmp_path` 参数更改此设置) 。你还可以仅在查询超出内存限制时启用落盘，也就是说，`max_bytes_ratio_before_external_sort=0.6` 只会在查询已用内存达到其可用内存 (受 `max_memory_usage` 以及用户和服务器限制约束) 的 `60%` 时才启用落盘。
 
 运行查询时，实际使用的内存可能会超过 `max_bytes_before_external_sort`。因此，这个设置值必须显著小于 `max_memory_usage`。例如，如果你的服务器有 128 GB RAM，并且只需运行单个查询，可以将 `max_memory_usage` 设为 100 GB，并将 `max_bytes_before_external_sort` 设为 80 GB。
 

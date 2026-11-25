@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Оператор `TRUNCATE` в ClickHouse позволяет быстро удалить все данные из таблицы или базы данных, сохранив их структуру.
 
-## TRUNCATE TABLE
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -33,6 +33,11 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
   Если `alter_sync` установлена в `2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`. При `alter_sync = 3` ожидание неактивных реплик не выполняется, поэтому исключение не генерируется.
 </Note>
 
+<Note>
+  Для non-replicated таблиц `MergeTree` удалённые части остаются на диске как неактивные части данных в течение `old_parts_lifetime` секунд. Чтобы удалить их сразу, используйте `SETTINGS truncate_removes_parts_immediately = 1`.
+  Для таблиц `ReplicatedMergeTree` удалённые части стираются сразу, поскольку `TRUNCATE` выполняется на каждой реплике как запись журнала `DROP_RANGE` — аналогично `DROP PARTITION`.
+</Note>
+
 Запрос `TRUNCATE TABLE` **не поддерживается** для следующих движков таблиц:
 
 * [`View`](/ru/reference/engines/table-engines/special/view)
@@ -41,7 +46,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ru/reference/engines/table-engines/special/buffer)
 * [`Null`](/ru/reference/engines/table-engines/special/null)
 
-## TRUNCATE ВСЕХ ТАБЛИЦ
+## TRUNCATE ВСЕХ ТАБЛИЦ {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +64,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 Удаляет все данные из всех таблиц в базе данных.
 
-## TRUNCATE DATABASE
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

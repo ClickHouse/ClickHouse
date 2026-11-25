@@ -430,6 +430,68 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+導入バージョン: v26.11.0
+
+指定した文字列全体が、指定した正規表現パターンに一致するかどうかを判定します。
+
+文字列内の任意の位置で一致を検索する [`match`](#match) とは異なり、この関数は、
+パターンの両端を `^` と `$` でアンカーした場合と同様に、パターンが文字列全体に一致する場合にのみ `1` を返します。
+これは RE2 ライブラリの `RE2::FullMatch`、Python の `re.fullmatch`、
+DuckDB の `regexp_full_match` に相当します。
+
+この関数は RE2 正規表現ライブラリを使用します。サポートされている構文については、[re2](https://github.com/google/re2/wiki/Syntax) を参照してください。
+
+マッチングは UTF-8 を前提に動作します。たとえば `¥` は内部的には 2 バイトを使用しますが、マッチングでは 1 つのコードポイントとして扱われます。
+正規表現に NULL バイトを含めることはできません。
+haystack または pattern が有効な UTF-8 でない場合の動作は未定義です。
+
+RE2 のデフォルトの動作とは異なり、`.` は改行にも一致します。これを無効にするには、パターンの先頭に `(?-s)` を付けてください。
+
+**構文**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**別名**: `regexp_full_match`
+
+**引数**
+
+* `haystack` — パターンを検索する対象の文字列。 [`String`](/ja/reference/data-types/string)
+* `pattern` — 正規表現のパターン。定数にすることも、カラムから取得することもできます。 [`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+パターンが文字列全体に一致する場合は `1`、そうでない場合は `0` を返します。 [`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**文字列全体との一致**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**最上位に選択を含むパターン**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 導入バージョン: v25.10.0
@@ -1534,7 +1596,7 @@ haystack または pattern が有効な UTF-8 でない場合の動作は未定�
 
 RE2 のデフォルトの動作とは異なり、`.` は改行にも一致します。これを無効にするには、パターンの先頭に `(?-s)` を付けてください。
 
-このパターンはアンカーされません。文字列全体に一致させるには、`^` と `$` を使って自分でパターンをアンカーしてください。
+このパターンはアンカーされません。文字列全体に一致させるには、`^` と `$` を使って自分でパターンをアンカーするか、[`fullMatch`](#fullMatch) 関数を使用してください。
 
 単に部分文字列を検索したいだけであれば、代わりに [`like`](#like) または [`position`](#position) 関数を使用できます。これらはこの関数よりも大幅に高速です。
 

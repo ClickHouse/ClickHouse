@@ -188,6 +188,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 启用预取在 Wide parts 中通过寻道至标记读取的 JSON shared data 子流，包括 `SHARED` 类型化路径的数据子流。此类预取会从粒度开头读取，而这通常不是读取子流的位置，因此可能造成浪费。禁用此设置可跳过这些预取操作。
 
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "新增设置：缩小 `MergeTree` 读取末尾阶段的任务，使所有线程大致同时完成。"}]}]} />
+
+将 `MergeTree` 读取末尾阶段的每个任务设为单个线程所分配数据量的 1/N (不小于
+`merge_tree_min_read_task_size`) ，使所有线程大致同时完成。值越大，线程间的负载
+越均衡，但每个任务的额外开销也越多。设为 0 则禁用此功能。
+
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />

@@ -631,7 +631,7 @@ ORDER BY tuple();
   以下高级参数的默认值几乎适用于所有场景。
   我们不建议修改它们。
 
-  可选参数 `dictionary_block_size` (默认值：512) 指定字典块的大小 (以行为单位) 。
+  可选参数 `dictionary_block_size` (默认值：8192) 指定字典块的大小 (以行为单位) 。
 
   可选参数 `dictionary_block_frontcoding_compression` (默认值：1) 指定字典块是否使用前缀编码进行压缩。
 
@@ -917,7 +917,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 #### `arrayJoin` {#functions-example-arrayjoin}
 
-针对被索引数组中单个元素的条件，其使用索引的方式与 `has` 和 `hasAny` 相同：`arrayJoin(tags) = 'clickhouse'` 会像 `has(tags, 'clickhouse')` 一样使用索引，`arrayJoin(tags) IN (set)` 则会像 `hasAny(tags, set)` 一样使用索引。这同样适用于 `GLOBAL IN`、设置了 `transform_null_in = 1` 且集合中不含 `NULL` 的 `IN`，以及 `ARRAY JOIN` 子句。索引仅用于跳过粒度，ClickHouse 仍会逐个元素检查该条件。`LEFT ARRAY JOIN` 不会使用索引。
+针对被索引数组中单个元素的条件，其使用索引的方式与 `has` 和 `hasAny` 相同：`arrayJoin(tags) = 'clickhouse'` 会像 `has(tags, 'clickhouse')` 一样使用索引，`arrayJoin(tags) IN (set)` 则会像 `hasAny(tags, set)` 一样使用索引。这同样适用于 `GLOBAL IN`、设置了 `transform_null_in = 1` 且集合中不含 `NULL` 的 `IN`，以及 `ARRAY JOIN` 子句。索引仅用于跳过粒度，ClickHouse 仍会逐个元素检查该条件。`LEFT ARRAY JOIN` 同样会使用索引，除非该条件会匹配它为空数组补充的元素 (即空字符串) 。
 
 示例：
 
@@ -1683,13 +1683,13 @@ Aggregating
 * 一组倒排列表，每个倒排列表表示一组行号。
 
 文本索引是针对整个 分片 构建的。
-与其他跳过索引不同，文本索引在数据分片合并时可以直接合并，而不必在合并时重新构建 (见下文) 。
+与其他跳过索引不同，文本索引在数据分区片段合并时可以直接合并，而不必在合并时重新构建 (见下文) 。
 
 在创建索引期间，会创建三个文件 (每个 分片 一组) ：
 
 **字典块文件 (.dct)**
 
-文本索引中的标记会先排序，再存储到字典块中，每个字典块包含 512 个标记 (块大小可通过参数 `dictionary_block_size` 配置) 。
+文本索引中的标记会先排序，再存储到字典块中，每个字典块包含 8192 个标记 (块大小可通过参数 `dictionary_block_size` 配置) 。
 字典块文件 (.dct) 包含一个 分片 中所有索引粒度的全部字典块。
 
 **索引头文件 (.idx)**
@@ -1711,9 +1711,9 @@ Aggregating
 
 **文本索引的合并**
 
-当数据分片合并时，文本索引无需从头重新构建；相反，它可以在合并过程中的独立步骤里高效完成合并。
+当数据分区片段合并时，文本索引无需从头重新构建；相反，它可以在合并过程中的独立步骤里高效完成合并。
 在这一步中，会读取每个输入 分片 的文本索引中已排序的字典，并将它们合并为一个新的统一字典。
-倒排列表中的行号也会重新计算，以反映它们在合并后数据分片中的新位置；这会用到初始合并阶段生成的旧行号到新行号映射。
+倒排列表中的行号也会重新计算，以反映它们在合并后数据分区片段中的新位置；这会用到初始合并阶段生成的旧行号到新行号映射。
 这种文本索引的合并方式，类似于带有 `_part_offset` 列的 [projections](/zh/reference/statements/alter/projection#projection-indexes) 的合并方式。
 如果索引在源 分片 中尚未 materialized，则会先构建该索引，将其写入临时文件，然后再与其他 分片 中的索引以及其他临时索引文件中的索引一并合并。
 

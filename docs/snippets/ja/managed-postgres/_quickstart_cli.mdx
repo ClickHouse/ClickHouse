@@ -2,7 +2,7 @@
 title: クイックスタート CLI
 ---
 
-このページでは、[clickhousectl](/ja/concepts/features/interfaces/cli) と `psql` を使って、ClickHouse Managed Postgres のプロビジョニング、データの読み込み、ClickHouse へのレプリケーション、クエリの実行を、すべてコマンドラインから行う方法を説明します。任意の `--interactive` ログインを除き、コマンドは非対話型です。`clickhousectl` は `--json` を指定すると JSON を出力するほか、コーディングエージェントを検出した場合にも自動的に JSON を出力します。プレーンな値を取得するには、`cloud service query` に `--format` を指定してください。
+このページでは、[clickhousectl](/ja/concepts/features/interfaces/cli) と `psql` を使って、ClickHouse Managed Postgres のプロビジョニング、データの読み込み、ClickHouse へのレプリケーション、クエリの実行を、すべてコマンドラインから行う方法を説明します。任意の `--interactive` ログインを除き、コマンドは非対話型です。`clickhousectl` は `--json` を指定すると JSON を出力するほか、コーディングエージェントを検出した場合にも自動的に JSON を出力します。プレーンな値を取得するには、`cloud clickhouse query` に `--format` を指定してください。
 
 ## 前提条件 {#prerequisites}
 
@@ -198,7 +198,7 @@ psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type O
 同じリージョンにサービスを作成し、レスポンスを保存します。パスワードは作成時のレスポンスにのみ表示されます。
 
 ```bash
-clickhousectl cloud service create \
+clickhousectl cloud clickhouse create \
   --name quickstart-ch \
   --region us-east-1 \
   --json > ch.json
@@ -210,12 +210,12 @@ CH_PASSWORD=$(jq -r .password ch.json)
 稼働状態になるまで待機してください。ClickPipe には稼働中の宛先が必要です：
 
 ```bash
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-代わりに既存のサービスを使用する場合は、`clickhousectl cloud service list` で取得した `CH_ID` を設定し、`CH_PASSWORD` にはその `default` ユーザーのパスワードを設定します。これは `pg_clickhouse` のステップで必要です。
+代わりに既存のサービスを使用する場合は、`clickhousectl cloud clickhouse list` で取得した `CH_ID` を設定し、`CH_PASSWORD` にはその `default` ユーザーのパスワードを設定します。これは `pg_clickhouse` のステップで必要です。
 
 ### テーブルを ClickHouse に複製する {#replicate-to-clickhouse}
 
@@ -261,12 +261,12 @@ while :; do
 done
 ```
 
-### ClickHouse でレプリケートされたデータにクエリを実行する {#query-clickhouse}
+### ClickHouse で複製されたデータにクエリを実行する {#query-clickhouse}
 
 CLI から ClickHouse サービスに直接 SQL を実行します。最初の呼び出し時に、clickhousectl はお使いの APIキーをサービスのクエリ API エンドポイントに追加します (エンドポイントが存在しない場合は作成します)。新しいキーは作成されません。この処理を行わずにエラーで終了させるには、`--no-auto-enable` を指定してください。`--format TabSeparated` を指定すると値のみが出力されます。以下の比較はこの出力形式を前提としています:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
@@ -277,12 +277,12 @@ Binding the authenticated API key to the Query API endpoint for service 'quickst
 1000000
 ```
 
-Postgres への新しい書き込みは継続的にレプリケートされます。1 行を挿入し、件数が 1,000,001 に達するまでポーリングしてください (通常は 1 分未満です) :
+Postgres への新しい書き込みは継続的に複製されます。1 行を挿入し、件数が 1,000,001 に達するまでポーリングしてください (通常は 1 分未満です) :
 
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
@@ -293,7 +293,7 @@ done
 [`pg_clickhouse`](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction) 拡張機能を使うと、Postgres をトランザクションデータと分析データの両方に対応する統合クエリレイヤーとして利用できます。ClickHouse の HTTPS ホスト名を取得し、`psql` でこの拡張機能を設定します。
 
 ```bash
-CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+CH_HOST=$(clickhousectl cloud clickhouse get "$CH_ID" --json \
   | jq -r '.endpoints[] | select(.protocol=="https") | .host')
 
 psql "$PG_URL" <<SQL
@@ -323,5 +323,5 @@ clickhousectl cloud postgres delete "$PG_ID"
 稼働中の ClickHouse サービス は直接削除できません。`--force` を指定すると、サービスを停止し、停止が完了するのを待ってから削除します。
 
 ```bash
-clickhousectl cloud service delete "$CH_ID" --force
+clickhousectl cloud clickhouse delete "$CH_ID" --force
 ```

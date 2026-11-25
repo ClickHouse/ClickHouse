@@ -115,6 +115,10 @@ Diccionarios activos.
 
 Tablas replicadas activas.
 
+### AttachedSharedTable {#attachedsharedtable}
+
+Tablas SharedMergeTree activas.
+
 ### Tabla adjunta {#attachedtable}
 
 Tablas activas.
@@ -615,6 +619,10 @@ Número de servidores registrados de Distributed Cache
 
 Número de servidores registrados de caché distribuida en la zona de disponibilidad actual
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+Número de clientes de Distributed Cache con la ventana de ralentización abierta, según el último escaneo de solicitudes bloqueadas
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 Número de archivos temporales committed que pertenecen a este proceso del servidor de Distributed Cache
@@ -629,11 +637,15 @@ Número de conexiones abiertas al servidor de ClickHouse desde Distributed Cache
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-Número de conexiones activas al servidor de ClickHouse desde Distributed Cache (no marcadas como canceladas por el límite)
+Número de conexiones de cliente que figuran en el registro del servidor de Distributed Cache, incluidas las marcadas para cerrarse
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 Número de clientes de S3 almacenados en caché en la caché distribuida
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+Número de solicitudes in-flight al servidor de Distributed Cache que no registraron progreso durante al menos `distributed_cache_stuck_request_no_progress_timeout_ms`, o que superaron `distributed_cache_max_request_processing_time_ms` sin finalizar por sí mismas en un intervalo de escaneo, según el último escaneo de solicitudes bloqueadas
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -957,7 +969,7 @@ Número de trabajos en cola o activos en el pool de hilos de IcebergCatalog.
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-Número de background tasks para eliminar los archivos de datos reemplazados por la compactación de Iceberg, que están programadas o aún retenidas por las tablas Iceberg.
+Número de tablas Iceberg con la tarea en segundo plano que hace caducar sus instantáneas obsoletas y elimina los archivos a los que solo hacen referencia dichas instantáneas, habilitada mediante `enable_cleanup_old_data_files_compaction`.
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1974,6 +1986,10 @@ El número mínimo de réplicas registradas en Keeper entre todas las tablas. Te
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 Número de registros de partes outdated almacenados en Keeper
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+Bloqueos de líder de actualización de partes que esta réplica mantiene o está adquiriendo, uno por cada tabla SharedMergeTree en la que es líder
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

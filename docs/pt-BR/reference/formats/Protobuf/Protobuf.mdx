@@ -324,7 +324,7 @@ Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 
 ### `format_schema_source='query'` {#format-schema-source-query}
 
-Você também pode armazenar seu schema Protobuf em uma tabela.
+Você também pode armazenar seu Esquema Protobuf em uma tabela.
 
 Crie uma tabela no ClickHouse Cloud na qual os dados serão inseridos:
 
@@ -347,7 +347,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 Insira os dados no ClickHouse Cloud, especificando o schema como uma consulta a ser executada.
-Envie este insert pela [interface HTTP](/pt-BR/concepts/features/interfaces/http#insert-protobuf), na qual o servidor interpreta os dados e executa a consulta do schema. Já o `clickhouse client` interpreta os dados de entrada no lado do cliente, onde a consulta do schema falha.
+Envie este insert pela [interface HTTP](/pt-BR/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf), na qual o servidor interpreta os dados e executa a consulta do schema. Já o `clickhouse client` interpreta os dados de entrada no lado do cliente, onde a consulta do schema falha.
 A opção `--url-query` do curl (versão 7.87 e posteriores) aplica codificação de URL a cada parâmetro, de modo que a consulta e a consulta do schema podem ser escritas sem alterações:
 
 ```bash

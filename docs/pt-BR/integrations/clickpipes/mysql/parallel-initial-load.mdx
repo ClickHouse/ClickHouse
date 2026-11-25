@@ -21,7 +21,7 @@ No entanto, o ClickPipe do MySQL pode paralelizar esse processo, o que pode acel
 
 ### Coluna de chave de partição {#key-mysql-snapshot}
 
-Depois de habilitar a feature flag, você deverá ver a configuração abaixo no seletor de tabelas do ClickPipe (tanto durante a criação quanto na edição de um ClickPipe):
+Você pode ver a configuração abaixo no seletor de tabelas do ClickPipe (tanto durante a criação quanto na edição de um ClickPipe):
 
 <div className="ch-image-md">
   <Frame>
@@ -61,17 +61,10 @@ Essa configuração controla quantas partições são processadas em paralelo. O
   #### Número de tabelas no snapshot paralelo {#tables-parallel-mysql-snapshot}
 </div>
 
-Não está realmente relacionado ao snapshot paralelo, mas essa configuração controla quantas tabelas são processadas em paralelo durante a carga inicial. O valor padrão é 1. Observe que isso se soma ao paralelismo das partições; portanto, se você tiver 4 partições e 2 tabelas, o ClickPipe lerá 8 partições em paralelo.
+Não está realmente relacionado ao snapshot paralelo, mas essa configuração controla quantas tabelas são processadas em paralelo durante a carga inicial. O valor padrão é 1. Observe que isso se soma ao paralelismo das partições; portanto, se o paralelismo da carga inicial for 4 e você tiver 2 tabelas, o ClickPipe lerá 8 partições em paralelo.
 
 <div id="monitoring-parallel-mysql-snapshot">
   ### Monitorando o snapshot paralelo no MySQL {#monitoring-parallel-mysql-snapshot}
 </div>
 
-Você pode executar **SHOW processlist** no MySQL para ver o snapshot paralelo em ação. O ClickPipe criará várias conexões com o banco de dados de origem, cada uma lendo uma partição diferente da tabela de origem. Se você vir consultas **SELECT** com intervalos diferentes, isso significa que o ClickPipe está lendo as tabelas de origem. Aqui, você também pode ver o COUNT(*) e a consulta de particionamento.
-
-<div id="limitations-parallel-mysql-snapshot">
-  ### Limitações {#limitations-parallel-mysql-snapshot}
-</div>
-
-* Os parâmetros de snapshot não podem ser editados após a criação do ClickPipe. Se quiser alterá-los, será necessário criar um novo ClickPipe.
-* Ao adicionar tabelas a um ClickPipe existente, não é possível alterar os parâmetros de snapshot. O ClickPipe usará os parâmetros existentes para as novas tabelas.
+Você pode executar **SHOW processlist** no MySQL para ver o snapshot paralelo em ação. O ClickPipe criará várias conexões com o banco de dados de origem, cada uma lendo uma partição diferente da tabela de origem. Se você vir consultas **SELECT** com intervalos diferentes, isso significa que o ClickPipe está lendo as tabelas de origem.

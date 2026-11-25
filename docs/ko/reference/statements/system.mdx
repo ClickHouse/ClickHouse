@@ -165,7 +165,15 @@ Parquet 메타데이터 캐시를 비웁니다.
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-vector similarity index cache를 비웁니다.
+[벡터 유사성 인덱스](/ko/reference/engines/table-engines/mergetree-family/annindexes)의 캐시를 지웁니다. 이 캐시는 역직렬화된 벡터 인덱스 그래뉼을 메모리에 보관합니다.
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+`FOR TABLE`을 지정하면 해당 `MergeTree` 테이블의 캐시 엔트리만 제거됩니다.
+
+모든 테이블 또는 단일 테이블에 대한 `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` 권한(privilege)이 필요합니다.
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1030,6 +1038,29 @@ SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
   모든 상태의 파트는 `detached/` 폴더로 이동됩니다. 데이터 손실 전에 활성 상태였던(커밋된) 파트는 ATTACH됩니다.
 </Note>
 
+이 SQL 문은 서버 전체의 데이터 캐시도 지웁니다. 복원된 파트에는 새 이름이 부여되는데, 이 이름이 다른 파트가 이전에 사용하던 이름 및 경로와 같을 수 있으므로 해당 이름의 캐시 엔트리가 더 이상 유효하지 않게 되기 때문입니다.
+
+이 작업은 복원된 테이블뿐만 아니라 서버의 모든 테이블에 영향을 미치므로, 해당 테이블에 대한 쿼리는 캐시를 다시 채워야 합니다. `ON CLUSTER`를 사용하면 레플리카가 복원되는 모든 서버에서 캐시가 지워집니다.
+
+지워지는 캐시는 다음과 같습니다:
+
+* [마크](#drop-mark-cache)
+* [비압축](#drop-uncompressed-cache)
+* [프라이머리 인덱스](#drop-primary-index-cache)
+* [통계](#drop-statistics-cache)
+* [인덱스 마크](#drop-index-mark-cache)
+* [인덱스 비압축](#drop-index-uncompressed-cache)
+* [벡터 유사성 인덱스](#drop-vector-similarity-index-cache)
+* [텍스트 인덱스](#drop-text-index-caches)
+* [mmap](#drop-mmap-cache)
+* [페이지](#drop-page-cache)
+* [컬럼](#drop-columns-cache)
+* [쿼리 조건](#drop-query-condition-cache)
+* [암호화 헤더](#drop-encryption-headers-cache)
+* `UNIQUE KEY` 삭제 비트맵 캐시
+
+[쿼리 캐시](#drop-query-cache)와 [파일 시스템 캐시](#drop-filesystem-cache)는 유지됩니다.
+
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
 데이터가 [남아 있을 수 있지만] Zookeeper 메타데이터가 손실된 경우 레플리카를 복원합니다.
@@ -1209,7 +1240,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-현재 실행 중인 갱신이 완료될 때까지 기다립니다. 실행 중인 갱신이 없으면 즉시 반환됩니다. 가장 최근 갱신 시도가 실패한 경우 오류를 보고합니다.
+현재 실행 중인 갱신이 완료될 때까지 기다리며, 실행 시점이 되었지만 아직 `refresh_coordination_jitter_ms` 지연을 기다리고 있는 갱신도 대상에 포함됩니다. 실행 중이거나 실행 시점이 된 갱신이 없으면 즉시 반환됩니다. 가장 최근 갱신 시도가 실패한 경우 오류를 보고합니다.
 
 새 갱신 가능 구체화 뷰를 생성한 직후(`EMPTY` 키워드 없이) 초기 갱신이 완료될 때까지 기다리는 데 사용할 수 있습니다.
 

@@ -136,6 +136,11 @@ Para configurar PrivateLink con un recurso de VPC:
       y debes eliminarlo manualmente si ya no lo necesitas.
     </Note>
 
+    <Tip>
+      Un Resource-Share queda vinculado a un Reverse Private Endpoint cuando ClickPipes lo acepta y, a partir de ese momento, ningún otro endpoint puede usarlo.
+      Recomendamos crear el Reverse Private Endpoint justo después de crear el Resource-Share y no compartir los detalles del Resource-Share hasta entonces.
+    </Tip>
+
     Puedes añadir la Resource-Configuration al Resource-Share mediante la [consola de AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) o ejecutando el siguiente comando con el ID de cuenta de ClickPipes `072088201116` (arn:aws:iam::072088201116:root):
 
     ```bash

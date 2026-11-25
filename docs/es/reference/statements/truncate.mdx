@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 La sentencia `TRUNCATE` de ClickHouse se utiliza para eliminar rápidamente todos los datos de una tabla o base de datos sin alterar su estructura.
 
-## TRUNCATE TABLE
+## TRUNCATE TABLE {#truncate-table}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -33,6 +33,11 @@ Puede especificar cuánto tiempo (en segundos) se debe esperar a que las réplic
   Si `alter_sync` está establecido en `2` y algunas réplicas permanecen inactivas durante más tiempo del especificado por la configuración `replication_wait_for_inactive_replica_timeout`, se lanza una excepción `UNFINISHED`. Con `alter_sync = 3` no se espera a las réplicas inactivas, por lo que no se lanza ninguna excepción.
 </Note>
 
+<Note>
+  En las tablas `MergeTree` no replicadas, las partes eliminadas permanecen en disco como partes inactivas durante `old_parts_lifetime` segundos. Use `SETTINGS truncate_removes_parts_immediately = 1` para eliminarlas de inmediato.
+  En las tablas `ReplicatedMergeTree`, las partes eliminadas se borran de inmediato, porque `TRUNCATE` se ejecuta en cada réplica como una entrada de registro `DROP_RANGE`, al igual que `DROP PARTITION`.
+</Note>
+
 La consulta `TRUNCATE TABLE` **no es compatible** con los siguientes motores de tabla:
 
 * [`View`](/es/reference/engines/table-engines/special/view)
@@ -41,7 +46,7 @@ La consulta `TRUNCATE TABLE` **no es compatible** con los siguientes motores de 
 * [`Buffer`](/es/reference/engines/table-engines/special/buffer)
 * [`Null`](/es/reference/engines/table-engines/special/null)
 
-## TRUNCATE de todas las tablas
+## TRUNCATE de todas las tablas {#truncate-all-tables}
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +64,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 Elimina todos los datos de todas las tablas de una base de datos.
 
-## TRUNCATE DATABASE
+## TRUNCATE DATABASE {#truncate-database}
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

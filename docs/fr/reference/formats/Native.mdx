@@ -345,14 +345,14 @@ Avec `LowCardinality(Nullable(String))`, l’indice 0 est `NULL` :
 02 00 02 00 02              // indexes → "yes", NULL, "yes", NULL, "yes"
 ```
 
-#### Array {#array}
+#### Tableau {#array}
 
-Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#array), où chaque array est préfixé par un nombre d&#39;éléments au format LEB128, le format Native encode les arrays sous forme de deux sous-flux colonnaires :
+Contrairement à [RowBinary](/fr/reference/formats/RowBinary/RowBinary#array), où chaque tableau est préfixé par un nombre d&#39;éléments au format LEB128, le format Native encode les tableaux sous forme de deux sous-flux colonnaires :
 
-* N offsets `UInt64` cumulatifs (little-endian, 8 octets chacun). La ligne `i` contient `offset[i] - offset[i-1]` éléments, avec `offset[-1]` implicitement égal à 0.
+* N offsets `UInt64` cumulatifs (little-endian, 8 octets chacun). La ligne `i` contient `offset[i] - offset[static_cast<ssize_t>(i) - 1]` éléments, avec `offset[-1]` implicitement égal à 0.
 * Tous les éléments imbriqués de toutes les lignes, sérialisés en bloc de façon contiguë.
 
-Par exemple, `Array(UInt32)` avec 3 lignes `[[0, 10], [1, 11], [2, 12]]` :
+Par exemple, `Array(UInt32)` avec 3 lignes `[[0, 10], [1, 11], [2, 12]]` :
 
 ```text
 // Offsets
@@ -369,7 +369,7 @@ Par exemple, `Array(UInt32)` avec 3 lignes `[[0, 10], [1, 11], [2, 12]]` :
 0c 00 00 00                 // 12
 ```
 
-Un tableau vide a le même offset que la ligne précédente. Par exemple, `Array(String)` avec 4 lignes `[[], ['0'], ['0','1'], ['0','1','2']]` :
+Un tableau vide a le même offset que la ligne précédente. Par exemple, `Array(String)` avec 4 lignes `[[], ['0'], ['0','1'], ['0','1','2']]` :
 
 ```text
 00 00 00 00 00 00 00 00    // 0 (empty)

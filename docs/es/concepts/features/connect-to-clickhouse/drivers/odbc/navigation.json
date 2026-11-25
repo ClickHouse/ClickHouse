@@ -1,0 +1,6 @@
+{
+  "group": "Controlador ODBC",
+  "pages": [
+    "es/concepts/features/connect-to-clickhouse/drivers/odbc/index"
+  ]
+}

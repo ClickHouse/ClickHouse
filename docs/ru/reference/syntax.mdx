@@ -369,6 +369,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 <Note>
   Параметры запроса — это не универсальные текстовые подстановки, которые можно использовать в любых местах произвольных SQL-запросов.
   Они в первую очередь предназначены для работы в операторах `SELECT` вместо идентификаторов или литералов.
+  Они также работают в DDL-операторах вместо имён баз данных и таблиц (например, `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). В `ALTER TABLE` их также можно использовать в `DROP`, `CLEAR`, `MATERIALIZE`, `COMMENT`, `RENAME COLUMN` и `AFTER` (например, `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## Функции {#functions}

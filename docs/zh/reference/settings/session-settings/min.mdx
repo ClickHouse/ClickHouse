@@ -120,13 +120,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "新增设置：仅当连接右侧的估计行数不少于 100000 行或没有估计值时，`enable_packed_string_keys_in_hash_join` 才会生效。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "新增设置：在没有运行时过滤器的情况下，若哈希连接需要对每个左侧键（即平均长度超过 15 字节或长度未知的键）计算哈希，则此设置为该哈希连接右侧行数的最小值。`enable_packed_string_keys_in_hash_join` 还要求哈希表大于 L2 缓存。设为 0 时对所有连接都进行打包。"}]}]} />
 
-连接右侧的最小估计行数，达到该值时 `enable_packed_string_keys_in_hash_join` 才会生效。较小的连接从中获益甚微，且在键较长时反而可能变慢。
+对于右侧有行数估算值的哈希连接，仅当使用精确键的哈希表大致超过 CPU 的 L2 缓存时，或此设置为 0 时，才会对其 `String` 键进行打包 (参见 `enable_packed_string_keys_in_hash_join`) 。表的大小等于右侧行数乘以单行字节数，其中单行字节数为 32 字节的单元加上键的平均长度 (长度未知时按 0 计) 。较小的连接从打包键中获益甚微，甚至可能变慢。
 
-如果已启用 `collect_hash_table_stats_during_joins`，则估计值取同一连接上一次执行时右侧的行数；否则取查询优化器的估计值。`parallel_hash_join_threshold` 使用的也是同一估计值。没有估计值的连接始终会使用 `enable_packed_string_keys_in_hash_join`。
+超过 15 字节的打包键会针对左侧的每一行计算哈希。若连接带有运行时过滤器，且该过滤器主要只放行有匹配项的行 (参见 `enable_join_runtime_filters`) ，则只需对匹配的行计算哈希，因此无需设定最小值。若没有此类过滤器，此设置即为右侧行数的最小值。此设置在键的平均长度超过 15 字节时生效；长度未知时同样生效，因为此时按长键处理。键的长度可从该键的 `basic` 列统计信息中获知。`MergeTree` 表默认会收集这些统计信息，参见 `auto_statistics_types`。
 
-0 表示不设最小值。
+当键是 `Memory` 表的列、子查询中聚合函数的结果，或 `ON` 中表达式 (例如 `concat(k, 'x')` 或 `hex(k)`) 的结果时，该键没有统计信息。带有 `OR` 的连接不会使用统计信息。仅原样传递该列或按该列分组的子查询会保留统计信息。
+
+除 `SEMI` 和 `ANTI` 之外的 `LEFT` 连接以及 `FULL` 连接会保留左侧的所有行，因此不会生成运行时过滤器。`LEFT ANTI` 连接的过滤器放行的是没有匹配项的行，因此不计在内。
+
+如果启用了 `collect_hash_table_stats_during_joins`，行数取自同一连接上一次执行时的右侧行数；否则取查询优化器的估算值，`parallel_hash_join_threshold` 也使用该估算值。若没有优化器估算值，则取本服务器读取右表时自身的估算值。若两者都没有，连接会对键进行打包，除非规划该查询的服务器估算的右侧行数低于此最小值。分布式查询中的每个服务器都会根据自身的估算值、统计信息和缓存大小各自做出决定。
+
+设为 0 时对所有连接的键都进行打包。
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'OpenAPI لـ ClickHouse Managed Postgres'
 description: 'أدِر خدمات ClickHouse Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
-keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة', 'سجلات الخادم', 'السجلات']
+keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'رؤى الاستعلامات', 'الاستعلامات البطيئة', 'الاستعلامات الحاجبة', 'سجلات الخادم', 'السجلات']
 doc_type: 'guide'
 ---
 
@@ -285,12 +285,13 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
 
 توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات ClickHouse Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
 
-## Query insights {#query-insights}
+## رؤى الاستعلامات {#query-insights}
 
-إن بيانات القياس عن بُعد الخاصة بكل عبارة، والتي تستند إليها علامة التبويب [Query Insights] في الكونسول السحابي،
+إن بيانات القياس عن بُعد الخاصة بكل عبارة، والتي تستند إليها علامة التبويب [رؤى الاستعلامات] في وحدة تحكم ClickHouse Cloud،
 متاحة أيضًا برمجيًا. توفّر نقطتا نهاية أبطأ
 أنماط الاستعلامات في خدمة: تسرد إحداهما جميع الأنماط مرتبةً حسب التأثير،
-بينما تُرجع الأخرى نمطًا واحدًا مع أحدث عمليات تنفيذه.
+بينما تُرجع الأخرى نمطًا واحدًا مع أحدث عمليات تنفيذه. وتسرد نقطة نهاية ثالثة
+الاستعلامات التي انتظرت تحرير الأقفال، والجلسات التي عطّلتها.
 
 ### إدراج أنماط الاستعلامات البطيئة {#list-slow-query-patterns}
 
@@ -410,10 +411,82 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 يختصر المثال كلا الكائنين مراعاةً للإيجاز؛ وتُرجع واجهة برمجة تطبيقات
 مجموعة العدادات الكاملة الموثقة ضمن [per-execution counters].
 
+### استعراض الاستعلامات الحاجبة {#list-blocking-queries}
+
+تُعيد [استعلامات حاجبة API] المجموعات نفسها التي يعرضها
+جدول [استعلامات حاجبة] في وحدة التحكم: تقرن كل نتيجة استعلامًا منتظرًا واحدًا
+بمُعيق مباشر واحد، مع ترتيبها بحسب الأكثر تكرارًا أولًا. ولا تتوفر البيانات إلا للفترات
+التي كان فيها جمع الاستعلامات الحاجبة مُفعّلًا للخدمة. مرِّر
+`from_date` و`to_date` على هيئة طوابع زمنية بتنسيق RFC 3339. ويجب أن يكون `to_date` لاحقًا لـ
+`from_date`، وألا يتجاوز النطاق 31 يومًا:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+صفِّ النتائج حسب `db_name` أو `db_user` أو `app` الخاصة بالجلسات المنتظِرة؛ إذ تطابق القيمة الفارغة
+`app=` الجلسات التي لا تحمل اسم تطبيق. تنقّل بين صفحات النتائج
+باستخدام `limit` (حتى 2000، والقيمة الافتراضية 50) و`offset`، واستخدم `totalCount`
+لمعرفة عدد المجموعات المطابقة.
+
+تصف الحقول التي تبدأ بـ `blocked` الجلسات المنتظِرة، بينما تصف الحقول
+التي تبدأ بـ `blocking` الجلسة المسبِّبة للحظر. وتُستمد `lockType` و`blockedMode`
+والحقول `latest*` من أحدث عينة:
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+كما هو الحال في وحدة التحكم، يمثّل `blockingQuery` العبارة الحالية أو الأحدث للجهة المُعيقة،
+وقد لا تكون هي العبارة التي حصلت على القفل. ويكون `blockedQuery` و
+`blockingQuery` فارغين عندما لا يتوفر لدى رؤى الاستعلامات نص العبارة،
+كما يكون `blockingQuery` فارغًا عندما تكون قيمة `blockingInternal` أو
+`blockingPrepared` هي `true`. وتُعيد المعاملة المُحضَّرة قيمة `blockingPids`
+على أنها `[0]`.
+
 ## سجلات الخادم {#server-logs}
 
-تتوفر سجلات خادم PostgreSQL المعروضة في عارض السجلات ضمن الكونسول السحابي أيضًا برمجيًا. تُرجع [واجهة برمجة تطبيقات السجلات] إدخالات سجل فردية لخدمة
-خلال نافذة زمنية. وكما هو الحال مع Query Insights، يلزم تحديد النافذة، لذا
+تتوفر سجلات خادم PostgreSQL المعروضة في عارض السجلات ضمن وحدة تحكم ClickHouse Cloud أيضًا برمجيًا. تُرجع [واجهة برمجة تطبيقات السجلات] إدخالات سجل فردية لخدمة
+خلال نافذة زمنية. وكما هو الحال مع رؤى الاستعلامات، يلزم تحديد النافذة، لذا
 مرّر `from_date` و`to_date` كطوابع زمنية بتنسيق RFC 3339. يجب ألا يتجاوز النطاق
 30 يومًا، ويجب أن يكون `to_date` بعد `from_date`:
 
@@ -489,14 +562,18 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس ClickHouse Managed Postgres"
 
-[Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights لاستعلامات Postgres"
+[رؤى الاستعلامات]: /products/managed-postgres/monitoring/query-insights "رؤى الاستعلامات لاستعلامات Postgres"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية للتفاصيل في Query Insights"
+[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية للتفاصيل في رؤى الاستعلامات"
 
-[per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات Query Insights لكل تنفيذ"
+[Blocking queries]: /products/managed-postgres/monitoring/query-insights#blocking-queries "الاستعلامات الحاجبة في رؤى الاستعلامات"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "إدراج أنماط الاستعلامات البطيئة لـ Postgres"
+[per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات رؤى الاستعلامات لكل تنفيذ"
+
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "سرد أنماط الاستعلامات البطيئة لـ Postgres"
 
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "الحصول على نمط استعلام بطيء لـ Postgres مع أحدث عمليات التنفيذ"
+
+[استعلامات حاجبة API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list "سرد استعلامات Postgres الحاجبة"
 
 [logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "سرد سجلات خادم Postgres"

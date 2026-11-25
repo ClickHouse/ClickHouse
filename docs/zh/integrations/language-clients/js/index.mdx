@@ -37,9 +37,7 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
   ```
 </Info>
 
-<div id="environment-requirements-nodejs">
-  ## 环境要求 (Node.js)
-</div>
+## 环境要求 (Node.js) {#environment-requirements-nodejs}
 
 运行客户端的环境中必须提供 Node.js。
 该客户端兼容所有仍在维护中的 [Node.js 发行版](https://github.com/nodejs/release#readme)。
@@ -55,15 +53,11 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 | 20.x       | ✔     |
 | 18.x       | 尽力支持  |
 
-<div id="environment-requirements-web">
-  ## 环境要求 (Web)
-</div>
+## 环境要求 (Web) {#environment-requirements-web}
 
 该客户端的 Web 版本已在最新版 Chrome/Firefox 浏览器中经过官方测试，并且可作为依赖项用于例如 React/Vue/Angular 应用程序或 Cloudflare workers。
 
-<div id="installation">
-  ## 安装
-</div>
+## 安装 {#installation}
 
 要安装最新版的稳定版 Node.js 客户端，请运行：
 
@@ -77,9 +71,7 @@ Web 版安装：
 npm i @clickhouse/client-web
 ```
 
-<div id="compatibility-with-clickhouse">
-  ## 与 ClickHouse 的兼容性
-</div>
+## 与 ClickHouse 的兼容性 {#compatibility-with-clickhouse}
 
 | 客户端版本  | ClickHouse |
 | ------ | ---------- |
@@ -87,9 +79,7 @@ npm i @clickhouse/client-web
 
 该客户端很可能也能在更早的版本上运行；不过，这类支持仅为尽力而为，不作保证。如果你使用的 ClickHouse 版本早于 23.3，请参阅 [ClickHouse 安全策略](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) 并考虑升级。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 我们希望通过客户端代码仓库中的 [示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples)，涵盖客户端使用的各种场景。
 
@@ -97,15 +87,11 @@ npm i @clickhouse/client-web
 
 如果示例或下文档中的某些内容不清楚，或有所遗漏，欢迎随时[联系我们](/zh/integrations/language-clients/js/index#contact-us)。
 
-<div id="client-api">
-  ### 客户端 API
-</div>
+### 客户端 API {#client-api}
 
 除非明确另有说明，否则大多数示例同时适用于 Node.js 版和 Web 版客户端。
 
-<div id="creating-a-client-instance">
-  #### 创建客户端实例
-</div>
+#### 创建客户端实例 {#creating-a-client-instance}
 
 你可以使用 `createClient` 工厂按需创建任意数量的客户端实例：
 
@@ -129,32 +115,28 @@ const client = createClient({
 
 客户端实例可在实例化时进行[预配置](/zh/integrations/language-clients/js/index#configuration)。
 
-<div id="configuration">
-  #### 配置
-</div>
+#### 配置 {#configuration}
 
-创建客户端实例时，可以调整以下连接设置：
+创建Client实例时，可以调整以下连接设置：
 
-| Setting                                                                  | Description                                | Default Value           | See Also                                                                                            |
-| ------------------------------------------------------------------------ | ------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------- |
-| **url**?: string                                                         | ClickHouse 实例的 URL。                        | `http://localhost:8123` | [URL 配置文档](/zh/integrations/language-clients/js/index#url-configuration)                               |
-| **pathname**?: string                                                    | 可选路径名，客户端解析 ClickHouse URL 后会将其附加到 URL 之后。 | `''`                    | [带路径名的代理文档](/zh/integrations/language-clients/js/index#proxy-with-a-pathname)                          |
-| **request&#95;timeout**?: number                                         | 请求超时时间 (毫秒) 。                              | `30_000`                | -                                                                                                   |
-| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | 启用压缩。                                      | -                       | [压缩文档](/zh/integrations/language-clients/js/index#compression)                                         |
-| **username**?: string                                                    | 发出请求时所代表的用户名。                              | `default`               | -                                                                                                   |
-| **password**?: string                                                    | 用户密码。                                      | `''`                    | -                                                                                                   |
-| **application**?: string                                                 | 使用 Node.js 客户端的应用程序名称。                     | `clickhouse-js`         | -                                                                                                   |
-| **database**?: string                                                    | 要使用的数据库名称。                                 | `default`               | -                                                                                                   |
-| **clickhouse&#95;settings**?: ClickHouseSettings                         | 应用于所有请求的 ClickHouse settings。              | `{}`                    | -                                                                                                   |
-| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | 客户端内部日志配置。                                 | -                       | [日志文档](/zh/integrations/language-clients/js/index#logging-nodejs-only)                                 |
-| **session&#95;id**?: string                                              | 可选的 ClickHouse 会话 ID，会随每个请求一起发送。           | -                       | -                                                                                                   |
-| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | 在 Node.js 和 Web 版本中默认启用。                   | -                       | -                                                                                                   |
-| **http&#95;headers**?: `Record<string, string>`                          | 发往 ClickHouse 请求的附加 HTTP 请求头。              | -                       | [带身份验证的反向代理文档](/zh/integrations/language-clients/js/index#reverse-proxy-with-authentication)           |
-| **roles**?: string |  string[]                                           | 要随发出请求附带的 ClickHouse 角色名称。                 | -                       | [在 HTTP interface 中使用 roles](/zh/concepts/features/interfaces/http#setting-role-with-query-parameters) |
+| 设置                                                                  | 描述                                | Default Value           | See Also                                                                                                                 |
+| ------------------------------------------------------------------------ | ------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **url**?: string                                                         | ClickHouse 实例的 URL。                        | `http://localhost:8123` | [URL 配置文档](/zh/integrations/language-clients/js/index#url-configuration)                                                    |
+| **pathname**?: string                                                    | 可选路径名，Client解析 ClickHouse URL 后会将其附加到 URL 之后。 | `''`                    | [带路径名的代理文档](/zh/integrations/language-clients/js/index#proxy-with-a-pathname)                                               |
+| **request&#95;timeout**?: number                                         | 请求超时时间 (毫秒) 。                              | `30_000`                | -                                                                                                                        |
+| **compression**?: `{ **response**?: boolean; **request**?: boolean }`    | 启用压缩。                                      | -                       | [压缩文档](/zh/integrations/language-clients/js/index#compression)                                                              |
+| **username**?: string                                                    | 发出请求时所代表的用户名。                              | `default`               | -                                                                                                                        |
+| **password**?: string                                                    | 用户密码。                                      | `''`                    | -                                                                                                                        |
+| **application**?: string                                                 | 使用 Node.js Client的应用程序名称。                     | `clickhouse-js`         | -                                                                                                                        |
+| **database**?: string                                                    | 要使用的数据库名称。                                 | `default`               | -                                                                                                                        |
+| **clickhouse&#95;settings**?: ClickHouseSettings                         | 应用于所有请求的 ClickHouse settings。              | `{}`                    | -                                                                                                                        |
+| **log**?: `{ **LoggerClass**?: Logger, **level**?: ClickHouseLogLevel }` | Client内部日志配置。                                 | -                       | [日志文档](/zh/integrations/language-clients/js/index#logging-nodejs-only)                                                      |
+| **session&#95;id**?: string                                              | 可选的 ClickHouse 会话 ID，会随每个请求一起发送。           | -                       | -                                                                                                                        |
+| **keep&#95;alive**?: `{ **enabled**?: boolean }`                         | 在 Node.js 和 Web 版本中默认启用。                   | -                       | -                                                                                                                        |
+| **http&#95;headers**?: `Record<string, string>`                          | 发往 ClickHouse 请求的附加 HTTP 请求头。              | -                       | [带身份验证的反向代理文档](/zh/integrations/language-clients/js/index#reverse-proxy-with-authentication)                                |
+| **roles**?: string |  string[]                                           | 要随发出请求附带的 ClickHouse 角色名称。                 | -                       | [在 HTTP interface 中使用 roles](/zh/concepts/features/connect-to-clickhouse/protocols/http#setting-role-with-query-parameters) |
 
-<div id="nodejs-specific-configuration-parameters">
-  #### Node.js 专用配置参数
-</div>
+#### Node.js 专用配置参数 {#nodejs-specific-configuration-parameters}
 
 | 设置                                                                                                           | 说明                                 | 默认值    | 另见                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------- |
@@ -164,9 +146,7 @@ const client = createClient({
 | **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Experimental</Badge>   | 为客户端自定义 HTTP agent。                | -      | [HTTP agent 文档](/zh/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only)        |
 | **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Experimental</Badge> | 将基本身份验证凭据设置到 `Authorization` 请求头中。 | `true` | [HTTP agent 文档中的此设置用法](/zh/integrations/language-clients/js/index#custom-httphttps-agent-experimental-nodejs-only) |
 
-<div id="url-configuration">
-  ### URL 配置
-</div>
+### URL 配置 {#url-configuration}
 
 <Warning>
   URL 配置会*始终*覆盖硬编码的值，并且在这种情况下会记录一条警告日志。
@@ -213,19 +193,13 @@ createClient({
 })
 ```
 
-<div id="connecting">
-  ### 建立连接
-</div>
+### 建立连接 {#connecting}
 
-<div id="gather-your-connection-details">
-  #### 获取连接信息
-</div>
+#### 获取连接信息 {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="connection-overview">
-  #### 连接概览
-</div>
+#### 连接概览 {#connection-overview}
 
 该客户端通过 HTTP 或 HTTPS 协议进行连接。RowBinary 支持正在推进中，参见[相关 issue](https://github.com/ClickHouse/clickhouse-js/issues/216)。
 
@@ -246,9 +220,7 @@ const client = createClient({
 
 客户端代码仓库包含多个使用环境变量的示例，例如[在 ClickHouse Cloud 中创建表](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts)、[使用异步插入](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/async_insert.ts)等，还有不少其他示例。
 
-<div id="connection-pool-nodejs-only">
-  #### 连接池 (仅限 Node.js)
-</div>
+#### 连接池 (仅限 Node.js) {#connection-pool-nodejs-only}
 
 为避免每次请求都建立连接带来的额外开销，客户端会创建一个到 ClickHouse 的连接池，利用 Keep-Alive 机制进行复用。默认情况下，Keep-Alive 处于启用状态，连接池大小设为 `10`，但你可以通过 `max_open_connections` [配置选项](/zh/integrations/language-clients/js/index#configuration) 进行更改。
 
@@ -256,9 +228,7 @@ const client = createClient({
 
 另请参阅：[Keep-Alive 配置](/zh/integrations/language-clients/js/index#keep-alive-configuration-nodejs-only)。
 
-<div id="query-id">
-  ### 查询 ID
-</div>
+### 查询 ID {#query-id}
 
 每个发送查询或语句的方法 (`command`、`exec`、`insert`、`select`) 都会在结果中返回 `query_id`。这个唯一标识符由客户端为每个查询分配；如果在[服务器配置](/zh/reference/settings/server-settings/settings)中启用了 `system.query_log`，它可用于从中获取数据，
 也可用于取消长时间运行的查询 (参见[该示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/troubleshooting/cancel_query.ts)) 。如有需要，用户也可以在 `command`/`query`/`exec`/`insert` 方法的 params 中覆盖 `query_id`。
@@ -267,9 +237,7 @@ const client = createClient({
   如果你要覆盖 `query_id` 参数，则需要确保它在每次调用时都是唯一的。随机 UUID 是一个不错的选择。
 </Tip>
 
-<div id="base-parameters-for-all-client-methods">
-  ### Base parameters for all client methods
-</div>
+### Base parameters for all client methods {#base-parameters-for-all-client-methods}
 
 有几个参数适用于所有 client 方法 ([query](/zh/integrations/language-clients/js/index#query-method)/[command](/zh/integrations/language-clients/js/index#command-method)/[insert](/zh/integrations/language-clients/js/index#insert-method)/[exec](/zh/integrations/language-clients/js/index#exec-method)) 。
 
@@ -292,9 +260,7 @@ interface BaseQueryParams {
 }
 ```
 
-<div id="query-method">
-  ### 查询方法
-</div>
+### 查询方法 {#query-method}
 
 该方法适用于大多数会返回响应的语句，例如 `SELECT`，也可用于发送 DDL 语句 (如 `CREATE TABLE`) ，并且应使用 await 等待其完成。返回的结果集应在应用程序中进行处理。
 
@@ -321,9 +287,7 @@ interface ClickHouseClient {
   请勿在 `query` 中指定 FORMAT 子句，请改用 `format` 参数。
 </Tip>
 
-<div id="result-set-and-row-abstractions">
-  #### 结果集和行抽象
-</div>
+#### 结果集和行抽象 {#result-set-and-row-abstractions}
 
 `ResultSet` 提供了多种便捷方法，便于在应用程序中处理数据。
 
@@ -465,9 +429,7 @@ while (true) {
 }
 ```
 
-<div id="insert-method">
-  ### Insert 方法
-</div>
+### Insert 方法 {#insert-method}
 
 这是执行数据插入的主要方法。
 
@@ -488,9 +450,7 @@ interface ClickHouseClient {
 
 如果 insert 语句已发送到服务器，则 `executed` 将为 `true`。
 
-<div id="insert-method-and-streaming-in-nodejs">
-  #### Node.js 中的 Insert 方法 与流式传输
-</div>
+#### Node.js 中的 Insert 方法 与流式传输 {#insert-method-and-streaming-in-nodejs}
 
 根据为 `insert` 方法指定的[数据格式](/zh/integrations/language-clients/js/index#supported-data-formats)，它既可以接受 `Stream.Readable`，也可以接受普通的 `Array<T>`。另请参阅关于[文件流式传输](/zh/integrations/language-clients/js/index#streaming-files-nodejs-only)的这一节。
 
@@ -602,9 +562,7 @@ await client.insert({
 })
 ```
 
-<div id="web-version-limitations">
-  #### Web 版本限制
-</div>
+#### Web 版本限制 {#web-version-limitations}
 
 目前，`@clickhouse/client-web` 中的插入操作仅支持 `Array<T>` 和 `JSON*` 格式。
 由于浏览器兼容性欠佳，Web 版本目前尚不支持流式插入。
@@ -631,9 +589,7 @@ interface InsertParams<T> extends BaseQueryParams {
 
 此内容今后可能会有所变动。另请参见：[Base parameters for all client methods](/zh/integrations/language-clients/js/index#base-parameters-for-all-client-methods)。
 
-<div id="command-method">
-  ### 命令方法
-</div>
+### command 方法 {#command-method}
 
 它可用于无任何输出的语句、`FORMAT` 子句不适用的情况，或者你根本不关心响应内容的情况。这类语句的一个示例是 `CREATE TABLE` 或 `ALTER TABLE`。
 
@@ -656,7 +612,7 @@ interface ClickHouseClient {
 }
 ```
 
-另见：[Base parameters for all client methods](/zh/integrations/language-clients/js/index#base-parameters-for-all-client-methods)。
+另请参阅：[Base parameters for all client methods](/zh/integrations/language-clients/js/index#base-parameters-for-all-client-methods)。
 
 **示例：** (Node.js/Web) 在 ClickHouse Cloud 中创建表。
 [源代码](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/schema-and-deployments/create_table_cloud.ts)。
@@ -670,7 +626,7 @@ await client.command({
   `,
   // Recommended for cluster usage to avoid situations where a query processing error occurred after the response code,
   // and HTTP headers were already sent to the client.
-  // See https://clickhouse.com/docs/interfaces/http/#response-buffering
+  // See https://clickhouse.com/docs/concepts/features/connect-to-clickhouse/protocols/http#response-buffering
   clickhouse_settings: {
     wait_end_of_query: 1,
   },
@@ -703,9 +659,7 @@ await client.command({
   使用 `abort_signal` 取消请求，并不意味着服务器一定没有执行该语句。
 </Warning>
 
-<div id="exec-method">
-  ### Exec 方法
-</div>
+### Exec 方法 {#exec-method}
 
 如果你有不适合使用 `query`/`insert` 的自定义查询，
 并且需要获取返回结果，可以使用 `exec` 来替代 `command`。
@@ -745,9 +699,7 @@ export interface QueryResult {
 }
 ```
 
-<div id="ping">
-  ### Ping
-</div>
+### Ping {#ping}
 
 用于检查连接状态的 `ping` 方法会在服务器可达时返回 `true`。
 
@@ -804,9 +756,7 @@ const result = await client.ping({ select: true, /* query_id, abort_signal, http
 
 `ping` 方法允许使用大多数标准 `query` 方法参数——请参见 `PingParamsWithSelectQuery` 类型定义。
 
-<div id="close-nodejs-only">
-  ### Close (仅限 Node.js)
-</div>
+### Close (仅限 Node.js) {#close-nodejs-only}
 
 关闭所有已打开的连接并释放资源。在 Web 版本中为空操作。
 
@@ -814,9 +764,7 @@ const result = await client.ping({ select: true, /* query_id, abort_signal, http
 await client.close()
 ```
 
-<div id="streaming-files-nodejs-only">
-  ## 文件流式传输 (仅限 Node.js)
-</div>
+## 文件流式传输 (仅限 Node.js) {#streaming-files-nodejs-only}
 
 客户端代码仓库中提供了多个使用常见数据格式 (NDJSON、CSV、Parquet) 的文件流式传输示例。
 
@@ -828,9 +776,7 @@ await client.close()
 将其他格式流式传输到文件的方法应与 Parquet 类似，
 唯一的区别在于 `query` 调用中使用的格式 (`JSONEachRow`、`CSV` 等) 以及输出文件名。
 
-<div id="supported-data-formats">
-  ## 支持的数据格式
-</div>
+## 支持的数据格式 {#supported-data-formats}
 
 客户端可按 JSON 或文本格式处理数据。
 
@@ -882,9 +828,7 @@ await client.close()
 ClickHouse 完整的输入和输出格式列表可在
 [此处](/zh/reference/formats/index)查看。
 
-<div id="supported-clickhouse-data-types">
-  ## 支持的 ClickHouse 数据类型
-</div>
+## 支持的 ClickHouse 数据类型 {#supported-clickhouse-data-types}
 
 <Note>
   对应的 JS 类型适用于所有 `JSON*` 格式，但将所有内容都表示为字符串的格式除外 (例如 `JSONStringEachRow`) 。
@@ -931,9 +875,7 @@ ClickHouse 完整的输入和输出格式列表可在
 * [Dynamic/Variant/JSON 使用示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/dynamic_variant_json.ts)
 * [Time/Time64 使用示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/time_time64.ts)
 
-<div id="datedate32-types-caveats">
-  ### Date/Date32 类型注意事项
-</div>
+### Date/Date32 类型注意事项 {#datedate32-types-caveats}
 
 由于客户端在插入值时不会进行额外的类型转换，因此 `Date`/`Date32` 类型的列只能以
 字符串形式插入。
@@ -951,9 +893,7 @@ await client.insert({
 
 不过，如果你使用的是 `DateTime` 或 `DateTime64` 列，也可以同时使用字符串和 JS Date 对象。将 `date_time_input_format` 设为 `best_effort` 时，JS Date 对象可直接按原样传递给 `insert`。更多详情请参见此[示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_js_dates.ts)。
 
-<div id="decimal-types-caveats">
-  ### Decimal* 类型注意事项
-</div>
+### Decimal* 类型注意事项 {#decimal-types-caveats}
 
 可以使用 `JSON*` 家族格式插入 Decimal 类型。假设我们定义了如下表：
 
@@ -1003,9 +943,7 @@ await client.query({
 
 更多详情请参见[此示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts)。
 
-<div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
-  ### 整数类型：Int64、Int128、Int256、UInt64、UInt128、UInt256
-</div>
+### 整数类型：Int64、Int128、Int256、UInt64、UInt128、UInt256 {#integral-types-int64-int128-int256-uint64-uint128-uint256}
 
 虽然 server 可以将其作为数值接收，但在 `JSON*` 家族的输出格式中，为避免整数溢出，它会以字符串形式返回，
 因为这些类型的最大值大于 `Number.MAX_SAFE_INTEGER`。
@@ -1035,9 +973,7 @@ const resultSet = await client.query({
 expect(await resultSet.json()).toEqual([ { number: 0 } ])
 ```
 
-<div id="clickhouse-settings">
-  ## ClickHouse 设置
-</div>
+## ClickHouse 设置 {#clickhouse-settings}
 
 客户端可以通过 [设置](/zh/reference/settings/session-settings)
 机制来调整 ClickHouse 的行为。
@@ -1065,15 +1001,11 @@ client.query({
   请确保代表其执行查询的用户拥有足够的权限来更改这些设置。
 </Warning>
 
-<div id="advanced-topics">
-  ## 进阶主题
-</div>
+## 进阶主题 {#advanced-topics}
 
-<div id="queries-with-parameters">
-  ### 带参数的查询
-</div>
+### 带参数的查询 {#queries-with-parameters}
 
-您可以创建带参数的查询，并从客户端应用程序传入参数值。这样可以避免在客户端侧
+您可以创建带参数的查询，并从Client应用程序传入参数值。这样可以避免在Client侧
 使用特定的动态值拼接查询。
 
 像往常一样编写查询，然后将希望从应用程序参数传递给查询的值放在花括号中，格式
@@ -1103,11 +1035,9 @@ await client.query({
 })
 ```
 
-更多详情，请参阅 https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax。
+更多详情，请参阅 https://clickhouse.com/docs/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#cli-queries-with-parameters-syntax。
 
-<div id="compression">
-  ### 压缩
-</div>
+### 压缩 {#compression}
 
 注意：Web 版本目前不支持请求压缩。响应压缩可正常工作。Node.js 版本两者都支持。
 
@@ -1127,9 +1057,7 @@ createClient({
 * `response: true` 表示 ClickHouse 服务器会返回压缩后的响应体。默认值：`response: false`
 * `request: true` 启用客户端请求体压缩。默认值：`request: false`
 
-<div id="logging-nodejs-only">
-  ### 日志 (仅限 Node.js)
-</div>
+### 日志 (仅限 Node.js) {#logging-nodejs-only}
 
 <Warning>
   日志功能属于 Experimental 功能，未来可能会发生变化。
@@ -1186,9 +1114,7 @@ const client = createClient({
 
 你可以在[这里](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-common/src/logger.ts)找到默认的日志记录器实现。
 
-<div id="tls-certificates-nodejs-only">
-  ### TLS 证书 (仅限 Node.js)
-</div>
+### TLS 证书 (仅限 Node.js) {#tls-certificates-nodejs-only}
 
 Node.js 客户端可选择支持基本 TLS (仅 CA)
 和双向 TLS (CA 和客户端证书) 。
@@ -1223,9 +1149,7 @@ const client = createClient({
 
 请在仓库中查看 [基本](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/basic_tls.ts) 和 [双向](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/mutual_tls.ts) TLS 的完整示例。
 
-<div id="keep-alive-configuration-nodejs-only">
-  ### Keep-alive 配置 (仅限 Node.js)
-</div>
+### Keep-alive 配置 (仅限 Node.js) {#keep-alive-configuration-nodejs-only}
 
 默认情况下，客户端会在底层 HTTP agent 中启用 Keep-Alive，这意味着已建立连接的套接字会复用于后续请求，并发送 `Connection: keep-alive` 请求头。默认情况下，空闲套接字会在连接池中保留 2500 毫秒 (请参阅[关于如何调整此选项的说明](/zh/integrations/language-clients/js/index#adjusting-idle_socket_ttl)) 。
 
@@ -1233,9 +1157,7 @@ const client = createClient({
 
 如果你要修改 `keep_alive.idle_socket_ttl`，请记住，它应始终与服务器/LB 的 Keep-Alive 配置相匹配，并且必须**始终更低**，以确保服务器不会先关闭仍处于打开状态的连接。
 
-<div id="adjusting-idle_socket_ttl">
-  #### 调整 `idle_socket_ttl`
-</div>
+#### 调整 `idle_socket_ttl` {#adjusting-idle_socket_ttl}
 
 客户端将 `keep_alive.idle_socket_ttl` 设置为 2500 毫秒，因为这通常可以视为最稳妥的默认值；服务端的 `keep_alive_timeout` 在[23.11 之前的 ClickHouse 版本中甚至可能低至 3 秒](https://github.com/ClickHouse/ClickHouse/commit/1685cdcb89fe110b45497c7ff27ce73cc03e82d1)，且无需修改 `config.xml`。
 
@@ -1258,9 +1180,7 @@ Keep-Alive: timeout=10
 
 在这种情况下，`keep_alive_timeout` 为 10 秒，你可以尝试将 `keep_alive.idle_socket_ttl` 提高到 9000 甚至 9500 毫秒，让空闲套接字保持打开状态的时间比默认情况下稍长一些。请留意可能出现的 &quot;Socket hang-up&quot; 错误，这表明服务端会先于客户端关闭连接；请逐步调低该值，直到错误消失。
 
-<div id="troubleshooting">
-  #### 故障排查
-</div>
+#### 故障排查 {#troubleshooting}
 
 如果你在使用最新版 client 时仍然遇到 `socket hang up` 错误，可以通过以下几种方式解决：
 
@@ -1331,9 +1251,7 @@ Keep-Alive: timeout=10
 
 * 尝试在启用 [no-floating-promises](https://typescript-eslint.io/rules/no-floating-promises/) ESLint 规则的情况下检查应用程序代码，这有助于识别未处理的 Promise，因为它们可能导致悬空的流和套接字。
 
-<div id="read-only-users">
-  ### 只读用户
-</div>
+### 只读用户 {#read-only-users}
 
 使用带有 [readonly=1 用户](/zh/concepts/features/configuration/settings/permissions-for-queries#readonly) 的客户端时，无法启用响应压缩，因为这需要 `enable_http_compression` 设置。以下配置会导致错误：
 
@@ -1347,9 +1265,7 @@ const client = createClient({
 
 请参阅[示例](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/security/read_only_user.ts)，其中更详细地展示了 readonly=1 用户的限制。
 
-<div id="proxy-with-a-pathname">
-  ### 带路径名的代理
-</div>
+### 带路径名的代理 {#proxy-with-a-pathname}
 
 如果您的 ClickHouse 实例位于代理后面，且其 URL 中包含路径名，例如 `http://proxy:8123/clickhouse&#95;server`，请将 `clickhouse_server` 指定为 `pathname` 配置选项 (可以带前导斜杠，也可以不带) ；否则，如果直接在 `url` 中提供，它会被视为 `database` 选项。支持多段路径，例如 `/my_proxy/db`。
 
@@ -1360,9 +1276,7 @@ const client = createClient({
 })
 ```
 
-<div id="reverse-proxy-with-authentication">
-  ### 使用身份验证的反向代理
-</div>
+### 使用身份验证的反向代理 {#reverse-proxy-with-authentication}
 
 如果您在 ClickHouse 部署前配置了启用身份验证的反向代理，可以使用 `http_headers` 设置在其中提供所需的请求头：
 
@@ -1374,9 +1288,7 @@ const client = createClient({
 })
 ```
 
-<div id="custom-httphttps-agent-experimental-nodejs-only">
-  ### 自定义 HTTP/HTTPS agent (Experimental，仅限 Node.js)
-</div>
+### 自定义 HTTP/HTTPS agent (Experimental，仅限 Node.js) {#custom-httphttps-agent-experimental-nodejs-only}
 
 <Warning>
   这是一个 Experimental 功能，未来的发行版中可能会发生向后不兼容的变更。客户端提供的默认实现和设置对于大多数用例来说应该已经足够。只有在你确定确实需要时，才应使用此功能。
@@ -1390,9 +1302,7 @@ const client = createClient({
 * `keep_alive.enabled` 只会控制 `Connection` 请求头的默认值 (`true` -&gt; `Connection: keep-alive`，`false` -&gt; `Connection: close`) 。
 * 虽然空闲 keep-alive 套接字管理仍然会继续生效 (因为它不依赖于 agent，而是依赖于具体的套接字本身) ，但现在可以通过将 `keep_alive.idle_socket_ttl` 的值设置为 `0` 来完全禁用它。
 
-<div id="custom-agent-usage-examples">
-  #### 自定义代理的用法示例
-</div>
+#### 自定义代理的用法示例 {#custom-agent-usage-examples}
 
 在不使用证书的情况下使用自定义 HTTP 或 HTTPS Agent：
 
@@ -1459,32 +1369,24 @@ const client = createClient({
 
 使用证书 *并* 配合自定义 *HTTPS* Agent 时，很可能需要通过 `set_basic_auth_header` 设置禁用默认的授权请求头 (于 1.2.0 引入) ，因为它会与 TLS 请求头发生冲突。所有 TLS 请求头都应手动提供。
 
-<div id="known-limitations-nodejsweb">
-  ## 已知限制 (Node.js/web)
-</div>
+## 已知限制 (Node.js/web) {#known-limitations-nodejsweb}
 
 * 结果集暂无数据映射器，因此仅使用语言的基本类型。计划在支持 [RowBinary format](https://github.com/ClickHouse/clickhouse-js/issues/216) 后引入部分数据类型映射器。
 * 某些 [Decimal* 和 Date* / DateTime* 数据类型有一些注意事项](/zh/integrations/language-clients/js/index#datedate32-types-caveats)。
 * 使用 JSON* 家族格式时，大于 Int32 的数字会以字符串表示，因为 Int64+ 类型的最大值超过了 `Number.MAX_SAFE_INTEGER`。更多详情请参见 [整数类型](/zh/integrations/language-clients/js/index#integral-types-int64-int128-int256-uint64-uint128-uint256) 部分。
 
-<div id="known-limitations-web">
-  ## 已知限制 (Web)
-</div>
+## 已知限制 (Web) {#known-limitations-web}
 
 * `select` 查询支持流式处理，但对插入操作不支持 (在类型层面也是如此) 。
 * 请求压缩已禁用，相关配置会被忽略。响应压缩可正常工作。
 * 暂不支持日志。
 
-<div id="tips-for-performance-optimizations">
-  ## 性能优化提示
-</div>
+## 性能优化提示 {#tips-for-performance-optimizations}
 
 * 为减少应用程序的内存占用，在适用的情况下，可考虑对大型插入 (例如从文件进行插入) 以及 select 查询使用流。对于事件监听器和类似用例，[异步插入](/zh/concepts/features/operations/insert/asyncinserts) 也是一个不错的选择，它可以尽量减少，甚至完全避免在客户端进行批处理。异步插入示例可在[客户端代码仓库](https://github.com/ClickHouse/clickhouse-js/tree/main/examples/node)中找到，文件名前缀为 `async_insert_`。
 * 该 client 默认不启用请求或响应压缩。不过，在查询或插入大型数据集时，你可以考虑通过 `ClickHouseClientConfigOptions.compression` 启用压缩 (仅针对 `request` 或 `response`，或同时启用两者) 。
 * 压缩会带来明显的性能开销。对 `request` 或 `response` 启用压缩，分别会降低插入或查询的速度，但会减少应用程序传输的网络流量。
 
-<div id="contact-us">
-  ## 联系我们
-</div>
+## 联系我们 {#contact-us}
 
 如果你有任何问题或需要帮助，欢迎通过 [Community Slack](https://clickhouse.com/slack) (`#clickhouse-js` 频道) 或在 [GitHub issues](https://github.com/ClickHouse/clickhouse-js/issues) 中联系我们。

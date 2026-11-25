@@ -63,7 +63,7 @@ ClickHouse Cloud 中的 SQL 控制台包含强大的[仪表盘](/zh/products/clo
 
 [ClickHouse 命令行客户端](/zh/concepts/features/interfaces/cli) (`clickhousectl`，别名 `chctl`) 是一款命令行工具，用于本地 ClickHouse 和 Postgres 开发，以及 ClickHouse Cloud 管理。它可以安装各个版本的 ClickHouse、启动和管理本地服务器，并执行查询。
 
-在本地开发中，`clickhousectl` 可以安装任意版本的 ClickHouse，并运行具名服务器。可使用 `clickhousectl local client` 进行连接，该命令会运行对应版本的 `clickhouse-client`。每个服务器都将数据保存在项目的 `.clickhouse/` 目录中，因此您可以同时运行多个相互隔离的环境。在 Docker 运行时，`clickhousectl local postgres` 会以相同方式启动本地 Postgres 服务器。
+在本地开发中，`clickhousectl` 可以安装任意版本的 ClickHouse，并在通过 `clickhousectl local init` 标记的项目目录中运行具名服务器。可使用 `clickhousectl local client` 进行连接，该命令会运行对应版本的 `clickhouse-client`。每个服务器都将数据保存在项目的 `.clickhouse/` 目录中，因此您可以同时运行多个相互隔离的环境。在 Docker 运行时，`clickhousectl local postgres` 会以相同方式启动本地 Postgres 服务器。
 
 `clickhousectl` 还可以管理 ClickHouse Cloud 云资源，包括服务、扩缩容、备份、Managed Postgres、ClickPipes、托管 ClickStack、API 密钥和组织。通过浏览器登录 (`clickhousectl cloud auth login`) 仅具有只读权限；如需创建或更改资源，则需要使用 API key。
 
@@ -73,7 +73,8 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 # Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
-clickhousectl local server start
+clickhousectl local init
+clickhousectl local clickhouse start
 clickhousectl local client
 ```
 

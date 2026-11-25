@@ -41,6 +41,18 @@ Icebergテーブルのメタデータを `system.iceberg_metadata_log` にどの
 * manifest&#95;file&#95;metadata - 上記すべてに加え、走査対象の avro マニフェストファイルのメタデータ。
 * manifest&#95;file&#95;entry - 上記すべてに加え、走査対象の avro マニフェストファイルのエントリ。
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "新しい設定。これまでコミットのたびに増え続けていた `metadata-log` について、Iceberg テーブルへの書き込み時に上限が適用されるようになりました。"}]}]} />
+
+書き込み時に保持する Iceberg テーブルの `metadata-log` のエントリ数の最大値です。この数には、その書き込みで作成されるメタデータファイルのエントリも含まれます。書き込みによってエントリ数が上限を超えると、古いエントリから順に削除されます。なお、メタデータファイル自体は削除されません。
+
+Iceberg テーブルプロパティ `write.metadata.previous-versions-max` は、この設定よりも優先されます。Java 実装と同様に、このプロパティは以前のメタデータファイルの数を表し、最小値は 1 です。そのため、`metadata-log` にはこの値より 1 つ多いエントリが保持されます。
+
+REST カタログのように、カタログ自体がメタデータファイルを書き込む場合、そのカタログ内のテーブルにはこの設定は適用されません。この場合、カタログは独自の設定とテーブルプロパティに従って `metadata-log` を管理します。
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

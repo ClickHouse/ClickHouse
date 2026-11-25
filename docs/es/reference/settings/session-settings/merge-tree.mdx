@@ -188,6 +188,16 @@ Valores posibles:
 
 Habilita el prefetch de subflujos de datos compartidos JSON en partes Wide que se leen mediante un reposicionamiento hasta una marca, incluido el subflujo de datos de las rutas tipadas `SHARED`. Este prefetch lee desde el inicio del gránulo, que normalmente no es la posición desde la que se lee el subflujo, por lo que puede resultar innecesaria. Desactívela para omitir estos prefetches.
 
+## merge_tree_read_end_tasks_per_stream {#merge_tree_read_end_tasks_per_stream}
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "32"},{"label": "Nueva configuración: las tareas al final de una lectura de `MergeTree` son más pequeñas para que todos los thread terminen aproximadamente al mismo tiempo."}]}]} />
+
+Hace que las tareas al final de una lectura de `MergeTree` tengan un tamaño equivalente a 1/N de los datos asignados a un thread (nunca inferior a
+`merge_tree_min_read_task_size`), para que todos los thread terminen aproximadamente al mismo tiempo. Los valores más altos equilibran mejor la carga entre los
+thread, pero añaden sobrecarga por tarea. El valor 0 deshabilita este comportamiento.
+
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />

@@ -63,9 +63,9 @@ GROUP BY event_date, event_type
 
 ### 多个 materialized view {#multiple-materialized-views}
 
-ClickHouse 允许多个 materialized view 将记录写入同一个目标表。要在 dbt-clickhouse 中通过隐式目标方式支持这一点，可以在模型文件中构造一个 `UNION`，并使用 `--my_mv_name:begin` 和 `--my_mv_name:end` 形式的注释来包裹每个 materialized view 的 SQL。
+ClickHouse 允许多个 materialized view 将记录写入同一个 target table。要在 dbt-clickhouse 中通过隐式目标方式支持这一点，可以在模型文件中构造一个 `UNION`，并使用 `--my_mv_name:begin` 和 `--my_mv_name:end` 形式的注释来包裹每个 materialized view 的 SQL。
 
-例如，下面的配置会构建两个 materialized view，它们都会将数据写入该模型的同一个目标表。materialized view 的名称将采用 `<model_name>_mv1` 和 `<model_name>_mv2` 的形式：
+例如，下面的配置会构建两个 materialized view，它们都会将数据写入该模型的同一个 target table。materialized view 的名称将采用 `<model_name>_mv1` 和 `<model_name>_mv2` 的形式：
 
 ```sql
 --mv1:begin
@@ -76,6 +76,8 @@ union all
 select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
+
+当所有视图都没有各自的 `WITH` 子句时，这些视图可以从 [ephemeral 模型](https://docs.getdbt.com/docs/build/materializations#ephemeral)中查询数据。dbt 会在第一个视图之前添加一次 ephemeral 模型的 CTE，而 dbt-clickhouse 会将这些 CTE 添加到每个视图中。当某个视图有自己的 `WITH` 子句时，dbt 会改为将 CTE 添加到该子句中，因此其他从 ephemeral 模型查询数据却缺少这些 CTE 的视图会执行失败并报错。这种情况下，请将每个视图分别编写为使用显式 target table 的独立模型 (参见 [从隐式目标迁移到显式目标](#migration-implicit-to-explicit)) 。
 
 <Warning>
   更新包含多个 materialized view (MV) 的模型时，尤其是重命名其中一个 MV 时，

@@ -1,0 +1,38 @@
+---
+description: 'Documentation des colonnes épinglées (fixes au défilement) dans l’interface Web SQL intégrée (`/play`)'
+sidebarTitle: 'Colonnes épinglées de l’interface utilisateur web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns
+title: 'Colonnes épinglées de l’interface utilisateur web'
+doc_type: 'reference'
+sidebar: false
+---
+
+L’interface Web SQL intégrée (`play.html`, servie sur le path [`/play`](/fr/concepts/features/connect-to-clickhouse/protocols/http) de n’importe quel port HTTP de ClickHouse) permet de garder visibles les colonnes de votre choix d’un ensemble de résultats pendant que le reste de la table défile horizontalement. Une colonne épinglée reste fixée au bord le plus proche de la zone de résultats au lieu de sortir de l’écran lors du défilement : une colonne clé (un identifiant, un nom, une date) reste ainsi visible à côté des colonnes situées à l’extrême droite que vous consultez.
+
+## Épingler une colonne {#pinning-a-column}
+
+Une icône de punaise 📌 apparaît à gauche de chaque en-tête de colonne. Cliquez dessus pour épingler la colonne ; cliquez de nouveau pour la désépingler. L&#39;icône est un véritable bouton : les utilisateurs du clavier peuvent donc l&#39;atteindre avec la touche Tab et l&#39;activer ou la désactiver au clavier. Elle expose en outre son état épinglé aux technologies d&#39;assistance.
+
+Sur les appareils dotés d&#39;un pointeur permettant le survol (une souris), l&#39;icône ne s&#39;affiche que lorsque l&#39;en-tête est survolé ou que l&#39;interrupteur a le focus, afin de ne pas encombrer l&#39;affichage le reste du temps. Sur les appareils tactiles et les autres appareils à pointeur imprécis, qui ne permettent pas le survol, l&#39;icône est toujours affichée pour pouvoir être touchée directement. Dans une colonne épinglée, l&#39;icône reste affichée en pleine intensité pour signaler que la colonne est épinglée.
+
+## Quand l’épinglage est disponible {#when-pinning-is-available}
+
+L’épinglage n’est proposé que lorsque la table est suffisamment large pour défiler horizontalement. Lorsque la table tient entièrement dans la zone d’affichage, aucune colonne ne peut sortir du champ en défilant : l’interrupteur d’épinglage est donc désactivé et exclu de l’ordre de tabulation au clavier. Dès que l’ensemble de résultats peut défiler horizontalement (ensemble de résultats large, fenêtre étroite ou résultat diffusé en continu qui s’élargit), les interrupteurs deviennent actifs.
+
+## Comportement d’une colonne épinglée lors du défilement {#how-a-pinned-column-behaves-when-scrolling}
+
+Lors du défilement horizontal, une colonne épinglée se déplace avec le contenu jusqu’au moment où elle sortirait de la zone d’affichage ; elle se fixe alors au bord le plus proche (le bord gauche pour les colonnes situées à gauche, le bord droit pour celles situées à droite) et reste visible. Lorsque plusieurs colonnes sont épinglées, elles s’empilent contre ce bord dans leur ordre d’origine, chacune étant séparée du contenu qui défile par une bordure. Une cellule épinglée s’affiche par-dessus les cellules ordinaires qui défilent en dessous, y compris une cellule sélectionnée, afin de rester toujours lisible.
+
+## Partagé au sein d&#39;un ensemble de résultats {#shared-across-a-result}
+
+Les épinglages sont suivis par nom de colonne et partagés entre les tables de résultats qui appartiennent à un même ensemble de résultats (une exécution `Run all` multi-requête génère une table par statement, et toutes partagent le même ensemble de colonnes épinglées), à l&#39;instar des [modes de codage couleur](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) per-column. Épingler une colonne nommée `id` dans l&#39;une de ces tables maintient épinglée la colonne nommée `id` dans les autres, ainsi que lors des exécutions ultérieures de la même requête qui renvoient cette même colonne.
+
+L&#39;ensemble de colonnes épinglées est propre à l&#39;ensemble de résultats qu&#39;il concerne : il est rattaché à l&#39;onglet de requête et, lorsque cet onglet est un [notebook](/fr/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), à chaque cellule. Épingler une colonne dans une cellule n&#39;a donc aucun effet sur les autres cellules ni sur les autres onglets, qui conservent leurs propres épinglages indépendants.
+
+## Persistance {#persistence}
+
+L&#39;ensemble de colonnes épinglées est mémorisé dans l&#39;URL de la page, dans l&#39;historique du navigateur et dans le snapshot de résultats de la cellule à laquelle il appartient : il est donc conservé lorsque vous rechargez la page, partagez le lien ou naviguez en arrière et en avant. Épingler ou désépingler une colonne dans une cellule qui ne contient pas l&#39;éditeur met également à jour la copie enregistrée de cette cellule, de sorte que l&#39;état est conservé après un rechargement. Seules les colonnes épinglées sont stockées (un ensemble vide n&#39;ajoute rien à l&#39;URL ni à l&#39;état de l&#39;historique), afin que ces données restent compactes.
+
+## Limitations {#limitations}
+
+* L&#39;affichage vertical (transposé) d&#39;une ligne unique ne comporte pas de colonnes à défilement horizontal ; l&#39;épinglage n&#39;y est donc pas disponible.

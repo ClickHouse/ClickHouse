@@ -1,0 +1,6 @@
+{
+  "group": "Драйвер ODBC",
+  "pages": [
+    "ru/concepts/features/connect-to-clickhouse/drivers/odbc/index"
+  ]
+}

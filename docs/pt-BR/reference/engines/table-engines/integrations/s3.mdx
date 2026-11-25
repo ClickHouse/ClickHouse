@@ -368,11 +368,12 @@ As configurações a seguir podem ser especificadas no arquivo de configuração
 * `access_key_id` e `secret_access_key` — Especifica as credenciais a serem usadas com o endpoint informado. Opcional.
 * `use_environment_credentials` — Se definido como `true`, o cliente S3 tentará obter credenciais de variáveis de ambiente e dos [metadados da instância EC2 da Amazon](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) para o endpoint informado. Opcional; o valor padrão é `false`.
 * `region` — Especifica o nome da região do S3. Opcional.
-* `use_insecure_imds_request` — Se definido como `true`, o cliente S3 usará uma solicitação IMDS insegura ao obter credenciais dos metadados da Amazon EC2. Opcional; o valor padrão é `false`.
+* `use_insecure_imds_request` — Se definido como `true`, o cliente S3 usará uma requisição IMDS insegura ao obter credenciais dos metadados da Amazon EC2. Opcional; o valor padrão é `false`.
 * `expiration_window_seconds` — Período de tolerância para verificar se credenciais com expiração já expiraram. Opcional; o valor padrão é `120`.
-* `no_sign_request` - Ignora todas as credenciais para que as solicitações não sejam assinadas. Útil para acessar buckets públicos.
-* `header` — Adiciona o cabeçalho HTTP especificado a uma solicitação para o endpoint informado. Opcional, pode ser especificado várias vezes.
-* `access_header` - Adiciona o cabeçalho HTTP especificado a uma solicitação para o endpoint informado, nos casos em que não houver outras credenciais de outra origem.
+* `no_sign_request` - Ignora todas as credenciais para que as requisições não sejam assinadas. Útil para acessar buckets públicos.
+* `request_payer` - Defina como `requester` para acessar um bucket com pagamento pelo solicitante: cada requisição ao endpoint informado inclui o cabeçalho `x-amz-request-payer: requester`. Opcional. Tem precedência sobre a configuração [`s3_request_payer`](/pt-BR/reference/settings/session-settings/s3#s3_request_payer).
+* `header` — Adiciona o cabeçalho HTTP especificado a uma requisição para o endpoint informado. Opcional, pode ser especificado várias vezes.
+* `access_header` - Adiciona o cabeçalho HTTP especificado a uma requisição para o endpoint informado, nos casos em que não houver outras credenciais de outra origem.
 * `server_side_encryption_customer_key_base64` — Se especificado, os cabeçalhos necessários para acessar objetos S3 com criptografia SSE-C serão definidos. Opcional.
 * `server_side_encryption_kms_key_id` - Se especificado, os cabeçalhos necessários para acessar objetos S3 com [criptografia SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) serão definidos. Se uma string vazia for especificada, a chave S3 gerenciada pela AWS será usada. Opcional.
 * `server_side_encryption_kms_encryption_context` - Se especificado junto com `server_side_encryption_kms_key_id`, o cabeçalho do contexto de criptografia fornecido para SSE-KMS será definido. Opcional.

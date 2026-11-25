@@ -12,19 +12,29 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_ddl_entry_format_version">
-  ## distributed_ddl_entry_format_version
-</div>
+## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-Versión de compatibilidad de las consultas de DDL distribuido (ON CLUSTER)
+Versión de compatibilidad de las consultas de DDL distribuido (ON CLUSTER). Use un valor más bajo para que los servidores más antiguos del
+cluster puedan seguir ejecutando las consultas.
 
-Valor predeterminado de Cloud: `6`.
+Los servidores no ejecutan entradas con las versiones `1` y `2`. Los servidores más antiguos las escriben cuando el parámetro de configuración tiene los valores `1`, `2`
+y `3`, por lo que, antes de actualizar, establezca este parámetro de configuración en al menos `4` en todos los servidores y espere a que se haya procesado la cola de DDL
+distribuido.
 
-<div id="distributed_ddl_output_mode">
-  ## distributed_ddl_output_mode
-</div>
+Valores posibles:
+
+* `3` — Igual que `4`. Se escribe como `4`, porque los servidores más antiguos rechazan las entradas con la versión `3`.
+* `4` — La entrada incluye los ajustes modificados en la sesión y el contexto de trazado de OpenTelemetry, y las consultas `CREATE` se normalizan en el initiator.
+* `5` — Además, conserva el `initial_query_id` de la consulta.
+* `6` — Además, indica si la consulta forma parte de un `BACKUP` o un `RESTORE`.
+* `7` — Además, incluye el UUID de la tabla padre, que una base de datos `Replicated` utiliza para ejecutar la consulta solo si la tabla existe.
+* `8` — Además, incluye el usuario y los roles del initiator, que los hosts utilizan junto con el ajuste del servidor `distributed_ddl_use_initial_user_and_roles`.
+
+Valor predeterminado en Cloud: `6`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -42,9 +52,7 @@ Valores posibles:
 
 Valor predeterminado en Cloud: `none_only_active`.
 
-<div id="distributed_ddl_task_timeout">
-  ## distributed_ddl_task_timeout
-</div>
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="180" />
 

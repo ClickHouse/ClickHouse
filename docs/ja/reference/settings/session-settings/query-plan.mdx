@@ -190,7 +190,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい設定。デフォルトで有効。DPsub 結合順序アルゴリズムが、入力のソート順に基づいてハッシュ結合とソートマージ結合のいずれかを選択します。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "この変更は 26.10 にバックポートされ、そちらに記録されています。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定。デフォルトで有効。DPsub 結合順序アルゴリズムが、入力のソート順に基づいてハッシュ結合とソートマージ結合のいずれかを選択します。"}]}]} />
 
 `dpsub` 結合順序アルゴリズムにのみ影響します。この設定により、`dpsub` は結合対象テーブルのソート順を考慮するようになります。具体的には、各内部等価結合についてコストに基づいてハッシュ結合と `full_sorting_merge` のいずれかを選択し、さらに後続の結合で利用可能な結合キーで結果がソートされている部分実行計画を保持します。
 
@@ -335,7 +335,7 @@ aggregate projection matcher (および、`IN` 句の Set を比較する必要�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "500"},{"label": "新しい設定"}]}]} />
 
-EXPLAIN PLAN におけるステップの説明の最大長。
+クエリプランステップの説明の最大長 (バイト単位) です。これより長い説明は、表示されるすべての箇所でこの長さに切り詰められます。
 
 ## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
@@ -400,14 +400,14 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` がデフォルトの JOIN 順序アルゴリズムになりました。relation が 12 個を超えるクエリでは `greedy` にフォールバックします。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "この変更は 26.10 にバックポートされており、変更内容は 26.10 に記載されています。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "dpsub,greedy"},{"label": "`dpsub` がデフォルトの結合順序アルゴリズムになりました。relation が 12 個を超えるクエリでは `greedy` にフォールバックします。"}]}, {"id": "row-3","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
 
-クエリプランの最適化時に試行する JOIN 順序アルゴリズムを指定します。利用可能なアルゴリズムは次のとおりです。
+クエリプランの最適化時に試行する結合順序アルゴリズムを指定します。利用可能なアルゴリズムは次のとおりです。
 
-* &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
-* &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
-* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけます。relation が 12 個以下のクエリにのみ適用され、それを超える場合はリスト内の次のアルゴリズムに処理を譲ります。
-* &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
+* &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な結合順序にならない場合があります
+* &#39;dpsize&#39; - 現時点では INNER 結合のみに対応する DPsize アルゴリズムを実装します。考えられるすべての結合順序を検討して最適なものを見つけますが、テーブル数や結合述語が多いクエリでは遅くなることがあります。
+* &#39;dpsub&#39; - INNER 結合と INNER 結合以外の結合の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての結合順序を検討して最適なものを見つけます。relation が 12 個以下のクエリにのみ適用され、それを超える場合はリスト内の次のアルゴリズムに処理を譲ります。
+* &#39;dphyp&#39; - 現時点では INNER 結合のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな結合グラフでは中間結合の数を減らせます
   複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば relation が多すぎる場合や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
@@ -416,7 +416,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。デフォルトは CD-C で、`query_plan_optimize_join_order_algorithm` のデフォルト値 `dpsub` と組み合わせることで、semi JOIN および anti JOIN も並べ替えの対象になります。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "この変更は 26.10 にバックポートされ、そちらに記録されています。"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "c"},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。デフォルトは CD-C で、`query_plan_optimize_join_order_algorithm` のデフォルト値 `dpsub` と組み合わせることで、semi JOIN および anti JOIN も並べ替えの対象になります。"}]}]} />
 
 `dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの結合順序の変更を有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
 
@@ -493,11 +493,11 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "等価結合キーをまたいでフィルターの conjunct を持ち上げ、両側で主キーの pruning が発火するようにする新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "等価結合キーをまたいでフィルタの conjunct を持ち上げ、両側で主キーの pruning が発火するようにする新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "統計情報に基づいて行グループをスキップする Parquet の読み取りでも、整数、Date、Decimal のカラムにフィルタの conjunct をコピーするようになりました。"}]}]} />
 
-等価結合の一方の側にあるフィルターの conjunct を、等価キーの substitution によってもう一方の側へコピーするクエリプランレベルの最適化を切り替えます。これにより、もう一方の側の主キー / 索引の pruning でその conjunct を利用できるようになります。
+等価結合の一方の側にあるフィルタの conjunct を、等価キーの substitution によってもう一方の側へコピーするクエリプランレベルの最適化を切り替えます。これにより、もう一方の側の主キー / 索引の pruning でその conjunct を利用できるようになります。
 
-この最適化が適用されるのは、フィルターと `MergeTree` の読み取りが式ステップおよびフィルターステップのみを挟んで join と隔てられており、かつコピー対象の conjunct が主キーカラムと定数を比較している場合(定数の Set を用いた `IN` を含む)です。ネストされた join の下や `DISTINCT` の下にある述語、および 2 つのキーカラム同士の比較は対象外です。これらはもう一方の側で主キーの pruning に利用できず、コピーしても処理が増えるだけだからです。
+この最適化が適用されるのは、フィルタと読み取りが式ステップおよびフィルタステップのみを挟んで結合と隔てられており、かつコピー対象の conjunct が定数(定数の集合を用いた `IN` を含む)と、`MergeTree` の読み取りの主キーカラム、または `Parquet` の読み取り(`file`、`url`、データレイクではないオブジェクトストレージ)のカラムのいずれかを比較している場合です。後者のカラムは、デフォルト式を持たない 64 ビット以下の整数型、`Date`、`Date32`、または `Decimal` 型であり、かつ読み取り時に min/max 統計情報によって行グループをスキップできるものに限ります。ネストされた結合の下や `DISTINCT` の下にある述語、および 2 つのキーカラム同士の比較は対象外です。これらはもう一方の側で pruning に利用できず、コピーしても処理が増えるだけだからです。
 
 `query_plan_enable_optimizations` が 1 の場合にのみ有効になります。
 
@@ -626,21 +626,21 @@ JOIN演算において左テーブルからの順序に従った読み取りを�
 
 **別名**: `optimize_read_in_window_order`
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "このロジックはデフォルトで無効です。これは別名 `optimize_read_in_window_order` にも適用されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "再びデフォルトで有効化されました。ソート処理がマージ済みストリームを `PARTITION BY` カラムで分散するようになったため、ウィンドウ関数が並列に実行されます。これは別名 `optimize_read_in_window_order` にも適用されます。"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "このロジックはデフォルトで無効化されています。これは別名 `optimize_read_in_window_order` にも適用されます。"}]}]} />
 
 ウィンドウ関数のソート時にストレージのソート順を利用する、クエリプランレベルの最適化をトグルします。
 設定 [`query_plan_enable_optimizations`](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用してください。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向け設定であり、開発者がデバッグ目的でのみ使用してください。この設定は将来、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:
 
-* 0 - 無効
-* 1 - 有効
+* 0 - 無効化
+* 1 - 有効化
 
 ## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 

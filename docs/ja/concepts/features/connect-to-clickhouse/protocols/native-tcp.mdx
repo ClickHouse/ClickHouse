@@ -1,0 +1,14 @@
+---
+description: 'ClickHouse のネイティブTCPインターフェイスに関するドキュメント'
+sidebarTitle: 'ネイティブインターフェイス (TCP)'
+slug: /concepts/features/connect-to-clickhouse/protocols/native-tcp
+title: 'ネイティブインターフェイス (TCP)'
+doc_type: 'reference'
+---
+
+ネイティブプロトコルは、[コマンドラインクライアント](/ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)、分散クエリ処理時のサーバー間通信、および一部の言語別クライアント (例: [clickhouse-go](/ja/integrations/go#connection-details)) で使用されています。
+
+ClickHouse は、ネイティブプロトコルと、それによって伝送される列指向形式の公式仕様を提供しています。
+
+* [ネイティブプロトコル](/ja/resources/develop-contribute/native-protocol/protocol) — パケットのフレーミング、接続のステートマシン、バージョンネゴシエーション、および `Block` 以外のすべてのメッセージのボディについて説明しています。
+* [ネイティブ形式](/ja/resources/develop-contribute/native-protocol/format) — `Block` とカラムの構造、型ごとのエンコーディング、および圧縮フレームについて説明しています。このフォーマットは、HTTP 経由の `FORMAT Native` のように、TCP プロトコル以外でも使用されます。

@@ -102,11 +102,11 @@ dbt détermine automatiquement le type de données de chaque colonne en analysan
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -232,11 +232,11 @@ dbt-clickhouse génère automatiquement le DDL adapté à la version :
 | 26.1+                 | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
 | 25.8 – 26.0           | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
-## Matérialisation : incrémentielle {#materialization-incremental}
+## Matérialisation : incrémentale {#materialization-incremental}
 
-Le modèle de type table sera reconstruit à chaque exécution de dbt. Cela peut s’avérer irréaliste et extrêmement coûteux pour des jeux de résultats volumineux ou des transformations complexes. Pour relever ce défi et réduire le temps de build, un modèle dbt peut être créé en tant que table ClickHouse incrémentielle et se configure à l’aide de la syntaxe suivante :
+Le modèle de type table sera reconstruit à chaque exécution de dbt. Cela peut s’avérer irréaliste et extrêmement coûteux pour des jeux de résultats volumineux ou des transformations complexes. Pour relever ce défi et réduire le temps de construction, un modèle dbt peut être créé en tant que table ClickHouse incrémentale et se configure à l’aide de la syntaxe suivante :
 
-Définition du modèle dans `dbt_project.yml` :
+Définition du modèle dans `dbt_project.yml` :
 
 ```yaml
 models:
@@ -246,10 +246,9 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
-Ou le bloc de configuration dans `models/<model_name>.sql` :
+Ou le bloc de configuration dans `models/<model_name>.sql` :
 
 ```python
 {{ config(
@@ -258,7 +257,6 @@ Ou le bloc de configuration dans `models/<model_name>.sql` :
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -268,12 +266,12 @@ Ou le bloc de configuration dans `models/<model_name>.sql` :
 
 Les configurations spécifiques à ce type de matérialisation sont listées ci-dessous :
 
-| Option                   | Description                                                                                                                                                                                                                                                                                                                                              | Required?                                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `unique_key`             | Un n-uplet de noms de colonnes qui identifie de manière unique les lignes. Pour plus de détails sur les contraintes d’unicité, voir [ici](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                         | Obligatoire. S’il n’est pas fourni, les lignes modifiées seront ajoutées deux fois à la table incrémentale. |
-| `inserts_only`           | Ce paramètre est obsolète au profit de la `strategy` incrémentale `append`, qui fonctionne de la même manière. S’il est défini sur `True` pour un modèle incrémental, les mises à jour incrémentales seront insérées directement dans la table cible sans créer de table intermédiaire. Si `inserts_only` est défini, `incremental_strategy` est ignoré. | Facultatif (par défaut : `False`)                                                                           |
-| `incremental_strategy`   | Stratégie à utiliser pour la matérialisation incrémentale. `delete+insert`, `append`, `insert_overwrite` et `microbatch` sont pris en charge. Pour plus de détails sur les stratégies, voir [ici](#incremental-model-strategies)                                                                                                                         | Facultatif (par défaut : &#39;default&#39;)                                                                 |
-| `incremental_predicates` | Conditions supplémentaires à appliquer à la matérialisation incrémentale (uniquement pour la stratégie `delete+insert`                                                                                                                                                                                                                                   | Facultatif                                                                                                  |
+| Option                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Required?                                                                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unique_key`             | Un tuple de noms de colonnes qui identifie de manière unique les lignes. Pour plus de détails sur les contraintes d’unicité, voir [ici](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                                                                                                                                                                                   | Obligatoire pour `legacy`, `delete+insert` et `microbatch`. Sans cette clé, la stratégie par défaut est `append`.                           |
+| `inserts_only`           | Ce paramètre est obsolète au profit de la `strategy` incrémentale `append`, qui fonctionne de la même manière. S’il est défini sur `True` pour un modèle incrémental, les mises à jour incrémentales seront insérées directement dans la table cible sans créer de table intermédiaire. Si `inserts_only` est défini, `incremental_strategy` est ignoré. Le définir consigne un avertissement d’obsolescence dans le journal, ce qui fait échouer l’exécution avec `--warn-error`. | Facultatif (par défaut : `False`)                                                                                                           |
+| `incremental_strategy`   | Stratégie à utiliser pour la matérialisation incrémentale. `delete+insert`, `append`, `insert_overwrite` et `microbatch` sont pris en charge. Pour plus de détails sur les stratégies, voir [ici](#incremental-model-strategies)                                                                                                                                                                                                                                                   | Facultatif (par défaut : `append` sans `unique_key`, sinon `delete+insert` si `use_lw_deletes` est défini, et `legacy` dans les autres cas) |
+| `incremental_predicates` | Conditions supplémentaires à appliquer à la matérialisation incrémentale. Uniquement pris en charge par les stratégies `delete+insert` et `microbatch` ; toute autre stratégie échoue lorsque ce paramètre est défini, y compris la stratégie par défaut `append` pour les modèles sans `unique_key`.                                                                                                                                                                              | Facultatif                                                                                                                                  |
 
 ### Stratégies pour les modèles incrémentaux {#incremental-model-strategies}
 
@@ -281,47 +279,50 @@ Les configurations spécifiques à ce type de matérialisation sont listées ci-
 
 #### La stratégie par défaut (legacy) {#default-legacy-strategy}
 
-Historiquement, ClickHouse ne prenait en charge les mises à jour et les suppressions que de façon limitée, sous la forme de « mutations » asynchrones.
+Il s&#39;agit de la stratégie par défaut pour les modèles disposant d&#39;une `unique_key` (voir [`incremental_strategy`](#incremental-configurations)).
+Historiquement, ClickHouse ne prenait en charge les mises à jour et les suppressions que de façon limitée, sous la forme de « mutations » asynchrones.
 Pour reproduire le comportement attendu de dbt,
-dbt-clickhouse crée par défaut une nouvelle table temporaire contenant tous les anciens
+dbt-clickhouse crée une nouvelle table temporaire contenant tous les anciens
 enregistrements non affectés (non supprimés, non modifiés),
 ainsi que les enregistrements nouveaux ou mis à jour,
-puis permute ou échange cette table temporaire avec la relation incremental existante du modèle. C&#39;est la seule stratégie
+puis permute ou échange cette table temporaire avec la relation incrémentale existante du modèle. C&#39;est la seule stratégie
 qui préserve la relation d&#39;origine si quelque chose
-tourne mal avant la fin de l&#39;opération ; toutefois, comme elle implique une copie complète de la table d&#39;origine, son exécution peut s&#39;avérer
+tourne mal avant la fin de l&#39;opération ; toutefois, comme elle implique une copie complète de la table d&#39;origine, son exécution peut s&#39;avérer
 coûteuse et lente.
 
 #### La stratégie Delete+Insert {#delete-insert-strategy}
 
-La stratégie `delete+insert` utilise les [suppressions légères](/fr/concepts/features/operations/delete/lightweight-delete) pour supprimer les lignes concernées, puis insérer les nouvelles. Comme elle ne copie pas l’intégralité de la table, elle est nettement plus performante que la stratégie « legacy ». Définir `use_lw_deletes: true` dans votre profil fait de `delete+insert` la stratégie incrémentielle par défaut.
+La stratégie `delete+insert` utilise les [suppressions légères](/fr/concepts/features/operations/delete/lightweight-delete) pour supprimer les lignes concernées, puis insérer les nouvelles. Comme elle ne copie pas l’intégralité de la table, elle est nettement plus performante que la stratégie « legacy ». Définir `use_lw_deletes: true` dans votre profil fait de `delete+insert` la stratégie incrémentale par défaut pour les modèles disposant d’une `unique_key`.
 
-Cette stratégie comporte d’importantes mises en garde :
+Cette stratégie comporte d’importantes mises en garde :
 
 * Elle agit directement sur la table concernée sans créer de tables intermédiaires ou temporaires. Par conséquent, en cas de
-  problème lors de l’opération, les données du modèle incrémentiel risquent de se retrouver dans un état non valide.
+  problème lors de l’opération, les données du modèle incrémental risquent de se retrouver dans un état non valide.
 * Elle nécessite le paramètre ClickHouse `allow_nondeterministic_mutations`. L’adaptateur l’active automatiquement pour ses
   propres sessions lorsque cela est possible. Lorsqu’il ne peut pas être activé (par exemple, parce qu’il est en lecture seule pour votre utilisateur dbt), le comportement
-  dépend de la manière dont la stratégie a été choisie : les modèles s’appuyant sur la stratégie par défaut basculent silencieusement vers la stratégie legacy,
+  dépend de la manière dont la stratégie a été choisie : les modèles s’appuyant sur la stratégie par défaut basculent silencieusement vers la stratégie legacy,
   les modèles qui définissent explicitement `delete+insert` ou `microbatch` échouent à l’exécution, et `use_lw_deletes: true` dans
   le profil échoue lors de la connexion.
 * Dans de très rares cas, l’utilisation de `incremental_predicates` non déterministes peut entraîner une condition de concurrence pour les
-  éléments mis à jour ou supprimés. Pour garantir des résultats cohérents, les prédicats incrémentiels ne doivent inclure que des sous-requêtes portant sur
-  des données qui ne seront pas modifiées lors de la matérialisation incrémentielle.
+  éléments mis à jour ou supprimés. Pour garantir des résultats cohérents, les prédicats incrémentaux ne doivent inclure que des sous-requêtes portant sur
+  des données qui ne seront pas modifiées lors de la matérialisation incrémentale.
 
 #### La stratégie Microbatch (nécessite dbt-core &gt;= 1.9) {#microbatch-strategy}
 
 La stratégie incrémentale `microbatch` est une fonctionnalité de dbt-core depuis la version 1.9, conçue pour traiter efficacement de grandes
 transformations de données chronologiques. Dans dbt-clickhouse, elle s’appuie sur la stratégie incrémentale `delete_insert`
-existante en scindant l’incrément en lots chronologiques prédéfinis, selon les configurations de modèle `event_time` et
+existante en scindant l’incrément en batchs chronologiques prédéfinis, selon les configurations de modèle `event_time` et
 `batch_size`.
 
 Au-delà de la gestion de transformations volumineuses, microbatch permet de :
 
-* [Retraiter les lots en échec](https://docs.getdbt.com/docs/build/incremental-microbatch#retry).
-* Détecter automatiquement [l’exécution parallèle des lots](https://docs.getdbt.com/docs/build/parallel-batch-execution).
+* [Retraiter les batchs en échec](https://docs.getdbt.com/docs/build/incremental-microbatch#retry).
+* Détecter automatiquement [l’exécution parallèle des batchs](https://docs.getdbt.com/docs/build/parallel-batch-execution).
 * Éliminer le besoin d’une logique conditionnelle complexe pour le [chargement rétroactif](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
 
 Pour plus de détails sur l’utilisation de microbatch, consultez la [documentation officielle](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+Les bornes des batchs sont exprimées en UTC, quel que soit le time zone du serveur ou de la colonne `event_time`.
 
 ##### Configurations disponibles pour Microbatch {#available-microbatch-configurations}
 
@@ -572,6 +573,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 Pour un exemple concret sur Jaffle Shop, consultez la [section snapshot des guides](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). Pour connaître toutes les options, consultez la page de référence [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+
+## Fonctions (UDFs) {#functions}
+
+Les [fonctions](https://docs.getdbt.com/docs/build/udfs) dbt, introduites avec `dbt-core v1.11+`, permettent aux utilisateurs de définir et de référencer des UDFs directement dans dbt.
+L&#39;adaptateur ClickHouse prend en charge la définition d&#39;UDFs SQL de types `scalar` et `aggregate` (voir la [spec de type](https://docs.getdbt.com/reference/resource-configs/type?version=1)), bien qu&#39;en interne ClickHouse traite ces deux types de la même manière.
+
+Voici deux exemples de création et de référencement de fonctions de type `scalar` ou `aggregate` :
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+Le corps de fonction est une expression unique portant sur les arguments, et non un `SELECT` :
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+dbt les crée sous la forme `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2`. Les modèles les appellent avec
+`function()` :
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+ClickHouse développe les UDFs en ligne directement dans la requête appelante ; les combinateurs d’agrégation (tels que `-If` ou `-State`) et les clauses de fenêtre (`OVER (...)`) ne peuvent donc pas être appliqués aux UDFs d’agrégation.
+
+Consultez la [documentation des propriétés de fonction](https://docs.getdbt.com/reference/function-properties?version=1) pour obtenir la liste complète des configurations.
+Notez que certaines configurations peuvent ne pas s’appliquer, voire ne pas fonctionner, avec l’adaptateur ClickHouse (voir la [section sur les configurations de fonction non prises en charge](#unsupported-function-configurations)).
+
+### Portée des fonctions {#functions-scope}
+
+Les UDFs n&#39;appartiennent pas à une base de données : un même nom est partagé par toutes les bases de données d&#39;un même service ClickHouse ou d&#39;un même cluster. Si vous devez distinguer des environnements qui partagent un service ou un cluster, utilisez `alias`, par exemple :
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+`{{ function('price_for_xlarge') }}` se résout alors en `price_for_xlarge_dev`, `price_for_xlarge_prod`, et ainsi de suite.
+
+### UDFs Python et JavaScript {#python-and-javascript-udfs}
+
+Les UDFs Python et JavaScript ne sont actuellement pas prises en charge par l&#39;adaptateur ClickHouse.
+
+### Configurations de fonctions non prises en charge {#unsupported-function-configurations}
+
+Les propriétés de fonction suivantes ne sont pas prises en charge dans ClickHouse :
+
+* `overloads` : une UDF ne peut avoir qu&#39;une seule signature. Définir `overloads` fait échouer la construction.
+* argument `default_value` : ne peut pas être défini dans les UDFs ClickHouse. Définir `default_value` fait échouer la construction.
+* `volatility` : ne peut pas être défini dans les UDFs ClickHouse. Ce paramètre est ignoré et un avertissement est émis.
+* `data_type` des arguments et de la valeur de retour : requis par dbt, mais comme les UDFs ClickHouse ne sont pas typées, il n&#39;est pas appliqué. Effectuez un CAST dans le corps de fonction si vous avez besoin d&#39;un type fixe.
+
+Par ailleurs, les configurations de modèle suivantes ne sont pas prises en charge dans ClickHouse :
+
+* `grants` : ClickHouse ne propose pas de privilèges accordés pour l&#39;utilisation des UDFs. Tout utilisateur peut appeler des UDFs. Définir `grants` fait échouer la construction.
+* `persist_docs` : les descriptions ne peuvent pas être persistées dans les UDFs et sont ignorées sans avertissement. Elles apparaissent néanmoins dans la documentation dbt.
 
 ## Contrats et contraintes {#contracts-and-constraints}
 

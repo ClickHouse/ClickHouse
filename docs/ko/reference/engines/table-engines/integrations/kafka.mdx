@@ -119,17 +119,27 @@ Kafka 테이블 엔진은 [librdkafka](https://github.com/confluentinc/librdkafk
 
 이름이 지정된 컬렉션을 사용하면 **`config.xml`에 있는 서버 전역 `<kafka>` 블록은 머지되지 않습니다**. 따라서 각 컬렉션에는 테이블에 필요한 모든 확장 속성이 포함되어야 합니다. 여기에는 TLS 파일과, 비어 있지 않은 테이블 `SETTINGS`로 지정하지 않은 경우의 `security.protocol`도 포함됩니다.
 
-클라이언트 인증서를 사용하는 `SASL_SSL`의 일반적인 레이아웃(layout)은 다음과 같습니다. TLS 경로와 `ssl.key.password`는 이름이 지정된 컬렉션에 저장하고, `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` 및 필요에 따라 `kafka_sasl_username` / `kafka_sasl_password`는 테이블의 `SETTINGS` 절에서 설정합니다. `kafka.security_protocol`과 `kafka_security_protocol`은 모두 `security.protocol`을 설정하며, 비어 있지 않은 테이블 설정이 우선 적용됩니다. 컬렉션에 해당 속성이 이미 저장되어 있으면 테이블 설정은 이름이 지정된 컬렉션 재정의로 처리됩니다. 이 경우 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요하며, 키가 `NOT OVERRIDABLE`이면 `Override not allowed` 오류가 발생합니다. `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`에도 동일한 규칙이 적용됩니다.
+`CREATE NAMED COLLECTION`으로 생성한 이름이 지정된 컬렉션은 `security.protocol`, `sasl.username`, `fetch.min.bytes`와 같이 [허용 목록](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp)에 있는 `librdkafka` 속성만 허용합니다. 테이블이 목록에 없는 속성이 포함된 컬렉션을 사용하면 ClickHouse는 `BAD_ARGUMENTS`를 반환합니다. `sasl.kerberos.keytab` 또는 `sasl.oauthbearer.token.endpoint.url`과 같이 지원되는 다른 속성을 사용하려면 서버 설정 파일에서 컬렉션을 정의하십시오. 이 제한은 테이블을 생성한 후 `ALTER NAMED COLLECTION`으로 추가한 속성에도 적용됩니다.
 
-예시(인증서 경로는 해당 테이블의 컨슈머를 실행하는 모든 ClickHouse 서버에 존재해야 합니다):
+SQL로 생성한 이름이 지정된 컬렉션에서는 `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, `sasl.oauthbearer.assertion.private.key.pem`에 파일 경로 대신 파일 내용을 전달하십시오. `ssl.ca.location` 및 `https.ca.location`의 값 `probe`는 경로가 아니므로 이 역시 허용됩니다.
+
+클라이언트 인증서를 사용하는 `SASL_SSL`의 일반적인 레이아웃(layout)은 다음과 같습니다. 인증서, 개인 키, `ssl.key.password`는 이름이 지정된 컬렉션에 저장하고, `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format` 및 필요에 따라 `kafka_sasl_username` / `kafka_sasl_password`는 테이블의 `SETTINGS` 절에서 설정합니다. `kafka.security_protocol`과 `kafka_security_protocol`은 모두 `security.protocol`을 설정하며, 비어 있지 않은 테이블 설정이 우선 적용됩니다. 컬렉션에 해당 속성이 이미 저장되어 있으면 테이블 설정은 이름이 지정된 컬렉션 재정의로 처리됩니다. 이 경우 해당 컬렉션에 대한 `SHOW NAMED COLLECTIONS SECRETS` 권한이 필요하며, 키가 `NOT OVERRIDABLE`이면 `Override not allowed` 오류가 발생합니다. `kafka_sasl_mechanism`, `kafka_sasl_username`, `kafka_sasl_password`에도 동일한 규칙이 적용됩니다.
+
+PEM 형식의 인증서와 개인 키를 포함하여 SQL로 생성한 이름이 지정된 컬렉션을 사용하는 예시는 다음과 같습니다.
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -145,7 +155,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-XML로 정의한 이름이 지정된 컬렉션(named collection)에서 동일한 확장 설정을 지정하는 예시는 다음과 같습니다.
+XML로 정의한 이름이 지정된 컬렉션(named collection)에서 동일한 확장 설정을 지정하는 예시는 다음과 같습니다. 이 방식에서는 파일을 대신 참조할 수 있습니다(해당 파일은 테이블의 컨슈머를 실행하는 모든 ClickHouse 서버에 존재해야 합니다).
 
 ```xml
 <clickhouse>
@@ -269,6 +279,24 @@ CREATE TABLE queue3 (
 ```
 
 성능을 개선하기 위해 수신된 메시지는 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size) 크기의 블록으로 그룹화됩니다. [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms)밀리초 내에 블록이 형성되지 않으면, 블록이 완전하게 형성되지 않았더라도 데이터가 테이블에 플러시됩니다.
+
+다음 테이블 설정(table settings)은 소비된 데이터가 materialized view에 기록되는 빈도를 제어합니다:
+
+* `kafka_max_block_size` — 블록의 행 수가 이 값에 도달하는 즉시 블록이 플러시됩니다. 기본값: `max_insert_block_size`를 `kafka_num_consumers`로 나눈 값.
+* `kafka_flush_interval_ms` — 블록이 가득 차지 않았더라도 이 시간이 지나면 블록이 플러시됩니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). 메시지가 생성된 후 대상 테이블에 표시되기까지의 지연을 줄이려면 이 값을 낮추십시오.
+* `kafka_consumer_reschedule_ms` — 새 메시지가 없을 때 엔진이 다시 폴링하기 전까지 대기하는 시간입니다. 기본값: `500` ms.
+
+이 설정들은 Kafka 테이블의 설정으로, 테이블의 `SETTINGS` 절에서 지정합니다. 서버 설정 파일의 `<kafka>` 섹션에서는 지정할 수 없습니다. 해당 섹션의 모든 키는 librdkafka에 속성으로 전달되므로([구성](#configuration) 참조), 예를 들어 해당 섹션의 `<flush_interval_ms>`는 ClickHouse 설정이 아닙니다.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 토픽 데이터 수신을 중지하거나 변환 로직을 변경하려면 materialized view를 detach하십시오:
 

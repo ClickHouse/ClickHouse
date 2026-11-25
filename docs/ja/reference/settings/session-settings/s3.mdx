@@ -90,6 +90,16 @@ S3 へのマルチパートアップロード時にアップロードする各�
 glob による一覧取得の代わりにファイルの反復処理で使用するため、クエリフィルターから抽出できる `_path` 値の最大数です。
 0 は無効を意味します。
 
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "リクエスター支払い (requester-pays) のS3バケットにアクセスするための新しい設定。"}]}]} />
+
+リクエスター支払い (requester-pays) の `S3` バケットにアクセスするには、`requester` に設定します。これにより、すべてのリクエストに `x-amz-request-payer: requester` ヘッダーが付与され、リクエストおよびデータ転送の料金はリクエスター側が負担します。設定可能な値: `none` (デフォルト。ヘッダーは送信されません)、`requester`。
+
+この設定は `S3` クライアントの作成時に反映されるため、`s3` テーブル関数や `BACKUP ... TO S3` など、クエリスコープでの利用に適用されます。一方、独自の認証情報を持つ `S3` ディスクや `S3` テーブルなど、作成済みで長期間存続するクライアントについては、後からクエリごとに `SET` を実行しても設定は変更されません。これらには、`<s3>` サーバー構成のエンドポイントセクション、またはディスク定義で `request_payer` キーを指定してください。このキーは本設定よりも優先されます。
+
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />

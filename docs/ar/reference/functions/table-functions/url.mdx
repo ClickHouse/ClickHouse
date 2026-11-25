@@ -94,6 +94,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 
 يُطبَّق مسند `_path` أو `_file` على كل عنوان لحظة توليده، ولذلك فإن العناوين التي يستبعدها تُولَّد هي الأخرى وتُحتسب ضمن الحد؛ وكل ما في الأمر أن قراءتها هي وحدها التي تُتخطّى.
 
+### الأنماط تولّد العناوين ولا تُصفّي سرد الملفات {#patterns-generate-addresses}
+
+لا يوفّر بروتوكول HTTP العادي أي طريقة لسرد الملفات الموجودة على الخادم، ولذلك فإن النمط في `url` *مولّد* للعناوين، لا *عامل تصفية* على الملفات الموجودة فعلًا. فكل عنوان يقرؤه الاستعلام يجب توليده وإرسال طلب إليه، ويُقيَّد عدد هذه العناوين بالإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings/other#glob_expansion_max_elements). أما العناوين التي يتبيّن أنها غير موجودة فتُتجاهَل أثناء القراءة، ما دام الإعداد [http&#95;skip&#95;not&#95;found&#95;url&#95;for&#95;globs](/ar/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) مفعّلًا.
+
+في المقابل، تعمل دوال الجدول الخاصة بالتخزين الكائني مثل [s3](/ar/reference/functions/table-functions/s3) بالطريقة المعاكسة: إذ يُصرَّف النمط إلى تعبير نمطي ويُطابَق مع سرد محتويات الحاوية، ومن ثَمّ فإن النمط الذي يصف فضاء مفاتيح هائلًا لا يترتب عليه أي تكلفة إضافية. ولهذا فإن النمط نفسه تقرؤه `s3` بالكامل بينما ترفضه `url`:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+استخدم `s3` (أو أي دالة أخرى من دوال الجدول للتخزين الكائني) عندما يكون الغرض من النمط مطابقته مع سرد للملفات، ولا ترفع قيمة `glob_expansion_max_elements` إلا إذا كان من الضروري فعلًا إرسال طلب إلى كل عنوان مُولَّد.
+
 ## أحرف البدل مع صفحات فهرس HTTP {#wildcards-with-http-index-pages}
 
 بالنسبة إلى `url` ومحرك الجدول `URL`، يمكن لـ ClickHouse توسيع أحرف البدل من خلال جلب صفحات فهرس HTTP ‏(HTML أو نص عادي) واستخراج عناوين URL من جسم الاستجابة. يتيح ذلك أنماطًا مثل `/**/` عندما يوفّر الخادم سردًا للدلائل.

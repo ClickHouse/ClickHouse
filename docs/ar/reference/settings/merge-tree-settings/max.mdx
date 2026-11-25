@@ -54,6 +54,8 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 بالنسبة إلى العمود الذي يحتوي على قيم ثابتة الحجم، يُقرَّب حجم الكتلة نزولًا إلى أقرب مضاعف لحجم القيمة بالبايت، على ألا يقل عن قيمة واحدة.
 
+تستوعب الكتلة المضغوطة 256 MiB كحد أقصى من البيانات غير المضغوطة، لذا تُعامَل أي قيمة تتجاوز 256 MiB على أنها 256 MiB.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />向量相似度索引缓存的大小，以条目数计。0 表示禁用。
+<SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />向量相似度索引缓存的大小，以条目数计。0 表示禁用。
 
 ## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
@@ -26,6 +26,10 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <Note>
   此设置可在运行时修改，并会立即生效。
+</Note>
+
+<Note>
+  在 ClickHouse Cloud 中，最大缓存大小取决于 pod (容器组) 的大小。可在 `system.server_settings` 中查看具体大小。服务器设置无法通过 SQL 或控制台更改，如需增大缓存，请联系支持团队进行配置。
 </Note>
 
 ## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}

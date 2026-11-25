@@ -136,7 +136,7 @@ doc_type: 'reference'
 
 С управляемыми клиентом ролями IAM вы:
 
-* Заранее создаете IAM-роли для каждой инфраструктуры, которые иначе создал бы ClickHouse Cloud
+* Заранее создаете роли IAM для каждой инфраструктуры, которые иначе создал бы ClickHouse Cloud
 * Убираете разрешения на запись в IAM у `ClickHouseManagementRole`, используемой для межаккаунтного доступа
 * Сохраняете полный контроль над разрешениями ролей и отношениями доверия
 
@@ -158,7 +158,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title="Создайте IAM-роли для каждой инфраструктуры" id="byo-iam-per-infra-roles">
-    Перед подготовкой каждой инфраструктуры BYOC создайте необходимые для нее IAM-роли (роли EKS Pod Identity, роль доступа ClickHouse к S3 и роль управления плоскостью данных) с помощью per-infra-модуля [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
+    Перед подготовкой каждой инфраструктуры BYOC создайте необходимые для нее роли IAM (роли EKS Pod Identity, роль доступа ClickHouse к S3 и роль управления плоскостью данных) с помощью per-infra-модуля [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
     ```hcl
     module "clickhouse_per_infra_iam" {
@@ -180,4 +180,4 @@ doc_type: 'reference'
   </Step>
 </Steps>
 
-Сведения о ролях IAM, которые ClickHouse Cloud создает по умолчанию, см. в [справочнике по привилегиям BYOC](/ru/products/bring-your-own-cloud/reference/privilege).
+Сведения о ролях IAM, которые ClickHouse Cloud создает по умолчанию, см. в разделе [Привилегии BYOC в AWS](/ru/products/bring-your-own-cloud/reference/privilege-aws#additional-iam-roles-created-by-the-controller).

@@ -1067,6 +1067,23 @@ formatos escapados/de texto completo não são afetados: neles, um número `Date
 
 Caminho do arquivo usado para registrar erros ao ler formatos de texto (CSV, TSV).
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração para ignorar as ocorrências repetidas de um campo em uma linha de dados de entrada em vez de lançar uma exceção."}]}]} />
+
+Habilita ou desabilita a omissão de ocorrências repetidas de um campo em uma mesma linha de dados de entrada.
+
+Quando essa configuração está habilitada, apenas o primeiro valor de um campo que aparece mais de uma vez na mesma linha é mantido. As demais ocorrências são ignoradas, em vez de provocar a exceção `Duplicate field found`. Nesse caso, a inferência de esquema determina o tipo desse campo a partir do primeiro valor.
+
+Formatos suportados:
+
+* `JSONEachRow` e os formatos que leem objetos JSON da mesma maneira (`JSONStringsEachRow`, `JSONObjectEachRow`, as linhas de `JSON`), incluindo os campos aninhados lidos com `input_format_import_nested_json`
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

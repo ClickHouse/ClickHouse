@@ -9,23 +9,13 @@ keywords: ['ClickStack', 'URL parameters', 'query parameters', 'ディープリ�
 
 ClickStack ページは、URL クエリパラメータを使用したディープリンクで開けます。これにより、外部システム (アラート通知、ランブック、CI ジョブ、チャットメッセージなど) から特定の検索、ダッシュボード、またはパネルに直接移動できます。
 
-このページの例では `<YOUR_CLICKSTACK_URL>` を使用しています。これを ClickStack の URL に置き換えてください。たとえば、ローカルのオープンソースデプロイメントの場合は `http://localhost:8080`、ClickHouse Cloud の Managed ClickStack の場合は `https://hyperdx.clickhouse.cloud` を使用します。
+このページの例では `<YOUR_CLICKSTACK_URL>` を使用しています。これを ClickStack の URL に置き換えてください。たとえば、ローカルのオープンソースデプロイメントの場合は `http://localhost:8080` を使用します。
 
 <Note>
   例では、読みやすさのためクエリパラメータを URL エンコードせずに示しています。プログラムでリンクを構築する場合は、各クエリパラメータ値を URL エンコードしてください。
 </Note>
 
-<Info>
-  **Managed ClickStack サービス ID パラメータ**
-
-  ClickHouse Cloud で Managed ClickStack を使用する場合、リンクをたどる認証済みユーザーが複数の ClickHouse Cloud サービスを使用する権限を持つときは、読み込む ClickHouse Cloud サービスを識別するため、リンクに `?chcServiceId=` パラメータを含める必要があります。
-
-  例: 特定の Cloud サービスを対象に Search を開く
-
-  ```text
-  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
-  ```
-</Info>
+Cloud サービスのパラメータおよびノートブックへのリンクについては、[ClickHouse オブザーバビリティのディープリンク](/ja/clickstack/observability/url-parameters)を参照してください。
 
 ## Search — `/search` {#search}
 
@@ -76,14 +66,31 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 
 保存済みのダッシュボードです。`<dashboardId>`を省略して (`/dashboards`) 、一時的な未保存のダッシュボードを開くことができます。ダッシュボードの作成について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview)を参照してください。
 
-| パラメータ               | フォーマット                                                                                                                              | 説明                                                            |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `from`, `to`        | エポックミリ秒                                                                                                                             | すべてのタイルに適用される時間範囲です。省略した場合は、直近15分がデフォルトになります。                 |
-| `where`             | 文字列                                                                                                                                 | すべてのタイルに適用されるダッシュボードレベルのフィルタークエリテキストです。                       |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`の記述に使用するクエリ言語です。                                       |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 構造化されたダッシュボードフィルター値です。`ServiceName`フィルターのドロップダウンで2つの項目を選択します。 |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 時系列タイルのバケットサイズです。`auto`は、選択した時間範囲に基づいてバケットサイズを決定します。          |
-| `highlightedTileId` | 文字列                                                                                                                                 | 特定のタイルまでスクロールして強調表示します。alertからリンクする場合に便利です。                   |
+| パラメータ               | フォーマット                                                                                                                              | 説明                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | エポックミリ秒                                                                                                                             | すべてのタイルに適用される時間範囲です。省略した場合は、直近15分がデフォルトになります。                                                                                            |
+| `where`             | 文字列                                                                                                                                 | すべてのタイルに適用されるダッシュボードレベルのフィルタクエリテキストです。                                                                                                  |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`の記述に使用するクエリ言語です。                                                                                                                  |
+| `filters`           | フィルタ値エントリのJSON配列                                                                                                                    | ダッシュボードの[カスタムフィルタと変数](/ja/clickstack/features/dashboards/overview#custom-filters)で選択された値です。詳しくは[フィルタ値](#dashboard-filter-values)を参照してください。 |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 時系列タイルのバケットサイズです。`auto`は、選択した時間範囲に基づいてバケットサイズを決定します。                                                                                     |
+| `highlightedTileId` | 文字列                                                                                                                                 | 特定のタイルまでスクロールして強調表示します。アラートからリンクする場合に便利です。                                                                                              |
+
+### フィルタの値 {#dashboard-filter-values}
+
+`filters` パラメータは JSON配列です。各エントリは 1 つのフィルタの選択値を設定するもので、次のいずれかの形式で指定します。
+
+| エントリ                                                                                                              | 用途                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | 変数として扱われるフィルタ: 静的な値、SQLクエリの値、PromQL ラベルの値、データソース変数および接続変数、ならびに **Available as variable** が有効になっている SQL式の値フィルタ。`name` はフィルタの変数名です。                                                                                                     |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [アドホックフィルタ](/ja/clickstack/features/dashboards/overview#adhoc-filters)。`name` はフィルタの一意な名前で、`operator` は `=`、`!=`、`=~`、`!~`、`LIKE`、`NOT LIKE`、`IN` のいずれかです。`LIKE` と `NOT LIKE` は SQL ログソースにのみ適用され、Prometheus のアドホックフィルタではこれらを使用する条件は無視されます。 |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | 変数ではない SQL式の値フィルタ。条件内の式は、フィルタの **Filter expression** と一致している必要があります。                                                                                                                                                                  |
+
+以下のルールが適用されます。
+
+* 同じフィルタを対象とするエントリがある場合、変数エントリが `sql` エントリより優先されます。変数機能の導入前に作成された、すべてのフィルタに `sql` エントリを使用するリンクも引き続き動作します。
+* データソース変数および接続変数では、値として ID の代わりにログソースまたは接続の**名前**を指定できます。名前はまず完全一致で照合され、一致しない場合は大文字と小文字を区別せずに照合されます。これにより、同じログソースでも環境ごとに ID が異なる場合でも、リンクが安定して機能します。
+* 単一選択のフィルタでは、最初の値のみが使用されます。
+* ダッシュボード上のどのフィルタにも一致しないエントリや、形式が不正なエントリは無視されます。
 
 ### 例: 1 つのタイルを強調表示した状態で、指定した時間範囲のダッシュボードを開く {#example-dashboard-highlight}
 
@@ -91,6 +98,30 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### 例: 変数として定義されたフィルタで値を選択する {#example-dashboard-variables}
+
+変数名が `service` のフィルタで `checkout` と `payments` を選択し、変数名が `severity` のフィルタで `ERROR` を選択します。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### 例: 名前でデータソースと接続を選択する {#example-dashboard-source-variable}
+
+`logs` という名前のデータソース変数で `Production Logs` ログソースを、`cluster` という名前の接続変数で `Production` 接続を選択します。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### 例: アドホックフィルター条件を追加する {#example-dashboard-adhoc}
+
+一意の名前 `adhoc` を持つアドホックフィルタに、2 つの条件を追加します。1 つは `ServiceName` が `checkout` または `payments` であること、もう 1 つは `SeverityText` が `DEBUG` でないことです。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## ダッシュボード一覧 — `/dashboards/list` {#dashboards-list}
@@ -217,18 +248,4 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-  **Managed ClickStack のみ**
-
-  Notebooks は、Managed ClickStack のデプロイメントでのみ利用できます。機能の詳細については、[AIノートブック](/ja/clickstack/notebooks)を参照してください。
-</Info>
-
-### 例: 指定した Cloud サービスで特定の notebook を開く {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
 ```

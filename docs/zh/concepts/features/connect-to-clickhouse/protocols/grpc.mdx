@@ -1,0 +1,99 @@
+---
+description: 'ClickHouse gRPC 接口文档'
+sidebarTitle: 'gRPC 接口'
+slug: /concepts/features/connect-to-clickhouse/protocols/grpc
+title: 'gRPC 接口'
+doc_type: 'reference'
+---
+
+## 简介 {#grpc-interface-introduction}
+
+ClickHouse 支持 [gRPC](https://grpc.io/) 接口。gRPC 是一个开源的远程过程调用系统，基于 HTTP/2 和 [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers)。ClickHouse 中的 gRPC 实现支持：
+
+* SSL；
+* 身份验证；
+* 会话；
+* 压缩；
+* 通过同一通道并行执行查询；
+* 取消查询；
+* 获取进度和日志；
+* 外部表。
+
+该接口的规范定义见 [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)。
+
+## gRPC 配置 {#grpc-interface-configuration}
+
+要使用 gRPC 接口，请在主[服务器配置](/zh/concepts/features/configuration/server-config/configuration-files)中设置 `grpc_port`。其他配置选项请参见以下示例：
+
+```xml
+<grpc_port>9100</grpc_port>
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if SSL is enabled -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server requests client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+    </grpc>
+```
+
+## 身份验证 {#grpc-authentication}
+
+查询通过 `QueryInfo` 的 `user_name` 和 `password` 字段进行身份验证 (`quota` 字段用于设置配额键) 。`user_name` 字段为可选：若该字段为空，查询将以 `default_session_user` [服务器设置](/zh/reference/settings/server-settings/settings)所指定的用户 (未另行配置时为 `default`) 及所提供的密码 (可以为空) 进行身份验证，行为与不带 `user` 参数的 HTTP 请求完全一致。空用户名只是该用户的别名：该用户的密码、`networks` 及其他访问检查照常生效，因此不带凭证的查询能否被接受，取决于该用户的配置。如果将 `default_session_user` 设置为空字符串，则不带 `user_name` 的查询将被拒绝；此时若服务器配置中启用了 `session_log` 配置节，该拒绝会作为 `user` 为空的 `LoginFailure` 事件记录到 [`system.session_log`](/zh/reference/system-tables/session_log) 中。
+
+## 内置客户端 {#grpc-client}
+
+您可以根据所提供的[规范](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)，使用 gRPC 支持的任意编程语言编写客户端。
+也可以使用内置的 Python 客户端，它位于代码仓库中的 [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py)。该内置客户端依赖 [grpcio 和 grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python 模块。
+
+该客户端支持以下参数：
+
+* `--help` – 显示帮助信息并退出。
+* `--host HOST, -h HOST` – 服务器名称。默认值：`localhost`。也可以使用 IPv4 或 IPv6 地址。
+* `--port PORT` – 要连接的端口。该端口必须已在 ClickHouse 服务器配置中启用 (参见 `grpc_port`) 。默认值：`9100`。
+* `--user USER_NAME, -u USER_NAME` – 用户名。默认值：`default`。
+* `--password PASSWORD` – 密码。默认值：空字符串。
+* `--query QUERY, -q QUERY` – 非交互式模式下要执行的查询。
+* `--database DATABASE, -d DATABASE` – 默认数据库。若未指定，则使用服务器设置中配置的当前数据库 (默认为 `default`) 。
+* `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – 结果输出[格式](/zh/reference/formats/index)。交互模式下的默认值：`PrettyCompact`。
+* `--debug` – 启用调试信息显示。
+
+如需以交互模式运行客户端，调用时不要指定 `--query` 参数。
+
+在批次模式下，可以通过 `stdin` 传入查询数据。
+
+**客户端使用示例**
+
+以下示例先创建一个表，并从 CSV 文件向其中加载数据，然后查询该表的内容。
+
+```bash title="Query"
+./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
+echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
+cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+
+./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
+```
+
+```text title="Response"
+┌─id─┬─text──────────────────┐
+│  0 │ Input data for        │
+│  1 │ gRPC protocol example │
+└────┴───────────────────────┘
+```

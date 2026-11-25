@@ -324,7 +324,7 @@ Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 
 ### `format_schema_source='query'` {#format-schema-source-query}
 
-Protobuf 스키마를 테이블에 저장할 수도 있습니다.
+Protobuf 스키마(schema)를 테이블에 저장할 수도 있습니다.
 
 ClickHouse Cloud에 데이터를 삽입할 테이블을 생성하십시오.
 
@@ -346,9 +346,9 @@ INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType 
 TRUNCATE TABLE test.protobuf_messages;
 ```
 
-스키마를 실행할 쿼리로 지정하여 데이터를 ClickHouse Cloud에 삽입합니다.
-이 삽입은 [HTTP 인터페이스](/ko/concepts/features/interfaces/http#insert-protobuf)를 통해 전송하십시오. HTTP 인터페이스에서는 서버가 데이터를 파싱하고 스키마 쿼리를 실행합니다. 반면 `clickhouse client`는 입력 데이터를 클라이언트 측에서 파싱하므로 스키마 쿼리가 실패합니다.
-curl의 `--url-query` 옵션(curl 7.87 이상)은 각 매개변수를 URL 인코딩하므로 쿼리와 스키마 쿼리를 그대로 작성하면 됩니다.
+스키마(schema)를 실행할 쿼리로 지정하여 데이터를 ClickHouse Cloud에 삽입합니다.
+이 삽입은 [HTTP 인터페이스](/ko/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf)를 통해 전송하십시오. HTTP 인터페이스에서는 서버가 데이터를 파싱하고 스키마(schema) 쿼리를 실행합니다. 반면 `clickhouse client`는 입력 데이터를 클라이언트 측에서 파싱하므로 스키마(schema) 쿼리가 실패합니다.
+curl의 `--url-query` 옵션(curl 7.87 이상)은 각 매개변수를 URL 인코딩하므로 쿼리와 스키마(schema) 쿼리를 그대로 작성하면 됩니다.
 
 ```bash
 curl 'https://<hostname>:8443/' --user 'default:<password>' \

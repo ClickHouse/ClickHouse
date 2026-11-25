@@ -1,0 +1,309 @@
+---
+description: 'Prise en charge de l’API HTTP de Prometheus dans ClickHouse : écriture distante, lecture distante et requêtes PromQL sur une table TimeSeries.'
+sidebarTitle: 'API Prometheus et PromQL'
+slug: /concepts/features/connect-to-clickhouse/prometheus
+title: 'API HTTP de Prometheus et PromQL'
+doc_type: 'reference'
+---
+
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+ClickHouse implémente l&#39;API HTTP de Prometheus au-dessus d&#39;une table [`TimeSeries`](/fr/reference/engines/table-engines/integrations/time-series). Un seul handler gère à la fois l&#39;écriture distante, la lecture distante, les requêtes PromQL instantanées et les requêtes PromQL sur une plage temporelle.
+
+Pour exposer les metrics propres à ClickHouse afin qu&#39;un serveur Prometheus puisse les collecter, consultez la page [point de terminaison des metrics Prometheus](/fr/concepts/features/connect-to-clickhouse/prometheus/metrics).
+
+## Prérequis {#prerequisites}
+
+Les étapes de configuration diffèrent selon que vous utilisez ClickHouse Cloud ou ClickHouse autogéré. Suivez la section correspondant à votre déploiement.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+  La prise en charge de PromQL dans ClickHouse Cloud est en aperçu privé. Sur les services qui participent à l’aperçu privé, le paramètre `enable_time_series_table` et les points de terminaison de l’API Prometheus sont déjà configurés. Les autres services ClickHouse Cloud ne disposent pas de cette configuration, et vous ne pouvez pas activer vous-même la fonctionnalité sur ces services. Le statement `SET enable_time_series_table` et la configuration `http_handlers` présentés dans les sections suivantes concernent les déploiements autogérés.
+</Note>
+
+Sur un service participant à l’aperçu privé, passez directement à la section [Créer une table TimeSeries](#create-a-timeseries-table). Le service expose les chemins d’endpoint répertoriés dans le [tableau des endpoints](#configure-prometheus-api).
+
+### Autogéré : activer le paramètre TimeSeries {#enable-the-timeseries-setting}
+
+Activez le paramètre `enable_time_series_table` pour l&#39;utilisateur qui crée la table et y accède :
+
+```sql
+SET enable_time_series_table = 1;
+```
+
+Pour les requêtes d’API HTTP, activez `enable_time_series_table` dans le profil de l’utilisateur de l’API.
+
+### Autogéré : configurer les points de terminaison de l’API Prometheus {#configure-prometheus-api}
+
+Configurez un seul handler, acheminé par préfixe, sur le port HTTP principal de ClickHouse :
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` conserve les handlers intégrés pour des endpoints tels que `/ping` et pour les requêtes SQL. Le préfixe ci-dessus expose ces endpoints via un seul handler :
+
+| Endpoint                                 | Rôle                                         |
+| ---------------------------------------- | -------------------------------------------- |
+| `/prometheus/api/v1/write`               | Écriture distante Prometheus                 |
+| `/prometheus/api/v1/read`                | Lecture distante Prometheus                  |
+| `/prometheus/api/v1/query`               | Requêtes PromQL instantanées                 |
+| `/prometheus/api/v1/query_range`         | Requêtes PromQL sur une plage temporelle     |
+| `/prometheus/api/v1/format_query`        | Mise en forme des expressions PromQL         |
+| `/prometheus/api/v1/series`              | Métadonnées des séries                       |
+| `/prometheus/api/v1/labels`              | Noms des labels                              |
+| `/prometheus/api/v1/label/<name>/values` | Valeurs des labels                           |
+| `/prometheus/api/v1/metadata`            | Métadonnées des familles de métriques        |
+| `/prometheus/api/v1/federate`            | Fédération des échantillons les plus récents |
+
+Dans cet exemple, le handler ne définit ni `database` ni `table`. Chaque requête doit donc fournir le paramètre de requête `table` (sauf `/format_query`, qui se contente d&#39;analyser l&#39;expression PromQL fournie et n&#39;a pas besoin de table). Elle peut également préciser `database`, utiliser un nom de table qualifié tel que `prometheus.metrics`, ou omettre la base de données pour utiliser `default`. Un même handler peut ainsi servir plusieurs tables `TimeSeries`.
+
+Pour utiliser une même table pour toutes les requêtes, configurez-la dans le handler :
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+Une table configurée dans le handler ne peut pas être surchargée par les paramètres de la requête.
+
+Paramètres de routage et du handler :
+
+| Nom          | Par défaut | Description                                                                                                                                                                                                                               |
+| ------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | aucun      | Filtre de règle qui correspond à tout chemin de requête commençant par le préfixe configuré.                                                                                                                                                |
+| `table`      | aucun      | Nom d&#39;une table `TimeSeries`. S&#39;il est omis, la requête doit fournir le paramètre de requête `table`. Le nom configuré peut inclure une base de données.                                                                          |
+| `database`   | aucun      | Base de données contenant la table. Une requête peut la fournir sous forme de paramètre de requête. Si ce paramètre est omis, ClickHouse utilise la base de données indiquée dans une valeur `table` qualifiée ou se rabat sur `default`. |
+
+### Créer une table TimeSeries {#create-a-timeseries-table}
+
+Créez une base de données et une table `TimeSeries` :
+
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+## Ingérer des metrics avec l&#39;écriture distante {#remote-write}
+
+ClickHouse prend en charge le [protocole Prometheus remote-write](https://prometheus.io/docs/specs/remote_write_spec/). Configurez Prometheus pour qu&#39;il écrive vers ce handler :
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Prometheus envoie les échantillons vers la table `prometheus.metrics`.
+
+Pour regrouper les données de nombreuses requêtes remote-write concurrentes dans un nombre réduit de parts, ClickHouse utilise les [insertions asynchrones](/fr/reference/settings/session-settings/async-insert#async_insert). Elles sont activées par défaut, et le paramètre `async_insert` dans l’URL (ou dans le profil utilisateur) permet de les activer ou de les désactiver.
+
+ClickHouse n’acquitte une requête remote-write asynchrone qu’une fois les données écrites sur disque dans toutes les tables internes de la table `TimeSeries`, quelle que soit la valeur du paramètre [`wait_for_async_insert`](/fr/reference/settings/session-settings/wait-for#wait_for_async_insert) : le protocole remote-write considère toute écriture acquittée comme durable. Si le vidage échoue, la requête renvoie une erreur et Prometheus la réessaie.
+
+Comme chaque requête attend son vidage, les insertions asynchrones limitent le débit d’écriture d’un même émetteur. Prometheus envoie une seule requête à la fois par shard remote-write. Lorsque plusieurs shards envoient simultanément, le délai de vidage adaptatif augmente jusqu’à [`async_insert_busy_timeout_max_ms`](/fr/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), sauf si les requêtes en attente atteignent d’abord [`async_insert_max_data_size`](/fr/reference/settings/session-settings/async-insert#async_insert_max_data_size). Une requête attend que son batch soit vidé, ce qui intervient au plus tard à l’issue de ce délai, compté à partir du début du batch ; ainsi, sous une charge soutenue, chaque shard écrit environ `samples per request / async_insert_busy_timeout_max_ms`, sachant que Prometheus envoie par défaut jusqu’à 2,000 échantillons par requête. Pour augmenter ce débit :
+
+* Augmentez `max_shards` (50 par défaut) ou `max_samples_per_send` dans la section `queue_config` de [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write). Prometheus ajoute automatiquement des shards lorsqu’il prend du retard, dans la limite de `max_shards`.
+* Réduisez `async_insert_busy_timeout_max_ms` dans l’URL ou dans le profil utilisateur, par exemple `&async_insert_busy_timeout_max_ms=50`. Les vidages sont alors plus fréquents, et chaque vidage crée de nouvelles parts dans les tables internes.
+* Désactivez les insertions asynchrones avec `async_insert=0`. Chaque requête crée alors ses propres parts dans les tables internes.
+
+## Interroger avec PromQL {#promql-query-support}
+
+Utilisez l&#39;endpoint de requête instantanée pour évaluer une expression PromQL à un instant donné :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Utilisez l&#39;endpoint de requête de plage pour évaluer une expression sur un intervalle de temps :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Les points de terminaison de requêtes acceptent également les paramètres dans le corps d&#39;un formulaire. Sans `--get`, curl envoie les paramètres au format `application/x-www-form-urlencoded` via `POST` :
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Utilisez l&#39;endpoint `format-query` pour analyser et formater une expression PromQL sans l&#39;évaluer :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+L&#39;expression est renvoyée sérialisée à partir de la requête analysée : les caractères d’espacement sont normalisés, les commentaires supprimés, les parenthèses redondantes retirées et les durées exprimées dans les unités acceptées par le parseur : `sum by (job) (http_requests_total{code="200"}) / 2`. Une durée conserve ses unités au lieu d&#39;être convertie en nombre de secondes : `rate(x[5m])` est donc renvoyé tel quel, sous la forme `rate(x[5m])`. Une durée qui ne correspond pas à un nombre entier d&#39;une seule unité est écrite avec chacune des unités nécessaires : `rate(x[90s])` est ainsi renvoyé sous la forme `rate(x[1m30s])`. Cet endpoint n&#39;évalue pas l&#39;expression ; il ne nécessite donc pas les paramètres `database` et `table`.
+
+Consultez les [fonctionnalités PromQL prises en charge](/fr/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) pour obtenir la liste des fonctions et des opérateurs d&#39;agrégation utilisés par l&#39;API HTTP, le dialecte `promql` et les fonctions de table.
+
+### Grafana {#grafana}
+
+Configurez une source de données Prometheus avec une URL de base qui s&#39;arrête juste avant `/api/v1` :
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: POST
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+Grafana ajoute `/api/v1/query` ou `/api/v1/query_range` à la fin de cette URL de base et ajoute `customQueryParameters` à chaque requête.
+
+Avec `httpMethod: POST`, Grafana envoie les paramètres de requête dans le corps de la requête. ClickHouse lit à la fois le corps de la requête et la chaîne de requête de l’URL : `customQueryParameters` s’applique donc toujours. Utilisez `POST` pour les expressions PromQL longues, car la longueur d’une URL est limitée.
+
+<Note>
+  Seuls sont implémentés les points de terminaison de requêtes `/api/v1/query`, `/api/v1/query_range` et `/api/v1/format_query`, les endpoints de métadonnées `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` et `/api/v1/metadata`, ainsi que l’endpoint de [fédération](#federation) `/api/v1/federate`. `/api/v1/series` requiert au moins un sélecteur de séries `match[]`, prend en charge les paramètres facultatifs `start`, `end` et `limit`, et renvoie l’union des séries correspondant à chaque sélecteur. `/api/v1/labels` accepte les mêmes paramètres, `match[]` y étant facultatif, et renvoie les noms de labels triés des séries correspondantes (ou de toutes les séries si aucun sélecteur n’est fourni). `/api/v1/label/<name>/values` accepte les mêmes paramètres que `/api/v1/labels` et renvoie les valeurs triées d’un label ; `<name>` peut utiliser l’échappement Prometheus `U__...` pour les noms de labels contenant des caractères hors de `[a-zA-Z0-9_]`. Ces endpoints couvrent les besoins d’une source de données Prometheus dans Grafana pour la navigation dans les labels, les variables de template et la complétion automatique du constructeur de requêtes.
+</Note>
+
+### Points d’entrée SQL {#sql-entry-points}
+
+ClickHouse utilise le même convertisseur PromQL pour l’API HTTP, le dialecte `promql` et les fonctions de table [`prometheusQuery`](/fr/reference/functions/table-functions/prometheusQuery) et [`prometheusQueryRange`](/fr/reference/functions/table-functions/prometheusQueryRange).
+
+Exécutez des requêtes PromQL directement avec `clickhouse-client` :
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+Utilisez les fonctions de table pour intégrer du PromQL dans une requête SQL :
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+## Interroger les métadonnées des metrics {#metadata}
+
+L’endpoint `/prometheus/api/v1/metadata` renvoie les métadonnées des metrics stockées dans la target table `Metrics` de la table `TimeSeries` : le type, le texte d’aide et l’unité de chaque famille de metrics. Il prend en charge les paramètres Prometheus suivants dans la chaîne de requête de l’URL :
+
+| Paramètre          | Description                                                                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric`           | Renvoie uniquement les métadonnées de cette famille de metrics.                                                                              |
+| `limit`            | Limite le nombre de familles de metrics renvoyées. Une valeur négative signifie aucune limite ; zéro ne renvoie aucune famille de metrics. |
+| `limit_per_metric` | Limite le nombre d’objets de métadonnées renvoyés pour chaque famille de metrics. Zéro et les valeurs négatives signifient aucune limite.    |
+
+Par défaut, la target table `Metrics` est une `ReplacingMergeTree` triée par nom de famille de metrics : elle conserve l’entrée de métadonnées la plus récemment écrite pour chaque famille de metrics. Plusieurs entrées par famille ne sont renvoyées que tant que la target table les stocke, c’est-à-dire avant la fusion de ses parts, ou lorsque la table est définie avec un moteur qui les conserve.
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/metadata" \
+  --data-urlencode "metric=http_requests_total" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+## Fédérer les metrics {#federation}
+
+ClickHouse prend en charge l&#39;endpoint de [fédération Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) à l&#39;adresse `/prometheus/api/v1/federate` (ou à tout chemin se terminant par `/federate` et servi par un handler de type `query`). Pour chaque série correspondant aux sélecteurs `match[]`, il renvoie le dernier échantillon des 5 dernières minutes au format texte Prometheus, ce qui permet à un serveur Prometheus d&#39;en effectuer la collecte :
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
+```
+
+## Lire les metrics par lecture distante {#remote-read}
+
+ClickHouse prend en charge le [protocole de lecture distante de Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) à l’adresse `/prometheus/api/v1/read`.
+
+Configurez un serveur Prometheus pour lire les données de la même table `TimeSeries` :
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+## Règles d’enregistrement {#recording-rules}
+
+ClickHouse n&#39;évalue pas les fichiers de règles Prometheus. Une [vue matérialisée actualisable](/fr/reference/statements/create/view#refreshable-materialized-view) peut jouer le rôle d’une [règle d’enregistrement](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) : elle évalue une expression PromQL selon une planification définie et ajoute le résultat à la fin d’une table `TimeSeries`. La vue suivante enregistre `sum by (job) (rate(http_requests_total[5m]))` sous le nom `job:http_requests:rate5m` toutes les minutes :
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+Chaque rafraîchissement évalue l&#39;expression au début de la minute en cours, définit le nom de la métrique avec `mapUpdate` et ajoute un échantillon pour chaque série de l&#39;ensemble de résultats. Vous pouvez ajouter des labels supplémentaires à la même map, par exemple `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. La série enregistrée s&#39;interroge comme toute autre métrique :
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+L’heure et l’erreur de la dernière évaluation sont affichées dans [`system.view_refreshes`](/fr/reference/system-tables/view_refreshes).
+
+Une vue diffère d’une règle d’enregistrement Prometheus sur les points suivants :
+
+* L’instant d’évaluation correspond à `now()` au moment où le rafraîchissement s’exécute. Outre la planification, une vue est rafraîchie juste après sa création (sauf si elle est créée avec `EMPTY`), après un redémarrage du serveur si ses rafraîchissements ne sont pas coordonnés (une vue située en dehors d’une base de données Replicated ou Shared, ou une vue avec `all_replicas = 1`, ne mémorise pas son dernier rafraîchissement), et lorsque `SYSTEM START VIEW` la relance après qu’elle a manqué un rafraîchissement planifié. Arrondissez `now()` au début de l’intervalle, comme dans l’exemple, afin que ces rafraîchissements n’ajoutent pas d’échantillons entre les rafraîchissements planifiés. Un rafraîchissement supplémentaire peut néanmoins écrire un second échantillon au même timestamp arrondi. Pour une règle de cinq minutes, utilisez `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+* Les évaluations manquées ne sont pas rattrapées. Après une indisponibilité du serveur ou un arrêt de la vue, celle-ci n’évalue que l’intervalle en cours, et les intervalles précédents restent vides. Il en va de même lorsqu’un rafraîchissement dure plus longtemps que l’intervalle.
+* Une série qui disparaît de l’ensemble de résultats ne reçoit aucun marqueur d’ancienneté : les requêtes continuent donc de renvoyer sa dernière valeur enregistrée pendant toute la période de lookback (5 minutes par défaut).
+* Il n’existe pas de fichier de règles : chaque règle est une vue distincte. Les règles n’apparaissent pas dans `/api/v1/rules`.

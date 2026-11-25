@@ -13,26 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
-
-<SettingsInfoBlock type="UInt64" default_value="100" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Nueva SETTING"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "100"},{"label": "Nueva SETTING"}]}]} />
-
-Número de archivos de datos fusionados que acumula la compactación de Iceberg en segundo plano antes de publicarlos en una nueva instantánea.
-
-Los resultados de la compactación se publican en cualquier caso cuando ya no quedan candidatos por compactar, por lo que esta SETTING solo limita
-el tiempo que los archivos ya fusionados permanecen sin publicar mientras la compactación sigue encontrando trabajo nuevo. `0` restaura el comportamiento anterior
-de publicar únicamente cuando la compactación se queda sin candidatos, un estado que nunca se alcanza mientras la tabla siga
-recibiendo nuevos archivos de datos; por tanto, cada salida fusionada se escribe en el almacenamiento de objetos y nunca se referencia desde una instantánea.
-
 ## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
 
 <SettingsInfoBlock type="Segundos" default_value="10800" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nuevo ajuste"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "10800"},{"label": "Nueva configuración"}]}]} />
 
-Tiempo tras el cual se eliminarán los datos.
+Con `enable_cleanup_old_data_files_compaction` activado, tiempo tras el cual expira una instantánea de una tabla Iceberg que ha sido reemplazada por otra más reciente,
+junto con los archivos a los que solo ella hace referencia. Se aplica el mayor entre este valor y `iceberg_outdated_snapshot_lifetime_seconds`.
 
 ## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
 
@@ -42,30 +30,25 @@ Tiempo tras el cual se eliminarán los datos.
 
 Tiempo mínimo de espera entre 2 operaciones de compactación en segundo plano.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
+## iceberg_compaction_max_bytes_to_merge {#iceberg_compaction_max_bytes_to_merge}
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="161061273600" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Nueva configuración para el máximo de bytes de un archivo de datos de Iceberg generado por la compactación, independiente del límite durante la inserción. El valor predeterminado coincide con el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB); consulte https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/. Anteriormente, la compactación fusionaba en un único archivo de salida todos los archivos aptos de una partición."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el máximo de bytes de un archivo de datos de Iceberg generado por la compactación, independiente del límite durante la inserción."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "161061273600"},{"label": "Nueva configuración. Limita el tamaño total de los archivos de una fusión de compactación, del mismo modo que `max_bytes_to_merge_at_max_space_in_pool` para `MergeTree`."}]}]} />
 
-Máximo de bytes de un archivo de datos Parquet de Iceberg generado por la compactación.
+Tamaño total máximo de los archivos de datos fusionados en una sola fusión de compactación de una tabla Iceberg, calculado como la suma de sus tamaños en el almacenamiento de objetos.
+Funciona igual que `max_bytes_to_merge_at_max_space_in_pool` para `MergeTree`: cuando el grupo de hilos en segundo plano tiene menos entradas disponibles que
+`number_of_free_entries_in_pool_to_lower_max_size_of_merge`, el límite se reduce a `max_bytes_to_merge_at_min_space_in_pool`
+(ambos de la sección `merge_tree` de la configuración).
+Los archivos de una partición que no quepan se fusionarán en fusiones posteriores. No se aplica a las fusiones que aplican archivos de eliminación por posición.
 
-El valor predeterminado refleja el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB);
-consulte https://iceberg.apache.org/docs/1.5.2/configuration/. El límite se compara con el tamaño del archivo
-escrito hasta el momento, es decir, el tamaño comprimido, la misma medida que usa `iceberg_data_file_size_lower_threshold_compaction`,
-por lo que un archivo puede superarlo en lo que el escritor aún tenga en búfer, como los grupos de filas de Parquet incompletos y los que se están
-codificando. Manténgalo por encima de
-`iceberg_data_file_size_lower_threshold_compaction`; de lo contrario, cada archivo de salida quedará por debajo del umbral inferior
-y volverá a seleccionarse para la compactación.
-
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+## iceberg_compaction_max_rows_to_merge {#iceberg_compaction_max_rows_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el número máximo de filas de un archivo de datos Iceberg generado por compactación, independiente del límite durante la inserción."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nueva configuración para el número máximo de filas de un archivo de datos Iceberg generado por compactación, independiente del límite durante la inserción."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "18446744073709551615"},{"label": "Nueva configuración. Recupera el límite del número total de filas de los archivos de una fusión de compactación, que antes se determinaba mediante `iceberg_compaction_max_rows_in_data_file`."}]}]} />
 
-Número máximo de filas de un archivo de datos Parquet de Iceberg generado por compactación. De forma predeterminada, se establece al máximo, de modo que el límite de tamaño
-`iceberg_compaction_max_bytes_in_data_file` decide por sí solo cuántos datos van a un archivo de salida, del mismo modo que
-Iceberg no tiene un equivalente en número de filas de `write.target-file-size-bytes`.
+Número total máximo de filas de los archivos de datos fusionados por una única fusión de compactación de una tabla Iceberg.
+Los archivos de una partición que no quepan se fusionan en las siguientes fusiones. No se aplica a una fusión que aplique archivos de eliminación por posición.
 
 {/*AUTOGENERATED_END*/}

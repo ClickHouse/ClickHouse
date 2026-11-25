@@ -51,6 +51,8 @@ ORDER BY event_time_microseconds;
 
 相関付けられた子クエリが他のノードで実行される可能性がある場合は、たとえば [`clusterAllReplicas`](/ja/reference/functions/table-functions/cluster) を使用して、すべてのノードで `system.query_log` をクエリします。
 
+`SQL SECURITY DEFINER` または `NONE` のビューや materialized view のアイデンティティでクエリが実行する処理は、そのクエリの子行としてログに記録されます。具体的には、ビューの読み取り、materialized view を介した読み取り、materialized view への挿入、またはソーステーブルへの `INSERT` 時に実行される materialized view のクエリが該当します。このような行では、`is_initial_query = 0` となり、`initial_query_id` は元のクエリ、`user` は定義者 (`NONE` の場合は空)、`query` は実際に実行された内容 (ビューのクエリ、または materialized view の移行先に対する読み取りや書き込み) となります。また、`tables`、`columns`、`partitions`、`projections`、`used_row_policies` には、その処理がアクセスした対象が記録されます。行は、実行された本体と実行場所の組み合わせごとに 1 行ずつ作成され、型はそのクエリの最終行と同じで、メトリクスは含まれません。
+
 各クエリは、クエリのステータス (`type` カラムを参照) に応じて、`query_log` テーブルに 1 行または 2 行を作成します。
 
 1. クエリの実行が成功した場合は、`QueryStart` 型と `QueryFinish` 型の 2 行が作成されます。
@@ -92,6 +94,7 @@ ORDER BY event_time_microseconds;
 * `columns` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ内に含まれるカラム名。
 * `partitions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリに含まれるパーティション名。
 * `projections` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用されたプロジェクションの名前。
+* `used_data_skipping_indices` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — 読み取り対象からグラニュールを除外したデータスキップ索引の名前。`database.table.index` の形式で表されます。
 * `views` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリに含まれる (マテリアライズドビューまたはライブビュー) の名前。
 * `exception_code` ([Int32](/ja/reference/data-types/int-uint)) — 例外コード。
 * `exception` ([String](/ja/reference/data-types/string)) — 例外メッセージ。
@@ -103,62 +106,63 @@ ORDER BY event_time_microseconds;
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリの識別子。
 * `address` ([IPv6](/ja/reference/data-types/ipv6)) — クエリの実行に使用された IP アドレス。プロキシ経由で接続され、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアントのアドレスになります。
 * `port` ([UInt16](/ja/reference/data-types/int-uint)) — クエリの実行に使用されたクライアントのポート。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアント側のポートになります。
-* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 同じクエリチェーン内の初期クエリを実行したユーザー名。
+* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 同じクエリチェーン内の初期クエリを実行したユーザーの名前。
 * `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリの ID。
-* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリが開始された送信元 IP アドレス。
-* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリが開始されたクライアントポート。
+* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリの発行元 IPアドレス。
+* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリの発行元クライアントのポート。
 * `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — マイクロ秒精度で記録される、同じクエリチェーン内の初期クエリの開始時刻。
-* `authenticated_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — セッション内で認証されたユーザー名。
-* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/ja/reference/data-types/enum)) — クライアントから報告された、クエリの開始元となったインターフェイス。報告されたインターフェイスがこのサーバーの認識できるものでない場合は `Unknown` になります。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリの開始時刻(マイクロ秒精度)。
+* `authenticated_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — session 内で認証されたユーザーの名前。
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10, &#39;IcebergRESTCatalog&#39; = 11)](/ja/reference/data-types/enum)) — クライアントから報告された、クエリの発行元インターフェイス。報告されたインターフェイスをこのサーバーが認識できない場合は `Unknown`。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — クエリがセキュアなインターフェイス経由で実行されたかどうかを示すフラグ
-* `os_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — `clickhouse-client` を実行しているオペレーティングシステムのユーザー名。
-* `client_hostname` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client または別の TCP クライアントが実行されているクライアントマシンのホスト名。
-* `client_name` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client または他の TCP クライアントの名前。
-* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — クライアントを呼び出した AI コーディングエージェント (例: `claude-code`、`cursor`)。環境変数から検出されます。エージェントが検出されなかった場合は空です。
-* `client_revision` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのリビジョン。
-* `client_version_major` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのメジャーバージョン。
-* `client_version_minor` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのマイナーバージョン。
-* `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのバージョンにおけるパッチ部分。
-* `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client で、複数のクエリを含むスクリプト内のクエリ番号。
-* `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client において、複数のクエリを含むスクリプトでクエリが開始される行番号です。
-* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ja/reference/data-types/enum)) — クエリの実行を開始した HTTP メソッド。クエリが HTTP 経由で到達しなかった場合、または報告されたメソッドがこのサーバーの認識できるものでない場合は `UNKNOWN` になります。
-* `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTPクエリで送信されるHTTPヘッダー UserAgent。
-* `http_referer` ([String](/ja/reference/data-types/string)) — HTTPクエリで渡されるHTTPヘッダーのReferer (クエリを行うページの絶対アドレスまたは部分的なアドレスを含みます) 。
-* `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTPクエリで渡される X-Forwarded-For HTTPヘッダー。
-* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定するクォータキー (keyed を参照) 。
-* `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — クエリがサーバー間で何回転送されたか。
-* `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouseのリビジョン番号。
-* `http_handler_name` ([String](/ja/reference/data-types/string)) — クエリを呼び出した SQL 定義の HTTP ハンドラー (CREATE HANDLER) の名前。このようなハンドラーを介してクエリが呼び出されなかった場合は空です。
-* `http_request_url` ([String](/ja/reference/data-types/string)) — クエリを呼び出した HTTP リクエストパス (クエリ文字列を除く)。機密性の高いリクエストパラメータが永続化されないよう、クエリ文字列は省略されます。HTTP 以外のクエリでは空です。
-* `log_comment` ([String](/ja/reference/data-types/string)) — ログコメント。max&#95;query&#95;size を超えない任意の文字列を設定できます。定義されていない場合は空文字列です。
-* `thread_ids` ([Array(UInt64)](/ja/reference/data-types/array)) — クエリの実行に関与しているスレッド ID。これらのスレッドが同時に実行されていたとは限りません。
-* `peak_threads_usage` ([UInt64](/ja/reference/data-types/int-uint)) — クエリの実行時に同時に使用されるスレッド数の最大値。
-* `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — さまざまなメトリクスを計測する ProfileEvents です。これらの説明は `system.events` テーブルにあります
-* `Settings` ([Map(LowCardinality(String), LowCardinality(String))](/ja/reference/data-types/map)) — クライアントがクエリを実行したときに変更された設定。設定の変更を記録するには、log&#95;query&#95;settings パラメータを 1 に設定します。
-* `used_aggregate_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリの実行中に使用された集約関数の正式名。
-* `used_aggregate_function_combinators` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用された集約関数コンビネータの正準名。
-* `used_database_engines` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリの実行中に使用されたデータベースエンジンの正式名称。
-* `used_data_type_families` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用されたデータ型ファミリーの標準名。
-* `used_dictionaries` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用された辞書の正規名。
-* `used_formats` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用されたフォーマットの正式名。
-* `used_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリの実行中に使用された関数の正式名。
-* `used_storages` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリの実行時に使用されたストレージの正式名称。
-* `used_table_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリの実行時に使用されたテーブル関数の正規名。
-* `used_executable_user_defined_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に使用された実行可能なユーザー定義関数の正規名。
-* `used_sql_user_defined_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された SQL ユーザー定義関数の正規名。
-* `used_row_policies` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された行ポリシー名の一覧。
-* `used_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に正常にチェックされた権限。
-* `missing_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に不足している権限。
+* `os_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client を実行している OS のユーザー名。
+* `client_hostname` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client またはその他の TCPクライアントが実行されているクライアントマシンのホスト名。
+* `client_name` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client またはその他の TCPクライアントの名前。
+* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — クライアントを呼び出した AI コーディングエージェント(例: `claude-code`、`cursor`)。環境変数から検出されます。エージェントが検出されなかった場合は空。
+* `client_revision` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCPクライアントのリビジョン。
+* `client_version_major` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCPクライアントのメジャーバージョン。
+* `client_version_minor` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCPクライアントのマイナーバージョン。
+* `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCPクライアントのバージョンのパッチ部分。
+* `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client で実行する、複数のクエリを含むスクリプト内でのクエリ番号。
+* `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client で実行する、複数のクエリを含むスクリプト内でクエリが始まる行番号。
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ja/reference/data-types/enum)) — クエリを発行した HTTP メソッド。クエリが HTTP 経由でない場合、または報告されたメソッドをこのサーバーが認識できない場合は `UNKNOWN`。
+* `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTP クエリで渡された HTTP ヘッダー UserAgent。
+* `http_referer` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された HTTP ヘッダー Referer(クエリを発行したページの絶対アドレスまたは部分アドレスを含む)。
+* `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された HTTP ヘッダー X-Forwarded-For。
+* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定されたクォータキー (keyed を参照)。
+* `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — クエリがサーバー間で転送された回数。
+* `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouse のリビジョン。
+* `http_handler_name` ([String](/ja/reference/data-types/string)) — クエリを呼び出した、SQL で定義された HTTP ハンドラー (CREATE HANDLER) の名前。クエリがそのようなハンドラー経由で呼び出されていない場合は空。
+* `http_request_url` ([String](/ja/reference/data-types/string)) — クエリを呼び出した HTTP リクエストのパス (クエリ文字列を除く)。機密性の高いリクエストパラメータが保存されないよう、クエリ文字列は省略されます。HTTP 以外のクエリでは空。
+* `log_comment` ([String](/ja/reference/data-types/string)) — ログコメント。max&#95;query&#95;size を超えない任意の文字列を設定できます。未定義の場合は空文字列。
+* `thread_ids` ([Array(UInt64)](/ja/reference/data-types/array)) — クエリ実行に関与しているスレッドの ID。これらのスレッドが同時に実行されていたとは限りません。
+* `peak_threads_usage` ([UInt64](/ja/reference/data-types/int-uint)) — クエリを同時に実行していたスレッド数の最大値。
+* `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — さまざまなメトリクスを計測する ProfileEvents。各項目の説明は system.events テーブルを参照してください。
+* `Settings` ([Map(LowCardinality(String), LowCardinality(String))](/ja/reference/data-types/map)) — クライアントがクエリを実行した際に変更された設定。設定の変更をログに記録するには、log&#95;query&#95;settings パラメータを 1 に設定します。
+* `used_aggregate_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された集約関数の標準名。
+* `used_aggregate_function_combinators` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された集約関数コンビネータの標準名。
+* `used_database_engines` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用されたデータベースエンジンの標準名。
+* `used_data_type_families` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用されたデータ型ファミリーの標準名。
+* `used_dictionaries` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された Dictionary の標準名。
+* `used_formats` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用されたフォーマットの標準名。
+* `used_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された関数の標準名。
+* `used_storages` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用されたストレージの標準名。
+* `used_table_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用されたテーブル関数の標準名。
+* `used_executable_user_defined_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された実行可能ユーザー定義関数の標準名。
+* `used_sql_user_defined_functions` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された SQL ユーザー定義関数の標準名。
+* `used_row_policies` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された行ポリシー名のリスト。
+* `used_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中にチェックが成功した権限。
+* `missing_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に不足していた権限。
 * `used_number_of_joins` ([UInt64](/ja/reference/data-types/int-uint)) — このクエリで実行された物理的な結合の数。パイプラインの構築時に収集されるため、クエリテキスト内の JOIN 句の数ではなく、すべての最適化が適用された後に残った結合の数を反映します。結合はネストの深さに関係なくカウントされます。サブクエリ、共通テーブル式、ビュー、ビューのビュー、および INSERT によってトリガーされた materialized view の SELECT は、いずれも送信されたクエリの行に集計されます。そのため、クエリ自体のテキストに JOIN がまったく含まれていなくても、この値が 0 以外になることがあります。EXPLAIN PIPELINE のように、パイプラインを構築するだけで実行しないクエリでは、説明対象のクエリの結合が報告されます。1 つのクエリの実行中に、一部のパイプラインは複数回組み立てられます。materialized view の SELECT は、それをトリガーする INSERT のブロックごと、および insert ストリームごとに組み立てられます。再帰 CTE の再帰メンバーは反復ごとに組み立てられ、ループのリレーションは再開されるたびに組み立て直されます。それでも、このようなパイプラインの結合は 1 回だけカウントされます。したがって、この数値はパイプラインが組み立てられた回数ではなく、クエリそのものを表します。
-* `used_join_algorithms` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合のアルゴリズム: &#39;HASH&#39;、&#39;GRACE&#95;HASH&#39;、&#39;PARTIAL&#95;MERGE&#39;、&#39;FULL&#95;SORTING&#95;MERGE&#39;、&#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;、&#39;IE&#95;JOIN&#39;、&#39;DIRECT&#39;、&#39;PASTE&#39;、&#39;CONSTANT&#39;。ソートおよび重複排除されているため、複数の結合で共通するアルゴリズムは 1 回だけ現れます。これは join&#95;algorithm 設定で許可されているアルゴリズムではなく、各結合の実行に実際に選択されたアルゴリズムです。ハッシュ結合は、ハッシュテーブルを単一スレッドで構築したか複数スレッドで構築したかにかかわらず &#39;HASH&#39; となります。実行途中でアルゴリズムが別のものに切り替わることがあり、その場合は両方が報告されます。
-* `used_join_kinds` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の種類。結合ごとに 1 つの要素を持つため、複数の結合で共通する種類は複数回現れます。要素は実行順ではなく、ソートされた順に並びます。各種類は実際に実行されたものであり、クエリテキストとは異なる場合があります。これは、オプティマイザが結合の左右を入れ替えて実行し、その結果 LEFT が RIGHT に変わることがあるためです。
-* `used_join_strictness` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の厳密性。結合ごとに 1 つの要素を持ち、used&#95;join&#95;kinds と同じ順序で並びます。つまり、両方の配列で同じインデックスの要素は同じ結合を表します。
-* `spilled_to_disk` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中にディスク上の一時ファイルへデータを書き込んだ (外部メモリで処理した) 演算子。ソートおよび重複排除されています。空の配列は、クエリがすべてメモリ内で実行されたことを意味します。
-* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このクエリが属するトランザクションの識別子。
-* `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ja/reference/data-types/enum)) — クエリ実行時のクエリキャッシュの使用状況。値: &#39;Unknown&#39; = 状態不明、&#39;None&#39; = クエリ結果はクエリ結果キャッシュに書き込まれず、クエリ結果キャッシュからも読み出されませんでした、&#39;Write&#39; = クエリ結果はクエリ結果キャッシュに書き込まれました、&#39;Read&#39; = クエリ結果はクエリ結果キャッシュから読み出されました。
-* `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — 非同期読み込みのメトリクス。
-* `is_internal` ([UInt8](/ja/reference/data-types/int-uint)) — 内部で実行される補助クエリかどうかを示します。
+* `used_join_algorithms` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合のアルゴリズム: &#39;HASH&#39;、&#39;GRACE&#95;HASH&#39;、&#39;PARTIAL&#95;MERGE&#39;、&#39;FULL&#95;SORTING&#95;MERGE&#39;、&#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;、&#39;INEQUALITY&#39;、&#39;BLOCK&#95;NESTED&#95;LOOP&#39;、&#39;DIRECT&#39;、&#39;PASTE&#39;、&#39;CONSTANT&#39;。ソート済みかつ重複排除済みのため、複数の結合で共通するアルゴリズムは 1 回だけ現れます。これは各結合の実行に選択されたアルゴリズムであり、join&#95;algorithm 設定で許可されているアルゴリズムではありません。ハッシュ結合は、ハッシュテーブルが単一スレッドで構築されたか複数スレッドで構築されたかにかかわらず &#39;HASH&#39; となります。実行の途中でアルゴリズムが別のものに切り替わることがあり、その場合は両方が報告されます。
+* `used_join_kinds` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の種類。結合ごとに 1 つの要素が含まれるため、複数の結合で共通する種類は複数回現れます。要素は実行順ではなくソートされた順に並びます。各種類は実際に実行されたものであり、クエリテキストとは異なる場合があります。オプティマイザが結合の左右を入れ替えて実行し、その結果 LEFT が RIGHT になることがあるためです。
+* `used_join_strictness` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の strictness。結合ごとに 1 つの要素が含まれ、used&#95;join&#95;kinds と同じ順序で並びます。つまり、両方の配列で同じインデックスの要素は同じ結合を表します。
+* `spilled_to_disk` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中にディスク上の一時ファイルにデータを書き込んだ (外部メモリで処理した) オペレーター。ソート済みかつ重複排除済みです。空の配列は、クエリがすべてメモリ内で実行されたことを意味します。
+* `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このクエリが実行されたトランザクションの識別子。
+* `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ja/reference/data-types/enum)) — クエリ実行中のクエリキャッシュの使用状況。値: &#39;Unknown&#39; = 状態不明、&#39;None&#39; = クエリ結果はクエリ結果キャッシュへの書き込みも読み取りも行われなかった、&#39;Write&#39; = クエリ結果がクエリ結果キャッシュに書き込まれた、&#39;Read&#39; = クエリ結果がクエリ結果キャッシュから読み取られた。
+* `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — 非同期読み取りのメトリクス。
+* `is_internal` ([UInt8](/ja/reference/data-types/int-uint)) — 内部で実行された補助クエリかどうかを示します。
+* `query_plan` (`JSON`) — この行が表すクエリのクエリプランを、ステップごとのランタイム統計とともに JSON としてシリアル化したものです。`log_query_plans` 設定が有効な場合にのみ値が設定されます。また、`QueryStart` 行の時点ではまだ実行計画が存在しないため、この行では空になります。例外をスローしたクエリの行では、例外がスローされた時点までにそのクエリが構築していた実行計画が記録され、統計情報は含まれません。これは、実行中に失敗したクエリでは実行計画が部分的にしか実行されておらず、実行前に失敗したクエリでは実行計画がまったく実行されていないためです。実行計画は `query_masking_rules` によってマスキングされます。いずれかのルールに一致するクエリや、シークレット引数を含むクエリについては、実行計画は保存されません。
 
 **別名:**
 

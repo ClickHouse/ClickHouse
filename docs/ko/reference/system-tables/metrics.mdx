@@ -114,6 +114,10 @@ AsynchronousInsert 스레드 풀에서 큐에 대기 중이거나 현재 실행 
 
 활성 상태의 복제된 테이블.
 
+### AttachedSharedTable {#attachedsharedtable}
+
+활성 상태인 SharedMergeTree 테이블 수입니다.
+
 ### AttachedTable {#attachedtable}
 
 활성 상태의 테이블(table)입니다.
@@ -614,6 +618,10 @@ Distributed Cache에 대해 수행된 Read 요청 수
 
 현재 AZ에 등록된 Distributed Cache 서버 수
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+마지막 멈춘 요청 스캔(Scan) 시점을 기준으로 속도 저하 윈도우가 열려 있는 Distributed Cache 클라이언트 수
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 이 Distributed Cache 서버 프로세스가 소유한 커밋된 임시 파일 수
@@ -628,11 +636,15 @@ Distributed Cache에서 ClickHouse 서버로 연결된 열린 연결 수
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-Distributed Cache에서 ClickHouse 서버로의 활성 연결 수(제한으로 인해 취소된 것으로 표시되지 않은 연결)
+분산 캐시 서버(Distributed Cache server)의 레지스트리에 등록된 클라이언트 연결 수(종료 대상으로 표시된 연결 포함)
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 Distributed Cache의 S3 캐시 클라이언트 수
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+마지막 정체 요청 스캔(Scan) 시점 기준으로, 최소 `distributed_cache_stuck_request_no_progress_timeout_ms` 동안 진행 상황이 없었거나 `distributed_cache_max_request_processing_time_ms`를 초과해 실행된 후 스캔 인터벌 1회 내에 스스로 종료되지 않은, 전송 중인 분산 캐시 서버(Distributed Cache server) 요청 수
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -956,7 +968,7 @@ IcebergCatalog 스레드 풀에서 큐에 대기 중이거나 활성 상태인 �
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-Iceberg 컴팩션으로 대체된 데이터 파일을 제거하는 백그라운드 작업 중 예약되었거나 아직 Iceberg 테이블이 보유 중인 작업의 수입니다.
+`enable_cleanup_old_data_files_compaction`으로 활성화되는 백그라운드 작업, 즉 오래된 스냅샷을 만료하고 해당 스냅샷에서만 참조하는 파일을 제거하는 백그라운드 작업이 있는 Iceberg 테이블의 수입니다.
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1973,6 +1985,10 @@ Keeper에 등록된 비활성 레플리카의 최소 수
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 Keeper에 저장된 오래된 파트 레코드의 수
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+이 레플리카가 보유 중이거나 획득 중인 파트 업데이트 리더 잠금 수입니다. 이 레플리카가 리더로 있는 SharedMergeTree 테이블마다 하나씩 존재합니다.
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

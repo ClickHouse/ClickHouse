@@ -18,11 +18,11 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "قراءة محركات جداول التخزين الكائني ودوال الجداول عبر distributed cache عند استخدامه في عمليات القراءة الأخرى."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
-لا يكون لهذا أي تأثير إلا في ClickHouse Cloud. يتيح القراءة من distributed cache عبر محركات الجداول / دوال الجداول (S3 وazure وما إلى ذلك). تستخدم ذاكرة التخزين المؤقت قيمة ETag الخاصة بالكائن مفتاحًا لها، حتى لا تُقدَّم نسخة متقادمة من كائن جرت الكتابة فوقه في مكانه. أما الكائن الذي تكون قيمة ETag الخاصة به مفقودة أو لا تمثّل معرّفًا قويًا للمحتوى، فيُقرأ مباشرةً من التخزين الكائني.
+يسري مفعوله فقط في ClickHouse Cloud. يتيح القراءة من distributed cache عبر محركات الجداول / دوال الجداول (s3، وazure، وIceberg، وDelta Lake، وغيرها). تعني القيمة `auto` (القيمة الافتراضية) القراءة عبر distributed cache عند استخدامه في عمليات القراءة الأخرى، وفقًا لما يحدده إعداد الخادم `enable_read_through_distributed_cache` والإعداد `force_read_through_distributed_cache`. تعتمد ذاكرة التخزين المؤقت في مفاتيحها على قيمة ETag الخاصة بالكائن، حتى لا يُقدَّم الكائن الذي استُبدل في مكانه بنسخة متقادمة، أو على الهوية غير القابلة للتغيير لملف البيانات المأخوذة من سجلات الجدول (Iceberg، وDelta Lake)، حتى لا تكون هناك حاجة إلى طلب `HEAD`. أما الكائن الذي لا يملك ETag قويًا أو هوية من هذا النوع، فيُقرأ من التخزين الكائني مباشرةً، وكذلك عمليات القراءة التي يتعذّر على خادم ذاكرة التخزين المؤقت تكرارها: جداول `url`، وعمليات قراءة `s3` باستخدام `NOSIGN` أو `headers`، وملفات البيانات ذات المسار المؤهَّل بالكامل (استنساخ سطحي في Delta Lake)، وعمليات قراءة `azure` ما لم تكن قيمة الإعداد `1`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

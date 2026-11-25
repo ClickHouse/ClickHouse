@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Overview",
+      "group": "概要",
       "pages": [
         "ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ja/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuration",
+      "group": "設定",
       "pages": [
         "ja/products/bring-your-own-cloud/configuration/configurations",
         "ja/products/bring-your-own-cloud/configuration/connect",
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "導入",
       "pages": [
         "ja/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "カスタマイズ",
           "pages": [
             "ja/products/bring-your-own-cloud/onboarding/customization-aws",
             "ja/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Network",
+          "group": "ネットワーク",
           "pages": [
             "ja/products/bring-your-own-cloud/onboarding/network",
             "ja/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,10 +40,17 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "リファレンス",
       "pages": [
         "ja/products/bring-your-own-cloud/reference/network-security",
-        "ja/products/bring-your-own-cloud/reference/privilege",
+        {
+          "group": "権限",
+          "root": "ja/products/bring-your-own-cloud/reference/privilege",
+          "pages": [
+            "ja/products/bring-your-own-cloud/reference/privilege-aws",
+            "ja/products/bring-your-own-cloud/reference/privilege-gcp"
+          ]
+        },
         "ja/products/bring-your-own-cloud/reference/clickhouse-data-access",
         "ja/products/bring-your-own-cloud/reference/observability-aws",
         "ja/products/bring-your-own-cloud/reference/billable-aws-services",
@@ -52,7 +59,7 @@
         "ja/products/bring-your-own-cloud/reference/security-shared-responsibility",
         "ja/products/bring-your-own-cloud/reference/faq",
         {
-          "group": "Connector Mode",
+          "group": "コネクターモード",
           "hidden": true,
           "tag": "Preview",
           "pages": [

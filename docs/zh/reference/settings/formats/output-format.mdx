@@ -162,6 +162,16 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 将 `UUID` 值写为普通的 Arrow `FixedSizeBinary(16)`，字段元数据中不附带 `arrow.uuid` 扩展类型。
 适用于不支持 `arrow.uuid` 扩展类型的 Arrow 读取器。
 
+## output_format_arrow_variant_as_json_string {#output_format_arrow_variant_as_json_string}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置：将 Variant 以其 JSON 表示形式作为字符串写入 Utf8 列，而不是写入 Arrow 紧凑联合类型。"}]}]} />
+
+将 `Variant` 值写为可为空的 Arrow `Utf8` 列，该列保存每个值的 JSON 表示 (与 `JSONEachRow`
+格式一致，例如 `String` 值会用引号括起) ，而不是写为 Arrow 紧凑联合类型。适用于不支持联合类型的 Arrow 读取器。
+`NULL` 值会写为 Arrow null，但 `Map` 键除外：由于 Arrow 不允许 Map 键为 null，此时会写为 JSON `null`。
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
 用于输出的压缩编解码器。可选值：&#39;null&#39;、&#39;deflate&#39;、&#39;snappy&#39;、&#39;zstd&#39;、&#39;bzip2&#39;、&#39;xz&#39;。
@@ -763,6 +773,14 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
 
 Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、brotli、zstd、gzip、none (未压缩)
 
+## output_format_parquet_data_page_row_limit {#output_format_parquet_data_page_row_limit}
+
+<SettingsInfoBlock type="UInt64" default_value="20000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "20000"},{"label": "新增设置：与 parquet-mr 和 Arrow 的做法一致，Parquet 数据页在达到 20000 行后即结束，从而使页面索引能够跳过压缩效果较好的列中的部分数据。"}]}]} />
+
+单个数据页中的最大行数，每处理 [output&#95;format&#95;parquet&#95;batch&#95;size](/zh/reference/settings/formats/output-format#output_format_parquet_batch_size) 个值检查一次；数据页大小达到 [output&#95;format&#95;parquet&#95;data&#95;page&#95;size](/zh/reference/settings/formats/output-format#output_format_parquet_data_page_size) 时也会结束。如果没有此限制，压缩效果较好的列 (例如已排序的列) 会将整个行组写入同一个页中，导致页面索引无法跳过其中任何部分。0 表示不限制。
+
 ## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -858,6 +876,14 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置。"}]}]} />
 
 使用 `ALP` (Adaptive Lossless floating-Point，自适应无损浮点) 编码对 `Float32` 和 `Float64` 列 (即 Parquet 中的 `FLOAT` 和 `DOUBLE`) 进行编码。`ALP` 是一种无损编码，对于类十进制的浮点数据 (如价格、测量值、坐标) ，其压缩效果远优于 `PLAIN`。此类列在写入时不使用字典；如果某个页面采用 `ALP` 编码后反而比 `PLAIN` 更大，则该页面改用 `PLAIN` 写入。该编码是最近才加入 Parquet 格式的，因此并非所有 Parquet 读取器都已支持：仅当读取这些文件的读取器支持该编码时，才应启用此设置。
+
+## output_format_parquet_use_data_page_v2 {#output_format_parquet_use_data_page_v2}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+以 `DataPageV2` 而非 `DataPage` (V1) 格式写入 Parquet 数据页。`DataPageV2` 以未压缩形式存储重复级别和定义级别，因此读取器无需解压缩值即可获取空值和 array 大小；此外，它会在页头中记录行数和空值数量，并确保每个数据页都从行边界开始。部分 Parquet 读取器不支持 `DataPageV2`。
 
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
@@ -1159,6 +1185,39 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 使用 Google wrapper 对 Nullable 列进行序列化时，会将默认值序列化为空 wrapper。若关闭此设置，则默认值和 NULL 值都不会被序列化
+
+## output_format_puffin_blob_type {#output_format_puffin_blob_type}
+
+<SettingsInfoBlock type="String" default_value="deletion-vector-v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "deletion-vector-v1"},{"label": "`Puffin` 输出格式的新增设置：所写入二进制大对象的类型。"}]}]} />
+
+`Puffin` 输出格式所写入二进制大对象的类型。可选值：
+
+* `deletion-vector-v1` - 输入包含两列：所引用的数据文件和已删除行的位置；每个被引用的数据文件对应写入一个删除向量二进制大对象。
+* `apache-datasketches-theta-v1` - 每个输入列基于其非 NULL 值生成一个 Apache DataSketches Theta sketch 二进制大对象，并将 `ndv` 属性设置为不同值数量的估计值，与 Iceberg 写入列统计信息的方式一致。
+
+## output_format_puffin_field_ids {#output_format_puffin_field_ids}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "`Puffin` 输出格式的新增设置：Theta sketch 二进制大对象所对应列的 Iceberg 字段 ID。"}]}]} />
+
+输入列的 Iceberg 字段 ID 列表，以逗号分隔，由 `Puffin` 输出格式写入 `apache-datasketches-theta-v1` 二进制大对象的 `fields` 中。写入 Theta sketch 时必须设置此项。
+
+## output_format_puffin_sequence_number {#output_format_puffin_sequence_number}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "`Puffin` 输出格式的新增设置：Theta sketch 二进制大对象的序列号。"}]}]} />
+
+`Puffin` 输出格式写入 `apache-datasketches-theta-v1` 二进制大对象的 Iceberg 序列号，即计算统计信息所依据的快照的序列号。写入 Theta sketch 时必须指定此设置。
+
+## output_format_puffin_snapshot_id {#output_format_puffin_snapshot_id}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "`Puffin` 输出格式的新增设置：Theta sketch 二进制大对象的快照 ID。"}]}]} />
+
+`Puffin` 输出格式写入 `apache-datasketches-theta-v1` 二进制大对象的 Iceberg 快照 ID，即计算统计信息所基于的快照。写入 Theta sketch 时必须设置此项。
 
 ## output_format_schema {#output_format_schema}
 

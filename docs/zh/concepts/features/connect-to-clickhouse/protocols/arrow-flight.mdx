@@ -1,0 +1,466 @@
+---
+description: 'ClickHouse 中 Apache Arrow Flight 接口的文档，该接口支持 Flight SQL 客户端连接到 ClickHouse'
+sidebarTitle: 'Arrow Flight 接口'
+slug: /concepts/features/connect-to-clickhouse/protocols/arrow-flight
+title: 'Arrow Flight 接口'
+doc_type: 'reference'
+---
+
+## 概览 {#overview}
+
+ClickHouse 支持 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) 协议——这是一个高性能 RPC 框架，基于 [gRPC](https://grpc.io/) 使用 [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) 格式实现高效的列式数据传输。
+
+该实现还支持 [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)，使支持 Flight SQL 协议的 BI 工具和应用程序能够直接查询 ClickHouse。
+
+主要功能：
+
+* 执行 SQL 查询并以 Apache Arrow 格式获取结果。
+* 使用 Arrow 格式向表中插入数据。
+* 通过 Flight SQL 命令查询元数据 (目录、schema、表、主键) 。
+* 通过 Flight SQL 创建、绑定、执行和关闭服务端预处理语句。
+* 通过 Flight SQL 操作管理会话和设置。
+* TLS 加密以及用户名/密码身份验证。
+* 通过 `PollFlightInfo` 增量获取结果。
+* 通过 `CancelFlightInfo` 取消查询。
+
+<Note>
+  在 ClickHouse Cloud 中，Arrow Flight 接口默认处于禁用状态，需要为您的服务开启相应的 Cloud 功能开关后方可使用。下文的服务器配置示例适用于自管理 ClickHouse。
+</Note>
+
+## 启用 Arrow Flight 服务器 {#enabling-server}
+
+要启用 Arrow Flight 服务器，请在 ClickHouse 服务器配置中添加 `arrowflight_port` 设置：
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+</clickhouse>
+```
+
+启动时，日志中会输出一条消息，确认该接口已启用：
+
+```text
+{} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
+```
+
+## TLS 配置 {#tls-configuration}
+
+要为 Arrow Flight 接口启用 TLS，请配置以下设置：
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/path/to/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/path/to/server-key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+```
+
+启用 TLS 后，客户端必须使用 `grpc+tls://` 协议方案 (而非 `grpc://`) 进行连接。
+
+## 身份验证 {#authentication}
+
+Arrow Flight 接口支持两种身份验证方法：
+
+### 基本身份验证 {#basic-auth}
+
+客户端通过标准 HTTP `Authorization: Basic` 请求头使用用户名和密码进行身份验证。身份验证成功后，服务端会在响应头中返回 Bearer 令牌。
+
+### Bearer 令牌身份验证 {#bearer-auth}
+
+后续请求可以通过 `Authorization: Bearer <token>` 请求头，使用基本身份验证返回的 Bearer 令牌。该令牌每次使用时都会自动刷新，其过期时间由 `default_session_timeout` 服务器设置决定 (默认值：60 秒) 。
+
+### 不带用户名的调用 {#auth-without-user-name}
+
+不带 `authorization` 请求头的调用，或使用用户名为空的 Basic 凭证的调用，将以 [`default_session_user`](/zh/reference/settings/server-settings/settings/default#default_session_user) 服务器设置所指定的用户 (未另行配置时为 `default`) 进行身份验证，并使用所提供的密码 (可能为空) 。其行为与不带 `user` 参数的 HTTP 请求完全相同。
+
+空用户名只是该用户的别名。该用户的密码、`networks` 及其他访问检查照常生效，因此是否接受不带凭证的调用，由该用户的配置决定。
+
+如果将 `default_session_user` 设置为空字符串，此类调用将被拒绝，并返回 `Unauthenticated`。若服务器配置中已启用 `session_log` 部分，该拒绝会作为 `LoginFailure` 事件记录到 [`system.session_log`](/zh/reference/system-tables/session_log) 中，其 `user` 为空。
+
+### Python 示例 {#auth-python-example}
+
+```python
+import pyarrow.flight as flight
+
+client = flight.FlightClient("grpc://localhost:9090")
+
+# Basic auth returns a bearer token for subsequent calls
+token_pair = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+启用 TLS：
+
+```python
+import pyarrow.flight as flight
+
+with open("ca-cert.pem", "rb") as f:
+    tls_root_certs = f.read()
+
+client = flight.FlightClient(
+    "grpc+tls://localhost:9090",
+    tls_root_certs=tls_root_certs,
+)
+
+token_pair = client.authenticate_basic_token("default", "password")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+## 会话管理 {#session-management}
+
+Arrow Flight 接口通过自定义 gRPC 元数据请求头支持 ClickHouse 会话：
+
+| 请求头                            | 描述                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `x-clickhouse-session-id`      | 会话标识符。若提供该值，多个请求将共享同一会话状态 (临时表、设置) 。                                     |
+| `x-clickhouse-session-timeout` | 会话超时时间，单位为秒。不得超过 `max_session_timeout`。                                  |
+| `x-clickhouse-session-check`   | 设置为 `1` 时，仅检查会话是否存在，而不创建新会话。                                             |
+| `x-clickhouse-session-close`   | 设置为 `1` 时，在请求完成后关闭会话。需要在服务器配置中将 `enable_arrow_close_session` 设置为 `true`。 |
+
+<Note>
+  由于 Arrow Flight 使用基于 HTTP/2 的 gRPC，元数据请求头名称区分大小写，必须严格按照所示以小写形式指定 (例如，应使用 `x-clickhouse-session-id`，而非 `X-ClickHouse-Session-Id`) 。这是 [RFC 9113 第 8.2 节](https://www.rfc-editor.org/rfc/rfc9113#section-8.2)的要求，该规范规定 HTTP/2 字段名称只能包含小写字符。这一点与 HTTP/1.1 不同，在 HTTP/1.1 中请求头名称不区分大小写。
+</Note>
+
+在会话中，可以通过 `SetSessionOptions` 操作 设置持久化的 ClickHouse 设置 (参见 [DoAction](#doaction)) 。
+
+## 服务器配置参考文档 {#configuration-reference}
+
+| 设置项                                                           | 默认值     | 描述                                                                                                                      |
+| ------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `arrowflight_port`                                            | —       | Arrow Flight 服务器的端口。仅在指定此设置时才会启动该服务器。                                                                                   |
+| `arrowflight.enable_ssl`                                      | `false` | 启用 TLS 加密。                                                                                                              |
+| `arrowflight.ssl_cert_file`                                   | —       | TLS 证书文件的路径。启用 TLS 时必填。                                                                                                 |
+| `arrowflight.ssl_key_file`                                    | —       | TLS 私钥文件的路径。启用 TLS 时必填。                                                                                                 |
+| `arrowflight.tickets_lifetime_seconds`                        | `600`   | Flight 票据过期并被清理前的时长 (秒) 。设置为 `0` 可禁用票据自动过期。                                                                             |
+| `arrowflight.cancel_ticket_after_do_get`                      | `false` | 若为 `true`，票据被 `DoGet` 消费后会立即取消，以释放内存。                                                                                   |
+| `arrowflight.poll_descriptors_lifetime_seconds`               | `600`   | 轮询描述符过期前的时长 (秒) 。设置为 `0` 可禁用自动过期。                                                                                       |
+| `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false` | 若为 `true`，轮询描述符被 `PollFlightInfo` 消费后即被取消。                                                                              |
+| `arrowflight.max_prepared_statements_per_user`                | `100`   | 每个用户可同时打开的预处理语句数量上限。设置为 `0` 可取消该限制。                                                                                     |
+| `arrowflight.prepared_statements_lifetime_seconds`            | `-1`    | 预处理语句的生命周期模式。`> 0`：以该值作为生命周期，会话绑定语句和无会话关联的语句均在每次请求时刷新过期时间。`0`：禁用自动过期。`-1`：会话绑定语句以会话超时时间作为生命周期，并在每次请求时刷新；无会话关联的语句不会自动过期。 |
+| `enable_arrow_close_session`                                  | `true`  | 允许客户端通过 `x-clickhouse-session-close` 请求头关闭会话。                                                                           |
+| `default_session_timeout`                                     | `60`    | 默认会话超时时间 (秒) 。同时决定 Bearer 令牌的过期时间。                                                                                      |
+| `max_session_timeout`                                         | `3600`  | 允许的最大会话超时时间 (秒) 。                                                                                                       |
+
+## 支持的 RPC 方法 {#rpc-methods}
+
+### GetFlightInfo {#getflightinfo}
+
+执行查询并返回一个 `FlightInfo`，其中包含结果 schema、附带用于获取数据的票据的端点、行数以及字节数。
+
+接受一个 `FlightDescriptor`，它可以是：
+
+* **PATH 描述符**：仅含单个分段的路径，会被解释为表名，并生成 `SELECT * FROM <table>`。
+* **CMD 描述符**：可以是原始 SQL 查询字符串，也可以是已序列化的 Flight SQL Protobuf 命令 (参见 [Flight SQL 命令](#flight-sql-commands)) 。
+
+查询会被完整执行，结果存储在服务端票据中。每个数据块都会生成一个独立的端点/票据，使客户端能够并行获取数据。
+
+```python
+# Query by table name
+descriptor = flight.FlightDescriptor.for_path("my_table")
+info = client.get_flight_info(descriptor, options)
+
+# Query by SQL
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM my_table WHERE id > 100"
+)
+info = client.get_flight_info(descriptor, options)
+
+# Retrieve results
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+### PollFlightInfo {#pollflightinfo}
+
+支持对长时间运行的查询进行增量结果获取。`PollFlightInfo` 无需像 `GetFlightInfo` 那样等待整个查询完成，而是逐块返回结果。
+
+首次调用时，查询开始执行。响应包含：
+
+* 一个 `FlightInfo`，其中包含截至目前所有已可用数据块的端点。
+* 一个用于下一次轮询的 `FlightDescriptor` (如果预计还有更多结果) 。
+
+后续使用返回的描述符发起调用，即可获取更多块。当没有更多数据可用时，响应中将不再包含下一个描述符。
+
+<Note>
+  当前实现会一直阻塞，直到有数据块可用，而不会在无数据时立即返回。
+</Note>
+
+### GetSchema {#getschema}
+
+无需执行完整查询，即可返回查询结果的 Arrow schema。支持与 `GetFlightInfo` 相同的描述符类型。
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT 1 AS x, 'hello' AS y"
+)
+schema_result = client.get_schema(descriptor, options)
+schema = schema_result.schema
+print(schema)  # x: int32, y: string
+```
+
+### DoGet {#doget}
+
+获取指定票据对应的数据。可接受以下任一形式：
+
+* 由 `GetFlightInfo` 或 `PollFlightInfo` 返回的票据。
+* 直接作为票据值的原始 SQL 查询字符串。
+
+```python
+# Using a ticket from GetFlightInfo
+reader = client.do_get(endpoint.ticket, options)
+table = reader.read_all()
+
+# Using a raw SQL query as ticket
+ticket = flight.Ticket("SELECT number FROM system.numbers LIMIT 10")
+reader = client.do_get(ticket, options)
+table = reader.read_all()
+```
+
+### DoPut {#doput}
+
+向 ClickHouse 发送数据。接收一个 `FlightDescriptor` 和一个由 Arrow 记录批次组成的 stream。
+
+**按表名插入** (PATH 描述符) ：
+
+```python
+schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3]), pa.array(["Alice", "Bob", "Charlie"])],
+    schema=schema,
+)
+
+descriptor = flight.FlightDescriptor.for_path("my_table")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**通过 SQL 插入** (CMD 描述符) ：
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "INSERT INTO my_table FORMAT Arrow"
+)
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**通过 Flight SQL `CommandStatementUpdate` 执行 DDL/DML：**
+
+Flight SQL 客户端使用 `CommandStatementUpdate` 执行 DDL/DML 语句 (CREATE、INSERT、ALTER 等) ，响应中会返回受影响的行数。
+
+**通过 Flight SQL `CommandStatementIngest` 批量摄取：**
+
+仅支持向已有表追加数据 (`TABLE_NOT_EXIST_OPTION_FAIL` + `TABLE_EXISTS_OPTION_APPEND`) 。该命令不支持目录和临时表。
+
+`CommandStatementUpdate` 和 `CommandStatementIngest` 均不支持 `transaction_id`。如果传入该参数，ClickHouse 将返回 `NotImplemented` 错误。
+
+<Note>
+  数据传输仅接受 `Arrow` 格式。在 SQL 中指定其他格式 (例如 `FORMAT JSON`) 会导致错误。
+</Note>
+
+### DoAction {#doaction}
+
+执行具名操作。支持以下操作：
+
+#### CancelFlightInfo {#cancelflightinfo}
+
+取消与某个 `FlightInfo` 关联的正在运行的查询。查询 ID 从该 `FlightInfo` 的 `app_metadata` 字段中提取。此外，还会取消与该查询关联的所有轮询描述符。
+
+```python
+# Start a long-running query via PollFlightInfo, then cancel it
+cancel_request = flight.CancelFlightInfoRequest(info)
+result = client.cancel_flight_info(cancel_request, options)
+# result.status is CancelStatus.CANCELLED if successful
+```
+
+#### SetSessionOptions {#setsessionoptions}
+
+为当前会话配置 ClickHouse 服务器设置。需要先通过 `x-clickhouse-session-id` 请求头设置会话 ID。
+
+支持的值类型：字符串、布尔类型、整数、Double 以及字符串列表。
+
+如果设置名称未知，则返回错误 `INVALID_NAME`。如果值无法解析，则返回错误 `INVALID_VALUE`。
+
+#### GetSessionOptions {#getsessionoptions}
+
+返回当前会话中所有 ClickHouse 设置及其值。返回一个将设置名称映射到字符串值的映射 (内部通过查询 `system.settings` 实现) 。
+
+#### CreatePreparedStatement {#createpreparedstatement}
+
+创建一个服务端预处理语句并返回语句句柄。该请求包含带有 `?` 占位符的 SQL 查询文本。
+
+此操作不支持 `transaction_id`。如果提供了该参数，ClickHouse 将返回 `NotImplemented` 错误。
+
+对于查询语句，响应中可能包含：
+
+* `dataset_schema`：结果集的 schema。
+* `parameter_schema`：语句参数的 schema。
+
+如果某个有效查询的 schema 推断失败 (例如，对该查询而言，将占位符替换为 `NULL` 不合法) ，ClickHouse 仍会创建预处理语句并返回句柄，只是不包含 `dataset_schema`。
+
+`dataset_schema` 只是尽力而为的推测，这也正是 Flight SQL 规范的本意——规范指出，结果 schema 可能取决于参数，服务器应给出最佳推测，且客户端不得假定该 schema 准确无误。请勿依赖它；应执行该语句来获取真正描述数据的 schema。在 ClickHouse 中，它可能因以下两个原因与实际返回的数据不一致：
+
+* 推断时会将每个 `?` 替换为 `NULL`，因此对于决定结果列的占位符，其类型是根据该 `NULL` 而非之后绑定的值确定的。`SELECT ? AS x` 推断出的列类型为 `Nothing`，但绑定 `5` 后实际返回的是 `UInt8`。仅用于谓词中的占位符 (如 `SELECT id, name FROM t WHERE id = ?`) 不存在此问题，因为结果类型来自表本身。
+* 没有 Arrow 等价类型的列，其 Arrow 类型由 [`output_format_arrow_unsupported_types`](/zh/reference/settings/formats/output-format) 决定，而每次调用都会从发起该调用的会话中解析此设置。由于句柄归属于用户而非某个单一会话，后续调用可能会得出不同的解析结果，从而在声明为 `utf8` 时实际返回 `binary`，反之亦然。直接在预处理查询内部设置该模式，即可让两者保持一致。
+
+预处理语句归已通过身份验证的用户所有，而非归属于某个单一会话。如果以同一用户身份打开多个会话，则可以在其中任一会话中执行、重新绑定和关闭同一个语句句柄。
+
+其他用户无法执行、绑定或关闭非其创建的语句句柄。
+
+`arrowflight.prepared_statements_lifetime_seconds` 控制过期行为：
+
+* `> 0`：使用已配置的值作为语句生命周期。无论是会话绑定还是无会话关联的语句，每次请求都会刷新过期时间。
+* `0`：预处理语句不会自动过期。
+* `-1` (默认) ：如果语句是在会话中创建的，其生命周期遵循该会话的超时设置，并在该会话每次发起请求时刷新。如果语句是在无会话的情况下创建的，则不会自动过期。
+
+已过期的语句会被移除，不再计入 `arrowflight.max_prepared_statements_per_user`。
+
+#### ClosePreparedStatement {#closepreparedstatement}
+
+当请求中包含非空的语句句柄时，关闭对应的预处理语句，并释放相关的服务端资源。
+
+当句柄为空时，ClickHouse 还支持通过 `ClosePreparedStatement` 批量关闭：
+
+* 如果存在 `x-clickhouse-session-id`，则关闭已通过身份验证的用户在该会话中的所有预处理语句。
+* 如果不存在会话 ID，则仅关闭已通过身份验证的用户的无会话关联预处理语句。
+
+如果预处理语句是在会话中创建的 (通过 `x-clickhouse-session-id`) ，则该会话关闭时，这些预处理语句也会随之自动关闭。
+
+## Flight SQL 命令 {#flight-sql-commands}
+
+当 `CMD` 描述符中包含已序列化的 [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html) 消息时，ClickHouse 可处理以下命令：
+
+### 通过 GetFlightInfo / GetSchema 支持的命令 {#flightsql-getflightinfo}
+
+| 命令                              | 描述                                                       |
+| ------------------------------- | -------------------------------------------------------- |
+| `CommandStatementQuery`         | 执行任意 SQL 查询。不支持 `transaction_id`。                        |
+| `CommandGetSqlInfo`             | 获取服务器元数据 (名称、版本、Arrow 版本、能力) 。                           |
+| `CommandGetCatalogs`            | 列出目录。返回空结果 (ClickHouse 不使用目录) 。                          |
+| `CommandGetDbSchemas`           | 列出数据库。支持可选的 `db_schema_filter_pattern` (SQL `LIKE` 模式) 。 |
+| `CommandGetTables`              | 列出表。支持按 schema、表名和表类型过滤，并可选择是否包含 schema。                 |
+| `CommandGetTableTypes`          | 列出表引擎类型 (来自 `system.table_engines`) 。                    |
+| `CommandGetPrimaryKeys`         | 获取指定表的主键列。                                               |
+| `CommandPreparedStatementQuery` | 通过句柄执行 `SELECT` 类预处理语句。                                  |
+
+### 通过 DoPut 支持的命令 {#flightsql-doput}
+
+| 命令                               | 描述                                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementUpdate`         | 执行 DDL/DML 语句 (CREATE、INSERT、ALTER 等) ，返回受影响的行数。不支持 `transaction_id`。                                           |
+| `CommandStatementIngest`         | 将 Arrow 数据批量插入到已有表中。仅支持追加模式。不支持 `transaction_id`。                                                               |
+| `CommandPreparedStatementQuery`  | 通过 `DoPut` 发送时，为预处理语句绑定参数值，然后返回包含语句句柄的 `DoPutPreparedStatementResult`。仅接受一个参数集 (一行) ，且绑定值的数量必须与 `?` 占位符的数量完全一致。 |
+| `CommandPreparedStatementUpdate` | 通过句柄执行预处理的 DDL/DML 语句，并返回受影响的行数。                                                                                |
+
+### ClickHouse 中不支持的命令 {#flightsql-not-implemented}
+
+这些命令对应的功能 ClickHouse 并未提供，因此 Arrow Flight SQL 接口不支持这些命令。
+
+| 命令                              | 原因                                         |
+| ------------------------------- | ------------------------------------------ |
+| `CommandGetCrossReference`      | ClickHouse 不是关系型数据库，未实现外键约束，因此无法提供交叉引用元数据。 |
+| `CommandGetExportedKeys`        | ClickHouse 不是关系型数据库，未实现外键约束，因此无法提供导出键元数据。  |
+| `CommandGetImportedKeys`        | ClickHouse 不是关系型数据库，未实现外键约束，因此无法提供导入键元数据。  |
+| `CommandStatementSubstraitPlan` | ClickHouse 不支持 Substrait 执行计划。             |
+
+## 完整示例 {#complete-example}
+
+```python title="Query"
+import pyarrow as pa
+import pyarrow.flight as flight
+
+# Connect and authenticate
+client = flight.FlightClient("grpc://localhost:9090")
+token = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token])
+
+# Insert data using DoPut with a PATH descriptor
+schema = pa.schema([("id", pa.uint32()), ("value", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3], type=pa.uint32()), pa.array(["a", "b", "c"])],
+    schema=schema,
+)
+descriptor = flight.FlightDescriptor.for_path("test")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+
+# Query data using GetFlightInfo + DoGet
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM test ORDER BY id"
+)
+info = client.get_flight_info(descriptor, options)
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+```text title="Response"
+   id value
+0   1     a
+1   2     b
+2   3     c
+```
+
+## 数据格式 {#data-format}
+
+所有数据均以 Apache Arrow IPC 格式传输。仅支持 `Arrow` 格式——指定其他 ClickHouse 格式 (例如 `FORMAT JSON`、`FORMAT CSV`) 会导致报错。
+
+序列化时，ClickHouse 数据类型会映射为 Arrow 类型。Arrow Flight 始终使用规范形式的 Arrow 映射；与 `Arrow` 和 `ArrowStream` 输出格式不同，它**不会**遵循那些改变类型表示方式的 `output_format_arrow_*` 设置——`output_format_arrow_string_as_string`、`output_format_arrow_low_cardinality_as_dictionary`、`output_format_arrow_date_as_uint16`、`output_format_arrow_fixed_string_as_fixed_byte_array` 以及字典索引相关设置在此均不生效。因此，同一查询通过 Arrow Flight 得到的 schema 可能与通过 `FORMAT Arrow` 得到的不同。这是有意为之，原因有二：
+
+* Flight SQL 规定了其元数据响应的固定 schema。例如，`CommandGetTables` 必须返回 `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null`。如果允许会话设置将这些 `utf8` 列变为 `binary`，ClickHouse 将无法符合任何 Flight SQL 驱动程序的要求，同时还会改变 ClickHouse 在 `table_schema` 中声明的各表 schema。
+* Flight 客户端通过不同的调用分别获取 schema 和数据 (先调用 `GetFlightInfo` 或 `GetSchema`，再调用 `DoGet`) 。若会话在两次调用之间发生变化，任何能够改变 schema 的设置都可能导致声明的 schema 与实际传输的 stream 不一致。
+
+唯一的例外是完全没有 Arrow 对应类型的类型，例如 `JSON`、`Dynamic`、`QBit` 或 `AggregateFunction`。由于没有可遵循的规范形式映射，ClickHouse 必须自行选择表示方式，您可以通过 [`output_format_arrow_unsupported_types`](/zh/reference/settings/formats/output-format) 来指定：
+
+| 值              | 行为                                                           |
+| -------------- | ------------------------------------------------------------ |
+| `throw`        | 拒绝该查询。                                                       |
+| `text`         | 每行一个值，以文本形式存为 Arrow `Utf8` 列——即 `CAST(col AS String)` 的返回结果。 |
+| `binary` (默认)  | 每行一个值，以二进制形式存为 Arrow `Binary` 列——即 `RowBinary` 所使用的编码。       |
+
+`AggregateFunction` 是唯一一种即使在 `text` 模式下仍保持为 Arrow `Binary` 列的类型：其文本形式是原始聚合状态，并非有效的 UTF-8，而 Arrow `Utf8` 列必须包含有效的 UTF-8。如需获得可读的值，请使用 `finalizeAggregation`。
+
+出于同样的原因，ClickHouse 在将 `text` 值写入 `Utf8` 列之前，会将其中所有无效的 UTF-8 序列替换为 U+FFFD (`�`) 。存放 `String` 的 `Dynamic` 会按原样序列化这些字节，而这些字节可以是任意内容；若不做替换，该列将违反 Arrow 规范，并可能被严格的客户端拒绝。只有原本就不是有效文本的值才会被修改。如需精确保留原始字节，请使用 `binary` 模式。
+
+`output_format_arrow_string_as_string` 从不作用于这些列，在 `FORMAT Arrow` 中同样如此——它仅控制真正的 `String` 和 `FixedString` 列。因此，`clickhouse.opaque` 列的 Arrow 类型总能表明其采用的编码：文本形式为 `Utf8`，二进制形式为 `Binary`。
+
+这也解释了为什么存放在 `Dynamic` 中的聚合状态在 `text` 模式下会丢失信息，而 `AggregateFunction` 列却不会。该列的类型来自 `Dynamic`，而 `Dynamic` 并不说明各行存放的内容；且 schema 在读取任何值之前就已确定，因此无法为该状态单独分配 `Binary` 列。如需保留，请使用 `binary` 模式。`Variant` 会列出其所有候选类型，因此其中的 `AggregateFunction` 会获得独立的 `Binary` 子列，不受影响。
+
+否则，此类列将与真正的 `Utf8`/`Binary` 列无从区分，因此它们会被声明为 Arrow 扩展类型：字段元数据中包含 `ARROW:extension:name` = `clickhouse.opaque`，并在 `ARROW:extension:metadata` 中记录原始的 ClickHouse 类型名称。按照 Arrow 规范，无法识别该扩展名称的客户端将看到普通的存储类型。嵌套列的标记位于其自身字段上，因此带有该标签的是 `Array(JSON)` 的子元素和 `Map(JSON, ...)` 的键，而非容器本身。
+
+旧版布尔类型设置 `output_format_arrow_unsupported_types_as_binary` 仍然有效：设为 `0` 时等价于 `throw`，设为 `1` 时等价于 `binary`。仅当 `output_format_arrow_unsupported_types` 保持默认值时，才会读取该设置。
+
+## 兼容性 {#compatibility}
+
+Arrow Flight 接口兼容任何支持 Arrow Flight 或 Arrow Flight SQL 协议的客户端或工具，包括：
+
+* Python (`pyarrow`)
+* Java (`org.apache.arrow.flight`)
+* C++ (`arrow::flight`)
+* Go (`apache/arrow/go`)
+* ADBC (Arrow Database Connectivity) 驱动程序
+* DBeaver 以及其他支持 Flight SQL 的工具
+
+如果您的工具有可用的 ClickHouse 原生连接器 (例如 JDBC、ODBC、原生协议) ，建议优先使用，除非出于性能或格式兼容性的考虑必须使用 Arrow Flight。
+
+## 客户端 ArrowFlight 功能 {#client-side}
+
+ClickHouse 也可以作为 Flight 客户端，从外部 Arrow Flight 服务器读取数据。请参阅：
+
+* [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight)
+* [arrowFlight 表函数](/zh/reference/functions/table-functions/arrowflight)
+
+## 另请参见 {#see-also}
+
+* [Apache Arrow Flight 规范](https://arrow.apache.org/docs/format/Flight.html)
+* [Apache Arrow Flight SQL 规范](https://arrow.apache.org/docs/format/FlightSql.html)
+* [ClickHouse 中的 Arrow 格式](/zh/reference/formats/Arrow/Arrow)

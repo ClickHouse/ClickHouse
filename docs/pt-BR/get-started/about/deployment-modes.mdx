@@ -63,7 +63,7 @@ Por ser um serviço gerenciado, você não precisa se preocupar com atualizaçõ
 
 A [CLI do ClickHouse](/pt-BR/concepts/features/interfaces/cli) (`clickhousectl`, alias `chctl`) é uma ferramenta de linha de comando para desenvolvimento local com ClickHouse e Postgres e para o gerenciamento do ClickHouse Cloud. Ela instala versões do ClickHouse, inicia e gerencia servidores locais e executa consultas.
 
-Para desenvolvimento local, o `clickhousectl` instala qualquer versão do ClickHouse e executa servidores nomeados. Conecte-se com `clickhousectl local client`, que executa o `clickhouse-client` da versão correspondente. Cada servidor mantém seus dados no diretório `.clickhouse/` do projeto, o que permite executar vários ambientes isolados lado a lado. Com o Docker em execução, `clickhousectl local postgres` inicia servidores Postgres locais da mesma forma.
+Para desenvolvimento local, o `clickhousectl` instala qualquer versão do ClickHouse e executa servidores nomeados em um diretório de projeto marcado por `clickhousectl local init`. Conecte-se com `clickhousectl local client`, que executa o `clickhouse-client` da versão correspondente. Cada servidor mantém seus dados no diretório `.clickhouse/` do projeto, o que permite executar vários ambientes isolados lado a lado. Com o Docker em execução, `clickhousectl local postgres` inicia servidores Postgres locais da mesma forma.
 
 O `clickhousectl` também gerencia recursos do ClickHouse Cloud: serviços, Escalonamento, backups, Managed Postgres, ClickPipes, Managed ClickStack, chaves de API e organizações. O login pelo navegador (`clickhousectl cloud auth login`) é read-only; para criar ou alterar recursos, é necessária uma chave de API.
 
@@ -73,7 +73,8 @@ curl -fsSL https://clickhouse.com/cli | sh
 
 # Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
-clickhousectl local server start
+clickhousectl local init
+clickhousectl local clickhouse start
 clickhousectl local client
 ```
 

@@ -114,6 +114,10 @@ AsynchronousInsert 线程池中处于排队或活跃状态的作业数量。
 
 处于活动状态的复制表。
 
+### AttachedSharedTable {#attachedsharedtable}
+
+活跃的 SharedMergeTree 表。
+
 ### AttachedTable {#attachedtable}
 
 处于活动状态的表。
@@ -614,6 +618,10 @@ S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 内存映射中的文件条�
 
 当前 AZ 中已注册的分布式缓存服务器数量
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+截至最近一次卡滞请求扫描时，降速窗口处于开启状态的分布式缓存客户端数量
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 当前分布式缓存服务器进程所拥有的已提交临时 File 数量
@@ -628,11 +636,15 @@ S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 内存映射中的文件条�
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-分布式缓存 到 ClickHouse 服务器的活跃连接数 (未因达到限制而被标记为已取消)
+分布式缓存服务器 registry 中列出的客户端连接数，包括已标记为待关闭的连接
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 分布式缓存中 S3 已缓存客户端的数量
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+截至最近一次卡滞请求扫描时，在传输中的分布式缓存服务器请求中，满足以下任一条件的请求数量：至少 `distributed_cache_stuck_request_no_progress_timeout_ms` 内没有任何进度；或运行时间已超过 `distributed_cache_max_request_processing_time_ms`，且未在一个扫描时间间隔内自行结束
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -956,7 +968,7 @@ IcebergCatalog 线程池中处于排队中或正在运行状态的作业数量�
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-用于清理被 Iceberg 合并整理取代的数据文件的后台任务数，包括已调度的任务以及仍被 Iceberg 表保留的任务。
+已启用后台清理任务的 Iceberg 表数量。该后台任务由 `enable_cleanup_old_data_files_compaction` 启用，负责使这些表的过期快照失效，并删除仅被这些快照引用的文件。
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1973,6 +1985,10 @@ Keeper 中所有 SharedMergeTree 表已注册的最大分区数
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 Keeper 中存储的过期 parts 记录数
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+此副本已持有或正在获取的 parts 更新 leader 锁，该副本担任 leader 的每个 SharedMergeTree 表各对应一个
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

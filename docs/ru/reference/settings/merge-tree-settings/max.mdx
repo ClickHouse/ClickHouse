@@ -53,6 +53,8 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Для столбца со значениями фиксированного размера размер блока округляется в меньшую сторону до величины, кратной размеру одного значения в байтах, но не может быть меньше одного значения.
 
+Сжатый блок содержит не более 256 МиБ несжатых данных, поэтому значения больше 256 МиБ обрабатываются как 256 МиБ.
+
 ## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

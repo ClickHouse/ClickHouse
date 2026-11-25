@@ -146,6 +146,10 @@ HTTP 연결에서 연결 오류로 인해 비정상으로 표시된 주소의 �
 
 키의 동일 범위 최적화가 적용된 블록 수
 
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+단일 수준 집계 해시 테이블(hash tables)을 병렬로 머지할 때, 파티션마다 모든 테이블의 모든 셀을 스캔하지 않고(`enable_parallel_single_level_merge_by_index` 참조) 테이블의 셀 인덱스(indexes)를 통해 읽은 해시 파티션 수입니다(`AggregationIndexedTables` 참조).
+
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
 집계를 위해 해시 테이블에 사전 할당된 요소 수입니다.
@@ -444,7 +448,7 @@ text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐�
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-자동 병렬 레플리카 기능에 아직 통계가 없어 결정을 내리는 대신 통계를 수집한 횟수입니다
+자동 병렬 복제본(Automatic Parallel Replicas) 기능에 아직 통계가 없어 결정을 내리는 대신 통계를 수집한 횟수입니다. 또한 최근 통계 수집에 어떤 단계가 참여하지 못했거나 해당 수집에서 측정된 값이 없어 병렬 복제본(Parallel replicas)을 사용하는 계획이 다시 구축되지 않는 경우에도 `AutoParallelReplicasRetryDeferred`와 함께 집계됩니다
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -456,11 +460,11 @@ text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐�
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후, 또는 이전 빌드 시 기억해 둔 경계 지점에서 해당 계획을 로컬 계획과 충분히 대응시키지 못해 비교하거나 사용할 수 없어 쿼리를 건너뛴 횟수입니다. 예를 들어 두 계획의 읽기 단계를 서로 짝지을 수 없거나, 복제본이 어떤 읽기를 분할할지 판단할 수 없는 경우가 이에 해당합니다. 구체적인 사유는 `AutoParallelReplicas` 로거에 기록됩니다
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본(Parallel replicas)을 사용하는 계획을 빌드한 후, 또는 이전 빌드 시 기억해 둔 경계 지점에서 해당 계획을 로컬 계획과 충분히 대응시키지 못해 비교하거나 사용할 수 없어 쿼리를 건너뛴 횟수입니다. 예를 들어 두 계획의 읽기 단계를 서로 짝지을 수 없거나, 레플리카가 어떤 읽기를 분할할지 판단할 수 없는 경우가 이에 해당합니다. 구체적인 사유는 `AutoParallelReplicas` 로거에 기록됩니다. 또한 이처럼 최근에 빌드한 이력이 있어 계획을 다시 빌드하지 않는 경우에도 `AutoParallelReplicasRetryDeferred`와 함께 집계됩니다
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본을 사용하는 계획을 빌드한 후 쿼리를 건너뛴 횟수입니다. 레플리카당 행(rows) 수가 너무 적거나 상관 서브쿼리(correlated subquery)가 있는 경우처럼, 플래너가 해당 계획에서 병렬 복제본을 사용하지 않았을 때 발생합니다. 구체적인 이유는 `Planner` 로거에서 확인할 수 있습니다.
+자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본(Parallel replicas)을 사용하는 계획을 빌드한 후 쿼리를 건너뛴 횟수입니다. 레플리카당 행(rows) 수가 너무 적거나 상관 서브쿼리(correlated subquery)가 있는 경우처럼, 플래너가 해당 계획에서 병렬 복제본(Parallel replicas)을 사용하지 않았을 때 발생합니다. 구체적인 이유는 `Planner` 로거에서 확인할 수 있습니다. 또한 이와 같은 최근 빌드 때문에 계획을 다시 빌드하지 않는 경우에도 `AutoParallelReplicasRetryDeferred`와 함께 집계됩니다.
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -473,6 +477,10 @@ text&#95;log의 비동기 큐로 전송된 메시지 수(수락되었거나 폐�
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 비용 모델은 병렬 레플리카가 유리하다고 판단했으나, 읽기량이 `automatic_parallel_replicas_min_bytes_per_replica` 미만이어서 자동 병렬 복제본(Automatic Parallel Replicas)이 거부된 횟수입니다.
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+동일한 계획에 대해 병렬 복제본(parallel replicas)으로 계획을 빌드하는 작업이 최근 결정 없이 종료되었고, 그 이후 이를 건너뛴 실행 횟수가 아직 `automatic_parallel_replicas_undecided_retry_after_executions`회 미만이어서 자동 병렬 복제본(Automatic Parallel Replicas)이 병렬 복제본으로 계획을 빌드하지 않은 횟수입니다. `AutoParallelReplicasPlansNotComparable` 등 앞서 발생한 결과에 해당하는 이벤트도 함께 집계됩니다
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -825,6 +833,10 @@ write-through 캐싱이 새로운 파일 세그먼트에서 캐싱을 계속하�
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 CacheWarmer가 전체를 가져온 데이터 파트(data part)의 수입니다.
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+워밍할 캐시가 Distributed Cache뿐이고 해당 파트가 현재 가용 영역에서 생성되어 이미 그 캐시에 저장되어 있으므로 `CacheWarmer`가 가져오지 않은 데이터 파트 수입니다.
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1601,6 +1613,10 @@ Distributed Cache 연결 이벤트입니다. Distributed Cache에 열려 있는 
 
 Distributed Cache 연결 이벤트입니다. 풀을 우회하는 Distributed Cache의 열린 연결 수입니다.
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+Distributed Cache 클라이언트 이벤트입니다. 서버가 이 클라이언트에 속도를 늦추라고 요청하여 닫힌 유휴 상태의 풀링된 연결(pooled connections) 수입니다.
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 Distributed Cache 읽기 버퍼 이벤트입니다. 읽기 범위를 미리 계산하는 데 걸린 시간
@@ -1687,7 +1703,7 @@ Distributed Cache 클라이언트 이벤트입니다. Distributed Cache에서 �
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-Distributed Cache 클라이언트 이벤트. Distributed Cache에서 수신한 SlowDown 패킷의 총 개수(해당 클라이언트의 가중치에 비해 열린 연결이 너무 많아 서버가 새 연결을 거부한 경우)
+Distributed Cache 클라이언트 이벤트. Distributed Cache 서버에서 수신한 SlowDown 패킷의 총 개수(해당 클라이언트의 가중치에 비해 열린 연결이 너무 많아 새 연결이 거부되었거나, 해당 서버에서 이 클라이언트의 요청이 너무 많이 정체된 경우)
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1781,17 +1797,29 @@ Distributed Cache 서버 이벤트입니다. 파일 시스템 캐시에서 읽�
 
 Distributed Cache server 이벤트입니다. 파일 시스템 캐시에서 읽는 동안 Distributed Cache의 객체 스토리지에서 읽어 온 바이트 수입니다.
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+Distributed Cache 서버 이벤트입니다. 요청 처리 도중 연결이 스트림 끝(end of stream)에 도달하여 서버가 처리를 중단한 `Read` 요청 수입니다. 클라이언트가 연결을 닫았거나 레지스트리가 소켓을 종료한 경우에 해당합니다.
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+Distributed Cache 서버 이벤트입니다. 클라이언트의 멈춘 처리 중인 요청이 `distributed_cache_slow_down_min_stuck_requests` 개수와 `distributed_cache_slow_down_stuck_requests_ratio` 비율에 도달하여, 멈춘 요청 스캔(Scan)이 해당 클라이언트의 속도 저하 윈도우를 연 횟수입니다
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 Distributed Cache 서버 이벤트입니다. 경합 발생 시 커밋된 임시 파일 뮤텍스를 획득하기 위해 대기한 시간입니다.
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-Distributed Cache 서버 이벤트. 경합 발생 시 클라이언트별 연결 버킷 뮤텍스를 대기하는 데 소요된 시간(register/unregister/identify/eviction)
+Distributed Cache 서버 이벤트. 경합 발생 시 클라이언트별 연결 버킷 뮤텍스를 대기하는 데 소요된 시간(register/unregister/identify/eviction, 멈춘 요청 스캔(Scan), 임시 데이터 보유, `system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 Distributed Cache 서버 이벤트. 경합(contention) 발생 시 전역 연결 레지스트리 뮤텍스를 대기하는 데 소요된 시간(identify, setClientWeight, eviction, 그리고 reindex 또는 버킷 삭제가 필요한 경우의 unregister)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+Distributed Cache 서버 이벤트입니다. 처리 중인 요청이 `distributed_cache_stuck_request_no_progress_timeout_ms` 이상 진행 상황에 변화가 없거나 `distributed_cache_max_request_processing_time_ms`를 초과하여 실행되는 바람에, 멈춘 요청 스캔(Scan)으로 종료된 연결 수입니다.
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1829,6 +1857,10 @@ Distributed Cache 서버 이벤트입니다. DistributedCacheServer에서 수신
 
 Distributed Cache 서버 이벤트. 클라이언트가 EndRequest를 보내지 않고 연결을 닫아(강제 종료된 클라이언트, 소켓이 쓰기 가능 상태가 아닌 클라이언트 또는 구버전 클라이언트) 서버가 EOF 시점에 처리를 중단한 요청 수입니다. 이 서버가 직접 닫은 연결(서버 종료 또는 연결 eviction)은 집계되지 않습니다
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+Distributed Cache 서버 이벤트. 서버의 처리 시간이 `distributed_cache_max_request_processing_time_ms`를 초과하여 종료된 처리 중인 요청의 수입니다. 이러한 요청은 `Error` 또는 `Stop`으로 종료되거나, 클라이언트에 백오프도 함께 요청하는 경우에는 `SlowDown`으로 종료됩니다
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 Distributed Cache 서버 이벤트입니다. 캐시된 S3 클라이언트 중 재사용된 수입니다.
@@ -1840,6 +1872,10 @@ Distributed Cache 서버 이벤트입니다. 서버 종료 중 `shutdownAllConne
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 Distributed Cache 서버 이벤트입니다. 이전에 연결 시도가 실패하여 Distributed Cache 서버를 건너뛴 횟수입니다.
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+Distributed Cache 서버 이벤트입니다. 클라이언트의 속도 저하(slow-down) 윈도우가 열려 있는 동안 SlowDown 패킷으로 종료된 요청 수입니다. 읽기 또는 쓰기 요청이 시작될 때 종료되었거나, 서버가 해당 요청을 `distributed_cache_max_request_processing_time_ms`보다 오래 처리하여 종료된 경우가 포함됩니다.
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1888,6 +1924,10 @@ Distributed Cache 이벤트입니다. hash로 선택된 서버가 변경되어(�
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 Distributed Cache 쓰기 버퍼 이벤트입니다. 사용 가능한 백그라운드 쓰기 슬롯이 없어(`distributed_cache_write_pool_size` 서버 설정으로 지정된 한도에 도달) 또는 백그라운드 쓰기를 시작할 수 없어 write-through 캐시 쓰기를 건너뛴 쓰기 버퍼의 수입니다. 이 경우에도 데이터는 객체 스토리지에 기록됩니다
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+Distributed Cache 클라이언트 이벤트입니다. 분산 캐시 서버(Distributed Cache server)가 이 클라이언트에 속도를 늦추도록 요청하여 해당 서버를 건너뛴 횟수입니다.
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2661,6 +2701,10 @@ SLRU 캐시 정책에서 시험(probationary) 큐에서 보호 큐로 승격(이
 
 파일 시스템 캐시 공간 예약 소요 시간
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+쓰기 작업자가 우선순위 잠금을 보유하고 있거나 대기 중이어서 SLRU 파일 시스템 캐시 승격 과정에서 건너뛴 다운그레이드 순회 횟수
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 state lock의 파일 시스템 캐시 잠금 시간
@@ -2732,6 +2776,30 @@ Global Thread 풀에서 스레드를 제거해 크기가 줄어든 총 횟수를
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 새 스레드가 시작될 때까지 대기한 총 시간입니다.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+Experimental GPU 집계(aggregation)가 GPU로 전송한 행(rows) 배치의 수입니다. 배치 하나는 한 번의 전송과 한 번의 축소(reduction) 또는 그룹화 작업에 해당합니다.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+행(rows) 배치를 GPU로 전송하고 GPU에서 집계(aggregating)하는 데 소요된 총 시간입니다.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+Experimental GPU 집계를 통해 GPU에서 집계된 행(rows)의 수입니다.
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+인덱스 분석(Index Analysis) 중 파티션 키(partition key)와 해당 MinMax 인덱스로 인해 MergeTree 테이블(MergeTree table) 읽기 대상에서 제외된 마크(인덱스 그래뉼(index granules)) 수입니다.
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+인덱스 분석(Index Analysis) 과정에서 프라이머리 키로 인해 MergeTree 테이블(MergeTree table) 읽기 대상에서 제외된 마크, 즉 인덱스 그래뉼(index granules)의 수입니다.
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+인덱스 분석(Index Analysis) 과정에서 데이터 스키핑 인덱스로 인해 MergeTree 테이블(MergeTree table) 읽기 대상에서 제외된 마크(인덱스 그래뉼(index granules)) 수입니다. 읽기 시점에 적용되는 인덱스(`use_skip_indexes_on_data_read`)는 집계에 포함되지 않습니다.
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2819,11 +2887,7 @@ PREWHERE에 의해 완전히 제외된 그래뉼의 수입니다. 즉, 그래뉼
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-이 레플리카 또는 다른 레플리카의 쿼리가 Iceberg 압축 병합으로 대체된 데이터 파일을 참조하는 스냅샷을 아직 읽고 있어서 해당 데이터 파일의 삭제가 연기된 횟수입니다.
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-Iceberg 압축 병합으로 대체된 데이터 파일의 삭제가 연기된 횟수입니다. 해당 컴팩션 또는 컴팩션으로 대체된 스냅샷의 경과 시간이 `iceberg_outdated_snapshot_lifetime_seconds`보다 짧으면 삭제가 연기됩니다.
+이 레플리카 또는 다른 레플리카의 쿼리가 아직 읽고 있어서 Iceberg 테이블(Iceberg table) 정리 작업이 다음 실행 때까지 삭제하지 않고 남겨 둔 오래된 스냅샷의 수입니다.
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -4761,6 +4825,10 @@ consistent hash에 의해 할당된 예정된 마크 수를 모든 레플리카�
 
 블룸 필터(Bloom filters)에 의해 프루닝으로 제외된 Parquet 행 그룹(row groups)의 총개수입니다.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+오프셋 인덱스(offset index)가 없는 Parquet 컬럼 청크(column chunks) 중, 지연 구체화(lazy materialization)로 읽는 행이 담긴 페이지를 페이지 헤더를 통해 찾아내어 해당 페이지만 읽은 컬럼 청크의 수입니다
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 객체 스토리지 또는 URL에 있는 파일의 Parquet 리더가 max&#95;download&#95;threads 중 자신에게 할당된 몫 안에서, 디코딩이 예약되기 전에 미리 컬럼 데이터(Column Data) 읽기를 시작한 행 그룹(row groups)의 수입니다.
@@ -4804,6 +4872,10 @@ cache에서 Parquet 메타데이터를 찾은 횟수입니다.
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 캐시에서 Parquet 메타데이터를 찾지 못해 디스크에서 읽어야 했던 횟수입니다.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+오프셋 인덱스(offset index)를 파일에서 읽지 않고 parquet 메타데이터 캐시에서 가져온 Parquet 컬럼 청크(column chunks)의 수입니다.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4876,6 +4948,10 @@ min/max 통계로 범위를 한정할 수 없어서, 필터(filter)를 통과할
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 min/max 통계상 `ORDER BY ... LIMIT` 결과에 해당하는 행을 포함할 수 없다고 판단되어 읽기 중에 건너뛴 Parquet row group의 수입니다(`use_top_k_dynamic_filtering` 참조).
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+ReplicatedMergeTree 테이블에서 읽기에 실패한 데이터 파트(data part)가 OS 페이지 캐시를 우회하는 direct I/O 방식의 검사를 통과한 횟수입니다. 이때 읽기 오류는 디스크에 있는 데이터가 아니라 페이지 캐시에 있던 잘못된 데이터 때문에 발생했을 가능성이 높습니다.
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -5621,6 +5697,10 @@ JOIN Runtime Filters가 처리한 블록 수
 
 수신 측의 연결이 끊어졌거나 수신 측이 읽기를 중단하여 전달이 중단된 JOIN Runtime Filter의 수입니다. 이 경우 해당 대상은 필터(filter)를 받지 못하므로, 그 행(rows)은 필터링되지 않고 그대로 통과합니다.
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+(U)Int8 또는 (U)Int16 키에 대한 JOIN 런타임 필터 중 블룸 필터(Bloom filter) 대신 정확한 키 집합(set)에서 밀집 비트셋(dense bitset)으로 전환된 필터의 수입니다.
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 수
@@ -6148,6 +6228,10 @@ killer가 예약한 파트 수
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 parts killer 실행 횟수
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+이 레플리카가 이미 할당량만큼의 리더 잠금을 보유하고 있어 잠금 획득을 시도하지 않은 파트 업데이트 리더 선출 횟수
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
@@ -6801,6 +6885,10 @@ OS kernel 모드에서 CPU 명령어를 실행하는 처리(쿼리 및 기타 �
 
 동일한 파트에 대한 이전 스캔이 포스팅 리스트(posting list) 임계값을 초과하여 텍스트 인덱스 패턴의 딕셔너리 스캔(dictionary scan)을 건너뛴 횟수입니다.
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+비용 문제로 데이터 파트(part)의 텍스트 인덱스 패턴 딕셔너리 스캔(dictionary scan)을 건너뛴 횟수입니다. 스캔해야 할 사전 블록(dictionary block)의 바이트 수가, 프라이머리 키와 앞서 적용된 스킵 인덱스로 걸러낸 뒤에도 여전히 읽어야 하는 행(rows)이 인덱싱된 컬럼에서 차지하는 바이트 수보다 클 때 스캔을 건너뜁니다.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 candidate 기반 구문 검색에서 검사한 candidate 행(postings 교집합)입니다.
@@ -7128,6 +7216,10 @@ UNIQUE KEY INSERT 쓰기 경로(write-path)에서 기존 파트의 활성 행(li
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 UNIQUE KEY INSERT 쓰기 경로(write-path)에서 기존 파트를 대상으로 조회한 새 행 키의 수입니다.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+UNIQUE KEY 테이블(tables)에서 동기식 DELETE로 삭제 표시(dead)된 행(rows) 수입니다.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 

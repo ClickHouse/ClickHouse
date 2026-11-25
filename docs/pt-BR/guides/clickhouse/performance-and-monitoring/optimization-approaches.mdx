@@ -13,9 +13,7 @@ import NYCTaxiExampleDataset from '/snippets/pt-BR/_nyc_taxi_example_dataset.mdx
 
 Use evidências dos [logs de consultas](/pt-BR/reference/system-tables/query_log), comparações controladas e [planos de consulta](/pt-BR/reference/statements/explain) para avaliar abordagens de otimização que resolvam o gargalo identificado.
 
-<div id="before-you-begin">
-  ## Antes de começar
-</div>
+## Antes de começar {#before-you-begin}
 
 Comece com uma referência reproduzível e uma hipótese sobre o gargalo. Se ainda não identificou um, comece por [Diagnosticar consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) e [Isolar gargalos em consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
 
@@ -25,9 +23,7 @@ Os exemplos deste guia usam a tabela `nyc_taxi.trips_small_inferred`. Para execu
   <NYCTaxiExampleDataset />
 </Accordion>
 
-<div id="choose-an-approach">
-  ## Escolha uma abordagem
-</div>
+## Escolha uma abordagem {#choose-an-approach}
 
 Use as evidências coletadas para decidir por onde começar. Prefira a alteração menos específica que resolva o problema:
 
@@ -39,19 +35,15 @@ Use as evidências coletadas para decidir por onde começar. Prefira a alteraç�
 
 Se as evidências não se enquadrarem em uma dessas categorias, volte ao plano de consulta em vez de forçar a consulta a se encaixar em uma abordagem.
 
-<div id="reduce-the-data-read">
-  ## Reduza a quantidade de dados lidos
-</div>
+## Reduza a quantidade de dados lidos {#reduce-the-data-read}
 
-* **Use quando:** A consulta lê colunas wide ou colunas desnecessárias.
+* **Use quando:** A consulta lê colunas largas ou colunas desnecessárias.
 * **Altere:** Reduza o tamanho ou o número de colunas lidas pela consulta.
 * **Valide:** Compare `read_bytes`, o uso de memória e a duração nas mesmas condições.
 
-O ClickHouse lê apenas as colunas exigidas por uma consulta, mas ainda precisa ler, descomprimir e processar os dados selecionados. Revise tanto as colunas selecionadas quanto seus tipos. A [inferência de esquema](/pt-BR/concepts/features/interfaces/schema-inference) oferece um ponto de partida prático, mas os tipos inferidos podem ser mais amplos ou permissivos do que os dados de produção exigem.
+O ClickHouse lê apenas as colunas exigidas por uma consulta, mas ainda precisa ler, descomprimir e processar os dados selecionados. Revise tanto as colunas selecionadas quanto seus tipos. A [inferência de esquema](/pt-BR/concepts/features/operations/insert/schema-inference) oferece um ponto de partida prático, mas os tipos inferidos podem ser mais amplos ou permissivos do que os dados de produção exigem.
 
-<div id="review-column-types">
-  ### Revise os tipos de coluna
-</div>
+### Revise os tipos de coluna {#review-column-types}
 
 <span id="choose-precise-types" />
 
@@ -75,9 +67,7 @@ Antes de alterar uma coluna, verifique os dados de origem e o caminho de ingest�
 
 Consulte [Seleção de tipos de dados](/pt-BR/best-practices/select-data-types) para orientações mais detalhadas.
 
-<div id="read-only-the-required-columns">
-  ### Leia apenas as colunas necessárias
-</div>
+### Leia apenas as colunas necessárias {#read-only-the-required-columns}
 
 Como o ClickHouse armazena dados por coluna, selecionar menos colunas reduz diretamente a quantidade de dados lidos. Liste as colunas necessárias em vez de usar `SELECT *`, especialmente em tabelas largas ou em consultas que retornam apenas um pequeno subconjunto de cada linha.
 
@@ -98,17 +88,13 @@ LIMIT 1000;
 
 Compare esta consulta, com o mesmo filtro e limite, usando `SELECT *`. O número de linhas retornadas permanece o mesmo, mas `read_bytes` deve refletir o conjunto menor de colunas lidas.
 
-<div id="align-the-data-layout-with-the-query">
-  ## Alinhe o layout dos dados à consulta
-</div>
+## Alinhe o layout dos dados à consulta {#align-the-data-layout-with-the-query}
 
 * **Use quando:** Um filtro seletivo ainda lê muitas partes ou grânulos.
 * **Altere:** Alinhe o layout físico aos filtros usados em consultas recorrentes.
 * **Valide:** Compare as partes e os grânulos selecionados por [`EXPLAIN indexes = 1`](/pt-BR/reference/statements/explain) e verifique `read_rows`, `read_bytes` e a duração.
 
-<div id="start-with-the-ordering-key">
-  ### Comece pela chave de ordenação
-</div>
+### Comece pela chave de ordenação {#start-with-the-ordering-key}
 
 Para [tabelas da família `MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/), a chave de ordenação determina como as linhas são organizadas em disco. Por padrão, ela também funciona como a chave primária que define o [índice primário esparso](/pt-BR/primary-indexes). Diferentemente de uma chave primária em um banco de dados OLTP, a chave primária do ClickHouse não impõe unicidade. Seu ganho de desempenho vem de permitir que o ClickHouse ignore grânulos que não podem atender aos filtros de uma consulta.
 
@@ -142,9 +128,7 @@ Use essa saída como referência. Para concluir a comparação, siga [Aplicar a 
   [`PREWHERE`](/pt-BR/optimize/prewhere) pode reduzir os valores de coluna lidos sem alterar o número de linhas processadas. O ClickHouse move automaticamente condições qualificadas de `WHERE` para `PREWHERE` quando `optimize_move_to_prewhere` está habilitado, que é o padrão. Inspecione o plano antes de adicionar `PREWHERE` manualmente e use tanto `read_bytes` quanto `read_rows` ao medir seu efeito.
 </Tip>
 
-<div id="evaluate-additional-indexing-and-data-layout-options">
-  ### Avalie opções adicionais de indexação e layout de dados
-</div>
+### Avalie opções adicionais de indexação e layout de dados {#evaluate-additional-indexing-and-data-layout-options}
 
 Se a chave de ordenação não puder atender com eficiência a um padrão de acesso importante, avalie as opções mais especializadas a seguir.
 
@@ -194,9 +178,7 @@ MATERIALIZE PROJECTION trips_by_payment_type;
 
 A materialização da projeção a preenche com os dados existentes; inserções futuras a mantêm automaticamente. Repita uma consulta representativa na tabela original e use `EXPLAIN projections = 1` para confirmar se o ClickHouse seleciona a projeção e lê menos linhas ou bytes. Meça também a sobrecarga de inserção e armazenamento antes de aplicar esse padrão em larga escala.
 
-<div id="precompute-repeatable-work">
-  ## Pré-calcule trabalhos repetitivos
-</div>
+## Pré-calcule trabalhos repetitivos {#precompute-repeatable-work}
 
 * **Use quando:** As mesmas transformações ou agregações dominam repetidamente o tempo de consulta.
 * **Altere:** Mova computações repetitivas para a ingestão, uma atualização agendada ou um layout de dados específico.
@@ -212,9 +194,7 @@ Escolha com base em como o resultado deve ser mantido e acessado. Essas opções
 
 Cada seção inclui uma implementação básica, o principal trade-off operacional e uma forma de validar o resultado.
 
-<div id="incremental-materialized-view">
-  ### View materializada incremental
-</div>
+### View materializada incremental {#incremental-materialized-view}
 
 Use uma [view materializada incremental](/pt-BR/materialized-view/incremental-materialized-view) quando for necessário manter atualizado um filtro, uma transformação ou uma agregação recorrente à medida que os dados chegam. Ela processa cada bloco recém-inserido e grava o resultado transformado em uma tabela de destino. A contrapartida é trabalho adicional de ingestão e uma tabela de destino explícita.
 
@@ -241,9 +221,7 @@ GROUP BY pickup_date;
 
 Consulte a tabela de destino usando `sum(trip_count)` agrupado por `pickup_date` para combinar, durante a consulta, as linhas que aguardam uma mesclagem em segundo plano. A visualização processa apenas novos inserts; portanto, faça o backfill dos dados de origem existentes separadamente. Valide a alteração comparando a duração e o número de linhas lidas com a agregação original e, em seguida, confirme que o trabalho adicional de inserção é aceitável.
 
-<div id="refreshable-materialized-view">
-  ### View materializada atualizável
-</div>
+### View materializada atualizável {#refreshable-materialized-view}
 
 Use uma [view materializada atualizável](/pt-BR/materialized-view/refreshable-materialized-view) quando resultados ligeiramente desatualizados forem aceitáveis e o resultado completo puder ser recalculado em intervalos viáveis. Ela reexecuta a consulta conforme um agendamento. A contrapartida é a atualização dos resultados e o custo de cada atualização.
 
@@ -271,9 +249,7 @@ GROUP BY payment_type;
 
 O relatório consulta o destino pré-computado enquanto o ClickHouse atualiza o resultado completo conforme o agendamento. Valide a alteração comparando a duração da consulta com a da agregação original e, em seguida, inspecione [`system.view_refreshes`](/pt-BR/reference/system-tables/view_refreshes) para confirmar que a duração, o status e a frequência das atualizações são adequados à carga de trabalho.
 
-<div id="purpose-built-table">
-  ### Tabela dedicada
-</div>
+### Tabela dedicada {#purpose-built-table}
 
 Use uma tabela dedicada quando uma carga de trabalho separada exigir um esquema, uma chave de ordenação ou um ciclo de vida substancialmente diferente. Ela oferece controle explícito sobre o design físico e pode ser mais clara do que manter muitas projeções. A contrapartida é o armazenamento adicional e o gerenciamento do pipeline. Junções ou transformações repetidas também podem ser transferidas para o pipeline de ingestão quando os dados de origem e os requisitos de atualização tornarem isso viável. Consulte [Usar visões materializadas](/pt-BR/best-practices/use-materialized-views) e [Desnormalização de dados](/pt-BR/data-modeling/denormalization) para orientações detalhadas de design.
 
@@ -295,9 +271,7 @@ WHERE source.payment_type IS NOT NULL
 
 Este exemplo exclui valores nulos da chave de ordenação e remove `Nullable` dessas duas colunas de destino. Confirme se esse tratamento atende aos requisitos de dados da carga de trabalho. O dashboard deve consultar explicitamente esta tabela, e o pipeline de ingestão deve mantê-la atualizada. Valide a alteração comparando as linhas e os bytes lidos, o uso de memória e a duração com a consulta na tabela de origem. Considere o armazenamento adicional e a manutenção do pipeline na decisão.
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
 Ao avaliar uma alteração, repita as medições originais em condições comparáveis. Confirme que a alteração reduz o trabalho esperado sem transferir o gargalo para outro ponto.
 

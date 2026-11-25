@@ -29,6 +29,7 @@ AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め�
 * **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
 * **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings/ai-function#ai_function_max_retries)) されます。
 * **同時実行リクエスト**: リクエストはサーバー全体で共有されるスレッドプールから、複数同時に発行されます ([`ai_function_max_concurrent_requests_per_thread`](/ja/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) で制御) 。
+* **空白文字のトリミング**: `aiClassify`、`aiExtract`、`aiFilter` は構造化された出力を要求し、モデルの応答の先頭と末尾にある空白文字を除去します。たとえば、`\n\nbug` という応答は `bug` になります。
 
 ## 設定 {#configuration}
 

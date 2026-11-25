@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-用于彻底删除 SharedMergeTree 的 snapshot parts 的周期。仅 ClickHouse Cloud 提供此功能
+对于快照 registry 下的每个表，可运行快照清理器的副本数量上限。每个运行清理器的副本都会通过副本标志 `snapshot_cleaner_enabled` 对外通告；各副本根据表名与副本名称计算的会合哈希 (rendezvous hash) 对所有通告的副本进行排序，只有排名位于前列的副本才会处理该表。这样，不同表的清理工作会分散到整个机群中，同时重复工作量也被控制在一定范围内。清理器已禁用 (`snapshot_cleaner_period = 0`) 的副本不会进行通告，也不会被选中。`0` 表示不设上限：每个副本都会处理所有表。仅在 ClickHouse Cloud 中可用
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+用于彻底删除 SharedMergeTree 的 快照 parts 的周期 (以秒为单位) 。仅在 ClickHouse Cloud 中可用
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

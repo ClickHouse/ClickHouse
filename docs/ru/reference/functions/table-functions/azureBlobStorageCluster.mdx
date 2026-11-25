@@ -12,31 +12,57 @@ doc_type: 'reference'
 Позволяет параллельно обрабатывать файлы из [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) с помощью множества узлов в указанном кластере. На initiator создаётся connection ко всем узлам кластера, раскрываются звёздочки в path к файлу S3, после чего каждый файл динамически распределяется. На узле-воркере запрашивается у initiator следующая task для processing, и она обрабатывается. Это повторяется, пока не будут завершены все tasks.
 Эта табличная функция похожа на [функцию s3Cluster](/ru/reference/functions/table-functions/s3Cluster).
 
-## Синтаксис
+## Синтаксис {#syntax}
 
-```sql
-azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
-```
+<Tabs>
+  <Tab title="Строка подключения">
+    Учётные данные встроены в строку подключения, поэтому указывать `account_name`/`account_key` отдельно не нужно:
 
-## Аргументы
+    ```sql
+    azureBlobStorageCluster(cluster_name, connection_string, container_name, blobpath [, format, compression, structure])
+    ```
+  </Tab>
 
-| Аргумент            | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`      | Имя кластера, которое используется для формирования набора адресов и параметров подключения к удалённым и локальным серверам.                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `connection_string` | `storage_account_url` — `connection_string` включает имя учётной записи и ключ ([Создание строки подключения](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)), либо здесь можно указать URL учётной записи хранилища, а имя учётной записи и ключ учётной записи передать как отдельные параметры (см. параметры `account_name` и `account_key`) |
-| `container_name`    | Имя контейнера                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `blobpath`          | путь к файлу. Поддерживает следующие подстановочные шаблоны в режиме только для чтения: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки.                                                                                                                                                                                                                                                                                                                                                                          |
-| `account_name`      | если используется `storage_account_url`, здесь можно указать имя учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `account_key`       | если используется `storage_account_url`, здесь можно указать ключ учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `format`            | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `compression`       | Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить значение `auto`.) Для `snappy` формат передачи данных выбирается параметром [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).                                                                                                                                                         |
-| `structure`         | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+  <Tab title="URL учётной записи хранилища">
+    Требуется передать `account_name` и `account_key` в виде отдельных аргументов:
 
-## Возвращаемое значение
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+    ```
+  </Tab>
+
+  <Tab title="Workload identity">
+    Используется Azure Workload Identity через `extra_credentials`. Этот способ нельзя сочетать с `account_name` / `account_key`, и для него требуется `storage_account_url` (а не `connection_string`):
+
+    ```sql
+    azureBlobStorageCluster(cluster_name, storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, structure])
+    ```
+
+    Workload Identity использует собственную идентичность сервера, поэтому по умолчанию этот способ запрещён: включите `allow_server_credentials_in_user_queries` в сеансе, из которого выполняется запрос, или в профиле настроек этого сеанса.
+  </Tab>
+</Tabs>
+
+## Аргументы {#arguments}
+
+| Аргумент              | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`        | Имя кластера, которое используется для формирования набора адресов и параметров соединения с удалёнными и локальными серверами.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `connection_string`   | Строка соединения, содержащая встроенные учётные данные (имя учётной записи + ключ учётной записи или токен SAS). При использовании этого варианта `account_name` и `account_key` **нельзя** передавать отдельно, а `client_id` / `tenant_id` использовать нельзя. См. [Настройка строки соединения](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
+| `storage_account_url` | URL конечной точки учётной записи хранения, например `https://<account>.blob.core.windows.net/`. При использовании этого варианта передайте либо `account_name` и `account_key`, либо `extra_credentials(client_id=, tenant_id=)` для Workload Identity.                                                                                                                                                                                                                                                                                           |
+| `container_name`      | Имя контейнера                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `blobpath`            | путь к файлу. Поддерживает следующие подстановочные шаблоны в режиме только для чтения: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки.                                                                                                                                                                                                                                                                                                                                                                                |
+| `account_name`        | Имя учётной записи хранилища. **Обязательно** при использовании `storage_account_url` без SAS или Workload Identity; **нельзя** передавать вместе с `connection_string` или `extra_credentials`.                                                                                                                                                                                                                                                                                                                                                   |
+| `account_key`         | Ключ учётной записи хранения. **Обязателен** при использовании `storage_account_url` без SAS или Workload Identity; **нельзя** передавать вместе с `connection_string` или `extra_credentials`.                                                                                                                                                                                                                                                                                                                                                    |
+| `format`              | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `compression`         | Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить значение `auto`.) Для `snappy` формат передачи данных выбирается параметром [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).                                                                                                                                                               |
+| `structure`           | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `extra_credentials`   | Используйте `client_id` и `tenant_id` для аутентификации с помощью Workload Identity Azure. Нельзя использовать вместе с `account_name` / `account_key`; требуется `storage_account_url` (а не `connection_string`). На каждом узле кластера должна быть задана переменная `AZURE_FEDERATED_TOKEN_FILE`.                                                                                                                                                                                                                                           |
+
+## Возвращаемое значение {#returned-value}
 
 Таблица с указанной структурой для чтения или записи данных в указанный файл.
 
-## Примеры
+## Примеры {#examples}
 
 Аналогично движку таблицы [AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage), для локальной разработки с Azure Storage можно использовать эмулятор Azurite. Подробности [здесь](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Ниже предполагается, что Azurite доступен по имени хоста `azurite1`.
 
@@ -49,11 +75,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-## Использование подписей общего доступа (SAS)
+## Использование подписей общего доступа (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 Примеры см. в разделе [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
 
-## См. также
+## См. также {#related}
 
 * [Движок AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)
 * [Табличная функция azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)

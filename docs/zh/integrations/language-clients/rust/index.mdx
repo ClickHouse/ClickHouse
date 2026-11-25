@@ -143,13 +143,13 @@ while let Some(row) = cursor.next().await? { .. }
 * 可以使用便捷的 `fetch_one::<Row>()` 和 `fetch_all::<Row>()` 方法，分别获取第一行或全部行。
 * 可以使用 `sql::Identifier` 来绑定表名。
 
-注意：由于整个响应是以流式方式返回的，游标即使在已经返回了一些行之后，也仍然可能报错。如果你的用例中遇到这种情况，可以尝试使用 `query(...).with_option("wait_end_of_query", "1")` 在服务端启用响应缓冲。[更多详情](/zh/concepts/features/interfaces/http#response-buffering)。`buffer_size` 选项也可能有帮助。
+注意：由于整个响应是以流式方式返回的，游标即使在已经返回了一些行之后，也仍然可能报错。如果你的用例中遇到这种情况，可以尝试使用 `query(...).with_option("wait_end_of_query", "1")` 在服务端启用响应缓冲。[更多详情](/zh/concepts/features/connect-to-clickhouse/protocols/http#response-buffering)。`buffer_size` 选项也可能有帮助。
 
 <Warning>
   在查询行时请谨慎使用 `wait_end_of_query`，因为它会增加服务端的内存消耗，并且很可能降低整体性能。
 </Warning>
 
-### 插入数据行 {#inserting-rows}
+### 插入行 {#inserting-rows}
 
 ```rust
 use serde::Serialize;
@@ -169,7 +169,7 @@ insert.end().await?;
 
 * 如果未调用 `end()`，`INSERT` 会被中止。
 * 行会以 stream 的形式逐步发送，以分散网络负载。
-* 只有当所有行都位于同一分区，且行数小于 [`max_insert_block_size`](/zh/reference/settings/session-settings#max_insert_block_size) 时，ClickHouse 才会以原子方式插入批次。
+* 只有当所有行都位于同一分区，且行数小于 [`max_insert_block_size`](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) 时，ClickHouse 才会以原子方式插入批次。
 
 ### 异步插入 (服务端批处理) {#async-insert-server-side-batching}
 

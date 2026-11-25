@@ -31,8 +31,8 @@ sola franja de partes compactas
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 Solo disponible en ClickHouse Cloud. Tamaño máximo de una parte compacta para leerla
-completa en memoria durante la fusión. Una fusión también lee completa una parte más grande
-si la parte no supera la memoria que, en el peor de los casos, ocupa un búfer de lectura por cada
+completa en memoria durante una fusión o mutación. Una parte más grande también se lee
+completa si la parte no supera la memoria que, en el peor de los casos, ocupa un búfer de lectura por cada
 columna (el tamaño del búfer configurado, el doble con precarga). En una parte con franjas
 pequeñas, esto puede consumir más memoria que leer cada columna por separado, pero
 envía una sola solicitud en lugar de una por columna y por franja. 0 lo desactiva.

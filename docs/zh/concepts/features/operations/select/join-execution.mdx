@@ -1,10 +1,14 @@
 ---
 title: 'ClickHouse 如何执行 JOIN'
 sidebarTitle: '执行'
-description: 'JOIN 的构建阶段与探测阶段，以及查询规划器针对 JOIN 的优化。'
-keywords: ['JOIN 执行', '构建侧', '探测侧', 'JOIN 查询规划器', 'JOIN 重排序', '过滤器下推']
+description: 'JOIN 的构建阶段与探测阶段、基于成本的 JOIN 顺序优化，以及查询规划器针对 JOIN 的优化。'
+keywords: ['JOIN 执行', '构建侧', '探测侧', 'JOIN 查询规划器', 'JOIN 重排序', '基于成本的优化器', '冲突检测器', '运行时过滤器', '过滤器下推']
 doc_type: 'guide'
 ---
+
+本页介绍 ClickHouse 如何规划和执行 JOIN，内容涵盖执行阶段、基于成本的 JOIN 顺序优化、查询规划器优化以及运行时过滤。
+
+## 构建阶段与探测阶段 {#build-and-probe-phases}
 
 大多数 JOIN 算法分两个阶段执行：
 
@@ -13,29 +17,351 @@ doc_type: 'guide'
 
 探测阶段必须等构建阶段完成后才会开始。因此，JOIN 所需的内存主要取决于构建侧的大小。
 
-默认情况下，JOIN 的右侧为构建侧，左侧为探测侧。部分算法并不遵循这一模型：[`direct` 算法](/zh/concepts/features/operations/select/join-algorithms#direct) 没有构建阶段，因为右侧本身已经是键值结构；[`full_sorting_merge` 算法](/zh/concepts/features/operations/select/join-algorithms#full-sorting-merge) 会先对两个输入分别排序，再将其合并；[`ie_join` 算法](/zh/concepts/features/operations/select/join-algorithms#ie-join) 则会先累积两个输入，再执行连接。
+默认情况下，JOIN 的右侧为构建侧，左侧为探测侧。部分算法并不遵循这一模型：[`direct` 算法](/zh/concepts/features/operations/select/join-algorithms#direct) 没有构建阶段，因为右侧本身已经是键值结构；[`full_sorting_merge` 算法](/zh/concepts/features/operations/select/join-algorithms#full-sorting-merge) 会先对两个输入分别排序，再将其合并；[`inequality` 算法](/zh/concepts/features/operations/select/join-algorithms#inequality) 则会先累积两个输入，再执行连接。
 
 ## 查询规划器行为 {#query-planner-behavior}
 
-在 JOIN 算法执行之前，查询规划器可能会对 JOIN 的输入进行调整。具体会应用以下优化。
+在算法运行之前，查询规划器会分两个处理遍对查询计划进行变换。第一个处理遍反复应用局部自底向上规则，直到再无规则可应用为止，随后在整个执行计划范围内全局移除未使用的列，并再次运行局部规则。第二个处理遍按固定顺序执行全计划范围的分析与变换。
 
-### 自动选择构建侧 {#automatic-build-side-selection}
+在相应设置已启用且适用于该查询时，查询规划器可以按顺序应用以下与 JOIN 相关的优化。
 
-从 24.12 版本开始，查询规划器可以交换 JOIN 的两个输入，使较小的输入成为构建侧。查询规划器会比较两个输入的估计行数，若估计左侧输入较小，则在基于哈希的 JOIN 中交换这两个输入。此行为由 [`query_plan_join_swap_table`](/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 设置控制。
+**第一个处理遍：**
+
+1. 当 JOIN 的 `ON` 条件折叠为常量 false 时，对该 JOIN 进行短路处理。
+2. 拆分过滤表达式并提取逻辑 `JOIN` `ON` 条件，随后合并表达式与过滤器。
+3. 将过滤器下推到 JOIN 之下，包括对以 `OR` 连接的 `JOIN` 条件进行部分下推。
+4. 当 JOIN 正上方的过滤器总会拒绝未匹配的行时，将外连接转换为 `INNER` JOIN。
+5. 将符合条件的 `INNER` JOIN 转换为 `IN` 子查询。
+6. 将 JOIN 之上的等值过滤器合并到 `JOIN` 条件中，包括将 `CROSS` JOIN 或逗号连接转换为 `INNER` JOIN。
+7. 根据 JOIN 之后的过滤器，将 `ANY` JOIN 转换为 `SEMI` JOIN 或 `ANTI` JOIN。
+8. 当排序键仅引用保留侧的列时，将 `ORDER BY ... LIMIT` top-K 操作下推到 `LEFT` JOIN 或 `RIGHT` JOIN 之下。
+
+**第二个处理遍：**
+
+1. 基于执行计划中更上层的过滤器或外层 JOIN 的条件，以传递方式将外连接转换为 `INNER` JOIN。
+2. 通过等值 JOIN 的连接键将过滤谓词传播到另一侧输入。
+3. 主键与 limit 分析、查询条件缓存设置以及文本索引分析。
+4. JOIN 顺序优化以及构建端的自动选择。
+5. 插入运行时 JOIN 过滤器，移除新产生的未使用列，将运行时过滤器向读取步骤下推，并将其注册以用于读取时的索引分析。
+6. `PREWHERE` 优化，可将已下推的过滤器和运行时过滤器移入 `PREWHERE`。
+7. 针对基于 JOIN 的 `LIMIT` 查询的延迟物化、贯穿 JOIN 的按序读取，以及分布式 JOIN 规划。
+8. 将逻辑连接步骤转换为物理 JOIN 算法，随后对物理连接步骤进行惰性列索引。
+9. 按主键范围对符合条件的 `MergeTree` JOIN 进行分片，标记受 seal 控制的探测读取以用于运行时过滤器的范围裁剪，并对 `parallel_full_sorting_merge` JOIN 进行分片。
+
+## JOIN 顺序优化 {#multi-table-join-reordering}
+
+如果查询在同一个子查询中连接多个表，基于成本的连接顺序优化器会决定这些表的执行顺序。
+
+### 为什么 JOIN 顺序很重要 {#why-join-order-matters}
+
+对相同的表采用不同的 JOIN 顺序，最终结果相同，但产生的中间结果大小和构建端哈希表大小可能相差悬殊。如果先连接大表、再连接选择性高的表，就会产生庞大的中间结果，后续的连接步骤必须对其进行哈希和探测。而先连接选择性高的表，则可以尽早减少中间结果的行数。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![在 TPC-H SF10 上针对 lineitem、orders、customer 和经过过滤的 nation 四张表的查询中，两种 JOIN 顺序的对比：先连接大表会产生 60.0M 行的中间结果，而先连接经过过滤的 nation 表，对于同样 2,407,146 行的最终结果，中间结果仅为 60K 行和 602K 行](/images/guides/join-execution/tpch-join-orders.png)
+  </Frame>
+</div>
+
+可能的 JOIN 树数量随表的数量迅速增长。对于 `n` 张表，共有 `n!` 种左深 JOIN 顺序和 `(2n - 2)! / (n - 1)!` 种浓密 (bushy) JOIN 树。当有 10 张表时，左深顺序多达 3,628,800 种，浓密树则超过 17.6 十亿种。当有 12 张表时，浓密树的搜索空间接近 28 万亿种。
+
+基于成本的 JOIN 优化器将该问题拆分为三个组成部分：
+
+* **搜索空间：** 保持查询语义不变的逻辑等价 JOIN 树的集合。
+* **成本模型：** 用于估算中间结果行数，并为每个候选执行计划赋予数值成本的函数。
+* **搜索策略：** 在搜索空间中枚举候选执行计划，从而选出低成本树的算法。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![查询优化示意图：SQL 查询经过由搜索空间、成本模型和搜索策略组成的查询优化器，生成包含 HashJoin 探测输入和构建输入的物理执行计划](/images/guides/join-execution/query-to-physical-plan.png)
+  </Frame>
+</div>
+
+### 成本模型与基数估算 {#cost-model-and-cardinality-estimates}
+
+对于每个候选 JOIN 节点，成本模型计算其累计成本的方式为：两个输入的成本之和，加上该 JOIN 步骤本身的估算输出基数。
+
+为估算输出基数，优化器首先估算 `JOIN` 条件的选择性：
+
+* 当列统计信息能够提供相等谓词两侧键的不同值数量时，选择性估算为 `1 / max(NDV_left, NDV_right)`。当两个输入之间由多个相等谓词连接时，优化器取其中最小的选择性。
+* 当等值 JOIN 缺少可靠的不同值统计信息、但两个输入的行数均已知时，优化器假定其为外键到主键的匹配，并将连接后的行数估算为 `max(left_rows, right_rows)`。
+* 当两个输入之间没有相等谓词连接时，优化器按笛卡尔积 `left_rows * right_rows` 进行估算。
+
+随后，输出基数会根据 JOIN 类型进行调整：
+
+* `INNER` JOIN 使用连接行数估算值，下限为 1。
+* `LEFT`、`RIGHT` 和 `FULL` JOIN 分别以左输入大小、右输入大小以及两个输入大小之和作为估算值的下限。
+* `SEMI` 和 `ANTI` JOIN 不以保留侧大小作为下限，而是根据等值 JOIN 的选择性和非保留侧的输入大小估算匹配比例：对于 `SEMI` JOIN，按该匹配比例缩放保留侧输入；对于 `ANTI` JOIN，则按其补数进行缩放。
+
+自 26.10 版本起，当被连接的表可以按 JOIN 键的顺序读取，且已启用 [`query_plan_join_order_use_interesting_orders`](/zh/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) 时，`dpsub` 会分别对 `hash` 的构建与探测开销以及 `full_sorting_merge` 的排序与合并开销进行建模，按成本在两者之间择优，并优先选择已排序输出可被后续 JOIN 复用的执行计划。
+
+### 搜索算法 {#search-algorithms}
+
+[`query_plan_optimize_join_order_algorithm`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) 设置接受一个以逗号分隔的搜索算法列表，查询规划器会按顺序依次尝试这些算法。自 26.10 版本起，默认值为 `dpsub,greedy`。
+
+* **`dpsub`：** 一种基于表子集的自底向上动态规划算法。它从单个表开始，按大小递增的顺序枚举表子集，将每个子集拆分为由有效 JOIN 边相连的、互不相交的非空子集对，使用成本模型评估每个候选结果，并为每个子集保留成本最低的执行计划，直至构建出涵盖所有表的执行计划。`dpsub` 会同时考虑浓密树和左深树，并且在配合冲突检测器使用时支持非 INNER JOIN。它有一个硬限制：每个 JOIN 图最多包含 12 个表。
+* **`greedy`：** 一种启发式算法，从单个表开始，反复合并成本最低的有效表对，且不会回溯修改先前的决策。它以多项式时间运行，可扩展至 JOIN 图的最大规模，即 64 个表。
+
+[`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 设置用于限制扁平化到单个 JOIN 分组中的表数量，最大值为 64。如果查询连接的表数量超过此限制，则会被拆分为多个分组并分别优化。将其设置为 `0` 会完全禁用 JOIN 顺序优化和构建端选择。将其设置为 `1` 会禁用多表重排序，但仍允许两表之间的构建端选择。在默认限制 `10` 下，每个分组最多包含 10 个表，因此 `dpsub` 会优化所有符合条件且不超过 10 个表的分组。将 `query_plan_optimize_join_order_limit` 提高到 `12` 后，`dpsub` 可以优化最多包含 12 个表的分组；若提高到 12 以上，则包含超过 12 个表的分组会回退到 `greedy`。
+
+**回退行为：**
+
+* 如果扁平化后的 JOIN 图超过 `dpsub` 的 12 表上限，或者某个算法遇到其不支持的 JOIN 类型，查询规划器会回退到 `query_plan_optimize_join_order_algorithm` 中的下一个算法，默认为 `greedy`。
+* 当 `query_plan_optimize_join_order_limit` 被提高到 12 以上，且为冲突检测器扁平化非 INNER JOIN 会产生超过 12 个表时，查询规划器会禁用冲突检测器扁平化，以便 `greedy` 仍能优化剩余的 inner JOIN 子图。
+* 如果 `query_plan_optimize_join_order_algorithm` 中的所有算法均未成功，查询将失败并报错。
+
+### 非 INNER JOIN 的重排序与冲突检测器 {#reordering-non-inner-joins}
+
+`INNER` JOIN 同时满足交换律和结合律，因此对于相互连接的多个 `INNER` JOIN，无论如何加括号，结果都相同。外连接、`SEMI` JOIN 和 `ANTI` JOIN 并不满足全部结合律和交换律恒等式，因此若不做有效性检查就对其重排序，可能会返回错误的结果。
+
+为了安全地对非 INNER JOIN 进行重排序，ClickHouse 会使用由 [`query_plan_optimize_join_order_conflict_detector`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector) 指定的冲突检测器。可接受的值包括：`''` 表示禁用检测器；`a` 表示 CD-A，它是正确的，但会遗漏部分有效执行计划；`c` 表示 CD-C，它既正确又完备，自 26.10 版本起为默认值。该冲突检测器实现了论文 [On the Correct and Complete Enumeration of the Core Search Space](https://dl.acm.org/doi/10.1145/2463676.2465314) (SIGMOD 2013) 中的算法。
+
+在枚举开始前，检测器会依据四种代数性质分析原始 JOIN 树中的相邻运算符。对于某对运算符不成立的每个恒等式，检测器都会生成相应的冲突规则，规定在应用另一个 JOIN 运算符之前哪些表必须已完成连接。在 `dpsub` 枚举过程中，任何违反冲突规则的候选拆分都会被丢弃。
+
+**支持的 JOIN 类型及例外情况：**
+
+* 在使用 `dpsub` 并启用冲突检测器时，具有 `ALL` 严格性的 `INNER`、`CROSS`、逗号、`LEFT`、`RIGHT` 和 `FULL` JOIN，以及 `LEFT` 和 `RIGHT` `SEMI` 与 `ANTI` JOIN，都会参与多表重排序，外连接、`SEMI` 和 `ANTI` JOIN 的两侧均可参与。
+* 在未使用冲突检测器，或由 `greedy` 规划该图时，只有 `INNER`、`CROSS`、逗号，以及具有 `ALL` 严格性且非保留侧为单表的 `LEFT` 或 `RIGHT` JOIN，才会在三个及以上的表之间重排序。在该模式下，`FULL`、`SEMI` 和 `ANTI` JOIN 会成为优化屏障，将图限制为两个表。
+* `ANY` JOIN 仅支持两表间的构建端选择，不参与多表重排序。
+* `ASOF` JOIN、`PASTE` JOIN、`GLOBAL` 和 `LOCAL` JOIN、带有残余过滤器的 JOIN，以及在 `join_use_nulls = 1` 下会将非 `Nullable` 列转为 `Nullable` 的外连接，均不参与多表重排序。
+
+**空值拒绝条件的作用：**
+
+外连接的某些恒等式仅在谓词会拒绝空值补充侧的 `NULL` 值时才成立。例如，只有当中间表的列为 `NULL` 时第二个 `ON` 谓词不可能求值为 true，两个相邻的 `LEFT` JOIN 才能重新结合。当 `join_use_nulls = 0` 时，未匹配的行会填充类型默认值而非 `NULL`，因此空值拒绝规则仅在相关列为 `Nullable` 类型时才适用。
+
+**无效与有效重排序示例：**
+
+以下查询在 `join_use_nulls = 1` 下涉及 `customers`、`orders` 和 `payments` 三个表：
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+LEFT JOIN orders ON customers.id = orders.customer_id
+INNER JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+以下两个简化的逻辑执行计划中，Plan A 展示了查询中书写的原始顺序，Plan B 展示了一种候选的重排方案。
+
+Plan A (原始) ：
+
+```text
+Inner join [orders.id = payments.order_id]
+├── Left outer join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+执行计划 B：对执行计划 A 的无效重排：
+
+```text
+Left outer join [customers.id = orders.customer_id]
+├── Scan customers
+└── Inner join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+对于没有任何订单的客户，执行计划 A 会生成一行 `orders` 列均为 `NULL` 值的记录，随后在 `INNER` JOIN 处将该行移除，因为 `NULL` 无法与任何付款记录匹配。执行计划 B 则先连接 `orders` 与 `payments`，再在 `LEFT` JOIN 处保留该客户。由于 `LEFT` JOIN 后接 `INNER` JOIN 时不满足结合性，冲突检测器会拒绝执行计划 B。
+
+如果按相反的顺序书写这两种 JOIN 类型，则该重排是有效的：
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+INNER JOIN orders ON customers.id = orders.customer_id
+LEFT JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+执行计划 C (原始) ：
+
+```text
+Left outer join [orders.id = payments.order_id]
+├── Inner join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+执行计划 D，是对执行计划 C 的合法重排：
+
+```text
+Inner join [customers.id = orders.customer_id]
+├── Scan customers
+└── Left outer join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+由于 `INNER` JOIN 后接 `LEFT` JOIN 满足结合性，执行计划 C 与执行计划 D 产生相同的行，因此冲突检测器允许采用执行计划 D。
+
+**SEMI JOIN 重排序示例：**
+
+考虑如下查询：`big` 与 `mid` 有大量相互匹配的键，而 `tiny` 仅包含一个很小的键集合：
+
+```sql
+SELECT sum(big.v + mid.v)
+FROM big
+INNER JOIN mid ON big.k = mid.k
+LEFT SEMI JOIN tiny ON big.k = tiny.k;
+```
+
+如果没有冲突检测器，`LEFT SEMI` JOIN 会固定在 `big INNER JOIN mid` 之上，因此 ClickHouse 会先计算 `big` 与 `mid` 的完整 `INNER` JOIN，再按 `tiny` 进行过滤。启用冲突检测器后，`dpsub` 会将 `LEFT SEMI` JOIN 移到 `INNER` JOIN 之下，从而先对 `big` 进行过滤。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![不使用与使用冲突检测器时 SEMI JOIN 执行计划的对比：不使用检测器时，先连接 big 和 mid，在与 tiny 进行 SEMI JOIN 之前产生 503,768,186 行中间结果；使用检测器时，先将 big 与 tiny 进行半连接，仅产生 1,015,092 行中间结果，约为前者的 1/496](/images/guides/join-execution/semi-join-reordering.png)
+  </Frame>
+</div>
+
+在一个基准测试数据集上，`big` 与 `mid` 共享大量重复的键，而 `tiny` 只选取其中一小部分键。将 `LEFT SEMI` JOIN 下推到 `INNER` JOIN 之下后，最大中间结果缩小至原来的约 1/496：
+
+| 配置       | 执行计划                 | 最大中间结果        |
+| -------- | -------------------- | ------------- |
+| 不使用冲突检测器 | `(big ⋈ mid) ⋉ tiny` | 503,768,186 行 |
+| 使用冲突检测器  | `mid ⋈ (big ⋉ tiny)` | 1,015,092 行   |
+
+以下 `EXPLAIN actions = 1` 执行计划是在 ClickHouse 26.10.11 上基于样本 `MergeTree` 表捕获的：`big` 和 `mid` 各有 3,000,000 行、100,000 个不同的键，`tiny` 有 100 行，并设置 `enable_join_runtime_filters = 0`，以单独考察 JOIN 顺序的影响。
+
+不使用冲突检测器，即设置 `query_plan_optimize_join_order_conflict_detector = ''`：
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  big[3000000] ⋈ mid[3000000] ⋉ tiny[100]
+   │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 93.41 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 91.69 million
+   │  Left: rows estimated 91.69 million
+   │  Right: rows estimated 100.00
+   │  Join conditions: k = k
+   │  Input (left): k, v, v
+   │  Input (right): k
+   ├──Join (JOIN FillRightFirst)
+   │  │  big[3000000] ⋈ mid[3000000]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  │  Cost: estimated 91.69 million
+   │  │  Selectivity: estimated (NDV) 1.019e-05
+   │  │  Output rows: estimated 91.69 million
+   │  │  Left: rows estimated 3.00 million
+   │  │  Right: rows estimated 3.00 million
+   │  │  Join conditions: k = k
+   │  │  Input (left): k, v
+   │  │  Input (right): k, v
+   │  ├──ReadFromMergeTree (default.big)
+   │  │     Read type: Default
+   │  │     Parts: 3 | Granules: 367
+   │  │     Output: v, k
+   │  └──ReadFromMergeTree (default.mid)
+   │        Read type: Default
+   │        Parts: 3 | Granules: 367
+   │        Output: v, k
+   └──ReadFromMergeTree (default.tiny)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: k
+```
+
+使用默认冲突检测器 `c` 时：
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  mid[3000000] ⋈ (big[3000000] ⋉ tiny[100])
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 96.45 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 93.40 thousand
+   │  Left: rows estimated 3.00 million
+   │  Right: rows estimated 3.06 thousand
+   │  Join conditions: k = k
+   │  Input (left): k, v
+   │  Input (right): k, v
+   ├──ReadFromMergeTree (default.mid)
+   │     Read type: Default
+   │     Parts: 3 | Granules: 367
+   │     Output: v, k
+   └──Join (JOIN FillRightFirst)
+      │  big[3000000] ⋉ tiny[100]
+      │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+      │  Cost: estimated 3.06 thousand
+      │  Selectivity: estimated (NDV) 1.019e-05
+      │  Output rows: estimated 3.06 thousand
+      │  Left: rows estimated 3.00 million
+      │  Right: rows estimated 100.00
+      │  Join conditions: k = k
+      │  Input (left): k, v
+      │  Input (right): k
+      ├──ReadFromMergeTree (default.big)
+      │     Read type: Default
+      │     Parts: 3 | Granules: 367
+      │     Output: v, k
+      └──ReadFromMergeTree (default.tiny)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: k
+```
+
+### CROSS JOIN 的位置 {#cross-join-placement}
+
+`CROSS` JOIN 没有等值条件，也不会向 JOIN 图中添加谓词边。为了在重排序过程中保持图的连通性，优化器会在 `CROSS` JOIN 的两侧之间添加一条选择性为 `1` 的显式边。这样，`dpsub` 便能将笛卡尔积放在中间结果代价最低的位置，而 ClickHouse 仍会按 `CROSS` JOIN 执行并报告该操作。
+
+### 传递谓词 {#transitive-predicates}
+
+启用 [`enable_join_transitive_predicates`](/zh/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) 后，优化器会在搜索 JOIN 顺序之前，根据 `ON` 条件的等价类推断出具有传递性的相等谓词。例如，由 `a.k = b.k` 和 `b.k = c.k` 可推导出 `a.k = c.k`，这样搜索策略便可以考虑直接连接 `a` 和 `c`，而不必将这两张表视为笛卡尔积。该设置于 26.4 版本引入，并自 26.6 版本起默认启用。
+
+## 自动选择构建端 {#automatic-build-side-selection}
+
+从 24.12 版本开始，查询规划器可以交换 JOIN 的两个输入，使较小的输入成为构建端。查询规划器会比较两个输入的估计行数，若估计左侧输入较小，则在基于哈希的 JOIN 中交换这两个输入。此行为由 [`query_plan_join_swap_table`](/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 设置控制。
 
 输入交换后，`LEFT` JOIN 会作为 `RIGHT` JOIN 执行，反之亦然。交换后的顺序可在 `EXPLAIN` 输出中查看。
 
-### 多表 JOIN 重排序 {#multi-table-join-reordering}
+由于 `dpsub` 成本模型为 JOIN 计算的成本与输入位于左侧还是右侧无关，因此构建端的方向是在 JOIN 重排序确定树结构之后才分配的。对于 `INNER`、`CROSS` 以及 `ALL` 外连接上的哈希 JOIN，`dpsub` 会将估计行数较小的输入放在右侧作为构建表，并相应地对调 `LEFT` 和 `RIGHT` JOIN。当行数估计相等或不可用时，它会将涉及表更多的输入放在左侧。
 
-如果查询在同一个子查询中连接多个表，查询规划器可以调整这些表的连接顺序。[`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 设置用于指定查询规划器最多可重排序的表数量。默认值为 `10`。值为 `1` 时会禁用重排序。
+对于 `ANY`、`SEMI` 和 `ANTI` JOIN，`dpsub` 内部在搜索完成后执行的方向确定步骤不会翻转输入，并会恢复 `SEMI` 和 `ANTI` JOIN 在查询中书写的原始方向。紧接着，当查询规划器根据所选树构建逻辑连接步骤时，构建端选择处理遍仍可能交换 `ANY`、`SEMI` 和 `ANTI` JOIN 的输入，将较小的输入放在右侧，即把 `LEFT` 反转为 `RIGHT`、把 `RIGHT` 反转为 `LEFT`。以下情况会跳过该交换：对 `ANY` JOIN 启用了 [`join_any_take_last_row`](/zh/reference/settings/session-settings/join#join_any_take_last_row)；[`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 包含无法同时支持原始方向和反转方向的合并算法 (例如 `partial_merge`) ；优化器选择了 `full_sorting_merge`；或 `query_plan_join_swap_table` 被设置为 `false`。
 
-### 列统计信息的使用 {#use-of-column-statistics}
+## 基数估计与统计信息 {#use-of-column-statistics}
 
-构建侧的选择和 JOIN 重排序都依赖于行数估算。若没有列统计信息，查询规划器会根据主索引推算估算值，而这类估算值可能不够精确。有了[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)后，查询规划器会借助统计信息来估算过滤器的选择性以及 JOIN 键的基数。
+基于成本的优化器根据行数和选择性的估计值做出以下四项决策：
 
-[`use_statistics`](/zh/reference/settings/session-settings/use-statistics#use_statistics) 设置用于控制优化器是否使用统计信息。[`materialize_statistics_on_insert`](/zh/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) 设置用于控制是否为新插入的数据构建统计信息。
+* **JOIN 顺序：**&#x6839;据 [`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 设置，默认以最多 10 张表为一组，为每组选择成本最低的 JOIN 顺序；涉及更多表的查询会被拆分为多个分组，分别优化。当该上限提高到 12 以上且某个分组包含超过 12 张表时，则回退到 `greedy`。
+* **JOIN 构建侧：**&#x6839;据 [`query_plan_join_swap_table`](/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 设置，将估计数据量较小的输入作为哈希连接的构建侧。
+* **JOIN 算法：**&#x5F53;参与连接的表可以按连接键顺序读取时，根据成本在 `hash` 和 `full_sorting_merge` 之间选择，并根据 [`query_plan_join_order_use_interesting_orders`](/zh/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) 设置，优先选择已排序输出可供后续 JOIN 重用的执行计划。
+* **过滤顺序：**&#x5C06; `WHERE` 条件移至 [`PREWHERE`](/zh/optimize/prewhere)，并根据列压缩后的大小和估计的选择性对这些条件排序，让成本更低、选择性更高的条件先执行。
 
-### 过滤器下推 {#filter-pushdown}
+没有列统计信息时，查询规划器根据主索引估算行数，结果可能不够精确。有了[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)，查询规划器就能同时估计过滤器的选择性和连接键的基数。
+
+### 自动统计信息收集与默认类型 {#automatic-statistics-collection}
+
+`MergeTree` 表会在 parts 合并时，为每个数据分区片段自动收集列统计信息。启用 [`materialize_statistics_on_insert`](/zh/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) 后，对于大小不超过 [`materialize_statistics_on_insert_max_table_size`](/zh/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) 的表，还会在 insert 时收集统计信息，因此无需手动运行 `ANALYZE`。[`use_statistics`](/zh/reference/settings/session-settings/use-statistics#use_statistics) 设置用于控制优化器是否使用这些统计信息。
+
+[`auto_statistics_types`](/zh/reference/settings/merge-tree-settings/other#auto_statistics_types) 表设置用于控制在适用的列上自动收集哪些类型的统计信息。自 26.7 版本起，其默认值为 `basic` 和 `uniq_v2`，取代了 26.4 版本起自动收集的 `minmax` 和 `uniq`：
+
+* **`basic`：** 记录数值列和时间列的最小值和最大值、默认值和 `NULL` 值的计数、字符串的总字节长度，以及非 `Nullable` 整数列和 `Decimal` 列的精确总和。
+* **`uniq_v2`：** 估算列中不同值的数量。
+
+有关声明语法、`ALTER TABLE` 命令以及支持的数据类型，请参阅[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)。
+
+### 其他估算来源 {#other-estimate-sources}
+
+除了 `MergeTree` 列统计信息和主索引估算之外，连接顺序优化器还可以使用另外两种基数估算来源：
+
+* **收集的哈希表统计信息：** 由 [`use_hash_table_stats_for_join_reordering`](/zh/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering) 控制，自 26.1 版本起可用。启用 [`collect_hash_table_stats_during_joins`](/zh/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins) 后，ClickHouse 会缓存已执行的 JOIN 子执行计划实际测得的构建端行数。之后再次执行匹配的子执行计划时，如果已缓存的计数小于静态估算值，查询规划器会改用实测计数进行重排序。
+* **数据湖元数据统计信息：** 由 [`use_datalake_metadata_statistics`](/zh/reference/settings/session-settings/use#use_datalake_metadata_statistics) 控制，自 26.11 版本起，在启用 `use_statistics` 时可用于 Apache Iceberg 表。查询规划器会从经过分区裁剪和 min-max 裁剪后剩余的 Iceberg 清单文件中读取行数、值范围以及空值比例。如果同时启用了 [`use_iceberg_table_statistics_ndv`](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_table_statistics_ndv)，还会从 `metadata.json` 中的 Iceberg 表统计信息读取不同值的计数。
+
+## 过滤器下推 {#filter-pushdown}
 
 当启用 [`query_plan_filter_push_down`](/zh/reference/settings/session-settings/query-plan#query_plan_filter_push_down) 时，查询规划器会将 `WHERE` 条件下移到 JOIN 之下，使每个输入在构建阶段和探测阶段之前先完成过滤。
 
@@ -44,6 +370,43 @@ doc_type: 'guide'
 * 作用于某一输入 JOIN 键上的条件也可以应用到另一输入，因为对每个匹配的行而言，两个输入的键列都相等。
 * 条件不会下推到已填充好的右侧 (例如字典) ，也不会下推到 `ASOF` JOIN 的右侧。
 
+另有两项优化进一步将过滤器下推扩展到 JOIN 的更多场景：
+
+* **跨等值 JOIN 的谓词传播：** 由 [`query_plan_propagate_predicate_across_join`](/zh/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join) 控制，自 26.9 版本起支持 `MergeTree` 主键，并在 26.11 版本中扩展到 Parquet 读取。在索引分析之前，查询规划器会将 JOIN 键上与常量比较的过滤器合取项从等值 JOIN 的一侧复制到另一侧，从而使两个输入都能进行主键或 Parquet 行组裁剪。
+* **析取下推：** 由 [`use_join_disjunctions_push_down`](/zh/reference/settings/session-settings/use#use_join_disjunctions_push_down) 控制，于 25.10 版本引入，并自 26.1 版本起默认启用。对于由 `OR` 连接的 `JOIN` 条件，若每个分支都至少包含一个作用于同一输入的确定性谓词，查询规划器会为该侧提取析取过滤器，并在 JOIN 之前将其下推到该输入。
+
+## 运行时 JOIN 过滤器 {#runtime-join-filters}
+
+启用 [`enable_join_runtime_filters`](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters) 后，ClickHouse 会利用构建阶段收集的键，在行到达 JOIN 之前对探测侧进行过滤。该功能自 26.2 版本起默认启用。
+
+对于符合条件的基于哈希的 JOIN (包括 `INNER`、`RIGHT`、`SEMI` 和 `ANTI` JOIN) ，ClickHouse 会在填充哈希表的同时，根据构建侧的相等键构建运行时过滤器。查询规划器会将该过滤器附加到探测侧子树上，并尽可能将其下推到靠近探测侧存储读取的位置 (包括下推到 `PREWHERE` 中) ，从而在探测哈希表之前剔除不匹配的探测侧行。对于 `LEFT ANTI` JOIN，该过滤器会排除键出现在构建侧中的行，同时放行键为 `NULL` 的行。
+
+运行时过滤器会根据构建侧不同键的数量和类型调整其内部表示：
+
+* **精确集合：** 过滤器最初是由不同键值组成的精确集合。空集合会被求值为常量掩码，而仅含单个值的非 `Nullable` 集合会被优化为直接的相等比较。
+* **紧凑位图或布隆过滤器：** 当不同键的数量或字节数超过精确集合的上限时，正向过滤器会针对 8 位和 16 位整数键切换为紧凑位图，针对其他连续键类型则切换为布隆过滤器。`LEFT ANTI` JOIN 过滤器不会切换为近似的布隆过滤器，因为假阳性会导致本应保留的行被丢弃。
+* **禁用：** 如果正向精确集合溢出且没有布隆过滤器作为回退方案，或者布隆过滤器的置位比率超过 (或预计会超过) 其最大值，则运行时过滤器会被永久禁用。在探测过程中，如果通过过滤器的行所占比例超过通过率阈值，ClickHouse 会在一定数量 (可配置) 的数据块内暂时跳过该过滤器，之后再重新评估。此外，当预估的探测侧行数小于或等于最小探测行数阈值时，ClickHouse 也不会创建运行时过滤器。
+
+**粒度剪枝：**
+
+启用 [`enable_join_runtime_filters_index_analysis`](/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) 和 [`use_skip_indexes_on_data_read`](/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) 后，ClickHouse 在读取 `MergeTree` 探测侧数据时，会使用已构建完成的运行时过滤器对粒度进行剪枝。该设置自 26.10 版本起默认启用。如果运行时过滤器保留了精确的键集合，ClickHouse 会构造一个 `IN` 谓词；否则会构造一个从最小值到最大值的键范围谓词。剪枝适用于以下探测键：属于主键的键、被 `minmax`、`set` 或 `bloom_filter` 跳数索引覆盖的键，或等于全局行索引 `_part_starting_offset + _part_offset` 的键。对于 Apache Iceberg 表，运行时过滤器还可以对数据文件、Parquet 行组和 Parquet 页进行剪枝。
+
+有关运行时过滤器调优设置的完整列表，请参阅 [JOIN 设置中的查询规划器部分](/zh/concepts/features/operations/select/join-settings#query-planner)。
+
+## 检查 JOIN 执行计划 {#inspecting-the-join-plan}
+
+对查询运行 `EXPLAIN actions = 1`，即可查看 JOIN 顺序、类型、严格性、构建侧、行数估算以及所选算法。自 26.7 版本起，不带参数的 `EXPLAIN` 默认以带操作注解的 Pretty 格式渲染输出；显式写出 `EXPLAIN actions = 1` 则在旧版本和当前版本中均适用。
+
+在 `EXPLAIN actions = 1` 的输出中，每个 `Join (JOIN FillRightFirst)` 步骤会显示：
+
+* 一个符号表达式，概括执行顺序以及每个表的估算行数。
+* `Type`、`Strictness` 和 `Algorithm` 行，分别显示经过构建端交换或重写之后实际执行的 JOIN 类型、严格性以及物理算法。
+* 估算成本、选择性、输出行，以及左右两侧输入的行数。
+* 两个子分支，其中第一个子分支是左侧的探测输入，第二个子分支是右侧的构建输入。
+* `BuildRuntimeFilter` 步骤和 `Runtime filters` 注解，显示运行时过滤器在何处构建和应用。
+
+如需将优化器的估算值与实际执行情况进行对比，请运行 [`EXPLAIN ANALYZE`](/zh/reference/statements/explain#explain-analyze)。`EXPLAIN ANALYZE` 会实际执行查询，并报告每个步骤的运行时指标。对于连接步骤，它会[对比估算指标与实际指标](/zh/reference/statements/explain#explain-analyze-join-estimation)，包括估算成本与实际成本、选择性、带 q-error 的输出行数，以及左右两侧输入的行数。
+
 ## 相关页面 {#related-pages}
 
 * [在 ClickHouse 中使用 JOIN](/zh/concepts/features/operations/select/joining-tables)
@@ -51,3 +414,4 @@ doc_type: 'guide'
 * [JOIN 内存管理与溢写](/zh/concepts/features/operations/select/join-memory-management)
 * [JOIN 设置](/zh/concepts/features/operations/select/join-settings)
 * [减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)
+* [全新的基于成本的连接优化器：支持非 INNER JOIN 的连接重排序](https://clickhouse.com/blog/the-new-cost-based-join-optimizer-with-reordering-support-for-non-inner-joins)

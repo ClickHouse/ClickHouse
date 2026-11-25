@@ -363,20 +363,21 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 以下设置可在配置文件中为指定端点设置 (将按 URL 的精确前缀匹配) ：
 
 * `endpoint` — 指定端点前缀。必填。
-* `access_key_id` and `secret_access_key` — 指定用于该端点的凭据。可选。
-* `use_environment_credentials` — 如果设为 `true`，S3 客户端会尝试从环境变量和 [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) 元数据中获取该端点的凭据。可选，默认值为 `false`。
+* `access_key_id` and `secret_access_key` — 指定用于该端点的凭证。可选。
+* `use_environment_credentials` — 如果设为 `true`，S3 客户端会尝试从环境变量和 [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) 元数据中获取该端点的凭证。可选，默认值为 `false`。
 * `region` — 指定 S3 区域名称。可选。
-* `use_insecure_imds_request` — 如果设为 `true`，S3 客户端在从 Amazon EC2 元数据获取凭据时会使用不安全的 IMDS 请求。可选，默认值为 `false`。
-* `expiration_window_seconds` — 用于检查基于过期时间的凭据是否已过期的宽限期。可选，默认值为 `120`。
-* `no_sign_request` - 忽略所有凭据，使请求不带签名。适用于访问公共存储桶。
+* `use_insecure_imds_request` — 如果设为 `true`，S3 客户端在从 Amazon EC2 元数据获取凭证时会使用不安全的 IMDS 请求。可选，默认值为 `false`。
+* `expiration_window_seconds` — 用于检查基于过期时间的凭证是否已过期的宽限期。可选，默认值为 `120`。
+* `no_sign_request` - 忽略所有凭证，使请求不带签名。适用于访问公共存储桶。
+* `request_payer` - 设为 `requester` 即可访问请求方付费存储桶：发往该端点的每个请求都会携带请求头 `x-amz-request-payer: requester`。可选。优先级高于 [`s3_request_payer`](/zh/reference/settings/session-settings/s3#s3_request_payer) 设置。
 * `header` — 向发往该端点的请求添加指定的 HTTP 请求头。可选，可指定多次。
-* `access_header` - 在没有来自其他来源的凭据时，向发往该端点的请求添加指定的 HTTP 请求头。
+* `access_header` - 在没有来自其他来源的凭证时，向发往该端点的请求添加指定的 HTTP 请求头。
 * `server_side_encryption_customer_key_base64` — 如果指定，将设置访问使用 SSE-C 加密的 S3 对象所需的请求头。可选。
 * `server_side_encryption_kms_key_id` - 如果指定，将设置访问使用 [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) 的 S3 对象所需的请求头。如果指定空字符串，将使用 AWS 托管的 S3 密钥。可选。
 * `server_side_encryption_kms_encryption_context` - 如果与 `server_side_encryption_kms_key_id` 一起指定，将设置给定的 SSE-KMS 加密上下文请求头。可选。
 * `server_side_encryption_kms_bucket_key_enabled` - 如果与 `server_side_encryption_kms_key_id` 一起指定，将设置用于为 SSE-KMS 启用 S3 存储桶 key 的请求头。可选，可为 `true` 或 `false`，默认不设置 (与存储桶级别设置一致) 。
 * `max_single_read_retries` — 单次读取的最大重试次数。默认值为 `4`。可选。
-* `max_put_rps`, `max_put_burst`, `max_get_rps` and `max_get_burst` - 用于特定端点而非按查询应用的 throttling 设置 (见上文说明) 。可选。
+* `max_put_rps`, `max_put_burst`, `max_get_rps` and `max_get_burst` - 用于特定端点而非按查询应用的限流设置 (见上文说明) 。可选。
 
 **示例：**
 

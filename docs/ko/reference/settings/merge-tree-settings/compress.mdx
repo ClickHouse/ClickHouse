@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며 ClickHouse 소스 코드에서 자동 생성됩니다.
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 마크는 압축을 지원하므로 mark file 크기가 줄어들고 네트워크 전송도 빨라집니다.
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,21 @@ Compact 파트의 물리적 레이아웃을 제어합니다. true(기본값)인 
 압축률은 향상되지만 읽기 시 더 많은 데이터를 압축 해제해야 합니다.
 이 설정은 항상 모든 컬럼을 읽는 워크로드(예: 프로젝션)에 유용합니다.
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "새로운 설정: 서브컬럼 읽기 속도를 높이기 위해 Compact 파트에서 컬럼 서브스트림 경계마다 새로운 압축 블록을 시작합니다"}]}]} />
+
+Compact 파트의 물리적 레이아웃(layout)을 제어합니다. true(기본값)이면 그래뉼(granule) 내 컬럼 서브스트림은
+현재 블록이 `min_compress_block_size`에 도달하면 새로운 압축 블록을 시작합니다. 따라서 단일
+서브컬럼(예: `Array` 크기, `Tuple` 원소 또는 JSON 경로)을 읽을 때 해당 서브스트림만 압축 해제하며,
+작은 서브스트림은 계속 하나의 블록을 공유합니다. false이면 그래뉼 내 컬럼의 모든 서브스트림이
+동일한 압축 블록에 패킹되므로 압축률은 향상되지만, 서브컬럼을 읽을 때 더 많은 데이터를 압축 해제해야
+합니다. `write_marks_for_substreams_in_compact_parts`와
+`compress_per_column_in_compact_parts`가 모두 활성화된 경우에만 적용됩니다.
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -488,6 +488,14 @@ Executamos testes funcionais, de integração, de estresse e unitários com o MS
 Executamos testes funcionais, de integração, de estresse e unitários com o UBSan a cada commit.
 O código de algumas bibliotecas de terceiros não é instrumentado para detectar UB.
 
+Também habilitamos a verificação `unsigned-integer-overflow`, que não faz parte de
+`-fsanitize=undefined`, porque o overflow de um inteiro sem sinal é um comportamento bem definido: o valor é reduzido
+módulo 2<sup>N</sup> (wraparound). Ainda assim, um wraparound *não intencional* é um bug; por isso, os locais do código que
+fazem wraparound de propósito (funções hash, checksums, geradores de números pseudoaleatórios, a semântica da
+aritmética do ClickHouse sobre tipos sem sinal) são anotados com o atributo `NO_SANITIZE_UNSIGNED_OVERFLOW`
+(consulte `base/base/sanitizer_defs.h`). Já para arquivos inteiros e para código de terceiros composto apenas por cabeçalhos,
+a verificação é desativada em `tests/ubsan_ignorelist.txt`.
+
 ### Valgrind (memcheck) {#valgrind-memcheck}
 
 Costumávamos executar os testes funcionais no Valgrind durante a noite, mas isso não é mais feito.

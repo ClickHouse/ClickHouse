@@ -13,6 +13,16 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+## automatic_parallel_replicas_ignore_thresholds {#automatic_parallel_replicas_ignore_thresholds}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre : à des fins de test, ignore le plafond de fils d’exécution de lecture du modèle de coût des réplicas parallèles automatiques, afin que les petites lectures soient départagées par la comparaison plutôt que court-circuitées par ce plafond."}]}]} />
+
+À des fins de test du modèle de coût des réplicas parallèles automatiques : ignore le plafond du nombre de fils d’exécution qu’une lecture peut utilement occuper (dérivé de `merge_tree_min_bytes_per_task_for_remote_reading`). Sans ce paramètre, ce plafond ramène les deux termes de la comparaison à la même valeur pour une lecture trop petite pour occuper `max_threads`. La comparaison se réduit alors à `0 > output_bytes / replicas` et la requête est tranchée avant même que le modèle de coût ne soit consulté.
+
+Ce paramètre ne modifie délibérément PAS `automatic_parallel_replicas_min_bytes_per_replica` : pour désactiver cette condition d’activation, définissez ce dernier à 0, c’est précisément son rôle. Il ne modifie pas non plus le dimensionnement des tâches de lecture et n’empêche pas la nouvelle collecte des statistiques ayant dérivé : une décision prise à partir de statistiques obsolètes n’est pas une décision prise par le modèle de coût.
+
 ## automatic_parallel_replicas_max_duplicated_read_ratio {#automatic_parallel_replicas_max_duplicated_read_ratio}
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
@@ -56,7 +66,9 @@ Permet aux réplicas parallèles automatiques de mémoriser, pour chaque plan de
 requête répétée dont les statistiques excluent le recours aux répliques parallèles, la décision soit prise sans construire le plan avec les répliques
 parallèles.
 
-Désactivez ce paramètre pour que chaque requête supporte le coût complet de cette décision, par exemple lors de l&#39;évaluation des performances liée à ce coût.
+Désactive les frontières mémorisées. Pour mesurer, lors d&#39;un test de performance, le coût de la construction du plan avec les répliques parallèles, définissez également
+`automatic_parallel_replicas_undecided_retry_after_executions = 0` : les plans dont la dernière construction s&#39;est terminée sans
+décision sont ignorés indépendamment de ce paramètre.
 
 ## automatic_parallel_replicas_statistics_drift_ratio {#automatic_parallel_replicas_statistics_drift_ratio}
 
@@ -71,5 +83,17 @@ au lieu de servir de base à la décision.
 Les lignes prises en compte sont celles sélectionnées par l’analyse d’index de l’initiateur : l’élagage effectué uniquement par les répliques pendant la lecture (par
 exemple via leurs propres caches des conditions de requête) n’est donc pas visible. Plus le ratio est faible, plus les statistiques sont collectées à nouveau rapidement lorsque la table
 évolue. Doit être supérieur à 1.
+
+## automatic_parallel_replicas_undecided_retry_after_executions {#automatic_parallel_replicas_undecided_retry_after_executions}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "Nouveau paramètre. Les réplicas parallèles automatiques ne construisent désormais plus le plan avec répliques parallèles pendant un certain nombre d’exécutions d’un plan de requête dont la dernière construction s’est terminée sans décision ; auparavant, chaque exécution le construisait."}]}]} />
+
+Nombre d’exécutions d’un plan de requête qui ne construisent pas le plan avec répliques parallèles lorsque sa dernière construction s’est terminée sans décision dans le cadre des réplicas parallèles automatiques : les deux plans n’ont pas pu être comparés, le planificateur n’a utilisé aucune réplique parallèle
+dans le plan construit avec ceux-ci, une étape du plan ne peut pas collecter les statistiques, ou la collecte n’a rien mesuré. Les exécutions concurrentes se relaient : une sur `automatic_parallel_replicas_undecided_retry_after_executions + 1` reconstruit le plan.
+Après le premier résultat de ce type pour un plan de requête, l’exécution suivante reconstruit immédiatement le plan, au cas où la première exécution aurait rempli d’autres caches de statistiques et où les décisions de planification changeraient.
+
+La valeur 0 désactive le report après des résultats indécis. Ce paramètre est indépendant de `automatic_parallel_replicas_remember_boundary`, qui évite la construction pour les plans dont la décision a été prise à partir des statistiques.
 
 {/*AUTOGENERATED_END*/}

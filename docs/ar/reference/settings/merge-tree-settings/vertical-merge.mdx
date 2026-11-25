@@ -49,8 +49,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كانت القيمة true، فيمكن لعملية دمج TTL على مستوى الصفوف استخدام خوارزمية الدمج العمودي بدلاً من الرجوع إلى
 الدمج الأفقي. ولا ينطبق ذلك إلا في وضع الدمج `MergeTree` أو `Replacing` أو `Collapsing` أو `VersionedCollapsing`،
-وعلى الجداول التي تحتوي على TTL للصفوف دون TTL للأعمدة أو TTL من نوع `GROUP BY`، وبشرط ألا يتضمن أي جزء بيانات
-مشارك في عملية الدمج حذفًا خفيف الوزن (lightweight delete). أما أي عملية دمج TTL أخرى فتظل أفقية.
+وعلى الجداول التي تحتوي على TTL للصفوف دون TTL للأعمدة أو TTL من نوع `GROUP BY`. أما أي عملية دمج TTL أخرى فتظل أفقية.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

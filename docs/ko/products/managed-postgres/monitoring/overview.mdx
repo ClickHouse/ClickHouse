@@ -9,13 +9,13 @@ doc_type: 'guide'
 
 ClickHouse Managed Postgres 서비스는 다음 방법으로 모니터링할 수 있습니다:
 
-| Section                                                              | Description                                                          | Setup required       |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------- |
-| [대시보드](/ko/products/managed-postgres/monitoring/dashboard)              | 리소스 사용량과 데이터베이스 활동을 보여주는 Cloud Console 기본 제공 차트                      | 없음                   |
-| [쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights)      | 각 statement의 telemetry: 영향도 순으로 순위가 매겨진 모든 쿼리 패턴과 진단 카운터             | 없음                   |
-| [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) | Prometheus, Grafana, Datadog 또는 OpenMetrics 호환 collector로 메트릭을 스크레이프 | API Key + scraper 설정 |
-| [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics)              | Prometheus 엔드포인트에서 노출되는 메트릭의 전체 목록과 타입, 레이블, 의미                      | 해당 없음                |
-| [알림](/ko/products/managed-postgres/monitoring/notifications)            | 스토리지 용량이 한도에 가까워지는 등 서비스에 주의가 필요할 때 Console, 이메일 및 Slack 알림          | 없음                   |
+| Section                                                              | Description                                                                             | Setup required                     |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------- |
+| [대시보드](/ko/products/managed-postgres/monitoring/dashboard)              | 리소스 사용량과 데이터베이스 활동을 보여주는 Cloud Console 기본 제공 차트                                         | 없음                                 |
+| [쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights)      | 각 statement의 telemetry: 영향도 순으로 순위가 매겨진 모든 쿼리 패턴과 진단 카운터, 대기 이벤트(wait event) 및 차단 중인 쿼리 | 없음. 단, 차단 중인 쿼리를 확인하려면 수집을 활성화해야 함 |
+| [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) | Prometheus, Grafana, Datadog 또는 OpenMetrics 호환 collector로 메트릭을 스크레이프                    | API Key + scraper 설정               |
+| [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics)              | Prometheus 엔드포인트에서 노출되는 메트릭의 전체 목록과 타입, 레이블, 의미                                         | 해당 없음                              |
+| [알림](/ko/products/managed-postgres/monitoring/notifications)            | 스토리지 용량이 한도에 가까워지는 등 서비스에 주의가 필요할 때 Console, 이메일 및 Slack 알림                             | 없음                                 |
 
 ## 빠른 시작 {#quick-start}
 
@@ -26,6 +26,10 @@ Cloud Console을 열고 아무 ClickHouse Managed Postgres 인스턴스의 **모
 쿼리별 telemetry(지연 시간 백분위수, 캐시 대비 디스크 읽기,
 임시 spill, 병렬 워커 활용도, WAL 볼륨)를 보려면 동일한 인스턴스의
 [쿼리 인사이트](/ko/products/managed-postgres/monitoring/query-insights) 탭을 여십시오.
+이 화면의 [대기](/ko/products/managed-postgres/monitoring/query-insights#waits)
+탭에서는 활성 세션이 무엇을 기다리고 있는지 확인할 수 있으며, 수집을 활성화하면
+어떤
+[세션이 다른 세션을 차단하고 있는지](/ko/products/managed-postgres/monitoring/query-insights#blocking-queries)도 확인할 수 있습니다.
 호스트 수준 메트릭을 자체
 관측성 스택으로 수집하려면
 [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)를 사용하십시오.

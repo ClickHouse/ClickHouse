@@ -1,0 +1,38 @@
+---
+description: 'Documentación sobre las columnas fijadas (fijas) en la interfaz web SQL integrada (`/play`)'
+sidebarTitle: 'Columnas fijadas en la interfaz de usuario web'
+slug: /concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns
+title: 'Columnas fijadas en la interfaz de usuario web'
+doc_type: 'reference'
+sidebar: false
+---
+
+La interfaz web SQL integrada (`play.html`, que se sirve en la ruta [`/play`](/es/concepts/features/connect-to-clickhouse/protocols/http) de cualquier puerto HTTP de ClickHouse) permite mantener visibles las columnas que elija de un resultado mientras el resto de la tabla se desplaza horizontalmente. Una columna fijada queda anclada al borde más próximo del área de resultados en lugar de desaparecer al desplazarse, de modo que una columna clave (un identificador, un nombre, una fecha) permanece a la vista junto a las columnas del extremo derecho que esté leyendo.
+
+## Fijación de una columna {#pinning-a-column}
+
+A la izquierda de cada encabezado de columna aparece un icono de chincheta 📌. Haga clic en él para fijar la columna y vuelva a hacer clic para desfijarla. El icono es un botón real, por lo que los usuarios de teclado pueden llegar a él con la tecla Tab y activarlo o desactivarlo con el teclado. Además, expone su estado de fijación a las tecnologías de asistencia.
+
+En dispositivos con un puntero que permite pasar el cursor por encima (un ratón), el icono solo se muestra mientras el cursor está sobre el encabezado o el toggle tiene el foco, de modo que no estorba el resto del tiempo. En dispositivos táctiles y otros dispositivos con puntero de baja precisión, que no admiten pasar el cursor por encima, el icono se muestra siempre para que pueda tocarse directamente. En una columna fijada, el icono permanece visible con intensidad completa para indicar que la columna está fijada.
+
+## Cuándo está disponible la fijación {#when-pinning-is-available}
+
+La fijación solo está disponible cuando la tabla es lo bastante ancha como para desplazarse horizontalmente. Si toda la tabla cabe en el área de visualización, no hay contenido que pueda quedar fuera de la vista, por lo que el toggle de fijación está deshabilitado y queda excluido del orden de tabulación del teclado. En cuanto el resultado admite desplazamiento horizontal (por ejemplo, con un resultado ancho, una ventana estrecha o un resultado transmitido progresivamente que crece en horizontal), los toggles se activan.
+
+## Cómo se comporta una columna fijada al desplazarse {#how-a-pinned-column-behaves-when-scrolling}
+
+Una columna fijada se desplaza junto con el contenido durante el desplazamiento horizontal hasta que está a punto de salir del área de visualización; en ese momento, se queda anclada al borde más cercano (el izquierdo para las columnas de la izquierda y el derecho para las de la derecha) y permanece visible. Si hay varias columnas fijadas, se apilan contra el borde en su orden original, y cada una queda separada del contenido desplazable por un borde. Una celda fijada se dibuja por encima de las celdas ordinarias que se desplazan por debajo de ella, incluso de una celda seleccionada, de modo que siempre sigue siendo legible.
+
+## Compartido en todo un resultado {#shared-across-a-result}
+
+Las columnas fijadas se registran por nombre de columna y se comparten entre las tablas de resultados que pertenecen a un mismo resultado (una ejecución de `Run all` (multiconsulta) genera una tabla por cada sentencia, y todas ellas comparten el mismo conjunto fijado), del mismo modo que los [modos de codificación por colores](/es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding) por columna. Si se fija una columna llamada `id` en una de esas tablas, la columna llamada `id` también queda fijada en las demás y en las ejecuciones posteriores de la misma consulta que devuelvan esa columna.
+
+El conjunto fijado pertenece al resultado que fija: a la pestaña de consulta y, en una pestaña que sea un [notebook](/es/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook), a cada celda individual. Por lo tanto, fijar una columna en una celda no afecta a las demás celdas (ni a las demás pestañas), que conservan sus propias columnas fijadas de forma independiente.
+
+## Persistencia {#persistence}
+
+El conjunto fijado se guarda en la URL de la página, en el historial del navegador y en la instantánea del resultado de la celda a la que pertenece, por lo que se conserva al recargar la página, compartir el enlace o navegar hacia atrás y hacia adelante. Al fijar o dejar de fijar una columna en una celda que no contiene actualmente el editor, también se actualiza la copia guardada de esa celda, de modo que el estado se mantiene tras una recarga. Solo se almacenan las columnas fijadas (un conjunto vacío no añade nada a la URL ni al estado del historial) para que ambos se mantengan compactos.
+
+## Limitaciones {#limitations}
+
+* La vista vertical (transpuesta) de una sola fila no tiene columnas con desplazamiento horizontal, por lo que no admite fijación.

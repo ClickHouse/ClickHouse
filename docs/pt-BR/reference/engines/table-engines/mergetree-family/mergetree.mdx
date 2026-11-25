@@ -1390,8 +1390,10 @@ poda de partes não são baseados nela.
 
 Determinadas configurações do MergeTree podem ser sobrescritas em nível de coluna:
 
-* `max_compress_block_size` — Tamanho máximo dos blocos de dados não comprimidos antes de serem comprimidos para gravação em uma tabela.
+* `max_compress_block_size` — Tamanho máximo dos blocos de dados não comprimidos antes de serem comprimidos para gravação em uma tabela. Um bloco comprimido contém no máximo 256 MiB de dados não comprimidos; portanto, valores acima de 256 MiB são tratados como 256 MiB. Dados gravados em blocos maiores por versões mais antigas não podem ser lidos.
 * `min_compress_block_size` — Tamanho mínimo dos blocos de dados não comprimidos necessário para que a compressão ocorra ao gravar a próxima marca.
+
+Em uma coluna com codec `Quantized`, ambas as configurações se aplicam apenas aos seus vetores (os elementos do array); os tamanhos de array e os códigos quantizados usam os valores definidos em nível de tabela. Os tamanhos de array compartilhados por várias colunas de uma estrutura `Nested` são gravados uma única vez, com as configurações da primeira coluna que os grava.
 
 Exemplo:
 

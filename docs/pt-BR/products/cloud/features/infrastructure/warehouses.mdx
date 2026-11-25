@@ -147,7 +147,7 @@ Você pode fazer isso com o segundo serviço e quaisquer serviços adicionais qu
 
 <Note>
   1. No momento, serviços read-only oferecem suporte a operações de gerenciamento de usuários (CREATE, DROP etc.).
-  2. [Views materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) são executadas **somente** em serviços read-write (RW) em um warehouse.
+  2. [Views materializadas atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) com atualizações coordenadas (o padrão) são executadas **somente** em serviços read-write (RW) em um warehouse. Views criadas com `APPEND` e `SETTINGS all_replicas = 1` não são coordenadas: todos os serviços, inclusive os read-only, tentam executar cada atualização e, em um serviço read-only, cada tentativa falha com `QUERY_IS_PROHIBITED` (código 392), a menos que a view grave em armazenamento externo.
   3. O tipo de um serviço (read-only ou read-write) é definido na criação e não pode ser alterado depois no Cloud Console. Para alternar entre acesso read-only e read-write, crie um novo serviço no warehouse com o tipo desejado.
 </Note>
 

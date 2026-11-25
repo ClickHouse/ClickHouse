@@ -104,7 +104,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **型推論の制御**
 
-  日付および日時の自動検出は、それぞれ設定 [`input_format_try_infer_dates`](/ja/reference/settings/formats/input-format#input_format_try_infer_dates) と [`input_format_try_infer_datetimes`](/ja/reference/settings/formats/input-format#input_format_try_infer_datetimes) で制御できます (いずれもデフォルトで有効です) 。オブジェクトをタプルとして推論するかどうかは、設定 [`input_format_json_try_infer_named_tuples_from_objects`](/ja/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) で制御されます。数値の自動検出など、JSON のスキーマ推論を制御するその他の設定については、[こちら](/ja/concepts/features/interfaces/schema-inference#text-formats) を参照してください。
+  日付および日時の自動検出は、それぞれ設定 [`input_format_try_infer_dates`](/ja/reference/settings/formats/input-format#input_format_try_infer_dates) と [`input_format_try_infer_datetimes`](/ja/reference/settings/formats/input-format#input_format_try_infer_datetimes) で制御できます (いずれもデフォルトで有効です) 。オブジェクトをタプルとして推論するかどうかは、設定 [`input_format_json_try_infer_named_tuples_from_objects`](/ja/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) で制御されます。数値の自動検出など、JSON のスキーマ推論を制御するその他の設定については、[こちら](/ja/concepts/features/operations/insert/schema-inference#text-formats) を参照してください。
 </Info>
 
 ## JSON のクエリ {#querying-json}
@@ -421,4 +421,4 @@ SETTINGS describe_compact_output = 1
 
 ## 関連情報 {#further-reading}
 
-データ型推論の詳細については、[こちら](/ja/concepts/features/interfaces/schema-inference)のドキュメントを参照してください。
+データ型推論の詳細については、[こちら](/ja/concepts/features/operations/insert/schema-inference)のドキュメントを参照してください。

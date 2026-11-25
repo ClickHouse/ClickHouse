@@ -77,6 +77,8 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+Las vistas pueden seleccionar datos de [modelos efímeros](https://docs.getdbt.com/docs/build/materializations#ephemeral) cuando ninguna vista tiene su propia cláusula `WITH`. dbt añade las CTE de los modelos efímeros una sola vez, antes de la primera vista, y dbt-clickhouse las añade a cada vista. Cuando una vista tiene su propia cláusula `WITH`, dbt añade las CTE a esa cláusula, de modo que una vista que selecciona datos de un modelo efímero sin ellas falla con un error. En ese caso, escribe cada vista como un modelo independiente con una tabla de destino explícita (consulta [Migración de destino implícito a explícito](#migration-implicit-to-explicit)).
+
 <Warning>
   Al actualizar un modelo con múltiples vistas materializadas (MV), especialmente al cambiar el nombre de una de ellas,
   dbt-clickhouse no elimina automáticamente la MV anterior. En su lugar,

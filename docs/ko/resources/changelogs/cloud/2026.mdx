@@ -10,6 +10,28 @@ rss: true
 
 이 ClickHouse Cloud 변경 로그와 함께 [Cloud 호환성](/ko/products/cloud/guides/cloud-compatibility) 페이지도 참조하십시오.
 
+<Update label="2026-11-23">
+  이번 주 릴리스에서는 프로덕션 데이터베이스 보호 장치가 강화되고, 보안 사고 발생 시의 커뮤니케이션이 개선되었으며, Claude 사용량 청구를 위한 새로운 옵션이 추가되었습니다.
+
+  ## 새로운 기능 {#2026-11-23-new-features}
+
+  ### Managed Postgres 삭제 보호 {#deletion-protection-for-managed-postgres}
+
+  이제 [ClickHouse Managed Postgres](/ko/cloud/managed-postgres) 서비스의 **Settings** 페이지 또는 OpenAPI를 통해 삭제 보호를 활성화할 수 있습니다. 보호가 활성화된 동안에는 보호를 해제하기 전까지 콘솔이나 API의 삭제 요청이 `409`로 거부되므로, 프로덕션 데이터베이스가 실수로 삭제되는 것을 방지할 수 있습니다. 읽기 복제본에는 아직 삭제 보호를 사용할 수 없습니다.
+
+  ## 통합 {#2026-11-23-integrations}
+
+  ### Anthropic Claude Platform 연결 청구 {#linked-billing-with-anthropics-claude-platform}
+
+  이제 ClickHouse Cloud 조직은 **Organization settings → Claude organization**에서 Claude Platform 조직을 연결할 수 있습니다. 연결 후에는 [ClickHouse Agents](/ko/agents/index)를 비롯해 지원되는 ClickHouse Cloud 제품 전반의 Claude 사용량을 Anthropic이 해당 조직에 직접 청구하며, 기존 Anthropic 약정 금액에서 차감합니다. API 키를 공유할 필요 없이 Claude에서 연결을 승인하고, Claude Console에서 변경 가능한 월별 지출 한도를 설정할 수 있으며, 어느 쪽에서든 연결을 해제할 수 있습니다. 연결된 조직은 Opus 5.5 및 Haiku 5.5를 비롯한 ClickHouse 카탈로그의 Claude 모델을 사용할 수 있습니다. 이 옵트인 기능은 모든 대상 조직에서 사용할 수 있습니다. 자세한 내용은 [Claude Platform 연결 청구](/ko/products/cloud/features/ai-ml/linked-billing-claude-platform)를 참조하십시오.
+
+  ## 보안 {#2026-11-23-security}
+
+  ### 조직 보안 담당자 지정 {#designate-security-contacts-for-your-organization}
+
+  이제 조직 관리자는 보안 담당자를 최대 3명까지 지정할 수 있습니다. 보안 사고가 발생하면 ClickHouse가 조직 내 연락 대상을 정확히 파악할 수 있습니다. 이 기능은 일반 제공됩니다.
+</Update>
+
 <Update label="2026-11-16">
   이번 주 업데이트에서는 Cloud 서비스와 지원 세션을 위한 보호 장치가 추가되고, 더 안전한 인증 정보 관리 기능이 프리뷰로 제공됩니다. 또한 이제 ClickHouse Observability와 ClickHouse Managed Postgres를 사용할 수 있습니다.
 
@@ -201,7 +223,7 @@ rss: true
 
   ### PromQL 지원 비공개 프리뷰 {#promql-support-in-private-preview}
 
-  이제 Prometheus 메트릭을 `TimeSeries` 테이블 엔진에 저장하고 ClickHouse 서비스에 대해 PromQL로 직접 쿼리할 수 있습니다. 트랜스파일러나 프록시가 필요 없으므로 기존 수집기, Grafana 대시보드, Prometheus 도구를 변경 없이 그대로 사용할 수 있습니다. Prometheus remote-write v1으로 쓰고 Prometheus HTTP API를 통해 읽거나, `prometheusQuery` 및 `prometheusQueryRange` 테이블 함수를 사용해 SQL 세션에서 PromQL을 실행할 수 있습니다. AWS, GCP, Azure에서 [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/promql-support-waitlist)을 통해 선정된 ClickHouse Cloud 및 BYOC 고객에게 제공됩니다. [Prometheus 인터페이스 문서](/ko/concepts/features/interfaces/prometheus) 및 [발표 내용](https://clickhouse.com/blog/introducing-promql)을 참고하십시오.
+  이제 Prometheus 메트릭을 `TimeSeries` 테이블 엔진에 저장하고 ClickHouse 서비스에 대해 PromQL로 직접 쿼리할 수 있습니다. 트랜스파일러나 프록시가 필요 없으므로 기존 수집기, Grafana 대시보드, Prometheus 도구를 변경 없이 그대로 사용할 수 있습니다. Prometheus remote-write v1으로 쓰고 Prometheus HTTP API를 통해 읽거나, `prometheusQuery` 및 `prometheusQueryRange` 테이블 함수를 사용해 SQL 세션에서 PromQL을 실행할 수 있습니다. AWS, GCP, Azure에서 [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/promql-support-waitlist)을 통해 선정된 ClickHouse Cloud 및 BYOC 고객에게 제공됩니다. [Prometheus 인터페이스 문서](/ko/concepts/features/connect-to-clickhouse/prometheus) 및 [발표 내용](https://clickhouse.com/blog/introducing-promql)을 참고하십시오.
 
   <a id="on-demand-compute-now-in-private-preview" />
 

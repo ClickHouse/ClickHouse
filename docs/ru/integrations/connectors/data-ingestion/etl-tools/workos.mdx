@@ -1,0 +1,270 @@
+---
+sidebarTitle: "WorkOS"
+keywords:
+  [
+    "workos",
+    "sync engine",
+    "authkit",
+    "sso",
+    "directory sync",
+    "identity",
+    "sign-in events",
+    "data ingestion",
+    "integrate",
+  ]
+slug: /integrations/workos
+description: "Зеркалирование пользователей, организаций и событий входа из WorkOS в ClickHouse с помощью WorkOS Sync Engine с открытым исходным кодом"
+title: "Подключение WorkOS к ClickHouse"
+doc_type: "guide"
+integration:
+  - support_level: "partner"
+  - category: "data_ingestion"
+  - website: "https://workos.com/"
+---
+
+import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+import ConnectionDetails from "/snippets/ru/_gather_your_details_http.mdx";
+
+<PartnerBadge />
+
+[WorkOS](https://workos.com/) предоставляет API для аутентификации и управления идентичностями в B2B-приложениях: управление пользователями
+и вход в систему, единый вход, синхронизацию каталогов (SCIM), а также роли и разрешения.
+Приложение, построенное на WorkOS, хранит пользователей, организации, состав участников и историю входов в WorkOS и получает эти данные через WorkOS API.
+
+[WorkOS Sync Engine](https://github.com/workos/sync-engine) — инструмент с открытым исходным кодом, поддерживаемый WorkOS, который копирует эти данные в вашу собственную базу данных и поддерживает их в актуальном состоянии. Его пункт назначения для ClickHouse, [`@workos/sync-clickhouse`](https://www.npmjs.com/package/@workos/sync-clickhouse), решает две задачи:
+
+* **История входов, которая хранится дольше, чем в WorkOS.** WorkOS хранит события 90 дней, а для событий `authentication.*` (каждый вход, успешный или неудачный) нет конечной точки для получения списка. Движок непрерывно считывает Events API и записывает данные в таблицы ClickHouse, работающие только на добавление в конец, поэтому история хранится у вас столько, сколько вам нужно.
+* **Соединения с остальными аналитическими данными.** Пользователи, организации, состав участников, каталоги, SSO-соединения и роли зеркалируются рядом с таблицами событий, поэтому на вопрос вроде «количество неудачных входов по каждой организации в час» можно ответить одним запросом вместо нескольких вызовов API с пагинацией.
+
+На этой странице описаны подключение движка к ClickHouse Cloud и к самостоятельно размещённому ClickHouse, аутентификация, сквозной пример, а также ограничения, которые следует учитывать при планировании.
+
+## Как это работает {#how-it-works}
+
+Движок работает в вашей инфраструктуре как команда Node.js или Docker-контейнер и подключается к ClickHouse через HTTP-интерфейс с помощью официального [JavaScript-клиента](/ru/integrations/language-clients/js/index). Он выполняет три задачи:
+
+1. **Дозагрузка** загружает текущее состояние через конечные точки получения списков WorkOS REST API.
+2. **Tail** опрашивает WorkOS Events API, начиная с позиции надёжно сохраняемого курсора, и применяет каждое событие.
+3. **Сверка** сравнивает идентификаторы с данными API и исправляет всё, что было пропущено на этапе tail.
+
+Он создаёт базу данных `workos`, содержащую:
+
+| Таблицы                                                                      | Движок                                                                                                              | Содержимое                                                                                              |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `auth_attempts`, `events`                                                    | [`ReplacingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) с ключом по id события | Только добавление в конец. Одна строка на каждую попытку входа и каждое событие WorkOS в исходном виде. |
+| `users`, `organizations`, `organization_memberships` и другие зеркальные таблицы | `ReplacingMergeTree` с версионированием по временной метке источника                                                | Текущее состояние каждого объекта. Удалённые записи сохраняются как маркеры удаления.                   |
+| Представления `<table>_live`                                                 | Представление                                                                                                       | Читают зеркальные таблицы с `FINAL` и скрывают маркеры удаления. Запросы следует выполнять к ним.           |
+| Служебные таблицы                                                            | [`KeeperMap`](/ru/reference/engines/table-engines/special/keepermap)                                                   | Курсор tail, аренда для единственной пишущей стороны и блокировка записи для каждого потока.            |
+
+Движок записывает один столбец типа `String` — `_raw`, содержащий полезную нагрузку в формате JSON. Все остальные столбцы являются выражениями `DEFAULT` над `_raw`, поэтому поле, которое WorkOS добавит позже, можно запрашивать с помощью `JSONExtractString(_raw, 'field')` без изменения схемы.
+
+## Предварительные требования {#prerequisites}
+
+* Аккаунт WorkOS и ключ API для окружения, данные которого нужно зеркалировать.
+* Node.js 22 или новее либо Docker. Движок опубликован как npm-пакет `@workos/sync-clickhouse` и как образ контейнера `ghcr.io/workos/sync-clickhouse`.
+* ClickHouse Cloud или самостоятельно размещённый ClickHouse версии 23.11 или новее.
+* Для самостоятельно размещённого ClickHouse — доступный серверу ClickHouse Keeper или ZooKeeper, а также заданный параметр `keeper_map_path_prefix`. См. раздел [Подключение к самостоятельно размещённому ClickHouse](#connect-to-self-hosted-clickhouse). В ClickHouse Cloud и то, и другое уже есть.
+* Сетевой доступ с хоста, на котором запущен движок, к HTTP-интерфейсу ClickHouse (порт 8443 в Cloud; 8123 или 8443 с TLS — в самостоятельно размещённой установке).
+
+## Настройка {#setup}
+
+### Подключение к ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+Получив эти данные, выполните следующие шаги:
+
+1. Добавьте адрес, с которого подключается движок, в [IP Access List](/ru/products/cloud/guides/security/connectivity/setting-ip-filters) сервиса. Если адрес отклонён, это проявляется как тайм-аут подключения, а не как ошибка аутентификации.
+
+2. Укажите учётные данные перед конечной точкой HTTPS, чтобы получить строку подключения, и экспортируйте её вместе с ключом API WorkOS:
+
+   ```bash
+   export DATABASE_URL='https://default:PASSWORD@HOST.clickhouse.cloud:8443'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+   Если пароль содержит символы, зарезервированные в URL, закодируйте его с помощью percent-encoding. Путь в URL игнорируется: зеркальная копия хранится в базе данных `workos` или в базе, указанной в `WORKOS_SYNC_SCHEMA`.
+
+3. Создайте схему, загрузите текущее состояние и запустите tail:
+
+   ```bash
+   npx @workos/sync-clickhouse init       # создать базу данных, таблицы и представления
+   npx @workos/sync-clickhouse backfill   # загрузить текущее состояние из WorkOS API
+   npx @workos/sync-clickhouse listen     # отслеживать Events API до остановки
+   ```
+
+Включать что-либо на стороне сервиса не требуется. `init` создаёт свои таблицы `KeeperMap` так же, как любые другие.
+
+### Подключение к самостоятельно размещённому ClickHouse {#connect-to-self-hosted-clickhouse}
+
+1. Включите `KeeperMap`. Движок хранит свой курсор и аренду в таблицах `KeeperMap`, для работы которых в конфигурации сервера должны быть заданы Keeper и префикс пути. Если кластер уже использует [ClickHouse Keeper](/ru/guides/oss/deployment-and-scaling/keeper/index) или ZooKeeper, достаточно добавить префикс:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   На одном узле без Keeper необходимо также включить встроенный Keeper:
+
+   ```xml title="/etc/clickhouse-server/config.d/keeper_map.xml"
+   <clickhouse>
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>localhost</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       <zookeeper>
+           <node>
+               <host>localhost</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+       <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+   </clickhouse>
+   ```
+
+   После добавления файла перезапустите сервер.
+
+2. Укажите в строке подключения HTTP-интерфейс: порт 8123 без TLS или 8443 с TLS.
+
+   ```bash
+   export DATABASE_URL='http://USER:PASSWORD@HOST:8123'
+   export WORKOS_API_KEY='sk_...'
+   ```
+
+3. Выполните те же три команды, что и для Cloud: `init`, `backfill`, затем `listen`.
+
+### Запуск в контейнере {#run-it-as-a-container}
+
+Образ контейнера поддерживает те же переменные окружения и команды:
+
+```bash
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse init
+docker run --rm -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse backfill
+docker run -d   -e DATABASE_URL -e WORKOS_API_KEY ghcr.io/workos/sync-clickhouse listen
+```
+
+Запускайте `listen` как долгоживущий процесс либо `tick` (один опрос с последующим завершением) по расписанию из планировщика. Команда `status` выводит позицию курсора, время, прошедшее с последнего успешного опроса, и количество строк по каждому потоку. Все команды, флаги и переменные окружения перечислены в <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse#command-line" target="_blank">README пакета</a>.
+
+## Аутентификация {#authentication}
+
+| Режим                                                 | Поддерживается | Как настроить                                                                                                                                            |
+| ----------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Имя пользователя и пароль по TLS                      | ✅              | Строка подключения `https://` с учётными данными. Сертификат сервера проверяется по системному хранилищу доверенных сертификатов.                        |
+| Имя пользователя и пароль, частный центр сертификации | ✅              | Укажите в `WORKOS_SYNC_CLICKHOUSE_TLS_CA` CA‑сертификат в формате PEM или в виде PEM, закодированного в base64. Требуется строка подключения `https://`. |
+| Имя пользователя и пароль без TLS                     | ✅              | Строка подключения `http://`. Только для самоуправляемых развертываний; используйте только в доверенной сети.                                            |
+| mTLS или клиентский SSL-сертификат                    | ❌              | Не поддерживается.                                                                                                                                       |
+| Собственный протокол (порты 9000 и 9440)              | ❌              | Не поддерживается. Движок работает только через HTTP-интерфейс.                                                                                          |
+
+Пользователю, от имени которого подключается движок, при первом запуске нужна привилегия `CREATE DATABASE` (либо существующая база данных, в которой он может создавать таблицы), а также `CREATE TABLE`, `CREATE VIEW`, `DROP TABLE`, `ALTER`, `INSERT` и `SELECT` для этой базы данных. Привилегия `ALTER` распространяется и на легковесный `DELETE`, который выполняет команда `redact`. Для оценки достаточно пользователя `default`. Для продакшн-среды создайте отдельного пользователя с этими привилегиями; см. [Управление доступом к облаку](/ru/products/cloud/guides/security/cloud-access-management/index).
+
+На стороне WorkOS движок аутентифицируется с помощью отдельного ключа API для каждого окружения. Выделите для синхронизации собственный ключ, чтобы её запросы можно было отличить от запросов вашего приложения.
+
+Заголовок `User-Agent` каждого соединения начинается с `workos-sync-engine`, поэтому операторы движка можно найти в [`system.query_log`](/ru/reference/system-tables/query_log) по полю `http_user_agent`.
+
+## Пример: неудачные входы по организациям {#example-failed-sign-ins}
+
+Входными данными движка служит ваша собственная среда WorkOS, а не файл, поэтому в этом примере используются её данные вместо тестового набора данных. Подойдёт любая среда WorkOS с несколькими пользователями и входами, в том числе предпродукционная.
+
+1. Создайте схему и загрузите текущее состояние:
+
+   ```bash
+   npx @workos/sync-clickhouse init
+   npx @workos/sync-clickhouse backfill
+   ```
+
+2. Запустите tail и не останавливайте его. История входов начинает накапливаться с этого момента: конечной точки, возвращающей список прошлых входов, нет, поэтому `backfill` не может их восстановить.
+
+   ```bash
+   npx @workos/sync-clickhouse listen
+   ```
+
+3. Войдите в своё приложение несколько раз, причём хотя бы одна попытка должна быть неудачной.
+
+4. Убедитесь, что в зеркальных таблицах появились строки, с помощью консоли SQL в Cloud или `clickhouse client`:
+
+   ```sql
+   SELECT _env, email
+   FROM workos.users_live
+   LIMIT 10;
+   ```
+
+5. Объедините журнал входов с зеркальными таблицами с помощью JOIN:
+
+   ```sql
+   SELECT
+       o.name AS organization,
+       toStartOfHour(a.created_at) AS hour,
+       count() AS failures
+   FROM workos.auth_attempts AS a
+   INNER JOIN workos.users_live AS u ON u.id = a.user_id AND u._env = a._env
+   INNER JOIN workos.organization_memberships_live AS m ON m.user_id = u.id AND m._env = u._env
+   INNER JOIN workos.organizations_live AS o ON o.id = m.organization_id AND o._env = m._env
+   WHERE a.status = 'failed' AND a.created_at > now() - INTERVAL 7 DAY
+   GROUP BY organization, hour
+   ORDER BY failures DESC;
+   ```
+
+Каждая строка содержит столбец `_env` со значением `production`, если в `WORKOS_ENVIRONMENT_NAME` не задано иное, поэтому несколько сред WorkOS могут использовать одну базу данных. Выполняйте JOIN по этому столбцу, как показано выше.
+
+## Известные ограничения {#known-limits}
+
+* **Зеркало — это модель только для чтения.** Оно обладает итоговой согласованностью (обычно в пределах нескольких секунд) и работает в одном направлении. Операции записи и решения об авторизации по-прежнему выполняйте через WorkOS API.
+* **История входов начинается с момента запуска tail.** WorkOS хранит события в течение 90 дней. Tail, остановленный на меньший срок, возобновляет работу со своего курсора. Если он был остановлен дольше, для восстановления текущего состояния потребуются `backfill` и `reconcile --repair`, а входы за пропущенный период будут потеряны.
+* **Одна пишущая сторона на окружение.** Второй процесс `listen` ожидает освобождения аренды, удерживаемой первым. Пока аренду удерживает прослушивающий обработчик, `tick` завершается с кодом 3.
+* **`listen` не даёт сервису ClickHouse Cloud перейти в спящий режим.** По умолчанию он выполняет опрос каждые 5 секунд, поэтому сервис никогда не [переходит в состояние простоя](/ru/products/cloud/features/autoscaling/idling). Запускайте `tick` по расписанию, чтобы сервис мог простаивать между запусками; платой за это станет пробуждение сервиса при каждом запуске.
+* **По умолчанию используются небольшие вставки.** Каждый опрос применяет до 100 событий в виде нескольких [асинхронных вставок](/ru/concepts/features/operations/insert/asyncinserts), завершения которых дожидается движок. В нагруженном окружении увеличьте `WORKOS_SYNC_MAX_EVENTS_PER_TICK`, чтобы каждый опрос порождал меньше вставок, но большего размера.
+* **Представления `_live` читают данные с `FINAL`.** Они подходят для аналитических запросов. Если приложение читает отдельные строки по ключу, лучше использовать пункт назначения Postgres или MySQL.
+* **Зеркальные таблицы хранят только последнюю версию каждой строки.** Более старые версии сохраняются до следующего слияния. История хранится в `workos.events`.
+* **Столбцы формируются из JSON.** Если значение невозможно привести к типу типизированного столбца, в этом столбце будет `NULL`, но само значение сохранится в `_raw`.
+* **DDL с `ON CLUSTER` не поддерживается.** `init` проверялся на ClickHouse Cloud и на одноузловой версии с открытым исходным кодом. Самоуправляемый многоузловой кластер не входит в тестовую матрицу.
+
+## Устранение неполадок {#troubleshooting}
+
+### Первая команда завершается по тайм-ауту {#trouble-timeout}
+
+В ClickHouse Cloud адрес, с которого работает движок, не добавлен в IP Access List, либо сеть блокирует исходящий трафик на порт 8443. Проверьте доступность порта с того же хоста:
+
+```bash
+curl https://HOST.clickhouse.cloud:8443/ping
+```
+
+`Ok.` означает, что сервис доступен с этого хоста. Кроме того, команда, отправленная бездействующему сервису, первые несколько секунд ждёт, пока сервис выйдет из спящего режима. Движок отводит на каждый запрос две минуты, поэтому такая задержка не считается ошибкой.
+
+### `KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined` {#trouble-keepermap}
+
+Команда `init` выполнена на самоуправляемом сервере, в конфигурации которого не задан параметр `keeper_map_path_prefix`. Добавьте конфигурацию, описанную в разделе [Подключение к самостоятельно размещённому ClickHouse](#connect-to-self-hosted-clickhouse), и перезапустите сервер.
+
+### `unsupported ClickHouse URL scheme` {#trouble-scheme}
+
+Строка подключения должна начинаться с `http://` или `https://` и указывать на HTTP-интерфейс. URL вида `clickhouse://` и порт собственного протокола не допускаются.
+
+### Оператор из `init --print-sql` завершается ошибкой `Could not find table` {#trouble-print-sql}
+
+`init --print-sql` не выполняет DDL, а только выводит его. Если применять его вручную к сервису с несколькими репликами, отправляя по одному оператору на запрос, оператор `CREATE VIEW` может дойти до реплики раньше, чем `CREATE TABLE` для таблицы, из которой он выбирает данные. Запустите скрипт повторно: все операторы в нём идемпотентны. Собственной команды `init` движка эта проблема не касается.
+
+## Связанные ресурсы {#related-resources}
+
+* <a href="https://workos.com/docs/events/data-syncing/database/clickhouse-cloud" target="_blank">
+    Руководство по ClickHouse Cloud в документации WorkOS
+  </a>
+* <a href="https://github.com/workos/sync-engine" target="_blank">
+    WorkOS Sync Engine на GitHub
+  </a>
+  : исходный код, задачи и руководства по эксплуатации и обеспечению согласованности
+* <a href="https://github.com/workos/sync-engine/tree/main/packages/sync-clickhouse" target="_blank">
+    Справочник по `@workos/sync-clickhouse`
+  </a>
+  : команды, переменные окружения, схема и встраивание движка в качестве
+  библиотеки
+* <a href="https://workos.com/docs/events" target="_blank">
+    WorkOS Events API
+  </a>

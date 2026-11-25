@@ -1066,6 +1066,23 @@ Protobufフォーマットのスキーマ推論時に、サポートされてい
 
 テキストフォーマット (CSV、TSV) の読み取り中に発生したエラーを記録するために使用するファイルのパス。
 
+## input_format_skip_duplicated_fields {#input_format_skip_duplicated_fields}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "入力データの1行内で同じフィールドが繰り返し出現した場合に、例外をスローせずに2回目以降の出現をスキップするための新しい設定。"}]}]} />
+
+入力データの1行内で同じフィールドが繰り返し出現した場合に、2回目以降の出現箇所をスキップするかどうかを有効または無効にします。
+
+有効にすると、1行内に複数回出現するフィールドは最初の値が保持され、`Duplicate field found` 例外をスローする代わりに、それ以降の出現箇所はスキップされます。この場合、スキーマ推論ではそのフィールドの型が最初の値から推論されます。
+
+対応フォーマット:
+
+* `JSONEachRow` および同じ方法で JSON オブジェクトを読み取るフォーマット (`JSONStringsEachRow`、`JSONObjectEachRow`、`JSON` の行) 。`input_format_import_nested_json` で読み取られるネストされたフィールドも対象です
+* `BSONEachRow`
+* `TSKV`
+* `Form`
+
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

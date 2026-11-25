@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights do Postgres'
 description: 'Telemetria por instrução para o ClickHouse Managed Postgres: cada padrão de consulta executado pelo seu banco de dados, classificado por impacto, com os contadores de diagnóstico que explicam por que cada um é lento'
-keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latência p99', 'padrões de consulta', 'desempenho do postgres', 'blocos temporários', 'workers paralelos', 'wal', 'eventos de espera', 'esperas por bloqueio', 'sessões bloqueadas']
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latência p99', 'padrões de consulta', 'desempenho do postgres', 'blocos temporários', 'workers paralelos', 'wal', 'eventos de espera', 'esperas por bloqueio', 'sessões bloqueadas', 'consultas bloqueadoras']
 doc_type: 'guide'
 ---
 
@@ -29,11 +29,12 @@ seções, na ordem em que você provavelmente vai usá-las:
   ordenada pelo critério que você quiser investigar.
 * Um painel **Consultas recentes** que lista execuções individuais em ordem
   cronológica inversa.
-* Uma tabela **Waits** que classifica os eventos de espera em que as sessões ativas
-  passaram mais tempo.
+* Uma aba **Waits** que classifica os eventos de espera em que as sessões ativas
+  passaram mais tempo, com uma tabela **Consultas bloqueantes** que mostra quais sessões
+  bloquearam consultas que aguardavam a liberação de bloqueios.
 * Um **painel lateral de detalhes** que agrega todos os contadores de um único padrão.
 
-Use o seletor de **Time period** na parte superior para alternar entre os últimos 15
+Use o seletor de **Período** na parte superior para alternar entre os últimos 15
 minutos, a última hora, o último dia, a última semana ou o último mês. O tamanho dos
 intervalos de agregação se ajusta automaticamente — intervalos de 1 minuto para os
 últimos 15 minutos ou para a última hora, de 5 minutos para o último dia e de 1 hora
@@ -69,15 +70,15 @@ percentis acompanhando umas às outras de perto.
 A terceira linha mostra o que as sessões ativas no primário estavam
 aguardando, com base em [amostras coletadas a cada 30 segundos](#how-waits):
 
-| Painel                           | O que mostra                                                                                                                                                                                  |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Painel                                | O que mostra                                                                                                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Active sessions by tipo de espera** | Média de sessões ativas, empilhadas por tipo de espera. **CPU** indica sessão ativa sem evento de espera. Passe o cursor sobre uma barra para ver os eventos de espera que compõem cada tipo. |
-| **Tempo de espera por bloqueio**               | O p50, o p95 e o máximo do tempo de espera por bloqueio decorrido nas sessões bloqueadas amostradas em cada intervalo.                                                                        |
-| **Sessões bloqueadas**             | Média de sessões bloqueadas por um bloqueio.                                                                                                                                                  |
+| **Tempo de espera por bloqueio**      | O p50, o p95 e o máximo do tempo de espera por bloqueio decorrido nas sessões bloqueadas amostradas em cada intervalo.                                                                        |
+| **Sessões bloqueadas**                | Média de sessões bloqueadas por um bloqueio.                                                                                                                                                  |
 
 Observe se **Sessões bloqueadas** se mantêm acima de zero enquanto **Tempo de espera por
-bloqueio** aumenta: isso pode indicar contenção de bloqueio persistente. Clique em qualquer
-gráfico de espera para abrir a tabela [Waits](#waits).
+bloqueio** aumenta: isso pode indicar contenção de bloqueio persistente. Clique em
+**Active sessions by tipo de espera** para abrir a aba [Waits](#waits).
 
 <div className="ch-image-lg">
   <Frame>
@@ -165,8 +166,10 @@ limitado ao padrão dessa execução específica.
 
 ## Waits {#waits}
 
-Expanda **Waits** ou clique em um [gráfico de espera](#wait-charts) para ver os eventos
-de espera classificados pela média de sessões ativas no período selecionado.
+Abra a aba **Waits** ou clique em **Active sessions by tipo de espera** nos
+[gráficos de espera](#wait-charts) para ver o mesmo gráfico e uma tabela **Wait events
+breakdown** que classifica os eventos de espera pela média de sessões ativas
+no período selecionado.
 
 <div className="ch-image-lg">
   <Frame>
@@ -176,13 +179,73 @@ de espera classificados pela média de sessões ativas no período selecionado.
 
 | Coluna                  | O que mostra                                                                                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **evento de espera**          | O evento de espera no formato `type:event`, por exemplo, `Lock:relation` ou `IO:WalSync`. **CPU** indica uma sessão ativa sem evento de espera. |
-| **tipo de espera**           | O tipo do evento de espera, correspondente às cores em **Active sessions by tipo de espera**.                                                        |
+| **evento de espera**    | O evento de espera no formato `type:event`, por exemplo, `Lock:relation` ou `IO:WalSync`. **CPU** indica uma sessão ativa sem evento de espera. |
+| **tipo de espera**      | O tipo do evento de espera, correspondente às cores em **Active sessions by tipo de espera**.                                                   |
 | **Avg active sessions** | O número médio de sessões neste evento de espera ao longo do período selecionado.                                                               |
 | **Share of load**       | A participação deste evento de espera no total da média de sessões ativas, incluindo **CPU**.                                                   |
 
 Para ver a descrição de cada evento, consulte a
 [referência de eventos de espera do Postgres](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE).
+
+### Consultas bloqueantes {#blocking-queries}
+
+Abaixo da tabela de eventos de espera, **Consultas bloqueantes** mostra quais consultas esperaram
+por bloqueios e quais sessões as bloquearam. Uma sessão bloqueadora
+mantém um bloqueio conflitante ou está à frente na fila aguardando um.
+Cada linha associa uma consulta em espera ao seu bloqueador direto e pode
+combinar amostras de várias sessões. Os pares observados com mais frequência
+aparecem primeiro.
+
+A coleta vem desativada por padrão. Para iniciá-la, ative o
+interruptor **Enable** ao lado do título **Consultas bloqueantes**. Somente usuários com permissão para
+gerenciar o serviço podem ativar ou desativar a coleta, e as réplicas de leitura
+seguem a configuração do primário. A amostragem geralmente começa em cerca de um minuto.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Seção Consultas bloqueantes com a coleta desativada: o interruptor Enable ao lado do título está desligado e uma mensagem informa que a coleta de consultas bloqueantes está desabilitada](/images/managed-postgres/monitoring/query-insights-blocking-queries-off.webp)
+  </Frame>
+</div>
+
+Com a coleta ativada, a tabela mostra as consultas bloqueantes observadas no
+período selecionado. Para interromper a coleta, desligue o interruptor **Enable**.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Seção Consultas bloqueantes com a coleta ativada: o interruptor Enable está ligado, acima dos filtros de banco de dados, usuário e aplicação e de uma tabela com as colunas Waiting query, Blocked by, Blocker application, Blocker state, Lock, Sessions, Longest wait e Last seen, mostrando esperas por bloqueios de linha e de tabela causadas por bloqueadores active e idle in transaction](/images/managed-postgres/monitoring/query-insights-blocking-queries.webp)
+  </Frame>
+</div>
+
+| Coluna                  | O que mostra                                                                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Waiting query**       | O texto normalizado da consulta que esperou pelo bloqueio.                                                                                                                                         |
+| **Blocked by**          | O texto normalizado da instrução atual ou mais recente do bloqueador.                                                                                                                              |
+| **Blocker application** | O `application_name` das sessões bloqueadoras.                                                                                                                                                     |
+| **Blocker state**       | O estado do bloqueador na amostra mais recente, como `active` ou `idle in transaction`. **waiting** significa que o próprio bloqueador estava esperando por um bloqueio em pelo menos uma amostra. |
+| **Lock**                | O tipo de bloqueio, como **Row** ou **Table**, e o modo de bloqueio solicitado pela consulta em espera, na amostra mais recente.                                                                   |
+| **Sessions**            | O número de sessões distintas que esperaram.                                                                                                                                                       |
+| **Longest wait**        | O maior tempo que uma sessão em espera já aguardava no momento da amostragem.                                                                                                                      |
+| **Last seen**           | O horário da amostra mais recente que registrou esse par.                                                                                                                                          |
+
+Abra o seletor **colunas** para ver os usuários, as aplicações e os PIDs das
+sessões em espera, além dos usuários e PIDs das sessões bloqueadoras. Filtre a
+tabela pelo banco de dados, usuário ou aplicação das sessões em espera.
+
+Um bloqueador em `idle in transaction` costuma ser o primeiro a ser corrigido: ele
+abriu uma transação, adquiriu bloqueios e não a confirmou nem a reverteu.
+O texto em **Blocked by** é a sua instrução mais recente, que pode não ser
+a que adquiriu o bloqueio.
+
+**No query text** significa que o Query Insights não tem o texto dessa instrução.
+Isso acontece quando a última instrução da sessão bloqueadora foi um comando
+utilitário como `LOCK TABLE`, quando uma consulta espera por um bloqueio de tabela
+antes que o Postgres lhe atribua um ID da consulta, ou quando o Query Insights
+ainda não registrou nenhuma execução concluída da instrução. O Query Insights também
+oculta o texto de instruções de sessões que o serviço usa internamente,
+por exemplo, para monitoramento e replicação. Mesmo assim, a linha mostra a
+aplicação, o estado e o bloqueio. **Prepared transaction** em **Blocked
+by** significa que uma transação preparada mantém o bloqueio; portanto, não há
+sessão bloqueadora a descrever.
 
 ## Painel lateral de detalhes {#detail}
 
@@ -243,7 +306,8 @@ endpoint de [listar padrões de consultas lentas](/pt-BR/products/cloud/api-refe
 e o [painel lateral de detalhes](#detail) corresponde ao
 endpoint de [obter um padrão de consulta lenta](/pt-BR/products/cloud/api-reference/postgres/slow-query-pattern-get),
 que retorna as métricas agregadas de um padrão junto com suas
-execuções recentes.
+execuções recentes. A tabela [Consultas bloqueantes](#blocking-queries) corresponde ao
+endpoint de [listar consultas bloqueantes](/pt-BR/products/managed-postgres/openapi#list-blocking-queries).
 
 <div id="how-it-works">
   ## Como funciona {#how-it-works}
@@ -275,6 +339,12 @@ coletadas a cada 30 segundos no primário. Waits curtas podem ocorrer
 inteiramente no intervalo entre duas amostras e não aparecer, por isso essas visualizações são mais
 úteis para identificar Waits prolongadas e contenção de bloqueio.
 
+As [consultas bloqueantes](#blocking-queries) também são amostradas a cada 30 segundos,
+em cada instância em que a coleta está ativada; por isso, um bloqueio mantido por apenas alguns
+segundos pode não aparecer. Cada amostra registra os IDs das consultas, e não o texto
+delas. O texto exibido na tabela vem dos padrões normalizados que o Query
+Insights já coleta, de modo que valores literais nunca aparecem.
+
 <div id="how-raw-events">
   ### Eventos brutos, não agregados {#how-raw-events}
 </div>
@@ -305,6 +375,6 @@ ClickHouse. O código-fonte e as issues estão em
 
 * [Dashboard de monitoramento](/pt-BR/products/managed-postgres/monitoring/dashboard) — gráficos integrados de recursos e atividade
 * [endpoint do Prometheus](/pt-BR/products/managed-postgres/monitoring/prometheus) — colete métricas no nível do host na sua própria stack de observabilidade
-* [OpenAPI do ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/openapi#query-insights) — consulte Padrões lentos e execuções recentes de forma programática
+* [OpenAPI do ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/openapi#query-insights) — consulte Padrões lentos, execuções recentes e consultas bloqueantes de forma programática
 * [Extensões](/pt-BR/products/managed-postgres/extensions) — as extensões disponíveis nas instâncias do ClickHouse Managed Postgres
 * [`pg_stat_ch` no GitHub](https://github.com/clickhouse/pg_stat_ch) — a extensão de código aberto que dá suporte ao Query Insights

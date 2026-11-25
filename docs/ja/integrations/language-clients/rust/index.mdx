@@ -143,7 +143,7 @@ while let Some(row) = cursor.next().await? { .. }
 * 先頭の行またはすべての行を取得するには、それぞれ便利な `fetch_one::<Row>()` メソッドと `fetch_all::<Row>()` メソッドを使用できます。
 * テーブル名をバインドするには `sql::Identifier` を使用できます。
 
-注意: レスポンス全体がストリーミングされるため、カーソルは一部の行を返した後でもエラーを返すことがあります。ユースケースによっては、この問題を回避するために `query(...).with_option("wait_end_of_query", "1")` を試し、サーバー側でレスポンスバッファリングを有効にできます。[詳細はこちら](/ja/concepts/features/interfaces/http#response-buffering)。`buffer_size` オプションも有用です。
+注意: レスポンス全体がストリーミングされるため、カーソルは一部の行を返した後でもエラーを返すことがあります。ユースケースによっては、この問題を回避するために `query(...).with_option("wait_end_of_query", "1")` を試し、サーバー側でレスポンスバッファリングを有効にできます。[詳細はこちら](/ja/concepts/features/connect-to-clickhouse/protocols/http#response-buffering)。`buffer_size` オプションも有用です。
 
 <Warning>
   行を選択する際に `wait_end_of_query` を使用する場合は注意してください。サーバー側のメモリ消費が増加し、全体的なパフォーマンスが低下する可能性があります。
@@ -169,7 +169,7 @@ insert.end().await?;
 
 * `end()` が呼び出されない場合、`INSERT` は中止されます。
 * ネットワーク負荷を分散するため、行はストリームとして順次送信されます。
-* ClickHouse がバッチをアトミックに挿入するのは、すべての行が同じパーティションに収まり、その数が [`max_insert_block_size`](/ja/reference/settings/session-settings#max_insert_block_size) 未満の場合に限られます。
+* ClickHouse がバッチをアトミックに挿入するのは、すべての行が同じパーティションに収まり、その数が [`max_insert_block_size`](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) 未満の場合に限られます。
 
 ### 非同期 INSERT (サーバー側バッチ処理) {#async-insert-server-side-batching}
 

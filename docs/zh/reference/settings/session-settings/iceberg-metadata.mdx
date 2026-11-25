@@ -41,6 +41,18 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * manifest&#95;file&#95;metadata - 以上所有内容 + 已遍历的 avro manifest 文件中的元数据。
 * manifest&#95;file&#95;entry - 以上所有内容 + 已遍历的 avro manifest 文件条目。
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "新增设置。对 Iceberg 表的写入操作会限制 `metadata-log` 的大小，此前该日志会随每次提交不断增长。"}]}]} />
+
+写入操作在 Iceberg 表的 `metadata-log` 中保留的最大条目数，包括本次写入的元数据文件所对应的条目。当写入新增条目导致超出该上限时，将移除最旧的条目，但元数据文件本身不会被删除。
+
+Iceberg 表属性 `write.metadata.previous-versions-max` 的优先级高于此设置。与 Java 实现一致，该属性表示保留的先前元数据文件数量，且最小为 1，因此 `metadata-log` 中保留的条目数比该属性值多 1。
+
+如果表所在的目录会自行写入元数据文件 (例如 REST 目录) ，则此设置对这些表不起作用：目录会根据其自身配置和表属性维护 `metadata-log`。
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

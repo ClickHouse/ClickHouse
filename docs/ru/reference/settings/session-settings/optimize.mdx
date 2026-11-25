@@ -80,7 +80,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Включает оптимизацию DISTINCT, если некоторые столбцы в DISTINCT являются префиксом сортировки. Например, префиксом ключа сортировки в MergeTree или оператора ORDER BY.
+Включает оптимизацию DISTINCT, если некоторые столбцы в DISTINCT являются префиксом сортировки. Например, префиксом ключа сортировки в MergeTree или оператора ORDER BY. Не применяется к чтению с `FINAL`, при котором используется вертикальный `FINAL` (см. `enable_vertical_final`), за исключением случаев, когда `LIMIT` позволяет `DISTINCT` досрочно прекратить чтение или чтение и так выполняется в порядке сортировки по другой причине, например из-за `ORDER BY`.
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 

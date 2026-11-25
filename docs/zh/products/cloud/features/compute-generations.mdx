@@ -1,0 +1,70 @@
+---
+sidebarTitle: '计算资源代际'
+slug: /cloud/features/compute-generations
+title: 'ClickHouse 计算资源代际：Gen 2'
+description: '对比 ClickHouse Cloud 中 Gen 1 与 Gen 2 两代计算资源。'
+keywords: ['计算资源代际', 'Gen 1', 'Gen 2', 'CPU', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+## 概览 {#overview}
+
+ClickHouse Cloud 的计算资源现已按代划分。Gen 1 即您目前使用的标准计算资源。Gen 2 基于最新的 CPU 家族，性能更高，价格也相应更高。是否迁移到 Gen 2 由您自行决定，并可按服务单独设置。现有服务将继续运行在 Gen 1 上，价格保持不变。
+
+<PrivatePreviewBadge />
+
+Gen 2 需申请开通，并通过功能开关启用。在正式可用之前，其功能、支持的区域、定价和条款均可能调整。
+
+当某一代计算资源最终停用时，运行在该代上的服务将于公告日期迁移至更新的一代。
+
+## Gen 1 和 Gen 2 {#gen-1-and-gen-2}
+
+在 CPU 和内存占用相同的情况下，Gen 2 的性能比 Gen 1 高出约 30% 至 50%，性价比更高。实际效果取决于您的配置和工作负载，因此请使用您自己的工作负载进行测试，以验证其对成本、性能或两者的影响。
+
+|           | Gen 1                                | Gen 2                           |
+| --------- | ------------------------------------ | ------------------------------- |
+| 硬件        | 标准计算硬件                               | 最新 CPU 家族                       |
+| 性能        | 基线                                   | 最多快约 30% 至 50%                  |
+| 价格        | 标准计算资源价格                             | 高于 Gen 1                        |
+| CPU 与内存比率 | 1:4                                  | 1:4，无需重新调整规格                    |
+| 可用性       | 基础版、Scale 和 Enterprise 层级，覆盖所有区域和云平台 | Scale 和 Enterprise 层级，部分 AWS 区域 |
+| 自动扩缩容和空闲  | 已支持                                  | 即将推出。目前可使用手动扩缩容和定时伸缩设置。         |
+
+## 可用性 {#availability}
+
+Gen 2 目前面向 AWS 上 Scale 和 Enterprise 层级的组织开放，适用于以下已确认容量的区域：
+
+* `us-east-1`
+* `us-east-2`
+* `us-west-2`
+* `eu-central-1`
+
+更多区域、服务等级和云平台即将陆续支持。请联系您的 ClickHouse account team 确认是否符合条件，并为您的组织启用相应的功能开关。
+
+## 硬件分配 {#hardware-allocation}
+
+Gen 2 会按优先级列表选择机器类型，优先选用最新的 CPU 家族，确保您的服务运行在当前可用的最佳硬件上。
+
+如果首选硬件不可用，ClickHouse 会依次从列表中的下一种机器类型为每个节点分配资源，确保您的服务持续运行。此时该服务仍按 Gen 2 价格计费。
+
+为了尽可能让您用上最新硬件，ClickHouse 会提前预留 Gen 2 容量，并且仅在已确认有供应的区域提供 Gen 2。可用性因区域而异，也会随时间变化。
+
+## 入门 {#get-started}
+
+<Steps>
+  <Step title="申请访问权限" id="request-access">
+    请联系您的客户团队，为您的组织启用 Gen 2。
+  </Step>
+
+  <Step title="创建服务" id="create-a-service">
+    启用后，在 ClickHouse Cloud 控制台中创建服务，并在创建服务流程中选择 **Gen 2**。目前尚不支持自动扩缩容，但您可以使用定时伸缩功能，在指定时间调整服务规模，以满足工作负载需求。
+  </Step>
+
+  <Step title="升级现有服务" id="upgrade-an-existing-service">
+    如需将现有的 Gen 1 服务升级到 Gen 2，请更改服务设置。
+  </Step>
+</Steps>
+
+私有预览期间如有任何问题或反馈，请联系您的客户团队或 [ClickHouse 支持团队](https://clickhouse.com/support/program)。

@@ -24,9 +24,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 ## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8192"},{"label": "增大文本索引的默认字典块大小"}]}]} />
 
 文本索引的默认字典块大小。
 可通过显式指定的 `dictionary_block_size` 索引参数覆盖。

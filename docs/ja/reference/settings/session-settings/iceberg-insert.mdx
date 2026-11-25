@@ -13,6 +13,27 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+## iceberg_insert_commit_retry_initial_backoff_ms {#iceberg_insert_commit_retry_initial_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "10"},{"label": "新しい設定。Iceberg への `INSERT` のコミットが同時実行のコミットとの競合に敗れた場合、即座にではなく、ランダムな指数バックオフによる遅延の後に再試行されます。"}]}]} />
+
+Iceberg テーブルへの `INSERT` のコミットが同時実行のコミットとの競合に敗れた場合に、最初の再試行までに入れる遅延の上限です。
+この上限は再試行のたびに 2 倍になり、最大で `iceberg_insert_commit_retry_max_backoff_ms` まで増加します。各遅延は 0 から上限までの範囲でランダムに選ばれるため、
+同じ競合に敗れたライター同士が同時に再試行して再び衝突することを防げます。
+遅延は最新のメタデータを参照する前に入るため、同時実行のライターが多い場合には、メタデータ
+ディレクトリの一覧取得の頻度を抑える効果もあります。`0` を指定すると遅延なしで再試行します。
+
+## iceberg_insert_commit_retry_max_backoff_ms {#iceberg_insert_commit_retry_max_backoff_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "5000"},{"label": "新しい設定。Icebergへの`INSERT`のコミットが同時実行された別のコミットとの競合により失敗した場合、即座にではなく、ランダムな指数バックオフによる待機後に再試行されます。"}]}]} />
+
+Icebergテーブルへの`INSERT`のコミットが同時実行された別のコミットとの競合により失敗した場合に、再試行までの待機時間の上限として使用する最大値です。
+`iceberg_insert_commit_retry_initial_backoff_ms`を参照してください。
+
 ## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
@@ -26,6 +47,17 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください
 そのため、未完了の Parquet 行グループやエンコード中の行グループなど、ライターがまだバッファに保持している分だけ、ファイルが上限を超える場合があります。
 なお、`iceberg_insert_max_rows_in_data_file` は
 サイズとは無関係にファイルを制限します。
+
+## iceberg_insert_max_data_files_in_upload {#iceberg_insert_max_data_files_in_upload}
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "新しい設定。S3 または Azure 上の Iceberg への INSERT で、書き込みが完了したデータファイルごとにアップロードを待機しなくなりました。"}]}]} />
+
+バックグラウンドでアップロードを行うオブジェクトストレージ (S3、Azure) において、`INSERT` が次のファイルを書き込んでいる間、アップロード完了を待たずに保持できる、1 つの挿入ストリーム内の書き込み完了済みデータファイルの最大数です。
+このようなファイルは、アップロードが完了するまでアップロード用のバッファを保持します。
+そのため、値を大きくするとメモリ消費量は増えますが、より多くのアップロードのレイテンシを隠蔽できます。`0` を指定すると、各データファイルのアップロード完了を待ってから
+次のデータファイルを書き込みます。
 
 ## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
@@ -42,6 +74,15 @@ Iceberg テーブルエンジンに対する 1 回の挿入操作で許可され
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1000000"},{"label": "新しい設定"}]}]} />
 
 挿入操作時の Iceberg Parquet データファイルの最大行数。
+
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "新しい設定"}]}]} />
+
+ソート順が定義されたIcebergテーブルへの `INSERT` において、データをソートして書き込む前に、全パーティション合計でバッファに保持できる非圧縮バイト数の上限です。
+この上限を超えると、最も大きいバッファが前倒しで書き込まれ、サイズの小さいソート済みデータファイルになります。0 の場合は無制限です。
 
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 

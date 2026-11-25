@@ -96,9 +96,7 @@ ClickHouse Cloud 使用一份存储在 S3 中的数据副本，并配有多个�
 
 > 创建分布式表时，你需要指定一个集群。这个在 config.xml 中定义的集群会列出各个分片 (及其副本) ，从而让用户可以控制每个节点使用它们的顺序。利用这一点，你可以确保选择具有确定性。
 
-<div id="sequential-consistency">
-  ## 顺序一致性 {#sequential-consistency}
-</div>
+## 顺序一致性 {#sequential-consistency}
 
 在极少数情况下，你可能需要顺序一致性。
 
@@ -107,7 +105,7 @@ ClickHouse Cloud 使用一份存储在 S3 中的数据副本，并配有多个�
 从用户角度来看，这通常表现为：需要将数据写入 ClickHouse，并在读取数据时保证返回最新插入的行。
 这可以通过多种方式实现 (按优先顺序排列) ：
 
-1. **在同一节点上读/写** - 如果你使用原生协议，或者使用 [session 通过 HTTP 执行写入/读取](/zh/concepts/features/interfaces/http#default-database)，那么你应当连接到同一个副本：在这种情况下，你直接从写入所在的节点读取，因此读取结果始终是一致的。
+1. **在同一节点上读/写** - 如果你使用原生协议，或者使用 [session 通过 HTTP 执行写入/读取](/zh/concepts/features/connect-to-clickhouse/protocols/http#default-database)，那么你应当连接到同一个副本：在这种情况下，你直接从写入所在的节点读取，因此读取结果始终是一致的。
 2. **手动同步副本** - 如果你写入一个副本，却从另一个副本读取，可以在读取前执行 `SYSTEM SYNC REPLICA LIGHTWEIGHT`。
 3. **启用顺序一致性** - 通过查询设置 [`select_sequential_consistency = 1`](/zh/reference/settings/session-settings/other#select_sequential_consistency)。在 OSS 中，还必须指定设置 `insert_quorum = 'auto'`。
 

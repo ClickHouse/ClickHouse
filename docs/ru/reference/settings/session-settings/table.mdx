@@ -18,11 +18,11 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "новая настройка"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "auto"},{"label": "Чтение из объектного хранилища через distributed cache с помощью движков таблиц и табличных функций, если этот кэш используется для других операций чтения."}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Действует только в ClickHouse Cloud. Разрешает чтение из distributed cache через движки таблиц / табличные функции (s3, azure и т. д.). В качестве ключа кэша используется ETag объекта, поэтому после перезаписи объекта на месте его устаревшая версия не будет отдаваться из кэша. Объект, у которого ETag отсутствует или не является строгим идентификатором содержимого, читается напрямую из объектного хранилища.
+Действует только в ClickHouse Cloud. Разрешает чтение из distributed cache через движки таблиц и табличные функции (s3, azure, Iceberg, Delta Lake и т. д.). Значение `auto` (по умолчанию) означает, что чтение выполняется через distributed cache, если он используется для других операций чтения. Это определяется настройкой сервера `enable_read_through_distributed_cache` и настройкой `force_read_through_distributed_cache`. Ключом кэша служит ETag объекта, чтобы после перезаписи объекта по тому же адресу не возвращалась его устаревшая версия, либо неизменяемый идентификатор файла данных из записей таблицы (Iceberg, Delta Lake), что позволяет обойтись без запроса `HEAD`. Объект без сильного ETag или такого идентификатора читается напрямую из объектного хранилища. Напрямую также выполняются операции чтения, которые сервер кэша не может повторить: чтение из таблиц `url`, чтение через `s3` с `NOSIGN` или `headers`, чтение файлов данных с полным путём (поверхностный клон Delta Lake), а также чтение через `azure`, если значение настройки не равно `1`.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 

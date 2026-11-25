@@ -88,7 +88,7 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정된 임계값을 초과하면 상위 LIMIT개 행만 유지하도록 최종 머지 전에 블록을 추가로 머지합니다.
+`ORDER BY`와 `LIMIT`를 함께 사용하는 경우, 직전의 추가 머지 단계 이후 누적된 블록(Block)이 사용하는 메모리가 지정된 임계값을 초과하면 상위 `LIMIT`개 행만 유지하도록 최종 머지 전에 블록(Block)을 추가로 머지합니다. `max_bytes_before_external_sort`로 인해 디스크로 유출하기 전에는 누적된 모든 블록(Block)이 계산에 포함됩니다.
 
 ## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
 
@@ -202,24 +202,22 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "메모리 사용량이 사용 가능한 메모리의 지정된 비율을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_distinct`만 적용됩니다."}]}]} />
 
-실행 시작 시점에 외부 `DISTINCT` 임계값을 계산하는 데 사용되는 서버 또는 사용자 가용 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 사용합니다.
+실행 시작 시점에 외부 `DISTINCT` 임계값을 계산하는 데 사용되는 비율로, 쿼리의 `max_memory_usage`와 서버 또는 사용자 메모리 제한 범위 내에서 사용 가능한 메모리를 기준으로 합니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 사용합니다. `page_cache_min_size`를 초과하는 사용자 공간 페이지 캐시도 사용 가능한 메모리로 간주됩니다.
 
-값은 `0` 이상 `1` 미만이어야 합니다. `0`이면 이 임계값이 비활성화됩니다. 적용 가능한 서버 또는 사용자 메모리 제한이 없으면 이 비율은 아무런 효과가 없습니다.
-
-`max_memory_usage`는 이 계산에 영향을 주지 않습니다. 해당 제한을 기준으로 스필을 구성하려면 `max_bytes_before_external_distinct`를 사용하여 추가 메모리 사용을 위한 여유를 남겨 두십시오.
+값은 `0` 이상 `1` 미만이어야 합니다. `0`이면 이 임계값이 비활성화됩니다. 적용 가능한 쿼리, 서버 또는 사용자 메모리 제한이 없으면 이 비율은 아무런 효과가 없습니다.
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "기본적으로 디스크로 자동 스필을 활성화합니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "디스크로 자동 스필하는 기능을 기본적으로 활성화합니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
 
 가용 메모리 중 `GROUP BY`에 사용할 수 있는 비율입니다. 이 값에 도달하면
 집계를 위해 외부 메모리를 사용합니다.
 
 예를 들어 `0.6`으로 설정하면 실행 시작 시 `GROUP BY`는 가용 메모리의 60%
-(서버/사용자/머지 기준)까지 사용할 수 있으며, 이후에는
-외부 집계를 사용하기 시작합니다.
+(쿼리의 `max_memory_usage` 및 서버/사용자/머지 제한 기준)까지 사용할 수 있으며, 이후에는
+외부 집계를 사용하기 시작합니다. `page_cache_min_size`를 초과하는 사용자 공간 페이지 캐시는 가용 메모리로 간주됩니다.
 
 ## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
@@ -227,9 +225,9 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "새로운 설정: 해시 조인의 스필 임계값으로 사용되는 가용 메모리 비율입니다. 기본값은 `0.5`이며, `max_bytes_ratio_before_external_group_by` 및 `max_bytes_ratio_before_external_sort`와 동일한 방식으로 활성화됩니다. 절대값 설정인 `max_bytes_before_external_join`과 함께 사용되며, 둘 중 더 작은 값이 적용됩니다."}]}]} />
 
-`JOIN`에 사용할 수 있는 가용 메모리 비율입니다. 이 값에 도달하면 해시 조인이 오른쪽 입력 데이터를 디스크로 스필합니다. 단, 이는 `GraceHashJoin`으로 해당 조인을 실행할 수 있는 경우(동등 조건 disjunct가 하나이며, 지원되는 유형과 엄격성인 경우)에만 해당합니다. 여러 disjunct로 구성된 `ON` 조건(`OR`)은 `hash`를 그대로 사용하므로 스필 없이 메모리 제한에 도달할 수 있습니다. 스필 이후 조인은 그레이스 해시 조인(grace hash join)으로 계속 실행되며, 쿼리 실행 계획(query plan)에서 왼쪽 스트림의 행 순서를 유지해야 하는 경우에는 부분 병합 조인으로 실행됩니다(`max_bytes_before_external_join` 참조).
+`JOIN`에 사용할 수 있는 가용 메모리 비율입니다. 이 값에 도달하면 해시 조인이 오른쪽 입력 데이터를 디스크로 유출합니다. 단, 이는 `GraceHashJoin`으로 해당 조인을 실행할 수 있는 경우(동등 조건 disjunct가 하나이며, 지원되는 유형과 엄격성인 경우)에만 해당합니다. 여러 disjunct로 구성된 `ON` 조건(`OR`)은 `hash`를 그대로 사용하므로 스필 없이 메모리 제한에 도달할 수 있습니다. 스필 이후 조인은 그레이스 해시 조인(grace hash join)으로 계속 실행되며, 쿼리 실행 계획(query plan)에서 왼쪽 스트림의 행 순서를 유지해야 하는 경우에는 부분 병합 조인으로 실행됩니다(`max_bytes_before_external_join` 참조).
 
-예를 들어 `0.6`으로 설정하면 실행 시작 시 `JOIN`의 오른쪽 해시 테이블이 가용 메모리(서버/사용자/머지에 할당된 메모리 기준)의 `60%`까지 사용할 수 있으며, 그 이후부터는 디스크로 스필하기 시작합니다.
+예를 들어 `0.6`으로 설정하면 실행 시작 시 `JOIN`의 오른쪽 해시 테이블이 가용 메모리(쿼리의 `max_memory_usage` 및 서버/사용자/머지 제한 기준)의 `60%`까지 사용할 수 있으며, 그 이후부터는 디스크로 유출하기 시작합니다. `page_cache_min_size`를 초과하는 사용자 공간 페이지 캐시는 가용 메모리로 간주됩니다.
 
 `max_bytes_before_external_join`과 `max_bytes_ratio_before_external_join`이 모두 설정된 경우 계산된 임계값 중 더 작은 값이 사용됩니다. 비율이 `0`이면 절대값 설정만 적용됩니다.
 
@@ -242,25 +240,23 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "기본값을 0.5로 변경한 사항이 26.10에 백포트되었습니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "메모리 사용량(memory usage)이 사용 가능한 메모리의 지정된 비율을 초과하면 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필할 수 있도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_set`만 적용됩니다."}]}]} />
 
 서브쿼리가 포함된 `IN`의 집합을 디스크로 스필하는 임계값을 실행 시작 시점에 계산할 때 사용하는,
-사용 가능한 서버 또는 사용자 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 의미합니다.
+쿼리의 `max_memory_usage` 및 서버 또는 사용자 메모리 제한 내에서 사용 가능한 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 의미합니다.
+`page_cache_min_size`를 초과하는 사용자 공간 페이지 캐시도 사용 가능한 메모리로 간주됩니다.
 
 값은 `0` 이상 `1` 미만이어야 합니다. `0`으로 설정하면 이 임계값이 비활성화됩니다. 적용할 수 있는
-서버 또는 사용자 메모리 제한이 없으면 이 비율은 효과가 없습니다.
-
-`max_memory_usage`는 이 계산에 영향을 주지 않습니다. 해당 제한을 기준으로 스필을 구성하려면
-추가 메모리 사용을 고려해 여유를 두고 `max_bytes_before_external_set`을 사용하십시오.
+쿼리, 서버 또는 사용자 메모리 제한이 없으면 이 비율은 효과가 없습니다.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "기본적으로 디스크 자동 스필을 활성화합니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "디스크로 자동 스필하는 기능을 기본적으로 활성화합니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
 
 `ORDER BY`에 사용할 수 있는 가용 메모리의 비율입니다. 이 값에 도달하면 외부 정렬이 사용됩니다.
 
-예를 들어 `0.6`으로 설정하면 실행 시작 시 `ORDER BY`에서 가용 메모리(서버/사용자/머지 기준)의 `60%`까지 사용할 수 있고, 그 이후부터는 외부 정렬을 사용하기 시작합니다.
+예를 들어 `0.6`으로 설정하면 실행 시작 시 `ORDER BY`에서 가용 메모리(쿼리의 `max_memory_usage` 및 서버/사용자/머지 제한 기준)의 `60%`까지 사용할 수 있고, 그 이후부터는 외부 정렬을 사용하기 시작합니다. `page_cache_min_size`를 초과하는 사용자 공간 페이지 캐시도 가용 메모리로 간주됩니다.
 
-참고로 `max_bytes_before_external_sort`는 계속 적용되며, 정렬 block이 `max_bytes_before_external_sort`보다 큰 경우에만 디스크로 스필됩니다.
+참고로 `max_bytes_before_external_sort`는 계속 적용되며, 정렬 블록(Block)이 `max_bytes_before_external_sort`보다 큰 경우에만 디스크로 유출됩니다.
 
 ## max_bytes_to_read {#max_bytes_to_read}
 

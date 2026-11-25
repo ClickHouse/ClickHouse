@@ -1066,7 +1066,7 @@ Spill: spilled <compressed_bytes>
 
 #### 結合 ステップ {#explain-analyze-join-steps}
 
-結合 ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に 結合 の実装固有の行を出力します。`Left` と `Right` は SQL 上の論理的な側に対応します。ほとんどの場合、`Left` は 結合 のプローブ側、`Right` は 結合 のビルド側にもなります。ただし、結合 の実行中に入れ替え (swap) が発生することがあるため、常にそうなるとは限りません。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 3 つの実装、すなわち `CROSS` または `COMMA` 結合、結合キーが定まらない `ON` 部分を受け取る [block nested loop 結合](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition)、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
+結合 ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に 結合 の実装固有の行を出力します。`Left` と `Right` は SQL 上の論理的な側に対応します。ほとんどの場合、`Left` は 結合 のプローブ側、`Right` は 結合 のビルド側にもなります。ただし、結合 の実行中に入れ替え (swap) が発生することがあるため、常にそうなるとは限りません。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 3 つの実装、すなわち `CROSS` または `COMMA` 結合、結合キーが定まらない `ON` 部分を受け取る [block nested loop join](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition)、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
 
 各側の行は同じ形式です。
 
@@ -1079,7 +1079,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · q-error <ra
 
 * `rows estimated <estimated_rows>` — 結合順序オプティマイザによるその側の行数の推定値。隣に表示される実際の `rows` との比較用に出力されます。オプティマイザが推定値を生成しなかった場合は `no stats` となります (「[推定値と実測値の join メトリクス](#explain-analyze-join-estimation)」を参照) 。
 * `rows <rows>` — 結合処理を通過したその側の行の総数。
-* `q-error <ratio>`: `Output rows` の場合と同様に、その側における `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` の値です。両方が 0 以外の場合に出力されます。その側がフィルタ付きのテーブル読み取りである場合は、フィルタの推定値に対する q-error となります。JOINランタイムフィルタは適用先の側から行を除外しますが、この影響はどの推定値にも反映されません。推定値のみを比較するには、`enable_join_runtime_filters = 0` を設定してください。
+* `q-error <ratio>`: `Output rows` の場合と同様に、その側における `max(<estimated_rows> / <rows>, <rows> / <estimated_rows>)` の値です。両方が 0 以外の場合に出力されます。その側がフィルタ付きのテーブル読み取りである場合は、フィルタの推定値に対する q-error となります。JOINランタイムフィルタは適用先の側から行を除外しますが、この影響はどの推定値にも反映されません。推定値のみを比較するには、`enable_join_runtime_filters = 0` を設定してください。同様に、主キー範囲で分割されたハッシュ結合 (`query_plan_join_shard_by_pk_ranges`) では、ビルド側が空の範囲について、結果に現れ得ないプローブ側の行は読み取られません。推定値のみを比較するには、`query_plan_join_shard_by_pk_ranges = 0` を設定してください。
 * `matched <matched_rows>` — もう一方の側で少なくとも1つの結合相手が見つかった、その側の行数。これはキーではなく*行*を数えます。キーが右側に3回出現して一致した場合、右側の3行すべてが一致した行としてカウントされます。
 * `match rate <match_rate>%` — 一致したその側の行の割合。`100 * <matched_rows> / <rows>` として算出されます。
 * `fanout <fanout>` — その側で一致した行1行あたりが平均して生成する出力行数。

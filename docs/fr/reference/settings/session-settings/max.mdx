@@ -64,13 +64,15 @@ La valeur `0` signifie qu&#39;il n&#39;y a pas de limite.
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
-La taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Par défaut, 1 048 576 (1 MiB). Indiquer une taille de bloc plus petite entraîne généralement une légère baisse du taux de compression ; en revanche, la vitesse de compression et de décompression augmente légèrement grâce à une meilleure localité du cache, et la consommation de mémoire diminue.
+La taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Par défaut, 1 048 576 (1 Mio). Indiquer une taille de bloc plus petite entraîne généralement une légère baisse du taux de compression ; en revanche, la vitesse de compression et de décompression augmente légèrement grâce à une meilleure localité du cache, et la consommation de mémoire diminue.
 
 <Note>
   Il s’agit d’un réglage réservé aux experts, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
 </Note>
 
 Ne confondez pas les blocs utilisés pour la compression (un segment de mémoire constitué d’octets) avec les blocs utilisés pour le traitement des requêtes (un ensemble de lignes d’une table).
+
+Un bloc compressé contient au maximum 256 Mio de données non compressées ; les valeurs supérieures à 256 Mio sont donc traitées comme 256 Mio. Le bloc est réduit davantage encore lorsque sa compression par le codec pourrait dépasser 512 Mio, ce qui ne se produit qu’avec une chaîne de codecs expansifs. Les données écrites dans des blocs plus grands par des versions antérieures ne peuvent pas être lues.
 
 ## max_consume_snapshots {#max_consume_snapshots}
 

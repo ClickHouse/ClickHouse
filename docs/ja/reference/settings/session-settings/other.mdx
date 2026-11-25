@@ -162,7 +162,7 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 
 <SettingsInfoBlock type="UInt64" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "トークンの期限切れが発生した場合に、S3 のバックアップおよび復元リクエストを再試行します。0 を指定すると以前の動作に戻ります。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "120000"},{"label": "トークンの期限切れが発生した場合に、S3 のバックアップおよび復元リクエストを再試行します。0 を指定すると以前の動作に戻ります。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "120000"},{"label": "この変更は 26.8 にバックポートされ、そちらに記録されています。"}]}]} />
 
 バックアップまたは復元中に、応答で `ExpiredToken` が返された S3 リクエストを再試行する最大時間 (ミリ秒) です。再試行回数が `backup_restore_s3_retry_attempts` に達した場合も、再試行は停止します。0 を指定すると、この再試行は無効になります。AWS S3 の `HEAD` 応答は汎用的な HTTP ステータスしか返さないため、`HEAD` によるメタデータリクエストはこの再試行の対象外です。
 
@@ -985,6 +985,14 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
 
 選択されたパーサーが値を読み取れない場合、関数はエラーを出さずにその型のデフォルト値 (`1970-01-01 00:00:00`) を返します。そのため、2 つの設定が食い違っていると、抽出される値が何の通知もなく変わってしまいます。
 
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "一部のパスのみが変更される場合に完全なシリアル化とパースを回避する、最適化された JSON 間の型変換を有効化する新しい設定。"}]}]} />
+
+有効にすると、パラメータ (型指定されたパス、スキップルール) が異なる JSON 型同士の変換で、最適化された処理経路が使用されます。この経路では、変更されていないサブカラムをポインタで再利用し、変更されたパスにのみ CAST を適用します。これにより、文字列へのシリアル化と文字列からのパースを行う完全なパイプラインを経由せずに済みます。無効化すると、すべての JSON 型の変更で、従来のフォーマット＋パースによる変換が強制的に使用されます。
+
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -1433,7 +1441,7 @@ ignore を伴う読み取りではなく seek を行うために、リモート�
 
 この設定では、`file` テーブル関数で処理したファイルのリネームパターンを指定できます。このオプションを設定すると、`file` テーブル関数で読み取られたすべてのファイルは、処理が正常に完了した場合に限り、プレースホルダーを含む指定のパターンに従ってリネームされます。
 
-リネームはソースへの書き込みであるため、このオプションを設定してファイルを読み取るクエリには、`READ ON FILE` に加えて `WRITE ON FILE` 権限が必要です。`DESCRIBE` はリネームを行うデータ読み取りパイプラインを構築しないため、`READ ON FILE` のみが必要です。
+リネームはソースへの書き込みであるため、このオプションを設定してファイルを読み取るクエリには、`READ ON FILE` に加えて `WRITE ON FILE` 権限が必要です。また、このようなクエリは readonly モード (`readonly` が 0 より大きい場合。HTTP GET リクエストはすべてこれに該当します) では拒否されます。`DESCRIBE` はリネームを行うデータ読み取りパイプラインを構築しないため、`DESCRIBE` にはこれら 2 つの制限はいずれも適用されません。
 
 ### プレースホルダー {#placeholders}
 
@@ -2025,6 +2033,19 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "system.remote_data_paths をクエリする際、実際のテーブルデータに加えて shadow ディレクトリも走査します。"}]}]} />
 
 system.remote&#95;data&#95;paths をクエリする際、実際のテーブルデータに加えて凍結データ (shadow ディレクトリ) も走査します
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "新しい設定。`MergeTree` テーブルに対する `TRUNCATE` は、削除対象のパーツを即座には削除せず、`old_parts_lifetime` 秒間保持します"}]}]} />
+
+有効にすると、非レプリケーションの `MergeTree` テーブルに対する `TRUNCATE` は、切り詰められたパーツをディスクから即座に削除します。無効の場合、これらのパーツはマージのソースパーツと同様に非アクティブとなり、`old_parts_lifetime` 秒後に削除されます。これにより、実行中のクエリや、古くなったパーツ一覧を保持しているリーダーも、引き続きそれらのパーツを読み取ることができます。レプリケートされたテーブルでは、パーツは常に即座に削除されます。
+
+設定可能な値:
+
+* 0 - 切り詰められたパーツは `old_parts_lifetime` 秒後に削除されます。
+* 1 - 切り詰められたパーツは即座に削除されます。
 
 ## union_default_mode {#union_default_mode}
 

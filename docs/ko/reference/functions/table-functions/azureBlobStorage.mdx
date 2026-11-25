@@ -31,6 +31,16 @@ doc_type: 'reference'
     ```
   </Tab>
 
+  <Tab title="Workload identity">
+    `extra_credentials`를 통해 Azure Workload Identity를 사용합니다. `account_name` / `account_key`와 함께 사용할 수 없으며, `connection_string`이 아닌 `storage_account_url`을 지정해야 합니다:
+
+    ```sql
+    azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+    ```
+
+    Workload Identity는 서버 자체의 아이덴티티를 사용하므로 기본적으로 허용되지 않습니다. 쿼리를 실행하는 세션 또는 해당 세션의 설정 프로파일(Settings Profile)에서 `allow_server_credentials_in_user_queries`를 활성화하십시오.
+  </Tab>
+
   <Tab title="명명된 컬렉션">
     지원되는 키의 전체 목록은 아래의 [이름이 지정된 컬렉션](#named-collections)을 참조하십시오:
 
@@ -45,35 +55,35 @@ doc_type: 'reference'
 | 인수                               | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection_string`              | 자격 증명이 포함된 연결 문자열입니다(계정 이름 + 계정 키 또는 SAS 토큰). 이 형식을 사용할 때는 `account_name` 및 `account_key`를 별도로 전달해서는 **안 됩니다**. [연결 문자열 구성](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)을 참고하십시오.                                                      |
-| `storage_account_url`            | 스토리지 계정 엔드포인트 URL입니다. 예: `https://myaccount.blob.core.windows.net/`. 이 형식을 사용할 때는 `account_name` 및 `account_key`도 **반드시** 함께 전달해야 합니다.                                                                                                                                                                                                                                                                                                            |
+| `storage_account_url`            | 스토리지 계정 엔드포인트 URL입니다. 예: `https://<account>.blob.core.windows.net/`. 이 형식을 사용할 때는 `account_name`과 `account_key`를 전달하거나, Workload Identity를 사용하는 경우 `extra_credentials(client_id=, tenant_id=)`를 전달하십시오.                                                                                                                                                                                                                                                  |
 | `container_name`                 | 컨테이너 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `blobpath`                       | 파일 경로입니다. 읽기 전용 모드에서는 다음 와일드카드를 지원합니다: `*`, `**`, `?`, `{abc,def}`, `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다.                                                                                                                                                                                                                                                                                                                        |
 | `account_name`                   | 스토리지 계정 이름입니다. SAS 없이 `storage_account_url`을 사용할 때는 **필수**이며, `connection_string`을 사용할 때는 전달해서는 **안 됩니다**.                                                                                                                                                                                                                                                                                                                                        |
 | `account_key`                    | 스토리지 계정 키입니다. SAS 없이 `storage_account_url`을 사용할 때는 **필수**이며, `connection_string`을 사용할 때는 전달해서는 **안 됩니다**.                                                                                                                                                                                                                                                                                                                                         |
-| `format`                         | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `compression`                    | 지원되는 값: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. 기본적으로는 파일 확장자를 기준으로 압축을 자동 감지합니다(`auto`로 설정한 경우와 동일). `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택됩니다(기본값은 `basic`).                                                                                                                                                                 |
+| `format`                         | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `compression`                    | 지원되는 값: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. 기본적으로는 파일 확장자를 기준으로 압축을 자동 감지합니다(`auto`로 설정한 경우와 동일). `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택됩니다(기본값은 `basic`).                                                                                                                                                              |
 | `structure`                      | 테이블 구조입니다. 형식: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                     |
 | `partition_strategy`             | 선택 사항입니다. 지원되는 값: `WILDCARD` 또는 `HIVE`. `WILDCARD`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `HIVE`는 와일드카드를 허용하지 않으며 경로를 테이블 루트로 가정하고, 파일 이름으로 Snowflake ID를 사용하며 파일 포맷을 확장자로 하는 Hive 스타일의 파티션 디렉터리를 생성합니다. 명시적인 전략이 없을 때 `{_partition_id}`가 있는 경로는 `WILDCARD`를 사용합니다. 다른 글롭이 있는 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `HIVE`이면 `HIVE`를 사용하고, 그렇지 않으면 파티션 전략을 사용하지 않습니다. |
 | `partition_columns_in_data_file` | 선택 사항입니다. `HIVE` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 예상할지 여부를 ClickHouse에 지정합니다. 기본값은 `false`입니다.                                                                                                                                                                                                                                                                                                                                           |
-| `extra_credentials`              | authentication에 `client_id` 및 `tenant_id`를 사용합니다. `extra_credentials`가 제공되면 `account_name` 및 `account_key`보다 우선합니다.                                                                                                                                                                                                                                                                                                                               |
+| `extra_credentials`              | Azure Workload Identity 인증에 `client_id`와 `tenant_id`를 사용합니다. `account_name` / `account_key`와 함께 사용할 수 없으며, `connection_string`이 아닌 `storage_account_url`이 필요합니다.                                                                                                                                                                                                                                                                                  |
 
 ## 이름이 지정된 컬렉션 {#named-collections}
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 다음 키를 사용할 수 있습니다:
 
-| 키                     | 필수   | 설명                                                                                             |
-| --------------------- | ---- | ---------------------------------------------------------------------------------------------- |
-| `container`           | 예    | 컨테이너 이름입니다. 위치 인수 `container_name`에 해당합니다.                                                |
-| `blob_path`           | 예    | 파일 경로(선택적 와일드카드 포함)입니다. 위치 인수 `blobpath`에 해당합니다.                                               |
-| `connection_string`   | 아니요* | 자격 증명이 포함된 연결 문자열입니다. *`connection_string` 또는 `storage_account_url` 중 하나를 제공해야 합니다. |
-| `storage_account_url` | 아니요* | 스토리지 계정 endpoint URL입니다. *`connection_string` 또는 `storage_account_url` 중 하나를 제공해야 합니다.         |
-| `account_name`        | 아니요  | `storage_account_url`을 사용할 때 필요합니다                                                             |
-| `account_key`         | 아니요  | `storage_account_url`을 사용할 때 필요합니다                                                             |
-| `format`              | 아니요  | 파일 포맷입니다.                                                                                      |
-| `compression`         | 아니요  | 압축 유형입니다.                                                                                      |
-| `structure`           | 아니요  | 테이블 구조입니다.                                                                                     |
-| `client_id`           | 아니요  | authentication에 사용할 클라이언트 ID입니다.                                                               |
-| `tenant_id`           | 아니요  | authentication에 사용할 테넌트 ID입니다.                                                                 |
+| 키                     | 필수   | 설명                                                                                                                                         |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `container`           | 예    | 컨테이너 이름입니다. 위치 인수 `container_name`에 해당합니다.                                                                                                 |
+| `blob_path`           | 예    | 파일 경로(선택적 와일드카드 포함)입니다. 위치 인수 `blobpath`에 해당합니다.                                                                                           |
+| `connection_string`   | 아니요* | 자격 증명이 포함된 연결 문자열입니다. *`connection_string` 또는 `storage_account_url` 중 하나를 제공해야 합니다. `client_id` / `tenant_id`와 함께 사용할 수 없습니다.              |
+| `storage_account_url` | 아니요* | 스토리지 계정 엔드포인트 URL입니다. *`connection_string` 또는 `storage_account_url` 중 하나를 제공해야 합니다. Workload Identity(`client_id` / `tenant_id`)를 사용할 때 필요합니다. |
+| `account_name`        | 아니요  | 계정 키 인증 방식으로 `storage_account_url`을 사용할 때 필요합니다. `client_id` / `tenant_id`와 함께 사용할 수 없습니다.                                                 |
+| `account_key`         | 아니요  | 계정 키 인증 방식으로 `storage_account_url`을 사용할 때 필요합니다. `client_id` / `tenant_id`와 함께 사용할 수 없습니다.                                                 |
+| `format`              | 아니요  | 파일 포맷입니다.                                                                                                                                  |
+| `compression`         | 아니요  | 압축 유형입니다.                                                                                                                                  |
+| `structure`           | 아니요  | 테이블 구조입니다.                                                                                                                                 |
+| `client_id`           | 아니요  | Azure Workload Identity에 사용할 클라이언트 ID입니다. `tenant_id`와 `storage_account_url`이 필요하며, 서버 프로세스에 `AZURE_FEDERATED_TOKEN_FILE`이 설정되어 있어야 합니다.          |
+| `tenant_id`           | 아니요  | Azure Workload Identity에 사용할 테넌트 ID입니다. `client_id`와 `storage_account_url`이 필요하며, 서버 프로세스에 `AZURE_FEDERATED_TOKEN_FILE`이 설정되어 있어야 합니다.            |
 
 <Note>
   명명된 컬렉션의 키 이름은 위치 함수 인수 이름과 다릅니다. `container`는 `container_name`이 아니며, `blob_path`는 `blobpath`가 아닙니다.

@@ -1,5 +1,5 @@
 ---
-description: 'Documentación de highlight-next-line'
+description: 'Configure el almacenamiento de objetos, el cifrado y las cachés del sistema de archivos local para los discos de ClickHouse.'
 sidebarTitle: 'Discos externos para almacenar datos'
 slug: /operations/storing-data
 title: 'Discos externos para almacenar datos'
@@ -50,8 +50,8 @@ Requiere especificar:
 
 <br />
 
-Opcionalmente, se puede especificar `metadata_type` (su valor predeterminado es `local`), pero también puede establecerse en `plain`, `web` y, a partir de `24.4`, `plain_rewritable`.
-El uso del tipo de metadatos `plain` se describe en la [sección sobre Plain Storage](/es/concepts/features/configuration/server-config/storing-data#plain-storage); el tipo de metadatos `web` solo puede usarse con el tipo de almacenamiento de objetos `web`; el tipo de metadatos `local` almacena los archivos de metadatos localmente (cada archivo de metadatos contiene la asignación a archivos en el almacenamiento de objetos y cierta metainformación adicional sobre ellos).
+Opcionalmente, especifique `metadata_type`. El valor predeterminado es `local` para S3, Azure, HDFS y el almacenamiento de objetos local, y `web` para el almacenamiento web. Los tipos de disco de compatibilidad `s3_plain` y `s3_plain_rewritable` seleccionan los tipos de metadata `plain` y `plain_rewritable`, respectivamente.
+El uso del tipo de metadata `plain` se describe en la [sección sobre Plain Storage](/es/concepts/features/configuration/server-config/storing-data#plain-storage); el tipo de metadata `web` solo puede usarse con el tipo de almacenamiento de objetos `web`; el tipo de metadata `local` almacena los archivos de metadata localmente (cada archivo de metadata contiene la asignación a archivos en el almacenamiento de objetos y cierta metainformación adicional sobre ellos).
 
 Por ejemplo:
 
@@ -178,24 +178,24 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-## refresh_parts_interval y table_disk {#refresh-parts-interval-and-table-disk}
+## `refresh_parts_interval` y `table_disk` {#refresh-parts-interval-and-table-disk}
 
-Esta configuración está pensada para tablas MergeTree no replicadas en las que las partes pueden escribirse externamente y la detección de metadatos debe actualizarse desde el almacenamiento.
+Este parámetro de configuración está pensado para tables MergeTree no replicadas en las que las partes pueden escribirse externamente y la detección de metadata debe actualizarse desde el almacenamiento.
 
-La configuración de MergeTree `refresh_parts_interval` permite actualizar periódicamente la lista de partes de datos desde el almacenamiento subyacente (por ejemplo, para detectar partes escritas externamente). La distinción importante es entre **metadatos compartidos entre réplicas** y **metadatos locales de cada réplica** (por ejemplo, S3 con metadatos locales por réplica): solo cuando los metadatos se comparten las partes nuevas serán visibles para todas las réplicas. Usar solo almacenamiento de objetos no implica metadatos compartidos.
+El parámetro de configuración de `MergeTree` `refresh_parts_interval` permite actualizar periódicamente, en discos de solo lectura, la lista de partes de datos desde el almacenamiento subyacente (por ejemplo, para detectar partes escritas externamente). La distinción importante es entre **metadata compartida entre réplicas** y **metadata local de cada réplica** (por ejemplo, S3 con metadata local por réplica): solo cuando la metadata se comparte las partes nuevas serán visibles para todas las réplicas. Usar solo almacenamiento de objetos no implica metadata compartida.
 
-* **Almacenamiento de objetos (por ejemplo, `disk = 's3'`) no implica metadatos compartidos.** Cuando los metadatos se almacenan localmente en cada réplica (el comportamiento predeterminado), cada réplica gestiona de forma independiente sus punteros a blobs en almacenamiento de objetos. Los cambios realizados en una réplica no son visibles para las demás. En ese caso, `refresh_parts_interval` no hace que las partes nuevas sean visibles entre réplicas, porque los metadatos que lee cada réplica son locales a esa réplica.
+* **Almacenamiento de objetos (por ejemplo, `disk = 's3'`) no implica metadata compartida.** Cuando la metadata se almacena localmente en cada réplica (el comportamiento predeterminado), cada réplica gestiona de forma independiente sus punteros a blobs en almacenamiento de objetos. Los cambios realizados en una réplica no son visibles para las demás. En ese caso, `refresh_parts_interval` no hace que las partes nuevas sean visibles entre réplicas, porque la metadata que lee cada réplica es local a esa réplica.
 
-* **La actualización automática de partes requiere que los metadatos del filesystem se compartan** (o que la tabla use metadatos de solo lectura propiedad de la propia tabla para que la actualización sea aplicable). Configurar `table_disk = true` junto con un disco local de la tabla (por ejemplo, `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) es una forma de obtener la semántica correcta: la tabla controla el ciclo de vida de los metadatos y el almacenamiento se trata como de solo lectura, por lo que `refresh_parts_interval` se ejecuta y pueden detectarse las partes añadidas externamente.
+* **La actualización automática de partes requiere un disco de solo lectura y acceso a la metadata del escritor.** [`table_disk`](/es/reference/settings/merge-tree-settings/table#table_disk) indica que el disco apunta directamente a los datos de una table; no convierte el disco en uno de solo lectura. Configure el acceso de solo lectura por separado, por ejemplo, con `read_only=true` en la definición del disco, y use un tipo de metadata compatible.
 
-* **Con un disco definido globalmente** (por ejemplo, `disk = 's3'` en `storage_configuration`) y los metadatos locales predeterminados, cada réplica tiene su propio estado de metadatos. Aunque los blobs puedan estar en S3, el almacenamiento no se considera compartido a efectos de `refresh_parts_interval`, y las partes nuevas creadas fuera de ClickHouse o en otra réplica no se detectarán.
+* **Con un disco definido globalmente** (por ejemplo, `disk = 's3'` en `storage_configuration`) y la metadata local predeterminada, cada réplica tiene su propio estado de metadata. Aunque los blobs puedan estar en S3, el almacenamiento no se considera compartido a efectos de `refresh_parts_interval`, y las partes nuevas creadas fuera de ClickHouse o en otra réplica no se detectarán.
 
-Para la actualización automática de partes, asegúrese de que los metadatos se compartan o use un disco a nivel de tabla con `table_disk = true`, como se indicó anteriormente. Si se confía solo en `refresh_parts_interval` con metadatos locales de la réplica, las partes no se actualizarán como se espera.
+Para la actualización automática de partes, asegúrese de que el lector tenga acceso a la metadata del escritor y utilice un disco de solo lectura. Compartir un bucket de S3 no basta para compartir la metadata almacenada localmente.
 
 <Note>
-  `refresh_parts_interval` no se usa para tablas ReplicatedMergeTree.
-  Las tablas replicadas ya sincronizan las partes mediante el mecanismo de replicación.
-  Esta configuración solo se aplica a tablas MergeTree no replicadas en las que las partes se escriben externamente y se requiere actualizar los metadatos.
+  `refresh_parts_interval` no se usa para tables ReplicatedMergeTree.
+  Las tables replicadas ya sincronizan las partes mediante el mecanismo de replicación.
+  Este parámetro de configuración solo se aplica a tables MergeTree no replicadas en las que las partes se escriben externamente y se requiere actualizar la metadata.
 </Note>
 
 ## Configuración dinámica {#dynamic-configuration}
@@ -204,8 +204,7 @@ También es posible especificar la configuración de almacenamiento sin definir 
 disco en el archivo de configuración, ya que puede configurarse en los
 ajustes de la consulta `CREATE`/`ATTACH`.
 
-La siguiente consulta de ejemplo se basa en la configuración dinámica de disco anterior y
-muestra cómo usar un disco local para almacenar en caché datos de una tabla almacenada en una URL.
+La siguiente consulta adjunta una table de solo lectura almacenada en una URL.
 
 ```sql highlight={20-23}
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
@@ -258,7 +257,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
-    path='/var/lib/clickhouse/custom_disk_cache/',
+    path='custom_disk_cache/',
     disk=disk(
       type=web,
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
@@ -266,14 +265,15 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   );
 ```
 
-En la configuración resaltada a continuación, observe que el disco de `type=web` está anidado dentro
+En la configuración resaltada anteriormente, observe que el disco de `type=web` está anidado dentro
 del disco de `type=cache`.
 
 <Note>
   El ejemplo usa `type=web`, pero cualquier tipo de disco puede configurarse como dinámico,
   incluido un disco local. Los discos locales requieren que el argumento `path` esté dentro del
-  parámetro de configuración del servidor `custom_local_disks_base_directory`, que no tiene
-  ningún valor predeterminado, así que establézcalo también cuando use un disco local.
+  ajuste del servidor `custom_local_disks_base_directory`, que no tiene ningún valor predeterminado.
+
+  Para un disco de caché dinámico, configure `filesystem_caches_path` o `custom_cached_disks_base_directory` en el servidor. Las rutas relativas de caché se resuelven dentro de ese directorio; las rutas absolutas también deben estar dentro de él.
 </Note>
 
 Cada argumento de `disk` solo puede especificarse una vez, salvo aquellos que el disco lee como una lista:
@@ -282,7 +282,7 @@ Cada argumento de `disk` solo puede especificarse una vez, salvo aquellos que el
 También es posible combinar una configuración basada en archivos de configuración con una
 configuración definida en SQL:
 
-```sql highlight={20-28}
+```sql highlight={20-25}
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,
@@ -305,22 +305,19 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
-    path='/var/lib/clickhouse/custom_disk_cache/',
-    disk=disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      )
+    path='custom_disk_cache/',
+    disk='web'
   );
 ```
 
-donde `web` procede del archivo de configuración del servidor:
+donde `web` proviene del archivo de configuración del servidor:
 
 ```xml
 <storage_configuration>
     <disks>
         <web>
             <type>web</type>
-            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+            <endpoint>https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/</endpoint>
         </web>
     </disks>
 </storage_configuration>
@@ -328,45 +325,52 @@ donde `web` procede del archivo de configuración del servidor:
 
 ### Uso del almacenamiento S3 {#s3-storage}
 
-#### Parámetros obligatorios {#required-parameters-s3}
+#### Endpoint y autenticación {#required-parameters-s3}
 
 | Parámetro           | Descripción                                                                                                                                                                                                |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `endpoint`          | URL del endpoint de S3 con estilo `path` o `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Debe incluir el bucket y la ruta raíz para almacenar los datos. |
-| `access_key_id`     | ID de la clave de acceso de S3 utilizada para la autenticación.                                                                                                                                            |
-| `secret_access_key` | Clave de acceso secreta de S3 utilizada para la autenticación.                                                                                                                                             |
+| `access_key_id`     | ID de la clave de acceso de S3. Opcional cuando se utiliza un proveedor de credenciales.                                                                                                                   |
+| `secret_access_key` | Clave de acceso secreta de S3, proporcionada junto con `access_key_id` cuando se utilizan credenciales explícitas.                                                                                         |
+
+Los valores predeterminados de S3 han cambiado entre versiones: `use_environment_credentials` pasó de `false` a `true` en `23.4`, `connect_timeout_ms` de `10000` a `1000` en `23.5`, y `request_timeout_ms` de `5000` a `30000` en `22.10`. Estos cambios en los valores predeterminados no afectan a los valores configurados explícitamente.
+
+Las credenciales explícitas tienen prioridad sobre los proveedores de credenciales. Configure `session_token` cuando utilice credenciales explícitas temporales. Con `use_environment_credentials=true`, ClickHouse puede obtener credenciales del entorno, de archivos de credenciales de AWS, mediante identidad web o de roles de instancia o contenedor. Esta opción habilita una cadena de proveedores y no se limita a las variables de entorno.
 
 #### Parámetros opcionales {#optional-parameters-s3}
 
-| Parámetro                                       | Descripción                                                                                                                                                                                                                                                                                                                                             | Valor predeterminado                     |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `region`                                        | Nombre de la región de S3.                                                                                                                                                                                                                                                                                                                              | *                                        |
-| `support_batch_delete`                          | Controla si se comprueba la compatibilidad con la eliminación por lotes. Establézcalo en `false` cuando use Google Cloud Storage (GCS), ya que GCS no admite eliminaciones por lotes.                                                                                                                                                                   | `true`                                   |
-| `use_environment_credentials`                   | Lee las credenciales de AWS de las variables de entorno `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN`, si existen. Nota: las credenciales del entorno se comparten entre todos los discos S3. Para usar credenciales distintas en diferentes discos, especifique `access_key_id` y `secret_access_key` explícitos para cada disco. | `false`                                  |
-| `use_insecure_imds_request`                     | Si es `true`, usa una solicitud IMDS no segura al obtener credenciales de los metadatos de Amazon EC2.                                                                                                                                                                                                                                                  | `false`                                  |
-| `expiration_window_seconds`                     | Período de gracia (en segundos) para comprobar si las credenciales basadas en expiración han caducado.                                                                                                                                                                                                                                                  | `120`                                    |
-| `proxy`                                         | Configuración del proxy para el endpoint de S3. Cada elemento `uri` dentro del bloque `proxy` debe contener una URL de proxy.                                                                                                                                                                                                                           | -                                        |
-| `connect_timeout_ms`                            | Tiempo de espera de conexión del socket, en milisegundos.                                                                                                                                                                                                                                                                                               | `10000` (10 segundos)                    |
-| `request_timeout_ms`                            | Tiempo de espera de la solicitud, en milisegundos.                                                                                                                                                                                                                                                                                                      | `5000` (5 segundos)                      |
-| `s3_retry_attempts`                             | Número de reintentos para solicitudes fallidas.                                                                                                                                                                                                                                                                                                         | `500`                                    |
-| `s3_max_single_read_retries`                    | Número de reintentos ante caídas de conexión durante la lectura.                                                                                                                                                                                                                                                                                        | `4`                                      |
-| `min_bytes_for_seek`                            | Número mínimo de bytes para usar la operación de reposicionamiento en lugar de la lectura secuencial.                                                                                                                                                                                                                                                   | `1 MB`                                   |
-| `metadata_path`                                 | Ruta local del sistema de archivos donde se almacenan los archivos de metadatos de S3.                                                                                                                                                                                                                                                                  | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`                             | Si es `true`, omite las comprobaciones de acceso al disco durante el arranque.                                                                                                                                                                                                                                                                          | `false`                                  |
-| `header`                                        | Añade el encabezado HTTP especificado a las solicitudes. Puede especificarse varias veces.                                                                                                                                                                                                                                                              | *                                        |
-| `server_side_encryption_customer_key_base64`    | Encabezados necesarios para acceder a objetos S3 con cifrado SSE-C.                                                                                                                                                                                                                                                                                     | -                                        |
-| `server_side_encryption_kms_key_id`             | Encabezados necesarios para acceder a objetos S3 con [cifrado SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). Una cadena vacía usa la clave S3 administrada por AWS.                                                                                                                                           | *                                        |
-| `server_side_encryption_kms_encryption_context` | Encabezado de contexto de cifrado para SSE-KMS (usado con `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                                         | -                                        |
-| `server_side_encryption_kms_bucket_key_enabled` | Habilita las claves de bucket de S3 para SSE-KMS (usado con `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                                       | Coincide con la configuración del bucket |
-| `s3_max_put_rps`                                | Número máximo de solicitudes PUT por segundo antes de aplicar throttling.                                                                                                                                                                                                                                                                               | `0` (ilimitado)                          |
-| `s3_max_put_burst`                              | Número máximo de solicitudes PUT simultáneas antes de alcanzar el límite de RPS.                                                                                                                                                                                                                                                                        | Igual que `s3_max_put_rps`               |
-| `s3_max_get_rps`                                | Número máximo de solicitudes GET por segundo antes de aplicar throttling.                                                                                                                                                                                                                                                                               | `0` (ilimitado)                          |
-| `s3_max_get_burst`                              | Número máximo de solicitudes GET simultáneas antes de alcanzar el límite de RPS.                                                                                                                                                                                                                                                                        | Igual que `s3_max_get_rps`               |
-| `s3_upload_checksum_algorithm`                  | Algoritmo de suma de comprobación para las cargas: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256` (enviado como `x-amz-checksum-*`). Si está vacío, se usa `Content-MD5`, o `CRC32` para los buckets de S3Express. Se ignora en GCS.                                                                                                            | vacío                                    |
-| `s3_delete_checksum_algorithm`                  | Algoritmo de suma de comprobación para las solicitudes `DeleteObjects` por lotes: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256`. Si está vacío, se usa `MD5`; `CRC32` para buckets de S3Express, o `SHA256` cuando `MD5` no está disponible (modo FIPS) o el servidor lo rechaza. Se ignora en GCS.                                            | vacío                                    |
-| `key_template`                                  | Define el formato de generación de claves de objeto mediante la sintaxis de [re2](https://github.com/google/re2/wiki/Syntax). Requiere la marca `storage_metadata_write_full_object_key`. Es incompatible con `ruta raíz` en `endpoint`. Requiere `key_compatibility_prefix`.                                                                           | *                                        |
-| `key_compatibility_prefix`                      | Obligatorio con `key_template`. Especifica la `ruta raíz` anterior de `endpoint` para leer versiones antiguas de metadatos.                                                                                                                                                                                                                             | -                                        |
-| `read_only`                                     | Solo permite leer desde el disco.                                                                                                                                                                                                                                                                                                                       | *                                        |
+Los siguientes valores predeterminados se aplican salvo que se sobrescriban en la configuración de disco o se hereden de ajustes `s3_*` modificados en el Contexto de inicialización. Las opciones de cliente y autenticación utilizan claves de disco sin prefijo; las opciones de solicitud, como `s3_retry_attempts`, utilizan el prefijo `s3_`. Las consultas pueden sobrescribir los ajustes de solicitud para cada operación de lectura y escritura; para cambiar los ajustes del cliente, es necesario volver a configurarlo.
+
+| Parámetro                                       | Descripción                                                                                                                                                                                                                                                                                                | Valor predeterminado                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `region`                                        | Nombre de la región de S3.                                                                                                                                                                                                                                                                                 | *                                                                                                        |
+| `support_batch_delete`                          | Controla las operaciones de eliminación por batch. Si no se especifica, se detecta automáticamente si se admiten; `false` deshabilita las operaciones de eliminación por batch (por ejemplo, para GCS).                                                                                                    | Sin establecer (detecta la compatibilidad)                                                               |
+| `use_environment_credentials`                   | Habilita la cadena de proveedores de credenciales de AWS cuando no hay credenciales explícitas. Los discos del proceso del servidor comparten las credenciales del entorno y de la instancia.                                                                                                              | `true`                                                                                                   |
+| `use_insecure_imds_request`                     | Si es `true`, utiliza una solicitud IMDS no segura para obtener credenciales de los metadatos de Amazon EC2.                                                                                                                                                                                               | `false`                                                                                                  |
+| `expiration_window_seconds`                     | Período de gracia (en segundos) para comprobar si las credenciales con fecha de caducidad han caducado.                                                                                                                                                                                                    | `120`                                                                                                    |
+| `proxy`                                         | Configuración del proxy para el punto de conexión de S3. Cada elemento `uri` del bloque `proxy` debe contener la URL de un proxy.                                                                                                                                                                          | -                                                                                                        |
+| `connect_timeout_ms`                            | Tiempo de espera de conexión en milisegundos. Los tiempos de espera adaptativos pueden ser más cortos en los primeros intentos.                                                                                                                                                                            | `1000` (1 segundo)                                                                                       |
+| `request_timeout_ms`                            | Tiempo de espera de la solicitud del client en milisegundos. Los tiempos de espera adaptativos pueden ser más cortos en los primeros intentos.                                                                                                                                                             | `30000` (30 segundos)                                                                                    |
+| `s3_retry_attempts`                             | Número máximo de reintentos tras la solicitud inicial en caso de fallos reintentables de S3. Es independiente del límite de intentos de lectura indicado a continuación.                                                                                                                                   | `500`                                                                                                    |
+| `s3_max_single_read_retries`                    | Número máximo de intentos de lectura, incluido el intento inicial, cuando una lectura falla debido a un error reintentable.                                                                                                                                                                                | `4`                                                                                                      |
+| `min_bytes_for_seek`                            | El lector de la configuración de disco lo acepta, pero el búfer de lectura actual de S3 no lo utiliza. Utilice [`remote_read_min_bytes_for_seek`](/es/reference/settings/session-settings/other#remote_read_min_bytes_for_seek) para ese búfer.                                                               | `1048576` (1 MiB)                                                                                        |
+| `metadata_path`                                 | Directorio local de metadata, utilizado con `metadata_type=local`.                                                                                                                                                                                                                                         | `<path>/disks/<disk_name>/`, donde `<path>` es el directorio de datos del servidor                       |
+| `skip_access_check`                             | Si es `true`, omite las comprobaciones de acceso al disco durante el inicio.                                                                                                                                                                                                                               | `false`                                                                                                  |
+| `header`                                        | Añade la cabecera HTTP especificada a las solicitudes. Se puede especificar varias veces.                                                                                                                                                                                                                  | *                                                                                                        |
+| `request_payer`                                 | Establezca el valor en `requester` para acceder a un bucket en el que paga el solicitante: añade `x-amz-request-payer: requester` a las solicitudes.                                                                                                                                                       | -                                                                                                        |
+| `server_side_encryption_customer_key_base64`    | Encabezados necesarios para acceder a objetos de S3 con cifrado SSE-C.                                                                                                                                                                                                                                     | *                                                                                                        |
+| `server_side_encryption_kms_key_id`             | Encabezados obligatorios para acceder a objetos de S3 con [cifrado SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). Si se especifica una cadena vacía, se utiliza la clave de S3 gestionada por AWS.                                                               | -                                                                                                        |
+| `server_side_encryption_kms_encryption_context` | Encabezado de contexto de cifrado para SSE-KMS (se utiliza con `server_side_encryption_kms_key_id`).                                                                                                                                                                                                       | *                                                                                                        |
+| `server_side_encryption_kms_bucket_key_enabled` | Habilita las claves de bucket de S3 para SSE-KMS (se utiliza junto con `server_side_encryption_kms_key_id`).                                                                                                                                                                                               | Coincide con el parámetro de configuración del bucket                                                    |
+| `s3_max_put_rps`                                | Número máximo de solicitudes PUT por segundo antes de aplicar la limitación de tasa.                                                                                                                                                                                                                       | `0` (sin límite)                                                                                         |
+| `s3_max_put_burst`                              | Capacidad de ráfaga del algoritmo de cubeta de fichas para solicitudes PUT; se aplica cuando `s3_max_put_rps` es distinto de cero. No es un límite de concurrencia.                                                                                                                                        | El equivalente a un segundo de `s3_max_put_rps`, salvo que el perfil especifique una capacidad de ráfaga |
+| `s3_max_get_rps`                                | Número máximo de solicitudes GET por segundo antes de aplicar la limitación de tasa.                                                                                                                                                                                                                       | `0` (sin límite)                                                                                         |
+| `s3_max_get_burst`                              | Capacidad de ráfaga del algoritmo de depósito de fichas para solicitudes GET; se aplica cuando `s3_max_get_rps` es distinto de cero. No es un límite de concurrencia.                                                                                                                                      | Un segundo de `s3_max_get_rps`, salvo que el perfil especifique una capacidad de ráfaga                  |
+| `s3_upload_checksum_algorithm`                  | Algoritmo de suma de comprobación para las cargas: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256` (enviados como `x-amz-checksum-*`). Si se deja vacío, se usa `Content-MD5` o `CRC32` en el caso de los buckets de S3Express. Se ignora para GCS.                                                 | vacío                                                                                                    |
+| `s3_delete_checksum_algorithm`                  | Algoritmo de suma de comprobación para solicitudes `DeleteObjects` en lote: `MD5` (enviado como `Content-MD5`), `CRC32` o `SHA256`. Si se deja vacío, se usa `MD5`, `CRC32` para buckets de S3Express o `SHA256` cuando `MD5` no está disponible (modo FIPS) o el servidor lo rechaza. Se ignora para GCS. | vacío                                                                                                    |
+| `key_template`                                  | Define la generación de claves de objetos mediante la sintaxis de [re2](https://github.com/google/re2/wiki/Syntax). Incompatible con una ruta raíz en `endpoint`.                                                                                                                                          | Vacío                                                                                                    |
+| `key_compatibility_prefix`                      | Junto con `key_template`, especifica el antiguo prefijo raíz para la lectura de metadata que almacena claves relativas de objetos. Omítalo si no se necesita un prefijo de compatibilidad.                                                                                                                 | Vacío                                                                                                    |
+| `read_only`                                     | Encapsula el disco en modo de solo lectura.                                                                                                                                                                                                                                                                | `false`                                                                                                  |
 
 <Note>
   Google Cloud Storage (GCS) también es compatible mediante el tipo `s3`. Consulte [GCS backed MergeTree](/es/integrations/connectors/data-sources/gcs).
@@ -379,11 +383,11 @@ Sus parámetros de configuración son los mismos que los del tipo de disco `s3`.
 A diferencia del tipo de disco `s3`, almacena los datos tal cual. En otras palabras,
 en lugar de usar nombres de blob generados aleatoriamente, usa nombres de archivo normales
 (de la misma forma en que ClickHouse almacena archivos en el disco local) y no almacena
-metadatos localmente. Por ejemplo, estos se derivan de los datos en `s3`.
+metadata localmente. Por ejemplo, esta se deriva de los datos en `s3`.
 
-Este tipo de disco permite mantener una versión estática de la tabla, ya que no
+Este tipo de disco permite mantener una versión estática de la table, ya que no
 permite ejecutar merges sobre los datos existentes ni insertar nuevos
-datos. Un caso de uso de este tipo de disco es crear backups en él, lo que puede hacerse
+datos. Un caso de uso de este tipo de disco es crear copias de seguridad en él, lo que puede hacerse
 mediante `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Después,
 puede hacer `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')`
 o usar `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
@@ -399,14 +403,14 @@ Configuración:
 ```
 
 A partir de `24.1`, es posible configurar cualquier disco de almacenamiento de objetos (`s3`, `azure`, `hdfs` (no compatible), `local`) usando
-el tipo de metadatos `plain`.
+el tipo de metadata `plain`.
 
 Configuración:
 
 ```xml
 <s3_plain>
     <type>object_storage</type>
-    <object_storage_type>azure</object_storage_type>
+    <object_storage_type>s3</object_storage_type>
     <metadata_type>plain</metadata_type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
@@ -492,40 +496,42 @@ de habilitarlo:
   proceso del servidor se termina entre ambos pasos, el objeto queda en el bucket sin que nada
   haga referencia a él, por lo que hay que eliminarlo manualmente.
 
-### Uso de Azure Blob Storage {#azure-blob-storage}
+### Uso de Azure Blob Storage
 
 Los motores de tabla de la familia `MergeTree` pueden almacenar datos en [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 mediante un disco de tipo `azure_blob_storage`.
 
-Configuración:
+Añada este fragmento dentro del elemento `clickhouse` de la configuración del servidor. Establezca `AZURE_STORAGE_ACCOUNT_KEY` en el entorno del servidor y sustituya los nombres de la cuenta y del contenedor:
 
 ```xml
 <storage_configuration>
-    ...
     <disks>
         <blob_storage_disk>
             <type>azure_blob_storage</type>
-            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <storage_account_url>https://account.blob.core.windows.net</storage_account_url>
             <container_name>container</container_name>
             <account_name>account</account_name>
-            <account_key>pass123</account_key>
+            <account_key from_env="AZURE_STORAGE_ACCOUNT_KEY"/>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
-    ...
 </storage_configuration>
 ```
 
-#### Parámetros de conexión {#azure-blob-storage-connection-parameters}
+#### Parámetros de conexión
 
-| Parámetro                           | Descripción                                                                                                                                                                                                                                              | Valor predeterminado |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `storage_account_url` (Obligatorio) | URL de la cuenta de Azure Blob Storage. Ejemplos: `http://account.blob.core.windows.net` o `http://azurite1:10000/devstoreaccount1`.                                                                                                                     | -                    |
-| `container_name`                    | Nombre del contenedor de destino.                                                                                                                                                                                                                        | `default-container`  |
-| `container_already_exists`          | Controla el comportamiento de creación del contenedor: <br />- `false`: crea un contenedor nuevo <br />- `true`: se conecta directamente al contenedor existente <br />- Si no se establece: comprueba si el contenedor existe y lo crea si es necesario | -                    |
+| Parámetro                  | Descripción                                                                                                                                                                                                                                              | Valor predeterminado |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `storage_account_url`      | URL de la cuenta de Azure Blob Storage; obligatoria a menos que se proporcione `connection_string` o `endpoint`. Ejemplos: `https://account.blob.core.windows.net` o `http://azurite1:10000/devstoreaccount1`.                                           | -                    |
+| `container_name`           | Obligatorio con `storage_account_url` o `connection_string`; de lo contrario, se proporciona en `endpoint`.                                                                                                                                              | Ninguno              |
+| `container_already_exists` | Controla el comportamiento de creación del contenedor: <br />- `false`: crea un contenedor nuevo <br />- `true`: se conecta directamente al contenedor existente <br />- Si no se establece: comprueba si el contenedor existe y lo crea si es necesario | -                    |
 
-Parámetros de autenticación (el disco intentará usar todos los métodos disponibles **y** Managed Identity Credential):
+Antes de `24.3`, si se omitía `container_name`, se seleccionaba `default-container`.
+
+Para la autenticación se selecciona un único método: Shared Key si se proporcionan tanto `account_name` como `account_key`; en su defecto, `connection_string`; si tampoco se proporciona, Workload Identity cuando `use_workload_identity=true` (valor predeterminado: `false`); y, en último lugar, identidad administrada. Si la autenticación falla, no se recurre a otro método. Antes de `24.7`, las cadenas de conexión tenían prioridad sobre las Shared Keys.
+
+Parámetros de autenticación:
 
 | Parámetro           | Descripción                                                            |
 | ------------------- | ---------------------------------------------------------------------- |
@@ -535,22 +541,24 @@ Parámetros de autenticación (el disco intentará usar todos los métodos dispo
 
 #### Parámetros de límite {#azure-blob-storage-connection-parameters}
 
-| Parámetro                         | Descripción                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------ |
-| `max_single_part_upload_size`     | Tamaño máximo de una sola carga de bloque en Blob Storage.                     |
-| `min_bytes_for_seek`              | Tamaño mínimo de una región en la que se puede cambiar la posición de lectura. |
-| `max_single_read_retries`         | Número máximo de intentos para leer un fragmento de datos desde Blob Storage.  |
-| `max_single_download_retries`     | Número máximo de intentos para descargar un búfer legible desde Blob Storage.  |
-| `thread_pool_size`                | Número máximo de hilos para la creación de instancias de `IDiskRemote`.        |
-| `max_inflight_parts_for_one_file` | Número máximo de solicitudes PUT simultáneas para un solo objeto.              |
+| Parámetro                         | Descripción                                                                                                                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_single_part_upload_size`     | Tamaño máximo en bytes de una carga de una sola parte.                                                                                                                       |
+| `min_bytes_for_seek`              | Se acepta, pero el búfer de lectura actual no lo utiliza. Use [`remote_read_min_bytes_for_seek`](/es/reference/settings/session-settings/other#remote_read_min_bytes_for_seek). |
+| `max_single_read_retries`         | Número máximo de intentos para leer un fragmento de datos desde Blob Storage.                                                                                                |
+| `max_single_download_retries`     | Número máximo de intentos para descargar un búfer legible desde Blob Storage.                                                                                                |
+| `thread_pool_size`                | Número máximo de threads en el pool de hilos dedicado a las operaciones de copia del disco.                                                                                  |
+| `max_inflight_parts_for_one_file` | Número máximo de partes que se pueden cargar de forma concurrente para un solo objeto.                                                                                       |
+
+Los límites de intentos de lectura incluyen el intento inicial y son independientes de los reintentos del SDK de Azure.
 
 #### Otros parámetros {#azure-blob-storage-limit-parameters}
 
-| Parámetro                        | Descripción                                                                              | Valor predeterminado                     |
-| -------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `metadata_path`                  | Ruta local del sistema de archivos para almacenar archivos de metadatos de Blob Storage. | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`              | Si es `true`, omite las comprobaciones de acceso al disco durante el inicio.             | `false`                                  |
-| `metadata_keep_free_space_bytes` | Cantidad de espacio libre que se debe reservar en el disco de metadatos.                 | -                                        |
+| Parámetro                        | Descripción                                                                                                                    | Valor predeterminado                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `metadata_path`                  | Directorio local de metadata, utilizado solo con `metadata_type=local`.                                                        | `<path>/disks/<disk_name>/`, donde `<path>` es el directorio de datos del servidor |
+| `skip_access_check`              | Omite la comprobación de acceso al disco durante el inicio. No desactiva la autenticación ni la inicialización del contenedor. | `false`                                                                            |
+| `metadata_keep_free_space_bytes` | Bytes que se deben mantener libres en el disco local de metadata.                                                              | `0`                                                                                |
 
 Pueden encontrarse ejemplos de configuraciones funcionales en el directorio de pruebas de integración (consulte, por ejemplo, [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) o [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
@@ -601,11 +609,11 @@ HDFS no tiene soporte y, por lo tanto, podrían surgir problemas al usarlo. No d
 
 Ten en cuenta que HDFS puede no funcionar en casos límite.
 
-### Uso del cifrado de datos {#encrypted-virtual-file-system}
+### Uso del cifrado de datos
 
 Puede cifrar los datos almacenados en discos externos [S3](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) o [HDFS](#using-hdfs-storage-unsupported) (no compatible), o en un disco local. Para activar el modo de cifrado, en el archivo de configuración debe definir un disco del tipo `encrypted` y elegir el disco en el que se guardarán los datos. Un disco `encrypted` cifra todos los archivos escritos en tiempo real y, al leer archivos desde un disco `encrypted`, los descifra automáticamente. Así, puede trabajar con un disco `encrypted` como si fuera uno normal.
 
-Ejemplo de configuración de disco:
+El siguiente fragmento debe incluirse dentro de `storage_configuration`. Sustituya la clave de ejemplo por su propia clave de la longitud requerida.
 
 ```xml
 <disks>
@@ -626,21 +634,21 @@ Por ejemplo, cuando ClickHouse escribe datos de una tabla en un archivo `store/a
 
 Al escribir el mismo archivo en `disk2`, en realidad se escribirá en el disco físico en la ruta `/path1/path2/store/all_1_1_0/data.bin`, en modo cifrado.
 
-### Parámetros requeridos {#encrypted-virtual-file-system}
+#### Parámetros obligatorios
 
 | Parámetro | Tipo   | Descripción                                                                                                                                                     |
 | --------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`    | String | Debe establecerse en `encrypted` para crear un disco cifrado.                                                                                                   |
-| `disk`    | String | Tipo de disco que se utilizará para el almacenamiento subyacente.                                                                                               |
-| `key`     | Uint64 | Clave para el cifrado y descifrado. Puede especificarse en formato hexadecimal mediante `key_hex`. Se pueden especificar varias claves usando el atributo `id`. |
+| `disk`    | String | Nombre de un disco previamente configurado que se utilizará para el almacenamiento subyacente.                                                                  |
+| `key`     | String | Clave para el cifrado y descifrado. Puede especificarse en formato hexadecimal mediante `key_hex`. Se pueden especificar varias claves usando el atributo `id`. |
 
-### Parámetros opcionales {#required-parameters-encrypted-disk}
+#### Parámetros opcionales {#required-parameters-encrypted-disk}
 
-| Parámetro        | Tipo   | Predeterminado  | Descripción                                                                                                                                                   |
-| ---------------- | ------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`           | String | Directorio raíz | Ubicación en el disco donde se guardarán los datos.                                                                                                           |
-| `current_key_id` | String | -               | El identificador de clave usado para el cifrado. Todas las claves especificadas pueden usarse para el descifrado.                                             |
-| `algorithm`      | Enum   | `AES_128_CTR`   | Algoritmo de cifrado. Opciones: <br />- `AES_128_CTR` (clave de 16 bytes) <br />- `AES_192_CTR` (clave de 24 bytes) <br />- `AES_256_CTR` (clave de 32 bytes) |
+| Parámetro        | Tipo   | Predeterminado                                 | Descripción                                                                                                                                                                      |
+| ---------------- | ------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`           | String | Directorio raíz                                | Directorio relativo en el disco subyacente, que debe terminar en `/` si no está vacío.                                                                                           |
+| `current_key_id` | UInt64 | `0` solo cuando la única clave tiene el ID `0` | Selecciona la clave usada para el cifrado. Si hay varias claves, seleccione explícitamente la clave actual. Todas las claves configuradas siguen disponibles para el descifrado. |
+| `algorithm`      | Enum   | `AES_128_CTR`                                  | Algoritmo de cifrado. Opciones: <br />- `AES_128_CTR` (clave de 16 bytes) <br />- `AES_192_CTR` (clave de 24 bytes) <br />- `AES_256_CTR` (clave de 32 bytes)                    |
 
 Ejemplo de configuración del disco:
 
@@ -650,7 +658,7 @@ Ejemplo de configuración del disco:
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...</endpoint>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/example-bucket/data/</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -665,14 +673,11 @@ Ejemplo de configuración del disco:
 </clickhouse>
 ```
 
-### Uso de la caché local {#optional-parameters-encrypted-disk}
+### Uso de la caché local
 
-Es posible configurar una caché local sobre discos en la configuración de almacenamiento a partir de la versión 22.3.
-En las versiones 22.3 - 22.7, la caché solo es compatible con el tipo de disco `s3`. En las versiones &gt;= 22.8, la caché es compatible con cualquier tipo de disco: S3, Azure, Local, Encrypted, etc.
-En las versiones &gt;= 23.5, la caché solo es compatible con tipos de disco remotos: S3, Azure, HDFS (no compatible).
-La caché usa el ajuste `cache_policy` (`SLRU` de forma predeterminada) para el desalojo, que se muestra en [`system.filesystem_cache_settings`](/es/operations/system-tables/filesystem_cache_settings). La lista completa de ajustes de los discos de caché se encuentra en [`system.filesystem_cache_settings`](/es/operations/system-tables/filesystem_cache_settings).
+Un disco `cache` actúa como envoltorio de un disco de almacenamiento de objetos, como S3, Azure o `web`, y almacena los datos en caché en el sistema de archivos local. No puede envolver un disco `local` normal ni un envoltorio `encrypted`. Defina el disco subyacente antes del disco de caché.
 
-Ejemplo de configuración para versiones posteriores o iguales a 22.8:
+Configuración recomendada para las versiones actuales:
 
 ```xml
 <clickhouse>
@@ -680,13 +685,13 @@ Ejemplo de configuración para versiones posteriores o iguales a 22.8:
         <disks>
             <s3>
                 <type>s3</type>
-                <endpoint>...</endpoint>
-                ... s3 configuration ...
+                <endpoint>https://s3.eu-west-1.amazonaws.com/example-bucket/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
             </s3>
             <cache>
                 <type>cache</type>
                 <disk>s3</disk>
-                <path>/s3_cache/</path>
+                <path>s3_cache/</path>
                 <max_size>10Gi</max_size>
             </cache>
         </disks>
@@ -703,7 +708,7 @@ Ejemplo de configuración para versiones posteriores o iguales a 22.8:
 </clickhouse>
 ```
 
-Ejemplo de configuración para versiones anteriores a la versión 22.8:
+Configuración antigua, válida solo para las versiones `22.3`–`22.7`. No utilice estas claves `data_cache_*` en las configuraciones actuales; utilice un disco `cache` independiente, como se muestra arriba:
 
 ```xml
 <clickhouse>
@@ -711,8 +716,8 @@ Ejemplo de configuración para versiones anteriores a la versión 22.8:
         <disks>
             <s3>
                 <type>s3</type>
-                <endpoint>...</endpoint>
-                ... s3 configuration ...
+                <endpoint>https://s3.eu-west-1.amazonaws.com/example-bucket/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
                 <data_cache_enabled>1</data_cache_enabled>
                 <data_cache_max_size>10737418240</data_cache_max_size>
             </s3>
@@ -732,31 +737,31 @@ Ejemplo de configuración para versiones anteriores a la versión 22.8:
 
 Ajustes de **configuración del disco** de caché del sistema de archivos (ajustes comunes):
 
-Estos ajustes deben definirse en la sección de configuración del disco. Esta tabla recoge los parámetros más utilizados del disco de caché, no todas las claves que se aceptan en la configuración. Los valores en tiempo de ejecución y la lista completa de ajustes se encuentran en [`system.filesystem_cache_settings`](/es/operations/system-tables/filesystem_cache_settings).
+Estos ajustes deben definirse en la sección de configuración del disco. Esta tabla recoge los parámetros más utilizados del disco de caché, no todas las claves que se aceptan en la configuración. Los valores en tiempo de ejecución y la lista completa de ajustes se encuentran en [`system.filesystem_cache_settings`](/es/reference/system-tables/filesystem_cache_settings).
 
-| Parameter                                   | Type    | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                                      | String  | *          | **Obligatorio**. Ruta al directorio donde se almacenará la caché.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `max_size`                                  | Size    | -          | Tamaño máximo de la caché en bytes o en un formato legible (p. ej., `10Gi`). **Obligatorio salvo que** se establezca `max_size_ratio_to_total_space`; no se pueden establecer ambos a la vez. Cuando se alcanza el límite, los archivos se desalojan según la política definida en `cache_policy` (SLRU de forma predeterminada). Admite formatos `ki`, `Mi`, `Gi` (desde la v22.10).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `max_size_ratio_to_total_space`             | Double  | *          | Alternativa a `max_size`: fracción del espacio total del disco que se usa como tamaño de la caché, en `(0, 1]`. **Obligatorio salvo que** se establezca `max_size`. No se puede especificar junto con `max_size`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `cache_policy`                              | Enum    | `SLRU`     | Política de desalojo de la caché. Valores posibles: `LRU`, `SLRU` (predeterminado), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. Las políticas de overcommit requieren una compilación con soporte para caché distribuida y no se pueden combinar con `use_split_cache` (el servidor rechaza ambos casos al iniciarse).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `slru_size_ratio`                           | Double  | `0.6`      | Para `SLRU` / `SLRU_OVERCOMMIT`, proporción entre la caché protegida y la caché de prueba.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `reserve_granularity`                       | Size    | `4Mi`      | Al reservar espacio para la descarga de un segmento de archivo, reserva por adelantado al menos esta cantidad de bytes (con el tamaño del segmento de archivo como máximo). `0` reserva exactamente el tamaño solicitado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `cache_on_write_operations`                 | Boolean | `false`    | Habilita la caché write-through para las consultas `INSERT` y las fusiones en segundo plano. Se puede anular para cada consulta con `enable_filesystem_cache_on_write_operations`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `cache_hits_threshold`                      | Integer | `0`        | Obsoleto; no tiene efecto.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `enable_bypass_cache_with_threshold`        | Boolean | `false`    | Omite la caché para rangos de lectura grandes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `bypass_cache_threshold`                    | Size    | `256Mi`    | Tamaño del rango de lectura que activa la omisión de la caché (requiere `enable_bypass_cache_with_threshold`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `max_file_segment_size`                     | Size    | `32Mi`     | Tamaño máximo de un único archivo de caché en bytes o en un formato legible. Para `SLRU` / `SLRU_OVERCOMMIT`, no debe superar el tamaño de cada cola SLRU, `max_size * min(slru_size_ratio, 1 - slru_size_ratio)` (de cada parte con `use_split_cache`); se rechaza cualquier valor mayor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `boundary_alignment`                        | Size    | `4Mi`      | Alineación de los límites de los segmentos de archivo en la caché. No debe superar `max_file_segment_size` (el servidor rechaza un valor mayor al iniciarse).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `max_elements`                              | Integer | `10000000` | Número máximo de archivos de caché.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `load_metadata_threads`                     | Integer | `16`       | Número de threads para cargar los metadatos de la caché durante el inicio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `background_download_threads`               | UInt64  | `5`        | Número de threads para la descarga en segundo plano de segmentos de archivo. `0` deshabilita la descarga en segundo plano.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `background_download_queue_size_limit`      | UInt64  | `5000`     | Número máximo de segmentos en espera en la cola de descarga en segundo plano. `0` significa sin límite (la cola no se deshabilita). La descarga en segundo plano solo se deshabilita cuando `background_download_threads` es `0`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `background_download_max_file_segment_size` | Size    | `4Mi`      | Umbral, redondeado según la alineación, que determina hasta dónde se precarga un segmento en segundo plano. El tamaño de descarga se redondea hacia arriba a `boundary_alignment`, por lo que no es un límite estricto (por ejemplo, `1Mi` con `boundary_alignment` `4Mi` sigue descargando `4Mi`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `load_metadata_asynchronously`              | Boolean | `false`    | Carga los metadatos de la caché de forma asíncrona durante el inicio del servidor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `use_real_disk_size`                        | Boolean | `false`    | Contabiliza las reservas de la caché en unidades alineadas a los bloques del sistema de archivos en lugar de en bytes reservados. Esto aproxima el espacio que ocupa la reserva en el disco, pero no es el tamaño asignado exacto; afecta a `current_size` de esta caché en `system.filesystem_cache_settings`. La métrica `FilesystemCacheSize`, que abarca todo el proceso, y los eventos de perfilado del tamaño de desalojo se suman para todas las cachés, por lo que solo reflejan de manera uniforme el espacio ocupado por las reservas cuando todas las cachés usan el mismo modo. El `size` por segmento en `system.filesystem_cache` sigue siendo el tamaño lógico del rango; use `downloaded_size` para los bytes escritos en un segmento parcial. Es necesario reiniciar el servidor para cambiar este parámetro de configuración. |
-| `use_split_cache`                           | Boolean | `false`    | Separa los archivos entre sistema y datos. No es compatible con `SLRU_OVERCOMMIT` ni con `LRU_OVERCOMMIT`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `split_cache_ratio`                         | Double  | `0.1`      | Proporción del segmento del sistema con respecto al tamaño total de la caché para split&#95;cache.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Parámetro                                   | Tipo    | Valor predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                      | String  | *                    | **Obligatorio**. Directorio de caché. Las rutas relativas se resuelven dentro de `filesystem_caches_path` o, si este no se ha configurado, dentro de `<path>/caches/`. Si `filesystem_caches_path` está configurado, las rutas absolutas también deben estar dentro de ese directorio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `max_size`                                  | Size    | -                    | Tamaño máximo de la caché en bytes o en un formato legible (p. ej., `10Gi`). **Obligatorio salvo que** se establezca `max_size_ratio_to_total_space`; no se pueden establecer ambos a la vez. Cuando se alcanza el límite, los archivos se desalojan según la política definida en `cache_policy` (SLRU de forma predeterminada). Admite formatos `ki`, `Mi`, `Gi` (desde la v22.10).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `max_size_ratio_to_total_space`             | Double  | *                    | Alternativa a `max_size`: fracción del espacio total del disco que se usa como tamaño de la caché, en `(0, 1]`. **Obligatorio salvo que** se establezca `max_size`. No se puede especificar junto con `max_size`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `cache_policy`                              | Enum    | `SLRU`               | Política de desalojo de la caché. Valores posibles: `LRU`, `SLRU` (predeterminado), `SLRU_OVERCOMMIT`, `LRU_OVERCOMMIT`. Las políticas de overcommit requieren una compilación con soporte para caché distribuida y no se pueden combinar con `use_split_cache` (el servidor rechaza ambos casos al iniciarse).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `slru_size_ratio`                           | Double  | `0.6`                | Para `SLRU` / `SLRU_OVERCOMMIT`, proporción entre la caché protegida y la caché de prueba.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `reserve_granularity`                       | Size    | `4Mi`                | Al reservar espacio para la descarga de un segmento de archivo, reserva por adelantado al menos esta cantidad de bytes (con el tamaño del segmento de archivo como máximo). `0` reserva exactamente el tamaño solicitado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `cache_on_write_operations`                 | Boolean | `false`              | Habilita la caché write-through para las consultas `INSERT` y las fusiones en segundo plano. También requiere que se establezca `enable_filesystem_cache_on_write_operations=true` en los ajustes utilizados por la operación de escritura.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `cache_hits_threshold`                      | Integer | `0`                  | Obsoleto; no tiene efecto.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `enable_bypass_cache_with_threshold`        | Boolean | `false`              | Omite la caché para rangos de lectura grandes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `bypass_cache_threshold`                    | Size    | `256Mi`              | Tamaño del rango de lectura que activa la omisión de la caché (requiere `enable_bypass_cache_with_threshold`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `max_file_segment_size`                     | Size    | `32Mi`               | Tamaño máximo de un único archivo de caché en bytes o en un formato legible. Para `SLRU` / `SLRU_OVERCOMMIT`, no debe superar el tamaño de cada cola SLRU, `max_size * min(slru_size_ratio, 1 - slru_size_ratio)` (de cada parte con `use_split_cache`); se rechaza cualquier valor mayor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `boundary_alignment`                        | Size    | `4Mi`                | Alineación de los límites de los segmentos de archivo en la caché. No debe superar `max_file_segment_size` (el servidor rechaza un valor mayor al iniciarse).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `max_elements`                              | Integer | `10000000`           | Número máximo de archivos de caché.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `load_metadata_threads`                     | Integer | `16`                 | Número de threads para cargar los metadatos de la caché durante el inicio.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `background_download_threads`               | UInt64  | `5`                  | Número de threads para la descarga en segundo plano de segmentos de archivo. `0` deshabilita la descarga en segundo plano.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `background_download_queue_size_limit`      | UInt64  | `5000`               | Número máximo de segmentos en espera en la cola de descarga en segundo plano. `0` significa sin límite (la cola no se deshabilita). La descarga en segundo plano solo se deshabilita cuando `background_download_threads` es `0`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `background_download_max_file_segment_size` | Size    | `4Mi`                | Umbral, redondeado según la alineación, que determina hasta dónde se precarga un segmento en segundo plano. El tamaño de descarga se redondea hacia arriba a `boundary_alignment`, por lo que no es un límite estricto (por ejemplo, `1Mi` con `boundary_alignment` `4Mi` sigue descargando `4Mi`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `load_metadata_asynchronously`              | Boolean | `false`              | Carga los metadatos de la caché de forma asíncrona durante el inicio del servidor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `use_real_disk_size`                        | Boolean | `false`              | Contabiliza las reservas de la caché en unidades alineadas a los bloques del sistema de archivos en lugar de en bytes reservados. Esto aproxima el espacio que ocupa la reserva en el disco, pero no es el tamaño asignado exacto; afecta a `current_size` de esta caché en `system.filesystem_cache_settings`. La métrica `FilesystemCacheSize`, que abarca todo el proceso, y los eventos de perfilado del tamaño de desalojo se suman para todas las cachés, por lo que solo reflejan de manera uniforme el espacio ocupado por las reservas cuando todas las cachés usan el mismo modo. El `size` por segmento en `system.filesystem_cache` sigue siendo el tamaño lógico del rango; use `downloaded_size` para los bytes escritos en un segmento parcial. Es necesario reiniciar el servidor para cambiar este parámetro de configuración. |
+| `use_split_cache`                           | Boolean | `false`              | Separa los archivos entre sistema y datos. No es compatible con `SLRU_OVERCOMMIT` ni con `LRU_OVERCOMMIT`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `split_cache_ratio`                         | Double  | `0.1`                | Proporción del segmento del sistema con respecto al tamaño total de la caché para split&#95;cache.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 > **Nota**: Los valores de tamaño admiten unidades como `ki`, `Mi`, `Gi`, etc. (p. ej., `10Gi`).
 
@@ -784,9 +789,9 @@ Estos ajustes deben definirse en la sección de configuración del disco. Esta t
 
 #### Comandos de la caché {#cache-system-tables-file-cache}
 
-##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
+##### Vaciar la caché del sistema de archivos
 
-Este comando solo se admite cuando no se proporciona `<cache_name>`
+Utilice [`SYSTEM CLEAR FILESYSTEM CACHE`](/es/reference/statements/system#drop-filesystem-cache) para desalojar las entradas de caché que se puedan liberar. Para vaciar una caché concreta, utilice `SYSTEM CLEAR FILESYSTEM CACHE 'cache'`. Omita el nombre para vaciar todas las cachés; puede añadir `ON CLUSTER cluster_name` al final de cualquiera de las dos variantes.
 
 ##### `SHOW FILESYSTEM CACHES` {#system-clear-filesystem-cache-on-cluster}
 
@@ -799,7 +804,7 @@ SHOW FILESYSTEM CACHES
 
 ```text title="Response"
 ┌─Caches────┐
-│ s3_cache  │
+│ cache     │
 └───────────┘
 ```
 
@@ -810,8 +815,10 @@ El nombre de la caché puede obtenerse con el comando `SHOW FILESYSTEM CACHES`. 
 o iguales a `22.8`, el comando se llama `DESCRIBE CACHE`)
 
 ```sql title="Query"
-DESCRIBE FILESYSTEM CACHE 's3_cache'
+DESCRIBE FILESYSTEM CACHE 'cache'
 ```
+
+Ejemplo de salida de una versión anterior del servidor; las columnas y los valores dependen de la versión y de la configuración de la caché.
 
 ```text title="Response"
 ┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
@@ -826,7 +833,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                               |                                 | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                               |                                 | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-### Uso de almacenamiento web estático (solo lectura) {#web-storage}
+### Uso de almacenamiento web estático (solo lectura)
 
 Este es un disco de solo lectura. Sus datos solo se leen y nunca se modifican. Una tabla nueva
 se carga en este disco mediante la consulta `ATTACH TABLE` (consulte el ejemplo a continuación). En realidad, el disco local
@@ -834,7 +841,7 @@ no se utiliza; cada consulta `SELECT` dará lugar a una solicitud `http` para
 obtener los datos necesarios. Cualquier modificación de los datos de la tabla producirá una
 excepción; es decir, no se permiten los siguientes tipos de consultas: [`CREATE TABLE`](/es/reference/statements/create/table),
 [`ALTER TABLE`](/es/reference/statements/alter/index), [`RENAME TABLE`](/es/reference/statements/rename#rename-table),
-[`DETACH TABLE`](/es/reference/statements/detach) y [`TRUNCATE TABLE`](/es/reference/statements/truncate).
+y [`TRUNCATE TABLE`](/es/reference/statements/truncate).
 El almacenamiento web puede utilizarse con fines de solo lectura. Un caso de uso
 es alojar datos de muestra o migrar datos. Existe una herramienta, `clickhouse-static-files-uploader`,
 que prepara un directorio de datos para una tabla determinada (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
@@ -944,7 +951,7 @@ Un caso de prueba ya preparado. Debes añadir esta configuración a config:
 </clickhouse>
 ```
 
-Y luego, ejecuta esta consulta:
+A continuación, ejecute esta consulta:
 
 ```sql
 ATTACH TABLE test_hits UUID '1ae36516-d62d-4218-9ae3-6516d62da218'
@@ -1091,25 +1098,25 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-#### Parámetros obligatorios {#static-web-storage-required-parameters}
+#### Parámetros obligatorios
 
-| Parámetro  | Descripción                                                                                                                  |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `type`     | `web`. De lo contrario, el disco no se crea.                                                                                 |
-| `endpoint` | La URL del endpoint en formato `path`. La URL del endpoint debe incluir una ruta raíz donde se almacenan los datos cargados. |
+| Parámetro  | Descripción                                                     |
+| ---------- | --------------------------------------------------------------- |
+| `type`     | `web`. De lo contrario, el disco no se crea.                    |
+| `endpoint` | URL HTTP(S) de la raíz de los datos cargados, terminada en `/`. |
 
 #### Parámetros opcionales {#static-web-storage-required-parameters}
 
 El storage backend de objetos `web` solo lee el parámetro `endpoint`. No hay parámetros opcionales adicionales específicos de web; las opciones genéricas de disco siguen siendo aplicables.
 
-Si una consulta falla con la excepción `DB:Exception Unreachable URL`, puedes intentar ajustar esta configuración: [http&#95;connection&#95;timeout](/es/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/es/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/es/reference/settings/server-settings/settings/other#keep_alive_timeout).
+Para los tiempos de espera de conexión o lectura, consulta [`http_connection_timeout`](/es/reference/settings/session-settings/http#http_connection_timeout) y [`http_receive_timeout`](/es/reference/settings/session-settings/http#http_receive_timeout). Estos ajustes se aplican a las consultas o los perfiles; no son claves de la configuración del disco `web`. Las solicitudes realizadas fuera de una consulta utilizan los ajustes del contexto global. El lector de datos web establece un mínimo de 20 segundos para los tiempos de espera de conexión y recepción; los valores inferiores no reducen estos tiempos de espera de lectura de datos.
 
 Para obtener archivos para la carga, ejecuta:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` se puede encontrar en la consulta `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
 
 Al cargar archivos mediante `endpoint`, deben cargarse en la ruta `<endpoint>/store/`, pero la configuración solo debe contener `endpoint`.
 
-Si la URL no es accesible al cargar el disco mientras el servidor inicia las tablas, se capturan todos los errores. Si en este caso hubo errores, las tablas pueden volver a cargarse (hacerse visibles) mediante `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Si los metadatos se cargaron correctamente durante el inicio del servidor, las tablas están disponibles de inmediato.
+Si la URL no es accesible al cargar el disco mientras el servidor inicia las tablas, se capturan todos los errores. Si en este caso hubo errores, las tablas pueden volver a cargarse (hacerse visibles) mediante `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Si la metadata se cargó correctamente durante el inicio del servidor, las tablas están disponibles de inmediato.
 
 Usa [`http_max_tries`](/es/reference/settings/session-settings/http-max#http_max_tries) para limitar el número de intentos de lectura HTTP, incluido el intento inicial. Usa [`http_retry_initial_backoff_ms`](/es/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) y [`http_retry_max_backoff_ms`](/es/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) para configurar los retardos inicial y máximo entre reintentos.
 

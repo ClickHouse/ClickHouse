@@ -31,11 +31,11 @@ Utilise le cache de pages en espace utilisateur lors de la lecture depuis des di
 
 ## use_page_cache_for_object_storage {#use_page_cache_for_object_storage}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nouveau paramètre pour utiliser le cache de pages en espace utilisateur pour les fonctions de table de stockage objet"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nouveau paramètre permettant d’utiliser le cache de pages en espace utilisateur pour les fonctions de table de stockage d’objet"}]}, {"id": "row-2","items": [{"label": "26.12"},{"label": "1"},{"label": "Utilisation par défaut du cache de pages en espace utilisateur pour les moteurs de table et les fonctions de table de stockage d’objet, si le cache de pages est configuré sur le serveur."}]}]} />
 
-Utilisez le cache de pages en espace utilisateur lors de la lecture depuis les fonctions de table de stockage objet (s3, azure, hdfs) et les moteurs de table (S3, Azure, HDFS).
+Utilise le cache de pages en espace utilisateur lors de la lecture depuis les fonctions de table de stockage d’objet (s3, azure, hdfs, Iceberg, Delta Lake, etc.) et les moteurs de table (S3, Azure, HDFS, Iceberg, Delta Lake, etc.). Ce paramètre n’a d’effet que si le cache de pages en espace utilisateur est configuré sur le serveur (`page_cache_max_size`), et uniquement pour les objets disposant d’un ETag fort ou d’une identity immuable issue des enregistrements de la table (fichiers de données d’Iceberg et de Delta Lake). Il n’est pas utilisé en combinaison avec le cache du système de fichiers. En combinaison avec le Distributed Cache, il n’est utilisé que si `use_page_cache_with_distributed_cache` est également activé.
 
 ## use_page_cache_lookahead_for_text_index {#use_page_cache_lookahead_for_text_index}
 

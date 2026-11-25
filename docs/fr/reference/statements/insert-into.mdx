@@ -176,7 +176,7 @@ WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
-INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
 ```
 
 La clause `RETURNING` spécifie une requête `SELECT` qui s’exécute sur les données insérées, et la requête renvoie son ensemble de résultats.
@@ -267,12 +267,12 @@ Des données peuvent être insérées dans des tables référencées à l’aide
 **Syntaxe**
 
 ```sql
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [PARTITION BY expr] ...
 ```
 
 **Exemple**
 
-La fonction de table [remote](/fr/reference/functions/table-functions/remote) est utilisée dans les requêtes suivantes :
+La fonction de table [remote](/fr/reference/functions/table-functions/remote) est utilisée dans les requêtes suivantes :
 
 ```sql title="Query"
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
@@ -285,6 +285,28 @@ SELECT * FROM simple_table;
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
+```
+
+### Écritures partitionnées {#partitioned-writes}
+
+La clause `PARTITION BY` est prise en charge par certaines fonctions de table qui écrivent dans des fichiers ou dans un stockage d’objet, par exemple [file](/fr/reference/functions/table-functions/file#partitioned-write-to-multiple-tsv-files), [s3](/fr/reference/functions/table-functions/s3#partitioned-write), [gcs](/fr/reference/functions/table-functions/gcs#partitioned-write) et [azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#partitioned-write). Les fonctions de table qui ne la prennent pas en charge, comme `remote`, rejettent la requête. `expr` fait référence aux colonnes de la fonction de table.
+
+La répartition éventuelle des lignes insérées, et la manière dont elle s’effectue, dépendent de la stratégie de partitionnement de la fonction de table et de son chemin. En l’absence de stratégie de partitionnement explicite, la présence d’un caractère de substitution `{_partition_id}` dans le chemin entraîne l’utilisation de la stratégie `wildcard` : chaque partition est écrite dans un fichier ou un objet distinct, dont le chemin est obtenu en remplaçant le caractère de substitution par la valeur de `expr` convertie en string. Les pages consacrées à `s3`, `gcs` et `azureBlobStorage` décrivent leurs autres stratégies de partitionnement.
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION file('insert_partitioned_{_partition_id}.csv', 'CSV', 'id UInt32, text String')
+    PARTITION BY id % 2
+    VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd');
+SELECT _file, id, text FROM file('insert_partitioned_*.csv', 'CSV', 'id UInt32, text String') ORDER BY id;
+```
+
+```text title="Response"
+┌─_file────────────────────┬─id─┬─text─┐
+│ insert_partitioned_1.csv │  1 │ a    │
+│ insert_partitioned_0.csv │  2 │ b    │
+│ insert_partitioned_1.csv │  3 │ c    │
+│ insert_partitioned_0.csv │  4 │ d    │
+└──────────────────────────┴────┴──────┘
 ```
 
 ## Insertion dans ClickHouse Cloud {#inserting-into-clickhouse-cloud}

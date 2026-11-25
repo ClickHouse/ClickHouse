@@ -57,6 +57,10 @@ ClickHouse テーブルのカラムのデータ型は、挿入される Avro デ
 
 データのインポート中に、スキーマ内にフィールドが見つからず、かつ設定 [`input_format_avro_allow_missing_fields`](/ja/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) が有効になっている場合は、エラーをスローする代わりにデフォルト値が使用されます。
 
+### 並列解析 {#parallel-parsing}
+
+[`input_format_parallel_parsing`](/ja/reference/settings/formats/input-format#input_format_parallel_parsing) が有効な場合、Avro オブジェクトコンテナファイルはブロック (同期マーカー) の境界で分割され、各ブロックが複数のスレッドでパースされます。ブロック全体がバッファリングされ並行してデコードされるため、ピークメモリ使用量はパースに使用するスレッド数に比例して増加します。順次パースしてメモリ使用量を抑えるには、`input_format_parallel_parsing = 0` を設定してください。なお、[`AvroConfluent`](/ja/reference/formats/Avro/AvroConfluent) はオブジェクトコンテナファイルではないため、この動作は適用されません。
+
 ### Avroデータの書き込み {#writing-avro-data}
 
 ClickHouseのテーブルからAvroファイルにデータを書き込むには、次のようにします。

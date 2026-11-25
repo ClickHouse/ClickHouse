@@ -377,7 +377,7 @@ Os dashboards podem ser marcados como favoritos para facilitar o acesso na barra
 
 ## Filtros personalizados e variáveis {#custom-filters}
 
-Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os dashboards, os dashboards salvos oferecem suporte a filtros personalizados em listas suspensas preenchidas com dados consultados no ClickHouse. Esses filtros fornecem controles reutilizáveis de apontar e clicar, para que quem visualiza o dashboard possa filtrar sem precisar escrever expressões manualmente.
+Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os dashboards, os dashboards salvos oferecem suporte a filtros personalizados e variáveis. Eles fornecem controles reutilizáveis de apontar e clicar, para que quem visualiza o dashboard possa filtrar sem precisar escrever expressões manualmente. Seus valores podem vir de uma coluna consultada em uma fonte de dados, de uma lista escrita manualmente, de uma consulta SQL, de valores de rótulos do Prometheus ou de condições de chave-valor escolhidas livremente. As variáveis também podem determinar qual fonte de dados ou conexão um bloco consulta. Consulte [Tipos de filtro](#filter-types) para ver a lista completa.
 
 <div className="ch-image-lg">
   <Frame>
@@ -390,7 +390,7 @@ Cada filtro permite que quem visualiza escolha um ou mais valores e realiza uma 
 * **Transmissão** — aplica a seleção como uma condição de filtro aos blocos correspondentes. Os blocos não precisam ser atualizados para fazer referência ao filtro.
 * **Variável** — expõe a seleção às consultas dos blocos como `$variableName`, para que cada bloco decida onde e como o valor é usado.
 
-Um filtro deve realizar pelo menos uma das duas ações. A transmissão é ativada por padrão ao criar um filtro.
+Quais dessas ações um filtro oferece depende do seu [tipo](#filter-types). Um filtro **Valores de expressão SQL** deve realizar pelo menos uma das duas ações e faz transmissão por padrão.
 
 As etapas a seguir mostram como adicionar um filtro ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
 
@@ -406,7 +406,7 @@ As etapas a seguir mostram como adicionar um filtro ao dashboard criado na seç�
   </Step>
 
   <Step title="Adicione um novo filtro" id="add-new-filter">
-    Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome de exibição**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
+    Clique em **Adicionar novo filtro**. Escolha um **Tipo** — este exemplo usa o padrão, **Valores de expressão SQL** — e configure o filtro fornecendo um **Nome de exibição**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
 
     Por exemplo, para adicionar um filtro de serviço a dados de traces, use `ServiceName` como expressão de filtro com a fonte de dados `Traces`. O &quot;Filtro de valores da lista suspensa&quot; é opcional e permite restringir quais valores aparecem na lista suspensa.
 
@@ -452,11 +452,132 @@ As etapas a seguir mostram como adicionar um filtro ao dashboard criado na seç�
   Filtros personalizados em listas suspensas estão disponíveis em dashboards salvos. Para ver esse padrão em ação, consulte o [dashboard do Kubernetes](#kubernetes-dashboard), que fornece filtros suspensos integrados para pod do Kubernetes, Implantação, nome do nó, Espaço de nomes e Cluster.
 </Note>
 
+### Tipos de filtro {#filter-types}
+
+O seletor **Type** na caixa de diálogo do filtro define de onde vêm os valores de um filtro e como eles chegam aos blocos.
+
+| Tipo                                                       | Origem dos valores                                                                                          | Difusão                         | Variável                                                                      |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------- |
+| [Valores de expressão SQL](#sql-expression-values-filters) | Os valores distintos de uma expressão, consultados em uma fonte de dados                                    | Opcional, habilitada por padrão | Opcional                                                                      |
+| [Valores estáticos](#static-values-filters)                | Uma lista definida manualmente                                                                              | Não                             | Sempre                                                                        |
+| [Valores de consulta SQL](#sql-query-filters)              | A primeira coluna de uma consulta SQL                                                                       | Não                             | Sempre                                                                        |
+| [Valores de rótulo PromQL](#promql-label-filters)          | Os valores de um rótulo do Prometheus                                                                       | Não                             | Sempre                                                                        |
+| [Chaves e valores ad hoc](#adhoc-filters)                  | Condições `key operator value` construídas a partir das chaves e dos valores de uma ou mais fontes de dados | Sempre                          | Não                                                                           |
+| [Fonte de dados](#data-source-variables)                   | As fontes de dados da equipe                                                                                | Não                             | Sempre, como uma [referência de fonte de dados](#source-connection-variables) |
+| [Conexão](#connection-variables)                           | As conexões do ClickHouse da equipe                                                                         | Não                             | Sempre, como uma [referência de conexão](#source-connection-variables)        |
+
+#### Valores de expressão SQL {#sql-expression-values-filters}
+
+A lista suspensa exibe os valores distintos da **Expressão de filtro** na **Fonte de dados** selecionada, podendo ser restrita por um **Filtro de valores da lista suspensa**. Para fontes de dados de métricas, escolha também um **Tipo de métrica**. Um filtro de valores de expressão SQL pode [difundir](#broadcast-filters) sua seleção, ser [disponibilizado como variável](#dashboard-variables) ou ambos.
+
+#### Valores estáticos {#static-values-filters}
+
+A lista suspensa desse filtro oferece uma lista de valores definida manualmente. Digite cada valor em **Options** e pressione Enter. Um filtro pode conter até 1000 opções.
+
+Um filtro de valores estáticos é sempre uma variável e nunca faz difusão; por isso, os blocos o utilizam referenciando sua variável, por exemplo, `$__filter(SeverityText, $severity)`. Isso é útil para valores que não estão armazenados em uma coluna ou para uma lista fixa e criteriosamente selecionada.
+
+#### Valores de consulta SQL {#sql-query-filters}
+
+A lista suspensa exibe a primeira coluna retornada por uma consulta SQL do ClickHouse, na ordem em que a consulta retorna as linhas, com até 10,000 valores. Configure:
+
+* **Conexão** — a conexão com o ClickHouse em que a consulta é executada ou uma [variável de conexão](#connection-variables).
+* **Fonte de dados** — opcional. Uma fonte de dados na mesma conexão ou uma [variável de fonte de dados](#data-source-variables). Com uma fonte de dados selecionada, a consulta pode usar `$__sourceTable` e `$__filters`, que aplica as seleções dos filtros de difusão do dashboard para essa fonte de dados, da mesma forma que os [blocos de SQL bruto](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro).
+* **Consulta SQL** — a consulta em si. Ela pode usar as [macros de tempo](/pt-BR/clickstack/features/dashboards/sql-visualizations#time-filter-macros) e referenciar as demais variáveis do dashboard. O editor exibe uma prévia dos valores que a consulta retorna para o intervalo de tempo atual do dashboard.
+
+Por exemplo, a consulta a seguir lista os serviços que registraram eventos no intervalo de tempo do dashboard, limitados aos ambientes selecionados em um filtro `environment`:
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+Um filtro de valores de consulta SQL é sempre uma variável e nunca faz difusão.
+
+#### Valores de rótulo PromQL {#promql-label-filters}
+
+<Note>
+  O suporte a PromQL está em prévia. Em implantações Open Source, habilite-o definindo `ENABLE_PROMQL=true` para a API e `NEXT_PUBLIC_ENABLE_PROMQL=true` para o app (consulte [funcionalidades opcionais](/pt-BR/clickstack/managing/config#optional-features-and-deployment-modes)) e habilite o schema PromQL no coletor (consulte [métricas compatíveis com Prometheus](/pt-BR/clickstack/managing/config#collector-prometheus-metrics)). Consulte [configurações da fonte PromQL](/pt-BR/clickstack/managing/config#promql-source-settings) para criar uma fonte de dados PromQL.
+</Note>
+
+A lista suspensa desse filtro exibe os valores de um rótulo do Prometheus. Selecione uma **Fonte de dados** PromQL e informe o **Rótulo** cujos valores preenchem a lista suspensa, como `job`, `instance` ou `__name__`. Opcionalmente, informe **Series matchers**: um seletor de séries do Prometheus, como `up{job="api"}`, que restringe as séries das quais os valores são lidos. Os series matchers podem referenciar as demais variáveis do dashboard.
+
+Um filtro de valores de rótulo PromQL é sempre uma variável e nunca faz difusão. Em blocos PromQL, referencie-o dentro de um matcher de rótulo, por exemplo, `rate(http_requests_total{job=~"$job"}[$__rate_interval])`. Consulte [Referenciando uma variável](#referencing-variables) para saber como os valores são renderizados.
+
+#### Chaves e valores ad hoc {#adhoc-filters}
+
+Em vez de oferecer uma única lista suspensa, um filtro ad hoc permite que o visualizador monte uma lista de condições `key operator value` com base nas chaves das suas fontes de dados: colunas e chaves de map para fontes de dados SQL, ou labels para fontes de dados Prometheus. Chaves e valores são sugeridos conforme o visualizador digita. Configure:
+
+* **Tipo de origem** — SQL (fontes de dados de log, trace ou sessão) ou Prometheus.
+* **Fontes de dados** — as fontes de dados cujas chaves e valores o filtro sugere.
+* **Filtro de chaves e valores** — opcional, somente para fontes de dados SQL. Uma condição SQL ou Lucene que restringe as linhas usadas para sugerir chaves e valores. Pode referenciar as outras variáveis do dashboard.
+* **Aplica-se às fontes de dados** — as fontes de dados para as quais as condições são difundidas. Deixe em branco para difundi-las a todos os blocos que usam alguma das fontes de dados do filtro.
+* **Nome único** — identifica as condições do filtro na [URL do dashboard](/pt-BR/clickstack/url-parameters#dashboard-filter-values).
+
+Condições em fontes de dados SQL aceitam os seguintes operadores: `=`, `!=`, `=~` (expressão regular), `!~` (expressão regular), `LIKE`, `NOT LIKE`, `IN`. Condições em fontes de dados Prometheus aceitam `=`, `!=`, `=~` (expressão regular), `!~` (expressão regular) e `IN` — `LIKE` e `NOT LIKE` são exclusivos de SQL.
+
+Os visualizadores também podem adicionar uma condição clicando em um valor em um bloco de tabela, série temporal ou busca no dashboard.
+
+Condições ad hoc são sempre difundidas e não podem ser referenciadas como variáveis. Blocos do criador de gráficos e blocos PromQL nas fontes de dados correspondentes as aplicam automaticamente, e blocos de SQL bruto as aplicam por meio da [macro `$__filters`](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro).
+
+#### Fonte de dados {#data-source-variables}
+
+Uma variável de fonte de dados permite que quem visualiza o painel escolha qual fonte de dados um bloco consulta. Selecione os **Source kinds** disponíveis na lista suspensa (por exemplo, apenas fontes de dados de log) e, opcionalmente, restrinja-os a uma única **Connection**, que também pode ser uma variável de conexão. Consulte [Variáveis de fonte de dados e de conexão](#source-connection-variables) para saber como blocos e filtros a utilizam.
+
+#### Conexão {#connection-variables}
+
+Uma variável de conexão permite que o visualizador escolha qual conexão com o ClickHouse será usada pelos blocos de SQL bruto, pelos filtros de valores de consulta SQL e pelas variáveis de fonte de dados. Ela não tem outras configurações além do nome.
+
+### Variáveis de fonte de dados e de conexão {#source-connection-variables}
+
+As variáveis de fonte de dados e de conexão substituem uma fonte de dados ou um ID da conexão, e não um valor no texto da consulta. Sempre que um seletor de fonte de dados ou de conexão as aceita, as variáveis do dashboard aparecem em um grupo **Variables**. Ao escolher uma delas, é armazenada uma referência `$name` que é resolvida para a seleção atual do visualizador. Com isso, é possível criar um único dashboard que alterna, por exemplo, entre os logs de vários ambientes ou entre vários clusters ClickHouse.
+
+| Usado em                            | Aceita uma variável de fonte de dados | Aceita uma variável de conexão |
+| ----------------------------------- | ------------------------------------- | ------------------------------ |
+| Blocos do criador de gráficos       | Source                                | —                              |
+| Blocos de SQL bruto                 | Source                                | Connection                     |
+| Blocos PromQL                       | Source                                | —                              |
+| Filtros de valores de expressão SQL | Data source, Applies to sources       | —                              |
+| Filtros de valores de rótulo PromQL | Data source                           | —                              |
+| Filtros ad hoc                      | Data sources, Applies to sources      | —                              |
+| Filtros de valores de consulta SQL  | Source                                | Connection                     |
+| Variáveis de fonte de dados         | —                                     | Connection                     |
+
+Uma variável de fonte de dados só é oferecida onde pelo menos um dos seus tipos de fonte de dados for compatível. Por exemplo, um bloco PromQL só oferece variáveis de fonte de dados que permitem fontes de dados PromQL.
+
+As variáveis de fonte de dados e de conexão são sempre de seleção única e obrigatórias, já que um bloco não consegue executar consultas sem uma fonte de dados ou conexão. Enquanto nenhum valor for selecionado, os blocos e filtros que referenciam a variável ficam aguardando. Para bloquear o dashboard inteiro, habilite **Block every tile**. Um [link de dashboard](/pt-BR/clickstack/url-parameters#dashboard-filter-values) pode selecionar uma fonte de dados ou conexão tanto pelo nome quanto pelo ID.
+
+<Note>
+  Alertas não estão disponíveis em blocos que usam uma variável de fonte de dados ou de conexão. Ao salvar um bloco desse tipo, o alerta dele é removido.
+</Note>
+
+### Opções de seleção {#filter-selection-options}
+
+Os filtros de valores de expressão SQL, valores estáticos, valores de consulta SQL e valores de rótulo PromQL têm estas opções adicionais:
+
+* **Seleção única** — apenas um valor pode ser selecionado por vez.
+* **Obrigatório** — os blocos que usam o filtro, seja por meio de sua variável ou por difusão, só são carregados quando o filtro tiver uma seleção.
+  * **Bloquear todos os blocos** — bloqueia todos os blocos do dashboard até que o filtro tenha uma seleção, e não apenas os blocos que o utilizam.
+
+### Filtros encadeados {#chained-filters}
+
+A configuração de um filtro pode referenciar as outras variáveis do dashboard, de modo que seus valores dependam da seleção de outro filtro. Por exemplo, um filtro de serviços pode listar apenas os serviços do ambiente selecionado por um filtro `environment`. As variáveis podem ser referenciadas:
+
+* No **Filtro de valores da lista suspensa** de um filtro de valores por expressão SQL, por exemplo `$__filter(ResourceAttributes['deployment.environment'], $environment)`.
+* Na **Consulta SQL** de um filtro de valores por consulta SQL.
+* Nos **Matchers de séries** de um filtro de valores de rótulo PromQL, por exemplo `up{env="$env"}`.
+* No **Filtro de chaves e valores** de um filtro ad hoc.
+* Nos campos de fonte de dados e de conexão, por meio de [variáveis de fonte de dados e de conexão](#source-connection-variables).
+
+Quando a seleção do filtro referenciado muda, os valores do filtro dependente são consultados novamente. Enquanto um filtro obrigatório referenciado não tiver nenhuma seleção, um filtro ad hoc que dependa dele não poderá adicionar nem editar condições e exibirá o nome do filtro que está aguardando.
+
 <div id="broadcast-filters">
   ### Transmissão {#broadcast-filters}
 </div>
 
-Com a **Condição de filtro de transmissão** ativada, os valores selecionados são aplicados como condição de filtro aos blocos do dashboard, sem que nenhum deles faça referência explícita ao filtro. Por padrão, a condição é aplicada a todos os blocos. Use **Aplica-se às fontes** para restringi-la aos blocos que usam um determinado conjunto de fontes — útil quando a expressão do filtro só faz sentido para parte dos dados do dashboard.
+Filtros de valores de expressão SQL podem transmitir sua seleção, e filtros ad hoc sempre transmitem suas condições. Com a **Condição de filtro de transmissão** ativada em um filtro de valores de expressão SQL, os valores selecionados são aplicados como condição de filtro aos blocos do dashboard, sem que nenhum deles faça referência explícita ao filtro. Por padrão, a condição é aplicada a todos os blocos. Use **Aplica-se às fontes** para restringi-la aos blocos que usam um determinado conjunto de fontes — útil quando a expressão do filtro só faz sentido para parte dos dados do dashboard.
 
 Os blocos do construtor de gráficos adotam filtros de transmissão automaticamente. Os blocos de Raw SQL devem incluir a [macro `$__filters`](/pt-BR/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) e ter uma fonte selecionada, pois o ClickStack não consegue inferir onde a condição deve ser inserida em uma consulta escrita manualmente.
 
@@ -464,7 +585,9 @@ Os blocos do construtor de gráficos adotam filtros de transmissão automaticame
   ### Variáveis {#dashboard-variables}
 </div>
 
-Com **Disponível como variável** habilitado, a seleção do filtro também fica disponível para consultas de blocos como `$variableName`. Por padrão, o **Nome da variável** é o nome de exibição do filtro, com caracteres inválidos removidos, mas pode ser substituído. Os nomes devem começar com uma letra e podem conter apenas letras, dígitos e sublinhados.
+Filtros de valores estáticos, de valores de consulta SQL e de valores de rótulo PromQL são sempre variáveis. Um filtro de valores de expressão SQL se torna uma variável quando a opção **Disponível como variável** está habilitada. Uma variável disponibiliza a seleção do filtro para consultas de blocos como `$variableName`. Por padrão, o **Nome da variável** é o nome de exibição do filtro, com caracteres inválidos removidos, mas pode ser substituído. Os nomes devem começar com uma letra e podem conter apenas letras, dígitos e sublinhados.
+
+Filtros ad hoc nunca são variáveis, e variáveis de fonte de dados e de conexão são [referências a uma fonte de dados ou conexão](#source-connection-variables), e não valores no texto da consulta.
 
 Use uma variável quando não quiser propagar uma condição `WHERE` — por exemplo, para inserir o valor em uma expressão `SELECT`, uma cláusula `HAVING` ou uma chave de junção, ou para filtrar um bloco com base em uma coluna diferente da expressão do próprio filtro.
 
@@ -474,13 +597,14 @@ Use uma variável quando não quiser propagar uma condição `WHERE` — por exe
 
 Uma variável é expandida para os valores atualmente selecionados no respectivo menu suspenso. A forma de referência controla a renderização:
 
-| Referência          | Expande para                                                                                                                                                                             | Seleção vazia |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `$name`, `${name}`  | Os valores selecionados, no formato `sqlstring` ou `lucene`, dependendo do contexto. As chaves delimitam o nome quando ele é seguido por caracteres de palavra, como em `${name}_total`. | `NULL`        |
-| `${name:sqlstring}` | Os valores selecionados, entre aspas simples, separados por vírgulas e com escape como valores SQL, por exemplo, `'a', 'b'`                                                              | `NULL`        |
-| `${name:csv}`       | Sem aspas e separados por vírgulas: `a,b`. Sem escape para SQL.                                                                                                                          | string vazia  |
-| `${name:regex}`     | Uma alternância de regex, com escape para regex: `(a\|b)`.                                                                                                                               | `.*`          |
-| `${name:lucene}`    | Um `OR` de termos entre aspas, para entradas do Lucene: `("a" OR "b")`.                                                                                                                  | `("")`        |
+| Referência          | Expande para                                                                                                                                                                             | Seleção vazia                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `$name`, `${name}`  | Os valores selecionados, no formato `sqlstring` ou `lucene`, dependendo do contexto. As chaves delimitam o nome quando ele é seguido por caracteres de palavra, como em `${name}_total`. | `NULL`                               |
+| `${name:sqlstring}` | Os valores selecionados, entre aspas simples, separados por vírgulas e com escape como valores SQL, por exemplo, `'a', 'b'`                                                              | `NULL`                               |
+| `${name:csv}`       | Sem aspas e separados por vírgulas: `a,b`. Sem escape para SQL.                                                                                                                          | string vazia                         |
+| `${name:regex}`     | Uma alternância de regex, com escape para regex: `(a\|b)`.                                                                                                                               | `.*`                                 |
+| `${name:lucene}`    | Um `OR` de termos entre aspas, para entradas do Lucene: `("a" OR "b")`.                                                                                                                  | `("")`                               |
+| `${name:promql}`    | O padrão em blocos PromQL. Para um filtro de seleção única, o valor selecionado, para uso em `label="$name"`. Caso contrário, uma alternância de regex, para uso em `label=~"$name"`.    | `.*` (string vazia em seleção única) |
 
 Como `$name` é renderizado como `NULL` antes de qualquer seleção, prefira as seguintes macros sempre que for esperado um predicado SQL. Ambas as macros são expandidas para `1=1` enquanto a variável não tiver nenhuma seleção, para que a consulta permaneça válida:
 

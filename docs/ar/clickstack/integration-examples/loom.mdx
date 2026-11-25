@@ -1,0 +1,48 @@
+---
+title: 'إرسال بيانات القياس عن بُعد من Loom إلى ClickStack'
+sidebarTitle: 'Loom'
+slug: /use-cases/observability/clickstack/integrations/loom
+description: 'أرسل بيانات تتبّع الطلبات ومقاييسها من Loom إلى ClickStack Open Source عبر OpenTelemetry.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Loom', 'OpenTelemetry', 'OTLP']
+---
+
+استخدم ClickStack لفحص بيانات تتبّع الطلبات ومقاييسها الواردة من [Loom](https://github.com/ClickHouse/loom)، وهو خادم للذاكرة والبحث في الشيفرة مخصّص لوكلاء الذكاء الاصطناعي.
+
+## قبل أن تبدأ {#before-you-begin}
+
+* خادم Loom قيد التشغيل.
+* [نشر لـ ClickStack Open Source](/ar/clickstack/deployment/oss) يتضمن مستقبِل OTLP عبر HTTP يمكن الوصول إليه من خادم Loom.
+
+## آلية العمل {#how-it-works}
+
+يُصدِّر Loom بيانات القياس عن بُعد إلى مُجمِّع OpenTelemetry الخاص بـ ClickStack عبر OTLP HTTP، ثم يكتب جامع البيانات هذه البيانات في ClickHouse، لتصبح متاحة في ClickStack.
+
+## تهيئة مُصدِّر Loom {#configure-loom-exporter}
+
+يمكنك العثور على API key لاستيعاب البيانات الخاص بـ ClickStack ضمن **إعدادات الفريق → مفاتيح API**. اضبط متغيرات البيئة التالية على خادم Loom، واستبدل الـ URL والمفتاح الواردين في المثال بالقيم الخاصة بك، ثم أعد تشغيل Loom:
+
+```bash
+export LOOM_OTEL_EXPORTER=otlp
+export LOOM_OTEL_EXPORTER_OTLP_ENDPOINT='http://clickstack-collector:4318'
+export LOOM_OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+استخدم عنوان URL الأساسي لجامع البيانات الذي يمكن الوصول إليه من Loom، إذ يُلحق Loom به المسارين `/v1/traces` و`/v1/metrics`. وإذا كان Loom يرسل البيانات إلى جامع بيانات وسيط، فاستخدم الترويسات التي يتوقعها ذلك المستقبِل على هيئة أزواج `key=value` مفصولة بفواصل. واحذف إعداد الترويسات إذا لم يكن المستقبِل يتطلب أي ترويسات.
+
+## التحقق من بيانات القياس عن بُعد في ClickStack {#verify-telemetry}
+
+تحقّق من إعدادات المُصدِّر النهائية في Loom. استبدل عنوان URL الخاص بـ Loom في المثال إذا كان الخادم يعمل على مضيف أو منفذ مختلف.
+
+```bash
+curl -sS 'http://localhost:7777/v1/health?include=otel'
+```
+
+تحقّق من أن قيمة `otel.mode` هي `otlp` وأن قيمة `otel.endpoint` هي عنوان URL لجامع البيانات الذي تمت تهيئته.
+
+أرسل طلبًا إلى Loom، كالبحث في الذاكرة مثلًا، لإنشاء تتبّع. في ClickStack، افتح صفحة **بحث**، واختر المصدر **Traces**، ثم صفِّ النتائج حسب اسم الخدمة `loom` (`service.name` في OpenTelemetry). وإذا كان `LOOM_OTEL_SERVICE_NAME` مُعيَّنًا، فصفِّ النتائج حسب قيمته.
+
+## الخطوات التالية {#next-steps}
+
+* [إرسال بيانات OpenTelemetry إلى ClickStack](/ar/clickstack/ingesting-data/opentelemetry)
+* [إعدادات بيانات القياس عن بُعد ومقاييسها في Loom](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/observability/telemetry.md)

@@ -76,14 +76,31 @@ URL 쿼리 매개변수를 사용한 딥 링크로 ClickHouse Observability 페�
 
 저장된 대시보드입니다. `<dashboardId>`를 생략하면(`/dashboards`) 저장되지 않은 임시 대시보드가 열립니다. 대시보드 구성에 대한 자세한 내용은 [대시보드](/ko/clickstack/observability/features/dashboards/overview)를 참조하십시오.
 
-| 매개변수                | 포맷                                                                                                                                  | 설명                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `from`, `to`        | 에포크 기준 밀리초                                                                                                                          | 모든 타일에 적용되는 시간 범위입니다. 생략하면 기본값으로 최근 15분이 적용됩니다.                  |
-| `where`             | 문자열                                                                                                                                 | 모든 타일에 공통으로 적용되는 대시보드 수준의 필터 쿼리 텍스트(query text)입니다.              |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`를 작성하는 데 사용한 쿼리 언어(query language)입니다.                    |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 구조화된 대시보드 필터 값입니다. 이 예시는 `ServiceName` 필터 드롭다운에서 두 개의 항목을 선택합니다. |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 시계열 타일의 버킷 크기입니다. `auto`는 선택한 시간 범위에 맞춰 버킷 크기를 자동으로 결정합니다.       |
-| `highlightedTileId` | 문자열                                                                                                                                 | 특정 타일로 스크롤한 뒤 해당 타일을 강조 표시합니다. 알림에서 링크로 연결할 때 유용합니다.             |
+| 매개변수                | 포맷                                                                                                                                  | 설명                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | 에포크 기준 밀리초                                                                                                                          | 모든 타일에 적용되는 시간 범위입니다. 생략하면 기본값으로 최근 15분이 적용됩니다.                                                                                                             |
+| `where`             | 문자열                                                                                                                                 | 모든 타일에 공통으로 적용되는 대시보드 수준의 필터 쿼리 텍스트(query text)입니다.                                                                                                         |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`를 작성하는 데 사용한 쿼리 언어(query language)입니다.                                                                                                               |
+| `filters`           | 필터 값 엔트리의 JSON 배열                                                                                                                   | 대시보드의 [사용자 지정 필터 및 변수](/ko/clickstack/observability/features/dashboards/overview#custom-filters)에서 선택한 값입니다. 자세한 내용은 [필터 값](#dashboard-filter-values)을 참조하십시오. |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 시계열 타일의 버킷 크기입니다. `auto`는 선택한 시간 범위에 맞춰 버킷 크기를 자동으로 결정합니다.                                                                                                  |
+| `highlightedTileId` | 문자열                                                                                                                                 | 특정 타일로 스크롤한 뒤 해당 타일을 강조 표시합니다. 알림에서 링크로 연결할 때 유용합니다.                                                                                                        |
+
+### 필터 값 {#dashboard-filter-values}
+
+`filters` 매개변수는 JSON 배열입니다. 각 엔트리는 필터 하나의 선택값을 설정하며, 다음 형식 중 하나로 작성합니다.
+
+| 엔트리                                                                                                               | 용도                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | 변수로 동작하는 필터: 정적 값, SQL 쿼리(SQL query) 값, PromQL 레이블 값, 데이터 소스 및 연결 변수, 그리고 **Available as variable**이 활성화된 SQL 표현식(SQL expression) 값 필터. `name`은 필터의 변수 이름입니다.                                                                                        |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [애드혹 필터](/ko/clickstack/observability/features/dashboards/overview#adhoc-filters). `name`은 필터의 고유 이름이며, `operator`는 `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE`, `IN` 중 하나입니다. `LIKE`와 `NOT LIKE`는 SQL 소스에만 적용되며, Prometheus 애드혹 필터에서는 이를 사용하는 조건이 무시됩니다. |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | 변수가 아닌 SQL 표현식(SQL expression) 값 필터. 조건의 표현식은 필터의 **Filter expression**과 일치해야 합니다.                                                                                                                                                                   |
+
+다음 규칙이 적용됩니다.
+
+* 같은 필터를 대상으로 하는 변수 엔트리와 `sql` 엔트리가 모두 있으면 변수 엔트리가 우선합니다. 변수 기능이 도입되기 전에 만들어져 모든 필터에 `sql` 엔트리를 사용하는 링크도 계속 작동합니다.
+* 데이터 소스 및 연결 변수에서는 ID 대신 소스 또는 연결의 **이름**을 값으로 사용할 수 있습니다. 이름은 먼저 정확히 일치하는 항목을 찾고, 없으면 대소문자를 구분하지 않고 비교합니다. 따라서 동일한 소스의 ID가 환경마다 다르더라도 링크를 그대로 사용할 수 있습니다.
+* 단일 선택 필터는 첫 번째 값만 사용합니다.
+* 대시보드의 어떤 필터와도 일치하지 않거나 형식이 잘못된 엔트리는 무시됩니다.
 
 ### 예시: 특정 타일을 강조 표시한 상태로 특정 시간 범위의 대시보드 열기 {#example-dashboard-highlight}
 
@@ -91,6 +108,30 @@ URL 쿼리 매개변수를 사용한 딥 링크로 ClickHouse Observability 페�
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### 예시: 변수로 지정된 필터에서 값 선택하기 {#example-dashboard-variables}
+
+변수 이름이 `service`인 필터에서 `checkout`과 `payments`를 선택하고, 변수 이름이 `severity`인 필터에서 `ERROR`를 선택합니다.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### 예시: 이름으로 데이터 소스와 연결 선택 {#example-dashboard-source-variable}
+
+`logs`라는 데이터 소스 변수에서 `Production Logs` 소스를 선택하고, `cluster`라는 연결 변수에서 `Production` 연결을 선택합니다.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### 예시: 애드혹 필터 조건(Filter Conditions) 추가 {#example-dashboard-adhoc}
+
+고유 이름이 `adhoc`인 애드혹 필터(filter)에 2개의 조건을 추가합니다. 추가되는 조건은 `ServiceName`이 `checkout` 또는 `payments`이고 `SeverityText`가 `DEBUG`가 아닌 것입니다.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## 대시보드 목록 — `/dashboards/list` {#dashboards-list}

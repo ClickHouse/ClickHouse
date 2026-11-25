@@ -53,12 +53,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 استخدم قائمة انتظار الفرز الدفعي لتقليل الحمل الزائد لقائمة الانتظار لكل صف عند دمج التدفقات المرتبة.
 
-ينطبق فقط على عمليات الدمج التي لا تغيّر الصفوف، أي عمليات دمج `MergeTree`
-البسيطة (وضع الدمج `Ordinary`). ولا يؤثر في المحركات التي تتضمن دلالات
-أثناء الدمج، مثل `ReplacingMergeTree` و`CollapsingMergeTree` و
-`SummingMergeTree` و`AggregatingMergeTree` و`CoalescingMergeTree` و
-`GraphiteMergeTree` و`VersionedCollapsingMergeTree`، إذ تواصل استخدام
-قائمة الانتظار الافتراضية بغض النظر عن هذا الإعداد.
+ينطبق فقط على عمليات الدمج في وضع الدمج `Ordinary`: أي عمليات دمج أجزاء بيانات `MergeTree` البسيطة، بما في ذلك
+عمليات الدمج التي تحذف الصفوف أو تعيد كتابتها (عمليات الحذف الخفيفة، وعمليات حذف TTL، وأجزاء التصحيح الخاصة بالتحديثات
+الخفيفة، و`OPTIMIZE ... DEDUPLICATE`)، وعمليات دمج أجزاء الإسقاط العادي. أما خوارزميات الدمج
+الخاصة بالمحركات التي تتضمن دلالات أثناء الدمج، مثل `ReplacingMergeTree` و`CollapsingMergeTree` و
+`SummingMergeTree` و`AggregatingMergeTree` و`CoalescingMergeTree` و`GraphiteMergeTree` و
+`VersionedCollapsingMergeTree`، وكذلك خوارزميات دمج أجزاء الإسقاط التجميعي، فتختار كلٌّ منها قائمة انتظار الفرز الخاصة بها، ولذلك
+لا يؤثر هذا الإعداد فيها.
 
 ## merge_workload {#merge_workload}
 

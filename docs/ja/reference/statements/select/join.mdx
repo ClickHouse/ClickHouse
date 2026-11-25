@@ -184,9 +184,9 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 `ON` 部分には、等価条件に加えて、異なるテーブルのカラムを他の演算子で比較する条件を含めることができます。このような条件は、`ALL`、`ANY`、`SEMI`、`ANTI` の strictness において、その strictness が許可するすべての結合の種類でサポートされています。`ASOF` strictness ではサポートされていません。
 
-`ON` 部分に不等式に加えて 2 つのテーブル間の等価条件が含まれている場合、その等価条件が結合キーとなり、不等式はそれによってマッチした行に対して評価されます。このような混在した条件は、[`hash`](/ja/concepts/features/operations/select/join-algorithms#hash)、[`parallel_hash`](/ja/concepts/features/operations/select/join-algorithms#parallel-hash)、および [`grace_hash`](/ja/concepts/features/operations/select/join-algorithms#grace-hash) アルゴリズムによって実行されます。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) で [`ie_join`](/ja/concepts/features/operations/select/join-algorithms#ie-join) がこれらのアルゴリズムより前に指定されており、かつ `ON` 部分に 2 つの不等号条件が含まれている場合は、代わりに `ie_join` が JOIN を実行し、等価条件をフィルタとして適用します。
+`ON` 部分に不等式に加えて 2 つのテーブル間の等価条件が含まれている場合、その等価条件が結合キーとなり、不等式はそれによってマッチした行に対して評価されます。このような混在した条件は、[`hash`](/ja/concepts/features/operations/select/join-algorithms#hash)、[`parallel_hash`](/ja/concepts/features/operations/select/join-algorithms#parallel-hash)、および [`grace_hash`](/ja/concepts/features/operations/select/join-algorithms#grace-hash) アルゴリズムによって実行されます。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) で [`inequality`](/ja/concepts/features/operations/select/join-algorithms#inequality) がこれらのアルゴリズムより前に指定されており、かつ `ON` 部分に 2 つの不等号条件が含まれている場合は、代わりに `inequality` が JOIN を実行し、等価条件をフィルタとして適用します。
 
-`ON` 部分に 2 つのテーブル間の等価条件が含まれていない場合、マッチに使用する結合キーは存在しません。このような JOIN は、条件が不等式のペアである場合は [`ie_join`](/ja/concepts/features/operations/select/join-algorithms#ie-join) によって実行され、それ以外の場合は [block nested loop join](#join-with-an-arbitrary-on-condition) として実行されます。
+`ON` 部分に 2 つのテーブル間の等価条件が含まれていない場合、マッチに使用する結合キーは存在しません。このような JOIN は、条件が不等式のペアである場合は [`inequality`](/ja/concepts/features/operations/select/join-algorithms#inequality) によって実行され、それ以外の場合は [block nested loop join](#join-with-an-arbitrary-on-condition) として実行されます。
 
 JOIN 中に評価される条件には `arrayJoin` を含めることはできません。このような条件では行数を維持する必要があるためです。代わりにサブクエリ内で `ARRAY JOIN` を使用してください。
 
@@ -238,9 +238,9 @@ key4    f    2    3    4            0    0    \N
 
 ## 任意の ON 条件による JOIN {#join-with-an-arbitrary-on-condition}
 
-`ON` 部分には、範囲チェック、算術比較、スカラー関数の呼び出しなど、両方のテーブルのカラムを対象とした任意のブール式を指定できます。2 つのテーブル間の等値比較が含まれていない場合、行の照合に使う 結合キーは存在しません。不等号条件の組は、[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) に `ie_join` が含まれていれば、先頭に指定されていなくても `ie_join` によって実行されます。このような条件を実行できる `join_algorithm` の値は、ほかに存在しないためです。バージョン 26.8 以降、`join_algorithm` のデフォルト値には `ie_join` が含まれています。それ以外の条件は [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) として実行されます。この場合、右テーブルがマテリアライズされ、すべての行の組に対して条件が評価されます。`ALL INNER JOIN` は、条件をフィルタとする `CROSS JOIN` と同等の形式になります。
+`ON` 部分には、範囲チェック、算術比較、スカラー関数の呼び出しなど、両方のテーブルのカラムを対象とした任意のブール式を指定できます。2 つのテーブル間の等値比較が含まれていない場合、行の照合に使う 結合キーは存在しません。不等号条件の組は、[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) に `inequality` が含まれていれば、先頭に指定されていなくても `inequality` によって実行されます。このような条件を実行できる `join_algorithm` の値は、ほかに存在しないためです。バージョン 26.8 以降、`join_algorithm` のデフォルト値には `inequality` が含まれています。それ以外の条件は [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) として実行されます。この場合、右テーブルがマテリアライズされ、すべての行の組に対して条件が評価されます。`ALL INNER JOIN` は、条件をフィルタとする `CROSS JOIN` と同等の形式になります。
 
-block nested loop join は、`ASOF JOIN`、`PASTE JOIN`、`ANY FULL JOIN` を除くすべての JOIN 種別とstrictnessをサポートします。これは `join_algorithm` に指定できる値ではなく、他のどのアルゴリズムでも条件を実行できない場合にのみ使われる最後の手段です。`EXPLAIN` の出力では `BlockNestedLoopJoin` ステップとして表示されます。[`allow_block_nested_loop_join`](/ja/reference/settings/session-settings/allow#allow_block_nested_loop_join) が無効の場合、これを必要とするクエリは `INVALID_JOIN_ON_EXPRESSION` エラーで拒否されます。
+block nested loop join は、`ASOF JOIN`、`PASTE JOIN`、`ANY FULL JOIN` を除くすべての 結合の種類とstrictnessをサポートします。これは `join_algorithm` に指定できる値ではなく、他のどのアルゴリズムでも条件を実行できない場合にのみ使われる最後の手段です。`EXPLAIN` の出力では `BlockNestedLoopJoin` ステップとして表示されます。[`allow_block_nested_loop_join`](/ja/reference/settings/session-settings/allow#allow_block_nested_loop_join) が無効の場合、これを必要とするクエリは `INVALID_JOIN_ON_EXPRESSION` エラーで拒否されます。
 
 **例**
 
@@ -339,12 +339,12 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 
 ## 暗黙的な型変換 {#implicit-type-conversion}
 
-左テーブルと右テーブルの 結合キーの型が異なる場合、ClickHouse は比較を行う前に、それらを最小共通スーパータイプに変換します。これはすべての JOIN の種類および strictness に適用されます:
+左テーブルと右テーブルの 結合キーの型が異なる場合、ClickHouse は比較を行う前に、それらを最小共通スーパータイプに変換します。これはすべての 結合の種類および strictness に適用されます:
 
 * `ON` を使用する場合、変換は比較にのみ適用されます。結果では、キーカラムは元の型を保持します。
 * `USING` を使用する場合、結果では、マージ済みカラムは共通の型になります。`semi_join_include_columns_from_both_sides` または `anti_join_include_columns_from_both_sides` が無効化されている場合、`SEMI JOIN` または `ANTI JOIN` のマージ済みカラムは、保持される側のテーブルの型を維持します。
 
-キーの型に共通のスーパータイプが存在せず、`UInt64` と `Int64` のように両方が整数型または整数型のタプルである場合、ClickHouse は両方のキーを、両方のキーの型に共通する値を保持できる型に変換します。`UInt64` と `Int64` の場合、この型は `UInt64` です。この型で表現できないキーの値は、どの値とも一致しません。この変換は、`ON` 内の等価条件 (`isNotDistinctFrom` を除く) と、`INNER JOIN` または `SEMI JOIN` における `USING` に使用されます。`ASOF JOIN` の最近傍一致条件、`ie_join` が実行する不等号条件、およびその他の JOIN における `USING` には使用されません。これらの場合、結果カラムには一致しなかった値も保持する必要があるためです。この変換はバージョン 26.9 以降で利用できます。
+キーの型に共通のスーパータイプが存在せず、`UInt64` と `Int64` のように両方が整数型または整数型のタプルである場合、ClickHouse は両方のキーを、両方のキーの型に共通する値を保持できる型に変換します。`UInt64` と `Int64` の場合、この型は `UInt64` です。この型で表現できないキーの値は、どの値とも一致しません。この変換は、`ON` 内の等価条件 (`isNotDistinctFrom` を除く) と、`INNER JOIN` または `SEMI JOIN` における `USING` に使用されます。`ASOF JOIN` の最も近い一致条件、`inequality` が実行する不等号条件、およびその他の JOIN における `USING` には使用されません。これらの場合、結果カラムには一致しなかった値も保持する必要があるためです。この変換はバージョン 26.9 以降で利用できます。
 
 キーの型に共通のスーパータイプが存在せず、かつ `String` と `Int32`、あるいは `UInt64` と `Float64` のようにこの変換が適用されない場合、クエリは `NO_COMMON_TYPE` などの例外で失敗します。
 

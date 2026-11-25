@@ -135,6 +135,11 @@ ClickPipes 反向专用终结点可配置为使用以下任一种 AWS PrivateLin
       如果不再需要，必须手动删除。
     </Note>
 
+    <Tip>
+      ClickPipes 接受 Resource-Share 后，该 Resource-Share 即与对应的 Reverse Private Endpoint 绑定，此后不能再供其他任何端点使用。
+      建议在创建 Resource-Share 后立即创建 Reverse Private Endpoint，并在此之前妥善保管 Resource-Share 的详细信息，切勿外泄。
+    </Tip>
+
     您可以通过 [AWS 控制台](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) 将 Resource-Configuration 添加到 Resource-Share，也可以使用 ClickPipes 账户 ID `072088201116` (arn:aws:iam::072088201116:root) 运行以下命令：
 
     ```bash

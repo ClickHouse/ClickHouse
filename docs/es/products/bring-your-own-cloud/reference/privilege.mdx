@@ -1,76 +1,67 @@
 ---
 title: 'Privilegio BYOC'
 slug: /cloud/reference/byoc/reference/privilege
-sidebarTitle: 'Privilegio'
+sidebarTitle: 'Descripción general'
 keywords: ['BYOC', 'nube', 'bring your own cloud', 'privilegio']
 description: 'Despliegue ClickHouse en su propia infraestructura en la nube'
 doc_type: 'reference'
 ---
 
+Esta página ofrece un resumen de las identities que ClickHouse BYOC utiliza en su cuenta en la nube. Para consultar los permisos, el alcance y la finalidad de cada identity, vea la página correspondiente a su proveedor de nube:
+
+* [Privilegio BYOC en AWS](/es/products/bring-your-own-cloud/reference/privilege-aws)
+* [Privilegio BYOC en GCP](/es/products/bring-your-own-cloud/reference/privilege-gcp)
+
 ## Roles de IAM de AWS {#aws-iam-roles}
 
 ### Rol de IAM Bootstrap {#bootstrap-iam-role}
 
-El rol de IAM Bootstrap tiene los siguientes permisos:
+El rol de IAM Bootstrap, `ClickHouseManagementRole`, tiene los siguientes permisos:
 
-* **Operaciones de EC2 y VPC**: Necesarias para configurar la VPC y los clústeres de EKS.
+* **Operaciones de EC2 y VPC**: Necesarias para configurar la VPC y los clusters de EKS.
 * **Operaciones de S3 (por ejemplo, `s3:CreateBucket`)**: Necesarias para crear buckets para el almacenamiento BYOC de ClickHouse.
 * **Operaciones de IAM (por ejemplo, `iam:CreatePolicy`)**: Necesarias para que los controladores puedan crear roles adicionales (consulta la siguiente sección para obtener más detalles).
-* **Operaciones de EKS**: Limitadas a recursos con nombres que comienzan con el prefijo `clickhouse-cloud`.
+* **Operaciones de EKS**: Las operaciones de escritura se limitan a recursos cuyos nombres comienzan con el prefijo `clickhouse-cloud`.
 
 ### Roles de IAM adicionales creados por el controlador {#additional-iam-roles-created-by-the-controller}
 
-Además de `ClickHouseManagementRole`, creado mediante CloudFormation, el controlador creará varios roles adicionales.
+Además de `ClickHouseManagementRole`, el controlador crea varios roles adicionales para cada infraestructura BYOC:
 
-Estos roles los asumen aplicaciones que se ejecutan dentro del clúster de EKS del cliente:
+* **Administración del plano de datos**: el servicio de administración de ClickHouse lo asume, con su ID externo, para la administración diaria de sus servicios de ClickHouse.
+* **Roles del cluster de EKS y de los nodos**: los utilizan EKS, los nodos del sistema y los nodos de Karpenter.
+* **Controladores del cluster**: Karpenter, Cluster Autoscaler, AWS Load Balancer Controller y el controlador EBS CSI.
+* **Identity del servidor de ClickHouse**: lee y escribe datos de tablas y copias de seguridad en los buckets de BYOC.
+* **Almacenamiento de monitorización (Thanos)**: lee y escribe métricas en el bucket de monitorización de BYOC.
+* **Roles de telemetría**: envían a ClickHouse el estado operativo de la infraestructura, los datos de uso para la facturación y las métricas de Kubernetes para el escalado automático. No tienen ningún otro permiso.
 
-* **Rol de State Exporter**
-  * Componente de ClickHouse que informa sobre el estado de salud del servicio a ClickHouse Cloud.
-  * Requiere permiso para escribir en una cola de SQS propiedad de ClickHouse Cloud.
-* **Load-Balancer Controller**
-  * Controlador estándar de balanceador de carga de AWS.
-  * Controlador EBS CSI para gestionar volúmenes de los servicios de ClickHouse.
-* **External-DNS**
-  * Propaga configuraciones de DNS a Route 53.
-* **cert-manager**
-  * Aprovisiona certificados TLS para dominios de servicio de BYOC.
-* **Cluster Autoscaler**
-  * Ajusta el tamaño del grupo de nodos según sea necesario.
-* **Almacenamiento de monitorización (Thanos)**
-  * Lo asumen las cargas de trabajo de Prometheus y Thanos de tu clúster.
-  * Escribe y lee la retención de métricas a largo plazo, limitada al bucket de monitorización de tu propia cuenta.
-
-Los roles **K8s-control-plane** y **k8s-worker** están pensados para que los asuman los servicios de AWS EKS.
-
-Por último, **`data-plane-mgmt`** permite que un componente del plano de control de ClickHouse Cloud reconcilie los Custom resources necesarios, como `ClickHouseCluster` y el Istio Virtual Service/Gateway.
+Para conocer los permisos y el alcance de cada política y rol, consulte [Privilegios de BYOC en AWS](/es/products/bring-your-own-cloud/reference/privilege-aws).
 
 ## Cuentas de servicio de GCP {#gcp-service-accounts}
 
 ### Cuenta de servicio Bootstrap {#bootstrap-service-account}
 
-A la cuenta de servicio Bootstrap se le asignan roles personalizados de ámbito de proyecto con los siguientes permisos:
+A la cuenta de servicio Bootstrap, `clickhouse-management`, se le asignan roles personalizados de ámbito de proyecto con los siguientes permisos:
 
-* **Common**: Permisos básicos de lectura y de identidad.
+* **Common**: Permisos básicos de lectura y de identity.
 * **VPC**: Administra la VPC, las subredes, el enrutamiento y los adjuntos de Private Service Connect que alojan tu infraestructura BYOC.
-* **Cluster**: Administra los clústeres de GKE y los recursos dentro del clúster.
+* **Cluster**: Administra los clusters de GKE y los recursos dentro del cluster.
 * **Storage**: Se usa para administrar los buckets de Cloud Storage que se utilizan para las copias de seguridad de ClickHouse, el estado compartido y los datos de monitorización.
 * **Rol de IAM**: Administra las cuentas de servicio y los roles personalizados dentro del proyecto. Este rol no otorga la capacidad de crear claves de cuentas de servicio, vincular políticas de organización ni modificar recursos en otros proyectos.
 
 ### Cuentas de servicio adicionales creadas por el controlador {#additional-service-accounts-created-by-the-controller}
 
-Además de la cuenta de servicio `clickhouse-management` creada mediante Terraform como parte del onboarding, cuando aprovisionas tu primer servicio BYOC, el plano de control de ClickHouse (autenticándose como `clickhouse-management`) crea cuentas de servicio adicionales en tu proyecto para cargas de trabajo específicas dentro del clúster. Cada una de ellas se crea con un conjunto de permisos reducido y de un único propósito.
+Además de la cuenta de servicio `clickhouse-management`, el controlador crea varias cuentas de servicio adicionales para cada infraestructura BYOC. Cada una tiene un conjunto de permisos reducido y de un único propósito:
 
-* **Identidad de ejecución de los nodos de GKE**
-  * Asociada a cada máquina virtual de nodo de GKE en tu clúster BYOC.
-  * La usan el agente kubelet, los agentes locales del nodo y los colectores de Cloud Operations para emitir logs y métricas, así como el subsistema de descarga de imágenes para descargar imágenes de contenedor.
-* **Identidad del scraper de facturación**
-  * La usa la carga de trabajo scraper independiente para recopilar telemetría de facturación.
-* **Identidad de monitorización**
-  * Identidad de destino para la pila de monitorización que se ejecuta en tu clúster. Se usa para leer y escribir en el almacenamiento de métricas a largo plazo de un bucket de GCS dedicado a esta implementación.
-* **Identidad de gestión del entorno de ejecución de ClickHouse**
-  * La usa el controlador de gestión del plano de datos en tiempo de ejecución de ClickHouse, que se encarga de operaciones de día 2 como la gestión de endpoints de Private Service Connect, los ajustes del ciclo de vida del bucket y la rotación de cuentas de servicio.
+* **Identity de administración del plano de datos**: el servicio de administración de ClickHouse la suplanta para la administración diaria de tus servicios de ClickHouse, como los buckets, el acceso de los pods del servidor y Private Service Connect.
+* **Identity de los nodos de GKE**: asociada a todos los nodos de GKE. Escribe logs y métricas, y descarga imágenes de contenedor.
+* **Identity del servidor de ClickHouse**: lee y escribe datos de tablas y copias de seguridad en los buckets de cada servicio de ClickHouse.
+* **Identity de monitorización**: lee y escribe métricas en el bucket de monitorización de BYOC.
+* **Identities de telemetría**: envían a ClickHouse datos de uso para la facturación y métricas de Kubernetes para el escalado automático. No tienen permisos en tu proyecto.
+* **Delegado de TDE** (solo si TDE está activado): cifra y descifra las claves de datos de TDE con tu clave de KMS.
 
-El state exporter, que publica eventos de estado de servicios y copias de seguridad en ClickHouse Cloud, queda deliberadamente fuera de esta lista: en GCP, su identidad de publicación es una cuenta de servicio propiedad de ClickHouse en un proyecto propiedad de ClickHouse, no una creada en el tuyo. Lo que sí se crea en tu proyecto es una vinculación de identidad de carga de trabajo que permite a la cuenta de servicio `state-exporter` dentro del clúster suplantarla. No interviene ningún material de claves, y la identidad que publica en Pub/Sub no tiene permisos en tu proyecto.
+Para consultar los permisos y el alcance de cada rol y cuenta de servicio, consulta [Privilegios de BYOC en GCP](/es/products/bring-your-own-cloud/reference/privilege-gcp).
+
+El state exporter, que publica eventos de estado de servicios y copias de seguridad en ClickHouse Cloud, queda deliberadamente fuera de esta lista: en GCP, su identity de publicación es una cuenta de servicio propiedad de ClickHouse en un proyecto propiedad de ClickHouse, no una creada en el tuyo. Lo que sí se crea en tu proyecto es una vinculación de identity de carga de trabajo que permite a la cuenta de servicio `state-exporter` dentro del cluster suplantarla. No interviene ningún material de claves, y la identity que publica en Pub/Sub no tiene permisos en tu proyecto.
 
 ## Roles e identidades de Azure {#azure-roles-and-identities}
 

@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-<div id="compress_marks">
-  ## compress_marks
-</div>
+## compress_marks {#compress_marks}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Las marcas admiten compresión, lo que reduce el tamaño del archivo de marcas y acelera la
 transmisión por red.
 
-<div id="compress_per_column_in_compact_parts">
-  ## compress_per_column_in_compact_parts
-</div>
+## compress_per_column_in_compact_parts {#compress_per_column_in_compact_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +32,21 @@ del disco. Si es false, todas las columnas dentro de un gránulo se empaquetan e
 lo que mejora la relación de compresión, pero requiere descomprimir más datos durante las lecturas.
 Esto resulta beneficioso para cargas de trabajo que siempre leen todas las columnas (p. ej., projections).
 
-<div id="compress_primary_key">
-  ## compress_primary_key
-</div>
+## compress_per_substream_in_compact_parts {#compress_per_substream_in_compact_parts}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "Nueva configuración: inicia un nuevo bloque comprimido en los límites de los subflujos de columna en las partes compactas para acelerar las lecturas de subcolumnas"}]}]} />
+
+Controla la disposición física de las partes compactas. Si es true (valor predeterminado), un subflujo de columna dentro de un gránulo inicia
+un nuevo bloque comprimido en cuanto el bloque actual alcanza `min_compress_block_size`, de modo que, al leer una sola
+subcolumna (p. ej., el tamaño de un `Array`, un elemento de un `Tuple` o una ruta JSON), solo se descomprime ese subflujo,
+mientras que los subflujos pequeños siguen compartiendo bloque. Si es false, todos los subflujos de una columna dentro de un gránulo se empaquetan
+en el mismo bloque comprimido, lo que mejora la relación de compresión, pero obliga a descomprimir más datos
+al leer una subcolumna. Solo tiene efecto cuando `write_marks_for_substreams_in_compact_parts` y
+`compress_per_column_in_compact_parts` están habilitados.
+
+## compress_primary_key {#compress_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

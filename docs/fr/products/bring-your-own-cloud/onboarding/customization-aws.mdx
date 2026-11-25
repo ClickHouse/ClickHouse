@@ -134,17 +134,17 @@ Pour les organisations ayant des exigences de sécurité avancées ou des politi
   Les rôles IAM gérés par le client sont en private preview. Contactez ClickHouse Support pour activer cette fonctionnalité pour votre organisation avant de suivre les étapes ci-dessous.
 </Info>
 
-Avec des rôles IAM gérés par le client, vous :
+Avec des rôles IAM gérés par le client, vous :
 
 * Créez à l’avance les rôles IAM propres à chaque infrastructure que ClickHouse Cloud créerait autrement
 * Supprimez les permissions d’écriture IAM du `ClickHouseManagementRole` utilisé pour l’accès inter-comptes
 * Conservez un contrôle total sur les permissions des rôles et les relations d’approbation
 
-Les deux modules ci-dessous utilisent l’`external_id` généré par la console ClickHouse Cloud ; toutes les infrastructures BYOC d’un même compte AWS partagent le même ID externe. Consultez [ID externe AWS](/fr/products/bring-your-own-cloud/onboarding/standard#aws-external-id) pour plus de détails, y compris l’espace réservé `emptyid` legacy.
+Les deux modules ci-dessous utilisent l’`external_id` généré par la console ClickHouse Cloud ; toutes les infrastructures BYOC d’un même compte AWS partagent le même ID externe. Consultez [ID externe AWS](/fr/products/bring-your-own-cloud/onboarding/standard#aws-external-id) pour plus de détails, y compris l’espace réservé `emptyid` legacy.
 
 <Steps>
   <Step title="Configurer le rôle de gestion sans permissions d’écriture IAM" id="byo-iam-management-role">
-    Lors de la [configuration initiale de BYOC](/fr/products/bring-your-own-cloud/onboarding/standard), désactivez les permissions d’écriture IAM sur le rôle de gestion. Avec le CloudFormation template, définissez le paramètre `IncludeIAMWritePermissions` sur `false`. Avec le module Terraform :
+    Lors de la [configuration initiale de BYOC](/fr/products/bring-your-own-cloud/onboarding/standard), désactivez les permissions d’écriture IAM sur le rôle de gestion. Avec le CloudFormation template, définissez le paramètre `IncludeIAMWritePermissions` sur `false`. Avec le module Terraform :
 
     ```hcl
     module "clickhouse_onboarding" {
@@ -158,7 +158,7 @@ Les deux modules ci-dessous utilisent l’`external_id` généré par la console
   </Step>
 
   <Step title="Créer les rôles IAM propres à chaque infrastructure" id="byo-iam-per-infra-roles">
-    Avant que chaque infrastructure BYOC soit provisionnée, créez les rôles IAM requis (rôles d’identité de pod EKS, rôle d’accès ClickHouse S3 et rôle de gestion du plan de données) avec le module par infrastructure [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
+    Avant que chaque infrastructure BYOC soit provisionnée, créez les rôles IAM requis (rôles d’identité de pod EKS, rôle d’accès ClickHouse S3 et rôle de gestion du plan de données) avec le module par infrastructure [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
 
     ```hcl
     module "clickhouse_per_infra_iam" {
@@ -180,4 +180,4 @@ Les deux modules ci-dessous utilisent l’`external_id` généré par la console
   </Step>
 </Steps>
 
-Pour plus d’informations sur les rôles IAM que ClickHouse Cloud crée par défaut, consultez la [référence des privilèges BYOC](/fr/products/bring-your-own-cloud/reference/privilege).
+Pour plus d’informations sur les rôles IAM que ClickHouse Cloud crée par défaut, consultez [Privilèges BYOC sur AWS](/fr/products/bring-your-own-cloud/reference/privilege-aws#additional-iam-roles-created-by-the-controller).

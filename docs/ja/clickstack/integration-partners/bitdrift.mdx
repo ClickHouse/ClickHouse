@@ -66,10 +66,12 @@ ClickStack は、バックエンドサービス、Web フロントエンド、�
   ## 前提条件 {#prerequisites}
 </div>
 
-* **ClickStack** がインストール済みで、セルフマネージドまたは ClickHouse Cloud 上でバックエンドサービスからアクセス可能であること。[Open Source ClickStack を使い始める](/ja/clickstack/getting-started/oss) または [Self-managed ClickHouse Observability を使い始める](/ja/clickstack/self-configured/getting-started/managed)を参照してください。
+* **ClickStack Open Source** がインストール済みで、バックエンドサービスからアクセス可能であること。[Open Source ClickStack を使い始める](/ja/clickstack/getting-started/oss)を参照してください。
 * バックエンドサービスが **OpenTelemetry** でインストルメントされ、トレースを ClickStack に送信していること。[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
 * モバイルアプリに **bitdrift Capture SDK** が統合されていること。インストール手順については、[bitdrift SDK ドキュメント](https://docs.bitdrift.io/)を参照してください。
 * **bitdrift アカウント**を所有していること。テナントのトレーシングを有効にするには、[Support](https://bitdrift.io/contact-us)にお問い合わせください (トレーシングは bitdrift がテナントごとに有効化する実験的機能です) 。
+
+ClickHouse オブザーバビリティについては、別途用意されている [bitdrift インテグレーションガイド](/ja/clickstack/observability/integration-partners/bitdrift)に従ってください。
 
 ## トレーシングを設定する {#configure-tracing}
 
@@ -95,7 +97,7 @@ ClickStack は、バックエンドサービス、Web フロントエンド、�
   ## デプロイメントの柔軟性 {#deployment-flexibility}
 </div>
 
-このインテグレーションは、ClickStack をセルフマネージドで運用している場合でも、ClickHouse Cloud のマネージドサービスとして利用している場合でも機能します。これは、データが ClickStack に到達する経路を変更しないためです。bitdrift はモバイルテレメトリーを ClickStack にエクスポートするのではなく、デバイス上でリクエストの OpenTelemetryトレースコンテキスト をキャプチャし、自身で OpenTelemetry をインストルメントしたサービスがすでに ClickStack に送信しているバックエンドトレースにリンクします。bitdrift が **View Trace** リンクの生成に必要とするのは ClickStack UI のアドレスだけであるため、ClickStack のデプロイメントやインジェストパイプラインを変更する必要はありません。
+このインテグレーションは、ClickStack Open Source のデータベースをローカルで実行している場合でも、ClickHouse Cloud 上で実行している場合でも機能します。これは、データが ClickStack に到達する経路を変更しないためです。bitdrift はモバイルテレメトリーを ClickStack にエクスポートするのではなく、デバイス上でリクエストの OpenTelemetryトレースコンテキスト をキャプチャし、自身で OpenTelemetry をインストルメントしたサービスがすでに ClickStack に送信しているバックエンドトレースにリンクします。bitdrift が **View Trace** リンクの生成に必要とするのは ClickStack UI のアドレスだけであるため、ClickStack のデプロイメントやインジェストパイプラインを変更する必要はありません。
 
 <div id="next-steps">
   ## 次のステップ {#next-steps}

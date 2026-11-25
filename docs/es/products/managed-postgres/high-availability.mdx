@@ -17,20 +17,24 @@ ClickHouse Managed Postgres ofrece distintos niveles de alta disponibilidad para
 </div>
 
 <div id="two-standbys">
-  ### 2 Nodos standby {#two-standbys}
+  ### 2 Nodos en espera {#two-standbys}
 </div>
 
-Con dos nodos standby, se aprovisionan dos nodos réplica junto con el nodo primario. Ambos nodos standby tienen el mismo tamaño que el primario y cualquiera de los dos puede asumir el control si el primario falla.
+Con dos nodos en espera, se aprovisionan dos nodos réplica junto con el nodo principal. Ambos nodos en espera tienen el mismo tamaño que el principal y cualquiera de los dos puede asumir el control si el principal falla.
 
-Esta configuración usa **replicación síncrona**, en la que el primario espera la confirmación de al menos un nodo standby antes de confirmar las escrituras. Esto ofrece garantías de durabilidad más sólidas que la replicación asíncrona. Como solo se requiere una confirmación (no ambas), el impacto en el rendimiento es menor que con la replicación síncrona con un único nodo standby.
+Esta configuración usa **replicación síncrona**, en la que el principal espera la confirmación de recepción de al menos un nodo en espera antes de confirmar las escrituras. Esto ofrece garantías de durabilidad más sólidas que la replicación asíncrona. Como ambos nodos en espera son réplicas completas, su base de datos mantiene su caudal completo y conserva un destino de conmutación por error listo incluso ante un fallo prolongado de una zona de disponibilidad.
 
-<div id="one-standby">
-  ### 1 Standby {#one-standby}
-</div>
+### 1 réplica en espera síncrona (versión preliminar) {#one-standby-synchronous}
 
-Con un standby, se aprovisiona un nodo réplica junto al primario. El standby tiene el mismo tamaño que el primario y puede asumir el control si el primario falla.
+Con una réplica en espera y un listener de WAL ligero, la réplica en espera tiene el mismo tamaño que la principal y puede asumir su función si la principal falla.
 
-Los datos se replican en el standby mediante **replicación asíncrona**. Esto significa que las escrituras se confirman en el primario sin esperar la confirmación del standby. La replicación asíncrona garantiza que la alta disponibilidad no ralentice las escrituras debido a la latencia de red adicional. Sin embargo, también significa que es posible que el standby no haya recibido las transacciones más recientes en el momento en que falle el primario. Para la mayoría de las aplicaciones, esta compensación entre rendimiento y el pequeño riesgo de perder escrituras muy recientes merece la pena. Si necesita durabilidad en las escrituras, se recomienda optar por 2 standbys.
+El listener de WAL ligero actúa como una segunda réplica en espera sin coste adicional: recibe el stream del write-ahead log y proporciona una segunda vía de confirmación de recepción. Esta configuración utiliza **replicación síncrona**, en la que la principal espera la confirmación de recepción de la réplica en espera o del listener de WAL antes de confirmar las escrituras. Así, la latencia y el caudal se mantienen estables aunque la réplica en espera se ralentice o sufra una interrupción breve, sin renunciar a sólidas garantías de durabilidad.
+
+### 1 Nodo en espera asíncrono {#one-standby-asynchronous}
+
+Con un nodo en espera, se aprovisiona un nodo réplica junto al principal. El nodo en espera tiene el mismo tamaño que el principal y puede asumir el control si el principal falla.
+
+Los datos se replican en el nodo en espera mediante **replicación asíncrona**. Esto significa que las escrituras se confirman en el principal sin esperar la confirmación de recepción del nodo en espera. La replicación asíncrona garantiza que la alta disponibilidad no ralentice las escrituras debido a la latencia de red adicional. Sin embargo, también significa que es posible que el nodo en espera no haya recibido las transacciones más recientes en el momento en que falle el principal. Para la mayoría de las aplicaciones, esta compensación entre rendimiento y el pequeño riesgo de perder escrituras muy recientes merece la pena. Si necesita durabilidad en las escrituras, se recomienda optar por una de las opciones síncronas.
 
 <div id="no-standby">
   ### Sin standby {#no-standby}

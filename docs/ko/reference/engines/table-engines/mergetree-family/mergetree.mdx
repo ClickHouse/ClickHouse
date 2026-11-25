@@ -1386,8 +1386,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 일부 MergeTree 설정은 컬럼 수준에서 재정의할 수 있습니다:
 
-* `max_compress_block_size` — 테이블에 쓰기 전에 압축하는 비압축 데이터 블록의 최대 크기입니다.
-* `min_compress_block_size` — 다음 mark를 쓸 때 압축하기 위해 필요한 비압축 데이터 블록의 최소 크기입니다.
+* `max_compress_block_size` — 테이블에 쓰기 전에 압축하는 비압축 데이터 블록(Block)의 최대 크기입니다. 압축 블록(Block) 하나에는 최대 256 MiB의 비압축 데이터만 담을 수 있으므로, 256 MiB를 초과하는 값은 256 MiB로 처리됩니다. 이전 버전에서 더 큰 블록(Block)으로 기록된 데이터는 읽을 수 없습니다.
+* `min_compress_block_size` — 다음 mark를 쓸 때 압축하기 위해 필요한 비압축 데이터 블록(Block)의 최소 크기입니다.
+
+`Quantized` 코덱을 사용하는 컬럼에서는 두 설정 모두 해당 컬럼의 벡터(배열 요소(array elements))에만 적용되며, 배열 크기와 양자화 코드에는 테이블 수준 값이 사용됩니다. `Nested` structure의 여러 컬럼이 공유하는 배열 크기는 한 번만 기록되며, 이때는 이를 가장 먼저 기록하는 컬럼의 설정이 적용됩니다.
 
 예시:
 

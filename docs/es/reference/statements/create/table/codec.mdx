@@ -195,11 +195,12 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — Un códec especializado para admitir la búsqueda vectorial aproximada en columnas de tipo `Array(Float32)`, `Array(Float64)` o `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — Un códec especializado para admitir la búsqueda vectorial aproximada en columnas de tipo `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` o `Array(UInt8)`.
 Almacena los vectores originales de precisión completa, junto con un *código cuantizado* compacto por vector.
 En las tablas de la familia `MergeTree`, las consultas de búsqueda vectorial que usan la configuración [`vector_search_use_quantized_codes`](/es/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) exploran los códigos cuantizados para crear una lista reducida y, posteriormente, recalculan la puntuación de los resultados con los vectores de precisión completa.
 Esta búsqueda en dos fases lee menos bytes que un escaneo normal con precisión completa, a costa de una menor exhaustividad.
 `dimensions` es la longitud del vector; los valores admitidos para `method` son `rabitq`, `turboquant`, `int8`, `prefix` y `product`, cada uno con una combinación distinta de tamaño, exactitud y función de distancia.
+Para las columnas `Array(Int8)` y `Array(UInt8)`, no se admiten el método `int8` ni el método `prefix` con el formato `int8`.
 
 El códec solo se puede establecer en `CREATE TABLE`; no se puede añadir, eliminar ni cambiar mediante `ALTER TABLE`, ni siquiera con `ADD COLUMN ... CODEC(Quantized(...))`.
 No se puede encadenar con ningún otro códec (ni siquiera con un códec de cifrado como `AES_128_GCM_SIV`).

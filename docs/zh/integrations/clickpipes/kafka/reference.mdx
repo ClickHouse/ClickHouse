@@ -110,7 +110,7 @@ ClickPipes 在以下情况下支持 JSON 类型：
 
 #### 支持的 Avro 数据类型 {#supported-avro-data-types}
 
-ClickPipes 支持所有 Avro 基本类型和复杂类型，以及除 `local-timestamp-millis` 和 `local_timestamp-micros` 之外的所有 Avro 逻辑类型。Avro `record` 类型会转换为 Tuple，`array` 类型会转换为 Array，`map` 类型会转换为 Map (仅支持字符串键) 。通常可使用[此处](/zh/concepts/features/interfaces/schema-inference#avro)列出的转换方式。我们建议对 Avro 数值类型使用精确的类型匹配，因为 ClickPipes 在类型转换时不会检查是否发生溢出或精度损失。或者，所有 Avro 类型也都可以插入到 `String` 列中，此时会表示为有效的 JSON 字符串。
+ClickPipes 支持所有 Avro 基本类型和复杂类型，以及除 `local-timestamp-millis` 和 `local_timestamp-micros` 之外的所有 Avro 逻辑类型。Avro `record` 类型会转换为 Tuple，`array` 类型会转换为 Array，`map` 类型会转换为 Map (仅支持字符串键) 。通常可使用[此处](/zh/concepts/features/operations/insert/schema-inference#avro)列出的转换方式。我们建议对 Avro 数值类型使用精确的类型匹配，因为 ClickPipes 在类型转换时不会检查是否发生溢出或精度损失。或者，所有 Avro 类型也都可以插入到 `String` 列中，此时会表示为有效的 JSON 字符串。
 
 #### Nullable 类型和 Avro union {#nullable-types-and-avro-unions}
 

@@ -8,6 +8,10 @@ keywords: ['설치', '자가 관리형', 'linux', 'macos', 'windows', 'docker']
 
 운영하는 플랫폼에 ClickHouse를 설치합니다.
 
+<Note>
+  `amd64` 및 `aarch64`용 Linux 바이너리는 `musl` C 라이브러리와 정적으로 링크되어 있습니다. 호스트 이름은 `/etc/hosts`와 `/etc/resolv.conf`에 지정된 DNS 서버를 통해서만 해석됩니다. Name Service Switch(`/etc/nsswitch.conf`)는 사용되지 않으므로 `sss`, `mdns`, `ldap` 등의 NSS 모듈에서만 제공되는 호스트 이름은 해석할 수 없습니다.
+</Note>
+
 ## 로컬 개발 {#local-development}
 
 로컬 머신에서 ClickHouse를 실행해 빌드, 테스트, 실험을 진행합니다.

@@ -430,6 +430,7 @@ Paramètres de rafraîchissement disponibles :
 * `refresh_retry_initial_backoff_ms` - Délai avant la première nouvelle tentative, si `refresh_retries` n’est pas égal à zéro. Chaque tentative suivante double le délai, jusqu’à `refresh_retry_max_backoff_ms`. Par défaut : 100 ms.
 * `refresh_retry_max_backoff_ms` - Limite de la croissance exponentielle du délai entre les tentatives de rafraîchissement. Par défaut : 60000 ms (1 minute).
 * `all_replicas` - Dans une [base de données Replicated](/fr/reference/engines/database-engines/replicated) avec `APPEND`, contrôle si toutes les répliques se rafraîchissent indépendamment ou si une seule réplique se rafraîchit à chaque heure planifiée. Ne peut pas être modifié après la création de la vue. Par défaut : `false`.
+* `refresh_coordination_jitter_ms` - Si les rafraîchissements sont coordonnés entre les répliques, chaque réplique attend un délai aléatoire pouvant atteindre cette valeur avant de lancer un rafraîchissement arrivé à échéance, afin de répartir les rafraîchissements entre les répliques même sans `RANDOMIZE FOR`. Ce délai n’est pas pris en compte dans `next_refresh_time`. 0 désactive le délai. Par défaut : 1000 ms.
 
 ### Modification des paramètres de rafraîchissement {#changing-refresh-parameters}
 

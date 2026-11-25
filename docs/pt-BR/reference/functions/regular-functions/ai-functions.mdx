@@ -29,6 +29,7 @@ Todas as funções compartilham uma infraestrutura comum que fornece:
 * **Aplicação de cotas**: Limites por consulta para tokens ([`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) e chamadas de API ([`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Retentativas com backoff**: Falhas transitórias são repetidas ([`ai_function_max_retries`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_retries)) com backoff exponencial ([`ai_function_retry_initial_delay_ms`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 * **Requisições concorrentes**: As requisições são enviadas a partir de um pool de threads compartilhado por todo o servidor, várias ao mesmo tempo (controlado por [`ai_function_max_concurrent_requests_per_thread`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
+* **Remoção de espaços em branco**: `aiClassify`, `aiExtract` e `aiFilter` solicitam saída estruturada e removem os espaços em branco do início e do final da resposta do modelo; assim, uma resposta como `\n\nbug` se torna `bug`.
 
 ## Configuração {#configuration}
 

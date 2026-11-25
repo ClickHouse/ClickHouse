@@ -369,6 +369,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 <Note>
   쿼리 매개변수는 임의의 SQL 쿼리의 임의 위치에서 사용할 수 있는 일반적인 텍스트 치환 기능이 아닙니다.
   주로 식별자 또는 리터럴 자리에 사용하는 `SELECT` SQL 문에서 동작하도록 설계되었습니다.
+  DDL 문에서도 데이터베이스 이름과 테이블 이름 자리에 사용할 수 있습니다(예: `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). `ALTER TABLE`에서는 `DROP`, `CLEAR`, `MATERIALIZE`, `COMMENT`, `RENAME COLUMN`, `AFTER`에서도 사용할 수 있습니다(예: `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## 함수 {#functions}

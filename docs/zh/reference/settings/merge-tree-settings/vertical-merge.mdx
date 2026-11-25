@@ -46,10 +46,10 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "允许对需要删除因生存时间 (TTL) 过期行的合并使用纵向合并算法"}]}]} />
 
-如果为 true，基于行 TTL 的合并可以使用纵向合并算法，而不必回退到
+如果为 true，基于行 生存时间 (TTL) 的合并可以使用纵向合并算法，而不必回退到
 横向合并。此设置仅适用于使用 `MergeTree`、`Replacing`、`Collapsing` 或 `VersionedCollapsing`
-合并模式、设置了行 TTL 但未设置列 TTL 或 `GROUP BY` TTL 的表，且仅在参与合并的数据分片
-均不包含轻量级删除时生效。其他 TTL 合并仍使用横向合并。
+合并模式、设置了行 生存时间 (TTL) 但未设置列 生存时间 (TTL) 或 `GROUP BY` 生存时间 (TTL) 的表。其他 生存时间 (TTL) 合并仍使用
+横向合并。
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 

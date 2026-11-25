@@ -57,6 +57,10 @@ $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avr
 
 При импорте данных, если поле не найдено в схеме и включена настройка [`input_format_avro_allow_missing_fields`](/ru/reference/settings/formats/input-format#input_format_avro_allow_missing_fields), вместо ошибки будет использовано значение по умолчанию.
 
+### Параллельный разбор {#parallel-parsing}
+
+Если включена настройка [`input_format_parallel_parsing`](/ru/reference/settings/formats/input-format#input_format_parallel_parsing), объектный контейнерный файл Avro разделяется по границам блоков (маркерам синхронизации), и блоки разбираются в нескольких потоках. Поскольку блоки буферизуются и декодируются целиком и конкурентно, пиковое потребление памяти растёт с увеличением числа потоков разбора. Чтобы выполнять разбор последовательно и снизить потребление памяти, установите `input_format_parallel_parsing = 0`. Это не относится к формату [`AvroConfluent`](/ru/reference/formats/Avro/AvroConfluent), поскольку он не использует объектный контейнерный файл.
+
 ### Запись данных в формате Avro {#writing-avro-data}
 
 Чтобы записать данные из таблицы ClickHouse в файл Avro:

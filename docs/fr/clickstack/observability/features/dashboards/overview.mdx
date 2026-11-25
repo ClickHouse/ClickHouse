@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
+import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 ClickHouse Observability permet de visualiser les événements grâce à la création de graphiques intégrée à l’UI. Ces graphiques peuvent être ajoutés à des tableaux de bord pour être partagés avec d’autres utilisateurs.
 
 Les visualisations peuvent être créées à partir de traces, de métriques, de logs ou de tout schéma d’événement large défini par l’utilisateur.
@@ -383,7 +385,7 @@ Ouvrez le menu **Balises** du tableau de bord pour sélectionner ou créer des b
 
 ## Filtres personnalisés et variables {#custom-filters}
 
-En plus des [filtres en texte libre](#filter-dashboards) disponibles sur tous les tableaux de bord, les tableaux de bord enregistrés prennent en charge des filtres personnalisés sous forme de listes déroulantes, alimentées par des données issues de requêtes sur ClickHouse. Ces filtres réutilisables s&#39;utilisent d&#39;un simple clic : les lecteurs du tableau de bord peuvent ainsi filtrer les données sans écrire d&#39;expressions manuellement.
+En plus des [filtres en texte libre](#filter-dashboards) disponibles sur tous les tableaux de bord, les tableaux de bord enregistrés prennent en charge des filtres personnalisés et des variables. Ces contrôles réutilisables s&#39;utilisent d&#39;un simple clic : les lecteurs du tableau de bord peuvent ainsi filtrer les données sans écrire d&#39;expressions manuellement. Leurs valeurs peuvent provenir d&#39;une colonne interrogée depuis une source, d&#39;une liste saisie manuellement, d&#39;une requête SQL, de valeurs d&#39;étiquettes Prometheus ou de conditions clé-valeur librement choisies. Les variables peuvent également déterminer la source de données ou la connexion interrogée par une tuile. Consultez [Types de filtres](#filter-types) pour la liste complète.
 
 <div className="ch-image-lg">
   <Frame>
@@ -396,7 +398,7 @@ Chaque filtre permet au lecteur de choisir une ou plusieurs valeurs, puis les ex
 * **Diffusion** — applique la sélection comme condition de filtrage aux tuiles correspondantes. Il n&#39;est pas nécessaire de modifier les tuiles pour qu&#39;elles référencent le filtre.
 * **Variable** — expose la sélection aux requêtes des tuiles sous la forme `$variableName`, afin que chaque tuile détermine où et comment utiliser la valeur.
 
-Un filtre doit remplir au moins l&#39;un de ces deux rôles. La diffusion est activée par défaut lors de la création d&#39;un filtre.
+Les rôles pris en charge par un filtre dépendent de son [type](#filter-types). Un filtre **valeurs d’expression SQL** doit remplir au moins l&#39;un de ces deux rôles, et diffuse sa valeur par défaut.
 
 Les étapes suivantes montrent comment ajouter un filtre au tableau de bord créé dans la section [« Créer des tableaux de bord »](#creating-dashboards).
 
@@ -412,7 +414,7 @@ Les étapes suivantes montrent comment ajouter un filtre au tableau de bord cré
   </Step>
 
   <Step title="Ajouter un nouveau filtre" id="add-new-filter">
-    Cliquez sur **Add new filter**. Configurez le filtre en indiquant un **Display Name**, en sélectionnant une **source de données** et en saisissant une **expression de filtrage**, c&#39;est-à-dire une colonne ou une expression SQL dont les valeurs distinctes rempliront la liste déroulante. Cliquez sur **Save filter**.
+    Cliquez sur **Add new filter**. Choisissez un **Type** — cet exemple utilise la valeur par défaut, **valeurs d’expression SQL** — puis configurez le filtre en indiquant un **Display name**, en sélectionnant une **source de données** et en saisissant une **expression de filtrage**, c&#39;est-à-dire une colonne ou une expression SQL dont les valeurs distinctes rempliront la liste déroulante. Cliquez sur **Save filter**.
 
     Par exemple, pour ajouter un filtre par service sur les données de traçage, utilisez `ServiceName` comme expression de filtrage avec la source de données `Traces`. Le champ « Dropdown values filter » est facultatif et permet de restreindre les valeurs proposées dans la liste déroulante.
 
@@ -458,15 +460,136 @@ Les étapes suivantes montrent comment ajouter un filtre au tableau de bord cré
   Les filtres déroulants personnalisés sont disponibles sur les tableaux de bord enregistrés. Pour un exemple concret, consultez le [Tableau de bord Kubernetes](#kubernetes-dashboard), qui propose des filtres déroulants intégrés pour groupe de conteneurs, Déploiement, nom de nœud, Espace de noms et Cluster.
 </Note>
 
+### Types de filtres {#filter-types}
+
+Le sélecteur **Type** de la boîte de dialogue des filtres détermine la provenance des valeurs d&#39;un filtre et la manière dont elles sont transmises aux tuiles.
+
+| Type                                                           | Provenance des valeurs                                                                                  | Diffusion                       | Variable                                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------ |
+| [Valeurs d&#39;expression SQL](#sql-expression-values-filters) | Les valeurs distinctes d&#39;une expression, obtenues en interrogeant une source                        | Facultative, activée par défaut | Facultative                                                                    |
+| [Valeurs statiques](#static-values-filters)                    | Une liste saisie manuellement                                                                           | Non                             | Toujours                                                                       |
+| [Valeurs de requête SQL](#sql-query-filters)                   | La première colonne d&#39;une requête SQL                                                               | Non                             | Toujours                                                                       |
+| [Valeurs d&#39;étiquette PromQL](#promql-label-filters)        | Les valeurs d&#39;une étiquette Prometheus                                                              | Non                             | Toujours                                                                       |
+| [Clés et valeurs ad hoc](#adhoc-filters)                       | Conditions `key operator value` construites à partir des clés et valeurs d&#39;une ou plusieurs sources | Toujours                        | Non                                                                            |
+| [Source de données](#data-source-variables)                    | Les sources de l&#39;équipe                                                                             | Non                             | Toujours, sous forme de [référence de source](#source-connection-variables)    |
+| [Connexion](#connection-variables)                             | Les connexions ClickHouse de l&#39;équipe                                                               | Non                             | Toujours, sous forme de [référence de connexion](#source-connection-variables) |
+
+#### Valeurs d&#39;expression SQL {#sql-expression-values-filters}
+
+Sa liste déroulante affiche les valeurs distinctes de l&#39;**Expression de filtrage** dans la **Source de données** sélectionnée, éventuellement restreintes par un **Filtre des valeurs de la liste déroulante**. Pour les sources de métriques, choisissez également un **Type de métrique**. Un filtre de valeurs d&#39;expression SQL peut [diffuser](#broadcast-filters) sa sélection, être [disponible en tant que variable](#dashboard-variables), ou les deux.
+
+#### Valeurs statiques {#static-values-filters}
+
+Sa liste déroulante propose une liste de valeurs saisies manuellement. Saisissez chaque valeur dans **Options** et appuyez sur Entrée. Un filtre peut contenir jusqu&#39;à 1000 options.
+
+Un filtre à valeurs statiques est toujours une variable et n&#39;est jamais diffusé : les tuiles l&#39;utilisent donc en référençant sa variable, par exemple `$__filter(SeverityText, $severity)`. C&#39;est utile pour des valeurs qui ne sont pas stockées dans une colonne, ou pour une liste fixe et soigneusement sélectionnée.
+
+#### Valeurs issues d&#39;une requête SQL {#sql-query-filters}
+
+Sa liste déroulante affiche la première colonne renvoyée par une requête SQL ClickHouse, dans l&#39;ordre où la requête renvoie les lignes, dans la limite de 10,000 valeurs. Configurez :
+
+* **Connexion** — la connexion à ClickHouse sur laquelle la requête s&#39;exécute, ou une [variable de connexion](#connection-variables).
+* **Source** — facultatif. Une source sur la même connexion, ou une [variable de source de données](#data-source-variables). Lorsqu&#39;une source est sélectionnée, la requête peut utiliser `$__sourceTable` et `$__filters`, qui applique les sélections des filtres diffusés du tableau de bord pour cette source, comme le font les [tuiles SQL brut](/fr/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro).
+* **Requête SQL** — la requête elle-même. Elle peut utiliser les [macros temporelles](/fr/clickstack/observability/features/dashboards/sql-visualizations#time-filter-macros) et faire référence aux autres variables du tableau de bord. L&#39;éditeur affiche un aperçu des valeurs renvoyées par la requête pour l&#39;intervalle de temps actuel du tableau de bord.
+
+Par exemple, la requête suivante liste les services ayant journalisé des événements dans l&#39;intervalle de temps du tableau de bord, en se limitant aux environnements sélectionnés dans un filtre `environment` :
+
+```sql
+SELECT DISTINCT ServiceName
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
+ORDER BY ServiceName
+```
+
+Un filtre de valeurs issues d&#39;une requête SQL est toujours une variable et n&#39;est jamais diffusé.
+
+#### Valeurs d&#39;étiquette PromQL {#promql-label-filters}
+
+<PrivatePreviewBadge />
+
+Sa liste déroulante affiche les valeurs d&#39;une étiquette Prometheus. Sélectionnez une **source de données** PromQL, puis saisissez l&#39;**étiquette** dont les valeurs alimentent la liste déroulante, par exemple `job`, `instance` ou `__name__`. Vous pouvez également saisir des **Series matchers**, c&#39;est-à-dire un sélecteur de séries Prometheus, tel que `up{job="api"}`, qui restreint les séries dont les valeurs sont lues. Les Series matchers peuvent faire référence aux autres variables du tableau de bord.
+
+Un filtre de valeurs d&#39;étiquette PromQL est toujours une variable et n&#39;est jamais diffusé. Dans les tuiles PromQL, référencez-le dans un matcher d&#39;étiquette, par exemple `rate(http_requests_total{job=~"$job"}[$__rate_interval])`. Consultez [Référencer une variable](#referencing-variables) pour savoir comment les valeurs sont générées.
+
+#### Clés et valeurs ad hoc {#adhoc-filters}
+
+Au lieu de proposer une seule liste déroulante, un filtre ad hoc permet au lecteur de constituer une liste de conditions `key operator value` à partir des clés de ses sources : colonnes et clés de map pour les sources SQL, ou étiquettes pour les sources Prometheus. Les clés et valeurs sont suggérées au fur et à mesure de la saisie. Paramètres à configurer :
+
+* **Type de source** — SQL (sources de journaux, de traces ou de sessions) ou Prometheus.
+* **Sources de données** — les sources dont le filtre suggère les clés et valeurs.
+* **Filtre des clés et valeurs** — facultatif, sources SQL uniquement. Condition SQL ou Lucene qui restreint les lignes à partir desquelles les clés et valeurs sont suggérées. Elle peut faire référence aux autres variables du tableau de bord.
+* **S&#39;applique aux sources** — les sources vers lesquelles les conditions sont diffusées. Laissez ce champ vide pour les diffuser à toutes les tuiles qui utilisent l&#39;une des sources de données du filtre.
+* **Nom unique** — identifie les conditions du filtre dans l&#39;[URL du tableau de bord](/fr/clickstack/observability/url-parameters#dashboard-filter-values).
+
+Les conditions sur les sources SQL prennent en charge les opérateurs suivants : `=`, `!=`, `=~` (expression régulière), `!~` (expression régulière), `LIKE`, `NOT LIKE`, `IN`. Les conditions sur les sources Prometheus prennent en charge `=`, `!=`, `=~` (expression régulière), `!~` (expression régulière) et `IN` ; `LIKE` et `NOT LIKE` sont réservés à SQL.
+
+Les lecteurs peuvent également ajouter une condition en cliquant sur une valeur dans une tuile de table, de série temporelle ou de recherche du tableau de bord.
+
+Les conditions ad hoc sont toujours diffusées et ne peuvent pas être référencées en tant que variables. Les tuiles de l&#39;éditeur de graphiques et les tuiles PromQL portant sur les sources correspondantes les prennent en compte automatiquement, tandis que les tuiles SQL brut les appliquent au moyen de la [macro `$__filters`](/fr/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro).
+
+#### Source de données {#data-source-variables}
+
+Une variable de source de données permet à l&#39;utilisateur de choisir la source interrogée par une tuile. Sélectionnez les **Source kinds** proposés dans sa liste déroulante (par exemple, uniquement les sources de journaux), puis, si vous le souhaitez, limitez-les à une seule **connexion**, qui peut elle-même être une variable de connexion. Consultez [Variables de source de données et de connexion](#source-connection-variables) pour savoir comment les tuiles et les filtres l&#39;utilisent.
+
+#### Connexion {#connection-variables}
+
+Une variable de connexion permet au lecteur de choisir la connexion ClickHouse utilisée par les tuiles de SQL brut, les filtres dont les valeurs proviennent d’une requête SQL et les variables de source de données. Elle ne comporte aucun autre paramètre que son nom.
+
+### Variables de source de données et de connexion {#source-connection-variables}
+
+Les variables de source de données et de connexion se substituent à un ID de source ou de connexion, et non à une valeur dans le texte de la requête. Partout où un sélecteur de source ou de connexion les accepte, les variables du tableau de bord sont répertoriées sous un groupe **Variables**. Lorsque vous en choisissez une, une référence `$name` est enregistrée, qui est résolue en la sélection actuelle de l&#39;utilisateur. Il est ainsi possible de créer un seul tableau de bord qui bascule, par exemple, entre les logs de plusieurs environnements ou entre plusieurs clusters ClickHouse.
+
+| Utilisée dans                             | Accepte une variable de source de données      | Accepte une variable de connexion |
+| ----------------------------------------- | ---------------------------------------------- | --------------------------------- |
+| Tuiles de l&#39;éditeur de graphiques     | Source                                         | —                                 |
+| Tuiles SQL brut                           | Source                                         | Connexion                         |
+| Tuiles PromQL                             | Source                                         | —                                 |
+| Filtres de valeurs d&#39;expression SQL   | Source de données, S&#39;applique aux sources  | —                                 |
+| Filtres de valeurs d&#39;étiquette PromQL | Source de données                              | —                                 |
+| Filtres ad hoc                            | Sources de données, S&#39;applique aux sources | —                                 |
+| Filtres de valeurs de requête SQL         | Source                                         | Connexion                         |
+| Variables de source de données            | —                                              | Connexion                         |
+
+Une variable de source de données n&#39;est proposée que si au moins l&#39;un de ses types de source convient. Par exemple, une tuile PromQL ne propose que les variables de source de données qui autorisent les sources PromQL.
+
+Les variables de source de données et de connexion sont toujours à sélection unique et obligatoires, car une tuile ne peut pas exécuter de requête sans source ni connexion. Tant qu&#39;aucune valeur n&#39;est sélectionnée, les tuiles et les filtres qui font référence à la variable restent en attente. Activez **bloquer toutes les tuiles** pour mettre plutôt l&#39;ensemble du tableau de bord en attente. Un [lien de tableau de bord](/fr/clickstack/observability/url-parameters#dashboard-filter-values) peut sélectionner une source ou une connexion aussi bien par son nom que par son ID.
+
+<Note>
+  Les alertes ne sont pas disponibles sur les tuiles qui utilisent une variable de source de données ou de connexion. L&#39;enregistrement d&#39;une telle tuile supprime son alerte.
+</Note>
+
+### Options de sélection {#filter-selection-options}
+
+Les filtres de type valeurs d&#39;expression SQL, valeurs statiques, valeurs de requête SQL et valeurs d&#39;étiquette PromQL disposent des options supplémentaires suivantes :
+
+* **Sélection unique** — une seule valeur peut être sélectionnée à la fois.
+* **Obligatoire** — les tuiles qui utilisent le filtre, via sa variable ou par diffusion, ne se chargent pas tant qu&#39;aucune valeur n&#39;est sélectionnée dans le filtre.
+  * **Bloquer toutes les tuiles** — bloque toutes les tuiles du tableau de bord, et pas seulement celles qui utilisent le filtre, tant qu&#39;aucune valeur n&#39;est sélectionnée.
+
+### Filtres chaînés {#chained-filters}
+
+La configuration d&#39;un filtre peut faire référence aux autres variables du tableau de bord, de sorte que ses valeurs dépendent de la sélection d&#39;un autre filtre. Par exemple, un filtre par service peut ne lister que les services de l&#39;environnement sélectionné dans un filtre `environment`. Les variables peuvent être référencées dans :
+
+* Le champ **Dropdown values filter** d&#39;un filtre de valeurs d’expression SQL, par exemple `$__filter(ResourceAttributes['deployment.environment'], $environment)`.
+* Le champ **requête SQL** d&#39;un filtre de valeurs par requête SQL.
+* Le champ **Series matchers** d&#39;un filtre de valeurs d&#39;étiquettes PromQL, par exemple `up{env="$env"}`.
+* Le champ **filtre des clés et valeurs** d&#39;un filtre ad hoc.
+* Les champs de source et de connexion, via les [variables de source de données et de connexion](#source-connection-variables).
+
+Lorsque la sélection du filtre référencé change, les valeurs du filtre dépendant sont de nouveau interrogées. Tant qu&#39;aucune valeur n&#39;est sélectionnée dans un filtre obligatoire référencé, un filtre ad hoc qui en dépend ne peut ni ajouter ni modifier de conditions, et indique le nom du filtre dont il attend la sélection.
+
 ### Diffusion {#broadcast-filters}
 
-Lorsque l&#39;option **Broadcast filter condition** est activée, les valeurs sélectionnées sont appliquées comme condition de filtrage aux tuiles du tableau de bord, sans qu&#39;aucune tuile ne fasse explicitement référence au filtre. Par défaut, la condition s&#39;applique à toutes les tuiles. Utilisez **Applies to sources** pour la limiter aux tuiles qui utilisent certaines sources, ce qui est utile lorsque l&#39;expression du filtre n&#39;a de sens que pour une partie des données du tableau de bord.
+Les filtres de type valeurs d’expression SQL peuvent diffuser leur sélection, et les filtres ad hoc diffusent toujours leurs conditions. Lorsque l&#39;option **Broadcast filter condition** est activée sur un filtre de type valeurs d’expression SQL, les valeurs sélectionnées sont appliquées comme condition de filtrage aux tuiles du tableau de bord, sans qu&#39;aucune tuile ne fasse explicitement référence au filtre. Par défaut, la condition s&#39;applique à toutes les tuiles. Utilisez **s’applique aux sources** pour la limiter aux tuiles qui utilisent certaines sources, ce qui est utile lorsque l&#39;expression du filtre n&#39;a de sens que pour une partie des données du tableau de bord.
 
 Les tuiles créées avec l&#39;éditeur de graphiques prennent automatiquement en compte les filtres diffusés. Les tuiles en SQL brut doivent inclure la [macro `$__filters`](/fr/clickstack/observability/features/dashboards/sql-visualizations#dashboard-filter-macro) et avoir une source sélectionnée, car l&#39;UI ne peut pas inférer où placer la condition dans une requête écrite à la main.
 
 ### Variables {#dashboard-variables}
 
-Lorsque l&#39;option **Available as variable** est activée, la sélection du filtre est également exposée aux requêtes des tuiles sous la forme `$variableName`. Le champ **Variable name** reprend par défaut le nom d&#39;affichage du filtre, débarrassé des caractères non autorisés, et peut être surchargé. Les noms doivent commencer par une lettre et ne peuvent contenir que des lettres, des chiffres et des traits de soulignement.
+Les filtres de type valeurs statiques, valeurs de requête SQL et valeurs d&#39;étiquette PromQL sont toujours des variables. Un filtre de type valeurs d&#39;expression SQL devient une variable lorsque l&#39;option **Available as variable** est activée. Une variable expose la sélection du filtre aux requêtes des tuiles sous la forme `$variableName`. Le champ **Variable name** reprend par défaut le nom d&#39;affichage du filtre, débarrassé des caractères non autorisés, et peut être surchargé. Les noms doivent commencer par une lettre et ne peuvent contenir que des lettres, des chiffres et des traits de soulignement.
+
+Les filtres ad hoc ne sont jamais des variables, et les variables de source de données et de connexion sont des [références à une source ou à une connexion](#source-connection-variables) plutôt que des valeurs insérées dans le texte de la requête.
 
 Utilisez une variable lorsque la diffusion d&#39;une condition `WHERE` ne répond pas à votre besoin, par exemple pour insérer la valeur dans une expression `SELECT`, une clause `HAVING` ou une clé de jointure, ou pour filtrer une tuile sur une colonne autre que l&#39;expression du filtre lui-même.
 
@@ -474,13 +597,14 @@ Utilisez une variable lorsque la diffusion d&#39;une condition `WHERE` ne répon
 
 Une variable est remplacée par les valeurs actuellement sélectionnées dans sa liste déroulante. La forme de la référence détermine le rendu :
 
-| Référence           | Remplacée par                                                                                                                                                                                       | Sélection vide |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `$name`, `${name}`  | Les valeurs sélectionnées, au format `sqlstring` ou `lucene`, selon le contexte. Les accolades délimitent le nom lorsqu&#39;il est suivi de caractères alphanumériques, comme dans `${name}_total`. | `NULL`         |
-| `${name:sqlstring}` | Les valeurs sélectionnées, entre guillemets simples, séparées par des virgules et échappées comme valeurs SQL, par ex. `'a', 'b'`                                                                   | `NULL`         |
-| `${name:csv}`       | Sans guillemets et séparées par des virgules : `a,b`. Non échappées pour SQL.                                                                                                                       | chaîne vide    |
-| `${name:regex}`     | Une alternance d&#39;expression régulière, avec échappement des caractères spéciaux : `(a\|b)`.                                                                                                     | `.*`           |
-| `${name:lucene}`    | Un `OR` de termes entre guillemets, pour les entrées Lucene : `("a" OR "b")`.                                                                                                                       | `("")`         |
+| Référence           | Remplacée par                                                                                                                                                                                                                     | Sélection vide                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `$name`, `${name}`  | Les valeurs sélectionnées, au format `sqlstring` ou `lucene`, selon le contexte. Les accolades délimitent le nom lorsqu&#39;il est suivi de caractères alphanumériques, comme dans `${name}_total`.                               | `NULL`                                        |
+| `${name:sqlstring}` | Les valeurs sélectionnées, entre guillemets simples, séparées par des virgules et échappées comme valeurs SQL, par ex. `'a', 'b'`                                                                                                 | `NULL`                                        |
+| `${name:csv}`       | Sans guillemets et séparées par des virgules : `a,b`. Non échappées pour SQL.                                                                                                                                                     | chaîne vide                                   |
+| `${name:regex}`     | Une alternance d&#39;expression régulière, avec échappement des caractères spéciaux : `(a\|b)`.                                                                                                                                   | `.*`                                          |
+| `${name:lucene}`    | Un `OR` de termes entre guillemets, pour les entrées Lucene : `("a" OR "b")`.                                                                                                                                                     | `("")`                                        |
+| `${name:promql}`    | Forme utilisée par défaut dans les tuiles PromQL. Pour un filtre à sélection unique, la valeur sélectionnée, à utiliser dans `label="$name"`. Sinon, une alternance d&#39;expression régulière, à utiliser dans `label=~"$name"`. | `.*` (chaîne vide en cas de sélection unique) |
 
 Comme `$name` est rendu sous la forme `NULL` tant que rien n&#39;est sélectionné, privilégiez les macros suivantes partout où un prédicat SQL est attendu. Les deux macros sont remplacées par `1=1` tant qu&#39;aucune valeur n&#39;est sélectionnée pour leur variable, ce qui garantit la validité de la requête :
 

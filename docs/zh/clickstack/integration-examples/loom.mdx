@@ -1,0 +1,48 @@
+---
+title: '将 Loom 遥测数据发送到 ClickStack'
+sidebarTitle: 'Loom'
+slug: /use-cases/observability/clickstack/integrations/loom
+description: '通过 OpenTelemetry 将 Loom 的请求链路追踪和指标发送到 ClickStack 开源版。'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Loom', 'OpenTelemetry', 'OTLP']
+---
+
+使用 ClickStack 查看 [Loom](https://github.com/ClickHouse/loom) 的请求链路追踪和指标。Loom 是一款面向 AI 智能体的记忆与代码搜索服务器。
+
+## 开始之前 {#before-you-begin}
+
+* 一台正在运行的 Loom 服务器。
+* 一个 [ClickStack 开源版部署](/zh/clickstack/deployment/oss)，且其 OTLP HTTP 接收器可从 Loom 服务器访问。
+
+## 工作原理 {#how-it-works}
+
+Loom 通过 OTLP HTTP 将遥测数据导出到 ClickStack OpenTelemetry 采集器。采集器再将遥测数据写入 ClickHouse，之后即可在 ClickStack 中查看和使用这些数据。
+
+## 配置 Loom 导出器 {#configure-loom-exporter}
+
+在 **团队设置 → API 密钥** 中找到 ClickStack 摄取 API key。在 Loom 服务器上配置以下环境变量，将示例中的 URL 和密钥替换为实际值，然后重启 Loom：
+
+```bash
+export LOOM_OTEL_EXPORTER=otlp
+export LOOM_OTEL_EXPORTER_OTLP_ENDPOINT='http://clickstack-collector:4318'
+export LOOM_OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+请使用 Loom 可访问的采集器基准 URL。Loom 会在其后追加 `/v1/traces` 和 `/v1/metrics`。如果 Loom 将数据发送到中间采集器，请以逗号分隔的 `key=value` 键值对形式提供该接收器所需的请求头。如果接收器不需要任何请求头，请省略请求头设置。
+
+## 在 ClickStack 中验证遥测数据 {#verify-telemetry}
+
+检查 Loom 已解析的导出器设置。如果服务器位于其他主机或端口，请替换示例中的 Loom URL。
+
+```bash
+curl -sS 'http://localhost:7777/v1/health?include=otel'
+```
+
+检查 `otel.mode` 是否为 `otlp`，以及 `otel.endpoint` 是否为已配置的采集器 URL。
+
+发起一次 Loom 请求 (例如记忆搜索) 以生成 trace。在 ClickStack 中打开 **搜索**，选择 **Traces** source，然后按服务名称 `loom` (即 OpenTelemetry 中的 `service.name`) 进行过滤。如果设置了 `LOOM_OTEL_SERVICE_NAME`，则按该值过滤。
+
+## 后续步骤 {#next-steps}
+
+* [将 OpenTelemetry 数据发送到 ClickStack](/zh/clickstack/ingesting-data/opentelemetry)
+* [Loom 遥测数据设置与指标](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/features/observability/telemetry.md)

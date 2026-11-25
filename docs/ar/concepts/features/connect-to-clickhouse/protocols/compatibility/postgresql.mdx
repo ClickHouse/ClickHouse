@@ -1,0 +1,93 @@
+---
+description: 'توثيق واجهة بروتوكول الاتصال الشبكي لـ PostgreSQL في ClickHouse'
+sidebarTitle: 'واجهة PostgreSQL'
+slug: /concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql
+title: 'واجهة PostgreSQL'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+<Tip>
+  تعرّف على خدمة [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) التي نقدمها. تعتمد الخدمة على تخزين NVMe في الموقع الفعلي نفسه لموارد القدرة الحاسوبية، وتوفر أداءً أسرع بما يصل إلى 10x لأحمال العمل من نوع disk-bound مقارنةً بالبدائل التي تستخدم التخزين المتصل بالشبكة مثل EBS. كما تتيح لك نسخ بيانات Postgres نسخًا متماثلًا إلى ClickHouse باستخدام موصل التقاط تغييرات البيانات في Postgres ضمن ClickPipes.
+</Tip>
+
+يدعم ClickHouse بروتوكول الاتصال الشبكي لـ PostgreSQL، مما يتيح لك استخدام عملاء Postgres للاتصال بـ ClickHouse. إذ يمكن لـ ClickHouse محاكاة مثيل PostgreSQL، بحيث يمكنك استخدام تطبيق عميل PostgreSQL لا يدعمه ClickHouse مباشرةً (مثل Amazon Redshift) للاتصال بـ ClickHouse.
+
+لتمكين بروتوكول الاتصال الشبكي لـ PostgreSQL، أضف إعداد [postgresql&#95;port](/ar/reference/settings/server-settings/settings/postgresql#postgresql_port) إلى ملف تهيئة الخادم. على سبيل المثال، يمكنك تحديد المنفذ في ملف XML جديد ضمن مجلد `config.d`:
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+شغّل خادم ClickHouse، ثم ابحث عن رسالة في السجل مشابهة لما يلي تتضمن العبارة **Listening for PostgreSQL compatibility protocol**:
+
+```response
+{} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
+```
+
+## ربط psql بـ ClickHouse {#connect-psql-to-clickhouse}
+
+يوضّح الأمر التالي طريقة ربط عميل PostgreSQL ‏`psql` بـ ClickHouse:
+
+```bash
+psql -p [port] -h [hostname] -U [username] [database_name]
+```
+
+على سبيل المثال:
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default
+```
+
+<Note>
+  يتطلب عميل `psql` تسجيل الدخول باستخدام كلمة مرور، لذا لن تتمكن من الاتصال باستخدام المستخدم `default` الذي لا يملك كلمة مرور. لذلك، إما أن تعيّن كلمة مرور للمستخدم `default`، أو أن تسجّل الدخول بمستخدم آخر.
+</Note>
+
+يطلب منك عميل `psql` إدخال كلمة المرور:
+
+```response
+Password for user alice:
+psql (14.2, server 22.3.1.1)
+WARNING: psql major version 14, server major version 22.
+         Some psql features might not work.
+Type "help" for help.
+
+default=>
+```
+
+وهذا كل ما يلزم! أصبح لديك الآن عميل PostgreSQL متصل بـ ClickHouse، وتُنفَّذ جميع الأوامر والاستعلامات على ClickHouse.
+
+<Note>
+  لا يدعم بروتوكول PostgreSQL حاليًا سوى كلمات المرور بنص صريح غير مشفّر.
+</Note>
+
+## استخدام SSL {#using-ssl}
+
+إذا هيّأت SSL/TLS على مثيل ClickHouse لديك، فسيستخدم `postgresql_port` الإعدادات نفسها (إذ يُستخدم المنفذ نفسه لاتصالات العملاء الآمنة وغير الآمنة).
+
+لكل عميل طريقته الخاصة للاتصال باستخدام SSL. يوضّح الأمر التالي كيفية تمرير الشهادات والمفتاح لإنشاء اتصال آمن بين `psql` وClickHouse:
+
+```bash
+psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
+```
+
+## تهيئة مصادقة مستخدم ClickHouse باستخدام SCRAM-SHA-256 {#using-scram-sha256}
+
+لضمان مصادقة آمنة للمستخدمين في ClickHouse، يُوصى باستخدام بروتوكول SCRAM-SHA-256. هيّئ المستخدم بتحديد العنصر `password_scram_sha256_hex` في الملف users.xml. ويجب توليد تجزئة كلمة المرور باستخدام num&#95;iterations=4096.
+
+تأكد من أن عميل psql يدعم SCRAM-SHA-256 ويعتمده عند التفاوض أثناء الاتصال.
+
+مثال على تهيئة المستخدم `user_with_sha256` بكلمة المرور `abacaba`:
+
+```xml
+<user_with_sha256>
+    <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+</user_with_sha256>
+```
+
+راجع [وثائق PostgreSQL](https://jdbc.postgresql.org/documentation/head/ssl-client.html) لمزيد من التفاصيل حول إعدادات SSL فيها.

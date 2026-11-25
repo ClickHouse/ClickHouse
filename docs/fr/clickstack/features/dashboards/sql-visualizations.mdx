@@ -24,9 +24,11 @@ Pour créer une visualisation basée sur SQL, ouvrez l’éditeur d’une tuile 
 À partir de là :
 
 1. Sélectionnez une **connexion ClickHouse** sur laquelle exécuter la requête.
-2. Sélectionnez éventuellement une **Source** — cela permet d’appliquer à votre visualisation des filtres au niveau du tableau de bord via la macro `$__filters`.
+2. Sélectionnez éventuellement une **Source** — cela permet d’appliquer à votre graphique des filtres au niveau du tableau de bord via la macro `$__filters`, et autorise l’utilisation de `$__sourceTable` dans la requête.
 3. Rédigez votre requête SQL dans l’éditeur, en utilisant des paramètres de requête et des macros pour l’intégrer à l’intervalle de temps, aux filtres et aux variables du tableau de bord.
 4. Cliquez sur le bouton **play** pour prévisualiser les résultats, puis sur **Save**.
+
+La connexion et la source peuvent également être définies par une [variable de connexion ou une variable de source de données](/fr/clickstack/features/dashboards/overview#source-connection-variables) : c’est alors l’utilisateur qui consulte le tableau de bord qui choisit la connexion ou la source interrogée par la tuile.
 
 <div id="query-parameters">
   ## Paramètres de requête {#query-parameters}
@@ -118,19 +120,18 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
   ### Macro de filtre du tableau de bord {#dashboard-filter-macro}
 </div>
 
-| Macro        | Description                                                                                          |
-| ------------ | ---------------------------------------------------------------------------------------------------- |
-| `$__filters` | Remplacé par les conditions de filtre du tableau de bord (nécessite qu’une Source soit sélectionnée) |
+| Macro            | Description                                                                                                                                                                                                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | Remplacé par les conditions de filtre du tableau de bord (nécessite qu’une Source soit sélectionnée)                                                                                                                                                                                                                             |
+| `$__sourceTable` | Remplacé par le nom pleinement qualifié de la table de la Source sélectionnée, par exemple `default.otel_logs`. Pour les sources de métriques, utilisez `$__sourceTable(<metric type>)`, où le type de métrique est `gauge`, `histogram`, `sum`, `summary` ou `exponential histogram`. Nécessite qu’une Source soit sélectionnée |
 
 Lorsqu’une **Source** est sélectionnée dans le graphique et que les filtres du tableau de bord sont actifs, `$__filters` se développe en conditions `WHERE` SQL correspondantes. Lorsqu’aucune source n’est sélectionnée ou qu’aucun filtre n’est appliqué, il se développe en `(1=1)` ; il peut donc toujours être inclus sans risque dans une clause `WHERE`.
 
-Seuls les filtres pour lesquels la **Condition de filtre de diffusion** est activée sont appliqués par `$__filters`. Les filtres exposés en tant que variables sont référencés explicitement, comme décrit ci-dessous.
+`$__filters` applique les sélections des filtres de valeurs d’expression SQL pour lesquels la **Condition de filtre de diffusion** est activée, ainsi que les conditions des [filtres ad hoc](/fr/clickstack/features/dashboards/overview#adhoc-filters) qui s’appliquent à la source de la tuile. Les filtres exposés en tant que variables sont référencés explicitement, comme décrit ci-dessous.
 
-<div id="dashboard-variables">
-  ### Macros de variables de tableau de bord {#dashboard-variables}
-</div>
+### Macros de variables de tableau de bord {#dashboard-variables}
 
-Lorsqu&#39;un filtre de tableau de bord est [disponible sous forme de variable](/fr/clickstack/features/dashboards/overview#dashboard-variables), ses valeurs sélectionnées peuvent être référencées n&#39;importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d&#39;un tableau de bord déclarant au moins une variable.
+Lorsqu&#39;un filtre de tableau de bord est [disponible sous forme de variable](/fr/clickstack/features/dashboards/overview#dashboard-variables) — un filtre de valeurs d&#39;expression SQL avec l&#39;option **Available as variable** activée, ou tout filtre de valeurs statiques, de valeurs de requête SQL ou de valeurs d&#39;étiquette PromQL —, ses valeurs sélectionnées peuvent être référencées n&#39;importe où dans la requête. Ces macros ne sont disponibles que dans les tuiles d&#39;un tableau de bord déclarant au moins une variable.
 
 | Macro                                         | Description                                                                                                                            |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -138,7 +139,7 @@ Lorsqu&#39;un filtre de tableau de bord est [disponible sous forme de variable](
 | `$__filter(<expression>, $<variable>)`        | Se développe en `<expression> IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, sinon en `1=1`.                  |
 | `$__conditionalAll(<condition>, $<variable>)` | Se développe en `<condition>` lorsque la variable comporte une sélection, sinon en `1=1`.                                              |
 
-Les valeurs d&#39;une variable peuvent également être interpolées directement sous la forme `$name` ou `${name}`, avec un format facultatif : `${name:sqlstring}` (par défaut), `${name:csv}` ou `${name:regex}`. Dans le format par défaut, une référence directe renvoie `NULL` tant qu&#39;aucune valeur n&#39;est sélectionnée ; utilisez donc de préférence les macros ci-dessus partout où un prédicat est attendu.
+Les valeurs d&#39;une variable peuvent également être interpolées directement sous la forme `$name` ou `${name}`, avec un format facultatif : `${name:sqlstring}` (par défaut), `${name:csv}` ou `${name:regex}`. Dans le format par défaut, une référence directe renvoie `NULL` tant qu&#39;aucune valeur n&#39;est sélectionnée ; utilisez donc de préférence les macros ci-dessus partout où un prédicat est attendu.
 
 <div id="how-results-are-plotted">
   ## Comment les résultats de la requête sont représentés {#how-results-are-plotted}

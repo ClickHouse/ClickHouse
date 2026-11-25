@@ -99,6 +99,37 @@ url = 'https://connection.url/'
 
 Необязательный параметр конфигурации `update_timeout_ms` по умолчанию имеет значение `5000`.
 
+#### Ротация ключей {#named-collections-key-rotation}
+
+Можно настроить несколько ключей, каждый с атрибутом `id`; параметр `current_key_id` задаёт ключ,
+которым шифруются новые записи (`current_key_hex` задаёт его по значению). Для расшифровки
+используются все настроенные ключи. Работающий сервер не подхватывает изменения ключей, даже после
+`SYSTEM RELOAD CONFIG`: требуется перезапуск. Существующие коллекции остаются доступными для чтения с помощью
+старого ключа и повторно шифруются текущим ключом при следующей записи: через
+`ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION` или при восстановлении из резервной копии. Сервер,
+у которого нет ключа, которым зашифрована коллекция, сообщает об ошибке с указанием отпечатка этого
+ключа и пропускает коллекцию при загрузке: она снова загрузится после перезапуска сервера с этим
+ключом или после того, как сервер, у которого есть этот ключ, перезапишет коллекцию. Удаляйте старый ключ из
+конфигурации только после того, как все зашифрованные им коллекции будут перезаписаны.
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex id="0">bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex id="1">00112233445566778899aabbccddeeff</key_hex>
+    <current_key_id>1</current_key_id>
+  </named_collections_storage>
+</clickhouse>
+```
+
+Чтобы выполнить ротацию ключа хранилища `local_encrypted`, добавьте новый ключ, сделайте его текущим, как в
+примере выше, и перезапустите сервер. Все серверы, совместно использующие хранилище `keeper_encrypted` или
+`zookeeper_encrypted`, должны знать новый ключ до того, как любой из них начнёт использовать его для записи: сервер,
+перезапущенный с новым текущим ключом, создаёт записи, которые ещё не перезапущенные серверы не смогут расшифровать.
+Поэтому ротацию ключа выполняйте в две стадии: сначала добавьте новый ключ, оставив текущим старый, и перезапустите
+все серверы; затем сделайте новый ключ текущим и снова перезапустите все серверы.
+
 Проверить активный тип хранилища можно с помощью `system.server_settings` и `getServerSetting`:
 
 ```sql
@@ -107,7 +138,7 @@ FROM system.server_settings
 WHERE name = 'named_collections_storage.type';
 ```
 
-Изменение типа хранилища требует перезапуска сервера; `SYSTEM RELOAD CONFIG` не изменяет активное backend-соединение.
+Для смены типа хранилища требуется перезапуск сервера; `SYSTEM RELOAD CONFIG` не меняет текущий бэкенд хранилища.
 
 ## Хранение именованных коллекций в конфигурационных файлах {#storing-named-collections-in-configuration-files}
 
@@ -559,19 +590,48 @@ kafka_max_block_size = '1048576';
 
 ### TLS и клиентские сертификаты {#kafka-mtls-named-collection}
 
-Пути TLS и `ssl.key.password` относятся к [расширенным настройкам librdkafka](/ru/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), а не к настройкам `kafka_*` движка таблиц Kafka. В именованной коллекции задавайте их с префиксом `kafka.` в DDL (например, `kafka.ssl_ca_location`) или внутри элемента `<kafka>` в XML (например, `<ssl_ca_location>`). Если `ENGINE = Kafka(collection)` использует коллекцию, глобальная конфигурация `<kafka>` сервера с ней не объединяется.
+TLS-сертификаты, закрытые ключи и `ssl.key.password` относятся к [расширенным настройкам librdkafka](/ru/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections), а не к настройкам `kafka_*` движка таблицы Kafka. В именованной коллекции задавайте их с префиксом `kafka.` в DDL (например, `kafka.ssl_ca_pem`) или внутри `<kafka>` в XML (например, `<ssl_ca_location>`). Если `ENGINE = Kafka(collection)` использует коллекцию, глобальная конфигурация сервера `<kafka>` с ней не объединяется.
+
+Именованная коллекция, созданная с помощью SQL, принимает только явно разрешённые свойства `librdkafka`. Для TLS передавайте содержимое сертификата или ключа в `ssl.ca.pem`, `ssl.certificate.pem` или `ssl.key.pem`. Чтобы использовать пути к файлам или другие свойства, не входящие в список разрешённых, определите коллекцию в файле конфигурации сервера. См. [TLS и SASL с именованными коллекциями](/ru/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+
+Пример с DDL:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 ```
 
-Если значения `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username` и `kafka_sasl_password` должны различаться для разных таблиц, задавайте их в `SETTINGS` таблицы. Полный пример `CREATE TABLE` приведён в разделе [TLS и SASL с именованными коллекциями](/ru/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
+Пример конфигурации XML со ссылками на файлы на сервере:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+Используйте `SETTINGS` на уровне таблицы для `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, `kafka_sasl_username` и `kafka_sasl_password`, если эти значения должны различаться для разных таблиц. Полный пример `CREATE TABLE` приведён в разделе [TLS и SASL с именованными коллекциями](/ru/reference/engines/table-engines/integrations/kafka#kafka-tls-sasl-named-collections).
 
 ### Аутентификация OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
 

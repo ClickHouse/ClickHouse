@@ -430,6 +430,7 @@ Parámetros de actualización disponibles:
 * `refresh_retry_initial_backoff_ms` - Retraso antes del primer reintento, si `refresh_retries` no es cero. Cada reintento posterior duplica el retraso, hasta `refresh_retry_max_backoff_ms`. Predeterminado: 100 ms.
 * `refresh_retry_max_backoff_ms` - Límite del crecimiento exponencial del retraso entre intentos de actualización. Predeterminado: 60000 ms (1 minuto).
 * `all_replicas` - En una [base de datos Replicated](/es/reference/engines/database-engines/replicated) con `APPEND`, controla si todas las réplicas se actualizan de forma independiente o si solo una réplica se actualiza en cada momento programado. No se puede cambiar después de crear la vista. Predeterminado: `false`.
+* `refresh_coordination_jitter_ms` - Si las actualizaciones están coordinadas entre réplicas, cada réplica espera un retraso aleatorio de hasta este valor antes de iniciar una actualización pendiente, de modo que las actualizaciones se repartan entre las réplicas incluso sin `RANDOMIZE FOR`. El retraso no se refleja en `next_refresh_time`. 0 deshabilita el retraso. Predeterminado: 1000 ms.
 
 ### Cambiar los parámetros de actualización {#changing-refresh-parameters}
 

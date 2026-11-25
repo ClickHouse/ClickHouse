@@ -202,28 +202,27 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 
 必要なのは Python 3 と Docker だけです。
 
-#### 利用可能なビルドジョブ {#available-build-jobs}
+#### 利用可能なビルドJob {#available-build-jobs}
 
-ビルドジョブ名は、CI Report に表示される名前と完全に一致します。
+ビルドJob名は、CI Report に表示される名前と完全に一致します。
 
 **AMD64 ビルド:**
 
 * `Build (amd_debug)` - シンボル付きデバッグビルド
 * `Build (amd_release)` - 最適化されたリリースビルド
-* `Build (amd_asan)` - Address Sanitizer ビルド
-* `Build (amd_tsan)` - Thread Sanitizer ビルド
-* `Build (amd_msan)` - Memory Sanitizer ビルド
-* `Build (amd_ubsan)` - Undefined Behavior Sanitizer ビルド
+* `Build (amd_asan)` - Address サニタイザー ビルド
+* `Build (amd_tsan)` - Thread サニタイザー ビルド
+* `Build (amd_msan)` - Memory サニタイザー ビルド
+* `Build (amd_ubsan)` - Undefined Behavior サニタイザー ビルド
 * `Build (amd_binary)` - Thin LTO なしの高速リリースビルド
 * `Build (amd_compat)` - 古いシステム向けの互換ビルド
-* `Build (amd_musl)` - musl libc を使用したビルド
 * `Build (amd_darwin)` - macOS ビルド
 * `Build (amd_freebsd)` - FreeBSD ビルド
 
 **ARM64 ビルド:**
 
 * `Build (arm_release)` - ARM64 向けの最適化リリースビルド
-* `Build (arm_asan)` - ARM64 Address Sanitizer ビルド
+* `Build (arm_asan)` - ARM64 Address サニタイザー ビルド
 * `Build (arm_coverage)` - カバレッジ用インストルメンテーションを含む ARM64 ビルド
 * `Build (arm_binary)` - Thin LTO なしの ARM64 高速リリースビルド
 * `Build (arm_darwin)` - macOS ARM64 ビルド
@@ -237,7 +236,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (loongarch64)` - LoongArch 64 ビット
 * `Build (wasm64)` - Emscripten 経由の WebAssembly 64 ビット。実験的: `clickhouse` バイナリをビルドし、Node.js ≥ 24 上で `clickhouse local` がクエリを実行することを検証します (モジュールはブラウザでも実行されますが、CI ではまだ検証していません)
 
-ジョブが成功すると、ビルド結果は `<repo_root>/ci/tmp/build` ディレクトリで利用できます。
+Jobが成功すると、ビルド結果は `<repo_root>/ci/tmp/build` ディレクトリで利用できます。
 
 **注:** 「その他のアーキテクチャ」カテゴリ以外のビルド (クロスコンパイルを使用しないもの) では、`BUILD_JOB_NAME` で指定したビルドを生成するために、ローカルマシンのアーキテクチャがビルドタイプと一致している必要があります。
 
@@ -303,8 +302,8 @@ clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
 
 master ブランチでは、コミットごとに LLVM カバレッジのインストルメンテーションを有効にしたビルドで ステートレス テスト、結合テスト、単体テストを実行し、カバレッジレポートを公開します。
 プルリクエストでこれらのJobが実行されるのは、`ci-coverage` ラベルが付いている場合 (またはカバレッジを収集・レポートするコードを変更している場合) のみです。プルリクエストのカバレッジレポートと変更行のカバレッジを確認したい場合は、このラベルを付けてください。
-ラベルがない場合、プルリクエストでは代わりに `arm_binary` ビルド上で同じ構成の ステートレス テストおよび結合テストが実行されます。単体テストは、すべてのプルリクエストで `amd_debug` ビルドおよびサニタイザ付きのビルド上で実行されます。
-ARM 上では自らをスキップする結合テストモジュールは、変更がそのモジュールの対象コードに及ぶ場合、対象を絞ったサニタイザJobで実行されます。
+ラベルがない場合、プルリクエストでは代わりに `arm_binary` ビルド上で同じ構成の ステートレス テストおよび結合テストが実行されます。単体テストは、すべてのプルリクエストで `arm_debug`、`arm_asan_ubsan`、`arm_tsan`、`amd_msan` の各ビルド上で実行されます。
+ARM 上では自らをスキップする結合テストモジュールは、変更がそのモジュールの対象コードに及ぶ場合、対象を絞ったサニタイザーJobで実行されます。
 ステートレステストを追加するだけで、カバレッジレポートが必要なプルリクエストでは、代わりに `ci-llvm-coverage` ラベルを使用できます。このラベルを付けると、カバレッジJob、カバレッジ対象外のテストのJob、変更されたテストに対するステートレステストの不安定性チェック、スタイルチェック、および AI コードレビューが実行され、それ以外のJobはすべてスキップされます。このようなプルリクエストは、このラベルを付けた状態でマージできますが、それ以外の変更を含むプルリクエストはマージできません。
 
 ## バグ修正の validate チェック {#bugfix-validate-check}

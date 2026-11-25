@@ -1,0 +1,47 @@
+---
+description: 'Documentación del controlador ADBC de ClickHouse'
+sidebarTitle: 'Controlador ADBC'
+slug: /concepts/features/connect-to-clickhouse/drivers/adbc
+title: 'Controlador ADBC'
+doc_type: 'reference'
+---
+
+El controlador ADBC de ClickHouse ofrece una interfaz [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+conforme a los estándares para conectar aplicaciones compatibles con ADBC a ClickHouse.
+
+El controlador se comunica con el servidor de ClickHouse mediante el [protocolo HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http), que es el protocolo principal
+compatible con todas las implementaciones de ClickHouse. Esto permite que el controlador funcione de forma coherente en entornos
+muy diversos, como instalaciones locales, servicios administrados en la nube y entornos en los que solo se dispone de acceso
+basado en HTTP.
+
+El código fuente del controlador está disponible en el
+[repositorio de GitHub adbc&#95;clickhouse](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  Este controlador se encuentra en desarrollo activo. Es posible que algunas funcionalidades de ADBC aún no estén completamente implementadas. La versión actual
+  se centra en ofrecer la conectividad esencial y la funcionalidad básica de ADBC, y está previsto incorporar funcionalidades adicionales en futuras
+  versiones.
+
+  Sus comentarios son muy valiosos y nos ayudan a priorizar nuevas funcionalidades y mejoras. Si detecta
+  limitaciones, funcionalidades ausentes o comportamientos inesperados, comparta sus observaciones o solicitudes de funcionalidades a través
+  del gestor de issues en
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+## Instalación {#installation}
+
+Puede instalar la versión más reciente del controlador con [dbc](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install clickhouse
+```
+
+También puede descargarlo manualmente desde [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+## Opciones de base de datos {#database-options}
+
+Las siguientes opciones de base de datos se utilizan para establecer una conexión con el controlador ADBC de ClickHouse.
+
+* `uri`: Especifica el endpoint HTTP(S) completo del servidor de ClickHouse, incluidos el protocolo, el host y el puerto.
+* `username`: Nombre de usuario utilizado para la autenticación en el servidor de ClickHouse.
+* `password`: Contraseña asociada al nombre de usuario especificado.

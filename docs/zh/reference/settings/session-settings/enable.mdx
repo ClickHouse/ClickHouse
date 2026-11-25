@@ -79,11 +79,11 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_cleanup_old_data_files_compaction`。"}]}]} />
 
-允许在 Iceberg 压实过程中清理旧的数据文件。
+允许通过后台合并整理清理 Iceberg 表的旧数据文件。
 
-清理操作会在压实完成后运行 `iceberg_compaction_data_cleanup`。它会将因本次压实而失效的快照标记为过期，方式与
-`expire_snapshots` 相同：将这些快照从表元数据中移除，并删除不再被任何其他快照引用的文件。对于格式版本为 1 的表，
-或由事务性目录管理的表，该操作仅删除文件，快照仍保留在元数据中。
+表的后台任务会将被较新快照替换已超过 `iceberg_compaction_data_cleanup` 时长的快照标记为过期 (被分支或标签引用的快照除外) ，方式与
+`expire_snapshots` 相同：将这些快照从表元数据中移除，并删除不再被任何其他快照引用的文件。它还会将同样在该时长之前被替换的元数据文件从元数据日志中丢弃并删除，
+除非表的元数据由事务性目录写入。任意副本上的查询正在读取的快照会保留，留待后续某次运行时再处理。对于格式版本为 1 的表，该设置不起作用。
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -181,6 +181,15 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 | `toStartOfMinute`         | 返回 `DateTime`<br />*注：对于超出 1970-2149 范围的值，结果会出错*     | 输入为 `Date`/`DateTime` 时，返回 `DateTime`<br />输入为 `Date32`/`DateTime64` 时，返回 `DateTime64`                       |
 | `timeSlot`                | 返回 `DateTime`<br />*注意：对于超出 1970-2149 范围的值，结果会不正确。*  | 对于 `Date`/`DateTime` 类型的输入，返回 `DateTime`<br />对于 `Date32`/`DateTime64` 类型的输入，返回 `DateTime64`                 |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：当 `GROUP BY` 的键由总大小不超过 16 字节的定宽键和一个不可为空的 `String` 键组成时，使用专用哈希表。禁用时，使用序列化方法。"}]}]} />
+
+当 `GROUP BY` 的键由总大小不超过 16 字节的定宽键和一个不可为空的 `String` 键组成时，使用专用哈希表。其中任意键均可为 `LowCardinality`。字符串为空字符串的键仅存储其定宽值，所用单元与纯定宽键一样窄；其他键则存储为定宽值加上指向该字符串的打包式引用，该引用可将不超过 11 字节的字符串内联存储；若定宽值最多占用 4 字节，则可内联存储不超过 15 字节的字符串。不含聚合函数的 `GROUP BY` 仅存储键，不为聚合状态预留空间，因此内存占用更少。
+禁用时，使用序列化方法。
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **别名**: `allow_experimental_full_text_index`
@@ -236,7 +245,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：`GROUP BY key [ORDER BY key] LIMIT n` 会将 top-K 堆的边界发布到 `MergeTree` 读取步骤，读取步骤据此过滤行并跳过粒度。当 `compatibility` 低于 26.10 时将禁用该功能。"}]}]} />
 
-此设置作用于 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)：当第一个参与排序的 `GROUP BY` 键是从 `MergeTree` 表中读取的列时，一旦 top-K 堆中已有 `LIMIT` 个键，聚合就会将该堆的边界发布到读取步骤。随后，读取步骤会在读取其他列之前 (`PREWHERE`) 丢弃键值超出边界的行，并利用主键或该列上的 `minmax` 跳过索引，跳过完全超出边界的粒度。
+此设置作用于 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)：当第一个参与排序的 `GROUP BY` 键是从 `MergeTree` 表中读取的列时，一旦 top-K 堆中已有 `LIMIT` 个键，聚合就会将该堆的边界发布到读取步骤。随后，读取步骤会在读取其他列之前 (`PREWHERE`) 丢弃键值超出边界的行，并利用主键或该列上的 `minmax` 跳过索引，跳过完全超出边界的粒度。当该列从 `Parquet` 文件中读取时 (`file`、`s3`、`azureBlobStorage`、`hdfs` 以及数据湖表函数和表引擎) ，读取器会自行丢弃此类行，并根据统计信息跳过完全超出边界的行组。
 
 此功能适用于 `GROUP BY key ORDER BY key LIMIT n`，以及不带 `ORDER BY` 的 `GROUP BY key LIMIT n` (此时任意 `n` 个分组都是有效结果) 。
 
@@ -548,7 +557,7 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 由于哈希表更小，连接会更晚触及 `max_bytes_in_join` 和 `max_bytes_before_external_join` 的限制。
 
-该设置不适用于 `FixedString` 或 `LowCardinality(Nullable(String))` 键、使用 `Join` 引擎的表，以及 `joinGet`。基于 `LowCardinality(String)` 键的连接可能会改用该键的字典。如果连接右侧的估计行数少于 `min_rows_for_packed_string_keys_in_hash_join`，该设置同样不会生效。
+该设置不适用于 `FixedString` 或 `LowCardinality(Nullable(String))` 键、使用 `Join` 引擎的表，以及 `joinGet`。基于 `LowCardinality(String)` 键的连接可能会改用该键的字典。如果连接的哈希表能够放入 CPU 的 L2 缓存，连接会保留精确键；如果连接需要对所有左侧键计算哈希，且右侧行数少于 `min_rows_for_packed_string_keys_in_hash_join`，同样会保留精确键。若将该设置设为 0，则所有连接都会采用打包式键，包括哈希表能够放入 L2 缓存的连接。
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 

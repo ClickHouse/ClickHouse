@@ -76,14 +76,31 @@ La lista de búsquedas guardadas.
 
 Un panel de control guardado. Omita `<dashboardId>` (`/dashboards`) para abrir un panel de control temporal sin guardar. Consulte [Paneles de control](/es/clickstack/observability/features/dashboards/overview) para obtener más información sobre cómo crear paneles de control.
 
-| Parámetro           | Formato                                                                                                                             | Descripción                                                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `from`, `to`        | milisegundos desde la época Unix                                                                                                    | Intervalo de tiempo aplicado a todos los bloques. Si se omite, se usan de forma predeterminada los últimos 15 minutos.                    |
-| `where`             | cadena                                                                                                                              | Texto de la consulta del filtro a nivel de panel de control, que se aplica a todos los bloques.                                                  |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Lenguaje de consulta en el que está escrito `where`.                                                                                      |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | Valores estructurados de los filtros del panel de control; por ejemplo, la selección de dos elementos en un desplegable de filtro `ServiceName`. |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Tamaño del bucket para los bloques de time-series. `auto` elige un tamaño de bucket en función del intervalo de tiempo seleccionado.      |
-| `highlightedTileId` | cadena                                                                                                                              | Desplaza la vista hasta un bloque específico y lo resalta; resulta útil al enlazar desde una alerta.                                      |
+| Parámetro           | Formato                                                                                                                             | Descripción                                                                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | milisegundos desde la época Unix                                                                                                    | Intervalo de tiempo aplicado a todos los bloques. Si se omite, se usan de forma predeterminada los últimos 15 minutos.                                                                                           |
+| `where`             | cadena                                                                                                                              | Texto de la consulta del filtro a nivel de panel de control, que se aplica a todos los bloques.                                                                                                                  |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Lenguaje de consulta en el que está escrito `where`.                                                                                                                                                             |
+| `filters`           | array JSON de entradas de valores de filtro                                                                                         | Las selecciones de los [filtros personalizados y variables](/es/clickstack/observability/features/dashboards/overview#custom-filters) del panel de control. Consulte [Valores de filtro](#dashboard-filter-values). |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Tamaño del bucket para los bloques de time-series. `auto` elige un tamaño de bucket en función del intervalo de tiempo seleccionado.                                                                             |
+| `highlightedTileId` | cadena                                                                                                                              | Desplaza la vista hasta un bloque específico y lo resalta; resulta útil al enlazar desde una alerta.                                                                                                             |
+
+### Valores de filtro {#dashboard-filter-values}
+
+El parámetro `filters` es un array JSON. Cada entrada define la selección de un filtro y adopta una de las siguientes formas:
+
+| Entrada                                                                                                           | Se usa para                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | Filtros que son variables: valores estáticos, valores de consulta SQL, valores de etiquetas de PromQL, variables de origen de datos y de conexión, y filtros de valores de expresión SQL con **Available as variable** habilitado. `name` es el nombre de la variable del filtro.                                                   |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Filtros ad hoc](/es/clickstack/observability/features/dashboards/overview#adhoc-filters). `name` es el nombre único del filtro y `operator` es uno de `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE` o `IN`. `LIKE` y `NOT LIKE` solo se aplican a fuentes SQL: los filtros ad hoc de Prometheus ignoran las condiciones que los utilizan. |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | Filtros de valores de expresión SQL que no son variables. La expresión de la condición debe coincidir con la **Filter expression** del filtro.                                                                                                                                                                                      |
+
+Se aplican las siguientes reglas:
+
+* Una entrada de variable tiene precedencia sobre una entrada `sql` que haga referencia al mismo filtro. Los enlaces creados antes de que existieran las variables, que usan entradas `sql` para todos los filtros, siguen funcionando.
+* En las variables de origen de datos y de conexión, un valor puede ser el **nombre** de la fuente o de la conexión en lugar de su ID. Los nombres se comparan primero de forma exacta y, después, sin distinguir entre mayúsculas y minúsculas. Así, los enlaces siguen siendo válidos entre entornos en los que la misma fuente tiene ID diferentes.
+* Un filtro de selección única solo usa el primer valor.
+* Las entradas que no coinciden con ningún filtro del panel de control o que tienen un formato incorrecto se ignoran.
 
 ### Ejemplo: abrir un panel de control en un intervalo de tiempo con un bloque resaltado {#example-dashboard-highlight}
 
@@ -91,6 +108,30 @@ Resulta útil para enlazar desde una notificación de alerta directamente al blo
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### Ejemplo: seleccionar valores en filtros que son variables {#example-dashboard-variables}
+
+Selecciona `checkout` y `payments` en un filtro cuyo nombre de variable es `service`, y `ERROR` en un filtro cuyo nombre de variable es `severity`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### Ejemplo: seleccionar un origen de datos y una conexión por nombre {#example-dashboard-source-variable}
+
+Selecciona la fuente `Production Logs` en una variable de origen de datos llamada `logs` y la conexión `Production` en una variable de conexión llamada `cluster`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### Ejemplo: Añadir condiciones de filtrado ad hoc {#example-dashboard-adhoc}
+
+Añade dos condiciones a un filtro ad hoc cuyo nombre único es `adhoc`: `ServiceName` es `checkout` o `payments`, y `SeverityText` no es `DEBUG`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## Lista de paneles de control — `/dashboards/list` {#dashboards-list}

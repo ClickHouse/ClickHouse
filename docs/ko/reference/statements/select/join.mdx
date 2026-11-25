@@ -180,13 +180,13 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-## 서로 다른 테이블의 컬럼에 대한 부등 조건 JOIN {#join-with-inequality-conditions-for-columns-from-different-tables}
+## 서로 다른 테이블의 컬럼에 대한 비동등 조건 JOIN {#join-with-inequality-conditions-for-columns-from-different-tables}
 
 `ON` 절에는 동등 조건뿐 아니라 서로 다른 테이블의 컬럼을 다른 연산자로 비교하는 조건도 포함할 수 있습니다. 이러한 조건은 `ALL`, `ANY`, `SEMI`, `ANTI` 엄격성에서 해당 엄격성이 허용하는 모든 JOIN 유형에 대해 지원됩니다. `ASOF` 엄격성에서는 지원되지 않습니다.
 
-`ON` 절에 부등 조건과 함께 두 테이블 간의 동등 조건이 있으면, 동등 조건이 JOIN 키가 되고 부등 조건은 이 키로 매칭된 행에 대해 검사됩니다. 이러한 혼합 조건은 [`hash`](/ko/concepts/features/operations/select/join-algorithms#hash), [`parallel_hash`](/ko/concepts/features/operations/select/join-algorithms#parallel-hash) 및 [`grace_hash`](/ko/concepts/features/operations/select/join-algorithms#grace-hash) 알고리즘에서 실행됩니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에서 [`ie_join`](/ko/concepts/features/operations/select/join-algorithms#ie-join)이 이들 알고리즘보다 앞에 나열되어 있고 `ON` 절에 두 개의 부등 조건이 있으면, 대신 `ie_join`이 JOIN을 실행하며 동등 조건은 필터(filter)로 적용됩니다.
+`ON` 절에 비동등 조건과 함께 두 테이블 간의 동등 조건이 있으면, 동등 조건이 조인 키가 되고 비동등 조건은 이 키로 매칭된 행에 대해 검사됩니다. 이러한 혼합 조건은 [`hash`](/ko/concepts/features/operations/select/join-algorithms#hash), [`parallel_hash`](/ko/concepts/features/operations/select/join-algorithms#parallel-hash) 및 [`grace_hash`](/ko/concepts/features/operations/select/join-algorithms#grace-hash) 알고리즘에서 실행됩니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에서 [`inequality`](/ko/concepts/features/operations/select/join-algorithms#inequality)가 이들 알고리즘보다 앞에 나열되어 있고 `ON` 절에 두 개의 비동등 조건이 있으면, 대신 `inequality`가 JOIN을 실행하며 동등 조건은 필터(filter)로 적용됩니다.
 
-`ON` 절에 두 테이블 간의 동등 조건이 없으면 매칭에 사용할 JOIN 키가 없습니다. 이러한 JOIN은 조건이 한 쌍의 부등 조건이면 [`ie_join`](/ko/concepts/features/operations/select/join-algorithms#ie-join)으로 실행되고, 그렇지 않으면 [블록 중첩 루프 조인(block nested loop join)](#join-with-an-arbitrary-on-condition)으로 실행됩니다.
+`ON` 절에 두 테이블 간의 동등 조건이 없으면 매칭에 사용할 조인 키가 없습니다. 이러한 JOIN은 조건이 한 쌍의 비동등 조건이면 [`inequality`](/ko/concepts/features/operations/select/join-algorithms#inequality)로 실행되고, 그렇지 않으면 [블록 중첩 루프 조인(block nested loop join)](#join-with-an-arbitrary-on-condition)으로 실행됩니다.
 
 조인 중 평가되는 조건에는 행 수를 유지해야 하므로 `arrayJoin`을 포함할 수 없습니다. 대신 서브쿼리에서 `ARRAY JOIN`을 사용하십시오.
 
@@ -238,7 +238,7 @@ key4    f    2    3    4            0    0    \N
 
 ## 임의의 ON 조건을 사용하는 JOIN {#join-with-an-arbitrary-on-condition}
 
-`ON` 절에는 범위 검사, 산술 비교, 스칼라 함수 호출 등 두 테이블의 컬럼에 대한 임의의 불리언 표현식을 사용할 수 있습니다. 두 테이블 간의 동등 비교가 없으면 행을 매칭하는 데 사용할 JOIN 키가 없습니다. 부등 조건 한 쌍으로 이루어진 조건은 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에 `ie_join` 알고리즘이 포함되어 있기만 하면 첫 번째 위치가 아니더라도 `ie_join`으로 실행됩니다. 다른 어떤 `join_algorithm` 값으로도 이러한 조건을 실행할 수 없기 때문입니다. 26.8 버전부터는 `join_algorithm`의 기본값에 `ie_join`이 포함되어 있습니다. 그 밖의 조건은 [블록 중첩 루프 조인(block nested loop join)](https://en.wikipedia.org/wiki/Nested_loop_join)으로 실행됩니다. 이 방식에서는 오른쪽 테이블을 구체화한 다음, 모든 행 쌍에 대해 조건을 평가합니다. `ALL INNER JOIN`은 해당 조건을 필터로 사용하는 `CROSS JOIN`과 동일한 형태로 실행됩니다.
+`ON` 절에는 범위 검사, 산술 비교, 스칼라 함수 호출 등 두 테이블의 컬럼에 대한 임의의 불리언 표현식을 사용할 수 있습니다. 두 테이블 간의 동등 비교가 없으면 행을 매칭하는 데 사용할 조인 키가 없습니다. 비동등 조건 한 쌍으로 이루어진 조건은 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에 `inequality` 알고리즘이 포함되어 있기만 하면 첫 번째 위치가 아니더라도 `inequality`로 실행됩니다. 다른 어떤 `join_algorithm` 값으로도 이러한 조건을 실행할 수 없기 때문입니다. 26.8 버전부터는 `join_algorithm`의 기본값에 `inequality`가 포함되어 있습니다. 그 밖의 조건은 [블록 중첩 루프 조인(block nested loop join)](https://en.wikipedia.org/wiki/Nested_loop_join)으로 실행됩니다. 이 방식에서는 오른쪽 테이블을 구체화한 다음, 모든 행 쌍에 대해 조건을 평가합니다. `ALL INNER JOIN`은 해당 조건을 필터(filter)로 사용하는 `CROSS JOIN`과 동일한 형태로 실행됩니다.
 
 블록 중첩 루프 조인은 `ASOF JOIN`, `PASTE JOIN`, `ANY FULL JOIN`을 제외한 모든 JOIN 유형과 엄격성을 지원합니다. 이 알고리즘은 `join_algorithm`에 지정할 수 있는 값이 아니며, 다른 어떤 알고리즘으로도 조건을 실행할 수 없을 때에만 사용되는 최후의 수단입니다. `EXPLAIN` 출력에서는 `BlockNestedLoopJoin` 단계로 표시됩니다. [`allow_block_nested_loop_join`](/ko/reference/settings/session-settings/allow#allow_block_nested_loop_join)이 비활성화되어 있으면 이 알고리즘이 필요한 쿼리는 `INVALID_JOIN_ON_EXPRESSION` 오류와 함께 거부됩니다.
 
@@ -269,7 +269,7 @@ ORDER BY o.id;
 
 **엄격성**
 
-`ANY`와 `SEMI`는 일반적으로 JOIN 키를 공유하는 행 그룹마다 1개의 행을 유지합니다. 여기서는 그러한 그룹이 없으므로, JOIN을 주도하는 테이블의 행마다 1개의 행을 유지합니다. 즉, `LEFT ANY`와 `LEFT SEMI`는 각 왼쪽 행을 최대 한 번, `RIGHT ANY`와 `RIGHT SEMI`는 각 오른쪽 행을 최대 한 번 출력합니다. `ANY INNER`는 양쪽을 동시에 제한합니다. 두 테이블의 각 행은 최대 한 번만 사용되므로, 결과의 행 수는 더 작은 테이블의 행 수를 넘지 않습니다. 이러한 결과를 구성하는 쌍은 `ANY`가 의미하는 대로 임의로 정해지며, 동일한 쿼리를 두 번 실행해도 달라질 수 있습니다. `ANY INNER`에서는 이 특성이 행 수에까지 적용됩니다. 행을 어떤 순서로 검사하든 양쪽의 각 행을 탐욕적으로 짝짓다 보면 짝을 찾지 못한 행의 수가 달라질 수 있으므로, JOIN 키가 없는 `ANY INNER` JOIN에 대한 `count()` 결과는 재현할 수 없으며 스레드 수와 오른쪽 테이블의 물리적 순서에 따라 달라집니다.
+`ANY`와 `SEMI`는 일반적으로 조인 키를 공유하는 행 그룹마다 1개의 행을 유지합니다. 여기서는 그러한 그룹이 없으므로, JOIN을 주도하는 테이블의 행마다 1개의 행을 유지합니다. 즉, `LEFT ANY`와 `LEFT SEMI`는 각 왼쪽 행을 최대 한 번, `RIGHT ANY`와 `RIGHT SEMI`는 각 오른쪽 행을 최대 한 번 출력합니다. `ANY INNER`는 양쪽을 동시에 제한합니다. 두 테이블의 각 행은 최대 한 번만 사용되므로, 결과의 행 수는 더 작은 테이블의 행 수를 넘지 않습니다. 이러한 결과를 구성하는 쌍은 `ANY`가 의미하는 대로 임의로 정해지며, 동일한 쿼리를 두 번 실행해도 달라질 수 있습니다. `ANY INNER`에서는 이 특성이 행 수에까지 적용됩니다. 행을 어떤 순서로 검사하든 양쪽의 각 행을 탐욕적으로 짝짓다 보면 짝을 찾지 못한 행의 수가 달라질 수 있으므로, 조인 키가 없는 `ANY INNER` JOIN에 대한 `count()` 결과는 재현할 수 없으며 스레드 수와 오른쪽 테이블의 물리적 순서에 따라 달라집니다.
 
 **성능**
 
@@ -339,12 +339,12 @@ float JOIN 키의 `NaN` 값에는 위의 `NULL` 규칙이 적용되지 않습니
 
 ## 암시적 타입 변환 {#implicit-type-conversion}
 
-왼쪽 테이블과 오른쪽 테이블의 JOIN 키 타입이 서로 다르면 ClickHouse는 비교하기 전에 두 키를 최소 공통 상위 타입으로 변환합니다. 이는 모든 JOIN 유형과 엄격성에 적용됩니다.
+왼쪽 테이블과 오른쪽 테이블의 조인 키 타입이 서로 다르면 ClickHouse는 비교하기 전에 두 키를 최소 공통 상위 타입으로 변환합니다. 이는 모든 JOIN 유형과 엄격성에 적용됩니다.
 
 * `ON`을 사용하면 변환은 비교에만 적용됩니다. 키 컬럼은 결과(result)에서 원래 타입을 유지합니다.
 * `USING`을 사용하면 병합된 컬럼은 결과에서 공통 타입을 가집니다. `semi_join_include_columns_from_both_sides` 또는 `anti_join_include_columns_from_both_sides`가 비활성화되어 있으면 `SEMI JOIN` 또는 `ANTI JOIN`의 병합된 컬럼은 보존되는 테이블의 타입을 유지합니다.
 
-키 타입에 공통 상위 타입(common supertype)이 없고 두 타입이 모두 정수 타입이거나 정수 타입의 튜플이면(`UInt64`와 `Int64`가 이에 해당), ClickHouse는 두 키를 양쪽 키 타입에 공통으로 속하는 값을 담을 수 있는 타입으로 변환합니다. `UInt64`와 `Int64`라면 이 타입은 `UInt64`입니다. 이 타입으로 표현할 수 없는 키 값(Key value)은 어떤 값과도 일치하지 않습니다. 이 변환은 `isNotDistinctFrom`을 제외한 `ON`의 동등 조건과 `INNER JOIN` 또는 `SEMI JOIN`의 `USING`에 사용됩니다. `ASOF JOIN`의 최근접 일치 조건, `ie_join`이 실행하는 비동등 조건, 그 밖의 JOIN에서의 `USING`에는 사용되지 않습니다. 이들의 결과 컬럼은 일치 항목이 없는 값도 담아야 하기 때문입니다. 이 변환은 버전 26.9부터 사용할 수 있습니다.
+키 타입에 공통 상위 타입(common supertype)이 없고 두 타입이 모두 정수 타입이거나 정수 타입의 튜플이면(`UInt64`와 `Int64`가 이에 해당), ClickHouse는 두 키를 양쪽 키 타입에 공통으로 속하는 값을 담을 수 있는 타입으로 변환합니다. `UInt64`와 `Int64`라면 이 타입은 `UInt64`입니다. 이 타입으로 표현할 수 없는 키 값(Key value)은 어떤 값과도 일치하지 않습니다. 이 변환은 `isNotDistinctFrom`을 제외한 `ON`의 동등 조건과 `INNER JOIN` 또는 `SEMI JOIN`의 `USING`에 사용됩니다. `ASOF JOIN`의 가장 가까운 일치 조건, `inequality`가 실행하는 비동등 조건, 그 밖의 JOIN에서의 `USING`에는 사용되지 않습니다. 이들의 결과 컬럼은 일치 항목이 없는 값도 담아야 하기 때문입니다. 이 변환은 버전 26.9부터 사용할 수 있습니다.
 
 키 타입에 공통 상위 타입이 없고 이 변환도 적용되지 않으면(`String`과 `Int32`, 또는 `UInt64`와 `Float64`가 이에 해당) 쿼리는 `NO_COMMON_TYPE`과 같은 예외를 발생시키며 실패합니다.
 

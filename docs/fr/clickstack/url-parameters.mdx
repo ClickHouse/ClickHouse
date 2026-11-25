@@ -9,23 +9,13 @@ keywords: ['ClickStack', 'paramètres d’URL', 'paramètres de requête', 'lien
 
 Vous pouvez ouvrir des pages ClickStack à l’aide de liens profonds et de paramètres de requête d’URL, afin d’accéder directement à une recherche, un tableau de bord ou un panneau spécifique depuis un système externe (notification d’alerte, runbook, job d’intégration continue, message de chat, etc.).
 
-Les exemples de cette page utilisent `<YOUR_CLICKSTACK_URL>`. Remplacez-le par votre URL ClickStack — par exemple `http://localhost:8080` pour un déploiement local open source, ou `https://hyperdx.clickhouse.cloud` pour Managed ClickStack dans ClickHouse Cloud.
+Les exemples de cette page utilisent `<YOUR_CLICKSTACK_URL>`. Remplacez-le par votre URL ClickStack — par exemple `http://localhost:8080` pour un déploiement local open source.
 
 <Note>
   Les exemples présentent des paramètres de requête sans encodage d’URL pour faciliter la lecture. Lorsque vous générez des liens par programmation, encodez chaque valeur de paramètre de requête dans l’URL.
 </Note>
 
-<Info>
-  **Paramètre d’ID de service Managed ClickStack**
-
-  Lorsque vous utilisez Managed ClickStack dans ClickHouse Cloud, les liens doivent inclure le paramètre `?chcServiceId=` afin d’identifier le service ClickHouse Cloud à charger si l’utilisateur authentifié qui suit le lien est autorisé à utiliser plusieurs services ClickHouse Cloud.
-
-  Exemple : ouvrir Search pour un service Cloud spécifique
-
-  ```text
-  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
-  ```
-</Info>
+Pour les paramètres de Service Cloud et les liens vers les notebooks, consultez [Liens profonds ClickHouse Observability](/fr/clickstack/observability/url-parameters).
 
 ## Search — `/search` {#search}
 
@@ -76,14 +66,31 @@ Liste des recherches enregistrées.
 
 Un tableau de bord enregistré. Omettez `<dashboardId>` (`/dashboards`) pour ouvrir un tableau de bord temporaire non enregistré. Consultez [Tableaux de bord](/fr/clickstack/features/dashboards/overview) pour en savoir plus sur la création de tableaux de bord.
 
-| Paramètre           | Format                                                                                                                              | Description                                                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `from`, `to`        | millisecondes depuis l’époque Unix                                                                                                  | Intervalle de temps appliqué à toutes les vignettes. S&#39;ils sont omis, les 15 dernières minutes sont utilisées par défaut.                         |
-| `where`             | string                                                                                                                              | Texte de requête de filtre au niveau du tableau de bord, appliqué à toutes les vignettes.                                                             |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Langage de requête dans lequel `where` est écrit.                                                                                                     |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | Valeurs de filtres structurés du tableau de bord, sélectionnant deux éléments dans le menu déroulant du filtre `ServiceName`.                         |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Taille des compartiments pour les vignettes de séries temporelles. `auto` choisit une taille de compartiment selon l’intervalle de temps sélectionné. |
-| `highlightedTileId` | string                                                                                                                              | Fait défiler la page jusqu&#39;à une vignette spécifique et la met en évidence — utile pour créer un lien depuis une alerte.                          |
+| Paramètre           | Format                                                                                                                              | Description                                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | millisecondes depuis l’époque Unix                                                                                                  | Intervalle de temps appliqué à toutes les vignettes. S&#39;ils sont omis, les 15 dernières minutes sont utilisées par défaut.                                                                             |
+| `where`             | string                                                                                                                              | Texte de requête de filtre au niveau du tableau de bord, appliqué à toutes les vignettes.                                                                                                                 |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Langage de requête dans lequel `where` est écrit.                                                                                                                                                         |
+| `filters`           | tableau JSON d’entrées de valeurs de filtre                                                                                         | Valeurs sélectionnées dans les [filtres personnalisés et variables](/fr/clickstack/features/dashboards/overview#custom-filters) du tableau de bord. Consultez [Valeurs de filtre](#dashboard-filter-values). |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Taille des compartiments pour les vignettes de séries temporelles. `auto` choisit une taille de compartiment selon l’intervalle de temps sélectionné.                                                     |
+| `highlightedTileId` | string                                                                                                                              | Fait défiler la page jusqu&#39;à une vignette spécifique et la met en évidence — utile pour créer un lien depuis une alerte.                                                                              |
+
+### Valeurs des filtres {#dashboard-filter-values}
+
+Le paramètre `filters` est un tableau JSON. Chaque entrée définit la sélection d’un filtre, sous l’une des formes suivantes :
+
+| Entrée                                                                                                            | Utilisée pour                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | Filtres qui sont des variables : valeurs statiques, valeurs de requête SQL, valeurs d’étiquette PromQL, variables de source de données et de connexion, ainsi que filtres de valeurs d’expression SQL pour lesquels **Available as variable** est activé. `name` est le nom de variable du filtre.                                                        |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Filtres ad hoc](/fr/clickstack/features/dashboards/overview#adhoc-filters). `name` est le nom unique du filtre, et `operator` est l’un des opérateurs suivants : `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE` ou `IN`. `LIKE` et `NOT LIKE` s’appliquent uniquement aux sources SQL — les filtres ad hoc Prometheus ignorent les conditions qui les utilisent. |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | Filtres de valeurs d’expression SQL qui ne sont pas des variables. L’expression de la condition doit correspondre au champ **Filter expression** du filtre.                                                                                                                                                                                               |
+
+Les règles suivantes s’appliquent :
+
+* Une entrée de variable prévaut sur une entrée `sql` ciblant le même filtre. Les liens antérieurs aux variables, qui utilisent des entrées `sql` pour chaque filtre, continuent de fonctionner.
+* Pour les variables de source de données et de connexion, une valeur peut être le **nom** de la source ou de la connexion au lieu de son ID. Les noms sont d’abord comparés de manière exacte, puis sans tenir compte de la casse. Les liens restent ainsi stables d’un environnement à l’autre, même lorsque la même source possède des ID différents.
+* Un filtre à sélection unique n’utilise que la première valeur.
+* Les entrées mal formées ou qui ne correspondent à aucun filtre du tableau de bord sont ignorées.
 
 ### Exemple : ouvrir un tableau de bord sur un intervalle de temps avec une vignette mise en évidence {#example-dashboard-highlight}
 
@@ -91,6 +98,30 @@ Utile pour créer un lien depuis une notification d’alerte directement vers la
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### Exemple : sélectionner des valeurs dans des filtres définis comme variables {#example-dashboard-variables}
+
+Sélectionne `checkout` et `payments` dans le filtre dont le nom de variable est `service`, et `ERROR` dans le filtre dont le nom de variable est `severity`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### Exemple : sélectionner une source de données et une connexion par leur nom {#example-dashboard-source-variable}
+
+Sélectionne la source `Production Logs` dans une variable de source de données nommée `logs`, ainsi que la connexion `Production` dans une variable de connexion nommée `cluster`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### Exemple : ajouter des conditions de filtrage ad hoc {#example-dashboard-adhoc}
+
+Ajoute deux conditions à un filtre ad hoc dont le nom unique est `adhoc` : `ServiceName` vaut `checkout` ou `payments`, et `SeverityText` est différent de `DEBUG`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## Liste des tableaux de bord — `/dashboards/list` {#dashboards-list}
@@ -217,18 +248,4 @@ Tableaux de bord HTTP, de bases de données et d’erreurs par service.
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-  **Uniquement dans Managed ClickStack**
-
-  Les Notebooks sont disponibles uniquement dans les déploiements Managed ClickStack. Consultez [AI Notebooks](/fr/clickstack/notebooks) pour en savoir plus sur cette fonctionnalité.
-</Info>
-
-### Exemple : ouvrir un notebook spécifique dans un service Cloud donné {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
 ```

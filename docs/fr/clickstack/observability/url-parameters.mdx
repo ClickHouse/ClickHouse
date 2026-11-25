@@ -76,14 +76,31 @@ Liste des recherches enregistrées.
 
 Un tableau de bord enregistré. Omettez `<dashboardId>` (`/dashboards`) pour ouvrir un tableau de bord temporaire non enregistré. Consultez [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) pour en savoir plus sur la création de tableaux de bord.
 
-| Paramètre           | Format                                                                                                                              | Description                                                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `from`, `to`        | millisecondes depuis l’époque Unix                                                                                                  | Intervalle de temps appliqué à toutes les tuiles. S’il est omis, les 15 dernières minutes sont utilisées par défaut.                          |
-| `where`             | string                                                                                                                              | Texte de la requête de filtre au niveau du tableau de bord, appliqué à toutes les tuiles.                                                     |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Langage de requête dans lequel `where` est écrit.                                                                                             |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | Valeurs structurées des filtres du tableau de bord ; ici, sélection de deux éléments dans la liste déroulante du filtre `ServiceName`.        |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Taille de bucket pour les tuiles de séries temporelles. `auto` choisit une taille de bucket en fonction de l’intervalle de temps sélectionné. |
-| `highlightedTileId` | string                                                                                                                              | Fait défiler la page jusqu’à une tuile donnée et la met en surbrillance — pratique pour un lien depuis une alerte.                            |
+| Paramètre           | Format                                                                                                                              | Description                                                                                                                                                                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | millisecondes depuis l’époque Unix                                                                                                  | Intervalle de temps appliqué à toutes les tuiles. S’il est omis, les 15 dernières minutes sont utilisées par défaut.                                                                                                    |
+| `where`             | string                                                                                                                              | Texte de la requête de filtre au niveau du tableau de bord, appliqué à toutes les tuiles.                                                                                                                               |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Langage de requête dans lequel `where` est écrit.                                                                                                                                                                       |
+| `filters`           | tableau JSON d’entrées de valeurs de filtre                                                                                         | Valeurs sélectionnées dans les [filtres personnalisés et variables](/fr/clickstack/observability/features/dashboards/overview#custom-filters) du tableau de bord. Consultez [Valeurs de filtre](#dashboard-filter-values). |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Taille de bucket pour les tuiles de séries temporelles. `auto` choisit une taille de bucket en fonction de l’intervalle de temps sélectionné.                                                                           |
+| `highlightedTileId` | string                                                                                                                              | Fait défiler la page jusqu’à une tuile donnée et la met en surbrillance — pratique pour un lien depuis une alerte.                                                                                                      |
+
+### Valeurs des filtres {#dashboard-filter-values}
+
+Le paramètre `filters` est un tableau JSON. Chaque entrée définit la sélection d’un filtre, sous l’une des formes suivantes :
+
+| Entrée                                                                                                            | Utilisation                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | Filtres qui sont des variables : valeurs statiques, valeurs de requête SQL, valeurs d’étiquettes PromQL, variables de source de données et de connexion, ainsi que filtres de valeurs d’expression SQL pour lesquels l’option **Available as variable** est activée. `name` est le nom de variable du filtre.                                                            |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Filtres ad hoc](/fr/clickstack/observability/features/dashboards/overview#adhoc-filters). `name` est le nom unique du filtre, et `operator` prend l’une des valeurs suivantes : `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE` ou `IN`. `LIKE` et `NOT LIKE` s’appliquent uniquement aux sources SQL : les filtres ad hoc Prometheus ignorent les conditions qui les utilisent. |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | Filtres de valeurs d’expression SQL qui ne sont pas des variables. L’expression de la condition doit correspondre au champ **Filter expression** du filtre.                                                                                                                                                                                                              |
+
+Les règles suivantes s’appliquent :
+
+* Une entrée de type variable a préséance sur une entrée `sql` portant sur le même filtre. Les liens antérieurs aux variables, qui utilisent des entrées `sql` pour chaque filtre, continuent de fonctionner.
+* Pour les variables de source de données et de connexion, une valeur peut être le **nom** de la source ou de la connexion au lieu de son ID. Les noms sont d’abord comparés de manière exacte, puis sans tenir compte de la casse. Les liens restent ainsi stables d’un environnement à l’autre, même lorsqu’une même source possède des ID différents.
+* Un filtre à sélection unique n’utilise que la première valeur.
+* Les entrées mal formées ou qui ne correspondent à aucun filtre du tableau de bord sont ignorées.
 
 ### Exemple : ouvrir un tableau de bord sur un intervalle de temps avec une tuile mise en évidence {#example-dashboard-highlight}
 
@@ -91,6 +108,30 @@ Utile pour pointer, depuis une notification d’alerte, directement vers la tuil
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### Exemple : sélectionner des valeurs dans des filtres définis comme variables {#example-dashboard-variables}
+
+Sélectionne `checkout` et `payments` dans le filtre associé à la variable `service`, et `ERROR` dans le filtre associé à la variable `severity`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### Exemple : sélectionner une source de données et une connexion par leur nom {#example-dashboard-source-variable}
+
+Sélectionne la source `Production Logs` dans une variable de source de données nommée `logs`, et la connexion `Production` dans une variable de connexion nommée `cluster`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### Exemple : ajouter des conditions de filtrage ad hoc {#example-dashboard-adhoc}
+
+Ajoute deux conditions à un filtre ad hoc portant le nom unique `adhoc` : `ServiceName` vaut `checkout` ou `payments`, et `SeverityText` est différent de `DEBUG`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## Liste des tableaux de bord — `/dashboards/list` {#dashboards-list}

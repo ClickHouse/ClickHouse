@@ -157,6 +157,17 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period에 0초에서 x초 �
 
 파트 업데이트 시 리더를 다시 확인하는 최대 주기입니다. ClickHouse Cloud에서만 사용할 수 있습니다
 
+## shared_merge_tree_max_noop_updates_from_leader {#shared_merge_tree_max_noop_updates_from_leader}
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "16"},{"label": "새로운 설정: no-op 메타데이터 갱신이 이 횟수만큼 연속으로 발생하면 팔로워는 파트 업데이트 리더 대신 Keeper에서 메타데이터를 읽습니다"}]}]} />
+
+가상 파트와 뮤테이션 중 어느 것도 변경하지 않은 메타데이터 갱신의 연속 횟수입니다.
+이 횟수에 도달하면 팔로워는 다시 변경이 발생할 때까지 파트 업데이트 리더 대신
+Keeper에서 메타데이터를 읽습니다. 0으로 설정하면 이 전환을 비활성화합니다.
+ClickHouse Cloud에서만 사용할 수 있습니다
+
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -340,6 +351,14 @@ partitions for mutations>` 비율이 이 설정보다 높으면, 머지/뮤테�
 <SettingsInfoBlock type="UInt64" default_value="32" />
 
 한 번에 스케줄링할 fetch 파트 메타데이터 작업 수입니다. ClickHouse Cloud에서만 사용할 수 있습니다.
+
+## shared_merge_tree_parts_update_leader_tables_budget_factor {#shared_merge_tree_parts_update_leader_tables_budget_factor}
+
+<SettingsInfoBlock type="Float" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2"},{"label": "새로운 설정"}]}]} />
+
+레플리카(replica)가 보유한 파트 업데이트 리더 잠금 수가 `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ`에 도달하면 더 이상 새 잠금을 획득하지 않습니다. 0으로 설정하면 제한이 비활성화됩니다. ClickHouse Cloud에서만 사용할 수 있습니다.
 
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 

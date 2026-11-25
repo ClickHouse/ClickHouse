@@ -1,0 +1,117 @@
+---
+description: 'ClickHouse の SSH インターフェイスに関するドキュメント'
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'SSH インターフェイス'
+slug: /concepts/features/connect-to-clickhouse/protocols/ssh
+title: 'PTY 対応の SSH インターフェイス'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+## はじめに {#preface}
+
+ClickHouseサーバーには、SSHプロトコルを使用して直接接続できます。クライアントの種類は問いません。
+
+[SSH 鍵で認証されるデータベースユーザー](/ja/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)を作成したら、次のようにします。
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+この秘密鍵を使用して ClickHouseサーバーに接続できます。接続すると擬似端末 (PTY) が開き、clickhouse-client の対話型 session が開始されます。
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+SSH 経由でのコマンド実行 (非対話型モード) にも対応しています：
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+## サーバー構成 {#server-configuration}
+
+SSH サーバー機能を有効化するには、`config.xml` 内の次のセクションのコメントを解除するか、このセクションを追加してください。
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+ホスト鍵は SSH プロトコルに不可欠な要素です。この鍵の公開部分はクライアント側の `~/.ssh/known_hosts` ファイルに保存され、一般に中間者攻撃を防ぐために使用されます。サーバーに初めて接続すると、次のようなメッセージが表示されます。
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+これは実際には、「このホストの公開鍵を記憶して接続を続行しますか？」という意味です。
+
+オプションを渡すことで、ホストを検証しないよう SSH クライアントに指示できます：
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+## 埋め込みクライアントの設定 {#configuring-embedded-client}
+
+埋め込みクライアントには、通常の `clickhouse-client` と同様にオプションを渡せますが、いくつかの制限があります。
+SSH プロトコルを使用するため、接続先ホストにパラメータを渡すには環境変数を使う以外に方法がありません。
+
+たとえば、`format` は次のように設定できます。
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+この方法で任意のユーザーレベルの設定を変更できます。また、通常の `clickhouse-client` オプションのほとんども渡せます (この構成では意味のないものを除きます) 。
+
+重要：
+
+`query` オプションと SSH コマンドの両方を渡した場合、後者が実行対象のクエリのリストに追加されます。
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

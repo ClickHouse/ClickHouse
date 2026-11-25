@@ -12,17 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するものであり、ClickHouse のソースコードから自動生成されています。
 
-<div id="snapshot_cleaner_period">
-  ## snapshot_cleaner_period
-</div>
+## snapshot_cleaner_max_replicas {#snapshot_cleaner_max_replicas}
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="3" changeable_without_restart="No" />
 
-SharedMergeTree のスナップショットパーツを完全に削除する間隔です。ClickHouse Cloud でのみ利用できます
+スナップショットレジストリ配下の各テーブルについて、スナップショットクリーナーを実行するレプリカの最大数です。クリーナーを実行している各レプリカは、`snapshot_cleaner_enabled` レプリカフラグによってその旨を通知します。各レプリカは、通知しているレプリカをテーブルとレプリカ名のランデブーハッシュで順位付けし、自身が上位エントリに含まれる場合にのみそのテーブルを処理します。これにより、テーブルごとのクリーンアップがフリート全体に分散され、重複する作業も一定の範囲内に抑えられます。クリーナーが無効になっているレプリカ (`snapshot_cleaner_period = 0`) は通知を行わず、選出されることもありません。`0` は上限なしを意味し、すべてのレプリカがすべてのテーブルを処理します。ClickHouse Cloudでのみ利用可能
 
-<div id="snapshot_cleaner_pool_size">
-  ## snapshot_cleaner_pool_size
-</div>
+## snapshot_cleaner_period {#snapshot_cleaner_period}
+
+<SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
+
+SharedMergeTree のスナップショットパーツを完全に削除する間隔 (秒) です。ClickHouse Cloudでのみ利用可能です
+
+## snapshot_cleaner_pool_size {#snapshot_cleaner_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="No" />
 

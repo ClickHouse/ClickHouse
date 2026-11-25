@@ -103,11 +103,11 @@ dbt 会通过分析用于创建模型的 SQL，自动确定每一列的数据类
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -246,7 +246,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 或者在 `models/<model_name>.sql` 的配置块中：
@@ -258,7 +257,6 @@ models:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -268,12 +266,12 @@ models:
 
 下面列出了此物化类型特有的配置：
 
-| Option                   | Description                                                                                                                        | Required?                  |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `unique_key`             | 由列名组成、用于唯一标识行的元组。有关唯一性约束的更多信息，请参见[此处](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional)。       | 必需。若未提供，已更改的行会被重复添加到增量表中。  |
-| `inserts_only`           | 此配置已弃用，建议改用 `append` 增量 `strategy`，两者行为相同。若在增量模型中将其设为 True，增量更新将直接插入目标表，而不会创建中间表。如果设置了 `inserts_only`，则会忽略 `incremental_strategy`。 | 可选 (默认值：`False`)           |
-| `incremental_strategy`   | 用于增量物化的策略。支持 `delete+insert`、`append`、`insert_overwrite` 或 `microbatch`。有关各策略的更多信息，请参见[此处](#incremental-model-strategies)          | 可选 (默认值：&#39;default&#39;) |
-| `incremental_predicates` | 应用于增量物化的附加条件 (仅适用于 `delete+insert` 策略)                                                                                             | 可选                         |
+| Option                   | Description                                                                                                                                                                      | Required?                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `unique_key`             | 由列名组成、用于唯一标识行的元组。有关唯一性约束的更多信息，请参见[此处](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional)。                                                     | `legacy`、`delete+insert` 和 `microbatch` 策略必需。若未提供，默认策略为 `append`。                                |
+| `inserts_only`           | 此配置已弃用，建议改用 `append` 增量 `strategy`，两者行为相同。若在增量模型中将其设为 True，增量更新将直接插入目标表，而不会创建中间表。如果设置了 `inserts_only`，则会忽略 `incremental_strategy`。设置此配置会记录一条弃用警告，启用 `--warn-error` 时，该警告会导致运行失败。 | 可选 (默认值：`False`)                                                                                 |
+| `incremental_strategy`   | 用于增量物化的策略。支持 `delete+insert`、`append`、`insert_overwrite` 或 `microbatch`。有关各策略的更多信息，请参见[此处](#incremental-model-strategies)                                                        | 可选 (默认值：未提供 `unique_key` 时为 `append`；否则，若设置了 `use_lw_deletes`，则为 `delete+insert`，其余情况为 `legacy`) |
+| `incremental_predicates` | 应用于增量物化的附加条件。仅 `delete+insert` 和 `microbatch` 策略支持此配置；使用其他策略时，设置此配置会导致运行失败，包括未提供 `unique_key` 的模型所使用的默认策略 `append`。                                                              | 可选                                                                                               |
 
 ### 增量模型策略 {#incremental-model-strategies}
 
@@ -281,9 +279,10 @@ models:
 
 #### 默认 (旧版) 策略 {#default-legacy-strategy}
 
+这是配置了 `unique_key` 的模型的默认策略 (参见 [`incremental_strategy`](#incremental-configurations)) 。
 一直以来，ClickHouse 对更新和删除的支持都比较有限，主要通过异步“变更”实现。
 为了模拟预期中的 dbt 行为，
-dbt-clickhouse 默认会创建一个新的临时表，其中包含所有未受影响 (未删除、未更改) 的“旧”
+dbt-clickhouse 会创建一个新的临时表，其中包含所有未受影响 (未删除、未更改) 的“旧”
 记录，以及所有新增或更新后的记录，
 然后将这个临时表与现有增量模型的 relation 交换。这是唯一一种
 在操作完成前如果出现问题时仍能保留原始 relation 的策略；不过，由于它需要完整复制原始表，因此执行起来可能
@@ -291,7 +290,7 @@ dbt-clickhouse 默认会创建一个新的临时表，其中包含所有未受�
 
 #### Delete+Insert 策略 {#delete-insert-strategy}
 
-`delete+insert` 策略使用[轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete)移除受影响的行，然后插入新行。由于无需复制整个表，其性能显著优于“legacy”策略。在 profile 中设置 `use_lw_deletes: true` 会将 `delete+insert` 设为默认的增量策略。
+`delete+insert` 策略使用[轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete)移除受影响的行，然后插入新行。由于无需复制整个表，其性能显著优于“旧版”策略。在 profile 中设置 `use_lw_deletes: true` 会将 `delete+insert` 设为具有 `unique_key` 的模型的默认增量策略。
 
 使用此策略时需注意以下事项：
 
@@ -299,25 +298,27 @@ dbt-clickhouse 默认会创建一个新的临时表，其中包含所有未受�
   问题，增量模型中的数据很可能处于无效状态。
 * 它需要启用 ClickHouse 设置 `allow_nondeterministic_mutations`。adapter 会尽可能在其
   自身 session 中自动启用该设置。如果无法启用 (例如，您的 dbt 用户对此设置只有只读权限) ，具体行为
-  取决于策略的选择方式：使用默认策略的模型会静默回退到 legacy
+  取决于策略的选择方式：使用默认策略的模型会静默回退到旧版
   策略；显式设置 `delete+insert` 或 `microbatch` 的模型会在运行时失败；而 profile 中的 `use_lw_deletes: true`
   会在连接时失败。
 * 在极少数情况下，使用非确定性的 `incremental_predicates` 可能会导致已
   更新或删除的项发生竞态条件。为确保结果一致，增量谓词应仅包含针对增量物化期间不会被修改的数据的子查询。
 
-#### 微批次策略 (需要 dbt-core &gt;= 1.9) {#microbatch-strategy}
+#### 微批处理策略 (需要 dbt-core &gt;= 1.9) {#microbatch-strategy}
 
 增量策略 `microbatch` 是 dbt-core 自 1.9 版本起提供的一项功能，旨在高效处理大规模时间序列数据转换。在 dbt-clickhouse 中，它基于现有的 `delete_insert`
 增量策略，根据 `event_time` 和
 `batch_size` 模型配置，将增量处理拆分为预定义的时间序列批次。
 
-除了能够处理大规模转换，微批次还支持：
+除了能够处理大规模转换，微批处理还支持：
 
 * [重新处理失败的批次](https://docs.getdbt.com/docs/build/incremental-microbatch#retry)。
 * 自动检测[批次并行执行](https://docs.getdbt.com/docs/build/parallel-batch-execution)。
-* 在[回填](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills)时，无需编写复杂的条件逻辑。
+* 在[历史数据回填](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills)时，无需编写复杂的条件逻辑。
 
-有关微批次的详细用法，请参阅[官方文档](https://docs.getdbt.com/docs/build/incremental-microbatch)。
+有关微批处理的详细用法，请参阅[官方文档](https://docs.getdbt.com/docs/build/incremental-microbatch)。
+
+无论服务端或 `event_time` 列使用什么时区，批次边界均以 UTC 为准。
 
 ##### 可用的 微批次 配置 {#available-microbatch-configurations}
 
@@ -568,6 +569,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 有关 Jaffle Shop 的完整示例，请参阅[指南中的 snapshot 部分](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot)。如需了解全部选项，请查阅 [snapshot 配置](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs)参考页面。
+
+## 函数 (UDFs) {#functions}
+
+dbt 从 `dbt-core v1.11+` 开始支持[函数](https://docs.getdbt.com/docs/build/udfs)，允许用户直接在 dbt 中定义和引用 UDFs。
+ClickHouse 适配器支持定义 `scalar` 和 `aggregate` 类型的 SQL UDFs (参见[类型规范](https://docs.getdbt.com/reference/resource-configs/type?version=1)) ，但 ClickHouse 内部对这两种类型的处理方式相同。
+
+以下两个示例展示了如何创建和引用 `scalar` 或 `aggregate` 类型的函数：
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+函数体是一个由参数构成的表达式，而不是 `SELECT` 语句：
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+dbt 使用 `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2` 创建这些函数。模型通过
+`function()` 调用这些函数：
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+ClickHouse 会将 UDFs 内联展开到调用它们的查询中，因此无法对聚合 UDFs 使用聚合组合器 (如 `-If` 或 `-State`) 或窗口子句 (`OVER (...)`) 。
+
+有关完整的配置列表，请参阅[函数属性文档](https://docs.getdbt.com/reference/function-properties?version=1)。
+请注意，某些配置可能不适用于 ClickHouse 适配器，或无法正常工作 (请参阅[不支持的函数配置](#unsupported-function-configurations)一节) 。
+
+### 函数作用域 {#functions-scope}
+
+UDFs 不归属于任何数据库：同一 ClickHouse 服务或集群中的所有数据库共享 UDF 名称。如果需要区分共用同一服务或集群的不同环境，请使用 `alias`，例如：
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+`{{ function('price_for_xlarge') }}` 随后会解析为 `price_for_xlarge_dev`、`price_for_xlarge_prod` 等。
+
+### Python 和 JavaScript UDFs {#python-and-javascript-udfs}
+
+ClickHouse 适配器目前不支持 Python 和 JavaScript UDFs。
+
+### 不支持的函数配置 {#unsupported-function-configurations}
+
+ClickHouse 不支持以下函数属性：
+
+* `overloads`：一个 UDF 只能有一个函数签名。设置 `overloads` 会导致构建失败。
+* 参数的 `default_value`：无法在 ClickHouse UDFs 中设置。设置 `default_value` 会导致构建失败。
+* `volatility`：无法在 ClickHouse UDFs 中设置。设置后会被忽略，并发出警告。
+* 参数和返回值的 `data_type`：dbt 要求提供，但 ClickHouse UDFs 不限定类型，因此不会强制执行这些类型约束。如果需要固定类型，请在函数体中进行类型转换。
+
+此外，ClickHouse 不支持以下模型配置：
+
+* `grants`：ClickHouse 不提供 UDF 使用授权机制，任何用户都可以调用 UDFs。设置 `grants` 会导致构建失败。
+* `persist_docs`：描述无法持久化到 UDFs 中，会被静默跳过，但仍会显示在 dbt 文档中。
 
 ## 契约与约束 {#contracts-and-constraints}
 

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'OpenAPI de ClickHouse Managed Postgres'
 description: 'Gérez vos services ClickHouse Managed Postgres avec notre OpenAPI'
-keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes', 'journaux du serveur', 'journaux']
+keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes', 'requêtes bloquantes', 'journaux du serveur', 'journaux']
 doc_type: 'guide'
 ---
 
@@ -286,10 +286,11 @@ Deux points de terminaison compatibles avec Prometheus exposent des métriques d
 
 ## Query insights {#query-insights}
 
-La télémétrie par instruction qui alimente l’onglet [Query Insights] dans la console cloud
+La télémétrie par statement qui alimente l’onglet [Query Insights] dans la console cloud
 est également accessible par programmation. Deux endpoints exposent les modèles de
-requête les plus lents d’un service : l’un répertorie tous les modèles classés par impact, l’autre
-renvoie un modèle précis avec ses exécutions récentes.
+requête les plus lents d’un service : l’un répertorie tous les modèles classés par impact, l’autre
+renvoie un modèle précis avec ses exécutions récentes. Un troisième répertorie les
+requêtes qui ont attendu des verrous ainsi que les sessions qui les ont bloquées.
 
 ### Lister les modèles de requête lentes {#list-slow-query-patterns}
 
@@ -406,13 +407,85 @@ CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes comp
 L&#39;exemple tronque les deux objets pour plus de concision ; l&#39;API renvoie le jeu complet
 de compteurs documenté dans [per-execution counters].
 
+### Lister les requêtes bloquantes {#list-blocking-queries}
+
+L&#39;[blocking queries API] renvoie les mêmes groupes que le
+tableau [Blocking queries] de la console : chaque résultat associe une requête
+en attente à un bloqueur direct, les plus fréquents en premier. Elle ne renvoie de données que pour
+les périodes où la collecte des requêtes bloquantes était activée pour le service. Indiquez
+`from_date` et `to_date` sous forme de timestamps RFC 3339. `to_date` doit être postérieur à
+`from_date`, et la plage ne doit pas dépasser 31 jours :
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Filtrez selon le `db_name`, le `db_user` ou l&#39;`app` des sessions en attente ; un
+`app=` vide correspond aux sessions sans nom d&#39;application. Parcourez les résultats
+page par page avec `limit` (jusqu&#39;à 2000, 50 par défaut) et `offset`, et utilisez `totalCount` pour
+connaître le nombre de groupes correspondants.
+
+Les champs commençant par `blocked` décrivent les sessions en attente, tandis que ceux
+commençant par `blocking` décrivent la session bloquante. `lockType`, `blockedMode`
+et les champs `latest*` proviennent de l&#39;échantillon le plus récent :
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+Comme dans la console, `blockingQuery` correspond au statement actuel ou le plus récent
+du processus bloquant, qui n&#39;est pas forcément celui qui a pris le verrou. `blockedQuery` et
+`blockingQuery` sont vides lorsque Query Insights ne dispose d&#39;aucun texte pour le statement,
+et `blockingQuery` est également vide lorsque `blockingInternal` ou
+`blockingPrepared` vaut `true`. Pour une transaction préparée, `blockingPids`
+vaut `[0]`.
+
 ## Journaux du serveur {#server-logs}
 
 Les journaux du serveur PostgreSQL affichés dans la visionneuse de journaux de la console cloud sont également
 accessibles par programmation. L&#39;[API des journaux] renvoie des entrées de journal individuelles pour un
-service sur une fenêtre temporelle. Comme pour Query insights, cette fenêtre est obligatoire ; transmettez donc
-`from_date` et `to_date` sous forme d&#39;horodatages RFC 3339. La plage ne doit pas dépasser
-30 jours et `to_date` doit être postérieur à `from_date` :
+service sur une fenêtre temporelle. Comme pour Query insights, cette fenêtre est obligatoire ; transmettez donc
+`from_date` et `to_date` sous forme de timestamps RFC 3339. La plage ne doit pas dépasser
+30 jours et `to_date` doit être postérieur à `from_date` :
 
 ```bash
 FROM=2026-05-25T00:00:00Z
@@ -490,10 +563,14 @@ d&#39;entrées ; incrémentez `offset` jusqu&#39;à ce qu&#39;une page renvoie m
 
 [detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "Volet de détails de Query insights"
 
+[Blocking queries]: /products/managed-postgres/monitoring/query-insights#blocking-queries "Requêtes bloquantes dans Query insights"
+
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Compteurs par exécution de Query insights"
 
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Lister les modèles de requêtes lentes Postgres"
 
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obtenir un modèle de requête lente Postgres avec les exécutions récentes"
+
+[blocking queries API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list "Lister les requêtes bloquantes Postgres"
 
 [API des journaux]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Lister les journaux du serveur Postgres"

@@ -89,7 +89,7 @@ Antes de ativar, verifique se todas as réplicas são compatíveis com a versão
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "Descontinua o tipo de estatística `minmax` e o substitui por `basic` (um superconjunto de `minmax`) nas estatísticas automáticas padrão; também substitui `uniq` por `uniq_v2` para reduzir a sobrecarga em inserções e no uso de memória"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Habilita estatísticas automáticas por padrão"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "A versão 26.7 substituiu `minmax, uniq` por `basic, uniq_v2` (`basic` é um superconjunto do obsoleto `minmax`, e `uniq_v2` reduz a sobrecarga nos insert, nas mesclagens e no uso de memória). A alteração é registrada na versão 26.4 para que `compatibility` com as versões 26.4 a 26.6 não restaure `minmax, uniq`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "basic, uniq_v2"},{"label": "Habilita estatísticas automáticas por padrão. As versões 26.4 a 26.6 foram lançadas com `minmax, uniq`, mas `compatibility` com essas versões resulta em `basic, uniq_v2`: as estatísticas afetam apenas o planejamento de consultas, não os resultados, e a mesclagem dos grandes estados de `uniq` de cada parte torna o planejamento de consultas muitas vezes mais lento nas versões mais recentes."}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "Nova configuração"}]}]} />
 
 Lista separada por vírgulas dos tipos de estatística a serem calculados automaticamente em todas as colunas adequadas.
 Tipos de estatística compatíveis: basic, tdigest, countmin, uniq, uniq&#95;v2.
@@ -197,6 +197,24 @@ O combinador de codecs `FirstApplicable` seleciona um codec para o tipo de dado 
 por exemplo, `FirstApplicable(PCO, ZSTD(3))` comprime números com `PCO` e os demais dados com `ZSTD(3)`. Pelo menos uma de suas
 alternativas deve ser aplicável a qualquer tipo de dado, e codecs com perda não são permitidos entre elas.
 Valor default: uma string vazia (não definido).
+
+## delay_merges_after_startup_seconds {#delay_merges_after_startup_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "60"},{"label": "Nova configuração para adiar mesclagens em segundo plano após a inicialização do servidor"}]}]} />
+
+As mesclagens em segundo plano de uma tabela carregada pelo servidor na inicialização só começam
+depois de transcorrido o número de segundos especificado desde a inicialização da tabela, para que as primeiras consultas
+após um restart não disputem recursos com elas. A primeira operação de `INSERT`, `OPTIMIZE`,
+mutação ou atualização leve na tabela neste servidor encerra o adiamento. Uma
+réplica de uma tabela `ReplicatedMergeTree` adia as mesclagens de sua
+fila de replicação, inclusive aquelas cujos resultados obteria como uma parte mesclada. Assim,
+`SYSTEM SYNC REPLICA` e mutações iniciadas em outra réplica podem ficar aguardando nessa réplica
+até que o adiamento termine. Tabelas criadas com `CREATE TABLE`, anexadas com
+`ATTACH TABLE` ou restauradas com `UNDROP TABLE` não estão sujeitas ao adiamento. As mesclagens não são
+adiadas enquanto uma partição tiver pelo menos `parts_to_delay_insert` partes ativas.
+0 desabilita o adiamento.
 
 ## disco {#disk}
 
@@ -812,6 +830,17 @@ Valores possíveis:
 Durante atualizações graduais, defina esta opção como `basic` para que os novos servidores produzam
 partes de dados compatíveis com os servidores antigos. Após a conclusão do upgrade,
 mude para `with_types` (ou `with_missing_columns`) para habilitar os recursos correspondentes.
+
+## serialize_statistics_bounds_with_column_type {#serialize_statistics_bounds_with_column_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Quando esta configuração está habilitada, os valores mínimo e máximo das estatísticas `minmax` e `basic` são gravados usando a serialização
+do tipo da coluna, no formato de arquivo de estatísticas `V5`, em vez da codificação genérica de `Field` usada no `V4`.
+Versões anteriores não conseguem ler arquivos de estatísticas no formato `V5`, portanto, não habilite esta configuração antes de concluir o upgrade de todas as réplicas:
+as estatísticas das partes gravadas com ela habilitada precisam ser rematerializadas após um downgrade.
 
 ## share_nested_offsets {#share_nested_offsets}
 

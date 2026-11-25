@@ -103,11 +103,11 @@ dbt는 모델을 생성하는 데 사용된 SQL을 분석해 각 컬럼의 데�
 }}
 
 select
-  -- event_type may be inferred as a String but we may prefer LowCardinality(String):
+  -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
-  -- countState() may be inferred as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
+  -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
   CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
-  -- maxSimpleState() may be inferred as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
+  -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
@@ -233,7 +233,7 @@ dbt-clickhouse는 버전에 맞는 DDL을 자동으로 생성합니다:
 | 26.1+         | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
 | 25.8 – 26.0   | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
-## 머티리얼라이즈: incremental {#materialization-incremental}
+## 머티리얼라이즈: 증분 {#materialization-incremental}
 
 테이블 모델은 dbt를 실행할 때마다 다시 생성됩니다. 이는 결과 집합(result set)이 크거나 변환이 복잡한 경우 현실적으로 어렵고 비용도 매우 많이 들 수 있습니다. 이 문제를 해결하고 빌드 시간을 줄이기 위해 dbt 모델을 증분 ClickHouse 테이블로 생성할 수 있으며, 다음 구문으로 구성합니다:
 
@@ -247,7 +247,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 또는 `models/<model_name>.sql`의 구성 블록:
@@ -259,7 +258,6 @@ models:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -269,12 +267,12 @@ models:
 
 이 머티리얼라이즈 유형에만 해당하는 구성은 아래와 같습니다:
 
-| Option                   | Description                                                                                                                                                                                                           | Required?                                          |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `unique_key`             | 행을 고유하게 식별하는 컬럼 이름의 튜플입니다. 고유성 제약 조건에 대한 자세한 내용은 [여기](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional)를 참조하십시오.                                                                  | 필수입니다. 지정하지 않으면 변경된 행이 incremental 테이블에 두 번 추가됩니다. |
-| `inserts_only`           | 동일한 방식으로 동작하는 incremental `strategy`인 `append`가 도입되면서 더 이상 사용이 권장되지 않습니다. incremental model에서 이 값을 True로 설정하면 중간 테이블을 생성하지 않고 incremental 업데이트가 대상 테이블에 직접 삽입됩니다. `inserts_only`를 설정하면 `incremental_strategy`는 무시됩니다. | 선택 사항(기본값: `False`)                                |
-| `incremental_strategy`   | incremental 머티리얼라이즈에 사용할 전략입니다. `delete+insert`, `append`, `insert_overwrite`, `microbatch`를 지원합니다. 전략에 대한 자세한 내용은 [여기](#incremental-model-strategies)를 참조하십시오.                                                       | 선택 사항(기본값: &#39;default&#39;)                      |
-| `incremental_predicates` | incremental 머티리얼라이즈에 적용할 추가 프레디케이트입니다(`delete+insert` strategy에만 적용됨)                                                                                                                                                 | 선택 사항                                              |
+| Option                   | Description                                                                                                                                                                                                                                                                            | Required?                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `unique_key`             | 행을 고유하게 식별하는 컬럼 이름의 튜플입니다. 고유성 제약 조건에 대한 자세한 내용은 [여기](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional)를 참조하십시오.                                                                                                                                   | `legacy`, `delete+insert`, `microbatch` 전략에서는 필수입니다. 지정하지 않으면 기본 전략은 `append`입니다.                 |
+| `inserts_only`           | 동일한 방식으로 동작하는 증분 `strategy`인 `append`가 도입되면서 더 이상 사용이 권장되지 않습니다. 증분 모델에서 이 값을 True로 설정하면 중간 테이블을 생성하지 않고 증분 업데이트가 대상 테이블에 직접 삽입됩니다. `inserts_only`를 설정하면 `incremental_strategy`는 무시됩니다. 이 값을 설정하면 사용 중단 경고가 로그에 기록되며, `--warn-error`를 사용하는 경우 실행이 실패합니다. | 선택 사항(기본값: `False`)                                                                               |
+| `incremental_strategy`   | 증분 머티리얼라이즈에 사용할 전략입니다. `delete+insert`, `append`, `insert_overwrite`, `microbatch`를 지원합니다. 전략에 대한 자세한 내용은 [여기](#incremental-model-strategies)를 참조하십시오.                                                                                                                        | 선택 사항(기본값: `unique_key`가 없으면 `append`, 있으면 `use_lw_deletes` 설정 시 `delete+insert`, 그 외에는 `legacy`) |
+| `incremental_predicates` | 증분 머티리얼라이즈에 적용할 추가 프레디케이트입니다. `delete+insert` 및 `microbatch` 전략에서만 지원되며, 그 외의 전략에서 이 값을 설정하면 실패합니다. `unique_key`가 없는 모델의 기본 전략인 `append`도 마찬가지입니다.                                                                                                                            | 선택 사항                                                                                             |
 
 ### 증분 모델 전략 {#incremental-model-strategies}
 
@@ -282,9 +280,10 @@ models:
 
 #### 기본(레거시) 전략 {#default-legacy-strategy}
 
+이 전략은 `unique_key`가 있는 모델의 기본 전략입니다([`incremental_strategy`](#incremental-configurations) 참조).
 과거 ClickHouse는 비동기식 &quot;뮤테이션&quot; 형태로만 업데이트와 삭제를 제한적으로 지원했습니다.
 예상되는 dbt 동작을 구현하기 위해,
-dbt-clickhouse는 기본적으로 영향을 받지 않은(삭제되지 않았고 변경되지 않은) 모든 &quot;기존&quot;
+dbt-clickhouse는 영향을 받지 않은(삭제되지 않았고 변경되지 않은) 모든 &quot;기존&quot;
 레코드와 새로 추가되거나 업데이트된 레코드를 포함하는 새 임시 테이블을 생성한 다음,
 이 임시 테이블을 기존 증분 모델 릴레이션과 스왑하거나 EXCHANGE합니다. 이 전략은 작업이 완료되기 전에
 문제가 발생하더라도 원래 릴레이션을 보존할 수 있는 유일한 전략입니다. 하지만 원본 테이블 전체를 복사해야 하므로, 실행 비용이
@@ -292,20 +291,20 @@ dbt-clickhouse는 기본적으로 영향을 받지 않은(삭제되지 않았고
 
 #### Delete+Insert 전략 {#delete-insert-strategy}
 
-`delete+insert` 전략은 [경량한 삭제](/ko/concepts/features/operations/delete/lightweight-delete)를 사용해 영향을 받는 행을 제거한 후 새 행을 삽입합니다. 전체 테이블을 복사하지 않으므로 &quot;레거시&quot; 전략보다 성능이 훨씬 뛰어납니다. 프로필에서 `use_lw_deletes: true`를 설정하면 `delete+insert`가 기본 incremental 전략으로 지정됩니다.
+`delete+insert` 전략은 [경량한 삭제](/ko/concepts/features/operations/delete/lightweight-delete)를 사용해 영향을 받는 행을 제거한 후 새 행을 삽입합니다. 전체 테이블을 복사하지 않으므로 &quot;레거시&quot; 전략보다 성능이 훨씬 뛰어납니다. 프로필에서 `use_lw_deletes: true`를 설정하면 `unique_key`가 있는 모델의 기본 증분 전략으로 `delete+insert`가 지정됩니다.
 
 이 전략을 사용할 때는 다음과 같은 중요한 주의 사항이 있습니다.
 
 * 중간 또는 임시 테이블을 생성하지 않고 영향을 받는 테이블을 직접 처리하므로, 작업 중
-  문제가 발생하면 incremental 모델의 데이터가 유효하지 않은 상태가 될 가능성이 높습니다.
+  문제가 발생하면 증분 모델의 데이터가 유효하지 않은 상태가 될 가능성이 높습니다.
 * ClickHouse 설정 `allow_nondeterministic_mutations`가 필요합니다. 어댑터는 가능하면 자체
   세션에서 이를 자동으로 활성화합니다. 활성화할 수 없는 경우(예: dbt 사용자가 읽기 전용인 경우) 동작은
   전략을 선택한 방식에 따라 달라집니다. 기본 전략을 사용하는 모델은 자동으로 레거시
   전략으로 폴백되며, `delete+insert` 또는 `microbatch`를 명시적으로 설정한 모델은 런타임에 실패하고, 프로필의
   `use_lw_deletes: true`는 연결 시 실패합니다.
 * 매우 드문 경우, 비결정적인 `incremental_predicates`를 사용하면
-  업데이트되거나 삭제되는 항목에 race condition이 발생할 수 있습니다. 일관된 결과를 보장하려면 incremental 프레디케이트에는
-  incremental 머티리얼라이즈 중 수정되지 않을 데이터에 대한 하위 쿼리만 포함해야 합니다.
+  업데이트되거나 삭제되는 항목에 race condition이 발생할 수 있습니다. 일관된 결과를 보장하려면 증분 프레디케이트에는
+  증분 머티리얼라이즈 중 수정되지 않을 데이터에 대한 하위 쿼리만 포함해야 합니다.
 
 #### Microbatch 전략 (dbt-core &gt;= 1.9 필요) {#microbatch-strategy}
 
@@ -320,6 +319,8 @@ dbt-clickhouse는 기본적으로 영향을 받지 않은(삭제되지 않았고
 * [백필](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills) 시 복잡한 조건부 로직이 필요하지 않습니다.
 
 microbatch 사용법에 대한 자세한 내용은 [공식 문서](https://docs.getdbt.com/docs/build/incremental-microbatch)를 참조하십시오.
+
+배치 경계는 서버나 `event_time` 컬럼의 시간대와 관계없이 UTC 기준입니다.
 
 ##### 사용 가능한 Microbatch 구성 {#available-microbatch-configurations}
 
@@ -569,6 +570,93 @@ select * from {{ ref('<model-name>') }}
 ```
 
 Jaffle Shop를 활용한 실제 예시는 [가이드의 snapshot 섹션](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot)을 참고하십시오. 모든 옵션은 [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) 참고 페이지에서 확인하십시오.
+
+## 함수(사용자 정의 함수(UDFs)) {#functions}
+
+dbt [함수](https://docs.getdbt.com/docs/build/udfs)는 `dbt-core v1.11+`에서 추가된 기능으로, dbt 내에서 직접 사용자 정의 함수(UDFs)를 정의하고 참조할 수 있습니다.
+ClickHouse 어댑터는 `scalar` 및 `aggregate` 타입의 SQL 사용자 정의 함수(UDFs) 정의를 지원하지만([타입 명세](https://docs.getdbt.com/reference/resource-configs/type?version=1) 참조), ClickHouse 내부에서는 두 타입을 동일하게 처리합니다.
+
+다음은 `scalar` 또는 `aggregate` 타입의 함수를 생성하고 참조하는 두 가지 예시입니다:
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+함수 본문은 `SELECT` 문이 아니라 인수로 구성된 단일 표현식입니다.
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+dbt는 이를 `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2` 형태로 생성합니다. 모델에서는
+`function()`을 사용하여 이를 호출합니다:
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+ClickHouse는 사용자 정의 함수(UDFs)를 호출하는 쿼리 안에 인라인으로 전개하므로, 집계 조합자(aggregate combinators)(예: `-If` 또는 `-State`)와 윈도우 절(`OVER (...)`)은 집계 사용자 정의 함수(UDFs)에 적용할 수 없습니다.
+
+전체 구성 목록은 [함수 속성 문서](https://docs.getdbt.com/reference/function-properties?version=1)를 참고하십시오.
+일부 구성은 ClickHouse 어댑터에서 적용되지 않거나 오류를 일으킬 수 있으니 유의하십시오([지원되지 않는 함수 구성 섹션](#unsupported-function-configurations) 참고).
+
+### 함수 범위 {#functions-scope}
+
+사용자 정의 함수(UDFs)는 특정 데이터베이스에 속하지 않으며, 동일한 ClickHouse 서비스 또는 클러스터에 있는 모든 데이터베이스가 같은 이름을 공유합니다. 하나의 서비스나 클러스터를 공유하는 환경을 서로 구분해야 한다면 다음과 같이 `alias`를 사용하십시오.
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+그러면 `{{ function('price_for_xlarge') }}`는 `price_for_xlarge_dev`, `price_for_xlarge_prod` 등으로 해석됩니다.
+
+### Python 및 JavaScript 사용자 정의 함수(UDFs) {#python-and-javascript-udfs}
+
+Python 및 JavaScript 사용자 정의 함수(UDFs)는 현재 ClickHouse 어댑터에서 지원되지 않습니다.
+
+### 지원되지 않는 함수 구성 {#unsupported-function-configurations}
+
+다음 함수 속성은 ClickHouse에서 지원되지 않습니다.
+
+* `overloads`: UDF는 하나의 시그니처만 가질 수 있습니다. `overloads`를 설정하면 빌드가 실패합니다.
+* 인수의 `default_value`: ClickHouse 사용자 정의 함수(UDFs)에서는 설정할 수 없습니다. `default_value`를 설정하면 빌드가 실패합니다.
+* `volatility`: ClickHouse 사용자 정의 함수(UDFs)에서는 설정할 수 없습니다. 설정하면 경고가 표시되고 무시됩니다.
+* 인수 및 반환값의 `data_type`: dbt에서는 필수 항목이지만, ClickHouse 사용자 정의 함수(UDFs)는 타입이 지정되지 않으므로 적용되지 않습니다. 고정된 타입이 필요하면 함수 본문에서 CAST하십시오.
+
+또한 다음 모델 구성은 ClickHouse에서 지원되지 않습니다.
+
+* `grants`: ClickHouse에는 UDF 사용 권한 부여 기능이 없으며, 모든 사용자가 사용자 정의 함수(UDFs)를 호출할 수 있습니다. `grants`를 설정하면 빌드가 실패합니다.
+* `persist_docs`: 설명을 사용자 정의 함수(UDFs)에 영구 저장할 수 없으며, 별도의 알림 없이 건너뜁니다. 설명은 dbt docs에는 그대로 표시됩니다.
 
 ## 계약 및 제약 조건 {#contracts-and-constraints}
 

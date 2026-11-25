@@ -123,9 +123,7 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 Мы рекомендуем по возможности использовать структурированное логирование и записывать журналы в формате JSON (то есть ndjson). Это упростит дальнейшую обработку журналов: либо перед отправкой в ClickHouse с помощью [процессоров Collector](https://opentelemetry.io/docs/collector/configuration/#processors), либо во время вставки с использованием materialized views. В конечном итоге структурированные журналы помогут сэкономить ресурсы на последующей обработке и снизить требуемую загрузку CPU в вашем решении на базе ClickHouse.
 
-<div id="example">
-  ### Пример {#example}
-</div>
+### Пример {#example}
 
 В качестве примера мы предоставляем структурированный (JSON) и неструктурированный наборы журнальных данных, каждый примерно по 10 млн строк, доступные по следующим ссылкам:
 
@@ -134,7 +132,7 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 В примере ниже используется структурированный набор данных. Чтобы воспроизвести следующие примеры, скачайте и распакуйте этот файл.
 
-Ниже приведена простая конфигурация для OTel Collector, которая читает эти файлы с диска с помощью приёмника filelog и выводит полученные сообщения в stdout. Поскольку наши журналы структурированы, мы используем оператор [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md). Измените путь к файлу access-structured.log.
+Ниже приведена простая конфигурация для OTel Collector, которая читает эти файлы с диска с помощью ресивера filelog и выводит полученные сообщения в stdout. Поскольку наши журналы структурированы, мы используем оператор [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md). Измените путь к файлу access-structured.log.
 
 <Info>
   **Рассмотрите использование ClickHouse для разбора**
@@ -170,12 +168,12 @@ service:
       exporters: [logging]
 ```
 
-Вы можете воспользоваться [официальными инструкциями](https://opentelemetry.io/docs/collector/installation/) для локальной установки OTel collector. Важно: убедитесь, что в инструкциях используется [дистрибутив contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (он содержит приёмник `filelog`); например, вместо `otelcol_0.102.1_darwin_arm64.tar.gz` нужно скачать `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Релизы доступны [здесь](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
+Вы можете воспользоваться [официальными инструкциями](https://opentelemetry.io/docs/collector/installation/) для локальной установки OTel collector. Важно: убедитесь, что в инструкциях используется [дистрибутив contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (он содержит ресивер `filelog`); например, вместо `otelcol_0.102.1_darwin_arm64.tar.gz` нужно скачать `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`. Релизы доступны [здесь](https://github.com/open-telemetry/opentelemetry-collector-releases/releases).
 
 После установки OTel collector можно запустить следующими командами:
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
 Если используются структурированные журналы, сообщения на выходе будут иметь следующий вид:

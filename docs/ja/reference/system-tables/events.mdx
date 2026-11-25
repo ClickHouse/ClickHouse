@@ -146,6 +146,10 @@ HTTP接続での接続エラーにより異常とマークされたアドレス�
 
 キーの等しい範囲の最適化が適用されたブロックの数
 
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+単一レベルの集約ハッシュテーブルの並列マージにおいて、パーティションごとに各テーブルのすべてのセルをスキャンするのではなく (`enable_parallel_single_level_merge_by_index` を参照) 、テーブルのセル索引 (`AggregationIndexedTables` を参照) を介して読み取られたハッシュパーティションの数。
+
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
 集約処理のために、ハッシュテーブルで事前に割り当てられた要素数。
@@ -444,7 +448,7 @@ text&#95;log の非同期キューに送信されたメッセージ (受け付�
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-自動並列レプリカで統計情報がまだ存在しなかったため、判断を行わずに統計情報の収集を行った回数
+自動並列レプリカで統計情報がまだ存在しなかったため、判断を行わずに統計情報の収集を行った回数。また、直近の収集にステップが参加できなかった、または何も計測されなかったことが原因で、並列レプリカを使用する実行計画が再構築されない場合にも、`AutoParallelReplicasRetryDeferred` とあわせてカウントされます
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -456,11 +460,11 @@ text&#95;log の非同期キューに送信されたメッセージ (受け付�
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-自動並列レプリカが、並列レプリカを使用した実行計画の構築後、または以前の構築時に記憶した境界において、その実行計画をローカルの実行計画と十分に対応付けられず、比較や利用ができなかったためにクエリをスキップした回数です。たとえば、両者の読み取りを対応付けられなかった場合や、レプリカがどの読み取りを分割するかを判別できなかった場合が該当します。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます
+自動並列レプリカが、並列レプリカを使用した実行計画の構築後、または以前の構築時に記憶した境界において、その実行計画をローカルの実行計画と十分に対応付けられず、比較や利用ができなかったためにクエリをスキップした回数です。たとえば、両者の読み取りを対応付けられなかった場合や、レプリカがどの読み取りを分割するかを判別できなかった場合が該当します。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます。また、こうした直近の構築が原因で実行計画が再構築されない場合にも、`AutoParallelReplicasRetryDeferred` とあわせてカウントされます
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-自動並列レプリカが並列レプリカを用いて実行計画を構築したものの、プランナーがその実行計画で並列レプリカを使用しなかったため、クエリをスキップした回数です。たとえば、レプリカあたりの行数が少なすぎる場合や、相関サブクエリが含まれる場合などが該当します。理由は `Planner` ロガーに出力されます
+自動並列レプリカが並列レプリカを用いて実行計画を構築したものの、プランナーがその実行計画で並列レプリカを使用しなかったため、クエリをスキップした回数です。たとえば、レプリカあたりの行数が少なすぎる場合や、相関サブクエリが含まれる場合などが該当します。理由は `Planner` ロガーに出力されます。また、こうした直近の構築が理由で実行計画が再構築されない場合にも、`AutoParallelReplicasRetryDeferred` と併せてカウントされます
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -473,6 +477,10 @@ text&#95;log の非同期キューに送信されたメッセージ (受け付�
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 コストモデルでは並列レプリカが有利と判断されたものの、読み取り量が `automatic_parallel_replicas_min_bytes_per_replica` を下回っていたため、自動並列レプリカが適用されなかった回数
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+同じ実行計画に対する並列レプリカ用の実行計画のビルドが直近で判定なしに終わっており、その後これをスキップした実行の回数が `automatic_parallel_replicas_undecided_retry_after_executions` 回に達していないために、自動並列レプリカが並列レプリカを用いた実行計画をビルドしなかった回数です。その直近の結果に対応するイベント (`AutoParallelReplicasPlansNotComparable` など) も併せてカウントされます
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -825,6 +833,10 @@ Merge モードでパッチパートを適用するための索引の構築に�
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 CacheWarmer が完全に取得したデータパーツ数。
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+`CacheWarmer` がフェッチしなかったデータパーツの数です。ウォームアップ対象のキャッシュが分散キャッシュのみで、かつそのパーツが現在のアベイラビリティゾーンで生成されたため、分散キャッシュにすでに保持されているケースが該当します。
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1601,6 +1613,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散キャッシュ の接続イベント。接続プールをバイパスして分散キャッシュに接続しているオープン接続数
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+分散キャッシュのクライアントイベント。接続先のサーバーからこのクライアントにスローダウン (処理速度の抑制) が要求されたために閉じられた、アイドル状態のプールされた接続の数
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 分散キャッシュの読み取りバッファに関するイベント。読み取り範囲の事前計算にかかった時間
@@ -1687,7 +1703,7 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-分散キャッシュのクライアントイベント。分散キャッシュから受信した SlowDown パケットの総数 (このクライアントの重みに対して開いている接続数が多すぎるため、サーバーが新しい接続を拒否した場合に送信されます)
+分散キャッシュのクライアントイベント。分散キャッシュサーバーから受信した SlowDown パケットの総数。このクライアントの重みに対して開いている接続数が多すぎるため新規接続が拒否された場合、またはこのクライアントのリクエストのうち多数がそのサーバー上で滞留している場合に送信されます
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1781,17 +1797,29 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 
 分散キャッシュサーバーのイベント。ファイルシステムキャッシュからの読み取り中に、分散キャッシュでオブジェクトストレージから読み取られたバイト数
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+分散キャッシュサーバーのイベント。リクエストの処理中に接続がストリームの終端に達したため、サーバーが処理を中止した `Read` リクエストの数です。クライアントが接続を閉じた場合や、レジストリが socket をシャットダウンした場合に発生します
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+分散キャッシュサーバーのイベント。滞留しているリクエストのスキャンによって、クライアントのスローダウンウィンドウが開かれた回数です。そのクライアントでスタックしている処理中のリクエストが `distributed_cache_slow_down_min_stuck_requests` に達し、かつ `distributed_cache_slow_down_stuck_requests_ratio` の比率に達した場合に開かれます
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 分散キャッシュサーバーのイベント。競合発生時に、コミット済み一時ファイル用ミューテックスの取得待ちに費やされた時間です。
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-分散キャッシュサーバーのイベント。競合発生時に、クライアントごとの connection バケットのミューテックスを待機した時間 (register/unregister/identify/エビクション)
+分散キャッシュサーバーのイベント。競合発生時に、クライアントごとの 接続 バケットのミューテックスを待機した時間 (register/unregister/identify/エビクション、滞留しているリクエストのスキャン、一時データの保持、`system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 分散キャッシュサーバーのイベント。競合発生時にグローバルな connection registry の ミューテックス を待機した時間 (identify、setClientWeight、エビクション、および再インデックスやバケット削除が必要な場合の unregister)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+分散キャッシュサーバーのイベント。処理中のリクエストが `distributed_cache_stuck_request_no_progress_timeout_ms` 以上にわたって進捗しなかった、または `distributed_cache_max_request_processing_time_ms` を超えて実行されたために、滞留しているリクエストのスキャンによって切断された接続の数
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1829,6 +1857,10 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 
 分散キャッシュサーバーのイベント。クライアントが EndRequest を送信せずに接続を閉じたため (強制終了されたクライアント、socket が書き込み可能でなかったクライアント、または古いクライアント) 、サーバーが EOF を受けて処理を停止したリクエストの数。このサーバー自身による切断 (シャットダウンまたは接続のエビクション) はカウントされません
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+分散キャッシュサーバーのイベント。サーバーでの処理時間が `distributed_cache_max_request_processing_time_ms` を超えたために終了した処理中のリクエストの数です。終了時には `Error` または `Stop` が返されるか、クライアントにもバックオフを求める場合は `SlowDown` が返されます
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 分散キャッシュ サーバーのイベントです。再利用されたキャッシュ済み S3 クライアント数
@@ -1840,6 +1872,10 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 分散キャッシュサーバーのイベントです。以前の接続試行が失敗したために、分散キャッシュサーバーがスキップされた回数です。
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+分散キャッシュサーバーのイベント。クライアントのスローダウンウィンドウが開いている間に、SlowDownパケットで終了したリクエストの数。読み取りリクエストまたは書き込みリクエストの開始時のほか、サーバーがリクエストを `distributed_cache_max_request_processing_time_ms` を超えて処理していた場合に発生します。
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1888,6 +1924,10 @@ Distributed Cache イベント。最終的な受信確認の前に接続が切�
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 分散キャッシュの書き込みバッファに関するイベント。バックグラウンド書き込みslotに空きがなかった (`distributed_cache_write_pool_size` server settingで設定された上限に達した) 、またはバックグラウンド書き込みを開始できなかったため、ライトスルーcacheへの書き込みをスキップした書き込みバッファの数。データはobject storageには書き込まれます
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+分散キャッシュのクライアントイベント。分散キャッシュサーバーからこのクライアントに対して速度を落とすよう要求があったために、そのサーバーがスキップされた回数
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2661,6 +2701,10 @@ SLRU キャッシュポリシーにおいて、試用キューから保護キュ
 
 ファイルシステムキャッシュ領域の予約時間
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+書き込み側が優先度ロックを保持していた、または取得待ちだったためにスキップされた、SLRU ファイルシステムキャッシュの昇格に伴うダウングレード走査の回数
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 state lock のためのファイルシステムキャッシュのロック時間
@@ -2732,6 +2776,30 @@ vertical merge のためのカラム収集に費やされた合計時間
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 新しいスレッドの起動待機に費やした合計時間。
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+実験的な GPU 集約によって GPU に送信された行のバッチ数です。1 つのバッチは、1 回の転送と 1 回のリダクションまたはグループ化に相当します。
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+行のバッチを GPU に転送し、GPU 上で集約する処理に要した合計時間。
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+実験的な GPU 集約により GPU 上で集計された行数。
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+索引解析時に、パーティションキーとその min-max 索引によって MergeTreeテーブルの読み取り対象から除外されたマーク (インデックスグラニュール) の数。
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+索引解析時に主キーによってMergeTreeテーブルの読み取り対象から除外されたマーク (インデックスグラニュール) の数。
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+索引解析の段階で、データスキッピングインデックスによってMergeTreeテーブルの読み取り対象から除外されたマーク (インデックスグラニュール) の数です。データ読み取り時に適用される索引 (`use_skip_indexes_on_data_read`) はカウントされません。
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2819,11 +2887,7 @@ PREWHERE によって完全に除外されたグラニュールの数です。�
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-Iceberg のコンパクションによって不要になったデータファイルの削除が、当該レプリカまたは他のレプリカ上のクエリがそれらのファイルを参照するスナップショットをまだ読み取っていたために延期された回数。
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-Iceberg のコンパクションによって置き換えられたデータファイルの削除が、コンパクション自体またはそれによって置き換えられたスナップショットの経過時間が `iceberg_outdated_snapshot_lifetime_seconds` 未満であったために延期された回数。
+当該レプリカまたは他のレプリカ上のクエリがまだ読み取っていたために、Icebergテーブルのクリーンアップで削除されず、次回の実行まで保持された古いスナップショットの数。
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -4761,6 +4825,10 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 ブルームフィルタによるプルーニングで除外されたParquet行グループの総数。
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+オフセットインデックスを持たない Parquet カラムチャンクのうち、遅延マテリアライゼーションで読み取る行を含むページをページヘッダーから特定し、該当ページのみを読み取ったカラムチャンクの数
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 オブジェクトストレージ内または URL 上のファイルを読み取る Parquet リーダーが、max&#95;download&#95;threads のうち自身に割り当てられた分の範囲内で、デコードがスケジュールされる前にカラムデータの読み取りを開始した行グループの数
@@ -4804,6 +4872,10 @@ Parquet メタデータが Parquet メタデータキャッシュで見つかっ
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 Parquet メタデータが Parquet メタデータキャッシュで見つからず、disk から読み込まれた回数。
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+オフセットインデックスをファイルから読み込まずに、Parquet メタデータキャッシュから取得した Parquet カラムチャンクの数。
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4876,6 +4948,10 @@ min/max 統計情報では範囲を絞り込めなかったため、`ORDER BY ..
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 読み取り時にスキップされた Parquet の行グループ数。min/max 統計情報から、`ORDER BY ... LIMIT` の結果に該当する行を含み得ないと判断された行グループが対象です (`use_top_k_dynamic_filtering` を参照) 。
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+読み取りに失敗した ReplicatedMergeTree テーブルのデータパーツが、OS page cache をバイパスする direct I/O でのチェックに合格した回数です。この読み取りエラーの原因は、ディスク上のデータではなく、ページキャッシュ内の不正なデータであった可能性が高いと考えられます。
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -5621,6 +5697,10 @@ JOINランタイムフィルタによって処理されたブロック数
 
 受信側が切断された、または読み取りを停止したために破棄されたJOINランタイムフィルタの配信数です。影響を受けた宛先にはフィルタが届かず、その行はフィルタリングされないまま通過します
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+(U)Int8 または (U)Int16 のキーに対する JOINランタイムフィルタのうち、キーの正確な集合からブルームフィルタではなく密なビットセットに切り替えられたものの数
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 JOINランタイムフィルタ による読み取り時のプルーニングのために検査されたグラニュール数
@@ -6148,6 +6228,10 @@ Keeper に問い合わせることなく、メタデータキャッシュのヒ�
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 パーツキラーの実行回数
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+このレプリカがリーダーロックを既に上限数まで保持していたため、ロックの取得を試行しなかったパーツ更新のリーダー選出の数
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
@@ -6801,6 +6885,10 @@ lazy posting list モードで、出力領域の値がすでに確定してい�
 
 同じパーツに対する以前のスキャンでポスティングリストのしきい値を超えていたため、テキスト索引のパターンに対する辞書スキャンがスキップされた回数。
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+データパートに対するテキスト索引のパターン辞書スキャンが、コストを理由にスキップされた回数です。スキャン対象の辞書ブロックのバイト数が、主キーおよびそれより前に適用されたスキップ索引による絞り込み後もなお読み取り対象として残る行の、索引付きカラムにおけるバイト数を上回る場合にスキップされます。
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 候補駆動型の フレーズ search で検査された候補行 (ポスティングリストの積集合) 。
@@ -7128,6 +7216,10 @@ UNIQUE KEY の INSERT 書き込みパスにおいて、既存パーツ内の有�
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 UNIQUE KEY INSERT の書き込みパスで、既存パーツに対して照合された新規行のキーの数。
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+UNIQUE KEY テーブルに対する同期 DELETE によって無効 (dead) としてマークされた行の数。
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 

@@ -461,7 +461,11 @@ Las consultas SELECT necesitan cargar los índices de similitud vectorial en la 
 Para evitar que el mismo índice de similitud vectorial se cargue repetidamente en la memoria principal, ClickHouse proporciona una caché en memoria específica para estos índices.
 Cuanto mayor sea esta caché, menos cargas innecesarias se producirán.
 El tamaño máximo de la caché puede configurarse mediante la configuración del servidor [vector&#95;similarity&#95;index&#95;cache&#95;size](/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
-De forma predeterminada, la caché puede crecer hasta 5 GB.
+En ClickHouse OSS, la caché puede crecer de forma predeterminada hasta 5 GB.
+
+En ClickHouse Cloud, el tamaño máximo de la caché depende del tamaño del pod.
+El tamaño exacto puede consultarse en [system.server&#95;settings](/es/reference/system-tables/server_settings).
+Dado que los ajustes del servidor no pueden modificarse desde SQL ni desde la consola, contacte con el soporte técnico para configurar un tamaño mayor.
 
 Los siguientes mensajes de registro (`system.text_log`) indican que se está cargando el índice de similitud vectorial.
 Si estos mensajes aparecen repetidamente para distintas consultas de búsqueda vectorial, esto indica que el tamaño de la caché es demasiado pequeño.
@@ -475,12 +479,12 @@ Si estos mensajes aparecen repetidamente para distintas consultas de búsqueda v
 ```
 
 <Note>
-  La caché del índice de similitud vectorial almacena gránulos del índice vectorial.
-  Si los gránulos individuales del índice vectorial son más grandes que la caché, no se almacenarán en caché.
-  Por lo tanto, asegúrese de calcular el tamaño del índice vectorial (según la fórmula de &quot;Estimación del consumo de almacenamiento y memoria&quot; o [system.data&#95;skipping&#95;indices](/es/reference/system-tables/data_skipping_indices)) y dimensionar la caché en consecuencia.
+  La caché del índice de similitud vectorial almacena gránulos de índices vectoriales.
+  Si un gránulo de índice vectorial supera el tamaño de la caché, no se almacenará en caché.
+  Por lo tanto, asegúrese de calcular el tamaño del índice vectorial (según la fórmula de &quot;Estimación del consumo de almacenamiento y memoria&quot; o [system.data&#95;skipping&#95;indices](/es/reference/system-tables/data_skipping_indices)) y dimensione la caché en consecuencia.
 </Note>
 
-*Reiteramos que verificar y, si es necesario, aumentar la caché del índice vectorial debe ser el primer paso al investigar consultas lentas de búsqueda vectorial.*
+*Insistimos en que comprobar y, si es necesario, aumentar la caché de índices vectoriales debería ser el primer paso al investigar consultas lentas de búsqueda vectorial.*
 
 El tamaño actual de la caché del índice de similitud vectorial se muestra en [system.metrics](/es/reference/system-tables/metrics):
 
@@ -499,6 +503,13 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
+```
+
+La sentencia [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/es/reference/statements/system#drop-vector-similarity-index-cache) elimina todos los índices de similitud vectorial de la caché.
+Para eliminar de la caché solo los índices de una única tabla, añada la cláusula `FOR TABLE`:
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 Para casos de uso en producción, recomendamos dimensionar la caché lo suficientemente grande para que todos los índices vectoriales permanezcan en memoria en todo momento.
@@ -520,10 +531,10 @@ La cuantización reduce la precisión de las búsquedas vectoriales en comparaci
 Sin embargo, en la mayoría de los conjuntos de datos, la cuantización brain float de precisión media (`bf16`) da como resultado una pérdida de precisión insignificante, por lo que los índices de similitud vectorial usan esta técnica de cuantización de forma predeterminada.
 La cuantización de cuarto de precisión (`i8`) y la cuantización binaria (`b1`) provocan una pérdida de precisión apreciable en las búsquedas vectoriales.
 Recomendamos ambas cuantizaciones solo si el tamaño del índice de similitud vectorial es significativamente mayor que la DRAM disponible.
-En ese caso, también sugerimos habilitar el rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) para mejorar la precisión.
+En ese caso, también sugerimos habilitar el recálculo de puntuaciones ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) para mejorar la exactitud.
 La cuantización binaria solo se recomienda para 1) embeddings normalizados (es decir, longitud del vector = 1; los modelos de OpenAI suelen estar normalizados), y 2) si se utiliza la distancia de coseno como función de distancia.
 La cuantización binaria usa internamente la distancia de Hamming para construir el grafo de proximidad y buscar en él.
-El paso de rescoring utiliza los vectores originales de precisión completa almacenados en la tabla para identificar los vecinos más cercanos mediante la distancia de coseno.
+El paso de recálculo de puntuaciones utiliza los vectores originales de precisión completa almacenados en la tabla para identificar los vecinos más cercanos mediante la distancia de coseno.
 
 **Ajuste de la transferencia de datos**
 
@@ -545,10 +556,10 @@ Los vectores de embedding (`search_v` en el fragmento anterior) pueden tener una
 Por ejemplo, OpenAI ofrece modelos que generan vectores de embeddings con 1536 o incluso 3072 dimensiones.
 En el código anterior, el driver de Python de ClickHouse sustituye el vector de embedding por una cadena legible para las personas y luego envía la consulta SELECT completa como una cadena.
 Suponiendo que el vector de embedding consta de 1536 valores de coma flotante de precisión simple, la cadena enviada alcanza una longitud de 20 kB.
-Esto genera un uso elevado de CPU para la tokenización, el análisis sintáctico y la realización de miles de conversiones de cadena a float.
+Esto genera un uso elevado de CPU para la tokenización, el análisis sintáctico y la realización de miles de conversiones de cadena a número de coma flotante.
 Además, se requiere una cantidad considerable de espacio en el archivo de registro del servidor de ClickHouse, lo que también provoca un aumento de tamaño en `system.query_log`.
 
-Tenga en cuenta que la mayoría de los modelos LLM devuelven un vector de embedding como una lista o un array de NumPy de floats nativos.
+Tenga en cuenta que la mayoría de los modelos LLM devuelven un vector de embedding como una lista o un array de NumPy de números de coma flotante nativos.
 Por lo tanto, recomendamos que las aplicaciones de Python vinculen el parámetro del vector de referencia en formato binario usando el siguiente estilo:
 
 ```python
@@ -689,7 +700,7 @@ El códec es adecuado para ClickHouse porque la parte costosa (el escaneo) es pr
 
 #### Aplicar el códec {#quantized-codecs-declaring}
 
-Especifique el códec `Quantized(...)` para la columna `Array(Float32)` (o `Array(Float64)` / `Array(BFloat16)`).
+Especifique el códec `Quantized(...)` para la columna `Array(Float32)` (o `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`).
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -707,15 +718,20 @@ El códec no se puede añadir ni cambiar posteriormente con `ALTER TABLE`.
 
 #### Métodos de cuantización {#quantized-codecs-methods}
 
-Cada método de cuantización presenta distintos equilibrios entre tamaño y exactitud. El argumento `dimensions` es la longitud del vector.
+Cada método de cuantización presenta distintos equilibrios entre tamaño y exactitud.
+El argumento `dimensions` es la longitud del vector.
 
-* `Quantized('rabitq', dimensions)` — un bit de signo por coordenada más un factor de corrección de coseno no sesgado (`dimensions/8 + 4` bytes). Una opción predeterminada sólida, pequeña y barata de evaluar con `popcount`. Solo `cosineDistance`.
-* `Quantized('turboquant', dimensions)` — dos bits por coordenada (un código MSE de 1 bit y un código residual de 1 bit) para candidatos de mayor fidelidad (`dimensions/4 + 4` bytes). Solo `cosineDistance`.
+* `Quantized('rabitq', dimensions)` — un bit de signo por coordenada más un factor de corrección de coseno no sesgado (`dimensions/8 + 4` bytes). Una opción predeterminada sólida, pequeña y barata de evaluar con `popcount`. Solo estima la distancia de coseno; para `L2Distance`, consulte más abajo.
+* `Quantized('turboquant', dimensions)` — dos bits por coordenada (un código MSE de 1 bit y un código residual de 1 bit) para candidatos de mayor fidelidad (`dimensions/4 + 4` bytes). Solo estima la distancia de coseno; para `L2Distance`, consulte más abajo.
 * `Quantized('int8', dimensions)` — un código `Int8` por coordenada más la norma del vector (`dimensions + 4` bytes); el código plano más grande, pero también el más fiel. Admite `L2Distance` y `cosineDistance`.
 * `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: conserva solo las primeras `leading_dimensions` coordenadas, como `Int8` (con una escala por vector) o `BFloat16`. Códigos diminutos para embeddings entrenados con Matryoshka Representation Learning. Admite `L2Distance` y `cosineDistance`.
-* `Quantized('product', dimensions, nbits, m)` — cuantización de producto: un diccionario de códigos por partición entrenado con k-means; cada vector se convierte en `m` códigos de `nbits` bits (por lo que `dimensions` debe ser múltiplo de `m`). La opción más compacta y con mayor exhaustividad por byte, a costa de un paso de entrenamiento durante la inserción. Admite `L2Distance` y `cosineDistance`.
+* `Quantized('product', dimensions, nbits, m)` — cuantización de producto: un diccionario de códigos por parte entrenado con k-means; cada vector se convierte en `m` códigos de `nbits` bits (por lo que `dimensions` debe ser múltiplo de `m`). La opción más compacta y con mayor exhaustividad por byte, a costa de un paso de entrenamiento durante la inserción. Admite `L2Distance` y `cosineDistance`.
 
 `rabitq` y `turboquant` requieren que `dimensions` sea múltiplo de 8.
+
+Para las columnas `Array(Int8)` y `Array(UInt8)`, los métodos `int8` y `prefix` con formato `int8` no son compatibles, ya que sus códigos no son más pequeños que los vectores originales.
+Los embeddings `UInt8` suelen ser valores con signo desplazados en 128. Los métodos `rabitq` y `turboquant` asumen que los vectores se distribuyen alrededor del origen, por lo que, en las columnas `Array(UInt8)`, restan 128 a cada elemento de los vectores almacenados y del vector de referencia antes de codificarlos.
+En consecuencia, la lista de preselección se ordena según la distancia de coseno de los vectores desplazados, mientras que el resultado final se vuelve a puntuar con la `cosineDistance` exacta de los vectores originales.
 
 #### Uso del códec {#quantized-codecs-searching}
 
@@ -730,13 +746,16 @@ LIMIT 10
 SETTINGS vector_search_use_quantized_codes = 1;
 ```
 
-La configuración `vector_search_use_quantized_codes = 1` permite al optimizador reescribir la consulta como un escaneo en dos fases.
-Esta configuración está desactivada de forma predeterminada.
-Sin ella, la misma consulta se ejecuta como un escaneo exacto normal sobre los vectores originales.
-Todos los métodos admiten la función de distancia `cosineDistance`; los métodos `int8`, `prefix` y `product` también admiten `L2Distance` como función de distancia.
+El parámetro de configuración `vector_search_use_quantized_codes = 1` permite al optimizador reescribir la consulta como un escaneo en dos fases.
+Este parámetro de configuración está desactivado de forma predeterminada.
+Sin él, la misma consulta se ejecuta como un escaneo exacto normal sobre los vectores originales.
+Todos los métodos admiten las funciones de distancia `cosineDistance` y `L2Distance`.
+Los métodos `int8`, `prefix` y `product` estiman ambas distancias.
+Los métodos `rabitq` y `turboquant` no almacenan las normas de los vectores y solo estiman la distancia de coseno: para `L2Distance`, la lista de preselección se ordena según la distancia de coseno y el resultado se vuelve a puntuar con la `L2Distance` exacta.
+Las distancias devueltas son exactas, pero la exhaustividad depende de cuánto varíen las normas de los vectores. Para vectores normalizados, ambas clasificaciones coinciden.
 
-La configuración `vector_search_index_fetch_multiplier` especifica cuántos candidatos se preseleccionan en relación con el `LIMIT` de la consulta.
-Los multiplicadores más altos mejoran la exhaustividad a costa de realizar más reclasificación.
+El parámetro de configuración `vector_search_index_fetch_multiplier` especifica cuántos candidatos se preseleccionan en relación con el `LIMIT` de la consulta.
+Los multiplicadores más altos mejoran la exhaustividad a costa de realizar más recálculo de puntuaciones.
 El valor predeterminado es `1` (sin sobremuestreo); normalmente es necesario aumentarlo (por ejemplo, a `10`) para obtener una buena exhaustividad.
 
 ### Bit cuantizado (QBit) {#approximate-nearest-neighbor-search-qbit}

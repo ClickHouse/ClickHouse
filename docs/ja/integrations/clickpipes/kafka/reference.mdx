@@ -110,7 +110,7 @@ fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型�
 
 #### サポートされる Avro データ型 {#supported-avro-data-types}
 
-ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
+ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/operations/insert/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
 
 <div id="nullable-types-and-avro-unions">
   #### Nullable 型と Avro ユニオン {#nullable-types-and-avro-unions}

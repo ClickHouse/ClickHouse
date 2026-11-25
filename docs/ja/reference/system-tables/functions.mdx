@@ -16,6 +16,7 @@ doc_type: 'reference'
 
 * `name` ([String](/ja/reference/data-types/string)) — 関数名。
 * `is_aggregate` ([UInt8](/ja/reference/data-types/int-uint)) — 集約関数かどうか。
+* `is_window` ([UInt8](/ja/reference/data-types/int-uint)) — `OVER` 句でのみ使用できるウィンドウ関数かどうか。
 * `case_insensitive` ([UInt8](/ja/reference/data-types/int-uint)) — 関数名で大文字と小文字を区別しないかどうか。
 * `alias_to` ([String](/ja/reference/data-types/string)) — 関数名がエイリアスである場合の元の関数名。
 * `create_query` ([String](/ja/reference/data-types/string)) — 廃止された。

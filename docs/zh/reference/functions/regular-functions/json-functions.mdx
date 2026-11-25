@@ -899,6 +899,130 @@ SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', '
 ['name','AGE']
 ```
 
+## JSONExtractLeafPathsAndValues {#JSONExtractLeafPathsAndValues}
+
+引入版本：v26.11.0
+
+与 [`JSONExtractLeafValues`](#JSONExtractLeafValues) 相同，但会为每个标量叶节点返回一个元组 `(path, value)`。
+有关路径规则以及参数 `skip_regex` 和 `arrays` 的说明，请参阅 `JSONExtractLeafValues` 的描述。
+
+<Note>
+  结果不受 `allow_simdjson`、`input_format_json_max_depth` 和 `json_type_escape_dots_in_keys` 等设置的影响。
+  因此，使用基于此函数的索引与执行全量扫描返回的行相同。
+</Note>
+
+**语法**
+
+```sql
+JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])
+```
+
+**参数**
+
+* `json` — 待解析的 JSON 字符串。[`String`](/zh/reference/data-types/string)
+* `skip_regex` — 可选。常量正则表达式 ([re2](https://github.com/google/re2/wiki/Syntax) 语法) 。匹配的路径及其下的所有内容都会被跳过。空字符串 (默认值) 表示不跳过任何内容。[`const String`](/zh/reference/data-types/string)
+* `arrays` — 可选。常量，区分大小写。指定数组的处理方式：`'skip'`、`'string'` 或 `'elements'` (默认值) 。[`const String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回各标量叶子节点的路径及其值。[`Array(Tuple(path String, value String))`](/zh/reference/data-types/array)
+
+**示例**
+
+**路径和值**
+
+```sql title=Query
+SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
+```
+
+```response title=Response
+┌─res──────────────────────────────────────────┐
+│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
+└──────────────────────────────────────────────┘
+```
+
+## JSONExtractLeafValues {#JSONExtractLeafValues}
+
+引入版本：v26.11.0
+
+解析 JSON 字符串，并按文档顺序以字符串数组的形式返回顶层对象中所有标量叶元素的值。
+叶元素是指字符串、数字或布尔值。`null`、空对象和空数组不会产生任何值。
+字符串以未转义的形式返回，数字和布尔值则以 JSON 文本形式返回 (与 [`JSONExtractRaw`](#JSONExtractRaw) 的返回方式相同) 。
+如果 JSON 无效，或其顶层不是对象，则结果为空数组。
+如果某个键出现多次，则返回其所有值。
+
+值的路径由以 `.` 连接的各级键组成，数组元素的索引用 `[i]` 表示，例如 `a.b`、`a[0]`、`a[0].b`、`a[0][1]`。
+键不会被转义：键 `a.b` 与 `a` 内的嵌套键 `b` 会得到相同的路径 `a.b`。
+与 `JSON` 数据类型不同，设置 [`json_type_escape_dots_in_keys`](/zh/reference/settings/formats/other#json_type_escape_dots_in_keys) 对此函数不适用。
+
+`skip_regex` 会与访问到的每个路径进行匹配 (包括任意深度的对象成员、数组内的成员，以及 `a[0]` 这类数组元素路径) 。
+一旦匹配，将跳过该值及其下的所有内容。
+与 [`match`](/zh/reference/functions/regular-functions/string-search-functions#match) 一样，部分匹配即可生效：如需匹配完整路径，请使用 `^` 和 `$`。
+与 `JSON` 数据类型的 `SKIP REGEXP` 不同，设置 [`type_json_use_partial_match_to_skip_paths_by_regexp`](/zh/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) 对此函数不适用。
+
+在 `'string'` 模式下，数组会被整体返回，且不受深度限制。
+
+<Note>
+  结果不受 `allow_simdjson`、`input_format_json_max_depth` 和 `json_type_escape_dots_in_keys` 等设置的影响。
+  因此，基于该函数构建的索引与全量扫描返回的行完全相同。
+</Note>
+
+对于 `JSON` 数据类型的列，请使用 [`JSONAllValues`](/zh/reference/functions/regular-functions/json-functions#JSONAllValues)。
+
+**语法**
+
+```sql
+JSONExtractLeafValues(json[, skip_regex[, arrays]])
+```
+
+**参数**
+
+* `json` — 待解析的 JSON 字符串。[`String`](/zh/reference/data-types/string)
+* `skip_regex` — 可选。常量正则表达式 ([re2](https://github.com/google/re2/wiki/Syntax) 语法) 。匹配的路径及其下的所有内容都会被跳过。空字符串 (默认值) 表示不跳过任何内容。[`const String`](/zh/reference/data-types/string)
+* `arrays` — 可选。常量，区分大小写。指定数组的处理方式：`'skip'` 对数组不输出任何内容；`'string'` 将每个数组作为单个紧凑 JSON 格式的值返回；`'elements'` (默认值) 遍历数组元素，元素路径依次为 `a[0]`、`a[1]` 等。[`const String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回各标量叶元素的值。[`Array(String)`](/zh/reference/data-types/array)
+
+**示例**
+
+**嵌套对象和数组**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
+```
+
+```response title=Response
+┌─res────────────────────┐
+│ ['x','1.5','true','y'] │
+└────────────────────────┘
+```
+
+**跳过路径**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ ['x','w'] │
+└───────────┘
+```
+
+**以字符串形式表示的数组**
+
+```sql title=Query
+SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
+```
+
+```response title=Response
+┌─res───────────┐
+│ ['[1,2]','x'] │
+└───────────────┘
+```
+
 ## JSONExtractRaw {#JSONExtractRaw}
 
 引入版本：v20.1.0

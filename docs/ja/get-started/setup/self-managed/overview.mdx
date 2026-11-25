@@ -8,6 +8,10 @@ keywords: ['インストール', 'セルフマネージド', 'linux', 'macos', '
 
 ご自身で運用するプラットフォームに ClickHouse をインストールします。
 
+<Note>
+  `amd64` および `aarch64` 向けの Linux バイナリは、`musl` C ライブラリと静的リンクされています。ホスト名の解決には、`/etc/hosts` と、`/etc/resolv.conf` に記載された DNS サーバーのみが使用されます。Name Service Switch (`/etc/nsswitch.conf`) は使用されないため、`sss`、`mdns`、`ldap` などの NSS モジュールでのみ提供されるホスト名は解決できません。
+</Note>
+
 ## ローカル開発 {#local-development}
 
 自分のマシンで ClickHouse を実行して、開発、テスト、検証を行います。

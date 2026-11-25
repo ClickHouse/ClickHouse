@@ -370,13 +370,14 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 * `region` — S3 のリージョン名を指定します。任意です。
 * `use_insecure_imds_request` — `true` に設定すると、S3 クライアントは Amazon EC2 メタデータから認証情報を取得する際に、安全でない IMDS リクエストを使用します。任意で、デフォルト値は `false` です。
 * `expiration_window_seconds` — 有効期限付き認証情報が期限切れかどうかを確認する際の猶予期間です。任意で、デフォルト値は `120` です。
-* `no_sign_request` - すべての認証情報を無視し、リクエストに署名しないようにします。公開 bucket へのアクセスに便利です。
+* `no_sign_request` - すべての認証情報を無視し、リクエストに署名しないようにします。公開 バケット へのアクセスに便利です。
+* `request_payer` - リクエスタ支払い (requester-pays) のバケットにアクセスする場合は `requester` に設定します。設定すると、指定したエンドポイントへのすべてのリクエストにヘッダー `x-amz-request-payer: requester` が付与されます。任意です。[`s3_request_payer`](/ja/reference/settings/session-settings/s3#s3_request_payer) 設定よりも優先されます。
 * `header` — 指定したエンドポイントへのリクエストに、指定した HTTP ヘッダーを追加します。任意で、複数回指定できます。
 * `access_header` - 他のソースから認証情報が提供されていない場合に、指定したエンドポイントへのリクエストに指定した HTTP ヘッダーを追加します。
-* `server_side_encryption_customer_key_base64` — 指定すると、SSE-C で暗号化された S3 object にアクセスするために必要なヘッダーが設定されます。任意です。
-* `server_side_encryption_kms_key_id` - 指定すると、[SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) で暗号化された S3 object にアクセスするために必要なヘッダーが設定されます。空文字列を指定した場合は、AWS 管理の S3 key が使用されます。任意です。
+* `server_side_encryption_customer_key_base64` — 指定すると、SSE-C で暗号化された S3 オブジェクト にアクセスするために必要なヘッダーが設定されます。任意です。
+* `server_side_encryption_kms_key_id` - 指定すると、[SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) で暗号化された S3 オブジェクト にアクセスするために必要なヘッダーが設定されます。空文字列を指定した場合は、AWS 管理の S3 key が使用されます。任意です。
 * `server_side_encryption_kms_encryption_context` - `server_side_encryption_kms_key_id` とあわせて指定すると、SSE-KMS 用の指定した暗号化コンテキストヘッダーが設定されます。任意です。
-* `server_side_encryption_kms_bucket_key_enabled` - `server_side_encryption_kms_key_id` とあわせて指定すると、SSE-KMS 用の S3 bucket key を有効にするヘッダーが設定されます。任意で、`true` または `false` を指定できます。デフォルトでは何も設定されず、bucket レベルの設定に従います。
+* `server_side_encryption_kms_bucket_key_enabled` - `server_side_encryption_kms_key_id` とあわせて指定すると、SSE-KMS 用の S3 バケット key を有効にするヘッダーが設定されます。任意で、`true` または `false` を指定できます。デフォルトでは何も設定されず、バケット レベルの設定に従います。
 * `max_single_read_retries` — 1 回の読み取りでの最大再試行回数です。デフォルト値は `4` です。任意です。
 * `max_put_rps`, `max_put_burst`, `max_get_rps` and `max_get_burst` - クエリ単位ではなく、特定のエンドポイントに対して使用するスロットリング設定です (説明は上記を参照) 。任意です。
 

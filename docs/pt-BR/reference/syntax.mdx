@@ -369,6 +369,7 @@ Um parâmetro de consulta pode ser referenciado em uma consulta usando `{<name>:
 <Note>
   Os parâmetros de consulta não são substituições genéricas de texto que podem ser usadas em locais arbitrários de consultas SQL arbitrárias.
   Eles foram projetados principalmente para funcionar em Instruções `SELECT`, no lugar de identificadores ou literais.
+  Eles também funcionam em instruções DDL no lugar de nomes de banco de dados e de tabela (por exemplo, `CREATE TABLE {db:Identifier}.{tbl:Identifier}`). Em `ALTER TABLE`, também funcionam em `DROP`, `CLEAR`, `MATERIALIZE`, `COMMENT`, `RENAME COLUMN` e `AFTER` (por exemplo, `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## Funções {#functions}

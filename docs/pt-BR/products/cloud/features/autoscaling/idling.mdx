@@ -7,9 +7,13 @@ title: 'Inatividade automática'
 doc_type: 'guide'
 ---
 
-## Automatic idling {#automatic-idling}
+## Suspensão automática {#automatic-idling}
 
-A inatividade automática pausa um serviço do ClickHouse Cloud após um período sem queries enviadas por usuários, sujeito às [condições de inatividade adaptativa](#adaptive-idling). Você pode habilitar a inatividade automática e configurar o tempo de inatividade na página **Settings** do service.
+A suspensão automática pausa um serviço do ClickHouse Cloud após um período sem queries enviadas por usuários, sujeito às [condições de inatividade adaptativa](#adaptive-idling). Você pode habilitar a suspensão automática e configurar a duração da inatividade na página **Settings** do serviço.
+
+<Note>
+  A [capacidade computacional Gen 2](/pt-BR/products/cloud/features/compute-generations) não oferece suporte à suspensão automática durante a prévia privada.
+</Note>
 
 ## O que é cobrado enquanto o serviço está pausado? {#billing-while-paused}
 

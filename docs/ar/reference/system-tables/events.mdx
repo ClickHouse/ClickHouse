@@ -147,6 +147,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد الكتل التي طُبِّق عليها تحسين النطاقات المتساوية للمفاتيح
 
+### AggregationPartitionsMergedByCellIndex {#aggregationpartitionsmergedbycellindex}
+
+عدد أقسام التجزئة التي قرأها الدمج المتوازي لجداول تجزئة التجميع أحادية المستوى من خلال فهارس الخلايا في الجداول (راجع `AggregationIndexedTables`)، بدلاً من فحص كل خلية في كل جدول لكل قسم (راجع `enable_parallel_single_level_merge_by_index`).
+
 ### AggregationPreallocatedElementsInHashTables {#aggregationpreallocatedelementsinhashtables}
 
 عدد العناصر التي خُصِّصت مسبقًا في جداول التجزئة لأغراض التجميع.
@@ -445,7 +449,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
 
-عدد المرات التي لم تتوفر فيها بعدُ إحصاءات لدى آلية النسخ المتماثلة المتوازية التلقائية، فجمعتها بدلاً من اتخاذ القرار
+عدد المرات التي لم تتوفر فيها بعدُ إحصاءات لدى آلية النسخ المتماثلة المتوازية التلقائية، فجمعتها بدلاً من اتخاذ القرار. ويُحتسب أيضاً، إلى جانب `AutoParallelReplicasRetryDeferred`، عندما يكون سبب عدم إعادة بناء الخطة باستخدام النسخ المتماثلة المتوازية عمليةَ جمعٍ حديثة لم تتمكن إحدى خطوات الخطة من المشاركة فيها، أو لم تقِس شيئاً
 
 ### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
 
@@ -457,11 +461,11 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
 
-عدد المرات التي تجاوزت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد إنشاء الخطة باستخدام النسخ المتماثلة المتوازية، أو عند حدٍّ محفوظ من إنشائها سابقًا، لتعذّر مطابقة تلك الخطة مع الخطة المحلية بدرجة تكفي لمقارنتهما أو لاستخدامها؛ كأن يتعذّر إقران عمليات القراءة في الخطتين، أو تحديد عملية القراءة التي ستقسّمها النسخ المتماثلة. ويوضّح مسجّل السجلات `AutoParallelReplicas` السبب الفعلي في كل حالة
+عدد المرات التي تجاوزت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد إنشاء الخطة باستخدام النسخ المتماثلة المتوازية، أو عند حدٍّ محفوظ من إنشائها سابقًا، لتعذّر مطابقة تلك الخطة مع الخطة المحلية بدرجة تكفي لمقارنتهما أو لاستخدامها؛ كأن يتعذّر إقران عمليات القراءة في الخطتين، أو تحديد عملية القراءة التي ستقسّمها النسخ المتماثلة. ويوضّح مسجّل السجلات `AutoParallelReplicas` السبب الفعلي في كل حالة. ويُحتسب كذلك، إلى جانب `AutoParallelReplicasRetryDeferred`، حين يكون هذا الإنشاء الحديث هو سبب عدم إعادة إنشاء الخطة
 
 ### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
 
-عدد المرات التي تخطّت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد بناء الخطة باستخدام النسخ المتماثلة المتوازية، نظرًا لأن مخطط الاستعلامات لم يستخدم النسخ المتماثلة المتوازية فيها، كأن يكون عدد الصفوف لكل نسخة متماثلة قليلًا جدًا أو أن يتضمن الاستعلام استعلامًا فرعيًا مترابطًا. ويوضّح مسجّل السجلات `Planner` السبب
+عدد المرات التي تخطّت فيها ميزة النسخ المتماثلة المتوازية التلقائية استعلامًا بعد بناء الخطة باستخدام النسخ المتماثلة المتوازية، نظرًا لأن مخطط الاستعلامات لم يستخدم النسخ المتماثلة المتوازية فيها، كأن يكون عدد الصفوف لكل نسخة متماثلة قليلًا جدًا أو أن يتضمن الاستعلام استعلامًا فرعيًا مترابطًا. ويوضّح مسجّل السجلات `Planner` السبب. ويُحتسب أيضًا، إلى جانب `AutoParallelReplicasRetryDeferred`، عندما يكون بناءٌ حديث كهذا هو سبب عدم إعادة بناء الخطة
 
 ### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
 
@@ -474,6 +478,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
 
 عدد المرات التي أحجمت فيها ميزة النسخ المتماثلة المتوازية التلقائية عن التفعيل رغم أن نموذج التكلفة كان يرجّح استخدام النسخ المتماثلة المتوازية، وذلك لأن حجم القراءة كان أقل من `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasRetryDeferred {#autoparallelreplicasretrydeferred}
+
+عدد المرات التي لم تُنشئ فيها ميزة النسخ المتماثلة المتوازية التلقائية الخطة باستخدام النسخ المتماثلة المتوازية، لأن إنشاءها للخطة نفسها انتهى مؤخرًا دون التوصل إلى قرار، ولأن عدد عمليات التنفيذ التي تجاهلته منذ ذلك الحين أقل من `automatic_parallel_replicas_undecided_retry_after_executions`. ويُحتسب إلى جانبه الحدث الخاص بتلك النتيجة السابقة، مثل `AutoParallelReplicasPlansNotComparable`
 
 ### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
 
@@ -826,6 +834,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 ### CacheWarmerDataPartsDownloaded {#cachewarmerdatapartsdownloaded}
 
 عدد أجزاء البيانات التي تم جلبها بالكامل بواسطة CacheWarmer.
+
+### CacheWarmerDataPartsSkippedSameAvailabilityZone {#cachewarmerdatapartsskippedsameavailabilityzone}
+
+عدد أجزاء البيانات التي لم يجلبها `CacheWarmer` لأن distributed cache كانت ذاكرة التخزين المؤقت الوحيدة المطلوب تهيئتها، ولأن جزء البيانات أُنشئ في منطقة التوافر الحالية، ومن ثَمّ فهو موجود فيها بالفعل.
 
 ### CannotRemoveEphemeralNode {#cannotremoveephemeralnode}
 
@@ -1602,6 +1614,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 حدث اتصال لـ Distributed Cache. عدد الاتصالات المفتوحة مع Distributed Cache التي تتجاوز المجمّع
 
+### DistrCachePooledConnectionsDroppedOnSlowDown {#distrcachepooledconnectionsdroppedonslowdown}
+
+حدث صادر عن عميل Distributed Cache. عدد الاتصالات الخاملة ضمن تجمّع الاتصالات التي أُغلقت لأن الخادم المرتبطة به طلب من هذا العميل إبطاء وتيرة الطلبات
+
 ### DistrCachePrecomputeRangesMicroseconds {#distrcacheprecomputerangesmicroseconds}
 
 حدث المخزن المؤقت للقراءة في Distributed Cache. الوقت المستغرَق في حساب نطاقات القراءة مسبقًا
@@ -1688,7 +1704,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 ### DistrCacheReceivedSlowDownPackets {#distrcachereceivedslowdownpackets}
 
-Distributed Cache client event. إجمالي عدد حزم SlowDown الواردة من distributed cache (رفض الخادم اتصالاً جديداً لأن هذا العميل لديه عدد كبير جداً من الاتصالات المفتوحة بالنسبة إلى وزنه)
+حدث صادر عن عميل Distributed Cache. إجمالي عدد حزم SlowDown الواردة من خوادم distributed cache: إما أن اتصالاً جديداً قد رُفض لأن هذا العميل لديه عدد كبير جداً من الاتصالات المفتوحة بالنسبة إلى وزنه، أو أن عدداً كبيراً جداً من طلبات هذا العميل عالق على ذلك الخادم
 
 ### DistrCacheReceivedStopPackets {#distrcachereceivedstoppackets}
 
@@ -1782,17 +1798,29 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 حدث خاص بخادم Distributed Cache. عدد البايتات المقروءة من التخزين الكائني في Distributed Cache أثناء القراءة من ذاكرة التخزين المؤقت لنظام الملفات
 
+### DistrCacheServerClientDisconnectedMidRequest {#distrcacheserverclientdisconnectedmidrequest}
+
+حدث صادر عن خادم Distributed Cache. عدد طلبات `Read` التي توقّف الخادم عن خدمتها لأن الاتصال بلغ نهاية الدفق أثناء معالجة الطلب: إمّا لأن العميل أغلقه، وإمّا لأن السجل أغلق المقبس
+
+### DistrCacheServerClientSlowDownWindowsOpened {#distrcacheserverclientslowdownwindowsopened}
+
+حدث صادر عن خادم Distributed Cache. عدد المرات التي فتح فيها فحص الطلبات العالقة نافذة الإبطاء لعميل ما، لأن طلباته العالقة قيد التنفيذ بلغت `distributed_cache_slow_down_min_stuck_requests` ونسبةً قدرها `distributed_cache_slow_down_stuck_requests_ratio`
+
 ### DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds {#distrcacheservercommittedtemporaryfileslockwaitmicroseconds}
 
 حدث صادر عن خادم Distributed Cache. الوقت المستغرق في انتظار قفل الاستبعاد المتبادل الخاص بالملفات المؤقتة المُثبَّتة عند حدوث تنازع.
 
 ### DistrCacheServerConnectionRegistryClientLockWaitMicroseconds {#distrcacheserverconnectionregistryclientlockwaitmicroseconds}
 
-حدث خادم Distributed Cache. الوقت المستغرق في انتظار mutex الخاص بحاوية الاتصالات لكل عميل عند حدوث تنازع (التسجيل/إلغاء التسجيل/التعريف/الإخلاء)
+حدث صادر عن خادم Distributed Cache. الوقت المستغرق في انتظار قفل الاستبعاد المتبادل الخاص بحاوية الاتصالات لكل عميل عند حدوث تنازع (التسجيل/إلغاء التسجيل/التعريف/الإخلاء، وفحص الطلبات العالقة، والاحتفاظ بالبيانات المؤقتة، و`system.distributed_cache_server_connections`)
 
 ### DistrCacheServerConnectionRegistryLockWaitMicroseconds {#distrcacheserverconnectionregistrylockwaitmicroseconds}
 
 حدث خادم distributed cache. الوقت المستغرق في انتظار mutex سجل الاتصالات العام عند التنازع (identify وsetClientWeight وeviction وunregister عند الحاجة إلى إعادة الفهرسة أو إزالة حاوية)
+
+### DistrCacheServerConnectionsClosedOnStuckRequest {#distrcacheserverconnectionsclosedonstuckrequest}
+
+حدث صادر عن خادم Distributed Cache. عدد الاتصالات التي أغلقتها عملية فحص الطلبات العالقة لأن طلبها قيد التنفيذ لم يُحرز أي تقدم لمدة لا تقل عن `distributed_cache_stuck_request_no_progress_timeout_ms`، أو تجاوز الحد المحدد في `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerConnectionsDroppedOverLimit {#distrcacheserverconnectionsdroppedoverlimit}
 
@@ -1830,6 +1858,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 حدث صادر عن خادم Distributed Cache. عدد الطلبات التي أغلق عميلها الاتصال دون إرسال EndRequest (عميل تم إنهاؤه، أو عميل لم يكن مقبسه قابلاً للكتابة، أو عميل قديم)، فتوقّف الخادم عن خدمتها عند EOF. لا تُحتسب عمليات الإغلاق التي يبادر بها هذا الخادم (إيقاف التشغيل أو إخلاء الاتصال)
 
+### DistrCacheServerRequestsEndedOnProcessingTime {#distrcacheserverrequestsendedonprocessingtime}
+
+حدث صادر عن خادم Distributed Cache. عدد الطلبات قيد التنفيذ التي أُنهيت لأن الخادم ظل يعالجها مدةً تتجاوز `distributed_cache_max_request_processing_time_ms`، وذلك إما بـ `Error` أو `Stop`، أو بـ `SlowDown` مع مطالبة العميل أيضًا بالتمهّل
+
 ### DistrCacheServerReusedS3CachedClients {#distrcacheserverreuseds3cachedclients}
 
 حدث صادر عن خادم Distributed Cache. عدد عملاء S3 المخزنين مؤقتًا الذين أُعيد استخدامهم
@@ -1841,6 +1873,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### DistrCacheServerSkipped {#distrcacheserverskipped}
 
 حدث صادر عن خادم Distributed Cache. عدد المرات التي تم فيها تخطي خادم Distributed Cache بسبب محاولات الاتصال الفاشلة السابقة
+
+### DistrCacheServerSlowDownRequests {#distrcacheserverslowdownrequests}
+
+حدث صادر عن خادم Distributed Cache. عدد الطلبات التي انتهت بحزمة SlowDown بينما كانت نافذة الإبطاء الخاصة بالعميل مفتوحة: إما عند بدء طلب قراءة أو طلب كتابة، أو لأن الخادم ظل يعالج أحد الطلبات مدةً تتجاوز `distributed_cache_max_request_processing_time_ms`
 
 ### DistrCacheServerStartRequestPackets {#distrcacheserverstartrequestpackets}
 
@@ -1889,6 +1925,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### DistrCacheSkippedWrites {#distrcacheskippedwrites}
 
 حدث مخزن الكتابة المؤقت الخاص بـ Distributed Cache. عدد الـ مخازن الكتابة المؤقتة التي تخطّت الكتابة عبر write-through cache بسبب عدم توفّر أي slot كتابة في الخلفية (بلوغ الحد المحدّد بواسطة server setting المسمى `distributed_cache_write_pool_size`) أو تعذّر بدء عملية كتابة في الخلفية. ومع ذلك تُكتب البيانات إلى تخزين كائني
+
+### DistrCacheSlowedDownServerSkipped {#distrcachesloweddownserverskipped}
+
+حدث صادر عن عميل Distributed Cache. عدد المرات التي جرى فيها تخطّي خادم ذاكرة التخزين المؤقت الموزعة لأنه طلب من هذا العميل إبطاء وتيرة الطلبات
 
 ### DistrCacheStaleReconnections {#distrcachestalereconnections}
 
@@ -2662,6 +2702,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 زمن حجز مساحة ذاكرة التخزين المؤقت لنظام الملفات
 
+### FilesystemCacheSkippedBusyPriorityLock {#filesystemcacheskippedbusyprioritylock}
+
+عدد عمليات المرور لخفض المستوى (downgrade walks) ضمن ترقية العناصر في ذاكرة التخزين المؤقت لنظام الملفات من نوع SLRU، والتي جرى تجاهلها لأن عملية كتابة كانت تحتفظ بقفل الأولوية أو تنتظر الحصول عليه
+
 ### FilesystemCacheStateLockMicroseconds {#filesystemcachestatelockmicroseconds}
 
 مدة قفل ذاكرة التخزين المؤقت لنظام الملفات عند قفل الحالة
@@ -2733,6 +2777,30 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### GlobalThreadPoolThreadCreationMicroseconds {#globalthreadpoolthreadcreationmicroseconds}
 
 إجمالي الوقت المستغرق في انتظار بدء خيوط تنفيذ جديدة.
+
+### GPUAggregationBatches {#gpuaggregationbatches}
+
+عدد دفعات الصفوف التي يرسلها التجميع التجريبي على GPU إلى وحدة GPU. تمثّل الدفعة الواحدة عملية نقل واحدة وعملية اختزال أو تجميع واحدة.
+
+### GPUAggregationMicroseconds {#gpuaggregationmicroseconds}
+
+إجمالي الوقت المستغرق في نقل دفعات الصفوف إلى وحدة معالجة الرسومات (GPU) وتجميعها عليها.
+
+### GPUAggregationRows {#gpuaggregationrows}
+
+عدد الصفوف التي جُمِّعت على وحدة GPU بواسطة ميزة التجميع التجريبية على GPU.
+
+### GranulesDroppedByPartitionKey {#granulesdroppedbypartitionkey}
+
+عدد العلامات (حبيبات الفهرس) التي استبعدها مفتاح التقسيم وفهرس الحدين الأدنى والأقصى الخاص به من القراءة في جدول MergeTree أثناء تحليل الفهرس.
+
+### GranulesDroppedByPrimaryKey {#granulesdroppedbyprimarykey}
+
+عدد العلامات (حبيبات الفهرس) التي استبعدها المفتاح الأساسي من القراءة في جدول MergeTree أثناء تحليل الفهرس.
+
+### GranulesDroppedBySkipIndexes {#granulesdroppedbyskipindexes}
+
+عدد العلامات (حبيبات الفهرس) التي استبعدتها فهارس تخطي البيانات من القراءة في جدول MergeTree أثناء تحليل الفهرس. ولا تُحتسب الفهارس المطبَّقة وقت القراءة (`use_skip_indexes_on_data_read`).
 
 ### GranulesReadByPrewhereReaders {#granulesreadbyprewherereaders}
 
@@ -2820,11 +2888,7 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 ### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
 
-عدد المرات التي أُجّلت فيها إزالة ملفات البيانات التي استُبدلت نتيجة دمج ملفات Iceberg، لأن استعلامًا على هذه النسخة المتماثلة أو على نسخة متماثلة أخرى كان لا يزال يقرأ لقطة تشير إلى تلك الملفات.
-
-### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
-
-عدد المرات التي أُجِّلت فيها إزالة ملفات البيانات التي استُبدلت نتيجة دمج ملفات Iceberg، لأن عملية الدمج أو اللقطة التي استبدلتها كانت أحدث من `iceberg_outdated_snapshot_lifetime_seconds`.
+عدد اللقطات غير المحدّثة التي أبقت عليها عملية تنظيف جدول Iceberg حتى تتابع تشغيل لاحق، لأن استعلامًا على هذه النسخة المتماثلة أو على نسخة متماثلة أخرى كان لا يزال يقرأها.
 
 ### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
 
@@ -4762,6 +4826,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 إجمالي عدد مجموعات الصفوف في Parquet التي تم استبعادها بواسطة مرشحات بلوم.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+عدد مقاطع الأعمدة في ملفات Parquet التي لا تحتوي على فهرس إزاحة، والتي حُدِّدت فيها مواقع الصفحات الحاوية للصفوف التي يقرؤها التجسيد الكسول اعتمادًا على ترويسات تلك الصفحات، بحيث لا تُقرأ سوى هذه الصفحات
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 مجموعات الصفوف التي بدأ قارئ Parquet لملفٍّ في التخزين الكائني أو على عنوان URL بقراءة بيانات الأعمدة الخاصة بها قبل جدولة فك ترميزها، وذلك ضمن حصته من max&#95;download&#95;threads
@@ -4805,6 +4873,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ParquetMetadataCacheMisses {#parquetmetadatacachemisses}
 
 عدد مرات عدم العثور على البيانات الوصفية لـ Parquet في التخزين المؤقت، ما استلزم قراءتها من القرص.
+
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+عدد مقاطع الأعمدة في Parquet التي جُلب فهرس الإزاحة الخاص بها من ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet بدلاً من قراءته من الملف.
 
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
@@ -4877,6 +4949,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
 
 عدد مجموعات الصفوف (row groups) في ملفات Parquet التي جرى تخطيها أثناء القراءة لأن إحصاءات القيم الدنيا/القصوى الخاصة بها أظهرت أنها لا يمكن أن تحتوي على أي صفوف من نتيجة `ORDER BY ... LIMIT` (راجع `use_top_k_dynamic_filtering`).
+
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+عدد المرات التي اجتاز فيها جزء بيانات تعذّرت قراءته من جدول ReplicatedMergeTree الفحصَ باستخدام الإدخال/الإخراج المباشر (direct I/O) متجاوزًا ذاكرة التخزين المؤقت لصفحات نظام التشغيل. ومن المرجّح أن خطأ القراءة نتج عن بيانات خاطئة في ذاكرة التخزين المؤقت للصفحات، لا عن البيانات الموجودة على القرص.
 
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
@@ -5622,6 +5698,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد عمليات تسليم مرشح JOIN وقت التنفيذ التي أُلغيت بسبب انقطاع اتصال المستقبِل أو توقفه عن القراءة؛ وفي هذه الحالة لا تتلقى الوجهة المتأثرة أي عامل تصفية، فتمر صفوفها دون تصفية
 
+### RuntimeFilterDenseBitsetsBuilt {#runtimefilterdensebitsetsbuilt}
+
+عدد مرشحات JOIN وقت التشغيل المبنية على مفاتيح من النوع (U)Int8 أو (U)Int16، والتي تحوّلت من المجموعة الدقيقة للمفاتيح إلى مصفوفة بتات كثيفة بدلاً من مرشّح بلوم
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 عدد الحبيبات التي جرى فحصها لأغراض التقليم عند القراءة بواسطة مرشح وقت التشغيل الخاص بـ JOIN
@@ -6149,6 +6229,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### SharedMergeTreePartsKillerRuns {#sharedmergetreepartskillerruns}
 
 عدد مرات تشغيل مكوّن parts killer
+
+### SharedMergeTreePartsUpdateLeaderElectionsSkippedByBudget {#sharedmergetreepartsupdateleaderelectionsskippedbybudget}
+
+عمليات انتخاب القائد لتحديث أجزاء البيانات التي لم تُجرِ محاولة للحصول على قفل، لأن هذه النسخة المتماثلة قد استنفدت بالفعل الحد المخصص لها من أقفال القائد
 
 ### SharedMergeTreeReplicaSetUpdatesFromZooKeeper {#sharedmergetreereplicasetupdatesfromzookeeper}
 
@@ -6802,6 +6886,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 عدد المرات التي تم فيها تخطي فحص القاموس لنمط الفهرس النصي، نظرًا لأن فحصًا سابقًا لجزء البيانات نفسه تجاوز الحد الأقصى لقائمة الترحيلات (posting list).
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+عدد المرات التي جرى فيها تخطي مسح القاموس الخاص بنمط الفهرس النصي لجزء ما، لأن كتل القاموس المطلوب مسحها تشغل عددًا من البايتات أكبر مما تشغله الصفوف التي لا تزال قابلة للقراءة في الـ column المفهرسة بعد تطبيق المفتاح الأساسي وفهارس تخطي البيانات السابقة.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 الصفوف المرشّحة (تقاطع قوائم postings) التي يفحصها بحث العبارات القائم على المرشّحين.
@@ -7129,6 +7217,10 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 عدد مفاتيح الصفوف الجديدة التي يجري فحصها مقابل أجزاء البيانات الموجودة ضمن مسار الكتابة لعمليات UNIQUE KEY INSERT.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+عدد الصفوف التي وُسِمت بأنها ميتة بواسطة عملية DELETE المتزامنة على جداول UNIQUE KEY.
 
 ### مرات العثور في ذاكرة التخزين المؤقتة لفهرس UniqueKeyIndex {#uniquekeyindexcachehits}
 

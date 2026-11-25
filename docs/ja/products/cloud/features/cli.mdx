@@ -13,7 +13,7 @@ ClickHouse CLI (`clickhousectl`、別名 `chctl`) を使用すると、端末、
 
 `clickhousectl cloud` コマンドで管理できる対象は次のとおりです。
 
-* **サービス:** ClickHouse Cloud サービスの作成、スケーリング、起動、停止、およびクエリ API 経由での SQL の実行。
+* **サービス:** ClickHouse Cloud サービスの作成、スケーリング、起動、停止、削除保護の設定、接続設定の `.env` ファイルへの書き出し、およびクエリ API 経由または対話型の `clickhouse client` セッションでの SQL の実行。
 * **[Managed Postgres](/ja/products/managed-postgres/overview):** Postgres サービス、読み取りレプリカ、ポイントインタイム復元の作成と、それらの設定の変更。
 * **[ClickPipes](/ja/integrations/clickpipes/home):** オブジェクトストレージ、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB、BigQuery からのデータ取り込み。
 * **[ClickStack](/ja/clickstack/overview):** [Self-managed ClickHouse Observability](/ja/clickstack/self-configured/deployment/managed) サービス上のソース、ダッシュボード、アラート、Webhook、保存済み検索、ロールの管理。
@@ -21,7 +21,7 @@ ClickHouse CLI (`clickhousectl`、別名 `chctl`) を使用すると、端末、
 * **バックアップ:** バックアップの一覧表示、バックアップスケジュールの変更、新しいサービスへのバックアップの復元。
 * **組織のアクセス管理:** 組織、メンバー、招待、APIキー、アクティビティログ。
 
-各コマンドで使用できるフラグと、必要な APIキーのアクセス許可を確認するには、`clickhousectl cloud <command> --help` を実行してください。
+サービス関連のコマンドは `clickhousectl cloud clickhouse` (短縮形は `cloud ch`) にまとめられています。各コマンドで使用できるフラグと、必要な APIキーのアクセス許可を確認するには、`clickhousectl cloud <command> --help` を実行してください。
 
 ## インストール {#installation}
 
@@ -50,23 +50,28 @@ clickhousectl cloud auth login --api-key <key> --api-secret <secret>
 
 ## 例 {#examples}
 
-### サービスを作成してクエリを実行する {#create-and-query-a-service}
+### サービスの作成とクエリの実行 {#create-and-query-a-service}
 
 ```bash
-# Create a service. Save the initial password; it is printed only once.
+# Create a service. The initial password is shown only once, so --dotenv
+# writes it and the connection settings to .env.local.
 # Omitting --ip-allow allows all addresses (0.0.0.0/0).
-clickhousectl cloud service create --name analytics \
+clickhousectl cloud clickhouse create --name analytics \
   --provider aws --region us-east-1 \
-  --ip-allow '203.0.113.10/32=Office'
+  --ip-allow '203.0.113.10/32=Office' \
+  --dotenv .env.local
 
 # Look up the service ID, then run SQL over the Query API
-CH_ID=$(clickhousectl cloud service get --name analytics --json | jq -r .id)
-clickhousectl cloud service query "$CH_ID" --query "SELECT version()"
+CH_ID=$(clickhousectl cloud clickhouse get --name analytics --json | jq -r .id)
+clickhousectl cloud clickhouse query "$CH_ID" --query "SELECT version()"
+
+# Open an interactive clickhouse client session
+clickhousectl cloud clickhouse client "$CH_ID"
 ```
 
-作成コマンドは、サービスが稼働状態になる前に返ります。`state` が `running` になるまで `clickhousectl cloud service get "$CH_ID"` をポーリングしてください。
+作成コマンドは、サービスが稼働状態になる前に終了します。`state` が `running` になるまで `clickhousectl cloud clickhouse get "$CH_ID"` をポーリングしてください。既存のサービスの場合は、`clickhousectl cloud clickhouse dotenv "$CH_ID" --local` を実行すると、同じ設定がパスワードなしで `.env.local` に書き込まれます。本番環境のサービスを保護するには、`clickhouse update "$CH_ID" --deletion-protection true` で削除保護を有効にします。有効にすると、`--deletion-protection false` を設定するまで `clickhouse delete` によるそのサービスの削除は拒否されます。
 
-APIキーで最初にクエリを実行すると、clickhousectl はサービスのクエリ API エンドポイントにお使いのAPIキーを追加します。エンドポイントが存在しない場合は作成されます。新しいキーは作成されません。この動作を行わずにエラーとするには、`--no-auto-enable` を指定してください。OAuth を使用する場合、`service query` は読み取り専用の `SELECT` 文を実行します。クエリ API は約 30 秒でタイムアウトするため、長時間かかるクエリや一括ロードには `clickhouse client` を使用してください。
+APIキーを使用する場合、キーがまだバインドされていなければ、`clickhouse query` はサービスのクエリ API エンドポイントにそのキーを追加し、必要に応じてエンドポイントも作成します。新しいキーは作成されません。この動作の代わりにエラーで終了させるには、`--no-auto-enable` を指定します。読み取り専用のキーは自身をバインドできないため、書き込みアクセス権を持つキーで一度バインドしておいてください。OAuth を使用する場合、`clickhouse query` で実行できるのは読み取り専用の `SELECT` 文のみです。クエリ API は約 30 秒でタイムアウトし、1 リクエストにつき 1 つのステートメントしか実行できないため、長時間かかるクエリ、スクリプト、一括ロードには `cloud clickhouse client` を使用してください。このコマンドはネイティブ TLS 経由で `clickhouse client` を起動し、ブラウザ経由で Cloud ユーザーとしてサインインするため、サービスのパスワードは不要です。ローカルに ClickHouse 25.12 以降がインストールされていること (`clickhousectl local install latest`) と、ブラウザで操作するユーザーが必要です。
 
 ### Managed Postgres サービスを作成する {#create-a-managed-postgres-service}
 
@@ -101,7 +106,7 @@ clickhousectl cloud udf deploy my_udf --service "$CH_ID"
 
 ## JSON 出力とコーディングエージェント {#json-output}
 
-Cloud コマンドは `--json` を受け付けます。また、CLI はコーディングエージェントを検出すると自動的に JSON を選択します。この場合、`cloud service query` のデフォルトの出力形式は `JSONEachRow` になるため、出力をパースするスクリプトでは `--format` を指定してください (例：`--format TabSeparated`) 。詳しくは [JSON 出力](/ja/concepts/features/interfaces/cli#json-output) および [終了コード](/ja/concepts/features/interfaces/cli#exit-codes) を参照してください。ClickHouse agent skills は `clickhousectl skills` でインストールできます。
+Cloud コマンドは `--json` を受け付けます。また、CLI はコーディングエージェントを検出すると自動的に JSON を選択します。この場合、`cloud clickhouse query` のデフォルトの出力形式は `JSONEachRow` になるため、出力をパースするスクリプトでは `--format` を指定してください (例：`--format TabSeparated`) 。詳しくは [JSON 出力](/ja/concepts/features/interfaces/cli#json-output) および [終了コード](/ja/concepts/features/interfaces/cli#exit-codes) を参照してください。ClickHouse agent skills は `clickhousectl skills` でインストールできます。
 
 ## さらに詳しく {#learn-more}
 

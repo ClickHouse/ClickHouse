@@ -165,7 +165,15 @@ Parquet のメタデータキャッシュをクリアします。
 
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
-ベクトル類似度索引キャッシュをクリアします。
+[ベクトル類似度索引](/ja/reference/engines/table-engines/mergetree-family/annindexes)のキャッシュをクリアします。このキャッシュには、デシリアライズされたベクトル索引のインデックスグラニュールがメモリ上に保持されています。
+
+```sql
+SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [db.]table]
+```
+
+`FOR TABLE` を指定した場合は、指定した `MergeTree` テーブルの cache エントリのみが削除されます。
+
+すべてのテーブル、または単一のテーブルに対する `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` 権限が必要です。
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -1029,6 +1037,29 @@ readonly の `ReplicatedMergeTree` テーブルでのみ動作します。
   すべての状態のパーツは `detached/` フォルダーに移動されます。データ消失前にアクティブだった (コミット済みの) パーツがアタッチされます。
 </Note>
 
+このステートメントは、サーバー全体のデータキャッシュもクリアします。復元済みのパーツには新しい名前が付けられますが、その名前やパスは他のパーツが以前使用していたものと一致する場合があり、そうした名前に対するキャッシュされたエントリが古くなってしまうためです。
+
+この影響は復元されたテーブルだけでなく、サーバー上のすべてのテーブルに及びます。それらのテーブルに対するクエリでは、キャッシュを再度構築する必要があります。`ON CLUSTER` を使用した場合は、レプリカが復元されるすべてのサーバーでキャッシュがクリアされます。
+
+クリアされるキャッシュは次のとおりです。
+
+* [マーク](#drop-mark-cache)
+* [非圧縮](#drop-uncompressed-cache)
+* [プライマリインデックス](#drop-primary-index-cache)
+* [統計](#drop-statistics-cache)
+* [索引マーク](#drop-index-mark-cache)
+* [索引非圧縮](#drop-index-uncompressed-cache)
+* [ベクトル類似度索引](#drop-vector-similarity-index-cache)
+* [テキスト索引](#drop-text-index-caches)
+* [mmap](#drop-mmap-cache)
+* [ページ](#drop-page-cache)
+* [カラム](#drop-columns-cache)
+* [クエリ条件](#drop-query-condition-cache)
+* [暗号化ヘッダー](#drop-encryption-headers-cache)
+* `UNIQUE KEY` の削除ビットマップキャッシュ
+
+[query cache](#drop-query-cache) と [ファイルシステムキャッシュ](#drop-filesystem-cache) は保持されます。
+
 ### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
 
 データは[存在している可能性がある]ものの、ZooKeeperのメタデータが失われた場合にレプリカを復元します。
@@ -1208,7 +1239,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-実行中のリフレッシュが完了するまで待機します。リフレッシュが実行されていない場合は、即座に返されます。直近のリフレッシュ試行が失敗している場合は、エラーを報告します。
+実行中のリフレッシュが完了するまで待機します。これには、実行予定時刻を迎えたものの `refresh_coordination_jitter_ms` の遅延によりまだ待機中のリフレッシュも含まれます。実行中または実行予定のリフレッシュがない場合は、即座に返されます。直近のリフレッシュ試行が失敗している場合は、エラーを報告します。
 
 新しいリフレッシャブルmaterialized view を作成した直後 (EMPTY キーワードなし) に使用して、初回のリフレッシュが完了するまで待つことができます。
 

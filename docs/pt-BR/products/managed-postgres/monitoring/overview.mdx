@@ -10,17 +10,17 @@ doc_type: 'guide'
 Você pode monitorar seus serviços ClickHouse Managed Postgres com os seguintes
 métodos:
 
-| Seção                                                                      | Descrição                                                                                                                                      | Configuração necessária           |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| [Dashboard](/pt-BR/products/managed-postgres/monitoring/dashboard)               | Gráficos integrados no console do Cloud para uso de recursos e atividade do banco de dados                                                     | Nenhuma                           |
-| [Query Insights](/pt-BR/products/managed-postgres/monitoring/query-insights)     | Telemetria por instrução: cada padrão de consulta classificado por impacto, com contadores de diagnóstico                                      | Nenhuma                           |
-| [Endpoint do Prometheus](/pt-BR/products/managed-postgres/monitoring/prometheus) | Colete métricas no Prometheus, Grafana, Datadog ou em qualquer collector compatível com OpenMetrics                                            | API key + configuração do scraper |
-| [Referência de métricas](/pt-BR/products/managed-postgres/monitoring/metrics)    | Lista completa das métricas expostas pelo endpoint do Prometheus, com tipos, labels e significados                                             | N/A                               |
-| [Notificações](/pt-BR/products/managed-postgres/monitoring/notifications)        | Alertas no Console, por e-mail e no Slack quando um serviço precisa de atenção, por exemplo, quando o armazenamento está próximo da capacidade | Nenhuma                           |
+| Seção                                                                      | Descrição                                                                                                                                                    | Configuração necessária                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| [Dashboard](/pt-BR/products/managed-postgres/monitoring/dashboard)               | Gráficos integrados no console do Cloud para uso de recursos e atividade do banco de dados                                                                   | Nenhuma                                          |
+| [Query Insights](/pt-BR/products/managed-postgres/monitoring/query-insights)     | Telemetria por instrução: cada padrão de consulta classificado por impacto, com contadores de diagnóstico, além de eventos de espera e consultas bloqueantes | Nenhuma; ative a coleta de consultas bloqueantes |
+| [Endpoint do Prometheus](/pt-BR/products/managed-postgres/monitoring/prometheus) | Colete métricas no Prometheus, Grafana, Datadog ou em qualquer collector compatível com OpenMetrics                                                          | API key + configuração do scraper                |
+| [Referência de métricas](/pt-BR/products/managed-postgres/monitoring/metrics)    | Lista completa das métricas expostas pelo endpoint do Prometheus, com tipos, labels e significados                                                           | N/A                                              |
+| [Notificações](/pt-BR/products/managed-postgres/monitoring/notifications)        | Alertas no Console, por e-mail e no Slack quando um serviço precisa de atenção, por exemplo, quando o armazenamento está próximo da capacidade               | Nenhuma                                          |
 
 ## Início rápido {#quick-start}
 
-Abra o console do Cloud e navegue até a aba **Monitoring** de qualquer
+Abra o console do Cloud e navegue até a aba **Monitoramento** de qualquer
 instância do ClickHouse Managed Postgres para ver gráficos em tempo real de CPU, memória, IOPS,
 conexões, transações, taxa de acerto do cache e deadlocks. Não requer
 configuração.
@@ -28,6 +28,10 @@ configuração.
 Para ver telemetria por consulta — percentis de latência, leituras no cache vs. em disco,
 spills temporários, utilização de workers paralelos e volume de WAL — abra a aba
 [Query Insights](/pt-BR/products/managed-postgres/monitoring/query-insights)
-na mesma instância. Para encaminhar métricas no nível do host para sua própria
+na mesma instância. A aba [Waits](/pt-BR/products/managed-postgres/monitoring/query-insights#waits)
+mostra o que as sessões ativas estão aguardando e, depois que você ativar a
+coleta, quais
+[sessões estão bloqueando outras](/pt-BR/products/managed-postgres/monitoring/query-insights#blocking-queries).
+Para encaminhar métricas no nível do host para sua própria
 stack de observabilidade, use o
 [Endpoint do Prometheus](/pt-BR/products/managed-postgres/monitoring/prometheus).

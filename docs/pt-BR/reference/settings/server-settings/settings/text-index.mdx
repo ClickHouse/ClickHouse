@@ -14,7 +14,7 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## text_index_header_cache_max_entries {#text_index_header_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="No" />Tamanho do cache do cabeçalho do índice de texto, em número de entradas. Zero significa desativado.
+<SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="Yes" />Tamanho do cache do cabeçalho do índice de texto, em número de entradas. Zero significa Disabled.
 
 ## text_index_header_cache_policy {#text_index_header_cache_policy}
 
@@ -34,7 +34,7 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## text_index_postings_cache_max_entries {#text_index_postings_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Tamanho do cache da lista de postings do índice de texto, em entradas. Zero significa que está desabilitado.
+<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="Yes" />Tamanho do cache da lista de postings do índice de texto, em entradas. Zero significa que está Disabled.
 
 ## text_index_postings_cache_policy {#text_index_postings_cache_policy}
 
@@ -54,7 +54,7 @@ Estas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## text_index_tokens_cache_max_entries {#text_index_tokens_cache_max_entries}
 
-<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="No" />Tamanho do cache de tokens do índice de texto, em entradas. Zero significa desabilitado.
+<SettingsInfoBlock type="UInt64" default_value="1000000" changeable_without_restart="Yes" />Tamanho do cache de tokens do índice de texto, em entradas. Zero significa Disabled.
 
 ## text_index_tokens_cache_policy {#text_index_tokens_cache_policy}
 

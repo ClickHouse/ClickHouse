@@ -41,6 +41,18 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * manifest&#95;file&#95;metadata - Всё вышеперечисленное + метаданные из обработанных avro manifest files.
 * manifest&#95;file&#95;entry - Всё вышеперечисленное + записи из обработанных avro manifest files.
 
+## iceberg_metadata_previous_versions_max {#iceberg_metadata_previous_versions_max}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "100"},{"label": "Новая настройка. При записи в таблицы Iceberg размер `metadata-log`, который ранее рос с каждым коммитом, теперь ограничивается."}]}]} />
+
+Максимальное число записей в `metadata-log` таблицы Iceberg, сохраняемых при операции записи, включая запись о файле метаданных, который создаёт эта операция. Если при записи число записей превышает лимит, самые старые из них удаляются. Сами файлы метаданных при этом не удаляются.
+
+Свойство таблицы Iceberg `write.metadata.previous-versions-max` имеет приоритет над этой настройкой. Как и в реализации на Java, это свойство задаёт количество предыдущих файлов метаданных и не может быть меньше единицы, поэтому `metadata-log` хранит на одну запись больше, чем указано в его значении.
+
+Настройка не влияет на таблицы в каталоге, который сам записывает файлы метаданных, например в REST-каталоге: в этом случае каталог ведёт `metadata-log` в соответствии с собственной конфигурацией и свойством таблицы.
+
 ## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />

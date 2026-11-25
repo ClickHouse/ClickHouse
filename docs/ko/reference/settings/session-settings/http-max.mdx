@@ -13,71 +13,61 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 다음 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="http_max_field_name_size">
-  ## http_max_field_name_size
-</div>
+## http_max_field_name_size {#http_max_field_name_size}
 
 <SettingsInfoBlock type="UInt64" default_value="4096" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "HTTP 연결의 인증 전 메모리 사용량을 제한하기 위해 기본값을 낮췄습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4096"},{"label": "이 변경 사항은 26.1에 백포트되었으며 해당 버전에 기록되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "4096"},{"label": "HTTP 연결의 인증 전 메모리 사용량(memory usage)을 제한하기 위해 기본값을 낮췄습니다."}]}]} />
 
-HTTP 요청 헤더, 쿼리 매개변수 및 폼 데이터에서 필드 이름의 최대 길이입니다.
+HTTP 요청 header, 쿼리 매개변수 및 폼 데이터에서 필드 이름의 최대 길이입니다.
 
-<div id="http_max_field_value_size">
-  ## http_max_field_value_size
-</div>
+또한 `url` 테이블 함수처럼 ClickHouse가 클라이언트로서 읽는 HTTP 응답 header의 필드 이름 길이도 제한합니다.
+
+## http_max_field_value_size {#http_max_field_value_size}
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
-HTTP 요청 헤더, 쿼리 매개변수, 폼 데이터에 포함되는 필드 값의 최대 길이입니다.
+HTTP 요청 header, 쿼리 매개변수, 폼 데이터에 포함되는 필드 값의 최대 길이입니다.
 
-<div id="http_max_fields">
-  ## http_max_fields
-</div>
+ClickHouse가 클라이언트로서 읽는 HTTP 응답(예: `url` 테이블 함수 사용 시)의 header에 포함된 필드 값의 길이도 이 설정으로 제한됩니다.
+
+## http_max_fields {#http_max_fields}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "HTTP 연결의 인증 전 메모리 사용량을 제한하기 위해 기본값을 낮췄습니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "이 변경 사항은 26.1에 백포트되었으며 해당 버전에 기록되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1000"},{"label": "HTTP 연결의 인증 전 메모리 사용량(memory usage)을 제한하기 위해 기본값을 낮췄습니다."}]}]} />
 
 HTTP 요청 헤더, 쿼리 매개변수 및 폼 데이터에 포함될 수 있는 최대 필드 수입니다.
 
-<div id="http_max_multipart_form_data_size">
-  ## http_max_multipart_form_data_size
-</div>
+또한 `url` 테이블 함수 등에서 ClickHouse가 클라이언트로 동작하며 읽는 HTTP 응답의 header에 포함된 필드 수도 제한합니다.
+
+## http_max_multipart_form_data_size {#http_max_multipart_form_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
 multipart/form-data 콘텐츠 크기에 대한 제한입니다. 이 설정은 URL 매개변수로 parse할 수 없으므로 사용자 프로필에 설정해야 합니다. 콘텐츠는 parse되고 external tables는 쿼리 실행이 시작되기 전에 메모리에 생성된다는 점에 유의하십시오. 또한 이 제한만이 해당 단계에 영향을 미칩니다(`max memory usage` 및 `max execution time` 제한은 HTTP 폼 데이터를 읽는 동안에는 영향을 미치지 않습니다).
 
-<div id="http_max_request_header_size">
-  ## http_max_request_header_size
-</div>
+## http_max_request_header_size {#http_max_request_header_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "인증 전에 전체 HTTP 요청 헤더 크기를 제한하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "10485760"},{"label": "이 변경 사항은 26.1에 백포트되었으며, 해당 버전에 기록되어 있습니다."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "10485760"},{"label": "인증 전에 전체 HTTP 요청 헤더 크기를 제한하는 새로운 설정입니다."}]}]} />
 
 모든 HTTP 요청 헤더의 최대 총 크기(이름과 값을 합친 크기)를 바이트 단위로 지정합니다.
 
-<div id="http_max_request_param_data_size">
-  ## http_max_request_param_data_size
-</div>
+## http_max_request_param_data_size {#http_max_request_param_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 사전 정의된 HTTP 요청에서 쿼리 매개변수로 사용하는 요청 데이터 크기의 제한입니다.
 
-<div id="http_max_tries">
-  ## http_max_tries
-</div>
+## http_max_tries {#http_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 http를 통해 읽기를 수행할 때의 최대 시도 횟수입니다.
 
-<div id="http_max_uri_size">
-  ## http_max_uri_size
-</div>
+## http_max_uri_size {#http_max_uri_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 

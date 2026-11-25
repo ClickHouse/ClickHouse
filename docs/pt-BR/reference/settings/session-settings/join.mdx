@@ -15,9 +15,43 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,inequality" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Adicionado `ie_join` à lista padrão; assim, uma junção cuja seção `ON` tenha apenas condições de desigualdade é executada com IEJoin em vez de um `CROSS JOIN` com filtro. Por estar por último, ele é usado apenas quando os outros algoritmos não se aplicam."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` é um alias obsoleto de `hash` e foi removido da lista padrão, mas ainda é aceito. Listar `hash` ou `parallel_hash` não controla o grau de paralelismo da junção."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash"}]}]} />
+<VersionHistory
+  rows={[
+  {
+    id: "row-1",
+    items: [
+      { label: "26.8" },
+      { label: "direct,parallel_hash,hash,ie_join" },
+      {
+        label:
+          "Adicionado `ie_join` (agora chamado `inequality`) à lista padrão; assim, uma junção cuja seção `ON` tenha apenas condições de desigualdade é executada com o algoritmo de junção por desigualdade em vez de um `CROSS JOIN` com filtro. Por estar por último, ele é usado apenas quando os outros algoritmos não se aplicam."
+      }
+    ]
+  },
+  { id: "row-2", items: [{ label: "26.12" }, { label: "direct,hash,inequality" }, { label: "`ie_join` foi renomeado para `inequality`. O nome anterior `ie_join` ainda é aceito como alias." }] },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.11" },
+      { label: "direct,hash,ie_join" },
+      {
+        label:
+          "`parallel_hash` é um alias obsoleto de `hash` e foi removido da lista padrão, mas ainda é aceito. Listar `hash` ou `parallel_hash` não controla o grau de paralelismo da junção."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "24.12" },
+      { label: "direct,parallel_hash,hash" },
+      { label: "'default' ficou obsoleto em favor de algoritmos de junção especificados explicitamente; além disso, agora parallel_hash é preferido em vez de hash" }
+    ]
+  }
+  ]}
+/>
 
 Especifica qual algoritmo de [JOIN](/pt-BR/reference/statements/select/join) é usado.
 
@@ -39,7 +73,7 @@ Valores possíveis:
 [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) é usado. O Grace hash oferece uma opção de algoritmo que permite executar junções complexas com bom desempenho, limitando o uso de memória.
 Selecionar `grace_hash` explicitamente é indicado principalmente para fins de diagnóstico. Para habilitar o spill da junção, defina [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
 
-`grace_hash` é externo desde o primeiro bloco: a tabela da direita é particionada imediatamente, enquanto `hash` e `parallel_hash` a coletam primeiro em memória e só a particionam quando o limiar de spill é ultrapassado. Escolha-o quando você já sabe que o lado direito não caberá na memória e quer pular a fase em memória. O próprio limiar de spill é o mesmo usado por todos os algoritmos hash, [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), e um dos dois precisa ser diferente de zero, a menos que `legacy_join_size_limits_trigger_spilling` esteja ativado. Sem um limiar, `grace_hash` é ignorado em favor do próximo algoritmo da lista, e rejeitado se for o único.
+`grace_hash` é externo desde o primeiro bloco: a tabela da direita é particionada imediatamente, enquanto `hash` e `parallel_hash` primeiro a acumulam em memória e só a particionam quando ela ultrapassa o limiar de spill. Escolha-o quando você já souber que o lado direito não caberá em memória e quiser pular a fase em memória. O limiar de spill é o mesmo usado por todos os algoritmos hash, [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), e um dos dois precisa ser diferente de zero, a menos que `legacy_join_size_limits_trigger_spilling` esteja ativado. Sem um limiar, `grace_hash` é ignorado em favor do próximo algoritmo da lista, ou rejeitado se for o único.
 
 A primeira fase de um grace join lê a tabela da direita e a divide em N buckets dependendo do valor de hash das colunas de chave (inicialmente, N é `grace_hash_join_initial_buckets`). Isso é feito de modo a garantir que cada bucket possa ser processado de forma independente. As linhas do primeiro bucket são adicionadas a uma tabela hash em memória, enquanto as demais são salvas em disco. Se a tabela hash crescer além do limiar de spill, o número de buckets é aumentado junto com o bucket atribuído a cada linha. Quaisquer linhas que não pertençam ao bucket atual são descarregadas e reatribuídas.
 
@@ -82,11 +116,11 @@ Quando definido como `auto`, `hash` join é tentado primeiro, e o algoritmo é a
 
 [Algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join) com ordenação completa das tabelas unidas antes da junção.
 
-* ie&#95;join
+* inequality
 
-O algoritmo [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) baseado em ordenação para um `JOIN` cuja seção `ON` tem duas comparações de desigualdade (`<`, `<=`, `>`, `>=`) entre expressões das tabelas unidas. Oferece suporte a `ALL INNER/LEFT/RIGHT/FULL JOIN` e `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+O algoritmo de [junção por desigualdade](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) baseado em ordenação para um `JOIN` cuja seção `ON` tem duas comparações de desigualdade (`<`, `<=`, `>`, `>=`) entre expressões das tabelas unidas. Oferece suporte a `ALL INNER/LEFT/RIGHT/FULL JOIN` e `SEMI`/`ANTI` `LEFT/RIGHT JOIN`. O nome anterior `ie_join` é aceito como alias.
 
-A posição na lista define a prioridade. Quando listado após outros algoritmos, como no valor padrão, `ie_join` é usado somente se a seção `ON` não tiver condições de igualdade. Quando listado primeiro, ele é usado sempre que a seção `ON` tiver duas condições de desigualdade, e as demais condições são aplicadas como filtro sobre o resultado da junção. Quando há mais de duas condições de desigualdade, as duas usadas pelo algoritmo são escolhidas pela seletividade estimada a partir das [estatísticas de coluna](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); sem estatísticas, são usadas as duas primeiras na ordem sintática. Sem `ie_join` na lista, um `INNER JOIN` apenas com condições de desigualdade é executado como um `CROSS JOIN` com um filtro, e os demais tipos de junção, como uma [junção block nested loop](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+A posição na lista define a prioridade. Quando listado após outros algoritmos, como no valor padrão, `inequality` é usado apenas quando a seção `ON` não possui condições de igualdade. Quando listado primeiro, é usado sempre que a seção `ON` possui duas condições de desigualdade, e as demais condições são aplicadas como um filtro sobre o resultado da junção. Quando há mais de duas condições de desigualdade, as duas usadas pelo algoritmo são escolhidas com base na seletividade estimada a partir das [estatísticas de coluna](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); sem estatísticas, são usadas as duas primeiras na ordem sintática. Sem `inequality` na lista, um `INNER JOIN` com apenas condições de desigualdade é executado como um `CROSS JOIN` com filtro, e os demais tipos de junção, como uma [junção block nested loop](/pt-BR/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
 Ambas as entradas são acumuladas em memória antes da junção: [`max_rows_in_join`](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) e [`max_bytes_in_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) limitam a entrada acumulada de ambos os lados em conjunto (não apenas o lado direito), com a ação em caso de overflow definida por [`join_overflow_mode`](/pt-BR/reference/settings/session-settings/join#join_overflow_mode); os índices de ordenação que o operator constrói sobre a entrada acumulada não são contabilizados no limite. O operator de junção em si é executado em uma única thread; apenas as ordenações pré-junção das entradas são paralelizadas.
 
@@ -181,7 +215,7 @@ baseado em hash considera essa configuração, incluindo aqueles que fazem spill
 limite interrompe a consulta em vez de acionar um spill. A exceção é
 `legacy_join_size_limits_trigger_spilling`: com ela ativada, a parte de uma junção que
 já é executada em disco continua fazendo spill em vez de aplicar essa configuração.
-`ie_join` também a considera, sobre a entrada que acumula de ambos os lados. `partial_merge` ainda
+`inequality` também a considera, sobre a entrada que acumula de ambos os lados. `partial_merge` ainda
 lida com os limites mudando de estratégia — veja
 [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm).
 
@@ -194,8 +228,8 @@ Valor padrão: `THROW`.
 
 **Veja também**
 
-* [cláusula junção](/pt-BR/reference/statements/select/join)
-* [motor de tabela junção](/pt-BR/reference/engines/table-engines/special/join)
+* [cláusula JOIN](/pt-BR/reference/statements/select/join)
+* [motor de tabela Join](/pt-BR/reference/engines/table-engines/special/join)
 
 ## join_use_nulls {#join_use_nulls}
 

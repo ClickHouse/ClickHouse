@@ -1,0 +1,89 @@
+---
+description: 'WebSocket 経由でブラウザから `clickhouse-client` sessionを利用できるウェブターミナルのドキュメント'
+sidebarTitle: 'ウェブターミナル'
+slug: /concepts/features/connect-to-clickhouse/native-tools/web-terminal
+title: 'ウェブターミナル'
+doc_type: 'reference'
+---
+
+ウェブターミナルは、WebSocket 経由で対話型の `clickhouse-client` sessionを提供する、ブラウザベースのインターフェイスです。ClickHouse のすべての HTTP ポートで、`/webterminal` パスから提供されます。
+
+ウェブターミナルを開くには、任意の ClickHouse HTTP ポートの `/webterminal` (例: `http://localhost:8123/webterminal`) にアクセスします。
+
+## 機能の有効化と無効化 {#enabling-the-feature}
+
+`/webterminal` エンドポイントはデフォルトで有効になっており、`enable_webterminal` サーバー設定で制御されます。無効化するには、この設定を `false` にします。無効化すると、`/webterminal` へのリクエストに対して HTTP ステータス `403 Forbidden` が返されます。
+
+```xml
+<clickhouse>
+    <enable_webterminal>false</enable_webterminal>
+</clickhouse>
+```
+
+<Note>
+  `enable_webterminal` は、従来の `allow_experimental_webterminal` 設定に代わるものです。後方互換性のため、`enable_webterminal` が設定されていない場合は、旧名称の設定も引き続き有効です。
+</Note>
+
+## 認証 {#authentication}
+
+ウェブターミナルは、HTTP プロトコルと同じ `Session` およびアクセス制御チェックによってユーザーを認証しますが、認証情報は HTTP アップグレードリクエストではなく、確立済みの WebSocket 接続上でインバンドでやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザは最初のメッセージを JSON 形式で送信します。
+
+```json
+{"type": "auth", "user": "<user>", "password": "<password>"}
+```
+
+`user` フィールドは任意です。省略された場合や空の場合、ユーザー名は `default_session_user` [サーバー設定](/ja/reference/settings/server-settings/settings) (または [コンポーザブルプロトコル](/ja/concepts/features/configuration/server-config/composable-protocols) の設定におけるエンドポイントごとのオーバーライド) の値にフォールバックします。この値は、別途設定しない限り `default` です。`default_session_user` が空文字列に設定されている場合、ユーザー名のない接続は禁止されます。この場合、`user` が省略された、または空の `auth` メッセージは認証に失敗し、サーバーはコード `1008` で WebSocket を閉じます。さらに、サーバー構成で `session_log` セクションが有効になっていれば、この拒否は `user` が空の `LoginFailure` イベントとして [`system.session_log`](/ja/reference/system-tables/session_log) に記録されます。
+
+この方式により、認証情報を URL のクエリパラメータや、アップグレードリクエストに付与する `Authorization` ヘッダーに含める必要がなくなります。これらに含めた認証情報は、ブラウザの履歴、サーバーのアクセスログ、リバースプロキシのログに残るおそれがあります。`/webterminal` は、アップグレードリクエストの URL パラメータ、HTTP Basic、`X-ClickHouse-User`/`X-ClickHouse-Key` ヘッダーを意図的に参照**しません**。
+
+認証情報が無効な場合、サーバーはコード `1008` で WebSocket を閉じ、ブラウザ UI は認証情報の再入力を求めます。
+
+## session の概要 {#session}
+
+認証が完了すると、サーバーは擬似端末にアタッチされた `clickhouse-client` を実行し、その入出力を WebSocket 経由で中継します。この session では、以下を含む `clickhouse-client` のすべての機能を利用できます。
+
+* 構文ハイライト
+* 自動補完
+* 複数行クエリ
+* コマンド履歴 (session の間、サーバー側に保存されます)
+
+端末のレンダリングには [xterm.js](https://xtermjs.org/) を使用しています。すべてのアセットは ClickHouse バイナリ自体から配信されるため、third-party の CDN は一切読み込まれません。
+
+## `/play` との連携 {#play-integration}
+
+[`/play`](/ja/concepts/features/connect-to-clickhouse/protocols/http) の Web SQL UI には、ウェブ端末がドッキング可能なパネルとして組み込まれています。表示を切り替えるには、サイドバーの端末アイコンをクリックするか、クエリエディターが空のときに `~` キーを押します。`/play` ページはロード時に `/webterminal` が利用可能かどうかを検出し、エンドポイントが使用不可の場合 (たとえば、`enable_webterminal` が `false` に設定されている場合) は端末関連のコントロールを非表示にします。
+
+## ドキュメントWebサイトとの連携 {#docs-integration}
+
+このドキュメントWebサイトでは、ページ下部に沿って配置された細い開発者用トレイに同じ端末が組み込まれており、[ClickHouse プレイグラウンド](https://play.clickhouse.com)に読み取り専用の `play` ユーザーとして接続されています。そのため、どのページの例も、ページを離れることなく試すことができます。固定トレイはページ末尾にトレイと同じ高さのスペースを確保するため、フッターのコントロールが隠れることはありません。端末を開いている間は、ドキュメントページがロックされ、スクロールバーも非表示になります。端末上でのスクロールは端末のスクロールバック内に限定され、背後のドキュメントページがスクロールすることはありません。「ClickHouse terminal」バーをクリックするか `~` キーを押すと、バーの上にパディングされたパネルが開きます。パネルを折りたたむには、バーをもう一度クリックするか、シェブロンをクリックするか、`~` または `Escape` を押すか、パネルの上辺を下にドラッグします。この上辺をドラッグしてパネルのサイズを変更することもできます。`exit` または `Ctrl+D` でsessionを終了した場合も、パネルは折りたたまれます。
+
+パネルを閉じても、sessionとスクロールバックは保持されるため、端末を再度開くと同じプロンプトに戻ります。sessionはページ内で保持されるため、ドキュメントページ間を移動しても維持されますが、ブラウザタブを再読み込みすると失われます。再読み込み後は、新しいsessionでパネルが再表示されます。
+
+端末トレイはWebサイトのデスクトップ用レイアウトの一部であり、幅の狭いビューポートでは利用できません。
+
+## セキュリティ上の考慮事項 {#security}
+
+ウェブターミナルは、ClickHouse の HTTP エンドポイントで認証できるすべてのユーザーに対して、シェルのような対話型sessionを公開します。そのため、HTTP プロトコルに関する注意事項がここでも同様に当てはまります。
+
+* 信頼できない環境では、認証情報とsessionのトラフィックを保護するため、`/webterminal` は必ず HTTPS 経由で提供してください。
+* HTTP プロトコルの場合と同様に、ネットワークレベル (ファイアウォール、リバースプロキシ、または `listen_host` 設定) でアクセスを制限してください。
+* このエンドポイントは、クロスオリジン WebSocket ハイジャックを緩和するため、`Origin` ヘッダーを `Host` と照合して検証します。TLS を外部で終端する場合は、これに合わせてリバースプロキシを設定してください。
+* TLS を終端するリバースプロキシの背後では、ブラウザが `https` を使用していても ClickHouse へのアップストリーム接続は平文の `http` になるため、厳密な同一オリジンチェックでは正当な接続まで拒否されてしまいます。このようなデプロイメントでは、WebSocket sessionの開始を許可するオリジンを完全な形式でカンマ区切りにして `webterminal_allowed_origins` に指定してください。この設定が空でない場合、デフォルトの同一オリジンチェックの代わりにこの設定が使用されます。例：`<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`
+
+## sessionの制限 {#session-limits}
+
+各ウェブ端末のsessionでは、専用のスレッドと擬似端末を持つ埋め込みの `clickhouse-client` が実行されます。そのため、サーバーは他のインターフェイスのsessionと同じ制限をこのsessionにも適用します。制限値は認証済みユーザーの設定から取得されます。
+
+* [`max_sessions_for_user`](/ja/reference/settings/session-settings/max#max_sessions_for_user) は、ユーザーの同時session数を制限します。上限を超えたsessionは埋め込みクライアントの起動前に拒否され、サーバーはコード `1008` で WebSocket を閉じます。
+* [`idle_connection_timeout`](/ja/reference/settings/session-settings/other#idle_connection_timeout) は、埋め込みクライアントが次のクエリを待機している間、指定した秒数にわたって双方向とも通信がなかった場合に、ネイティブプロトコルと同様にsessionを閉じます。実行中のクエリは、出力がない場合でもこのタイムアウトによって中断されません。
+* [`receive_timeout`](/ja/reference/settings/session-settings/receive#receive_timeout) と [`send_timeout`](/ja/reference/settings/session-settings/send#send_timeout) は、クライアントからの WebSocket フレームの読み取り時間と、クライアントへのデータ送信時間を制限します。値を `0` にするとタイムアウトは無効になります。
+
+端末で `SET` クエリを使ってこれらの設定を変更した場合、変更はクエリが完了し、埋め込みクライアントがプロンプトに戻った時点で反映されます。
+
+これらのsessionは、他のインターフェイスの接続とあわせて、サーバー全体の [`max_connections`](/ja/reference/settings/server-settings/settings/max#max_connections) の上限にもカウントされます。
+
+さらに、このハンドラーは RFC 6455 に基づき WebSocket プロトコルへの準拠を強制します。マスクされていないクライアントフレーム、予約されたオペコード、サイズ超過または断片化された制御フレーム、予約された RSV ビットは、プロトコルエラーを示すクローズコードで拒否されます。
+
+## プラットフォームでの利用可否 {#platform}
+
+このハンドラーは、ClickHouse がサポートするすべてのプラットフォーム向けにコンパイルされます。埋め込みの `clickhouse-client` ランナーが使用する擬似端末レイヤーは、移植可能な POSIX プリミティブ (`posix_openpt`/`grantpt`/`unlockpt`) 上に実装されています。また、Linux では thread-safe な `ptsname_r` を使用する Linux 固有のコードパスが用意されています。ClickHouse のスタートページおよび `/play` にある `/webterminal` へのリンクは、エンドポイントが使用不可の場合 (たとえば `enable_webterminal` が `false` に設定されている場合) には自動的に非表示になります。

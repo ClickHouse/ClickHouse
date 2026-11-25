@@ -113,24 +113,35 @@ hyperdx:
 
 ### 使用外部 Secret {#using-external-secret}
 
-对于需要在生产部署中将凭据与 Helm 值分离的情况，请使用外部 Kubernetes Secret：
+为避免将 HyperDX API key 写入 Helm 配置值，请将其存储在您自行创建的 Kubernetes Secret 中：
 
 ```bash
-# 创建您的 secret
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-然后在 values 中引用它：
+然后将其从该 图表 的 Secret 中移除，并改为从您自己的 Secret 中读取：
 
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+其他任何 HyperDX 环境变量都可以按同样的方式从 Secret 中读取。
+
+只要启用了内置组件，ClickHouse 和 MongoDB 的密码就必须保留在 `hyperdx.secrets` 中。该 图表 会用这些密码来设置内置的 ClickHouse 和 MongoDB 用户，OTel collector 也会从该 图表 的 Secret 中读取这些密码。
+
+<Note>
+  `hyperdx.deployment.useExistingConfigSecret` 仅从 Secret 中加载默认的连接和数据源 (`connections.json` 和 `sources.json`) ，而不会读取 API key 或密码。请参阅[外部 ClickHouse](/zh/clickstack/deployment/helm-deployment-options#external-clickhouse-secret)。
+</Note>
 
 ## 入口设置 {#ingress-setup}
 

@@ -79,6 +79,13 @@ Cloud 默认值：`50`。
 `clickhouse-client` 或 HTTP 接口发送数据的普通 `INSERT`。管道的写入端
 (合并块并将其写入目标端表) 最多可由这么多线程并行处理。
 
+对于结果依赖插入顺序的目标端，当输入只有一个流时，会保持单个写入流：
+`CollapsingMergeTree`、`CoalescingMergeTree`、`GraphiteMergeTree`、`ReplacingMergeTree`
+(包括它们的副本变体) 、带有 `UNIQUE KEY` 的 `MergeTree` 表、`EmbeddedRocksDB` 以及 `Distributed`
+(无法得知分片上表所用的引擎) 。具有多个输出流的 `SELECT` 本身没有需要保留的输入顺序，
+因此这些目标端仍可保持并行写入。`KeeperMap` 始终保持单个写入流。
+这些限制同样适用于经由 materialized view 或 `Alias` 表写入的目标端。
+
 可能的值：
 
 * 0 — 自动。使用服务器可用的 CPU 核心数 (与 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 相同的自动值) ，并会在内存压力下通过 [`max_insert_threads_min_free_memory_per_thread`](/zh/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread) 降低。

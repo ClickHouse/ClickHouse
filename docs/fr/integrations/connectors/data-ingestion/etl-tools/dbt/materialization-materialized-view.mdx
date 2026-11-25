@@ -63,9 +63,9 @@ Voir le [fichier de test](https://github.com/ClickHouse/dbt-clickhouse/blob/main
 
 ### Plusieurs vues matérialisées {#multiple-materialized-views}
 
-ClickHouse permet à plusieurs vues matérialisées d’écrire des enregistrements dans la même table cible. Pour prendre cela en charge dans dbt-clickhouse avec l’approche de cible implicite, vous pouvez construire un `UNION` dans votre fichier de modèle, en encadrant le SQL de chaque vue matérialisée par des commentaires de la forme `--my_mv_name:begin` et `--my_mv_name:end`.
+ClickHouse permet à plusieurs vues matérialisées d’écrire des enregistrements dans la même target table. Pour prendre cela en charge dans dbt-clickhouse avec l’approche de cible implicite, vous pouvez construire un `UNION` dans votre fichier de modèle, en encadrant le SQL de chaque vue matérialisée par des commentaires de la forme `--my_mv_name:begin` et `--my_mv_name:end`.
 
-Par exemple, ce qui suit créera deux vues matérialisées qui écrivent toutes deux des données dans la même table de destination du modèle. Les noms des vues matérialisées auront la forme `<model_name>_mv1` et `<model_name>_mv2` :
+Par exemple, ce qui suit créera deux vues matérialisées qui écrivent toutes deux des données dans la même table de destination du modèle. Les noms des vues matérialisées auront la forme `<model_name>_mv1` et `<model_name>_mv2` :
 
 ```sql
 --mv1:begin
@@ -77,10 +77,12 @@ select a,b,c from {{ source('raw', 'table_2') }}
 --mv2:end
 ```
 
+Les vues peuvent effectuer des requêtes SELECT sur des [modèles éphémères](https://docs.getdbt.com/docs/build/materializations#ephemeral) lorsqu’aucune vue ne possède sa propre clause `WITH`. dbt ajoute les CTE des modèles éphémères une seule fois, avant la première vue, et dbt-clickhouse les ajoute à chaque vue. Lorsqu’une vue possède sa propre clause `WITH`, dbt ajoute les CTE à cette clause à la place ; une vue qui effectue une requête SELECT sur un modèle éphémère sans ces CTE échoue alors avec une erreur. Dans ce cas, définissez chaque vue comme un modèle distinct doté d’une target table explicite (voir [Migration d’une cible implicite vers une cible explicite](#migration-implicit-to-explicit)).
+
 <Warning>
   Lors de la mise à jour d&#39;un modèle avec plusieurs vues matérialisées (MV), en particulier lors du renommage de l&#39;une des MV,
   dbt-clickhouse ne supprime pas automatiquement l&#39;ancienne MV. À la place,
-  vous verrez l&#39;avertissement suivant :
+  vous verrez l&#39;avertissement suivant :
 
   `Warning - Table <previous table name> was detected with the same pattern as model name <your model name> but was not found in this run. In case it is a renamed mv that was previously part of this model, drop it manually (!!!) `
 </Warning>

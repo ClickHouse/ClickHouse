@@ -2,7 +2,7 @@
   "item": "Agents",
   "pages": [
     {
-      "group": "Get started",
+      "group": "Premier pas",
       "pages": [
         "fr/agents/index",
         "fr/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Agent Builder",
+      "group": "Créateur d’agents",
       "pages": [
         "fr/agents/builder/index",
         "fr/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Manage agents",
+      "group": "Gérer les agents",
       "pages": [
         "fr/agents/prompts",
         "fr/agents/memory",

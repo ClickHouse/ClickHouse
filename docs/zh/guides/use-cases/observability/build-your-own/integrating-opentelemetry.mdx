@@ -123,9 +123,7 @@ OpenTelemetry collector 提供[多个发行版](https://github.com/open-telemetr
 
 我们建议用户尽可能采用结构化日志记录，并以 JSON (即 ndjson) 格式输出日志。这样可以简化后续所需的日志处理，无论是在发送到 ClickHouse 之前使用 [Collector 处理器](https://opentelemetry.io/docs/collector/configuration/#processors)，还是在写入时使用 materialized views。结构化日志最终可以节省后续处理资源，减少 ClickHouse 方案所需的 CPU。
 
-<div id="example">
-  ### 示例 {#example}
-</div>
+### 示例 {#example}
 
 为便于演示，我们提供了一个结构化 (JSON) 日志数据集和一个非结构化日志数据集，每个约有 1000 万行，可通过以下链接获取：
 
@@ -134,12 +132,12 @@ OpenTelemetry collector 提供[多个发行版](https://github.com/open-telemetr
 
 下面的示例使用结构化数据集。请确保已下载并解压该文件，以复现以下示例。
 
-以下展示了 OTel Collector 的一个简单配置：它使用 filelog receiver 读取磁盘上的这些文件，并将生成的消息输出到 stdout。由于日志是结构化的，我们使用 [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) operator。请将路径修改为 access-structured.log 文件的实际路径。
+以下展示了 OTel Collector 的一个简单配置：它使用 filelog 接收器 读取磁盘上的这些文件，并将生成的消息输出到 stdout。由于日志是结构化的，我们使用 [`json_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/json_parser.md) 操作员。请将路径修改为 access-structured.log 文件的实际路径。
 
 <Info>
   **考虑使用 ClickHouse 进行解析**
 
-  下面的示例会从日志中提取 timestamp。这需要使用 `json_parser` operator，它会将整行日志转换为 JSON 字符串，并将结果放入 `LogAttributes`。这样做的计算开销可能较高，[而在 ClickHouse 中可以更高效地完成](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local)——[使用 SQL 提取结构](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。与之对应的非结构化示例使用 [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) 实现相同效果，可在[这里](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==)找到。
+  下面的示例会从日志中提取 时间戳。这需要使用 `json_parser` 操作员，它会将整行日志转换为 JSON 字符串，并将结果放入 `LogAttributes`。这样做的计算开销可能较高，[而在 ClickHouse 中可以更高效地完成](https://clickhouse.com/blog/worlds-fastest-json-querying-tool-clickhouse-local)——[使用 SQL 提取结构](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)。与之对应的非结构化示例使用 [`regex_parser`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/regex_parser.md) 实现相同效果，可在[这里](https://pastila.nl/?01da7ee2/2ffd3ba8124a7d6e4ddf39422ad5b863#swBkiAXvGP7mRPgbuzzHFA==)找到。
 </Info>
 
 **[config-structured-logs.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*N*Nprocessors%3A*N__batch%3A*N____timeout%3A_5s*N____send*_batch*_size%3A_1*N*N*Nexporters%3A*N_logging%3A*N___loglevel%3A_debug*N*N*Nservice%3A*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Blogging%5D%7E)**
@@ -170,12 +168,12 @@ service:
       exporters: [logging]
 ```
 
-你可以按照[官方说明](https://opentelemetry.io/docs/collector/installation/)在本地安装 OTel collector。需要特别注意的是，请确保将说明改为使用 [contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (其中包含 `filelog` receiver) ；例如，用户下载的不应是 `otelcol_0.102.1_darwin_arm64.tar.gz`，而应是 `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`。发布版本可在[这里](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)找到。
+你可以按照[官方说明](https://opentelemetry.io/docs/collector/installation/)在本地安装 OTel collector。需要特别注意的是，请确保将说明改为使用 [contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib) (其中包含 `filelog` 接收器) ；例如，用户下载的不应是 `otelcol_0.102.1_darwin_arm64.tar.gz`，而应是 `otelcol-contrib_0.102.1_darwin_arm64.tar.gz`。发布版本可在[这里](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)找到。
 
 安装完成后，可以使用以下命令运行 OTel collector：
 
 ```bash
-./otelcol-contrib --config config-logs.yaml
+./otelcol-contrib --config config-structured-logs.yaml
 ```
 
 如果使用结构化日志，输出中的消息将采用以下形式：

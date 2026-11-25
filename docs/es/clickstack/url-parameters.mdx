@@ -9,23 +9,13 @@ keywords: ['ClickStack', 'parámetros de URL', 'parámetros de consulta', 'enlac
 
 Puedes abrir páginas de ClickStack mediante enlaces profundos con parámetros de consulta de URL para ir directamente a una búsqueda, un dashboard o un panel específicos desde un sistema externo (una notificación de alerta, un runbook, un job de CI, un mensaje de chat, entre otros).
 
-Los ejemplos de esta página usan `<YOUR_CLICKSTACK_URL>`. Sustitúyelo por la URL de tu ClickStack; por ejemplo, `http://localhost:8080` para una implementación local de código abierto o `https://hyperdx.clickhouse.cloud` para Managed ClickStack en ClickHouse Cloud.
+Los ejemplos de esta página usan `<YOUR_CLICKSTACK_URL>`. Sustitúyelo por la URL de tu ClickStack; por ejemplo, `http://localhost:8080` para una implementación local de código abierto.
 
 <Note>
   Los ejemplos muestran parámetros de consulta sin codificación de URL para facilitar la lectura. Al construir enlaces mediante programación, codifica en URL el valor de cada parámetro de consulta.
 </Note>
 
-<Info>
-  **Parámetro de ID de servicio de Managed ClickStack**
-
-  Al usar Managed ClickStack en ClickHouse Cloud, los enlaces deben incluir un parámetro `?chcServiceId=` para identificar qué servicio de ClickHouse Cloud debe cargarse si el usuario autenticado que sigue el enlace está autorizado a usar más de un servicio de ClickHouse Cloud.
-
-  Ejemplo: abrir Búsqueda en un servicio de Cloud específico
-
-  ```text
-  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
-  ```
-</Info>
+Para los parámetros del servicio de Cloud y los enlaces a notebooks, consulta [Enlaces profundos de ClickHouse Observability](/es/clickstack/observability/url-parameters).
 
 ## Búsqueda — `/search` {#search}
 
@@ -76,14 +66,31 @@ La lista de búsquedas guardadas.
 
 Un dashboard guardado. Omita `<dashboardId>` (`/dashboards`) para abrir un dashboard temporal sin guardar. Consulte [Dashboards](/es/clickstack/features/dashboards/overview) para obtener más información sobre cómo crear dashboards.
 
-| Parámetro           | Formato                                                                                                                             | Descripción                                                                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `from`, `to`        | milisegundos desde la época                                                                                                         | Intervalo de tiempo aplicado a todos los mosaicos. Si se omite, se usan de forma predeterminada los últimos 15 minutos.                    |
-| `where`             | cadena                                                                                                                              | Texto de consulta del filtro a nivel de dashboard, aplicado a todos los mosaicos.                                                              |
-| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Lenguaje de consulta en el que está escrito `where`.                                                                                       |
-| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | Valores de filtro estructurados del dashboard que seleccionan dos elementos en el menú desplegable del filtro `ServiceName`.                   |
-| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Tamaño del bucket para los mosaicos de series temporales. `auto` selecciona un tamaño de bucket según el intervalo de tiempo seleccionado. |
-| `highlightedTileId` | cadena                                                                                                                              | Desplaza la vista hasta un mosaico específico y lo resalta; resulta útil al enlazar desde una alerta.                                      |
+| Parámetro           | Formato                                                                                                                             | Descripción                                                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `from`, `to`        | milisegundos desde la época Unix                                                                                                         | Intervalo de tiempo aplicado a todos los mosaicos. Si se omite, se usan de forma predeterminada los últimos 15 minutos.                                                                     |
+| `where`             | cadena                                                                                                                              | Texto de consulta del filtro a nivel de dashboard, aplicado a todos los mosaicos.                                                                                                           |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | Lenguaje de consulta en el que está escrito `where`.                                                                                                                                        |
+| `filters`           | array JSON de entradas de valores de filtro                                                                                         | Las selecciones de los [filtros personalizados y variables](/es/clickstack/features/dashboards/overview#custom-filters) del dashboard. Consulte [Valores de filtro](#dashboard-filter-values). |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Tamaño del bucket para los mosaicos de series temporales. `auto` selecciona un tamaño de bucket según el intervalo de tiempo seleccionado.                                                  |
+| `highlightedTileId` | cadena                                                                                                                              | Desplaza la vista hasta un mosaico específico y lo resalta; resulta útil al enlazar desde una alerta.                                                                                       |
+
+### Valores de filtro {#dashboard-filter-values}
+
+El parámetro `filters` es un array JSON. Cada entrada define la selección de un filtro y adopta una de las siguientes formas:
+
+| Entrada                                                                                                           | Se usa para                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}`                                    | Filtros que son variables: filtros de valores estáticos, de valores de consulta SQL, de valores de etiquetas PromQL, variables de origen de datos y de conexión, y filtros de valores de expresión SQL con **Available as variable** habilitado. `name` es el nombre de variable del filtro.                      |
+| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Filtros ad hoc](/es/clickstack/features/dashboards/overview#adhoc-filters). `name` es el nombre único del filtro y `operator` es uno de `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE` o `IN`. `LIKE` y `NOT LIKE` solo se aplican a fuentes SQL: los filtros ad hoc de Prometheus ignoran las condiciones que los usan. |
+| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}`                                           | Filtros de valores de expresión SQL que no son variables. La expresión de la condición debe coincidir con la **Filter expression** del filtro.                                                                                                                                                                    |
+
+Se aplican las siguientes reglas:
+
+* Una entrada de variable tiene precedencia sobre una entrada `sql` que haga referencia al mismo filtro. Los enlaces anteriores a la incorporación de las variables, que usan entradas `sql` para todos los filtros, siguen funcionando.
+* En las variables de origen de datos y de conexión, un valor puede ser el **nombre** de la fuente o de la conexión en lugar de su ID. Los nombres se comparan primero de forma exacta y, después, sin distinguir entre mayúsculas y minúsculas. Así, los enlaces se mantienen estables entre entornos en los que la misma fuente tiene ID distintos.
+* Un filtro de selección única usa solo el primer valor.
+* Se ignoran las entradas mal formadas o que no coinciden con ningún filtro del dashboard.
 
 ### Ejemplo: Abrir un dashboard para un intervalo de tiempo con un mosaico resaltado {#example-dashboard-highlight}
 
@@ -91,6 +98,30 @@ Resulta útil para vincular desde una notificación de alerta directamente al mo
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+### Ejemplo: seleccionar valores en filtros que son variables {#example-dashboard-variables}
+
+Selecciona `checkout` y `payments` en el filtro cuyo nombre de variable es `service`, y `ERROR` en el filtro cuyo nombre de variable es `severity`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
+```
+
+### Ejemplo: seleccionar un origen de datos y una conexión por nombre {#example-dashboard-source-variable}
+
+Selecciona la fuente `Production Logs` en una variable de origen de datos llamada `logs` y la conexión `Production` en una variable de conexión llamada `cluster`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
+```
+
+### Ejemplo: Agregar condiciones de filtrado ad hoc {#example-dashboard-adhoc}
+
+Agrega dos condiciones a un filtro ad hoc con el nombre único `adhoc`: que `ServiceName` sea `checkout` o `payments`, y que `SeverityText` no sea `DEBUG`.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## Lista de dashboards — `/dashboards/list` {#dashboards-list}
@@ -217,18 +248,4 @@ Dashboards de HTTP, bases de datos y errores por servicio.
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
-```
-
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
-
-<Info>
-  **Solo disponible en Managed ClickStack**
-
-  Notebooks solo están disponibles en implementaciones de Managed ClickStack. Consulta [AI Notebooks](/es/clickstack/notebooks) para obtener más información sobre esta funcionalidad.
-</Info>
-
-### Ejemplo: Abrir un notebook específico en un servicio de Cloud concreto {#example-notebook-open}
-
-```text
-<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
 ```

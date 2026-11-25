@@ -1,0 +1,114 @@
+---
+description: 'Los formatos de estructura de tramas multiplexan datos, totales, extremos, progreso, eventos de perfilado y logs del servidor en un único stream de respuesta a través de HTTP'
+sidebarTitle: 'Formatos de estructura de tramas'
+slug: /concepts/features/connect-to-clickhouse/protocols/http/framing-formats
+title: 'Formatos de estructura de tramas'
+doc_type: 'reference'
+---
+
+Un formato de estructura de tramas multiplexa distintas partes de la respuesta a una consulta en un único stream: bloques de datos, totales y extremos, paquetes de progreso, eventos de perfilado (métricas) y logs del servidor; en definitiva, todo lo que admite el protocolo nativo. Esto permite un intercambio de datos más completo mediante el protocolo HTTP.
+
+Los formatos de estructura de tramas son independientes de los [formatos de salida](/es/reference/formats): encapsulan los bytes producidos por cualquier formato de salida, separando y, en su caso, codificando estos bloques de bytes. La concatenación de las cargas útiles de todos los paquetes `data`, `totals` y `extremes` es exactamente lo que habría producido el formato de salida sin estructura de tramas. Los paquetes auxiliares (progreso, log, eventos de perfilado, excepciones) se representan como JSON.
+
+La estructura de tramas también puede ampliar la capacidad expresiva de un formato de salida: esta es la única excepción deliberada a la regla anterior. La familia de formatos `JSONCompactEachRow` omite los totales y los extremos en su salida sin estructura de tramas, porque sus filas serían indistinguibles de las filas de datos ordinarias. Con un formato de estructura de tramas, el tipo de paquete permite distinguirlas, por lo que estos formatos emiten filas de totales y extremos (con su sintaxis de fila habitual) en los paquetes `totals` y `extremes`. Para estos formatos, la concatenación de las cargas útiles de los paquetes `data`, y solo de estos, es exactamente lo que habría producido el formato de salida sin estructura de tramas, y los paquetes `totals` y `extremes` contienen filas adicionales que no aparecen en la salida sin estructura de tramas; por tanto, un cliente que reconstruya la salida sin estructura de tramas a partir de un stream de este tipo debe concatenar únicamente las cargas útiles de `data`.
+
+El formato de estructura de tramas se selecciona mediante el parámetro de configuración `framing_output_format` en el ámbito de la consulta. Actualmente se aplica al protocolo HTTP y se ignora en otras interfaces.
+
+Los logs del servidor se incluyen como paquetes si se establece el parámetro de configuración `send_logs_level`. Los eventos de perfilado se incluyen si el parámetro de configuración `send_profile_events` está habilitado (opción predeterminada). Los paquetes de progreso y de eventos de perfilado se envían como máximo una vez cada `interactive_delay` microsegundos.
+
+Un stream que finaliza correctamente termina con un paquete `progress` final que contiene los contadores finales (`result_rows`, `result_bytes`, `memory_usage`), al igual que el paquete de progreso final del protocolo nativo. Estos contadores solo se conocen una vez que ha finalizado la consulta, por lo que ningún paquete `progress` anterior los contiene. El paquete `progress` final se escribe después de los últimos paquetes `log` y `profile_events` emitidos al registrar la finalización de la consulta (por ejemplo, la entrada de registro de «uso máximo de memoria»), de modo que es realmente el último paquete del stream. En caso de error, el último paquete es `exception`, y el paquete `progress` con los contadores finales no se escribe en absoluto —es el marcador de finalización correcta del stream—, incluso cuando el error se produce después de que la propia consulta haya terminado y ya se conozcan los contadores finales (por ejemplo, un error al escribir el registro de consultas).
+
+Como esta parte final del stream se escribe después de que se registre la entrada `QueryFinish` de `system.query_log`, los eventos de perfilado relativos al envío por red de la consulta (`NetworkSendBytes`, `NetworkSendElapsedMicroseconds`) no incluyen el envío de los paquetes finales ni el cierre de la respuesta; tampoco incluyen, cuando la respuesta se almacena temporalmente en un búfer (`http_response_buffer_size` o `wait_end_of_query`), el envío del cuerpo de la respuesta almacenado en el búfer, que solo se transmite una vez que ha finalizado la consulta. Esto coincide con el comportamiento del protocolo nativo, que también envía sus log y eventos de perfilado finales después de registrar la entrada en el registro de consultas.
+
+Las opciones que una consulta habilita únicamente mediante su propia cláusula `SETTINGS` —un formato de estructura de tramas, `send_logs_level` o `send_profile_events`— no se conocen hasta que se ha analizado la consulta, por lo que los log y los eventos de perfilado correspondientes solo se capturan a partir de su ejecución. Los log y los eventos de perfilado de las fases de análisis sintáctico, planificación y análisis solo se capturan cuando el parámetro de configuración procede de la sesión o de la URL. En particular, una consulta que falle durante el análisis (antes de la ejecución del pipeline) —por ejemplo, por una referencia a una tabla desconocida— y que habilite `send_logs_level` únicamente en su cláusula `SETTINGS` devuelve solo el paquete `exception`, no los log de la fase de análisis. Establezca `send_logs_level` en la sesión o en la URL para capturarlos.
+
+La misma advertencia sobre el descubrimiento tardío se aplica a `send_logs_source_regexp`: la cola de log filtra las entradas por fuente en el momento en que se captura cada entrada, por lo que una expresión regular definida únicamente en la propia cláusula `SETTINGS` de la consulta solo surte efecto a partir de la ejecución de la consulta. Los paquetes `log` de las fases de análisis sintáctico, planificación y análisis se filtran según el valor del parámetro de configuración en la sesión o en la URL (y no se filtran si no está definido ahí), por lo que pueden incluir fuentes que no coincidan con la expresión regular de nivel de consulta. A la inversa, las entradas descartadas por una expresión regular de sesión o de URL más restrictiva se pierden y no se recuperan con una más amplia de nivel de consulta. Defina `send_logs_source_regexp` en la sesión o en la URL para filtrar todo el ciclo de vida de la consulta.
+
+Si se produce una excepción durante la ejecución de la consulta, se envía como un paquete `exception` (el último paquete del stream), independientemente del parámetro de configuración `http_write_exception_in_output_format`, de modo que el cliente siempre puede analizar la respuesta como un stream de paquetes. Una vez registrada la excepción, el formato de salida no aporta más bytes de carga útil: una consulta que falla antes de producir salida alguna no entrega ningún paquete `data` (ni siquiera el esqueleto de documento vacío del formato), y una consulta que falla a mitad del stream deja la carga útil concatenada truncada en el punto del fallo, sin el sufijo del formato; la carga útil de una consulta fallida no debe parecer un documento completo.
+
+Hay una excepción: si la propia escritura de un paquete falla a medias (por ejemplo, porque la conexión se interrumpe después de que algunos bytes del paquete ya hayan llegado al cliente), la estructura de tramas falla de forma cerrada y el stream termina sin un paquete `exception` final. Nunca se reintenta un paquete escrito a medias, porque volver a emitirlo añadiría un duplicado tras los bytes truncados y corrompería el stream. En esa situación, el cliente recibe una respuesta truncada y una conexión HTTP abortada en lugar de un paquete terminal bien formado. La misma regla se aplica a un fallo producido mientras se cierra el propio stream de respuesta (al vaciar los resultados almacenados en búfer, finalizar la compresión HTTP o cerrar el socket): en ese punto, parte o la totalidad del stream de éxito ya se ha enviado por la red, por lo que no se le añade nada (ni un paquete `exception` ni el bloque de error HTTP genérico), y el cliente recibe una respuesta truncada y una conexión abortada. También se aplica cuando falla la propia entrega de la excepción: si la escritura del paquete terminal `exception` falla (por ejemplo, al vaciar los log finales) después de haberse producido cualquier parte del stream de paquetes, tanto si ya se ha transmitido como si sigue en los búferes de respuesta del servidor (`http_response_buffer_size`), el stream termina igualmente sin añadir nada, de modo que nunca se mezcla un cuerpo de error HTTP simple con un stream de paquetes parcial. Un fallo al escribir los campos de cadena de los paquetes auxiliares `log`, `profile_events` y `exception` también cuenta como un paquete escrito a medias, incluido un fallo al escribir los últimos bytes de dicha cadena: en ese caso, el stream termina con ese paquete truncado y sin ningún terminador (ni un paquete `exception` ni el paquete `progress` con los contadores finales), de modo que un cliente que exija un terminador detecta el fallo incluso cuando la propia consulta se ha completado correctamente.
+
+El formato de enmarcado también se aplica a las consultas que no producen ningún stream de resultados: un `INSERT` correcto, una consulta DDL o cualquier otra consulta sin salida. Este tipo de respuesta no contiene paquetes `data`, pero aun así cambia el `Content-Type` de la respuesta al formato de enmarcado y transmite los paquetes `progress`, `log` y `profile_events`, igual que el protocolo nativo. El stream termina con un paquete `progress` final que contiene los contadores finales (por ejemplo, `result_rows` y `result_bytes` con el número de filas escritas en un `INSERT`). Como no se formatea ninguna carga útil, el formato de salida es irrelevante para estas consultas y no afecta al stream enmarcado.
+
+## Formatos de enmarcado disponibles {#available-framing-formats}
+
+| Nombre                                                   | Descripción                                                                       |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [`None`](#framing-format-none)                           | Sin estructura de tramas: todo funciona igual que de forma predeterminada.        |
+| [`EventStream`](#framing-format-eventstream)             | Eventos enviados por el servidor mediante HTTP (`text/event-stream`).             |
+| [`JSONEachPacketBase64`](#framing-format-jsoneachpacket) | Un objeto JSON por paquete; los datos formateados se codifican en Base64.         |
+| [`JSONEachPacketString`](#framing-format-jsoneachpacket) | Un objeto JSON por paquete; los datos formateados se incluyen en una cadena JSON. |
+
+## None {#framing-format-none}
+
+Es el valor predeterminado. Dirige de forma transparente todo lo aplicable (datos, totales, extremos, progreso) al formato de salida e ignora todo lo que no es aplicable (métricas, logs). Así, por defecto todo funciona igual que siempre, incluidos los formatos que representan el progreso por sí mismos, como `JSONEachRowWithProgress`.
+
+## EventStream {#framing-format-eventstream}
+
+Encapsula los paquetes como [eventos enviados por el servidor mediante HTTP](https://html.spec.whatwg.org/multipage/server-sent-events.html) y establece el `Content-Type` de la respuesta en `text/event-stream; charset=UTF-8; payload=base64`. Cada paquete se envía como un evento cuyo nombre corresponde al tipo de paquete: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. Los paquetes de progreso y demás paquetes auxiliares se envían como JSON.
+
+Server-sent events es un protocolo de texto que trata los saltos de línea (incluidos los retornos de carro, `\r`) como delimitadores de campos, por lo que los bytes producidos por el formato de salida no se integran tal cual: cada bloque de datos formateados se codifica en base64 en un único campo `data:`, que al decodificarse da como resultado la carga útil completamente formateada, con todos sus saltos de línea. Esto es lo que indica el parámetro `payload=base64` del `Content-Type`. La concatenación de las cargas útiles decodificadas de los paquetes `data`, `totals` y `extremes` coincide byte a byte con lo que el formato de salida habría producido sin estructura de tramas, sea cual sea el formato de salida: de texto, binario (`Native`, `RowBinary`) o de transferencia directa de datos sin procesar (`RawBLOB`, `TSVRaw`).
+
+Los paquetes JSON auxiliares (`progress`, `log`, `profile_events`, `exception`) nunca se codifican: se escriben como un único campo `data:` de JSON, que no contiene saltos de línea.
+
+Los formatos de salida `*WithProgress` (`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`) escriben el progreso como filas dentro del propio stream, que forman parte de su salida. En cambio, un formato de enmarcado entrega el progreso como paquetes `progress` independientes, por lo que no es compatible con estos formatos de salida y los rechaza: utilice el formato de salida base (por ejemplo, `JSONEachRow`) con estructura de tramas, o bien la estructura de tramas `None` con un formato `*WithProgress`.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+event: data
+data: eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K
+
+event: profile_events
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
+
+```
+
+`EventStream` se integra con el protocolo HTTP y lanza una excepción cuando no es aplicable.
+
+## JSONEachPacketBase64 y JSONEachPacketString {#framing-format-jsoneachpacket}
+
+Cada paquete es un objeto JSON en una línea independiente (JSON delimitado por saltos de línea, `application/x-ndjson`) que contiene la información sobre el paquete. Los bytes producidos por el formato de salida se colocan en el campo `data`: codificados en base64 en `JSONEachPacketBase64` (adecuado para formatos de salida binarios) o como cadena JSON en `JSONEachPacketString`.
+
+Las dos variantes codifican el campo `data` de forma distinta, por lo que el `Content-Type` de la respuesta permite diferenciarlas, igual que ocurre con `EventStream`: `JSONEachPacketBase64` establece `application/x-ndjson; charset=UTF-8; payload=base64`, y `JSONEachPacketString` establece `application/x-ndjson; payload=string`. Así, un cliente puede saber, únicamente a partir de la metadata de la respuesta, si el campo `data` debe decodificarse desde base64. Solo `JSONEachPacketBase64` garantiza `charset=UTF-8`, porque únicamente la codificación base64 hace que todo el stream sea UTF-8 válido con independencia de los bytes de la carga útil (véase más abajo).
+
+Dado que `JSONEachPacketString` coloca los bytes de la carga útil en una cadena JSON, está pensado para formatos de salida que producen texto UTF-8 válido. Las columnas `String` y `FixedString` pueden contener bytes arbitrarios, por lo que los formatos de salida de texto como `JSONEachRow`, `TSV` o `CSV` pueden emitir UTF-8 no válido para esos valores (tal como hace el propio `JSONEachRow` de ClickHouse con el valor predeterminado `output_format_json_validate_utf8 = 0`) y, en ese caso, no se garantiza que la cadena JSON resultante, ni por tanto todo el stream NDJSON, sea UTF-8 válido. `JSONEachPacketString` no valida ni vuelve a codificar la carga útil; utilice `JSONEachPacketBase64` para transportar bytes arbitrarios de forma exacta byte a byte.
+
+`JSONEachPacketString` rechaza de antemano con un error, antes de ejecutar la consulta, los formatos de salida que se sabe que producen bytes no UTF-8: los formatos binarios (`Native`, `RowBinary`), los formatos de transferencia directa de datos sin procesar (`RawBLOB`, `TSVRaw`), los formatos que escriben en su salida un nombre de columna, un nombre de tipo de datos o un nombre de elemento de `Tuple` no UTF-8 procedente del encabezado de la consulta, y las configuraciones cuyos literales, definidos mediante ajustes, las serializaciones escriben tal cual y no son UTF-8 válido: los ajustes `format_csv_delimiter`, `format_tsv_null_representation` / `format_csv_null_representation` y `bool_true_representation` / `bool_false_representation`.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
+Con `JSONEachPacketBase64`, el mismo paquete `data` queda así:
+
+```text
+{"packet":"data","data":"eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K"}
+```
+
+## Tipos de paquete {#framing-format-packet-kinds}
+
+| Paquete          | Contenido                                                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`           | Bytes generados por el formato de salida para el resultado principal (incluidos el prefijo y el sufijo del formato).                                                                         |
+| `totals`         | Bytes generados por el formato de salida para la fila de totales (`WITH TOTALS`).                                                                                                            |
+| `extremes`       | Bytes generados por el formato de salida para los extremos (el parámetro de configuración `extremes`).                                                                                       |
+| `progress`       | Progreso de la consulta en formato JSON: `read_rows`, `read_bytes`, `total_rows_to_read`, `result_rows`, `result_bytes`, `elapsed_ns`, `memory_usage` (se omiten los campos con valor cero). |
+| `log`            | Una entrada de registro del servidor en formato JSON: `event_time`, `host_name`, `query_id`, `thread_id`, `priority`, `source`, `text`.                                                     |
+| `profile_events` | Un array de eventos de perfilado en formato JSON: `host_name`, `current_time`, `thread_id`, `type` (`increment` o `gauge`), `name`, `value`.                                                 |
+| `exception`      | El mensaje de excepción en formato JSON.                                                                                                                                                     |
+
+A diferencia de las cargas útiles `data`, `totals` y `extremes` (consulte las notas sobre la exactitud a nivel de bytes más arriba), los campos de cadena de los paquetes auxiliares (`query_id`, `text` y `source` de `log`, `name` de `profile_events` y el mensaje de `exception`) no disponen de la alternativa de escapado en base64, y algunos de ellos (por ejemplo, `query_id`, que se obtiene de la consulta) pueden contener bytes arbitrarios. Estos campos siempre se sanean a UTF-8 válido: las secuencias no válidas se reemplazan por el carácter de sustitución (`U+FFFD`), de modo que los paquetes auxiliares siempre son JSON válido.
+
+El procesamiento de varias consultas a la vez aún no está implementado, pero el diseño lo contempla: cada paquete puede ampliarse con información sobre el índice de la consulta dentro del conjunto de consultas.

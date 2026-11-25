@@ -114,6 +114,10 @@ cache 内の非同期 INSERT の hash ID 数
 
 有効なレプリケートテーブル。
 
+### AttachedSharedTable {#attachedsharedtable}
+
+アクティブな SharedMergeTree テーブルの数。
+
 ### AttachedTable {#attachedtable}
 
 利用可能なテーブル。
@@ -614,6 +618,10 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 
 現在のAZに登録されている分散キャッシュサーバーの数
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+直近の停滞リクエストのスキャン時点で、スローダウンウィンドウが開いている分散キャッシュクライアントの数
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 この分散キャッシュサーバープロセスが所有するコミット済み一時ファイルの数
@@ -628,11 +636,15 @@ ClickHouse のディスク経由で S3 の cloud storage からデータを読�
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-分散キャッシュから ClickHouse server へのアクティブな接続数 (制限によるキャンセルとしてはマークされていないもの)
+分散キャッシュサーバーのレジストリに登録されているクライアント接続数 (クローズ対象としてマークされたものを含む)
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 分散キャッシュの S3 キャッシュ済みクライアント数
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+直近の停滞リクエストのスキャン時点で、転送中の分散キャッシュサーバーリクエストのうち、`distributed_cache_stuck_request_no_progress_timeout_ms` 以上にわたって進捗がなかったもの、または `distributed_cache_max_request_processing_time_ms` を超えて実行され、1 回のスキャン間隔内に自ら終了しなかったものの数
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -956,7 +968,7 @@ IcebergCatalog のスレッドプールで、キューに入っている、ま�
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-Iceberg のコンパクションによって不要になったデータファイルを削除するバックグラウンドタスクのうち、スケジュール済み、または Iceberg テーブルによってまだ保持されているものの数。
+`enable_cleanup_old_data_files_compaction` によって、古いスナップショットを期限切れにし、それらのスナップショットからのみ参照されているファイルを削除するバックグラウンドタスクが有効化されている Iceberg テーブルの数。
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1973,6 +1985,10 @@ Keeper に登録されている非アクティブなレプリカの最小数
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 Keeper に保存されている outdated パーツレコードの数
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+このレプリカが保持中または取得中のパーツ更新リーダーロック。このレプリカがリーダーを務める SharedMergeTree テーブルごとに 1 つずつ存在します
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

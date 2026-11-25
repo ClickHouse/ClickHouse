@@ -31,12 +31,12 @@ O ClickHouse Cloud oferece diferentes canais de lançamento para atender às dif
 
 Janelas de upgrade programadas estão disponíveis em todos os canais de lançamento para serviços no tier Enterprise. Esse recurso permite configurar uma janela de horário em um determinado dia da semana para upgrades.
 
-## Cronograma de lançamento {#release-schedule}
+## Cronograma de versões {#release-schedule}
 
 <Warning>
-  **Entendendo as datas de lançamento**
+  **Entendendo as datas de versões**
 
-  As datas de início mostradas abaixo indicam quando o ClickHouse **inicia o rollout** de uma nova versão do banco de dados em cada canal de lançamento, não quando o seu serviço específico será atualizado.
+  As datas de início mostradas abaixo indicam quando o ClickHouse **inicia o rollout** de uma nova versão do banco de dados em cada canal de versões, não quando o seu serviço específico será atualizado.
 
   * Os rollouts são automatizados e ocorrem gradualmente ao longo de várias semanas
   * Serviços com janelas de upgrade programadas são atualizados durante a janela agendada na semana seguinte ao fim do rollout do canal (a partir de segunda-feira às 10:00 UTC)
@@ -49,68 +49,68 @@ Janelas de upgrade programadas estão disponíveis em todos os canais de lançam
 <ReleaseSchedule
   releases={[
   {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
-  version: '26.8',
-  fast_start_date: '2026-10-19',
-  fast_end_date: '2026-10-23',
-  regular_start_date: '2026-11-16',
-  regular_end_date: 'A definir',
-  slow_start_date: 'A definir',
-  slow_end_date: 'A definir',
-  eol_date: 'A definir',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
+   version: '26.8',
+   fast_start_date: '2026-10-19',
+   fast_end_date: '2026-10-23',
+   regular_start_date: 'A definir',
+   regular_end_date: 'A definir',
+   slow_start_date: 'A definir',
+   slow_end_date: 'A definir',
+   eol_date: 'A definir',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
   },
   {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
-  version: '26.6',
-  fast_start_date: '2026-09-07',
-  fast_end_date: '2026-09-14',
-  regular_start_date: '2026-09-28',
-  regular_end_date: '2026-10-23',
-  slow_start_date: '2026-11-10',
-  slow_end_date: 'A definir',
-  eol_date: 'A definir',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+   version: '26.6',
+   fast_start_date: '2026-09-07',
+   fast_end_date: '2026-09-14',
+   regular_start_date: '2026-09-28',
+   regular_end_date: '2026-10-23',
+   slow_start_date: '2026-11-10',
+   slow_end_date: 'A definir',
+   eol_date: 'A definir',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
   },
   {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
-  version: '26.4',
-  fast_start_date: 'Completed',
-  fast_end_date: 'Completed',
-  regular_start_date: 'Completed',
-  regular_end_date: 'Completed',
-  slow_start_date: 'Completed',
-  slow_end_date: 'Completed',
-  eol_date: '2026-11-27 (estimada)',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: 'Completed',
+   fast_end_date: 'Completed',
+   regular_start_date: 'Completed',
+   regular_end_date: 'Completed',
+   slow_start_date: 'Completed',
+   slow_end_date: 'Completed',
+   eol_date: '2026-12-04 (estimada)',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
   },
   {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
-  version: '26.2',
-  fast_start_date: 'Completed',
-  fast_end_date: 'Completed',
-  regular_start_date: 'Completed',
-  regular_end_date: 'Completed',
-  slow_start_date: 'Completed',
-  slow_end_date: 'Completed',
-  eol_date: '2026-10-04',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: 'Completed',
+   fast_end_date: 'Completed',
+   regular_start_date: 'Completed',
+   regular_end_date: 'Completed',
+   slow_start_date: 'Completed',
+   slow_end_date: 'Completed',
+   eol_date: '2026-10-04',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
   },
   ]}
 />
 
 <Note>
-  **Próximos congelamentos de lançamento**
+  **Próximos congelamentos de versões**
 
-  O ClickHouse pausa os rollouts durante os congelamentos de lançamento e não atualiza os serviços, mesmo que o serviço tenha uma janela de upgrade programada. As exceções são patches críticos de segurança e correções para problemas que possam causar corrupção ou perda de dados.
+  O ClickHouse pausa os rollouts durante os congelamentos de versões e não atualiza os serviços, mesmo que o serviço tenha uma janela de upgrade programada. As exceções são patches críticos de segurança e correções para problemas que possam causar corrupção ou perda de dados.
 
   Congelamentos programados (datas em UTC, inclusivas):
 
@@ -126,7 +126,8 @@ A tabela abaixo lista as datas de end-of-life (EOL) das versões principais do C
 
 | Versão | Lançamento | Data de EOL           | Status      |
 | ------ | ---------- | --------------------- | ----------- |
-| 26.4   | 2026-10-09 | 2026-11-27 (estimada) | Com suporte |
+| 26.6   | 2026-11-13 | A definir             | Com suporte |
+| 26.4   | 2026-10-09 | 2026-12-04 (estimada) | Com suporte |
 | 26.2   | 2026-08-07 | 2026-10-04            | End-of-life |
 
 As versões anteriores já estão em end-of-life. As datas de EOL marcadas como estimadas estão sujeitas a alterações.

@@ -2,11 +2,11 @@
 title: 'Algorithmes de jointure'
 sidebarTitle: 'Algorithmes'
 description: 'Fonctionnement des algorithmes de JOIN de ClickHouse, types de JOIN pris en charge et choix de l’algorithme approprié.'
-keywords: ['algorithmes de jointure', 'join_algorithm', 'jointure de hachage', 'jointure par hachage parallèle', 'jointure par hachage Grace', 'jointure par tri-fusion complet', 'jointure par fusion partielle', 'jointure directe', 'IEJoin']
+keywords: ['algorithmes de jointure', 'join_algorithm', 'jointure par hachage', 'jointure par hachage parallèle', 'jointure par hachage Grace', 'jointure par tri-fusion complet', 'jointure par fusion partielle', 'jointure directe', 'jointure par inégalité', 'IEJoin']
 doc_type: 'guide'
 ---
 
-Cette page présente chacune des valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) permettant d’exécuter un JOIN, ainsi que le mécanisme de repli par boucles imbriquées par bloc (block nested loop). Par souci de lisibilité, les diagrammes utilisent `max_threads = 2`.
+Cette page présente chacune des valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) permettant d’exécuter un JOIN, ainsi que le mécanisme de repli block nested loop. Par souci de lisibilité, les diagrammes utilisent `max_threads = 2`.
 
 ## `direct` {#direct}
 
@@ -128,9 +128,11 @@ L&#39;algorithme `partial_merge` est une variante de la JOIN par tri-fusion dans
 
 **Limitations.** Les JOIN `RIGHT` et `FULL` ne sont prises en charge qu&#39;avec la strictness `ALL`. Les strictness `ANTI` et `ASOF`, les clés de jointure multiples combinées avec `OR`, ainsi que les conditions comparant des colonnes des deux tables ne sont pas prises en charge.
 
-## `ie_join` {#ie-join}
+<a id="ie-join" />
 
-L&#39;algorithme `ie_join` implémente l&#39;algorithme [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf), fondé sur le tri, pour un JOIN dont la clause `ON` contient deux comparaisons d&#39;inégalité (`<`, `<=`, `>` ou `>=`) entre des expressions des tables jointes. ClickHouse trie les deux entrées selon les expressions des deux comparaisons et identifie les paires correspondantes sans comparer chaque paire de lignes. L&#39;algorithme est disponible à partir de la version 26.8.
+## `inequality` {#inequality}
+
+L&#39;algorithme `inequality` implémente l&#39;algorithme de [jointure par inégalité](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf), fondé sur le tri et également connu sous le nom d&#39;IEJoin, pour un JOIN dont la clause `ON` contient deux comparaisons d&#39;inégalité (`<`, `<=`, `>` ou `>=`) entre des expressions des tables jointes. ClickHouse trie les deux entrées selon les expressions des deux comparaisons et identifie les paires correspondantes sans comparer chaque paire de lignes. L&#39;algorithme est disponible à partir de la version 26.8. Avant la version 26.12, il s&#39;appelait `ie_join`, et ce nom reste accepté.
 
 **Conditions d&#39;utilisation.** Sa position dans `join_algorithm` détermine sa priorité :
 
@@ -143,11 +145,11 @@ Lorsque la clause `ON` contient plus de deux conditions d&#39;inégalité éligi
 
 **Limitations.** L&#39;opérateur JOIN s&#39;exécute dans un seul fil d’exécution. Seuls les tris des entrées s&#39;exécutent en parallèle. Les strictness `ANY` et `ASOF` ne sont pas prises en charge.
 
-## Repli sur la jointure par boucles imbriquées par blocs {#block-nested-loop-fallback}
+## Repli block nested loop {#block-nested-loop-fallback}
 
-La JOIN par boucles imbriquées par blocs exécute une JOIN dont la clause `ON` ne contient aucune condition d&#39;égalité entre les tables et qu&#39;aucun autre algorithme ne peut exécuter. ClickHouse matérialise le côté droit et évalue la condition `ON` pour chaque paire formée d&#39;une ligne de gauche et d&#39;une ligne de droite. Une égalité à l&#39;intérieur de la condition, telle que `t1.a = t2.a` dans `t1.a = t2.a OR t1.b < 0`, est évaluée avec `equals`, et non comme une clé de JOIN. Voir [Comparaison des clés de JOIN](#comparison-of-join-keys). Il ne s&#39;agit pas d&#39;une valeur de `join_algorithm`, mais du dernier recours de la planification des jointures.
+La JOIN par boucles imbriquées par blocs exécute une JOIN dont la clause `ON` ne contient aucune condition d&#39;égalité entre les tables et qu&#39;aucun autre algorithme ne peut exécuter. ClickHouse matérialise le côté droit et évalue la condition `ON` pour chaque paire formée d&#39;une ligne de gauche et d&#39;une ligne de droite. Une égalité à l&#39;intérieur de la condition, telle que `t1.a = t2.a` dans `t1.a = t2.a OR t1.b < 0`, est évaluée avec `equals`, et non comme une clé de jointure. Voir [Comparaison des clés de jointure](#comparison-of-join-keys). Il ne s&#39;agit pas d&#39;une valeur de `join_algorithm`, mais du dernier recours de la planification des jointures.
 
-**Cas d&#39;utilisation.** Elle s&#39;applique à une clause `ON` constituée d&#39;une expression booléenne arbitraire portant sur des colonnes des deux tables, comme une vérification de plage ou un appel de fonction, lorsque `ie_join` ne s&#39;applique pas. Lorsque `hash` figure dans `join_algorithm`, une JOIN `INNER` avec la strictness `ALL` est plutôt exécutée comme un `CROSS JOIN`, la condition servant de filtre. Ce repli est disponible depuis la version 26.10. Le paramètre [`allow_block_nested_loop_join`](/fr/reference/settings/session-settings/allow#allow_block_nested_loop_join) détermine s&#39;il peut être utilisé. Lorsque le repli n&#39;est pas autorisé, une telle requête est rejetée avec l&#39;erreur `INVALID_JOIN_ON_EXPRESSION`. Il prend en charge tous les types de JOIN et toutes les strictness, à l&#39;exception de `ASOF`, `PASTE` et `ANY FULL`.
+**Cas d&#39;utilisation.** Elle s&#39;applique à une clause `ON` constituée d&#39;une expression booléenne arbitraire portant sur des colonnes des deux tables, comme une vérification de plage ou un appel de fonction, lorsque `inequality` ne s&#39;applique pas. Lorsque `hash` figure dans `join_algorithm`, une JOIN `INNER` avec la strictness `ALL` est plutôt exécutée comme un `CROSS JOIN`, la condition servant de filtre. Ce repli est disponible depuis la version 26.10. Le paramètre [`allow_block_nested_loop_join`](/fr/reference/settings/session-settings/allow#allow_block_nested_loop_join) détermine s&#39;il peut être utilisé. Lorsque le repli n&#39;est pas autorisé, une telle requête est rejetée avec l&#39;erreur `INVALID_JOIN_ON_EXPRESSION`. Il prend en charge tous les types de JOIN et toutes les strictness, à l&#39;exception de `ASOF`, `PASTE` et `ANY FULL`.
 
 **Mémoire et déversement sur disque.** La consommation mémoire est bornée par le côté droit matérialisé et n&#39;augmente pas avec la taille du résultat. Les blocs du côté droit sont compressés en mémoire, puis écrits sur disque une fois le seuil de déversement sur disque atteint. Les [limites strictes](/fr/concepts/features/operations/select/join-memory-management#hard-limits) s&#39;appliquent au côté droit, y compris aux blocs déversés sur disque.
 
@@ -164,38 +166,38 @@ Le tableau suivant indique, pour chaque valeur de strictness, les types de JOIN 
 | `grace_hash`                                        | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 | `full_sorting_merge`, `parallel_full_sorting_merge` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` |                 |                 | `INNER`, `LEFT` |
 | `partial_merge`                                     | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`          | `LEFT`          |                 |                 |
-| `ie_join`                                           | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
-| Repli sur boucle imbriquée par blocs                | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| `inequality`                                        | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| Repli block nested loop                | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
 
 Les règles suivantes s&#39;appliquent également :
 
 * Les JOIN `ANY FULL` sont rejetées avant même la sélection de l&#39;algorithme, quel qu&#39;il soit.
 * Les JOIN `ASOF` ne sont prises en charge que par `hash` et `full_sorting_merge`. `parallel_full_sorting_merge` exécute une JOIN `ASOF` sous la forme d&#39;une JOIN `full_sorting_merge` unique.
 * `partial_merge` ne prend en charge les JOIN `RIGHT` et `FULL` qu&#39;avec la strictness `ALL`.
-* Le repli sur boucle imbriquée par blocs ne prend pas en charge les JOIN `ASOF`, `PASTE` ou `ANY FULL`.
+* Le repli block nested loop ne prend pas en charge les JOIN `ASOF`, `PASTE` ou `ANY FULL`.
 * Seul `hash`, ainsi que son alias `parallel_hash`, prend en charge plusieurs clés de jointure combinées par `OR` dans la clause `ON`. La valeur `auto` exécute ces JOIN avec `hash`.
 * Seuls `hash`, `parallel_hash` et `grace_hash` prennent en charge une clé d&#39;égalité combinée à une condition comparant des colonnes des deux tables.
 * L&#39;algorithme `direct` ne s&#39;applique qu&#39;aux côtés droits répertoriés dans [`direct`](#direct). Pour les tables `MergeTree`, il ne prend pas en charge la strictness `ANY`.
 * `CROSS JOIN`, les JOIN avec une condition `ON` constante et `PASTE JOIN` disposent d&#39;implémentations dédiées, indépendantes de `join_algorithm`.
 
-## Comparaison des clés de JOIN {#comparison-of-join-keys}
+## Comparaison des clés de jointure {#comparison-of-join-keys}
 
-Tous les algorithmes, à l’exception de `ie_join` et du repli en boucle imbriquée par blocs, utilisent comme clé de JOIN une égalité entre des colonnes des deux tables dans la clause `ON`. L’algorithme compare lui-même les clés au lieu de recourir à la fonction [`equals`](/fr/reference/functions/regular-functions/comparison-functions#equals), et une clé peut faire correspondre certaines paires de valeurs pour lesquelles `equals` ne renvoie pas `1`. `ie_join` évalue une telle égalité avec `equals` sur les paires retenues par ses deux conditions d’inégalité, et le repli en boucle imbriquée par blocs l’évalue avec `equals` dans le cadre de la condition `ON`.
+Tous les algorithmes, à l’exception de `inequality` et du repli block nested loop, utilisent comme clé de jointure une égalité entre des colonnes des deux tables dans la clause `ON`. L’algorithme compare lui-même les clés au lieu de recourir à la fonction [`equals`](/fr/reference/functions/regular-functions/comparison-functions#equals), et une clé peut faire correspondre certaines paires de valeurs pour lesquelles `equals` ne renvoie pas `1`. `inequality` évalue une telle égalité avec `equals` sur les paires retenues par ses deux conditions d’inégalité, et le repli block nested loop l’évalue avec `equals` dans le cadre de la condition `ON`.
 
 | Algorithme                                                           | Égalité entre les tables | Deux valeurs `NaN`                               | Deux valeurs `Tuple` `(1, NULL)` |
 | -------------------------------------------------------------------- | ------------------------ | ------------------------------------------------ | -------------------------------- |
-| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | Clé de JOIN              | Correspondent si elles ont le même motif de bits | Correspondent                    |
-| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | Clé de JOIN              | Correspondent                                    | Correspondent                    |
-| `ie_join`                                                            | `equals`                 | Ne correspondent pas                             | Ne correspondent pas             |
-| Repli en boucle imbriquée par blocs                                  | `equals`                 | Ne correspondent pas                             | Ne correspondent pas             |
+| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | Clé de jointure              | Correspondent si elles ont le même motif de bits | Correspondent                    |
+| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | Clé de jointure              | Correspondent                                    | Correspondent                    |
+| `inequality`                                                         | `equals`                 | Ne correspondent pas                             | Ne correspondent pas             |
+| Repli block nested loop                                  | `equals`                 | Ne correspondent pas                             | Ne correspondent pas             |
 
-Une valeur `NULL` d’une clé `Variant` se comporte comme le `Tuple` contenant un élément `NULL`. Une clé elle-même `NULL` ne correspond à rien, quel que soit l’algorithme, comme avec `equals`. Voir [Valeurs NULL et NaN dans les clés de JOIN](/fr/reference/statements/select/join#null-values-in-join-keys).
+Une valeur `NULL` d’une clé `Variant` se comporte comme le `Tuple` contenant un élément `NULL`. Une clé elle-même `NULL` ne correspond à rien, quel que soit l’algorithme, comme avec `equals`. Voir [Valeurs NULL et NaN dans les clés de jointure](/fr/reference/statements/select/join#null-values-in-join-keys).
 
 Les conditions d’égalité d’un JOIN `ASOF` suivent la ligne de `hash` ou de `full_sorting_merge`, selon l’algorithme qui l’exécute, et un côté droit utilisant le table engine `Join` suit la ligne `hash`.
 
-Un JOIN `direct` avec un dictionnaire dont la disposition est `complex_key_direct`, `complex_key_cache` ou `complex_key_ssd_cache` et dont la source est `CLICKHOUSE` envoie les clés à la source sous forme de texte, où chaque `NaN` est écrit `nan` ; deux clés `NaN` ne correspondent donc que si elles ont toutes deux le motif de bits de `nan`. Lorsque [`max_rows_in_set_to_optimize_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) a une valeur non nulle, `full_sorting_merge` et `parallel_full_sorting_merge` peuvent d’abord filtrer les entrées à l’aide d’un set de clés de JOIN qui compare les valeurs `NaN` selon leur motif de bits ; deux valeurs `NaN` de motifs de bits différents peuvent donc correspondre ou non d’une exécution à l’autre.
+Un JOIN `direct` avec un dictionnaire dont la disposition est `complex_key_direct`, `complex_key_cache` ou `complex_key_ssd_cache` et dont la source est `CLICKHOUSE` envoie les clés à la source sous forme de texte, où chaque `NaN` est écrit `nan` ; deux clés `NaN` ne correspondent donc que si elles ont toutes deux le motif de bits de `nan`. Lorsque [`max_rows_in_set_to_optimize_join`](/fr/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) a une valeur non nulle, `full_sorting_merge` et `parallel_full_sorting_merge` peuvent d’abord filtrer les entrées à l’aide d’un set de clés de jointure qui compare les valeurs `NaN` selon leur motif de bits ; deux valeurs `NaN` de motifs de bits différents peuvent donc correspondre ou non d’une exécution à l’autre.
 
-Un JOIN qui compare de telles valeurs peut par conséquent renvoyer des lignes différentes selon l’algorithme qui l’exécute. Par exemple, placer `ie_join` en premier dans `join_algorithm` peut conduire à lui faire exécuter un JOIN comportant une égalité en plus de deux conditions d’inégalité ; l’égalité est alors évaluée avec `equals` et non comme clé de JOIN.
+Un JOIN qui compare de telles valeurs peut par conséquent renvoyer des lignes différentes selon l’algorithme qui l’exécute. Par exemple, placer `inequality` en premier dans `join_algorithm` peut conduire à lui faire exécuter un JOIN comportant une égalité en plus de deux conditions d’inégalité ; l’égalité est alors évaluée avec `equals` et non comme clé de jointure.
 
 ## Choisir un algorithme de jointure {#choosing-a-join-algorithm}
 
@@ -205,7 +207,7 @@ Un JOIN qui compare de telles valeurs peut par conséquent renvoyer des lignes d
   </Frame>
 </div>
 
-Le graphique ci-dessus compare l’utilisation relative de la mémoire et le temps d’exécution de six algorithmes de jointure. La jointure par hachage parallèle qui y figure correspond à `hash` avec une table de hachage divisée. Les positions sont indicatives : les valeurs réelles dépendent de la taille des données, des types de clés et de la distribution des valeurs de clé. Le graphique n’inclut ni `ie_join`, ni `parallel_full_sorting_merge`, ni le repli sur la jointure par boucles imbriquées par blocs.
+Le graphique ci-dessus compare l’utilisation relative de la mémoire et le temps d’exécution de six algorithmes de jointure. La jointure par hachage parallèle qui y figure correspond à `hash` avec une table de hachage divisée. Les positions sont indicatives : les valeurs réelles dépendent de la taille des données, des types de clés et de la distribution des valeurs de clé. Le graphique n’inclut ni `inequality`, ni `parallel_full_sorting_merge`, ni le repli block nested loop.
 
 ### Optimiser les performances des jointures {#optimizing-join-performance}
 
@@ -219,9 +221,9 @@ ClickHouse essaie les algorithmes de la liste dans l’ordre et retient le premi
 
 * Lorsque le côté droit utilise le table engine `Join`, la jointure s’effectue toujours à l’aide de la table de hachage stockée par cette table.
 * `CROSS JOIN`, les JOIN avec une condition `ON` constante et `PASTE JOIN` reposent sur des implémentations dédiées.
-* Une clause `ON` sans condition d’égalité entre les tables est traitée par `ie_join` ou par le repli « block nested loop ».
+* Une clause `ON` sans condition d’égalité entre les tables est traitée par `inequality` ou par le repli block nested loop.
 
-Lorsqu’un seuil de déversement sur disque est en vigueur et qu’un stockage temporaire est configuré, `parallel_hash` et `hash` s’exécutent sous la forme d’une jointure de hachage avec déversement sur disque, qui bascule vers `grace_hash` dès que le côté droit dépasse le seuil. Consultez la section [seuils de déversement sur disque](/fr/concepts/features/operations/select/join-memory-management#spill-thresholds).
+Lorsqu’un seuil de déversement sur disque est en vigueur et qu’un stockage temporaire est configuré, `parallel_hash` et `hash` s’exécutent sous la forme d’une jointure par hachage avec déversement sur disque, qui bascule vers `grace_hash` dès que le côté droit dépasse le seuil. Consultez la section [seuils de déversement sur disque](/fr/concepts/features/operations/select/join-memory-management#spill-thresholds).
 
 ### La valeur `auto` {#the-auto-value}
 

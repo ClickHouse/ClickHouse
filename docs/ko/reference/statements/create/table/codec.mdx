@@ -195,11 +195,12 @@ ENGINE = MergeTree()
 
 <ExperimentalBadge />
 
-`Quantized(method, dimensions[, ...])` — `Array(Float32)`, `Array(Float64)` 또는 `Array(BFloat16)` 타입의 컬럼에서 근사 벡터 검색을 지원하는 특수 코덱입니다.
+`Quantized(method, dimensions[, ...])` — `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` 또는 `Array(UInt8)` 타입의 컬럼에서 근사 벡터 검색을 지원하는 특화 코덱입니다.
 원본 전체 정밀도 벡터와 함께 각 벡터의 압축된 *양자화 코드*를 저장합니다.
 `MergeTree` 계열 테이블에서 [`vector_search_use_quantized_codes`](/ko/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) 설정을 사용한 벡터 검색 쿼리는 양자화 코드를 스캔해 후보 목록을 만든 다음, 전체 정밀도 벡터를 기준으로 결과를 다시 평가합니다.
 이 2단계 검색은 재현율이 낮아지는 대신 일반적인 전체 정밀도 스캔보다 읽는 바이트 수가 적습니다.
 `dimensions`는 벡터 길이이며, 지원되는 `method` 값은 `rabitq`, `turboquant`, `int8`, `prefix`, `product`입니다. 각 값은 크기, 정확도, 거리 함수 간에 서로 다른 절충점을 제공합니다.
+`Array(Int8)` 및 `Array(UInt8)` 컬럼에서는 `int8` 메서드와, `int8` 포맷을 사용하는 `prefix` 메서드가 지원되지 않습니다.
 
 이 코덱은 `CREATE TABLE`에서만 설정할 수 있으며, `ADD COLUMN ... CODEC(Quantized(...))`를 포함해 `ALTER TABLE`을 통해 추가, 제거 또는 변경할 수 없습니다.
 암호화 코덱인 `AES_128_GCM_SIV`를 포함해 다른 어떤 코덱과도 함께 사용할 수 없습니다.

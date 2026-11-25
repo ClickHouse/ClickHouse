@@ -13,7 +13,7 @@ Las visualizaciones basadas en SQL resultan útiles cuando necesita ir más all�
 
 ## Creación de una visualización basada en SQL {#creating-a-raw-sql-chart}
 
-Para crear una visualización basada en SQL, abra el editor de un panel del cuadro de mando y seleccione **SQL**.
+Para crear una visualización basada en SQL, abra el editor de un bloque del panel de control y seleccione **SQL**.
 
 <div className="ch-image-lg">
   <Frame>
@@ -24,9 +24,11 @@ Para crear una visualización basada en SQL, abra el editor de un panel del cuad
 A continuación:
 
 1. Seleccione la **Conexión** en la que se ejecutará la consulta.
-2. Opcionalmente, seleccione una **Fuente**, lo que permite aplicar a su gráfico los filtros a nivel de panel mediante la macro `$__filters`.
+2. Opcionalmente, seleccione una **Fuente**, lo que permite aplicar a su gráfico los filtros a nivel de panel de control mediante la macro `$__filters` y que la consulta utilice `$__sourceTable`.
 3. Escriba su consulta SQL en el editor y utilice parámetros de consulta y macros para integrarla con el intervalo de tiempo, los filtros y las variables del panel de control.
 4. Haga clic en **Ejecutar** para previsualizar los resultados y, después, en **Guardar** para guardar la visualización.
+
+La conexión y la fuente también pueden ser una [variable de conexión o variable de origen de datos](/es/clickstack/observability/features/dashboards/overview#source-connection-variables), de modo que sea el usuario que visualiza el panel de control quien elija la conexión o la fuente que consulta el bloque.
 
 ## Parámetros de consulta {#query-parameters}
 
@@ -104,17 +106,18 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 ### Macro de filtro del panel de control {#dashboard-filter-macro}
 
-| Macro        | Descripción                                                                                         |
-| ------------ | --------------------------------------------------------------------------------------------------- |
-| `$__filters` | Se reemplaza por las condiciones de filtrado del panel de control (requiere seleccionar una fuente) |
+| Macro            | Descripción                                                                                                                                                                                                                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$__filters`     | Se reemplaza por las condiciones de filtrado del panel de control (requiere seleccionar una fuente)                                                                                                                                                                                                 |
+| `$__sourceTable` | Se reemplaza por la tabla de la fuente seleccionada, con su nombre completo, como `default.otel_logs`. Para fuentes de métricas, use `$__sourceTable(<metric type>)`, donde el tipo de métrica es `gauge`, `histogram`, `sum`, `summary` o `exponential histogram`. Requiere seleccionar una fuente |
 
 Cuando se selecciona una **fuente** en el gráfico y hay filtros del panel de control activos, `$__filters` se expande a las condiciones `WHERE` de SQL correspondientes. Si no hay ninguna fuente seleccionada o no se aplica ningún filtro, se expande a `(1=1)`, por lo que siempre puede incluirse de forma segura en una cláusula `WHERE`.
 
-`$__filters` solo aplica los filtros que tienen habilitada la opción **Broadcast filter condition**. Los filtros expuestos como variables se referencian de forma explícita, como se describe a continuación.
+`$__filters` aplica las selecciones de los filtros de valores de expresiones SQL que tienen habilitada la opción **Broadcast filter condition**, así como las condiciones de los [filtros ad hoc](/es/clickstack/observability/features/dashboards/overview#adhoc-filters) que se aplican a la fuente del bloque. Los filtros expuestos como variables se referencian de forma explícita, como se describe a continuación.
 
 ### Macros de variables de panel de control {#dashboard-variables}
 
-Cuando un filtro de panel de control está [disponible como variable](/es/clickstack/observability/features/dashboards/overview#dashboard-variables), sus valores seleccionados pueden referenciarse en cualquier parte de la consulta. Estas macros solo están disponibles en los bloques de un panel de control que declare al menos una variable.
+Cuando un filtro de panel de control está [disponible como variable](/es/clickstack/observability/features/dashboards/overview#dashboard-variables) (un filtro de valores de expresión SQL con **Available as variable** habilitado, o cualquier filtro de valores estáticos, de valores de consulta SQL o de valores de etiquetas de PromQL), sus valores seleccionados pueden referenciarse en cualquier parte de la consulta. Estas macros solo están disponibles en los bloques de un panel de control que declare al menos una variable.
 
 | Macro                                         | Descripción                                                                                                                               |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |

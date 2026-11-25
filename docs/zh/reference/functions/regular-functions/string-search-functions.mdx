@@ -430,6 +430,67 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 ['Server','nginx']
 ```
 
+## fullMatch {#fullMatch}
+
+引入版本：v26.11.0
+
+检查给定字符串是否整体与指定的 正则表达式 模式 匹配。
+
+[`match`](#match) 会在字符串的任意位置搜索匹配项，而此函数仅在 模式 匹配整个字符串时才返回 `1`，
+相当于在 模式 的两端分别加上 `^` 和 `$` 锚点。它对应于 RE2 库中的 `RE2::FullMatch`、Python 中的
+`re.fullmatch` 以及 DuckDB 中的 `regexp_full_match`。
+
+此函数使用 RE2 正则表达式 库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
+
+匹配基于 UTF-8 假设进行，例如 `¥` 在内部占用两个字节，但在匹配时会被视为单个码点。
+正则表达式 不能包含 NULL 字节。
+如果 haystack 或 模式 不是有效的 UTF-8，则其行为未定义。
+
+与 re2 的默认行为不同，`.` 会匹配换行符。要禁用此行为，请在 模式 前添加 `(?-s)`。
+
+**语法**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**别名**: `regexp_full_match`
+
+**参数**
+
+* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
+* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+如果该模式匹配整个字符串，则返回 `1`，否则返回 `0`。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**匹配整个字符串**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**包含顶层选择分支的模式**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ## hasAllTokens {#hasAllTokens}
 
 引入版本：v25.10.0
@@ -1534,7 +1595,7 @@ SELECT locate('ca', 'abcabc')
 
 与 re2 的默认行为不同，`.` 会匹配换行符。要禁用此行为，请在 模式 前添加 `(?-s)`。
 
-模式 不会自动加上锚点。若要匹配整个字符串，请自行使用 `^` 和 `$` 对 模式 加锚。
+模式 不会自动加上锚点。若要匹配整个字符串，请自行使用 `^` 和 `$` 对 模式 加锚，或使用 [`fullMatch`](#fullMatch) 函数。
 
 如果你只是想搜索子字符串，可以改用函数 [`like`](#like) 或 [`position`](#position)，它们的速度比此函数快得多。
 

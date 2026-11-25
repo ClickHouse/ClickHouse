@@ -96,6 +96,60 @@ Aquí puedes ver:
 * `SourceFromSingleChunk` necesita esperar porque `ExpressionTransform` no acepta ningún dato durante la ejecución de `sleep(1)`, por lo que permanecerá en estado `PortFull` durante 1e6 us y, por tanto, `output_wait_elapsed_us` &gt; 1e6.
 * `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` necesitan esperar hasta que `ExpressionTransform` ejecute `sleep(1)` para procesar el resultado, por lo que `input_wait_elapsed_us` &gt; 1e6.
 
+### Perfilado de una unión {#profiling-a-join}
+
+Cuando una consulta lee de varias tablas, cada tabla tiene su propia canalización de lectura y las filas pasan por muchos procesadores antes de llegar al resultado.
+Por eso, sumar `input_rows` u `output_rows` de todos los procesadores cuenta las mismas filas varias veces y no indica cuánto se leyó de cada tabla.
+El siguiente ejemplo utiliza dos tablas `MergeTree` de distinto tamaño en un solo servidor.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` muestra una canalización de lectura para cada lado de la unión (`ReadFromMergeTree`, con fuentes `MergeTreeSelect` por debajo), conectadas entre sí por los procesadores de la unión. `join_algorithm = 'hash'` y `enable_join_runtime_filters = 0` hacen que este ejemplo sea reproducible: un filtro en tiempo de ejecución de JOIN no puede descartar `big` antes de que su fuente emita filas.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+Para interpretar el resultado:
+
+* Fíjese en los procesadores de fuente, cuyo `name` es `MergeTreeSelect(...)` (o `MergeTreeSource`) y cuyo `plan_step_name` es `ReadFromMergeTree`. Su `output_rows` es el número de filas que produjo cada fuente. Súmelo por paso de lectura (`plan_step`), no para toda la consulta. El valor resultante es el número de filas que el paso de lectura transmitió al resto de la canalización.
+* Cada lado de la unión tiene su propio paso `ReadFromMergeTree` con un `plan_step` distinto. En las filas de esta ejecución, `parent_ids` enumera los ID de los procesadores posteriores. Partiendo de una fuente, haga coincidir recursivamente cada valor de `parent_ids` con un `id` del mismo `query_id` para seguir la rama hasta la unión. Así se identifica, por ejemplo, la rama que alimenta `FillingRightJoinSide`.
+* Los procesadores situados por encima de las fuentes (por ejemplo, `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor` o la propia transformación de la unión) consumen y producen filas derivadas de las fuentes. No sume sus contadores a los de las fuentes, ya que se contarían de nuevo las mismas filas.
+* La información del paso no siempre basta para identificar una fuente. `EXPLAIN PIPELINE` es un plan independiente: ayuda a comparar nombres de procesadores y formas de las ramas, pero su salida en texto plano no incluye ni los valores `id` registrados ni `parent_ids`. Si ambas tablas tienen descripciones de pasos similares, utilice el grafo de la consulta ejecutada y los números de filas conocidos. En este ejemplo, las fuentes de lectura de `big` suman 1,000,000 filas y las de `small`, 1,000 filas.
+* Los contadores de filas y bytes de los procesadores describen los datos que pasan por la canalización, no las lecturas físicas del almacenamiento. No incluyen los gránulos ni las marcas que se leyeron y luego se descartaron por filtrado; se ven afectados por la clave primaria y otros filtrados por índices, `PREWHERE` y la poda de columnas, y no reflejan los bytes comprimidos leídos del disco. `SelectedRows`, `SelectedBytes` y `SelectedMarks` en `system.query_log` son estadísticas lógicas de selección: pueden ser distintas de cero aunque todos los datos provengan de la caché. Para analizar las lecturas de archivos, utilice `ReadBufferFromFileDescriptorReadBytes`, que incluye las lecturas atendidas por la caché de páginas del sistema operativo. Para analizar las lecturas del disco local o de dispositivos de bloques sin contar la caché de páginas del sistema operativo, utilice `OSReadBytes`.
+
 ## Véase también {#see-also}
 
 * [`EXPLAIN PIPELINE`](/es/reference/statements/explain#explain-pipeline)

@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 이 엔진은 S3, GCP, Azure 스토리지의 기존 [Delta Lake](https://github.com/delta-io/delta) 테이블과 통합할 수 있도록 지원하며, 읽기와 쓰기를 모두 지원합니다(쓰기는 S3와 GCS는 v25.10부터, Azure는 v26.9부터).
 
-## DeltaLake 테이블 생성하기
+## DeltaLake 테이블 생성하기 {#create-table}
 
 기본적으로 Delta Lake 테이블은 이미 S3, GCP 또는 Azure 스토리지에 존재해야 하며, 아래 명령은 DDL 컬럼 정의 없이 해당 테이블에 연결합니다. `allow_delta_lake_create_table = 1`을 사용하면 `_delta_log`가 없는 위치에서 명시적으로 컬럼을 지정한 `CREATE TABLE` 문이 `delta-kernel-rs`를 통해 초기 커밋을 기록하여 새 Delta Lake 테이블을 생성합니다(파티션 테이블 생성은 아직 지원되지 않음). Unity `DataLakeCatalog` 데이터베이스 내에서는 테이블이 카탈로그에도 등록됩니다.
 
@@ -98,22 +98,54 @@ doc_type: 'reference'
     **구문**
 
     ```sql
+    -- Account key
     CREATE TABLE table_name
-    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    -- Workload identity (mutually exclusive with account_name / account_key)
+    CREATE TABLE table_name
+    ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
     ```
 
     **인수**
 
-    * `connection_string` — Azure 연결 문자열
-    * `storage_account_url` — Azure 스토리지 계정 URL(예: https://account.blob.core.windows.net)
+    * `connection_string` — Azure 연결 문자열(Connection String)
+    * `storage_account_url` — Azure 스토리지 계정 URL (예: https://account.blob.core.windows.net)
     * `container_name` — Azure 컨테이너 이름
-    * `blobpath` — 컨테이너 내 Delta Lake 테이블 경로
+    * `blobpath` — 컨테이너 내 Delta Lake 테이블(Delta Lake table)의 경로
     * `account_name` — Azure 스토리지 계정 이름
     * `account_key` — Azure 스토리지 계정 키
+    * `extra_credentials` — 선택 사항이며, `account_name` / `account_key` 대신 사용할 수 있습니다. Azure 워크로드 아이덴티티 인증에는 `client_id`와 `tenant_id`를 사용하십시오. 계정 자격 증명과 함께 사용할 수 없습니다. S3에서 사용하는 `role_arn` 형식의 `extra_credentials`와는 다릅니다.
+
+    엔진 매개변수는 [이름이 지정된 컬렉션(Named Collections)](/ko/concepts/features/configuration/server-config/named-collections)을 사용하여 지정할 수 있습니다. 이름이 지정된 컬렉션에서도 동일한 `client_id` 및 `tenant_id` 키를 사용할 수 있습니다.
+
+    **워크로드 아이덴티티**
+
+    delta-kernel Azure 경로를 사용하려면 다음 환경 변수도 설정해야 합니다.
+
+    * `AZURE_FEDERATED_TOKEN_FILE` — 필수 (프로젝션된 토큰 파일, 예: AKS 환경)
+    * `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — `extra_credentials` 또는 이름이 지정된 컬렉션으로 전달하지 않는 경우 필수
+    * `AZURE_AUTHORITY_HOST` — 선택 사항
+
+    워크로드 아이덴티티는 서버 자체의 아이덴티티를 사용하므로 기본적으로 허용되지 않습니다. 테이블을 생성하거나 쿼리하는 각 세션에서 `SET` 또는 해당 세션의 설정 프로파일(Settings Profile)을 통해 `allow_server_credentials_in_user_queries`를 활성화해야 합니다.
+
+    ```sql
+    SET allow_server_credentials_in_user_queries = 1;
+
+    CREATE NAMED COLLECTION azure_wi AS
+        storage_account_url = 'https://<account>.blob.core.windows.net',
+        container = 'mycontainer',
+        blob_path = 'path/to/table',
+        client_id = '<client-id>',
+        tenant_id = '<tenant-id>';
+
+    CREATE TABLE azureDeltaLake
+    ENGINE = DeltaLakeAzure(azure_wi)
+    ```
   </Tab>
 </Tabs>
 
-## DeltaLake 테이블에 데이터 쓰기
+## DeltaLake 테이블에 데이터 쓰기 {#insert-data}
 
 DeltaLake 테이블 엔진을 사용해 테이블을 생성한 후에는 다음과 같이 데이터를 삽입할 수 있습니다.
 
@@ -129,14 +161,13 @@ Delta Lake 쓰기는 기본적으로 비활성화되어 있는 베타 기능이�
 <Note>
   테이블 엔진을 사용한 쓰기는 delta kernel을 통해서만 지원됩니다.
   쓰기는 S3 및 GCS에서 동작하며, Azure는 26.9 버전부터 동작합니다.
-  Azure workload identity 인증(`extra_credentials(client_id = ..., tenant_id = ...)`)은 delta kernel에서 지원되지 않습니다.
 </Note>
 
-### 데이터 캐시
+### 데이터 캐시 {#data-cache}
 
 `DeltaLake` 테이블 엔진과 테이블 함수는 `S3`, `AzureBlobStorage`, `HDFS` 스토리지와 마찬가지로 데이터 캐시를 지원합니다. 자세한 내용은 [&quot;S3 테이블 엔진&quot;](/ko/reference/engines/table-engines/integrations/s3#data-cache)을 참조하십시오.
 
-## 관련 항목
+## 관련 항목 {#see-also}
 
 * [DeltaLake 테이블 함수](/ko/reference/functions/table-functions/deltalake)
 

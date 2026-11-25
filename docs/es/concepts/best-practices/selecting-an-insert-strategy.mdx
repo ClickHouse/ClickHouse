@@ -37,18 +37,18 @@ A continuación, resumimos brevemente cómo funcionan las inserciones de MergeTr
 </div>
 
 <div id="client-side-steps">
-  #### Pasos del cliente {#client-side-steps}
+  #### Pasos del Client {#client-side-steps}
 </div>
 
 Para un rendimiento óptimo, los datos deben ①[ agruparse en lotes](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance), por lo que el tamaño del lote es la **primera decisión**.
 
 ClickHouse almacena los datos insertados en disco,[ ordenados](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) por las columnas de clave primaria de la tabla. La **segunda decisión** es si ② ordenar previamente los datos antes de transmitirlos al servidor. Si un lote llega preordenado por las columnas de clave primaria, ClickHouse puede [omitir](https://github.com/ClickHouse/ClickHouse/blob/94ce8e95404e991521a5608cd9d636ff7269743d/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L595) el paso ⑩ de ordenación, acelerando la ingestión.
 
-Si los datos que se van a ingestar no tienen un formato predefinido, la **decisión clave** es elegir un formato. ClickHouse admite la inserción de datos en [más de 70 formatos](/es/reference/formats/index). Sin embargo, al usar el cliente de línea de comandos de ClickHouse o clientes para lenguajes de programación, esta elección suele gestionarse automáticamente. Si es necesario, esta selección automática también puede sustituirse explícitamente.
+Si los datos que se van a ingestar no tienen un formato predefinido, la **decisión clave** es elegir un formato. ClickHouse admite la inserción de datos en [más de 70 formatos](/es/reference/formats/index). Sin embargo, al usar el Client de línea de comandos de ClickHouse o Clients para lenguajes de programación, esta elección suele gestionarse automáticamente. Si es necesario, esta selección automática también puede sustituirse explícitamente.
 
 La siguiente **decisión importante** es ④ si se deben comprimir los datos antes de transmitirlos al servidor de ClickHouse. La compresión reduce el tamaño de la transferencia y mejora la eficiencia de la red, lo que se traduce en transferencias de datos más rápidas y un menor uso de ancho de banda, especialmente en conjuntos de datos grandes.
 
-Los datos se ⑤ transmiten a una interfaz de red de ClickHouse, ya sea la interfaz [nativa](/es/concepts/features/interfaces/tcp) o la interfaz [HTTP](/es/concepts/features/interfaces/http) (que [comparamos](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults) más adelante en esta publicación).
+Los datos se ⑤ transmiten a una interfaz de red de ClickHouse, ya sea la interfaz [nativa](/es/concepts/features/connect-to-clickhouse/protocols/native-tcp) o la interfaz [HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http) (que [comparamos](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults) más adelante en esta publicación).
 
 <div id="server-side-steps">
   #### Pasos en el servidor {#server-side-steps}
@@ -123,19 +123,17 @@ Práctica recomendada: usa LZ4, salvo que tengas un ancho de banda limitado o co
   En las pruebas del [benchmark FastFormats](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient), las inserciones Native comprimidas con LZ4 redujeron el tamaño de los datos en más de un 50 %, lo que redujo el tiempo de ingestión de 150 s a 131 s para un conjunto de datos de 5.6 GiB. Al cambiar a ZSTD, ese mismo conjunto de datos se comprimió hasta 1.69 GiB, pero aumentó ligeramente el tiempo de procesamiento en el servidor.
 </Note>
 
-<div id="compression-reduces-resource-usage">
-  #### La compresión reduce el uso de recursos {#compression-reduces-resource-usage}
-</div>
+#### La compresión reduce el uso de recursos {#compression-reduces-resource-usage}
 
-La compresión no solo reduce el tráfico de red, sino que también mejora la eficiencia en el uso de CPU y memoria en el servidor. Con datos comprimidos, ClickHouse recibe menos bytes y dedica menos tiempo al análisis de entradas grandes. Este beneficio es especialmente importante al ingestar desde varios clientes concurrentes, como en escenarios de observabilidad.
+La compresión no solo reduce el tráfico de red, sino que también mejora la eficiencia en el uso de CPU y memoria en el servidor. Con datos comprimidos, ClickHouse recibe menos bytes y dedica menos tiempo al análisis de entradas grandes. Este beneficio es especialmente importante al ingestar desde varios Clients concurrentes, como en escenarios de observabilidad.
 
 El impacto de la compresión en la CPU y la memoria es modesto con LZ4 y moderado con ZSTD. Incluso bajo carga, la eficiencia del lado del servidor mejora debido al menor volumen de datos.
 
 **Combinar la compresión con la agrupación en lotes y un formato de entrada eficiente (como Native) ofrece el mejor rendimiento de ingestión.**
 
-Al usar la interfaz nativa (p. ej., [clickhouse-client](/es/concepts/features/interfaces/client)), la compresión LZ4 está habilitada de forma predeterminada. Opcionalmente, puedes cambiar a ZSTD mediante la configuración.
+Al usar la interfaz nativa (p. ej., [clickhouse-client](/es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)), la compresión LZ4 está habilitada de forma predeterminada. Opcionalmente, puedes cambiar a ZSTD mediante la configuración.
 
-Con la [interfaz HTTP](/es/concepts/features/interfaces/http), usa el encabezado Content-Encoding para aplicar compresión (p. ej., Content-Encoding: lz4). Todo el payload debe comprimirse antes de enviarlo.
+Con la [interfaz HTTP](/es/concepts/features/connect-to-clickhouse/protocols/http), usa el encabezado Content-Encoding para aplicar compresión (p. ej., Content-Encoding: lz4). Toda la carga útil debe comprimirse antes de enviarla.
 
 <div id="pre-sort-if-low-cost">
   ### Ordenar previamente si el costo es bajo {#pre-sort-if-low-cost}
@@ -159,20 +157,18 @@ Cuando los datos llegan ya ordenados, ClickHouse puede omitir o simplificar el p
   ## Elija una interfaz: HTTP o nativa {#choose-an-interface}
 </div>
 
-<div id="choose-an-interface-native">
-  ### Nativa {#choose-an-interface-native}
-</div>
+### Nativa {#choose-an-interface-native}
 
-ClickHouse ofrece dos interfaces principales para la ingestión de datos: la **interfaz nativa** y la **interfaz HTTP**, cada una con sus ventajas e inconvenientes en términos de rendimiento y flexibilidad. La interfaz nativa, utilizada por [clickhouse-client](/es/concepts/features/interfaces/client) y por algunos clientes para lenguajes como Go y C++, está diseñada específicamente para ofrecer el máximo rendimiento. Siempre transmite los datos en el formato Native, muy eficiente, de ClickHouse, admite compresión por bloques con LZ4 o ZSTD y minimiza el procesamiento del lado del servidor al trasladar al cliente tareas como el análisis y la conversión de formato.
+ClickHouse ofrece dos interfaces principales para la ingestión de datos: la **interfaz nativa** y la **interfaz HTTP**, cada una con sus ventajas e inconvenientes en términos de rendimiento y flexibilidad. La interfaz nativa, utilizada por [clickhouse-client](/es/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) y por algunos Clients para lenguajes como Go y C++, está diseñada específicamente para ofrecer el máximo rendimiento. Siempre transmite los datos en el formato Native, muy eficiente, de ClickHouse, admite compresión por bloques con LZ4 o ZSTD y minimiza el procesamiento del lado del servidor al trasladar al Client tareas como el análisis y la conversión de formato.
 
-Incluso permite calcular en el lado del cliente los valores de las columnas MATERIALIZED y DEFAULT, lo que permite al servidor omitir por completo estos pasos. Esto hace que la interfaz nativa sea ideal para escenarios de ingestión de alto rendimiento en los que la eficiencia es fundamental.
+Incluso permite calcular en el lado del Client los valores de las columnas MATERIALIZED y DEFAULT, lo que permite al servidor omitir por completo estos pasos. Esto hace que la interfaz nativa sea ideal para escenarios de ingestión de alto rendimiento en los que la eficiencia es fundamental.
 
 ### HTTP {#choose-an-interface-http}
 
-A diferencia de muchas bases de datos tradicionales, ClickHouse también admite una interfaz HTTP. **Esta, en cambio, prioriza la compatibilidad y la flexibilidad.** Permite enviar datos en [cualquier formato compatible](/es/guides/clickhouse/data-formats/intro), incluidos JSON, CSV, Parquet y otros, y es compatible de forma generalizada con la mayoría de los client de ClickHouse, incluidos Python, Java, JavaScript y Rust.
+A diferencia de muchas bases de datos tradicionales, ClickHouse también admite una interfaz HTTP. **Esta, en cambio, prioriza la compatibilidad y la flexibilidad.** Permite enviar datos en [cualquier formato compatible](/es/guides/clickhouse/data-formats/intro), incluidos JSON, CSV, Parquet y otros, y es compatible de forma generalizada con la mayoría de los Clients de ClickHouse, incluidos Python, Java, JavaScript y Rust.
 
 Esto suele ser preferible al protocolo nativo de ClickHouse, ya que permite redirigir el tráfico fácilmente mediante balanceadores de carga. Esperamos pequeñas diferencias en el rendimiento de inserción con el protocolo nativo, que tiene un poco menos de sobrecarga.
 
-Sin embargo, carece de la integración más profunda del protocolo nativo y no puede realizar optimizaciones del lado del client, como el cálculo de valores materializados o la conversión automática al formato Native. Aunque las inserciones HTTP aún pueden comprimirse mediante cabeceras HTTP estándar (por ejemplo, `Content-Encoding: lz4`), la compresión se aplica a toda la carga útil en lugar de a bloques de datos individuales. Esta interfaz suele preferirse en entornos donde la simplicidad del protocolo, el balanceo de carga o una amplia compatibilidad de formatos son más importantes que el rendimiento puro.
+Sin embargo, carece de la integración más profunda del protocolo nativo y no puede realizar optimizaciones del lado del Client, como el cálculo de valores materializados o la conversión automática al formato Native. Aunque las inserciones HTTP aún pueden comprimirse mediante cabeceras HTTP estándar (por ejemplo, `Content-Encoding: lz4`), la compresión se aplica a toda la carga útil en lugar de a bloques de datos individuales. Esta interfaz suele preferirse en entornos donde la simplicidad del protocolo, el balanceo de carga o una amplia compatibilidad de formatos son más importantes que el rendimiento puro.
 
-Para obtener una descripción más detallada de estas interfaces, consulte [aquí](/es/concepts/features/interfaces/overview).
+Para obtener una descripción más detallada de estas interfaces, consulte [Conectarse a ClickHouse](/es/concepts/features/connect-to-clickhouse).

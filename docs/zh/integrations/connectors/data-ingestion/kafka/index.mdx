@@ -32,11 +32,12 @@ integration:
   如果你是 ClickHouse Cloud 用户，这是推荐选项。ClickPipes 是**全托管**的，并专为在 Cloud 环境中提供**最佳性能**而打造。
 </Tip>
 
-#### 主要功能 {#clickpipes-for-kafka-main-features}
+#### 主要特性 {#clickpipes-for-kafka-main-features}
 
 * 针对 ClickHouse Cloud 优化，提供极致性能
 * 支持横向和纵向扩展，适用于高吞吐量工作负载
 * 内置容错能力，支持可配置副本和自动重试
+* 可通过配置支持[精确一次语义](/zh/integrations/clickpipes/kafka/best-practices#delivery-semantics)
 * 可通过 ClickHouse Cloud UI、[Open API](/zh/integrations/clickpipes/programmatic-access/openapi) 或 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 进行部署和管理
 * 提供企业级安全保障，支持云原生授权 (IAM) 和私有连接 (PrivateLink)
 * 支持广泛的[数据源](/zh/integrations/clickpipes/kafka/reference)，包括 Confluent Cloud、亚马逊 MSK、Redpanda Cloud 和 Azure Event Hubs
@@ -84,11 +85,11 @@ Kafka Connect 是一个开源框架，可充当集中式数据枢纽，用于在
 
 ### 选择一种方案 {#choosing-an-option}
 
-| Product                  | Strengths                                                                                                                                         | Weaknesses                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **ClickPipes for Kafka** | • 面向高吞吐、低延迟场景的可扩展架构<br />• 内置监控和 schema 管理<br />• 私有网络连接 (通过 PrivateLink) <br />• 支持 SSL/TLS 身份验证和 IAM 授权<br />• 支持通过编程方式进行配置 (Terraform、API 端点)  | • 不支持将数据推送到 Kafka<br />• 至少一次语义                                                                         |
-| **Kafka Connect Sink**   | • 精确一次语义<br />• 可对数据转换、批处理和错误处理进行细粒度控制<br />• 可部署在私有网络中<br />• 可通过 Debezium 对 ClickPipes 尚未支持的数据库进行实时复制                                           | • 不支持将数据推送到 Kafka<br />• 部署和维护的运维复杂度较高<br />• 需要具备 Kafka 和 Kafka Connect 相关专业知识                         |
-| **Kafka 表引擎**   | • 支持[将数据推送到 Kafka](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br />• 运维上更易于部署                          | • 至少一次语义<br />• 消费者的横向扩缩容能力有限，无法独立于 ClickHouse server 进行扩缩容<br />• 错误处理和调试选项有限<br />• 需要具备 Kafka 相关专业知识 |
+| Product                  | Strengths                                                                                                                                                                                                                          | Weaknesses                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **ClickPipes for Kafka** | • 面向高吞吐、低延迟场景的可扩展架构<br />• [精确一次语义](/zh/integrations/clickpipes/kafka/best-practices#delivery-semantics)<br />• 内置监控和 schema 管理<br />• 私有网络连接 (通过 PrivateLink) <br />• 支持 SSL/TLS 身份验证和 IAM 授权<br />• 支持通过编程方式进行配置 (Terraform、API 端点) | • 不支持将数据推送到 Kafka                                                                                       |
+| **Kafka Connect Sink**   | • 精确一次语义<br />• 可对数据转换、批处理和错误处理进行细粒度控制<br />• 可部署在私有网络中<br />• 可通过 Debezium 对 ClickPipes 尚未支持的数据库进行实时复制                                                                                                                            | • 不支持将数据推送到 Kafka<br />• 部署和维护的运维复杂度较高<br />• 需要具备 Kafka 和 Kafka Connect 相关专业知识                         |
+| **Kafka 表引擎**            | • 支持[将数据推送到 Kafka](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br />• 运维上更易于部署                                                                                                           | • 至少一次语义<br />• 消费者的横向扩缩容能力有限，无法独立于 ClickHouse server 进行扩缩容<br />• 错误处理和调试选项有限<br />• 需要具备 Kafka 相关专业知识 |
 
 ### 其他选项 {#other-options}
 

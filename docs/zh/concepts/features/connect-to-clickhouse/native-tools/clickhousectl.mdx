@@ -1,0 +1,645 @@
+---
+description: 'clickhousectl 参考文档：适用于 ClickHouse 和 Postgres 的命令行客户端，覆盖从本地开发到 ClickHouse Cloud 的全流程'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'ClickHouse Cloud', 'Managed Postgres', 'ClickPipes', 'ClickStack', 'command line']
+sidebarTitle: 'clickhousectl'
+slug: /concepts/features/connect-to-clickhouse/native-tools/clickhousectl
+title: 'clickhousectl'
+doc_type: 'reference'
+---
+
+`clickhousectl` (别名 `chctl`) 是 ClickHouse 的官方命令行客户端，覆盖从本地开发到 ClickHouse Cloud 的全流程。无论是在终端中操作的用户，还是脚本和编程智能体，都可以使用它。
+
+使用 `clickhousectl`，您可以：
+
+* 安装和切换本地 ClickHouse 版本、运行相互隔离的本地服务器，以及执行 SQL
+* 在本地运行基于 Docker 的 Postgres
+* 创建、配置、扩缩容、备份和查询 ClickHouse Cloud 服务
+* 创建、监控、配置和恢复 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务
+* 创建并运维从对象存储、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB 和 BigQuery 摄取数据的 ClickPipes
+* 在 [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/deployment/managed) 服务上管理数据源、仪表盘、告警、Webhook、保存的搜索和角色
+* 在本地开发可执行用户定义函数，并将其部署到 ClickHouse Cloud
+* 管理组织成员、邀请、API 密钥和角色
+* 将官方 ClickHouse agent skills 安装到编程智能体中
+
+本页仅展示具有代表性的示例。所有命令和标志均以 `clickhousectl <command> --help` 为准。大多数命令的帮助信息末尾都附有 `CONTEXT FOR AGENTS` 块；对于 Cloud 命令，该块还会列出所需的 API key 权限。如需具体任务的操作步骤，请参阅各节中的指南链接。如需了解面向 Cloud 的概览，请参阅 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli)。
+
+## 安装 {#installation}
+
+`clickhousectl` 可在 MacOS 和 Linux 上运行，支持 ARM64 和 x86&#95;64 架构。
+
+```bash
+curl -fsSL https://clickhouse.com/cli | sh
+```
+
+该脚本会安装 `~/.local/bin/clickhousectl`，并创建别名 `chctl`。请确保 `~/.local/bin` 已加入 `PATH`。
+
+也可以通过软件包管理器安装：
+
+| 工具                          | 命令                              |
+| --------------------------- | ------------------------------- |
+| npm                         | `npm install -g clickhousectl`  |
+| uv                          | `uv tool install clickhousectl` |
+| pipx                        | `pipx install clickhousectl`    |
+| pip                         | `pip install clickhousectl`     |
+| cargo-binstall              | `cargo binstall clickhousectl`  |
+| Cargo，从源码构建 (Rust 1.94.1+)  | `cargo install clickhousectl`   |
+
+只有安装脚本和 npm 会创建别名 `chctl`。如需更新已有安装，请运行 `clickhousectl update` (参见[自更新](#self-update)) ；如果是通过 npm、uv、pipx 或 pip 安装的，该命令会改为输出对应软件包管理器的升级命令。
+
+### 命令行环境补全 {#shell-completions}
+
+如需使用 Tab 键补全命令、标志、本地服务器名称和已安装的版本，请在命令行环境启动文件中添加一行配置。该配置会同时为 `clickhousectl` 和 `chctl` 注册补全：
+
+```bash
+eval "$(clickhousectl completions bash)"   # ~/.bashrc
+eval "$(clickhousectl completions zsh)"    # ~/.zshrc, after compinit
+clickhousectl completions fish | source    # ~/.config/fish/config.fish
+```
+
+每次按下 Tab 键时，补全功能都会运行已安装的命令行客户端，因此执行 `update` 后，补全结果仍会保持最新。
+
+## 前置要求 {#requirements}
+
+* Docker (仅本地 Postgres 需要)
+* 如需使用 Cloud 命令，需要一个 [ClickHouse Cloud](https://clickhouse.com/cloud) 账户。只读命令可通过浏览器 OAuth (`cloud auth login`) 完成身份验证；创建或修改资源则需要 [API key](/zh/products/cloud/features/admin-features/api/openapi)。详见[身份验证](#authentication)。
+
+## 本地 {#local}
+
+包含 `.clickhouse/` 的目录即为项目根目录，正如包含 `.git/` 的目录之于 Git。本地命令会使用当前目录或其上级目录中距离最近的项目根目录，因此可在项目的任意子目录中运行；若不在任何项目中，则使用当前目录。如需显式指定项目根目录 (例如在脚本或 CI 作业中) ，可设置 `CLICKHOUSECTL_PROJECT_DIR`。每个项目的服务器数据保存在各自的 `.clickhouse/` 中，而 ClickHouse 二进制文件则全局共享，统一存放于 `~/.clickhouse/`。完整工作流请参阅[本地开发指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/local-development.md)。
+
+### 安装并选择版本 {#installing-versions}
+
+```bash
+clickhousectl local use latest              # Install the latest ClickHouse and make it the default (recommended)
+clickhousectl local install lts             # Install the latest LTS release
+clickhousectl local install 26.8            # Latest 26.8.x.x release
+clickhousectl local list                    # Installed versions
+clickhousectl local list --remote           # Versions available for download
+clickhousectl local which                   # Current default
+clickhousectl local remove 26.8.1.1760      # Remove an exact installed version
+clickhousectl local install --binary ~/ClickHouse/build/programs/clickhouse   # A build of your own
+```
+
+| 选择器           | 含义                                            |
+| ------------- | --------------------------------------------- |
+| `latest`      | 最新的 ClickHouse 构建版本，每次安装、使用或启动时都会进行远程检查 (推荐)  |
+| `stable`      | 最新的稳定版本                                       |
+| `lts`         | 最新的长期支持版                                      |
+| `26.8`        | 与之匹配的最新发行版                                    |
+| `26.8.1.1760` | 指定的确切版本                                       |
+
+`local use` 会在需要时安装该版本，将其设为今后启动服务器时使用的默认版本，并为其创建指向 `~/.local/bin/clickhouse` 的符号链接，从而让 `clickhouse client` 和 `clickhouse local` 位于您的 `PATH` 中。传入 `--no-global` 可跳过创建符号链接。如果该路径下已存在普通文件，则保持不变。
+
+`local remove` 不会移除默认版本，也不会移除任何项目中正在运行的服务器所使用的版本。使用 `--force` 会停止这些服务器并移除该版本，同时清除默认版本设置和符号链接。
+
+`local install --binary <path>` 会复制您自行构建的 ClickHouse 二进制文件，并以其报告的版本号进行安装，这样您就可以像对待其他已安装版本一样，通过 `local use` 或 `--version` 选择它。重新构建后报告的版本通常不变，因此请传入 `--force` 以替换已安装的副本。
+
+### 初始化项目 {#initializing-project}
+
+```bash
+clickhousectl local init
+```
+
+`init` 会将当前目录 (若设置了 `CLICKHOUSECTL_PROJECT_DIR`，则为该目录) 标记为项目根目录。它会创建一个被 git 忽略的 `.clickhouse/` 目录，用于存放运行时数据，同时生成可提交的脚手架：`clickhouse/` (`tables/`、`materialized_views/`、`queries/`、`seed/`、`udfs/`、`config.d/`) 和 `postgres/` (`tables/`、`views/`、`functions/`、`queries/`、`seed/`) 。重复运行该命令只会创建缺失的内容，因此克隆项目后运行一次即可。不执行 `init` 而直接启动服务器同样可行，此时会在当前目录中创建 `.clickhouse/`。
+
+### 运行本地服务器 {#managing-servers}
+
+```bash
+clickhousectl local clickhouse start dev --version latest   # Background start; waits for readiness
+clickhousectl local clickhouse start dev --no-wait          # Return after spawning
+clickhousectl local clickhouse start dev --foreground       # Run in the foreground
+clickhousectl local clickhouse start dev --http-port 8124 --tcp-port 9001
+clickhousectl local clickhouse list                         # ClickHouse servers in this project
+clickhousectl local clickhouse list --global                # Servers across all projects
+clickhousectl local status                                  # Every ClickHouse server and Postgres instance in this project
+clickhousectl local clickhouse stop dev
+clickhousectl local clickhouse stop-all                     # Stop every ClickHouse server in this project
+clickhousectl local clickhouse remove dev                   # Permanently delete a stopped server's data
+```
+
+`local ch` 是 `local clickhouse` 的简写，早期名称 `local server` 仍可作为别名使用。每个命名服务器的数据各自存放在 `.clickhouse/servers/<name>/data/` 中，停止服务器后数据会保留，供下次启动时使用。启动时若未指定名称，则使用 `default`；如果 `default` 已在运行，则会自动生成一个新名称。默认端口为 HTTP 8123 和 TCP 9000，若这些端口已被占用，则会改为分配空闲端口。
+
+作用于已有服务器的命令 (`stop`、`client`、`dotenv`、`local client` 和 `local udf --server`) 在省略名称时会选择 `default`；若不存在 `default`，则选择项目中该引擎唯一的服务器。如果存在多个服务器且均未命名为 `default`，这些命令会失败并返回 `server_selection_required`，同时列出各服务器名称。`remove` 从不自行推断：未指定名称时，它只会删除 `default`。在脚本中应显式传入名称。
+
+`--version` 用于为本次启动指定版本，不会更改默认版本。如果既未指定版本也未设置默认版本，直接启动会安装 `latest`，但不会将其设为默认版本；如需将其设为默认版本，请先运行 `local use latest`。
+
+### 使用本地客户端运行 SQL {#running-queries}
+
+```bash
+clickhousectl local client dev                                   # Interactive session
+clickhousectl local client dev --query "SELECT 1" --query "SELECT 2"
+clickhousectl local client dev --queries-file schema.sql seed.sql
+clickhousectl local client dev --query "SELECT version()" -- --format JSONEachRow
+clickhousectl local client --host localhost --port 9000          # Connect by address
+```
+
+`local client` 使用运行该服务器的同一个 ClickHouse 二进制文件连接到指定名称的服务器；若未指定名称，则按上述选择规则确定服务器。`--` 之后的参数会原样传递给 `clickhouse client`。输出和退出状态均来自 `clickhouse client`，即使在 JSON 模式下也是如此，因此编写脚本时请自行设置 SQL 输出格式。
+
+### 自定义服务器配置 {#custom-config-files}
+
+可以通过放置在以下三个位置的部分 XML 或 YAML 配置文件来覆盖内置默认值：
+
+| 位置                             | 作用范围                    | 生效时机                     |
+| ------------------------------ | ----------------------- | ------------------------ |
+| `~/.clickhouse/config.d/`      | 本机上的所有服务器               | 每次启动                     |
+| 项目根目录下的 `clickhouse/config.d/` | 项目中的所有服务器；将其提交到代码仓库即可共享 | 每次启动                     |
+| `~/.clickhouse/configs/`       | 使用该配置启动的服务器             | 仅在使用 `--config NAME` 启动时 |
+
+```bash
+cat > clickhouse/config.d/logging.xml <<'XML'
+<clickhouse>
+    <logger><level>debug</level></logger>
+</clickhouse>
+XML
+cat > ~/.clickhouse/configs/analytics.xml <<'XML'
+<clickhouse>
+    <profiles>
+        <default><max_threads>4</max_threads></default>
+    </profiles>
+</clickhouse>
+XML
+clickhousectl local clickhouse configs          # List both config.d directories and the named configs
+clickhousectl local clickhouse stop dev
+clickhousectl local clickhouse start dev --config analytics
+```
+
+每次启动时，系统都会按表中的顺序合并这些文件，后面的文件优先，因此每个文件只需包含您要更改的设置。对文件的编辑以及移除的 `--config` 将在下次启动时生效。托管的数据路径和端口始终优先于 config 中的配置值。
+
+### 将连接详情写入 dotenv 文件 {#dotenv}
+
+```bash
+clickhousectl local clickhouse dotenv dev                                     # Writes .env
+clickhousectl local clickhouse dotenv dev --local --user default --database analytics   # Writes .env.local
+```
+
+`dotenv` 会读取当前运行中服务器的实际端口，并写入 `CLICKHOUSE_HOST`、`CLICKHOUSE_PORT` 和 `CLICKHOUSE_HTTP_PORT`；如果传入了用户名、密码和数据库，也会一并写入。已有文件中的其他行会保留不变。请使用应用程序自带的 dotenv 加载器加载该文件；切勿对输出的预览内容执行 `eval`。
+
+### 本地 Postgres {#local-postgres}
+
+本地 Postgres 在 Docker 中运行，因此需要确保 Docker 已启动。支持 Postgres 17 和 18，包括 `18-alpine` 等镜像标签；新实例默认使用版本 18。
+
+```bash
+clickhousectl local install postgres@18                 # Optional: pre-pull the image
+clickhousectl local postgres start app --version 18
+clickhousectl local postgres start app --wait-timeout 120
+clickhousectl local postgres client app --query "SELECT version()"
+clickhousectl local postgres client app --queries-file pg-schema.sql
+clickhousectl local postgres dotenv app --local
+clickhousectl local postgres list                       # Postgres instances in this project
+clickhousectl local postgres stop app
+clickhousectl local postgres stop-all                   # Stop every Postgres instance in this project
+clickhousectl local postgres remove app                 # Permanently delete the instance and its data
+```
+
+`local pg` 是 `local postgres` 的简写。实例通过名称和主版本进行标识。恢复已停止的实例时，会沿用其原有的端口、用户、密码和数据库，因此创建时指定的标志在恢复时不会生效。如果未传入密码，系统将自动生成一个随机密码。`.env.local` 中包含该密码，请勿将其纳入版本控制。
+
+### 本地 UDFs {#local-udfs}
+
+`local udf` 会将 `clickhouse/udfs/<name>/` 下的[可执行用户定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)部署到本地服务器，而 `cloud udf` 则会将同一目录上传到 Cloud (参见 [Cloud 中的 UDFs](#cloud-udfs)) 。
+
+```bash
+clickhousectl local udf init my_udf            # udf.json and main.py (python3.11 runtime)
+clickhousectl local clickhouse start
+clickhousectl local udf deploy my_udf
+clickhousectl local client --query "SELECT my_udf(1)"
+clickhousectl local udf list
+clickhousectl local udf remove my_udf
+```
+
+除 `init` 外，所有命令都支持 `--server <name>` 参数；未指定时，由[选择规则](#managing-servers)决定使用哪个服务器。`deploy` 会按照与 Cloud 相同的方式验证 `udf.json`。如果服务器正在运行，它会重新加载函数，并确认该函数已加载。`native` 运行时仅支持在 Linux amd64 或 arm64 主机上进行本地部署。请参阅[用户自定义函数指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)。
+
+## 身份验证 {#authentication}
+
+Cloud 命令支持以下两种凭证类型：
+
+| 凭证        | 权限范围                                        | 存储位置                                                    |
+| --------- | ------------------------------------------- | ------------------------------------------------------- |
+| 浏览器 OAuth | 以您的用户身份执行操作：可在您所属的所有组织中执行只读 Cloud 操作和只读 SQL | `~/.clickhouse/tokens.json`，全局存储，各项目共享                  |
+| API key   | 作用域限定于单个组织；读取和写入权限取决于该 key 所分配的角色           | 保存后位于项目根目录下的 `.clickhouse/credentials.json`，在任意子目录中均可识别 |
+
+如果您还没有 ClickHouse Cloud 账户，可运行 `clickhousectl cloud auth signup`，在浏览器中打开注册页面。
+
+### OAuth 登录 {#oauth-login}
+
+```bash
+clickhousectl cloud auth login
+```
+
+此命令会打开浏览器，进入 OAuth 设备授权流程。令牌会全局保存到 `~/.clickhouse/tokens.json`，并自动刷新。
+
+<Note>
+  OAuth 为**只读**模式。如需创建或修改资源，请使用 [API key](#api-key) 登录。
+</Note>
+
+### API key {#api-key}
+
+[创建一个 API key](/zh/products/cloud/features/admin-features/api/openapi)，为其分配命令所需的角色，然后保存。使用交互式提示输入，可避免该密钥出现在命令行环境的历史记录中：
+
+```bash
+clickhousectl cloud auth login --interactive
+clickhousectl cloud auth login --api-key "$KEY_ID" --api-secret "$KEY_SECRET"   # Alternative
+```
+
+登录时会验证 API 密钥，并输出该密钥所属的身份。如果密钥被 API 拒绝，则不会保存该密钥，命令以退出码 4 退出。如果 API 无法访问，仍会保存密钥，但会给出警告。
+
+在 CI 及其他自动化场景中，请通过您的机密信息管理工具注入密钥，而不是将其保存到本地：
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-api-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-api-secret
+```
+
+在开发环境中，命令行客户端还会从当前目录下的 `.env` 文件中读取这些变量；若当前目录中没有该文件，则改为从[项目根目录](#local)读取。请勿将 `.env` 纳入版本控制。
+
+### 检查并清除凭证 {#auth-status}
+
+```bash
+clickhousectl cloud auth whoami          # Verify the active credentials and show the orgs they reach
+clickhousectl cloud auth status          # Show configured sources and which one is active
+clickhousectl cloud auth logout --oauth  # Clear OAuth tokens only
+clickhousectl cloud auth logout --api-keys
+clickhousectl cloud auth logout          # Clear both
+```
+
+`whoami` 适用于这两种凭证类型；如果凭证被拒绝，则以退出码 4 退出。即使所有凭证均无效，`status` 也可能以退出码 0 退出，因此请使用 `whoami` 来测试访问权限。注销不会清除环境变量，也不会修改 `.env`。
+
+### 凭证优先次序 {#credential-precedence}
+
+按以下顺序，采用第一个可用的来源：
+
+1. `--api-key` 和 `--api-secret` 标志
+2. 项目根目录中的 `.clickhouse/credentials.json`
+3. 已导出的环境变量
+4. 当前目录下 `.env` 文件中的变量；若不存在，则使用项目根目录下的 `.env`
+5. 全局 OAuth 令牌
+
+在任意 `cloud` 命令中添加 `--debug`，即可将所选的凭证来源和 API URL 输出到 stderr：
+
+```bash
+clickhousectl cloud clickhouse list --debug
+```
+
+### 选择组织 {#organizations}
+
+仅当您的凭证只能访问一个组织时，组织级命令才会自动选择该组织。否则，请传入 `--org-id`，或通过 `--org-name` 指定确切的组织名称；如果两者均未提供，命令将以退出码 2 退出，并列出每个组织的 ID 和名称：
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud clickhouse list --org-id <org-id>
+clickhousectl cloud clickhouse list --org-name "My Org"
+```
+
+大多数资源命令接受按位置传入的 ID 或精确匹配的 `--name`。有关权限、受限密钥以及登出后的清理，请参阅[身份验证与访问](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md)。
+
+## Cloud {#cloud}
+
+Cloud 命令会调用 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview)。创建和更新请求在 API 受理后即会返回，因此请轮询 `get`，直到资源达到所需的状态。
+
+### 服务 {#services}
+
+`cloud clickhouse` 用于管理 ClickHouse Cloud 服务。`cloud ch` 是它的简写，原名称 `cloud service` 仍可作为别名使用。
+
+```bash
+clickhousectl cloud clickhouse create --name analytics \
+  --provider aws --region us-east-1 --ip-allow '203.0.113.10/32=Office'
+clickhousectl cloud clickhouse create --name app-dev \
+  --ip-allow 203.0.113.10/32 --dotenv .env.local          # Password goes only to the file
+clickhousectl cloud clickhouse list
+clickhousectl cloud clickhouse get <service-id>
+clickhousectl cloud clickhouse start <service-id>
+clickhousectl cloud clickhouse stop <service-id>
+clickhousectl cloud clickhouse wake <service-id>             # Wake an idle service
+clickhousectl cloud clickhouse reset-password <service-id>
+clickhousectl cloud clickhouse delete <service-id>           # Must be stopped; --force stops it first
+```
+
+请保存创建时显示的初始密码；该密码仅返回一次。使用 `--dotenv [file]` (默认为 `.env`) 时，密码只会写入该文件，不会显示在终端或 JSON 输出中。创建命令会在预配完成前返回，因此请重复执行 `get`，直到状态变为 `running`。**省略 `--ip-allow` 将允许所有 IP (`0.0.0.0/0`) 访问。** 条目格式为 `IP_OR_CIDR=DESCRIPTION`。`--region` 接受任意区域 ID (包括私有区域) ，并由 Cloud 进行验证。使用 `--backup-id` 可将备份恢复到新服务中，使用 `--byoc-id` 可将服务部署到 BYOC 基础设施中。
+
+连接到运行中的服务：
+
+```bash
+clickhousectl cloud clickhouse client <service-id>                     # Interactive clickhouse client
+clickhousectl cloud clickhouse client --name analytics -q "SELECT version()"
+clickhousectl cloud clickhouse dotenv <service-id> --local             # Write .env.local, without a password
+```
+
+`client` 通过原生 TLS 协议打开 `clickhouse client`，并通过浏览器以您的 Cloud 用户身份登录，因此无需服务密码。该命令需要已安装 ClickHouse 25.12 或更高版本 (`clickhousectl local install latest`) ，且必须有人在浏览器端完成登录，因此在 CI 和智能体中请改用 [`query`](#query-api)。`dotenv` 会写入 `CLICKHOUSE_HOST`、`CLICKHOUSE_PORT`、`CLICKHOUSE_HTTP_PORT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_SECURE`，且仅替换这些键，因此 `create --dotenv` 写入的密码会保留不变。
+
+更新、扩缩容和配置服务：
+
+```bash
+clickhousectl cloud clickhouse update <service-id> --new-name analytics-prod \
+  --add-ip-allow '198.51.100.0/24=VPN' --remove-ip-allow 0.0.0.0/0 --add-tag env=prod
+clickhousectl cloud clickhouse update <service-id> --deletion-protection true
+clickhousectl cloud clickhouse profile list --region us-east-1
+clickhousectl cloud clickhouse scale <service-id> \
+  --min-replica-memory-gb 8 --max-replica-memory-gb 32 --num-replicas 2
+clickhousectl cloud clickhouse scale <service-id> --autoscaling-mode horizontal \
+  --min-replica-memory-gb 16 --max-replica-memory-gb 16 --min-replicas 2 --max-replicas 6
+clickhousectl cloud clickhouse scale <service-id> --profile v1-highmem-s
+clickhousectl cloud clickhouse settings set <service-id> --setting 'enable_analyzer=1'
+clickhousectl cloud clickhouse upgrade-window set <service-id> --weekday 0 --start-hour 6
+```
+
+每个副本的内存必须是 4 GB 的倍数，未付费服务最多 120 GB，付费服务最多 356 GB，副本数最多 50 个。组织和仓库级别的限制可能会使这些上限更低。横向自动扩缩容需要组织启用相应功能。`scale --profile` 用于更改 Enterprise 和 BYOC 组织中的实例配置文件。`update` 仅更改您传入的标志。
+
+启用删除保护 (`create --deletion-protection` 或 `update --deletion-protection true|false`) 后，`delete` 将拒绝删除该服务并返回错误代码 `deletion_protected`，即使使用 `--force` 也无效；删除前请先关闭删除保护。
+
+其他服务命令组包括 `settings` (list、get、schema、set、unset) 、`scaling-schedule`、`upgrade-window`、`replica-aware-routing` (Beta) 、`jwt-provider` (Beta，Enterprise 层级) 、`snapshot` (Beta) 、`private-endpoint`、`query-endpoint`、`backup-config` 和 `prometheus`。详见[创建和运维云服务](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md)。
+
+### 查询 API {#query-api}
+
+`cloud clickhouse query` 通过 HTTP 执行单条 SQL 语句，既不需要本地 `clickhouse` 二进制文件，也不需要服务密码：
+
+```bash
+clickhousectl cloud clickhouse query <service-id> --query "SELECT version()"
+clickhousectl cloud clickhouse query <service-id> --queries-file query.sql --format TabSeparated
+printf 'INSERT INTO trips FORMAT CSV\n' | cat - data.csv | \
+  clickhousectl cloud clickhouse query <service-id>
+```
+
+* **OAuth** 以您的身份运行查询，仅具有只读 SQL 访问权限。不会向该服务绑定任何内容。
+* **API key：** 查询始终使用当前活跃的 API key。如有需要，clickhousectl 会将该 key 添加到服务的查询 API 端点；如果端点尚不存在，则会以 `sql_console_admin` 角色创建该端点。现有的角色、起点 (origin) 及其他 key 绑定均会保留，也不会创建新的 key。如需改为直接报错，请传入 `--no-auto-enable`。
+
+绑定属于写入操作，因此只读 API key 无法绑定自身：查询会以退出码 1 退出并返回 `query_key_bind_forbidden`，且不会做任何更改。请使用具有写入权限的 key 执行一次绑定，命令为 `query-endpoint create <service-id> --role <role> --open-api-key <key-id>` (如果服务尚无端点，还需加上 `--allowed-origins '*'`) 。
+
+查询 API 每个请求只接受一条语句。请求可能在约 30 秒后超时，但 SQL 仍会继续执行，因此在重试写入操作之前，请先检查结果。对于多语句脚本、批量加载和长时间运行的查询，请使用 [`cloud clickhouse client`](#services)。服务的 IP 允许列表仅限制直接连接，不限制经代理的查询 API 路由。查询空闲的服务会将其唤醒；已停止的服务则必须先通过 `cloud clickhouse start` 启动。
+
+管理服务的查询 API 端点、命名 SQL 端点和已保存的查询：
+
+```bash
+clickhousectl cloud clickhouse query-endpoint get <service-id>
+clickhousectl cloud clickhouse query-endpoint create <service-id> \
+  --role sql_console_read_only --allowed-origins '*'
+clickhousectl cloud query-api-endpoint create <service-id> --file endpoint.json
+clickhousectl cloud saved-query create <service-id> --name "Order count" \
+  --sql 'SELECT count() FROM orders' --database default
+```
+
+`query-endpoint create` 会替换绑定到该端点的所有密钥的角色。请参阅 [SQL 与查询 API 行为](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md)。
+
+### Managed Postgres {#postgres-services}
+
+`cloud postgres` (别名 `cloud pg`) 用于管理 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview)。GCP 支持目前处于私有预览阶段。
+
+```bash
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.0/24:5432..6432=office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
+clickhousectl cloud postgres update <postgres-id> --size c6gd.2xlarge
+clickhousectl cloud postgres update <postgres-id> --ha-type sync --standby-count 2
+clickhousectl cloud postgres update <postgres-id> \
+  --remove-ip-allow <rule-id> --add-ip-allow '198.51.100.7:5432'
+clickhousectl cloud postgres update <postgres-id> --deletion-protection true
+clickhousectl cloud postgres config patch <postgres-id> --set log_min_duration_statement=1000
+clickhousectl cloud postgres reset-password <postgres-id> --generate
+clickhousectl cloud postgres delete <postgres-id>       # Deletes a running service too
+```
+
+AWS 规格包括 `m6gd.large`、`c6gd.xlarge` 和 `r6gd.xlarge`。在 GCP 上，请传入 `--provider gcp`，并指定 GCP 区域和规格，例如 `c4-standard-lssd-4`。
+
+请妥善保存 `create` 返回的密码和连接字符串。之后的 `get` 响应不会再返回凭证，只能通过 `reset-password` 获取新凭证。使用 `psql` 连接时，请指定 `sslmode=verify-full` 和 CA 文件。
+
+**如果在 create 时未指定访问标志，Postgres (5432) 和 PgBouncer (6432) 将允许所有 IPv4 和 IPv6 地址访问。** 每条规则传入一个 `--ip-allow IP_OR_CIDR:PORTS[=DESCRIPTION]`；如不设置任何规则，则传入 `--block-public-access`。一旦传入规则，便仅有所列规则生效。
+
+`--standby-count` 用于在 `create` 或 `update` 时设置热备用实例的数量：`--ha-type none` 对应 0，`async` 对应 1，`sync` 对应 1 或 2。在已启用该功能的组织中，如果开启了删除保护，API 会拒绝 `delete` 请求，直到您设置 `--deletion-protection false`。如需在 AWS 上使用私有连接，可通过 `private-endpoint` (create、get、update、delete) 管理 PrivateLink 端点服务 (Beta) ；每个 VPC 端点都必须先通过 `private-endpoint update --add-vpc-endpoint` 批准，才能建立连接。
+
+监控与恢复：
+
+```bash
+clickhousectl cloud postgres query <postgres-id> --query "SELECT version()"   # OAuth only, read-only
+clickhousectl cloud postgres logs <postgres-id> \
+  --from-date 2026-10-01T00:00:00Z --to-date 2026-10-02T00:00:00Z
+clickhousectl cloud postgres backup list <postgres-id>
+clickhousectl cloud postgres restore <postgres-id> \
+  --name restored-app --restore-target 2026-10-01T12:00:00Z
+clickhousectl cloud postgres read-replica create <postgres-id> --name app-db-replica
+clickhousectl cloud postgres promote <replica-id>
+```
+
+`cloud postgres query` 仅支持 OAuth，因此当优先级更高的 API key 来源处于活跃状态时，该命令会失败。`metrics`、`slow-queries` 和 `prometheus` 用于监控；`logs`、`metrics`、`slow-queries` 和 `backup list` 还可使用 `--name` 代替 ID。除非传入 `--ip-allow` 或 `--block-public-access`，否则 `restore` 会将源服务当前的 IPv4 访问规则复制到恢复后的服务上。恢复和创建副本操作返回的结果中不包含密码。`promote` 和 `switchover` 在请求被接受后即返回；执行 promote 后，请轮询 `postgres get --json`，直到副本报告 `isPrimary: true`。请参阅 [Managed Postgres 指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md)。
+
+### ClickPipes {#clickpipes}
+
+`cloud clickpipe` 可从对象存储、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB 和 BigQuery 摄取数据。创建管道和执行模式发现都需要 API key，以及一个正在运行的目标服务。每种数据源都有对应的 `clickpipe create <source>` 子命令；运行时加上 `--help` 即可查看其支持的标志。
+
+通过 IAM role 从 S3 加载文件。先发现 schema 并检查结果，再基于已保存的发现输出创建管道：
+
+```bash
+clickhousectl cloud clickpipe schema-discover object-storage <service-id> \
+  --storage-type s3 --source-url 'https://example-bucket.s3.amazonaws.com/events/**' \
+  --format JSONEachRow --iam-role "$S3_IAM_ROLE_ARN" --json > discovery.json
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name s3-events --storage-type s3 \
+  --source-url 'https://example-bucket.s3.amazonaws.com/events/**' \
+  --format JSONEachRow --iam-role "$S3_IAM_ROLE_ARN" \
+  --database default --table s3_events \
+  --columns-from discovery.json
+```
+
+`--columns-from` 会将发现的字段转换为目标端列，因此请先编辑该文件，删除不需要的字段。创建对象存储、Kafka、Kinesis 和 Pub/Sub 类型的 ClickPipe 时，需要提供 `--columns-from`、至少一个 `--column name:type`，或两者同时提供；`--column` 会在文件中的列之外追加列。
+
+使用 CDC (变更数据捕获) 复制 Postgres。TLS 默认启用验证；对于 Managed Postgres 数据源，请导出其 CA 并传入：
+
+```bash
+clickhousectl cloud postgres certs get <postgres-id> --output pg-ca.pem
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name orders-cdc --host "$POSTGRES_HOST" --pg-database postgres \
+  --username "$POSTGRES_USERNAME" --password "$POSTGRES_PASSWORD" \
+  --ca-certificate pg-ca.pem \
+  --replication-mode cdc --destination-database default \
+  --table-mapping public.orders:orders
+clickhousectl cloud clickhouse query <service-id> \
+  --query "SELECT id, status FROM default.orders FINAL WHERE _peerdb_is_deleted = 0"
+```
+
+`--table-mapping` 会创建 `ReplacingMergeTree` 表，因此请使用 `FINAL WHERE _peerdb_is_deleted = 0` 读取当前状态。创建 Postgres 和 MySQL 管道时，可以指定 `--use-json-native-format true`，将 JSON 列存储为 ClickHouse 原生 `JSON` 类型，而非 `String` (需要 ClickHouse 25.3+，且该组织已启用此功能) 。Kafka 管道的流程与对象存储相同：使用相同的数据源标志运行 `clickpipe schema-discover kafka`，然后通过 `--column` 或 `--columns-from` 传入列：
+
+```bash
+clickhousectl cloud clickpipe create kafka <service-id> \
+  --name kafka-events --brokers 'broker-1.example.com:9092' --topics events \
+  --format JSONEachRow --auth SCRAM-SHA-256 \
+  --username "$KAFKA_USERNAME" --password "$KAFKA_PASSWORD" \
+  --database default --table kafka_events \
+  --column 'event_id:Int64' --column 'event_type:String' --start-paused
+```
+
+BigQuery 数据管道默认执行快照。如需使用 CDC (变更数据捕获) ，请传入 `--replication-mode cdc` 和 `--replication-method` 参数，并在 `--table-mapping-json` 中为每个表指定水位线列或事件函数；可通过 `--sync-cron` 或 `--sync-interval-seconds` 设置同步调度计划。管理现有数据管道：
+
+```bash
+clickhousectl cloud clickpipe list <service-id>
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe update <service-id> <clickpipe-id> --file patch.json
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> --replicas 2
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
+  --streaming-max-insert-wait-ms 5000
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # Postgres and MySQL pipes; re-ingests data
+```
+
+CDC (变更数据捕获)  管道必须处于 `Paused` 状态才能执行 `update`：先停止管道，轮询 `get` 直至其状态变为 `Paused`，再执行更新。服务可能会在更新过程中自动恢复该管道，因此仅当 `get` 仍显示 `Paused` 时才需运行 `start`。`--start-paused` 适用于对象存储、Kafka、Kinesis 和 Pub/Sub。其他命令组包括 `cdc-scaling`、`context get` (查看 GCP 工作负载身份的就绪状态及主体) 以及 `reverse-private-endpoint`。详见 [ClickPipes 指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md)和 [ClickPipe 配置参考文档](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md)。
+
+### ClickStack {#clickstack}
+
+`cloud clickstack` 用于管理现有 [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/deployment/managed) 服务中的数据源、仪表盘、告警、Webhook、保存的搜索和角色。资源以 JSON 文件形式提供 (通过 `--file` 指定，或使用 `-` 从 stdin 读取) 。读取操作支持 OAuth；写入操作需要 API key。
+
+```bash
+clickhousectl cloud clickstack source list <service-id>
+clickhousectl cloud clickstack dashboard validate <service-id> --file dashboard.json
+clickhousectl cloud clickstack dashboard create <service-id> --file dashboard.json
+clickhousectl cloud clickstack webhook validate <service-id> --file webhook.json
+clickhousectl cloud clickstack alert create <service-id> --file alert.json
+clickhousectl cloud clickstack dashboard get <service-id> <dashboard-id> --json > dashboard-before.json
+```
+
+**每次更新 ClickStack 都会替换整个资源。** 请先使用 `get --json` 保存当前状态，然后发送完整定义，而不是只发送已更改的字段。详见 [ClickStack 指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md)。
+
+### Cloud 中的 UDFs {#cloud-udfs}
+
+`cloud udf` 用于管理组织级的可执行 UDFs、其版本以及它们与服务的关联。`deploy` 会上传您通过 `local udf` 测试过的目录，等待构建完成，将该版本关联到服务，并等待部署完成：
+
+```bash
+clickhousectl cloud udf deploy my_udf --service <service-id>
+clickhousectl cloud clickhouse query <service-id> --query "SELECT my_udf(1)"
+```
+
+如需自行执行各个步骤，请使用 `udf create`、`udf version create`、`udf attach` (若服务处于空闲状态，需加上 `--wake`) 、`udf detach` 和 `udf delete`。这些命令在请求被接受后即返回；可轮询 `udf get` 和 `udf attachment get` 查看进度。读取操作支持 OAuth；写入操作需要 API key。详见[用户自定义函数指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md)。
+
+### 组织与访问 {#org-and-access}
+
+```bash
+clickhousectl cloud org get --org-id <org-id>
+clickhousectl cloud org update --org-id <org-id> --new-name "Renamed Org"
+clickhousectl cloud org usage --org-id <org-id> --from-date 2026-09-01 --to-date 2026-09-30
+clickhousectl cloud org prometheus discovery --org-id <org-id>
+clickhousectl cloud org notifications --org-id <org-id> --severity warning
+clickhousectl cloud activity list --from-date 2026-09-01 --to-date 2026-09-30
+```
+
+`cloud org` 子命令通过 `--org-id` 指定组织,不接受位置参数形式的 ID。`org usage` 最多可查询 31 天的数据。`org` 还提供 `quota`、`balance`、`notification-types`、`role`(自定义组织角色)、`preview`(列出及开关预览功能,Beta)和 `byoc`(BYOC 基础设施,其中 `byoc access` 用于控制 ClickHouse 人员何时可以访问该基础设施,Beta)子命令。通知功能目前处于 Beta 阶段。
+
+管理成员、邀请和 API 密钥:
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud org role list --org-id <org-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id> \
+  --expires-at 2027-12-31T00:00:00Z --ip-allow '203.0.113.10/32=CI runner'
+clickhousectl cloud key list --all
+clickhousectl cloud key update <key-id> --new-name ci-key-old --state disabled
+```
+
+`member notification-settings` (Beta) 用于列出和更新成员自己的通知覆盖配置。**使用 `key create` 时若省略 `--ip-allow`，将拒绝所有网络访问**，这一点与创建服务时不同。密钥的机密值仅显示一次。除非传入 `--all`，否则 `key list` 仅返回一页结果。使用 `key update` 时，省略的标志会保留原有设置，而 `--clear-expiry`、`--clear-roles` 和 `--clear-ip-allow` 则会清除相应设置。
+
+### 备份 {#backups}
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+clickhousectl cloud clickhouse create --name restored-analytics \
+  --provider aws --region us-east-1 --ip-allow 203.0.113.10/32 --backup-id <backup-id>
+clickhousectl cloud clickhouse backup-config update <service-id> \
+  --backup-period-hours 24 --backup-retention-period-hours 720
+clickhousectl cloud backup bucket get <service-id>
+```
+
+恢复操作始终会创建一个新服务。`cloud backup bucket` (get、create、update、delete) 可通过特定于提供商的 JSON 文件配置自带备份桶。请参阅[云服务指南](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md#back-up-and-restore)中的备份部分。
+
+## JSON 输出 {#json-output}
+
+返回结构化数据的命令均支持 `--json`，包括本地命令、Cloud 命令，以及 `skills`、`update` 和 `telemetry` 命令：
+
+```bash
+clickhousectl cloud clickhouse list --json
+clickhousectl cloud key list --all --json
+clickhousectl local clickhouse list --json
+```
+
+当命令行客户端检测到编程智能体(例如 Claude Code、Cursor、Codex、Gemini CLI、Goose 或 Devin,或任何设置了 `AI_AGENT` 的工具)时,会自动选择 JSON 格式。SQL 客户端和原生客户端仍沿用各自的格式:`cloud clickhouse query` 在 JSON 模式下返回 `JSONEachRow`,而 `local client` 的输出始终为原生格式。需要解析查询输出的脚本应显式传入 `--format`。若希望在检测到智能体时仍输出便于人工阅读的格式,请设置 `CLICKHOUSECTL_AUTO_JSON=0`;此时显式指定 `--json` 仍会选择 JSON 格式。
+
+异步 Cloud 命令(例如 `clickhouse create`、`postgres create` 和 `clickpipe start`)会在 JSON 输出中附加一个 `next` 对象,指明需要执行的轮询:`command`(包含已解析的 ID 和 `--org-id`)、需要监视的 `field`、表示已完成的 `until` 值、`fail_on` 值,以及建议的 `interval_seconds`。命令本身仍会在 API 接受请求后立即返回。
+
+在 JSON 模式下,运行时错误会以对象形式输出到 stderr,其中包含一个稳定的 `code` 和一条 `message`:
+
+```json
+{"error":{"code":"server_not_found","message":"The selected server was not found"}}
+```
+
+请依据 `error.code` 进行分支判断，而不要依据错误消息。用法错误仍以文本形式输出，退出码为 2，且不会发送任何内容。有关输出形态和错误码的说明，请参阅[自动化与输出契约](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md)。
+
+## 退出码 {#exit-codes}
+
+| 代码  | 含义                                                |
+| --- | ------------------------------------------------- |
+| `0` | 成功。对于异步 Cloud 操作，表示请求已被接受，而非已完成                   |
+| `1` | 错误，包括拒绝请求的 HTTP 403 (代码为 `http_4xx`)              |
+| `2` | 用法错误，包括无效的标志值，以及通过解析但经检查确定永远无法成功的输入；此时不会发送任何请求 |
+| `3` | 交互式提示被取消，例如 `skills` 选择器                          |
+| `4` | 需要身份验证或身份验证被拒绝，包括尝试通过 OAuth 执行写入操作                |
+
+`local client`、`local postgres client` 以及其他转交给原生客户端执行的命令，会直接透传该客户端自身的退出状态。
+
+## 智能体技能 {#skills}
+
+将[官方 ClickHouse agent skills](https://github.com/ClickHouse/agent-skills) 安装到您的编程智能体中：
+
+```bash
+clickhousectl skills                                  # Interactive: choose scope and agents
+clickhousectl skills --agent claude --agent codex     # Current project
+clickhousectl skills --detected-only --global         # Agents detected in your home directory
+clickhousectl skills --all
+```
+
+技能默认安装到当前项目中；如果使用 `--global`，则安装到您的主目录。共享的 `.agents/skills/` 目录始终会包含在内。在没有终端的环境中，必须指定 `--agent`、`--all` 或 `--detected-only`。运行 `clickhousectl skills --help` 可查看受支持的智能体名称。
+
+## 搜索与反馈 {#search-and-feedback}
+
+```bash
+clickhousectl search ip allow                   # Find commands and flags by keyword
+clickhousectl search idle timeout --limit 10
+clickhousectl feedback "cloud clickhouse create should accept a --wait flag"
+```
+
+`search <words>` 会匹配命令名称、描述、标志和 agent 上下文，并列出匹配度最高的命令 (默认 5 条) 。若搜索没有匹配项，命令会以退出码 0 退出，且不返回任何结果。
+
+`feedback` 会向 clickhousectl 团队发送一条简短消息 (最多 500 个字符) ，过程中不会弹出提示或要求确认。您可以用它反馈命令行客户端无法完成的操作，或说明您期望的行为。请将 `--json` 等选项放在消息之前，且不要在消息中包含凭证、SQL、主机名或个人数据。如果使用 Cloud 凭证，消息会附带这些凭证所属组织的 ID。请参阅 [feedback 会发送哪些内容](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/feedback.md)。
+
+## 自更新 {#self-update}
+
+```bash
+clickhousectl update --check     # Check without installing
+clickhousectl update             # Install the latest release
+```
+
+`update` 会替换通过安装脚本、直接下载或 Cargo 安装的版本。如果是通过 npm、uv、pipx 或 pip 安装的，该命令会以退出码 1 退出，并输出应改用的软件包管理器升级命令。
+
+命令行客户端还会在后台检查更新，最多每 24 小时检查一次 (检查失败则在一小时后重试) ，并在有新版本时输出提示。设置 `CLICKHOUSECTL_NO_UPDATE_CHECK=1` 即可关闭更新检查及提示。
+
+## 遥测数据 {#telemetry}
+
+`clickhousectl` 会收集匿名用量数据，用于指导产品开发。首次运行时仅显示一条通知，不会发送任何数据；从后续运行开始收集，除非您将其禁用。
+
+每个事件包含：
+
+* 命令路径，以及显式传入的标志和参数的**名称**，绝不包含其值
+* 执行结果和退出码
+* 对于输错的命令，记录命令行客户端建议的命令或标志名称，绝不记录您实际输入的内容
+* 对于运行时失败，仅记录有限的类别：失败阶段和类型、允许列表内的 HTTP 状态码，以及重试、预配状态和耗时的类别
+* 命令行客户端版本、OS 和架构、是否在 CI 中运行，以及检测到的编程智能体
+
+参数值、SQL、凭证、资源标识符、`--` 之后的参数以及错误消息均不会被记录。也不会使用任何安装 ID 或设备 ID。
+
+如需停用遥测：
+
+```bash
+clickhousectl telemetry disable     # Persist the preference on this machine
+clickhousectl telemetry status
+export DO_NOT_TRACK=1               # Disable for an environment, overriding the saved preference
+```
+
+设置 `CHCTL_TELEMETRY_DEBUG=1` 可将载荷打印到 stderr，而不会发送任何数据。退出遥测不会影响 [`feedback`](#search-and-feedback) 命令，该命令仅在你手动运行时才会发送数据。详见[遥测数据详情](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/telemetry.md)。

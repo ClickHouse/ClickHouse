@@ -115,7 +115,7 @@ Temps passé, en secondes, dans les opérations d’écriture demandées à chaq
 
 ### CGroupMaxCPU {#cgroupmaxcpu}
 
-Le nombre maximal de cœurs CPU selon les CGroups.
+Le nombre maximal de cœurs CPU selon les CGroups : le minimum entre le quota CPU divisé par sa période et le nombre de CPU dans le cpuset effectif.
 
 ### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
 

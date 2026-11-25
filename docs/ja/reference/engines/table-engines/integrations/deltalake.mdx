@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 このエンジンは、S3、GCP、Azure ストレージ上の既存の [Delta Lake](https://github.com/delta-io/delta) テーブルとのインテグレーションを提供し、読み取りと書き込みの両方をサポートします (書き込みは S3 と GCS では v25.10 以降、Azure では v26.9 以降) 。
 
-## Delta Lake テーブルを作成する
+## Delta Lake テーブルを作成する {#create-table}
 
 デフォルトでは、Delta Lake テーブルはあらかじめ S3、GCP、または Azure ストレージ上に存在している必要があり、以下のコマンドは DDL のカラム定義なしでそのテーブルにアタッチします。`allow_delta_lake_create_table = 1` を設定している場合、`_delta_log` が存在しない場所に対して明示的なカラムを指定した `CREATE TABLE` を実行すると、代わりに `delta-kernel-rs` を通じて初期コミットを書き込むことで新しい Delta Lake テーブルが作成されます (パーティション分割されたテーブルの作成はまだサポートされていません)。また、Unity の `DataLakeCatalog` データベース内では、そのテーブルはカタログにも登録されます。
 
@@ -98,8 +98,13 @@ doc_type: 'reference'
     **構文**
 
     ```sql
+    -- Account key
     CREATE TABLE table_name
-    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    -- Workload identity (mutually exclusive with account_name / account_key)
+    CREATE TABLE table_name
+    ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
     ```
 
     **引数**
@@ -109,11 +114,38 @@ doc_type: 'reference'
     * `container_name` — Azure コンテナー名
     * `blobpath` — コンテナー内の Delta Lake テーブルへのパス
     * `account_name` — Azure ストレージアカウント名
-    * `account_key` — Azure ストレージアカウント キー
+    * `account_key` — Azure ストレージアカウントキー
+    * `extra_credentials` — `account_name` / `account_key` の代わりに指定できる任意の引数です。Azure Workload Identity 認証を使用する場合は、`client_id` と `tenant_id` を指定します。アカウントの認証情報と組み合わせて使用することはできません。なお、これは S3 の `role_arn` 形式の `extra_credentials` とは別物です。
+
+    エンジンパラメータは [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定することもできます。名前付きコレクションでも、同じ `client_id` および `tenant_id` キーを指定できます。
+
+    **Workload Identity**
+
+    delta-kernel の Azure パスでは、以下の環境変数も設定する必要があります。
+
+    * `AZURE_FEDERATED_TOKEN_FILE` — 必須 (プロジェクションされたトークンファイル。AKS など)
+    * `AZURE_TENANT_ID`、`AZURE_CLIENT_ID` — `extra_credentials` または名前付きコレクションで指定しない限り必須
+    * `AZURE_AUTHORITY_HOST` — 任意
+
+    Workload Identity はサーバー自身のアイデンティティを使用するため、デフォルトでは拒否されます。テーブルを作成またはクエリする各 session で、`SET` または設定プロファイルを使用して `allow_server_credentials_in_user_queries` を有効にする必要があります。
+
+    ```sql
+    SET allow_server_credentials_in_user_queries = 1;
+
+    CREATE NAMED COLLECTION azure_wi AS
+        storage_account_url = 'https://<account>.blob.core.windows.net',
+        container = 'mycontainer',
+        blob_path = 'path/to/table',
+        client_id = '<client-id>',
+        tenant_id = '<tenant-id>';
+
+    CREATE TABLE azureDeltaLake
+    ENGINE = DeltaLakeAzure(azure_wi)
+    ```
   </Tab>
 </Tabs>
 
-## Delta Lake テーブルを使用してデータを書き込む
+## Delta Lake テーブルを使用してデータを書き込む {#insert-data}
 
 Delta Lake テーブルエンジンを使用してテーブルを作成したら、次のようにデータを挿入できます。
 
@@ -129,14 +161,13 @@ Delta Lake への書き込みは、既定では無効になっているベータ
 <Note>
   テーブルエンジンを使った書き込みは、delta kernel 経由でのみサポートされています。
   書き込みは S3 と GCS でサポートされており、Azure ではバージョン 26.9 以降でサポートされています。
-  Azure の Workload Identity 認証 (`extra_credentials(client_id = ..., tenant_id = ...)`) は delta kernel ではサポートされていません。
 </Note>
 
-### データキャッシュ
+### データキャッシュ {#data-cache}
 
 `Delta Lake` テーブルエンジンおよびテーブル関数は、`S3`、`AzureBlobStorage`、`HDFS` ストレージと同様に、データキャッシュをサポートしています。詳細は [&quot;S3テーブルエンジン&quot;](/ja/reference/engines/table-engines/integrations/s3#data-cache) を参照してください。
 
-## 関連項目
+## 関連項目 {#see-also}
 
 * [deltaLake テーブル関数](/ja/reference/functions/table-functions/deltalake)
 

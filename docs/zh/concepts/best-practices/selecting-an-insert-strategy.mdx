@@ -37,7 +37,7 @@ import BulkInserts from '/snippets/zh/_bulk_inserts.mdx';
 </div>
 
 <div id="client-side-steps">
-  #### 客户端侧步骤 {#client-side-steps}
+  #### 客户端步骤 {#client-side-steps}
 </div>
 
 为获得最佳性能，数据必须①[按批次处理](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)，因此批次大小就成了**首要决策**。
@@ -48,7 +48,7 @@ ClickHouse 会将插入的数据存储在磁盘上，并[按](/zh/guides/clickho
 
 下一个**主要决策**是④是否在传输到 ClickHouse 服务器之前先压缩数据。压缩可以减小传输体积并提高网络效率，从而加快数据传输速度并降低带宽占用，尤其是在处理大型数据集时。
 
-数据会⑤通过 ClickHouse 网络接口传输——即 [原生](/zh/concepts/features/interfaces/tcp) 或[ HTTP](/zh/concepts/features/interfaces/http) 接口 (我们将在本文后面对它们进行[比较](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults)) 。
+数据会⑤通过 ClickHouse 网络接口传输——即 [原生](/zh/concepts/features/connect-to-clickhouse/protocols/native-tcp) 或[ HTTP](/zh/concepts/features/connect-to-clickhouse/protocols/http) 接口 (我们将在本文后面对它们进行[比较](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults)) 。
 
 <div id="server-side-steps">
   #### 服务器端步骤 {#server-side-steps}
@@ -127,15 +127,15 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
   #### 压缩可降低资源占用 {#compression-reduces-resource-usage}
 </div>
 
-压缩不仅能减少网络流量，还能提升服务器端的 CPU 和内存利用效率。使用压缩数据后，ClickHouse 接收的字节更少，解析大型输入所需的时间也更短。在可观测性等场景中，尤其是在多个并发客户端同时摄取数据时，这一点尤为重要。
+压缩不仅能减少网络流量，还能提升服务端的 CPU 和内存利用效率。使用压缩数据后，ClickHouse 接收的字节更少，解析大型输入所需的时间也更短。在可观测性等场景中，尤其是在多个并发客户端同时摄取数据时，这一点尤为重要。
 
-对于 CPU 和内存的影响，LZ4 较小，ZSTD 则较为明显。即使在高负载下，由于数据量减少，服务器端效率仍会提升。
+对于 CPU 和内存的影响，LZ4 较小，ZSTD 则较为明显。即使在高负载下，由于数据量减少，服务端效率仍会提升。
 
 **将压缩、批处理和高效的输入格式 (如 Native) 结合使用，可获得最佳摄取性能。**
 
-使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/interfaces/client)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
+使用原生接口 (例如 [clickhouse-client](/zh/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client)) 时，默认启用 LZ4 压缩。你也可以通过设置切换为 ZSTD。
 
-使用 [HTTP 接口](/zh/concepts/features/interfaces/http) 时，可通过 Content-Encoding 请求头启用压缩 (例如 Content-Encoding: lz4) 。整个载荷必须在发送前完成压缩。
+使用 [HTTP 接口](/zh/concepts/features/connect-to-clickhouse/protocols/http) 时，可通过 Content-Encoding 请求头启用压缩 (例如 Content-Encoding: lz4) 。整个载荷必须在发送前完成压缩。
 
 <div id="pre-sort-if-low-cost">
   ### 成本较低时进行预排序 {#pre-sort-if-low-cost}
@@ -163,7 +163,7 @@ ClickHouse 在数据传输过程中支持多种压缩编解码器。常见的两
   ### 原生接口 {#choose-an-interface-native}
 </div>
 
-ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/interfaces/client) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
+ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTTP 接口**——两者在性能与灵活性之间各有取舍。原生接口由 [clickhouse-client](/zh/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client) 以及 Go、C++ 等部分语言的客户端使用，专为高性能而设计。它始终以 ClickHouse 高效的 Native 格式 传输数据，支持使用 LZ4 或 ZSTD 进行按块压缩，并通过将解析、格式转换等工作卸载到客户端，尽量减少服务端处理。
 
 它甚至支持在客户端计算 MATERIALIZED 和 DEFAULT 列值，使服务端能够完全跳过这些步骤。因此，在效率至关重要的高吞吐量摄取场景中，原生接口是理想选择。
 
@@ -173,6 +173,6 @@ ClickHouse 为数据摄取提供了两种主要接口：**原生接口**和**HTT
 
 与 ClickHouse 的原生协议相比，这通常是更合适的选择，因为它便于通过负载均衡器灵活切换流量。我们预计原生协议在插入性能上会略有优势，因为它的额外开销更小。
 
-不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行 materialized 值计算或自动转换为 Native 格式 之类的客户端侧优化。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。在更看重协议简洁性、负载均衡或广泛格式兼容性，而非极致性能的环境中，这种接口通常更受青睐。
+不过，HTTP 接口缺少原生协议那样更深度的集成，也无法执行 materialized 值计算或自动转换为 Native 格式 之类的客户端优化。虽然 HTTP 插入仍可通过标准 HTTP 请求头进行压缩 (例如 `Content-Encoding: lz4`) ，但压缩作用于整个载荷，而不是单独的数据块。在更看重协议简洁性、负载均衡或广泛格式兼容性，而非极致性能的环境中，这种接口通常更受青睐。
 
-有关这些接口的更详细说明，请参见[此处](/zh/concepts/features/interfaces/overview)。
+有关这些接口的更详细说明，请参见[连接到 ClickHouse](/zh/concepts/features/connect-to-clickhouse)。

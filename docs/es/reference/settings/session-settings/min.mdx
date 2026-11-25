@@ -120,13 +120,19 @@ Para desactivar la división de los nodos `Resize`, establezca esta configuraci�
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nueva configuración: `enable_packed_string_keys_in_hash_join` solo se aplica cuando el lado derecho de la unión tiene una estimación de 100000 filas o más, o cuando no tiene estimación."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nueva configuración: número mínimo de filas del lado derecho para que una Unión hash que calcularía el hash de cada clave izquierda (es decir, una clave con una longitud media de más de 15 bytes o de longitud desconocida) sin un filtro en tiempo de ejecución empaquete sus claves. `enable_packed_string_keys_in_hash_join` también requiere una tabla hash mayor que la caché L2. Con 0 se empaquetan todas las uniones."}]}]} />
 
-Número mínimo estimado de filas en el lado derecho de una unión para que se aplique `enable_packed_string_keys_in_hash_join`. Las uniones más pequeñas apenas se benefician de ello y pueden ser más lentas con claves largas.
+Una Unión hash cuyo lado derecho tiene una estimación de filas empaqueta sus claves `String` (consulte `enable_packed_string_keys_in_hash_join`) solo cuando la tabla hash con claves exactas superaría aproximadamente el tamaño de la caché L2 de la CPU, o cuando este parámetro de configuración vale 0. El tamaño de la tabla es el número de filas del lado derecho multiplicado por los bytes de una fila: una celda de 32 bytes más la longitud media de la clave, que cuenta como 0 cuando es desconocida. Las uniones más pequeñas apenas se benefician de las claves empaquetadas y pueden resultar más lentas.
 
-La estimación es el número de filas del lado derecho en una ejecución anterior de la misma unión, si `collect_hash_table_stats_during_joins` está habilitado. En caso contrario, se usa la estimación del optimizador de consultas. `parallel_hash_join_threshold` utiliza la misma estimación. Una unión sin estimación siempre utiliza `enable_packed_string_keys_in_hash_join`.
+El hash de una clave empaquetada de más de 15 bytes se calcula para cada fila del lado izquierdo. Una unión con un filtro en tiempo de ejecución que deja pasar principalmente las filas con coincidencia (consulte `enable_join_runtime_filters`) solo calcula el hash de las filas que coinciden, por lo que no necesita un mínimo. Sin dicho filtro, este parámetro de configuración es el número mínimo de filas del lado derecho. Se aplica cuando la longitud media de la clave supera los 15 bytes, y también cuando la longitud es desconocida, ya que en ese caso se considera larga. La longitud se obtiene de las estadísticas de columna `basic` de la clave. Las tablas `MergeTree` las recopilan de forma predeterminada; consulte `auto_statistics_types`.
 
-0 significa que no hay mínimo.
+La clave no tiene estadísticas cuando es una columna de una tabla `Memory`, el resultado de una función de agregación de una subconsulta o el resultado de una expresión en `ON`, como `concat(k, 'x')` o `hex(k)`. Una unión con `OR` no las utiliza. Una subconsulta que se limita a transmitir la columna, o que agrupa por ella, las conserva.
+
+Una unión `LEFT` distinta de `SEMI` y `ANTI`, así como una unión `FULL`, conservan todas las filas de su lado izquierdo, por lo que no reciben filtro en tiempo de ejecución. El filtro de una unión `LEFT ANTI` deja pasar las filas sin coincidencia, por lo que no se tiene en cuenta.
+
+El número de filas corresponde a las filas del lado derecho de una ejecución anterior de la misma unión, si `collect_hash_table_stats_during_joins` está habilitado. De lo contrario, es la estimación del optimizador de consultas, que también utiliza `parallel_hash_join_threshold`. Si no hay estimación del optimizador, es la estimación que hace este servidor de su propia lectura de la tabla derecha. Una unión que no dispone de ninguna de las dos empaqueta las claves, salvo que el servidor que planificó la consulta haya estimado el lado derecho por debajo de este mínimo. Cada servidor de una consulta distribuida decide en función de su propia estimación, sus estadísticas y su tamaño de la caché.
+
+Con 0 se empaquetan las claves de todas las uniones.
 
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
