@@ -20,7 +20,7 @@ namespace
 
         explicit FunctionToJSONString(ContextPtr context)
             : format_settings(getFormatSettings(context))
-            , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+            , format_settings_hash(format_settings.source_settings_hash.value())
         {
         }
 

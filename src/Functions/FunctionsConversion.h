@@ -164,7 +164,7 @@ struct FunctionConvertSettings
         , json_use_optimized_type_conversion(!context || context->getSettingsRef()[Setting::json_use_optimized_type_conversion])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
-        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
+        , format_settings_hash(format_settings.source_settings_hash.value_or(0))
     {
     }
 

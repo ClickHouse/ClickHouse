@@ -19,7 +19,7 @@ ComparisonParams::ComparisonParams(const ContextPtr & context)
     , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
     , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
     , format_settings(getFormatSettings(context))
-    , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+    , format_settings_hash(format_settings.source_settings_hash.value())
 {
     format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 }
