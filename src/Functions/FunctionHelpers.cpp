@@ -535,10 +535,12 @@ bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, con
     /// The settings of writing a value as text.
     static const FunctionResultSetting writing_settings[] = {
         Setting::date_time_output_format, Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands,
-        Setting::interval_output_format, Setting::bool_true_representation, Setting::bool_false_representation,
-        Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
+        Setting::interval_output_format, Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
         Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
         Setting::output_format_values_escape_quote_with_quote};
+
+    /// The spellings of `Bool` values, used both to write and to parse them.
+    static const FunctionResultSetting bool_settings[] = {Setting::bool_true_representation, Setting::bool_false_representation};
 
     /// The settings of the `JSON` type.
     static const FunctionResultSetting json_settings[] = {
@@ -561,6 +563,8 @@ bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, con
         return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); });
     if (std::ranges::contains(writing_settings, setting))
         return has_type(to, is_text);
+    if (std::ranges::contains(bool_settings, setting))
+        return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); }) || has_type(to, is_text);
     if (std::ranges::contains(json_settings, setting))
         return has_type(from, may_hold_any) || has_type(to, may_hold_any);
 

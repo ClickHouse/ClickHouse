@@ -27,6 +27,8 @@ DROP TABLE IF EXISTS t_json_has;
 DROP TABLE IF EXISTS t_time_as_text;
 DROP TABLE IF EXISTS t_time_as_text_index;
 DROP TABLE IF EXISTS t_json_float;
+DROP TABLE IF EXISTS t_json_overflow;
+DROP TABLE IF EXISTS t_bool_cast;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -94,6 +96,13 @@ INSERT INTO t_time_as_text_index SELECT * FROM t_time_as_text;
 CREATE TABLE t_json_float (j String) ENGINE = MergeTree ORDER BY JSONExtractFloat(j, 'x') SETTINGS index_granularity = 1;
 INSERT INTO t_json_float SELECT '{"x":"1.6725"}' FROM numbers(3);
 INSERT INTO t_json_float SELECT concat('{"x":"', toString(number), '.5"}') FROM numbers(50);
+-- `JSONExtract` saturates a `DateTime` that overflows, or returns the epoch with `date_time_overflow_behavior = 'throw'`.
+CREATE TABLE t_json_overflow (s String) ENGINE = MergeTree ORDER BY JSONExtract(s, 'DateTime') SETTINGS index_granularity = 1;
+INSERT INTO t_json_overflow VALUES ('4294967296');
+INSERT INTO t_json_overflow SELECT toString(1000000 + number) FROM numbers(50);
+-- The spellings of `Bool` are used to parse it from text.
+CREATE TABLE t_bool_cast (s String) ENGINE = MergeTree ORDER BY CAST(s AS Bool) SETTINGS index_granularity = 1;
+INSERT INTO t_bool_cast SELECT if(number % 2, 'true', 'false') FROM numbers(50);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -133,6 +142,14 @@ SET precise_float_parsing = 0;
 SELECT 'json float expected', count() FROM t_json_float WHERE JSONExtractFloat(j, 'x') = 1.6724999999999999 SETTINGS use_primary_key = 0;
 SELECT 'json float', count() FROM t_json_float WHERE JSONExtractFloat(j, 'x') = 1.6724999999999999;
 SET precise_float_parsing = 1;
+SET date_time_overflow_behavior = 'throw';
+SELECT 'json overflow expected', count() FROM t_json_overflow WHERE JSONExtract(s, 'DateTime') = toDateTime(0) SETTINGS use_primary_key = 0;
+SELECT 'json overflow', count() FROM t_json_overflow WHERE JSONExtract(s, 'DateTime') = toDateTime(0);
+SET date_time_overflow_behavior = 'ignore';
+SET bool_true_representation = 'false', bool_false_representation = 'true';
+SELECT 'bool cast expected', count() FROM t_bool_cast WHERE CAST(s AS Bool) = true SETTINGS use_primary_key = 0;
+SELECT 'bool cast', count() FROM t_bool_cast WHERE CAST(s AS Bool) = true;
+SET bool_true_representation = 'true', bool_false_representation = 'false';
 SET input_format_try_infer_dates = 0;
 SELECT 'json inference expected', count() FROM t_json_inference WHERE dynamicType(getSubcolumn(CAST(s AS JSON), 'a')) = 'DateTime'
 SETTINGS use_primary_key = 0;
@@ -187,6 +204,8 @@ DROP TABLE t_json_has;
 DROP TABLE t_time_as_text;
 DROP TABLE t_time_as_text_index;
 DROP TABLE t_json_float;
+DROP TABLE t_json_overflow;
+DROP TABLE t_bool_cast;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;
