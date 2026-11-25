@@ -26,13 +26,15 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
+    /// The size of a data lake object recorded in the table metadata, unless `iceberg_info` carries it.
+    std::optional<size_t> file_size_hint;
 
     /// Convert received response into ObjectInfo.
-    ObjectInfoPtr getObjectInfo() const;
+    [[nodiscard]] ObjectInfoPtr getObjectInfo() const;
 
     /// Whether response is empty.
     /// It is used to identify an end of processing.
-    bool isEmpty() const { return path.empty(); }
+    [[nodiscard]] bool isEmpty() const { return path.empty(); }
 
     /// Serialize according to the protocol version.
     void serialize(WriteBuffer & out, size_t worker_protocol_version) const;

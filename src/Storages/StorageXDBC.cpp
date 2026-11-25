@@ -272,8 +272,6 @@ namespace
         Documentation documentation = is_jdbc
             ? Documentation{
                 .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # JDBC table engine
 
 <CloudNotSupportedBadge/>
@@ -375,8 +373,6 @@ FROM system.numbers
                 .related = {"ODBC"}}
             : Documentation{
                 .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # ODBC table engine
 
 <CloudNotSupportedBadge/>

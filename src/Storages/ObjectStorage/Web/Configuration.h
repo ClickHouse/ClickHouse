@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/parseRemoteDescription.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -53,31 +54,34 @@ public:
     static constexpr auto type_name = "web";
     static constexpr auto engine_name = "URL";
 
-    StorageWebConfiguration() = default;
+    /// The defaults reproduce the `url` table function; the `URL` engine passes its own caller
+    /// descriptor so an over-limit wildcard expansion names the surface the user actually invoked.
+    StorageWebConfiguration();
+    explicit StorageWebConfiguration(RemoteDescriptionCaller glob_caller_);
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return engine_name; }
-    std::string getNamespaceType() const override { return "host"; }
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return engine_name; }
+    [[nodiscard]] std::string getNamespaceType() const override { return "host"; }
 
-    Path getRawPath() const override { return path; }
+    [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & path_) override
     {
         path = path_;
         setPaths({path});
         setPathForRead(path);
     }
-    const String & getRawURI() const override { return raw_url; }
+    [[nodiscard]] std::string_view getRawURI() const override { return raw_url; }
 
-    bool supportsPartialPathPrefix() const override { return false; }
+    [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
-    String getNamespace() const override { return namespace_prefix; }
-    String getDataSourceDescription() const override { return raw_url; }
+    [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
+    [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
 
-    bool isArchive() const override { return archive_pattern.has_value(); }
-    std::string getPathInArchive() const override;
+    [[nodiscard]] bool isArchive() const override { return archive_pattern.has_value(); }
+    [[nodiscard]] std::string getPathInArchive() const override;
 
     void check(ContextPtr context) override;
 
@@ -102,6 +106,7 @@ private:
     void initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments, ContextPtr context);
     void setNamespaceFromURL(ContextPtr context);
 
+    RemoteDescriptionCaller glob_caller;
     String raw_url;
     WebObjectStorage::URLShards url_shards;
     String namespace_prefix;
