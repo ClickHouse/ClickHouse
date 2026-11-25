@@ -15,6 +15,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ErrnoException.h>
 #include <Common/Hex.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -107,6 +108,30 @@ bool isRecordStart(int fd, const String & file_name, UInt64 offset)
     return c == '\n';
 }
 
+/// The size of the beginning of a file that is kept as the evidence of its contents, see `FileState::head`.
+constexpr size_t consumed_head_size = 256;
+
+/// Reads the bytes [offset, offset + size) of the file, or less if the file ends earlier.
+String readRange(int fd, const String & file_name, UInt64 offset, size_t size)
+{
+    String result(size, '\0');
+    size_t bytes_read = 0;
+    while (bytes_read < size)
+    {
+        ssize_t res = ::pread(fd, result.data() + bytes_read, size - bytes_read, static_cast<off_t>(offset + bytes_read));
+        if (res < 0 && errno == EINTR)
+            continue;
+        if (res < 0)
+            throw ErrnoException(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read file {} at offset {}", file_name, offset + bytes_read);
+        if (res == 0)
+            break;
+        bytes_read += static_cast<size_t>(res);
+    }
+    result.resize(bytes_read);
+    return result;
+}
+
 struct stat statDescriptor(int fd, const String & file_name)
 {
     struct stat file_stat{};
@@ -118,14 +143,17 @@ struct stat statDescriptor(int fd, const String & file_name)
 /// An entry of the cursor of the query.
 struct CursorEntry
 {
-    /// The offset of the last read record.
-    Int64 offset = 0;
-    /// The cursor that a bounded read reports for an incremental refresh has the identity of the file (`inode`) and
-    /// the position after the last read record (`end`): {'<file name>': {'offset': ..., 'inode': ..., 'end': ...}}.
+    /// The offset of the last read record. A file of the cursor of an incremental refresh has no offset
+    /// if no record was read from it yet: it is read from the beginning.
+    std::optional<Int64> offset;
+    /// The cursor that a bounded read reports for an incremental refresh has the identity of the file (`inode`),
+    /// the position after the last read record (`end`) and the evidence of the contents that were read (`fingerprint`):
+    ///     {'<file name>': {'offset': ..., 'inode': ..., 'end': ..., 'fingerprint': ...}}.
     /// A file that does not match them was replaced or truncated since the cursor was taken and is read from the beginning.
     bool structured = false;
     std::optional<UInt64> inode;
     std::optional<UInt64> end;
+    std::optional<Int64> fingerprint;
 };
 
 std::map<String, CursorEntry> parseCursor(const CursorTreeNodePtr & cursor)
@@ -145,25 +173,25 @@ std::map<String, CursorEntry> parseCursor(const CursorTreeNodePtr & cursor)
         else
         {
             entry.structured = true;
-            std::optional<Int64> offset_field;
             for (const auto & [field, field_value] : *std::get<CursorTreeNodePtr>(value))
             {
                 const auto * number = std::get_if<Int64>(&field_value);
                 if (number && field == "offset")
-                    offset_field = *number;
+                    entry.offset = *number;
                 else if (number && field == "inode")
                     entry.inode = static_cast<UInt64>(*number);
                 else if (number && field == "end" && *number >= 0)
                     entry.end = static_cast<UInt64>(*number);
+                else if (number && field == "fingerprint")
+                    entry.fingerprint = *number;
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key '{}' in the cursor for file '{}'. The cursor of a FileLog table is "
                         "{{'<file name>': <offset of the last read record>}}, where a dot in the file name is written as %2E",
                         field, file_name);
             }
-            if (!offset_field)
+            if (!entry.offset && !entry.inode)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The cursor for file '{}' has no offset", file_name);
-            entry.offset = *offset_field;
         }
         result.emplace(file_name, entry);
     }
@@ -262,9 +290,13 @@ bool FileLogStreamSource::tryUpdateFiles(bool initial)
         {
             /// The file was truncated in place (e.g. by copytruncate): read it from the beginning.
             LOG_DEBUG(log, "File {} was truncated, reading it from the beginning", state.name);
-            state.position = 0;
-            state.last_offset = -1;
-            state.skip_record_at_position = false;
+            resetPosition(state);
+        }
+        else if (consumedContentsChanged(state))
+        {
+            /// The file was truncated and has grown again past the read position since the previous check.
+            LOG_DEBUG(log, "File {} was truncated and written again, reading it from the beginning", state.name);
+            resetPosition(state);
         }
     }
 
@@ -331,37 +363,53 @@ bool FileLogStreamSource::tryUpdateFiles(bool initial)
         if (entry && entry->structured)
         {
             /// The cursor of an incremental refresh: a file truncated since then is read from the beginning.
-            const bool valid = entry->offset >= 0
-                && (entry->end ? *entry->end > static_cast<UInt64>(entry->offset) && *entry->end <= size
-                                     && isRecordStart(fd, file_name, *entry->end)
-                               : static_cast<UInt64>(entry->offset) < size && isRecordStart(fd, file_name, static_cast<UInt64>(entry->offset)));
-            if (!valid)
+            /// A file may have grown again past the position of the cursor, so its contents are checked as well.
+            if (!entry->offset)
             {
-                LOG_DEBUG(log, "File {} was truncated since the cursor, reading it from the beginning", file_name);
+                /// No record was read from the file yet.
             }
-            else if (entry->end)
+            else if (*entry->offset >= 0 && entry->end && *entry->end > static_cast<UInt64>(*entry->offset) && *entry->end <= size
+                && isRecordStart(fd, file_name, *entry->end))
             {
-                state.last_offset = entry->offset;
+                state.last_offset = *entry->offset;
                 state.position = *entry->end;
+                state.head = readRange(fd, file_name, 0, std::min<UInt64>(state.position, consumed_head_size));
+                const UInt64 record_offset = static_cast<UInt64>(*entry->offset);
+                const String record = readRange(fd, file_name, record_offset, state.position - 1 - record_offset);
+                state.last_record_hash = sipHash64(record);
+            }
+            else if (*entry->offset >= 0 && !entry->end && static_cast<UInt64>(*entry->offset) < size
+                && isRecordStart(fd, file_name, static_cast<UInt64>(*entry->offset)))
+            {
+                state.last_offset = *entry->offset;
+                state.position = *entry->offset;
+                state.skip_record_at_position = true;
+                state.head = readRange(fd, file_name, 0, std::min<UInt64>(state.position, consumed_head_size));
             }
             else
             {
-                state.last_offset = entry->offset;
-                state.position = entry->offset;
-                state.skip_record_at_position = true;
+                LOG_DEBUG(log, "File {} was truncated since the cursor, reading it from the beginning", file_name);
+            }
+
+            if (state.last_offset >= 0 && entry->fingerprint && *entry->fingerprint != fingerprint(state))
+            {
+                LOG_DEBUG(log, "File {} was truncated and written again since the cursor, reading it from the beginning", file_name);
+                resetPosition(state);
             }
         }
         else if (entry)
         {
-            if (entry->offset < 0 || static_cast<UInt64>(entry->offset) >= size)
+            const Int64 offset = *entry->offset;
+            if (offset < 0 || static_cast<UInt64>(offset) >= size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Offset {} in the cursor for file {} is outside the file of size {}", entry->offset, file_name, size);
-            if (!isRecordStart(fd, file_name, static_cast<UInt64>(entry->offset)))
+                    "Offset {} in the cursor for file {} is outside the file of size {}", offset, file_name, size);
+            if (!isRecordStart(fd, file_name, static_cast<UInt64>(offset)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Offset {} in the cursor for file {} is not the beginning of a record", entry->offset, file_name);
-            state.last_offset = entry->offset;
-            state.position = entry->offset;
+                    "Offset {} in the cursor for file {} is not the beginning of a record", offset, file_name);
+            state.last_offset = offset;
+            state.position = offset;
             state.skip_record_at_position = true;
+            state.head = readRange(fd, file_name, 0, std::min<UInt64>(state.position, consumed_head_size));
         }
 
         if (bounded)
@@ -385,19 +433,85 @@ void FileLogStreamSource::reportFinalCursor() const
     /// merged into it. So the cursor does not keep the previous name of a renamed file (a later refresh could take
     /// its obsolete position for the file by its inode), nor the position in a file that was truncated or replaced
     /// and has no complete records yet (a later refresh could take it for a valid position in the new contents).
+    ///
+    /// A file without a read position (nothing was read from it, or it was truncated) is still in the cursor, with
+    /// its inode only: it is a file of the table, also after it is renamed to a name that does not match the path.
     auto cursor = std::make_shared<CursorTreeNode>();
     for (const auto & [inode, state] : files)
     {
-        if (state.last_offset < 0)
-            continue;
         auto & entry = cursor->getSubtreeOrCreate(encodeFileName(state.name));
-        entry->setValue("offset", state.last_offset);
         entry->setValue("inode", static_cast<Int64>(inode));
+
+        /// A file that was truncated and written again during the read is read from the beginning by the next read.
+        if (state.last_offset < 0 || consumedContentsChanged(state))
+            continue;
+
+        entry->setValue("offset", state.last_offset);
         /// The record at the offset of the cursor was not read yet (it is incomplete): it is skipped by the next read.
         if (!state.skip_record_at_position)
             entry->setValue("end", static_cast<Int64>(state.position));
+        entry->setValue("fingerprint", fingerprint(state));
     }
     streaming_cursor->replace(cursor);
+}
+
+void FileLogStreamSource::resetPosition(FileState & state)
+{
+    state.position = 0;
+    state.last_offset = -1;
+    state.skip_record_at_position = false;
+    state.head.clear();
+    state.last_record_hash.reset();
+}
+
+bool FileLogStreamSource::consumedContentsChanged(const FileState & state)
+{
+    const int fd = state.file->fd;
+    if (!state.head.empty() && readRange(fd, state.name, 0, state.head.size()) != state.head)
+        return true;
+
+    if (state.last_record_hash)
+    {
+        /// The last record read is right before the read position, without its newline.
+        chassert(state.last_offset >= 0 && state.position > static_cast<UInt64>(state.last_offset));
+        const UInt64 record_offset = static_cast<UInt64>(state.last_offset);
+        const size_t record_size = state.position - 1 - record_offset;
+        const String record = readRange(fd, state.name, record_offset, record_size);
+        if (record.size() != record_size || sipHash64(record) != *state.last_record_hash)
+            return true;
+    }
+
+    return false;
+}
+
+Int64 FileLogStreamSource::fingerprint(const FileState & state)
+{
+    SipHash hash;
+    hash.update(state.head.size());
+    hash.update(state.head.data(), state.head.size());
+    hash.update(state.last_record_hash.has_value());
+    hash.update(state.last_record_hash.value_or(0));
+    /// The values of the cursor are non-negative.
+    return static_cast<Int64>(hash.get64() & 0x7FFFFFFFFFFFFFFFULL);
+}
+
+IProcessor::Status FileLogStreamSource::prepare()
+{
+    /// The query does not need the rest of the rows (e.g. a `DISTINCT` by constants or a `LIMIT BY` without keys
+    /// already has its result), so it stopped the read. The bounded read of an incremental refresh still has to
+    /// report the cursor after all the records of the bounded stream: these records are consumed by the query,
+    /// although it does not need them, and the next refresh must not get them again. If the query was stopped
+    /// by an exception or was cancelled instead, it fails, and the reported cursor is discarded along with it.
+    if (getPort().isFinished() && !stream_finished && !isCancelled()
+        && !stream_settings.subscribe_for_updates && context->getStreamingCursor())
+    {
+        if (!skip_remaining_records)
+            LOG_DEBUG(log, "The query does not need more rows, skipping the remaining records to report the cursor");
+        skip_remaining_records = true;
+        return Status::Ready;
+    }
+
+    return ISource::prepare();
 }
 
 std::optional<Chunk> FileLogStreamSource::tryGenerate()
@@ -460,6 +574,8 @@ Chunk FileLogStreamSource::generate()
     const Field table_name = storage.getStorageID().getTableName();
     size_t total_rows = 0;
     String line;
+    /// The last record of the file that was read in this pass, for `FileState::last_record_hash`.
+    String last_record;
 
     /// Start from the file after the one that filled the previous chunk, so that a file with a backlog does not starve the others.
     std::vector<UInt64> order;
@@ -493,7 +609,8 @@ Chunk FileLogStreamSource::generate()
         reader.seek(static_cast<off_t>(state.position), SEEK_SET);
 
         bool reached_end = false;
-        while (total_rows < max_block_size)
+        bool has_last_record = false;
+        while (skip_remaining_records || total_rows < max_block_size)
         {
             const UInt64 offset = state.position;
             if (state.bound && offset >= *state.bound)
@@ -523,6 +640,15 @@ Chunk FileLogStreamSource::generate()
 
             state.position = next_position;
 
+            if (state.head.size() < consumed_head_size)
+            {
+                state.head.append(line, 0, consumed_head_size - state.head.size());
+                if (state.head.size() < consumed_head_size)
+                    state.head += '\n';
+            }
+            std::swap(line, last_record);
+            has_last_record = true;
+
             if (state.skip_record_at_position)
             {
                 /// It is the record at the offset of the cursor, which was already read.
@@ -530,8 +656,14 @@ Chunk FileLogStreamSource::generate()
                 continue;
             }
 
+            if (skip_remaining_records)
+            {
+                state.last_offset = static_cast<Int64>(offset);
+                continue;
+            }
+
             exception_message.reset();
-            ReadBufferFromString buf(line);
+            ReadBufferFromString buf(last_record);
             const size_t new_rows = executor.execute(buf);
             state.last_offset = static_cast<Int64>(offset);
 
@@ -548,7 +680,7 @@ Chunk FileLogStreamSource::generate()
                     else if (name == "_table")
                         column->insert(table_name);
                     else if (name == "_raw_record" && exception_message)
-                        column->insertData(line.data(), line.size());
+                        column->insertData(last_record.data(), last_record.size());
                     else if (name == "_error" && exception_message)
                         column->insertData(exception_message->data(), exception_message->size());
                     else
@@ -559,10 +691,13 @@ Chunk FileLogStreamSource::generate()
             total_rows += new_rows;
         }
 
+        if (has_last_record)
+            state.last_record_hash = sipHash64(last_record);
+
         if (reached_end && state.removed)
             drained_removed_files.push_back(inode);
 
-        if (total_rows >= max_block_size)
+        if (!skip_remaining_records && total_rows >= max_block_size)
         {
             next_inode = inode + 1;
             break;

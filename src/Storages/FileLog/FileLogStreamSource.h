@@ -34,6 +34,10 @@ class StorageFileLog;
 /// several names (hard links) is read once. A file is taken for reading by a name that matches the path of the table,
 /// and is still read after it is renamed to a name that does not match (`app.log` -> `app.log.1` for the path `*.log`).
 /// A file that leaves the directory is closed after its remaining complete records are read.
+/// A file truncated in place is read from the beginning. It is detected by its size, or, if it has grown again past
+/// the read position, by the contents: the first bytes of the file and the last record read are checked. A file
+/// rewritten with the same first bytes and the same record at the same position cannot be told from a file
+/// that was appended to.
 ///
 /// An unbounded stream checks the directory for new files and new data every `poll_timeout_ms`.
 /// A bounded stream (`STREAM BOUNDED`) reads the files up to their sizes at the start of the query.
@@ -53,6 +57,7 @@ public:
 
     String getName() const override { return "FileLogStreamSource"; }
 
+    Status prepare() override;
     Chunk generate() override;
     std::optional<Chunk> tryGenerate() override;
 
@@ -75,6 +80,11 @@ private:
         UInt64 position = 0;
         /// The record at `last_offset` from the cursor still has to be skipped.
         bool skip_record_at_position = false;
+        /// The evidence of the contents that were read: the first bytes of the file up to `position` (at most
+        /// `consumed_head_size`) and the hash of the last record read. If the file does not have them any more, it was
+        /// truncated and written again, even if it is not shorter than `position`, and it is read from the beginning.
+        String head;
+        std::optional<UInt64> last_record_hash;
         /// A bounded stream reads only the records that end within this size.
         std::optional<UInt64> bound;
         /// The file is not in the directory any more: it is closed after its remaining complete records are read.
@@ -88,6 +98,11 @@ private:
     /// Returns false if a name was given to another file while the files were being listed.
     bool tryUpdateFiles(bool initial);
     void reportFinalCursor() const;
+    /// Read the records again from the beginning of the file.
+    static void resetPosition(FileState & state);
+    /// The file does not have the contents that were read from it any more.
+    static bool consumedContentsChanged(const FileState & state);
+    static Int64 fingerprint(const FileState & state);
 
     StorageFileLog & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -112,6 +127,9 @@ private:
     Stopwatch poll_watch;
     bool started = false;
     bool stream_finished = false;
+    /// The query does not need more rows, but the bounded read of an incremental refresh has to get to its end
+    /// to report the cursor: the remaining records are skipped without parsing.
+    bool skip_remaining_records = false;
 };
 
 }
