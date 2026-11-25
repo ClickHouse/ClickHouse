@@ -367,7 +367,10 @@ def main():
         assert info.pr_number > 0, "only PR builds may skip ThinLTO"
         print("NOTE: no AMD performance comparison in this PR - build without ThinLTO, PGO and BOLT")
         assert "-DENABLE_THINLTO=1" in cmake_cmd
-        cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0")
+        assert "-DENABLE_BUILD_PROFILING=1" in cmake_cmd
+        cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0").replace(
+            "-DENABLE_BUILD_PROFILING=1", "-DENABLE_BUILD_PROFILING=0"
+        )
 
     cmake_cmd += flavor_cmake_options(
         cmake_cmd,
