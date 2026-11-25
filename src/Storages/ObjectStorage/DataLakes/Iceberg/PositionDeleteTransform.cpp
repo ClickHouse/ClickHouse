@@ -50,9 +50,9 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
     Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
     field_filename->set(Iceberg::f_id, IcebergPositionDeleteTransform::data_file_path_column_field_id);
-    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
-    field_pos->set(Iceberg::f_required, true);
-    field_pos->set(Iceberg::f_type, "string");
+    field_filename->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
+    field_filename->set(Iceberg::f_required, true);
+    field_filename->set(Iceberg::f_type, "string");
 
     pos_delete_schema->add(field_filename);
     pos_delete_schema->add(field_pos);
@@ -83,10 +83,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         String format = position_deletes_object.file_format;
-        if (boost::to_lower_copy(format) != "parquet")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
+        const String format_lower = boost::to_lower_copy(format);
+        if (format_lower != "parquet" && format_lower != "orc" && format_lower != "avro")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Position delete files are only supported in Parquet, ORC and Avro formats, but got {}", format);
 
-        /// Parquet reads the footer at the tail first, so hint the object-storage read buffer to
+        /// Parquet and ORC read the footer at the tail first, so hint the object-storage read buffer to
         /// skip the generic from-start prefetch that it would drop, unless seeks are disabled.
         auto read_settings = context->getReadSettings();
         read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format, context);
