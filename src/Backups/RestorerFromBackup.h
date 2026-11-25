@@ -91,8 +91,7 @@ private:
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
-    /// Checks the settings of the users, roles and settings profiles to restore against the current user's constraints,
-    /// as `CREATE [OR REPLACE] USER/ROLE/SETTINGS PROFILE` does.
+    /// Applies the settings constraints check of `CREATE [OR REPLACE] USER/ROLE/SETTINGS PROFILE` to the entities to restore.
     void checkSettingsOfAccessEntitiesToRestore() const;
 
     /// Returns the data path of the "system.named_collections" table in the backup, or an empty

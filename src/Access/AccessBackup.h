@@ -85,8 +85,7 @@ public:
     /// with dependencies resolved. generateRandomIDsAndResolveDependencies() must be called before that.
     [[nodiscard]] std::vector<std::pair<UUID, AccessEntityPtr>> getEntitiesFromBackup() const;
 
-    /// Returns a copy of the loaded state which never throws on existing or missing entities while resolving them.
-    /// `loadFromBackup` must be called first, and `generateRandomIDsAndResolveDependencies` must not be.
+    /// Returns a copy which resolves without throwing on existing or missing entities. Call after loadFromBackup(), before resolving.
     [[nodiscard]] AccessRestorerFromBackup makeCopyForChecking() const;
 
 private:
