@@ -5240,10 +5240,11 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
     /// share it, and it keeps the level and the channel which the root logger had when it was created.
     setupLogs("debug");
     auto & metadata_logger = Poco::Logger::get("CacheMetadata");
-    auto * const previous_channel = metadata_logger.getChannel();
+    /// Owns the channel: `setChannel` releases the old one, and this logger may be its last owner.
+    Poco::AutoPtr<Poco::Channel> previous_channel(metadata_logger.getChannel(), /* shared */ true);
     const auto previous_level = metadata_logger.getLevel();
     SCOPE_EXIT({
-        metadata_logger.setChannel(previous_channel);
+        metadata_logger.setChannel(previous_channel.get());
         metadata_logger.setLevel(previous_level);
     });
     metadata_logger.setChannel(Poco::Logger::root().getChannel());
