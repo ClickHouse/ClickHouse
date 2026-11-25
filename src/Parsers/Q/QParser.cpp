@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
+#include <base/arithmeticOverflow.h>
 
 #include <charconv>
 #include <cmath>
@@ -77,10 +78,57 @@ Int64 daysFromCivil(Int64 year, Int64 month, Int64 day)
 
 constexpr Int64 days_1970_to_2000 = 10957;
 constexpr Int64 nanoseconds_in_day = 86'400'000'000'000;
+constexpr Int64 milliseconds_in_day = 86'400'000;
+
+/// The dates 0001.01.01 and 9999.12.31 in days since 2000.01.01, and the months 0001.01 and 9999.12 in months since 2000.01:
+/// the range of the dates in q.
+constexpr Int64 min_date = -730119;
+constexpr Int64 max_date = 2921939;
+constexpr Int64 min_month = (1 - 2000) * 12;
+constexpr Int64 max_month = (9999 - 2000) * 12 + 11;
 
 [[noreturn]] void throwBadLiteral(std::string_view text)
 {
     throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid literal '{}' in the q program", text);
+}
+
+[[noreturn]] void throwOutOfRange(std::string_view text)
+{
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "The literal '{}' is out of range in the q program", text);
+}
+
+/// Checks that a temporal value is in the range of its type in q, so that the conversions of it between the units
+/// (here and in the compiler) do not overflow: a date within the years 0001..9999, and a minute, a second, or a time
+/// within 32 bits. Timestamps and timespans are counts of nanoseconds, which take all 64 bits.
+void checkTemporalRange(QType type, Int64 value, std::string_view text)
+{
+    Int64 min = 0;
+    Int64 max = 0;
+    switch (type)
+    {
+        case QType::Date:
+            min = min_date;
+            max = max_date;
+            break;
+        case QType::Month:
+            min = min_month;
+            max = max_month;
+            break;
+        case QType::Datetime:
+            min = min_date * milliseconds_in_day;
+            max = (max_date + 1) * milliseconds_in_day - 1;
+            break;
+        case QType::Minute:
+        case QType::Second:
+        case QType::Time:
+            min = -std::numeric_limits<Int32>::max();
+            max = std::numeric_limits<Int32>::max();
+            break;
+        default:
+            return;
+    }
+    if (value < min || value > max)
+        throwOutOfRange(text);
 }
 
 bool parseUnsigned(std::string_view text, Int64 & out)
@@ -238,8 +286,19 @@ Int64 clockToUnit(Int64 nanoseconds, QType type)
     }
 }
 
+DecodedNumber decodeNumberImpl(std::string_view text);
+
 /// Decodes a single number token, like `42`, `-1.5e3`, `0Nd`, `2024.01.15D10:30`, `101b`.
 DecodedNumber decodeNumber(std::string_view text)
+{
+    DecodedNumber result = decodeNumberImpl(text);
+    for (const auto & atom : result.atoms)
+        if (!atom.is_null && !atom.infinity && atom.value.getType() == Field::Types::Int64)
+            checkTemporalRange(result.type, atom.value.safeGet<Int64>(), text);
+    return result;
+}
+
+DecodedNumber decodeNumberImpl(std::string_view text)
 {
     DecodedNumber result;
     QAtom atom;
@@ -346,9 +405,21 @@ DecodedNumber decodeNumber(std::string_view text)
                     throwBadLiteral(text);
                 if (nanoseconds >= nanoseconds_in_day)
                     throwBadLiteral(text);
-                Int64 total = days * nanoseconds_in_day + nanoseconds;
-                result.type = is_datetime ? QType::Datetime : QType::Timestamp;
-                atom.value = Field(is_datetime ? total / 1'000'000 : total);
+                if (is_datetime)
+                {
+                    /// In milliseconds at once: the count of nanoseconds of a far date does not fit into 64 bits.
+                    result.type = QType::Datetime;
+                    atom.value = Field(days * milliseconds_in_day + nanoseconds / 1'000'000);
+                }
+                else
+                {
+                    /// A timestamp is a count of nanoseconds, which covers the years 1707..2292.
+                    Int64 total = 0;
+                    if (common::mulOverflow(days, nanoseconds_in_day, total) || common::addOverflow(total, nanoseconds, total))
+                        throwOutOfRange(text);
+                    result.type = QType::Timestamp;
+                    atom.value = Field(total);
+                }
             }
             else
                 throwBadLiteral(text);
@@ -373,7 +444,10 @@ DecodedNumber decodeNumber(std::string_view text)
         int fraction_digits = 0;
         if (!clock.empty() && !parseClock(clock, nanoseconds, components, fraction_digits))
             throwBadLiteral(text);
-        Int64 total = days * nanoseconds_in_day + nanoseconds;
+        /// A timespan is a count of nanoseconds: `106751D23:47:16.854775807` is the last one that fits.
+        Int64 total = 0;
+        if (common::mulOverflow(days, nanoseconds_in_day, total) || common::addOverflow(total, nanoseconds, total))
+            throwOutOfRange(text);
         result.type = QType::Timespan;
         result.explicit_type = true;
         atom.value = Field(negative ? -total : total);

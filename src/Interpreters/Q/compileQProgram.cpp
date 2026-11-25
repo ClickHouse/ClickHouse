@@ -32,6 +32,7 @@
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 
 #include <unordered_set>
@@ -294,6 +295,7 @@ void civilFromDays(Int64 days, Int64 & year, Int64 & month, Int64 & day)
 
 constexpr Int64 days_1970_to_2000 = 10957;
 constexpr Int64 nanoseconds_in_day = 86'400'000'000'000;
+constexpr Int64 milliseconds_in_day = 86'400'000;
 
 Int64 floorDiv(Int64 a, Int64 b)
 {
@@ -301,6 +303,19 @@ Int64 floorDiv(Int64 a, Int64 b)
     if ((a % b != 0) && ((a < 0) != (b < 0)))
         --q;
     return q;
+}
+
+/// Splits a count of units since an epoch into the whole days and the non-negative rest of the day.
+/// It does not multiply the days back, which would overflow for the first day of the 64-bit range.
+void splitDays(Int64 units, Int64 units_in_day, Int64 & days, Int64 & rest)
+{
+    days = units / units_in_day;
+    rest = units % units_in_day;
+    if (rest < 0)
+    {
+        rest += units_in_day;
+        --days;
+    }
 }
 
 String formatDate(Int64 days_since_2000)
@@ -312,21 +327,20 @@ String formatDate(Int64 days_since_2000)
     return fmt::format("{:04}-{:02}-{:02}", year, month, day);
 }
 
-/// Formats a time of day or a duration in nanoseconds as `[-]h:mm:ss.fffffffff` with `digits` fractional digits.
-String formatClock(Int64 nanoseconds, int digits)
+/// Formats a time of day or a duration as `[-]h:mm:ss[.fff]`. The value is a count of the units of `10^-digits` seconds
+/// (seconds, milliseconds, or nanoseconds), so it is formatted in its own unit, without a conversion that could overflow.
+String formatClock(Int64 units, int digits)
 {
-    bool negative = nanoseconds < 0;
-    UInt64 value = negative ? static_cast<UInt64>(-(nanoseconds + 1)) + 1 : static_cast<UInt64>(nanoseconds);
-    UInt64 fraction = value % 1'000'000'000;
-    UInt64 seconds = value / 1'000'000'000;
+    UInt64 units_in_second = 1;
+    for (int i = 0; i < digits; ++i)
+        units_in_second *= 10;
+    bool negative = units < 0;
+    UInt64 value = negative ? static_cast<UInt64>(-(units + 1)) + 1 : static_cast<UInt64>(units);
+    UInt64 fraction = value % units_in_second;
+    UInt64 seconds = value / units_in_second;
     String result = fmt::format("{}{:02}:{:02}:{:02}", negative ? "-" : "", seconds / 3600, seconds / 60 % 60, seconds % 60);
     if (digits > 0)
-    {
-        UInt64 divisor = 1;
-        for (int i = digits; i < 9; ++i)
-            divisor *= 10;
-        result += fmt::format(".{:0{}}", fraction / divisor, digits);
-    }
+        result += fmt::format(".{:0{}}", fraction, digits);
     return result;
 }
 
@@ -393,21 +407,29 @@ ASTPtr atomToAST(QType type, const QAtom & atom, size_t offset)
         case QType::Timestamp:
         case QType::Datetime:
         {
+            /// Nanoseconds or milliseconds since 2000.01.01, each formatted in its own unit.
             bool is_timestamp = type == QType::Timestamp;
-            Int64 total = atom.value.safeGet<Int64>() * (is_timestamp ? 1 : 1'000'000);
-            Int64 days = floorDiv(total, nanoseconds_in_day);
-            Int64 clock = total - days * nanoseconds_in_day;
-            String text = formatDate(days) + " " + formatClock(clock, is_timestamp ? 9 : 3);
-            return makeASTFunction("toDateTime64", makeLiteral(Field(text)), makeLiteral(Field(static_cast<UInt64>(is_timestamp ? 9 : 3))));
+            int digits = is_timestamp ? 9 : 3;
+            Int64 days = 0;
+            Int64 clock = 0;
+            splitDays(atom.value.safeGet<Int64>(), is_timestamp ? nanoseconds_in_day : milliseconds_in_day, days, clock);
+            String text = formatDate(days) + " " + formatClock(clock, digits);
+            return makeASTFunction("toDateTime64", makeLiteral(Field(text)), makeLiteral(Field(static_cast<UInt64>(digits))));
         }
         case QType::Timespan:
             return makeASTFunction("toTime64", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>(), 9))), makeLiteral(Field(static_cast<UInt64>(9))));
         case QType::Time:
-            return makeASTFunction("toTime64", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>() * 1'000'000, 3))), makeLiteral(Field(static_cast<UInt64>(3))));
+            return makeASTFunction("toTime64", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>(), 3))), makeLiteral(Field(static_cast<UInt64>(3))));
         case QType::Minute:
-            return makeASTFunction("toTime", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>() * 60'000'000'000, 0))));
+        {
+            /// The parser keeps the minutes within 32 bits, so the seconds fit.
+            Int64 seconds = 0;
+            if (common::mulOverflow(atom.value.safeGet<Int64>(), static_cast<Int64>(60), seconds))
+                throwQError(ErrorCodes::BAD_ARGUMENTS, offset, "The literal of minutes is out of range");
+            return makeASTFunction("toTime", makeLiteral(Field(formatClock(seconds, 0))));
+        }
         case QType::Second:
-            return makeASTFunction("toTime", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>() * 1'000'000'000, 0))));
+            return makeASTFunction("toTime", makeLiteral(Field(formatClock(atom.value.safeGet<Int64>(), 0))));
         case QType::Guid:
         case QType::Mixed:
             break;
