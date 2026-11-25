@@ -2115,6 +2115,28 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
 {
     QTable filtered = applyWhere(source, sql.where, env);
 
+    /// `select[n; >c]`: the order and the limit apply to the rows that the where phrase leaves, before the by and select
+    /// phrases see them. So `select[2] sum x from t` is the sum of the first two rows.
+    if (!sql.order_column.empty() || sql.limit)
+    {
+        QValue rows;
+        rows.kind = QValueKind::Table;
+        rows.table = std::make_shared<QTable>(filtered);
+        if (!sql.order_column.empty())
+        {
+            QValue column = scalar(makeLiteral(Field(sql.order_column)));
+            column.qtype = QType::Symbol;
+            column.is_string = true;
+            rows = callBuiltin(sql.order_descending ? "xdesc" : "xasc", {column, rows}, env, nullptr, sql.from ? sql.from->offset : 0);
+        }
+        if (sql.limit)
+        {
+            QValue limit = compile(sql.limit, env, nullptr);
+            rows = callBuiltin("#", {limit, rows}, env, nullptr, sql.limit->offset);
+        }
+        filtered = *rows.table;
+    }
+
     std::vector<std::pair<ASTPtr, String>> pre;
     QScope scope;
     scope.columns = filtered.columns;
@@ -2261,12 +2283,6 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
     outer.from = makeSubqueryTableExpression(main.build());
     outer.distinct = sql.distinct;
 
-    if (!sql.order_column.empty())
-    {
-        outer.order_by.clear();
-        outer.order_by.emplace_back(makeIdentifier(sql.order_column), sql.order_descending);
-    }
-
     QTypes result_qtypes;
     if (grouped)
         for (size_t i = 0; i < output_keys.size(); ++i)
@@ -2277,14 +2293,7 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             result_qtypes[output_names[i]] = *values[i].qtype;
 
     Names result_keys = grouped ? output_keys : Names{};
-    QValue result = makeTable(outer.build(), result_keys, result_qtypes);
-
-    if (sql.limit)
-    {
-        QValue limit = compile(sql.limit, env, nullptr);
-        result = callBuiltin("#", {limit, result}, env, nullptr, sql.limit->offset);
-    }
-    return result;
+    return makeTable(outer.build(), result_keys, result_qtypes);
 }
 
 QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source, QEnvironment & env)

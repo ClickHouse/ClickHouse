@@ -740,13 +740,24 @@ QValue takeRows(Call & call, const QValue & count, const QTable & table)
 
 QValue sortTable(Call & call, const Strings & columns, const QTable & table, bool descending)
 {
-    QSelectBuilder builder = selectColumns(table);
+    /// The rows that are equal in the columns keep their order, as in q: the number of the row is the last key of
+    /// the sorting. (And being a key, it is calculated before the sorting.)
+    QSelectBuilder numbered;
+    numbered.from = table.table_expression;
+    numbered.select.push_back(make_intrusive<ASTAsterisk>());
+    numbered.select.push_back(withAlias(fn("rowNumberInAllBlocks", ASTs{}), "__qrow"));
+
+    QSelectBuilder builder;
+    builder.from = makeSubqueryTableExpression(numbered.build());
+    for (const auto & column : table.columns)
+        builder.select.push_back(ident(column.name));
     for (const auto & column : columns)
     {
         if (!hasColumn(table, column))
             call.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("unknown column '{}'", column));
         builder.order_by.emplace_back(ident(column), descending);
     }
+    builder.order_by.emplace_back(ident("__qrow"), false);
     return tableValue(call.compiler, builder.build(), table.keys);
 }
 
