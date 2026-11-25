@@ -11751,6 +11751,7 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
 Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, or is the global row index `_part_starting_offset + _part_offset`, can be pruned. A self-join on the global row index, which fetches the rows found by a subquery, reads only the granules of those rows. The global row index identifies a row only within one query, so both sides of the join must read the table in the same query.
+A join key that is an element of an array column (`ARRAY JOIN`, `LEFT ARRAY JOIN` or `arrayJoin`) can be pruned with a `bloom_filter` or `text` skip index of the array column, if the runtime filter kept the exact key values.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 For an Iceberg table, the setting also allows skipping whole data files and the Parquet row groups and pages of the files that are read, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
