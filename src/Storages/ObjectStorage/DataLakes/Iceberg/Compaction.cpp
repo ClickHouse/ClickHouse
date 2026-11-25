@@ -241,7 +241,7 @@ public:
     }
 
     /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
-    Poco::JSON::Object::Ptr getSchemaObject(Int32 schema_id) const
+    [[nodiscard]] Poco::JSON::Object::Ptr getSchemaObject(Int32 schema_id) const
     {
         for (UInt32 i = 0; i < schemas->size(); ++i)
             if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id)
