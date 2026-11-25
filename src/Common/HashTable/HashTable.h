@@ -397,6 +397,20 @@ public:
         budget = budget_;
     }
 
+    /// Makes the grower describe half the cells in the Robin Hood mode. Returns false and changes nothing if the hash table is
+    /// in the Robin Hood mode already, has its initial size, or `num_elems` do not fit half the cells.
+    bool halveInRobinHoodMode(size_t num_elems)
+    {
+        if (robin_hood || size_degree <= initial_size_degree)
+            return false;
+        const UInt8 old_size_degree = size_degree;
+        setSizeDegree(static_cast<UInt8>(size_degree - 1), true);
+        if (!overflow(num_elems))
+            return true;
+        setSizeDegree(old_size_degree, false);
+        return false;
+    }
+
     void increaseSizeDegree(UInt8 delta)
     {
         UInt8 new_size_degree = size_degree + delta;
@@ -1878,6 +1892,45 @@ public:
     [[nodiscard]] size_t getBufferSizeInBytes() const
     {
         return grower.bufSize() * sizeof(Cell);
+    }
+
+    /// The bytes that `halveInRobinHoodMode` would free now, 0 if it would not change the hash table.
+    [[nodiscard]] size_t bytesFreedByHalving() const
+    requires GrowerWithRobinHood<Grower>
+    {
+        Grower half = grower;
+        return half.halveInRobinHoodMode(m_size) ? getBufferSizeInBytes() - half.bufSize() * sizeof(Cell) : 0;
+    }
+
+    /// Rebuilds the hash table in the Robin Hood mode in half the cells, if its elements fit there, and returns the bytes freed.
+    /// The new buffer is allocated before the old one is touched, so an exception leaves the hash table as it was.
+    size_t halveInRobinHoodMode()
+    requires GrowerWithRobinHood<Grower>
+    {
+        Grower half = grower;
+        if (!half.halveInRobinHoodMode(m_size))
+            return 0;
+
+        Cell * const old_buf = buf;
+        const size_t old_cells = grower.bufSize();
+        const size_t old_bytes = getBufferSizeInBytes();
+        Cell * const new_buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(half.bufSize())));
+        for (size_t i = 0; i < old_cells; ++i)
+        {
+            if (old_buf[i].isZero(*this))
+                continue;
+            size_t place_value = half.place(old_buf[i].getHash(*this));
+            while (!new_buf[place_value].isZero(*this))
+                place_value = half.next(place_value);
+            memcpy(
+                static_cast<void *>(&new_buf[place_value]), &old_buf[i], sizeof(Cell)); /// NOLINT(bugprone-undefined-memory-manipulation)
+        }
+
+        Allocator::free(old_buf, old_bytes);
+        buf = new_buf;
+        grower = half;
+        orderCollisionResolutionChains();
+        return old_bytes - getBufferSizeInBytes();
     }
 
     /// Estimates the additional memory charged while inserting this many new keys. Each resize charges

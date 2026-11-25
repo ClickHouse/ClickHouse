@@ -1013,3 +1013,55 @@ TEST(HashTableRobinHood, OnMemoryPressureKeepsTheInvariants)
         ASSERT_EQ(map.isRobinHoodMode(), latch_at_cells < (size_t(1) << 40)) << "latch at " << latch_at_cells << " cells";
     }
 }
+
+TEST(HashTableRobinHood, HalveInRobinHoodMode)
+{
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, UInt64, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+    constexpr size_t cell_bytes = sizeof(Map::cell_type);
+    LatchingBudget never_latches(size_t(1) << 40);
+
+    /// 300 keys grow the hash table to 1024 cells. Half of them hold up to 460 keys in the Robin Hood mode.
+    Map map;
+    map.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 300; ++key)
+        map[key] = key * 10;
+    ASSERT_EQ(map.getBufferSizeInBytes(), 1024 * cell_bytes);
+    ASSERT_FALSE(map.isRobinHoodMode());
+
+    ASSERT_EQ(map.bytesFreedByHalving(), 512 * cell_bytes);
+    ASSERT_EQ(map.halveInRobinHoodMode(), 512 * cell_bytes);
+    map.checkInvariants();
+    ASSERT_TRUE(map.isRobinHoodMode());
+    ASSERT_EQ(map.getBufferSizeInBytes(), 512 * cell_bytes);
+    ASSERT_EQ(map.size(), 300);
+    for (UInt64 key = 0; key < 300; ++key)
+    {
+        auto * it = map.find(key);
+        ASSERT_TRUE(it);
+        ASSERT_EQ(it->getMapped(), key * 10);
+    }
+
+    /// A hash table in the Robin Hood mode is not halved again, and grows by doubling.
+    ASSERT_EQ(map.bytesFreedByHalving(), 0);
+    ASSERT_EQ(map.halveInRobinHoodMode(), 0);
+    for (UInt64 key = 300; key < 2000; ++key)
+        map[key] = key * 10;
+    map.checkInvariants();
+    ASSERT_TRUE(map.isRobinHoodMode());
+    for (UInt64 key = 0; key < 2000; ++key)
+        ASSERT_TRUE(map.find(key));
+
+    /// 470 keys do not fit half the cells, so nothing changes.
+    Map full;
+    full.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
+    for (UInt64 key = 0; key < 470; ++key)
+        full[key] = key;
+    ASSERT_EQ(full.getBufferSizeInBytes(), 1024 * cell_bytes);
+    ASSERT_EQ(full.bytesFreedByHalving(), 0);
+    ASSERT_EQ(full.halveInRobinHoodMode(), 0);
+    ASSERT_FALSE(full.isRobinHoodMode());
+    full.checkInvariants();
+}
