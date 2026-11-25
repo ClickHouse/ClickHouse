@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS t_delete_where;
 DROP TABLE IF EXISTS t_group_by;
 DROP TABLE IF EXISTS t_column;
 DROP TABLE IF EXISTS t_move;
+DROP TABLE IF EXISTS t_index_clear;
 DROP TABLE IF EXISTS t_clear;
 
 CREATE TABLE t_recompress (k UInt64, d1 DateTime('UTC'), d2 DateTime('UTC'), v String)
@@ -46,6 +47,11 @@ ENGINE = MergeTree ORDER BY k
 TTL d1 + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(3)), d2 + INTERVAL 10 YEAR TO DISK 'default'
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
+CREATE TABLE t_index_clear (k UInt64, d1 DateTime('UTC'), d2 DateTime('UTC'), v String, INDEX i1 k TYPE minmax, INDEX i2 k TYPE minmax)
+ENGINE = MergeTree ORDER BY k
+TTL d1 + INTERVAL 1 DAY CLEAR INDEX i1, d2 + INTERVAL 10 YEAR CLEAR INDEX i2
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
 -- The `d2` rule is in the future both before (2100) and after (2070) the CLEAR, and tells the two apart.
 CREATE TABLE t_clear (k UInt64, d1 DateTime('UTC'), d2 DateTime('UTC'), v String)
 ENGINE = MergeTree ORDER BY k
@@ -58,6 +64,7 @@ INSERT INTO t_delete_where SELECT * FROM t_recompress;
 INSERT INTO t_group_by SELECT * FROM t_recompress;
 INSERT INTO t_column SELECT k, d1, d2, v, v FROM t_recompress;
 INSERT INTO t_move SELECT * FROM t_recompress;
+INSERT INTO t_index_clear SELECT * FROM t_recompress;
 INSERT INTO t_clear SELECT k, d1, toDateTime('2000-01-01 00:00:00', 'UTC'), v FROM t_recompress;
 
 ALTER TABLE t_recompress UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1;
@@ -66,6 +73,7 @@ ALTER TABLE t_delete_where UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') 
 ALTER TABLE t_group_by UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1;
 ALTER TABLE t_column UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1;
 ALTER TABLE t_move UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1;
+ALTER TABLE t_index_clear UPDATE d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1;
 ALTER TABLE t_clear CLEAR COLUMN d2;
 
 SELECT 'recompress', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)) FROM t_recompress;
@@ -74,6 +82,7 @@ SELECT 'delete_where', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash
 SELECT 'group_by', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)) FROM t_group_by;
 SELECT 'column', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)), sum(cityHash64(k, w)) FROM t_column;
 SELECT 'move', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)) FROM t_move;
+SELECT 'index_clear', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)) FROM t_index_clear;
 SELECT 'clear', count(), min(d1), max(d1), min(d2), max(d2), sum(cityHash64(k, v)) FROM t_clear;
 
 -- The recalculated TTL infos: the `d1` rule moved to 2095, every other rule kept its bound.
@@ -104,6 +113,12 @@ FROM system.parts
 ARRAY JOIN move_ttl_info.expression AS e, move_ttl_info.min AS mn, move_ttl_info.max AS mx
 WHERE database = currentDatabase() AND table = 't_move' AND active;
 
+SELECT DISTINCT table, 'index_clear', e, toDateTime(mn, 'UTC'), toDateTime(mx, 'UTC')
+FROM system.parts
+ARRAY JOIN index_clear_ttl_info.expression AS e, index_clear_ttl_info.min AS mn, index_clear_ttl_info.max AS mx
+WHERE database = currentDatabase() AND table = 't_index_clear' AND active
+ORDER BY e;
+
 -- Every mutation was a partial one, the path that did not read the other inputs.
 SYSTEM FLUSH LOGS part_log;
 SELECT table, min(ProfileEvents['MutationSomePartColumns'])
@@ -117,4 +132,5 @@ DROP TABLE t_delete_where;
 DROP TABLE t_group_by;
 DROP TABLE t_column;
 DROP TABLE t_move;
+DROP TABLE t_index_clear;
 DROP TABLE t_clear;

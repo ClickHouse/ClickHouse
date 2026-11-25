@@ -256,6 +256,8 @@ NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metad
         add(ttl);
     for (const auto & ttl : metadata.getRecompressionTTLs())
         add(ttl);
+    for (const auto & ttl : metadata.getIndexClearTTLs())
+        add(ttl);
 
     return res;
 }

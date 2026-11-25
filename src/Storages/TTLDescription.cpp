@@ -1225,6 +1225,7 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , destination_name(other.destination_name)
     , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
+    , index_name(other.index_name)
 {
 }
 
@@ -1257,6 +1258,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     destination_type = other.destination_type;
     destination_name = other.destination_name;
     if_exists = other.if_exists;
+    index_name = other.index_name;
 
     if (other.recompression_codec)
         recompression_codec = other.recompression_codec->clone();
@@ -1622,6 +1624,10 @@ TTLDescription TTLDescription::getTTLFromAST(
                     skip_validation || trust_recompression_codec ? CodecValidationSettings::trusted()
                                                                  : CodecValidationSettings(context->getSettingsRef()));
         }
+        else if (ttl_element->mode == TTLMode::CLEAR_INDEX)
+        {
+            result.index_name = ttl_element->index_name;
+        }
     }
 
     checkTTLExpression(expression, result.result_column, skip_validation);
@@ -1647,6 +1653,7 @@ TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  , move_ttl(other.move_ttl)
  , recompression_ttl(other.recompression_ttl)
  , group_by_ttl(other.group_by_ttl)
+ , index_clear_ttl(other.index_clear_ttl)
 {
 }
 
@@ -1665,6 +1672,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
     move_ttl = other.move_ttl;
     recompression_ttl = other.recompression_ttl;
     group_by_ttl = other.group_by_ttl;
+    index_clear_ttl = other.index_clear_ttl;
 
     return *this;
 }
@@ -1710,6 +1718,10 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         else if (ttl.mode == TTLMode::GROUP_BY)
         {
             result.group_by_ttl.emplace_back(std::move(ttl));
+        }
+        else if (ttl.mode == TTLMode::CLEAR_INDEX)
+        {
+            result.index_clear_ttl.emplace_back(std::move(ttl));
         }
         else
         {
