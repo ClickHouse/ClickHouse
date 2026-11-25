@@ -1572,8 +1572,9 @@ DataTypePtr keyLookupSourceHint(
         /// that resolves the rest of the name, so the elements are tried from the last one, and the one that
         /// resolves it is the only one converted. The prefix is compared as it is spelled: a name that is not
         /// declared is not matched case-insensitively (see `NestedColumnExtractHelper::resolveSubcolumn`).
-        for (size_t i = tuple->getElements().size(); i-- > 0;)
+        for (size_t position = tuple->getElements().size(); position > 0; --position)
         {
+            const size_t i = position - 1;
             const String element_name = tuple->getNameByPosition(i + 1);
             if (subcolumn.size() <= element_name.size() + 1 || subcolumn[element_name.size()] != '.'
                 || !subcolumn.starts_with(element_name))
