@@ -117,16 +117,12 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-
             /// The named collection is checked every time, also when the definition is read back from metadata
             /// (server startup, short `ATTACH`): the collection can change after the table is created.
-            /// `named_collection` is a copy, and a copy does not keep the source of the collection
-            /// (see `NamedCollection::duplicate`). Thus the collection of the factory is checked:
-            /// the configuration of the consumers and of the producers is loaded from it.
-            KafkaConfigLoader::checkNamedCollection(*NamedCollectionFactory::instance().get(collection_name));
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
 
             kafka_settings->loadFromNamedCollection(named_collection);
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
 
         if (has_settings)
