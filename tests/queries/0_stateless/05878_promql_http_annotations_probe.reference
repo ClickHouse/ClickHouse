@@ -1,0 +1,26 @@
+--- the annotation probe is a helper of the query: public result limits and quotas do not apply to it
+query: count(rate({__name__=~"foo|total_requests"}[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:12)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:12)"]
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+error - 
+probes run by the rejected request: 0
+--- the settings shaping the public result do not apply to the annotation probe
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- the annotation probes keep the execution time limit of the request, which is checked on the request's status
+query: rate(foo[5m]) + rate(foo[10m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:22)"]
+1	0
+--- the annotation probe's query result cache write is finalized
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+1
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+Read

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# Helpers of the tests of the `warnings` and `infos` arrays of /api/v1/query and /api/v1/query_range.
+
+# Creates the table `ts` with the series the tests query.
+create_annotations_table()
+{
+    $CLICKHOUSE_CLIENT -q "
+SET allow_experimental_time_series_table = 1;
+DROP TABLE IF EXISTS ts;
+CREATE TABLE ts ENGINE = TimeSeries;
+
+INSERT INTO ts (metric_name, tags, samples)
+SELECT name, if(le = '', map('job', job, 'id', id), map('job', job, 'id', id, 'le', le)),
+       arrayMap(i -> (toDateTime64(1700000000 + 15 * i, 3), toFloat64(mul * i)), range(41))
+FROM values('name String, job String, id String, le String, mul UInt8',
+    ('foo', 'a', '0', '', 1), ('foo', 'b', '1', '', 2), ('bar_total', 'a', '2', '', 3), ('qux_count', 'a', '4', '', 1),
+    ('total_requests', 'a', '5', '', 1),
+    ('m01', 'm', '6', '', 1), ('m02', 'm', '7', '', 1), ('m03', 'm', '8', '', 1), ('m04', 'm', '9', '', 1),
+    ('m05', 'm', '10', '', 1), ('m06', 'm', '11', '', 1), ('m07', 'm', '12', '', 1), ('m08', 'm', '13', '', 1),
+    ('m09', 'm', '14', '', 1), ('m10', 'm', '15', '', 1), ('m11', 'm', '16', '', 1), ('m12', 'm', '17', '', 1),
+    ('http.requests', 'u', '18', '', 1),
+    ('req_seconds_bucket', 'a', '19', '0.1', 1), ('req_seconds_bucket', 'a', '19', '1', 2), ('req_seconds_bucket', 'a', '19', '+Inf', 3));
+
+INSERT INTO ts (metric_name, tags, samples) VALUES ('baz', map('job', 'a', 'id', '3'), [(toDateTime64(1700000000, 3), 5)]);
+"
+}
+
+BASE="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/prometheus/api/v1"
+
+# Optional curl arguments, e.g. basic auth for a dedicated user.
+CURL_AUTH=
+
+# Prints the status, the number of result series and the response text following the `data` object.
+print_response()
+{
+    python3 -c '
+import json, sys
+raw = sys.stdin.read().rstrip()
+d = json.loads(raw)
+starts = [raw.find(key) for key in (",\"warnings\":", ",\"infos\":") if key in raw]
+tail = raw[min(starts):-1] if starts else ""
+print(d["status"], len(d["data"]["result"]) if d["status"] == "success" else "-", tail)'
+}
+
+# instant <time> <query> [extra_url_param...]
+instant()
+{
+    echo "query: $2"
+    ${CLICKHOUSE_CURL} -sS --get "${BASE}/query" --data-urlencode "query=$2" --data-urlencode "time=$1" \
+        --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" \
+        --data-urlencode "enable_time_series_aggregate_functions=1" \
+        ${CURL_AUTH} "${@:3}" | print_response
+}
+
+# range <query>
+range()
+{
+    echo "query_range: $1"
+    ${CLICKHOUSE_CURL} -sS --get "${BASE}/query_range" --data-urlencode "query=$1" \
+        --data-urlencode "start=1700000000" --data-urlencode "end=1700000600" --data-urlencode "step=60" \
+        --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" \
+        --data-urlencode "enable_time_series_aggregate_functions=1" | print_response
+}
+
+T=1700000600

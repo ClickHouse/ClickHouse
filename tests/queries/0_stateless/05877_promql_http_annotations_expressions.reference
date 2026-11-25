@@ -1,0 +1,44 @@
+--- rate inside a larger expression: the position of its selector
+query: rate(foo[5m]) > 1e9
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m]) + rate(foo[10m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:22)"]
+query: sum(rate(foo[5m])) / count(rate(foo[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:33)"]
+query: label_replace(rate(foo[5m]), "x", "y", "", "")
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:20)"]
+query: sum(
+  rate(
+    foo[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (3:5)"]
+--- annotations are collected from the original tree, before the pushdown of label matchers
+query: rate(foo[5m]) and on(job) bar_total{job="missing"}
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m]) and on(job) bar_total{job="missing"}
+success 0 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- a subquery argument is reported at 1:1, as Prometheus does
+query: rate(foo[5m:1m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+query: rate((foo + 1)[5m:1m])
+success 2 
+query: rate(bar_total[5m:1m])
+success 1 
+query: rate({__name__=~"foo|bar_total"}[5m:1m])
+success 3 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+query: rate((foo offset 1m)[5m:1m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:1)"]
+--- at most 10 of each kind
+query: rate({__name__=~"m.+"}[5m])
+success 12 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m01\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m02\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m03\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m04\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m05\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m06\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m07\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m08\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m09\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m10\" (1:6)","2 more info annotations omitted"]
+query: quantile(2, rate({__name__=~"m.+"}[5m])) + quantile(3, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)","PromQL warning: quantile value should be between 0 and 1, got 3 (1:53)"],"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m01\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m02\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m03\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m04\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m05\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m06\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m07\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m08\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m09\" (1:18)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"m10\" (1:18)","2 more info annotations omitted"]
+--- range queries
+query_range: quantile(2, foo)
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:10)"]
+query_range: quantile_over_time(2, baz[5m])
+success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)"]
+query_range: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+--- no annotations in an error
+query: quantile(2, foo) + rate(foo)
+error - 

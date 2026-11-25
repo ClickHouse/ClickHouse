@@ -1,0 +1,29 @@
+--- rate and increase: each metric name without a counter suffix, only if there is a result
+query: rate(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: increase(foo[5m])
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:10)"]
+query: irate(foo[5m])
+success 2 
+query: rate(bar_total[5m])
+success 1 
+query: rate(total_requests[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate(req_seconds_bucket[5m])
+success 3 
+query: rate(baz[5m])
+success 0 
+query: rate(nonexistent[5m])
+success 0 
+query: rate({job="a"}[5m])
+success 7 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate({job="a"}[5m])
+success 7 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:6)"]
+query: rate({__name__=~".+_total"}[5m])
+success 1 
+query: rate({"http.requests"}[5m])
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"http.requests\" (1:6)"]
+query: rate(foo[5m] offset 1m)
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
+query: rate(foo[5m] @ 1700000600)
+success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
