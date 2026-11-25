@@ -2972,15 +2972,6 @@ bool newLeafTypedPathsNeedFormatParse(
     return false;
 }
 
-/// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
-/// value converted through text does not depend on date_time_output_format or on how it is stored.
-FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
-{
-    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
-    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
-    return result;
-}
-
 /// The round trip of date and time values into date and time values: text holds the wall clock of a
 /// DateTime without its time zone, so it would come back at another instant in another zone or in the
 /// repeated hour of a daylight saving time fall-back. ISO text in UTC carries the instant; it is ours,

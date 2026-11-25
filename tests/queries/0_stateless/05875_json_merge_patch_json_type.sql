@@ -1,8 +1,8 @@
 -- Tags: no-fasttest
 -- Reason: needs RapidJSON, which is not enabled in the fast test build.
 
--- JSONMergePatch with a JSON first argument returns the same JSON type, and every result equals
--- the result of the String route: JSONMergePatch(c::String, ...) parsed back into the type.
+-- JSONMergePatch with a JSON first argument returns the same JSON type. The results are compared with the String
+-- route, JSONMergePatch(c::String, ...) parsed back into the type, wherever that route can round-trip the row.
 
 SET enable_lightweight_update = 1;
 

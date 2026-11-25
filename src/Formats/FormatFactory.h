@@ -81,6 +81,9 @@ UInt64 getFormatSettingsHash(const Settings & settings);
 /// Settings for an internal JSON text round trip that must not change the values.
 FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings);
 
+/// The same, with date and time written as a CAST to String writes them.
+FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings);
+
 /// `output_format_arrow_unsupported_types` supersedes the older boolean
 /// `output_format_arrow_unsupported_types_as_binary` (`0` means `throw`, `1` means `binary`). The boolean is
 /// only consulted while the new setting is left at its default, so an explicit `throw`/`text`/`binary` wins

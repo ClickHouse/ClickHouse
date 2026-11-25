@@ -544,7 +544,7 @@ UInt64 getFormatSettingsHash(const Settings & settings)
 }
 
 /// Settings for writing values as JSON text that is parsed back right away: numbers unquoted (inf and nan
-/// quoted, JSON has no number for them), maps and named tuples as objects, date and time in the default form.
+/// quoted, JSON has no number for them), maps and named tuples as objects.
 FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
 {
     FormatSettings result = format_settings;
@@ -559,6 +559,14 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     result.float_precision = 0;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
+    return result;
+}
+
+/// The same, but a DateTime is written as a CAST to String writes it, so a value converted through text does not
+/// depend on date_time_output_format or on how it is stored.
+FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
     result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
     return result;
 }

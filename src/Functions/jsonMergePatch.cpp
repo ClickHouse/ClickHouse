@@ -238,7 +238,7 @@ namespace
             : type(type_)
             , typed_paths(assert_cast<const DataTypeObject &>(*type_).getTypedPaths())
             , convert_settings(convert_settings_)
-            , round_trip_format_settings(getJSONRoundTripFormatSettings(format_settings))
+            , round_trip_format_settings(getJSONRoundTripFormatSettingsForValues(format_settings))
             , escape_dots_in_keys(format_settings.json.json_type_escape_dots_in_keys)
             , descend_into_typed_paths(format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
         {
@@ -897,7 +897,7 @@ Returns the merged JSON object string which is formed by merging multiple JSON o
 
 If the first argument has the `JSON` type, the result has the same type.
 Most patches update the stored paths directly, without converting the value to text.
-For a `JSON` first argument, `null` in a patch removes the path, or sets a typed path to the default value of its type.
+For a `JSON` first argument, `null` in a patch removes the path; a typed path, or a key in a `Map` typed path, gets the default value instead.
 A patch of the `JSON` type is applied as its text.
     )";
     FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
