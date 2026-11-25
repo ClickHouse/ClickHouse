@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/products/cloud/getting-started/cloud-get-started",
         "ru/products/cloud/getting-started/intro",
@@ -9,25 +9,27 @@
       ]
     },
     {
-      "group": "Сервисы и инфраструктура",
+      "group": "Services and infrastructure",
       "pages": [
         "ru/products/cloud/reference/architecture",
         "ru/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "Планирование и развёртывание",
+          "group": "Plan and deploy",
           "pages": [
             "ru/products/cloud/features/cloud-tiers",
             "ru/products/cloud/reference/supported-regions",
             "ru/products/cloud/features/infrastructure/deployment-options",
             "ru/products/cloud/guides/cloud-compatibility",
+            "ru/products/cloud/features/public-preview-features",
+            "ru/products/cloud/features/self-service-previews",
             "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
         },
         {
           "expanded": false,
-          "group": "Настройка и масштабирование",
+          "group": "Configure and scale",
           "pages": [
             "ru/products/cloud/features/autoscaling/overview",
             "ru/products/cloud/reference/settings",
@@ -37,12 +39,13 @@
             "ru/products/cloud/features/autoscaling/make-before-break",
             "ru/products/cloud/features/autoscaling/idling",
             "ru/products/cloud/features/autoscaling/scaling-recommendations",
-            "ru/products/cloud/features/autoscaling/scheduled-scaling"
+            "ru/products/cloud/features/autoscaling/scheduled-scaling",
+            "ru/products/cloud/features/scaling/preparing-for-traffic-spikes"
           ]
         },
         {
           "expanded": false,
-          "group": "Вычислительные ресурсы и хранилище",
+          "group": "Compute and storage",
           "pages": [
             "ru/products/cloud/features/infrastructure/on-demand-compute",
             "ru/products/cloud/features/large-single-replica-services",
@@ -55,18 +58,20 @@
         },
         {
           "expanded": false,
-          "group": "Надёжность и обслуживание",
+          "group": "Reliability and maintenance",
           "pages": [
             "ru/products/cloud/reference/service-uptime",
             "ru/products/cloud/reference/data-resiliency",
+            "ru/products/cloud/guides/deletion-protection",
             "ru/products/cloud/features/admin-features/upgrades"
           ]
         },
         {
           "expanded": false,
-          "group": "Планирование промышленной эксплуатации",
+          "group": "Production planning",
           "pages": [
             "ru/products/cloud/guides/best-practices/index",
+            "ru/products/cloud/guides/best-practices/performance-optimization-playbook",
             "ru/products/cloud/guides/production-readiness",
             "ru/products/cloud/guides/best-practices/multitenancy",
             "ru/products/cloud/guides/best-practices/usagelimits"
@@ -78,14 +83,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "Данные и интеграции",
+      "group": "Data and integrations",
       "pages": [
         "ru/products/cloud/features/integrations",
         "ru/products/cloud/features/data-catalogs",
         "ru/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "Источники данных",
+          "group": "Data sources",
           "pages": [
             "ru/products/cloud/guides/data-sources/index",
             "ru/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -98,14 +103,14 @@
       ]
     },
     {
-      "group": "Подключение и выполнение запросов",
+      "group": "Connect and query",
       "pages": [
         "ru/products/cloud/features/sql-console-features/sql-console",
         "ru/products/cloud/guides/sql-console/connection-details",
         "ru/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "Эндпоинты Query API",
+          "group": "Query API endpoints",
           "pages": [
             "ru/products/cloud/features/sql-console-features/query-endpoints",
             "ru/products/cloud/guides/sql-console/query-endpoints"
@@ -117,22 +122,23 @@
       ]
     },
     {
-      "group": "Управление доступом",
+      "group": "Access management",
       "pages": [
         "ru/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Учётные записи и роли Cloud",
+          "group": "Cloud accounts and roles",
           "pages": [
             "ru/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+            "ru/products/cloud/guides/security/cloud-access-management/approved-domains",
             "ru/products/cloud/reference/security/console-roles",
             "ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
         },
         {
           "expanded": false,
-          "group": "Пользователи базы данных и права доступа",
+          "group": "Database users and permissions",
           "pages": [
             "ru/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -141,41 +147,43 @@
         },
         {
           "expanded": false,
-          "group": "Провайдеры идентификации",
+          "group": "Identity providers",
           "pages": [
             "ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "ru/products/cloud/guides/security/saml-sso-removal",
             "ru/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
     },
     {
-      "group": "Безопасность и соблюдение требований",
+      "group": "Security and compliance",
       "pages": [
         "ru/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "Сетевой доступ",
+          "group": "Network access",
           "pages": [
             "ru/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "Частное сетевое подключение",
+              "group": "Private networking",
               "pages": [
                 "ru/products/cloud/guides/security/connectivity/private-networking/index",
                 "ru/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                 "ru/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "ru/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
               ]
-            }
+            },
+            "ru/products/cloud/guides/security/connectivity/org-network-connectivity"
           ]
         },
         {
           "expanded": false,
-          "group": "Ведение журнала аудита",
+          "group": "Audit logging",
           "pages": [
             "ru/products/cloud/guides/security/audit-logging/index",
             "ru/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -186,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "Защита данных",
+          "group": "Data security",
           "pages": [
             "ru/products/cloud/guides/security/data-masking",
             "ru/products/cloud/guides/security/cmek"
@@ -194,7 +202,7 @@
         },
         {
           "expanded": false,
-          "group": "Соблюдение требований и конфиденциальность",
+          "group": "Compliance and privacy",
           "pages": [
             "ru/products/cloud/reference/security/compliance-overview",
             "ru/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -206,11 +214,11 @@
       ]
     },
     {
-      "group": "Мониторинг и резервные копии",
+      "group": "Monitoring and backups",
       "pages": [
         {
           "expanded": false,
-          "group": "Мониторинг",
+          "group": "Monitoring",
           "pages": [
             "ru/products/cloud/features/monitoring/overview",
             "ru/products/cloud/features/monitoring/cloud-console",
@@ -223,19 +231,19 @@
         },
         {
           "expanded": false,
-          "group": "Резервные копии",
+          "group": "Backups",
           "pages": [
             "ru/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "Управление резервными копиями",
+              "group": "Manage backups",
               "pages": [
                 "ru/products/cloud/guides/backups/index",
                 "ru/products/cloud/guides/backups/review-and-restore-backups",
                 "ru/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Использование собственных резервных копий",
+                  "group": "Bring Your Own Backup",
                   "pages": [
                     "ru/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -249,18 +257,19 @@
       ]
     },
     {
-      "group": "Инструменты и агенты ИИ",
+      "group": "AI tools and agents",
       "pages": [
         "ru/products/cloud/features/ai-ml/index",
         "ru/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
-          "group": "Удалённый MCP",
+          "group": "Remote MCP",
           "pages": [
             "ru/products/cloud/features/ai-ml/remote-mcp",
             "ru/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
+        "ru/products/cloud/features/ai-ml/linked-billing-claude-platform",
         "ru/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -271,10 +280,10 @@
         "ru/products/cloud/features/admin-features/api/openapi",
         "ru/products/cloud/features/admin-features/api/postman",
         {
-          "group": "Справочник по API",
+          "group": "API reference",
           "openapi": {
-            "directory": "ru/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ru/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"
@@ -283,12 +292,12 @@
       ]
     },
     {
-      "group": "Оплата",
+      "group": "Billing",
       "pages": [
         "ru/products/cloud/reference/billing/billing-overview",
         {
           "expanded": false,
-          "group": "Маркетплейс",
+          "group": "Marketplace",
           "pages": [
             "ru/products/cloud/reference/billing/marketplace/overview",
             "ru/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -318,7 +327,7 @@
       ]
     },
     {
-      "group": "Поддержка",
+      "group": "Support",
       "pages": [
         "ru/products/cloud/features/support",
         "ru/products/cloud/reference/account-close"

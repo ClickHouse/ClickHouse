@@ -14,9 +14,7 @@ doc_type: 'reference'
   Técnicas diferentes podem ser aplicadas a objetos diferentes no mesmo esquema. Por exemplo, alguns objetos podem ser melhor representados com o tipo `String`, e outros com o tipo `Map`. Observe que, depois que um tipo `String` é usado, não é mais necessário tomar outras decisões de esquema. Por outro lado, é possível aninhar subobjetos dentro de uma chave `Map` — incluindo uma `String` que representa JSON — como mostramos abaixo:
 </Info>
 
-<div id="using-string">
-  ## Usando o tipo String
-</div>
+## Usando o tipo String {#using-string}
 
 Se os objetos forem altamente dinâmicos, sem uma estrutura previsível e contiverem objetos aninhados arbitrários, você deve usar o tipo `String`. Os valores podem ser extraídos em tempo de consulta usando funções JSON, como mostramos abaixo.
 
@@ -39,7 +37,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username
+ORDER BY username;
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -167,9 +165,7 @@ As funções de String são significativamente mais lentas (&gt; 10x) do que con
 
 A flexibilidade dessa abordagem tem um custo claro em desempenho e sintaxe, e ela deve ser usada apenas para objetos altamente dinâmicos no esquema.
 
-<div id="simple-json-functions">
-  ### Funções JSON simples
-</div>
+### Funções JSON simples {#simple-json-functions}
 
 Os exemplos acima usam a família de funções JSON*. Elas utilizam um parser JSON completo baseado em [simdjson](https://github.com/simdjson/simdjson), que faz uma análise rigorosa e distingue o mesmo campo aninhado em níveis diferentes. Essas funções conseguem lidar com JSON sintaticamente correto, mas mal formatado, por exemplo, com espaços duplos entre chaves.
 

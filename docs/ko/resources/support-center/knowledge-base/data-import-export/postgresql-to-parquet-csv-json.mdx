@@ -6,9 +6,7 @@ tags: ['데이터 내보내기', '데이터 포맷']
 keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 ---
 
-<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
-  ## PostgreSQL 데이터를 Parquet, CSV 또는 JSON으로 내보내는 방법
-</div>
+## PostgreSQL 데이터를 Parquet, CSV 또는 JSON으로 내보내는 방법 {#how-to-export-postgresql-data-to-parquet-csv-or-json}
 
 이는 `clickhouse-local`로 쉽게 수행할 수 있습니다:
 
@@ -23,9 +21,7 @@ keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
 curl https://clickhouse.com/ | sh
 ```
 
-<div id="export-postgresql-to-parquet">
-  ## PostgreSQL을 Parquet로 내보내기
-</div>
+## PostgreSQL을 Parquet로 내보내기 {#export-postgresql-to-parquet}
 
 `postgresql` 테이블 함수는 원격 PostgreSQL 서버에 저장된 데이터에 대해 `SELECT`(및 `INSERT`) 쿼리를 실행할 수 있게 해줍니다. 예를 들어, PostgreSQL에 있는 테이블의 전체 내용을 보려면 다음과 같습니다.
 
@@ -59,9 +55,7 @@ INTO OUTFILE 'my_output_file.parquet'"
   출력 파일 이름에 `.parquet` 확장자가 있으므로 ClickHouse는 Parquet 포맷을 사용한다고 가정합니다. 따라서 `FORMAT Parquet` 절은 생략했습니다.
 </Note>
 
-<div id="export-postgresql-to-csv">
-  ## PostgreSQL을 CSV로 내보내기
-</div>
+## PostgreSQL을 CSV로 내보내기 {#export-postgresql-to-csv}
 
 Parquet로 내보낼 때와 동일하지만, 출력 파일 이름만 더 적절하게 지정합니다:
 
@@ -79,9 +73,7 @@ INTO OUTFILE 'my_output_file.csv'"
 
 이제 끝입니다! ClickHouse는 출력 파일 이름의 `.csv` 확장자를 감지해 데이터를 쉼표로 구분된 형식으로 출력합니다. 그 외에는 위의 명령과 완전히 동일합니다.
 
-<div id="export-postgresql-to-json">
-  ## PostgreSQL을 JSON으로 내보내기
-</div>
+## PostgreSQL을 JSON으로 내보내기 {#export-postgresql-to-json}
 
 PostgreSQL에서 JSON으로 내보내려면 파일 이름만 바꾸면 되며, ClickHouse가 포맷을 자동으로 인식합니다:
 
@@ -116,9 +108,7 @@ INTO OUTFILE 'my_output_file.ndjson'"
   ```
 </Note>
 
-<div id="stream-postgresql-to-another-process">
-  ## PostgreSQL을 다른 프로세스로 스트리밍하기
-</div>
+## PostgreSQL을 다른 프로세스로 스트리밍하기 {#stream-postgresql-to-another-process}
 
 `INTO OUTFILE` 대신 테이블 함수의 결과를 다른 프로세스로 스트리밍할 수 있습니다. 다음은 구문을 보여주는 간단한 예시입니다. Linux `wc -l` 명령을 사용해 행 수를 계산합니다:
 

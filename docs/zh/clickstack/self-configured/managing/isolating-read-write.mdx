@@ -1,0 +1,291 @@
+---
+slug: /clickstack/self-configured/managing/isolating-read-write
+title: '隔离读写工作负载'
+sidebarTitle: '隔离读写'
+description: '使用 ClickHouse Cloud 仓库分离可观测性数据的摄取与查询工作负载'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '仓库', '计算与计算分离', '只读', '隔离', '摄取', '扩缩容']
+---
+
+import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<Note>
+  本页介绍的是 **Self-managed ClickHouse Observability**。如需推荐的全托管体验，请参阅[此处](/zh/clickstack/observability/overview)的文档。
+</Note>
+
+可观测性工作负载对同一份数据有着两种截然不同的需求。摄取持续进行且以写入为主，插入完成后很长一段时间内，后台合并仍在消耗 CPU 和内存。查询负载则起伏不定：仪表盘和搜索的访问量会在故障期间达到峰值，而此时恰恰最无法容忍响应缓慢。
+
+借助 ClickHouse Cloud [仓库](/zh/products/cloud/features/infrastructure/warehouses)，两类工作负载可以基于同一份数据，分别由独立的计算资源承担，从而互不争抢 CPU 和内存。
+
+<ScalePlanFeatureBadge feature="Compute-compute separation" />
+
+仓库是 ClickHouse Cloud 的一项功能，因此本文所述的设置适用于 Self-managed ClickHouse Observability：拆分后的两侧共用同一份数据副本，各自独立进行资源规模规划、扩缩容和休眠。
+
+<Note>
+  **何时值得进行隔离**
+
+  隔离主要面向持续摄取的大规模部署。若每月存储的数据量低于约 100 TB，单个读写服务通常足以同时承载两类工作负载，一般无需再添加第二个服务。请使用[容量估算模型](/zh/clickstack/self-configured/managing/estimating-resources)估算每月的已压缩数据量。
+</Note>
+
+## 为何要将读取与写入隔离 {#why-isolate}
+
+* **写入不再拖慢读取。** 持续的 OpenTelemetry 摄取 (包括插入操作本身以及随后的后台合并) 会与仪表盘和搜索查询争抢 CPU 和内存。摄取进行期间，读取延迟可能明显上升，摄取停止后才会恢复。
+* **读取不再干扰写入。** 资源争用是双向的：一个繁重的临时查询或开销较大的仪表盘渲染可能耗尽服务内存，导致插入操作直接失败，而不仅仅是变慢。
+* **只读计算资源完全专用于查询。** 除系统表外，只读服务不执行任何后台合并。它们还能立即进入空闲状态；而读写服务则可能因合并而一直无法进入空闲。
+* **两端可分别进行容量规划。** [容量估算模型](/zh/clickstack/self-configured/managing/estimating-resources)会分别估算数据摄取计算资源和查询计算资源，而借助仓库，您可以将二者分别配置为独立的服务。超过该模型 1 QPS 的基准后，查询计算资源将占据主导：其[计算示例](/zh/clickstack/self-configured/managing/estimating-resources#worked-example)在 5 QPS 下得出摄取需要 58 个 vCPU，而查询需要 290 个。因此，一个小型写入服务即可支撑规模大得多的读取服务。
+* **空闲与自动扩缩容按服务分别配置。** 每个服务都有各自的副本数、自动扩缩容和自动空闲设置，因此写入服务可以保持常驻以支持持续摄取，而读取服务则可在非工作时间进入空闲状态。
+* **存储无需重复。** 同一仓库中的服务共享相同的对象存储目录和相同的表，且[存储仅计费一次](/zh/products/cloud/features/infrastructure/warehouses#pricing)。
+* **可按端点限制访问。** IP 访问列表按服务生效，因此可以让写入端点仅允许您的采集器访问，读取端点仅允许您的可观测性 UI 访问。请参阅我们的[网络访问控制](/zh/products/cloud/features/infrastructure/warehouses#network-access-control)指南。
+
+## 架构 {#architecture}
+
+推荐的拓扑是在一个仓库中部署一个用于摄取的读写服务，以及一个供可观测性 UI 使用的只读服务：
+
+| 服务   | 类型 | 职责                         | 客户端                                                     |
+| ---- | -- | -------------------------- | ------------------------------------------------------- |
+| 主服务  | 读写 | 摄取、后台合并、DDL (建表、生存时间 (TTL)、物化视图)  | OpenTelemetry 采集器、ClickPipes、Vector、用于管理的 SQL 控制台 / 客户端 |
+| 次级服务 | 只读 | 搜索、仪表盘、笔记本、告警评估            | 可观测性 UI                                                 |
+
+规划拓扑时请注意以下几点：
+
+* 仓库中的第一个服务始终为读写服务，且服务类型**在创建时即已固定**——如需在只读与读写之间切换，请在该仓库中新建一个服务。
+* 仓库中的所有服务使用相同的云服务提供商、区域、ClickHouse 版本和 Keeper，并遵循主服务的升级计划。
+* 仅使用**一个**读写服务进行摄取。合并任务会分配给共享该存储的所有读写服务，因此某个服务上的插入操作所产生的合并，可能由另一个服务执行。如果该服务同时还在处理繁重的查询，这些查询就会与合并争抢该服务的 CPU 和内存，从而拖慢第一个服务上插入操作的合并，进而降低插入性能。请将查询工作负载放在只读服务上；只有在需要[将合并与摄取分离](#separating-merges)时，才添加第二个读写服务。
+
+## 搭建隔离部署 {#setup}
+
+<Steps>
+  <Step title="准备读写服务" id="prepare-read-write-service">
+    使用现有服务 (或新仓库的主服务) 进行摄取，并按照[容量估算模型](/zh/clickstack/self-configured/managing/estimating-resources)得出的数据摄取计算资源确定其规模。
+
+    在此服务上创建数据库和专用的摄取用户。由于仓库中的所有服务共享访问控制，您在此处创建的用户可在该仓库的所有服务上使用：
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    请使用 `openssl rand -base64 24` 等工具生成密码，并将其存储在机密信息管理器中，不要写入清单或 shell 历史记录。更多详情请参阅[创建摄取用户](/zh/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured)指南。
+
+    如果该服务已属于某个仓库，请注意：当仓库中的其他服务处于休眠状态时，数据库级别的 DDL 可能会挂起，详见[管理与 DDL](#administration)。
+  </Step>
+
+  <Step title="向仓库添加只读服务" id="add-read-only-service">
+    在 ClickHouse Cloud 控制台中，点击刚刚准备好的服务上的加号，创建第二个与其共享数据的服务。将服务类型选择为**只读**，并按照容量估算模型中得出的查询计算资源来配置其规模。
+
+    完整操作步骤请参阅我们的指南：[如何设置仓库](/zh/products/cloud/features/infrastructure/warehouses#setup-warehouses)。
+  </Step>
+
+  <Step title="将数据摄取目标设为读写服务" id="point-ingestion">
+    配置采集器，使其将数据导出到**读写**服务端点，并以摄取用户身份进行认证：
+
+    ```shell
+    CLICKHOUSE_ENDPOINT=https://<read-write-service>.clickhouse.cloud:8443
+    CLICKHOUSE_USER=hyperdx_ingest
+    CLICKHOUSE_PASSWORD=<strong-password>
+    HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel
+    ```
+
+    详情请参阅[采集器配置选项](/zh/clickstack/self-configured/managing/config#otel-collector)，或 [Vector](/zh/clickstack/observability/ingesting-data/vector) 及其他摄取路径中的等价设置。
+
+    发送到只读端点的写入操作会被拒绝，因此采集器必须始终指向读写服务。
+  </Step>
+
+  <Step title="将可观测性 UI 配置为连接只读服务" id="point-clickstack">
+    可观测性 UI 始终连接到在 ClickHouse Cloud 控制台中启动它的那个 ClickHouse 服务。要让它在只读计算资源上运行：
+
+    1. 在 ClickHouse Cloud 控制台中选择只读服务。
+    2. 在左侧导航菜单中选择 **ClickStack**。
+
+    此后，UI 发出的所有查询都会在该只读计算资源上运行，无需在可观测性 UI 中进行任何配置。详见我们的指南：[将可观测性 UI 与只读计算资源配合使用](/zh/clickstack/self-configured/deployment/managed#clickstack-read-only-compute)。
+
+    <Warning>
+      **可观测性 UI 状态的作用域限定于服务**
+
+      仪表盘、保存的搜索、告警和 source 都归属于启动可观测性 UI 的那个服务。即使同一仓库中的另一个服务共享相同的数据，切换到该服务后，这些内容也不会随之迁移。使用[默认 OpenTelemetry schema](/zh/clickstack/self-configured/deployment/managed#adding-data-sources) 的 source 会在新服务上被自动检测到，因此可以直接搜索这些数据；但自定义或手动配置的 source，以及您保存的其他所有内容，都需要重新创建。
+
+      请在构建仪表盘之前，先确定用于运行可观测性 UI 的服务。如果您要迁移一个已投入使用的部署，请注意：在原服务上创建的告警会继续在原服务上 (使用该服务的计算资源) 进行评估，直到您将其删除。
+    </Warning>
+  </Step>
+
+  <Step title="验证拆分结果" id="verify">
+    在可观测性 UI 中执行一次搜索或打开一个仪表盘，然后检查这些查询是在哪个服务上执行的。`system` 表只会写入执行该查询的节点，因此如果服务有多个副本，需要将 [`clusterAllReplicas`](/zh/reference/system-tables/overview#querying-across-nodes) 与 `default` 集群名称搭配使用，才能覆盖所有副本。在**只读**服务上，您应该能看到这些可观测性查询：
+
+    ```sql
+    SELECT
+        user,
+        query_kind,
+        http_user_agent,
+        count()
+    FROM clusterAllReplicas('default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10)
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL
+    ORDER BY count() DESC;
+    ```
+
+    此处结果为空，并不能单凭这一点说明查询被发送到了其他地方：`system.query_log` 会定期刷写 (默认每 7.5 秒一次) ，因此在搜索后立即运行的查询可能还看不到相应记录。请稍等片刻后再次运行；如果你拥有相应授权，也可以使用 [`SYSTEM FLUSH LOGS`](/zh/reference/statements/system#flush-logs) 强制刷写。
+
+    按 `user` 和 `http_user_agent` 分组，即可确定流量的来源：无论你的数据源指向哪些表，都能借此将来自 UI 的流量与来自 SQL 控制台以及其他任何连接到该端点的客户端的流量区分开来。按 `is_initial_query = 1` 进行筛选，可使每个查询仅按其提交时的形式保留一行；分布式执行产生的次级查询，以及用于计算[物化视图](/zh/reference/system-tables/query_views_log)的内部查询，会以 `is_initial_query = 0` 单独记录到日志中。
+
+    在**读写**服务上，同一查询应只显示来自摄取用户的插入操作，而不会出现可观测性查询流量。
+
+    依次在每个服务上运行该查询是最可靠的检查方式，因为 `default` 集群仅包含你当前所连接服务的副本。如需查看整个仓库范围的聚合视图，请改用集群名称 `all_groups.default`：
+
+    ```sql
+    SELECT
+        hostName() AS host,
+        query_kind,
+        count()
+    FROM clusterAllReplicas('all_groups.default', system.query_log)
+    WHERE event_time > now() - toIntervalMinute(10)
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+    GROUP BY ALL;
+    ```
+
+    使用此查询时需要注意两点：已休眠的服务无法返回任何行，因此如需完整的结果，请先唤醒这些服务；此外，`hostName()` 标识的是副本而非服务——若要确定某项活动来自哪个服务，请直接查询该服务。
+  </Step>
+</Steps>
+
+## 将合并与摄取分离 {#separating-merges}
+
+在持续极高的摄取速率下，摄取服务的主要开销将来自合并，而非插入操作本身。由于合并会被分配到共享该存储的所有读写服务上，它们也可能被调度到原本另有用途的服务上。
+
+对于此类部署，可以将合并完全移出摄取服务，形成三服务拓扑：
+
+| 服务 | 类型       | 职责              |
+| -- | -------- | --------------- |
+| 摄取 | 读写，已禁用合并 | 仅接受插入操作         |
+| 合并 | 读写       | 执行该仓库的所有后台合并与变更 |
+| 查询 | 只读       | 为可观测性 UI 提供服务   |
+
+<Info>
+  **需要提交支持请求**
+
+  无法通过 Cloud 控制台为读写服务配置禁用合并。请[联系支持团队](https://clickhouse.com/support/program)为服务应用此设置。
+</Info>
+
+当仅摄取负载就已使某个服务达到饱和，或者两个服务都必须写入因而需要两个读写服务时，可以考虑采用此拓扑。如果您的查询工作负载完全来自仅执行读取的可观测性 UI，那么更简单的[读写加只读拆分](#architecture)即可满足需求，并且是支持更完善的方案。
+
+运行此拓扑时，请注意以下事项：
+
+* **不要依赖任一读写服务的自动空闲功能。** 已禁用合并的服务仍会处理仓库中其他服务的插入操作所产生的 part 下载和移除事件，而且大量未合并的 parts 本身就可能导致服务无法进入空闲状态。请按两个读写服务始终保持唤醒状态来进行规划。
+* **不要在任一读写服务上运行查询。** 读写服务上的繁重 `SELECT` 查询会与合并任务争夺 CPU 和内存，而这正是此拓扑要避免的故障模式。请按照[上文](#point-clickstack)所述，将可观测性 UI 指向只读服务。
+* **如有变更，其状态会在执行变更的服务上跟踪。** 变更在可观测性场景中很少见——默认的可观测性 schema 设置了 [`ttl_only_drop_parts = 1`](/zh/clickstack/self-configured/managing/ttl)，因此常规的保留策略会在生存时间 (TTL) 合并期间直接删除整个已过期的 parts，而不是通过变更逐行移除数据。如果您确实向摄取服务提交了会产生变更的 `ALTER`，该变更将由合并服务执行，其进度会显示在合并服务的 [`system.mutations`](/zh/reference/system-tables/mutations) 中，而不是摄取服务上。
+
+## 管理与 DDL {#administration}
+
+所有 schema 变更都必须在**读写**服务上执行，包括：
+
+* 创建表——由 ClickStack 采集器在首次摄取时自动完成
+* [修改生存时间 (TTL)](/zh/clickstack/self-configured/managing/ttl#modifying-ttl) 以调整数据保留期
+* 创建用于查询加速的[物化视图](/zh/clickstack/self-configured/managing/materialized-views)
+* 添加[跳数索引、投影及其他性能优化](/zh/clickstack/self-configured/managing/performance-tuning)
+
+用户、角色和授权不属于 schema 变更——它们由仓库中的所有服务共享，因此只需在任意一个服务中创建一次即可。上文的[设置步骤](#prepare-read-write-service)已创建摄取用户。连接到只读服务的其他任何客户端都应使用单独的只读查询用户进行身份验证，并为其授予[可观测性 UI 所需的权限](/zh/clickstack/self-configured/managing/production#user-permissions)，而不应使用上文所示的摄取授权。
+
+使用 [SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)或 [ClickHouse 客户端](/zh/concepts/features/interfaces/client)连接到读写服务。由于仓库内各服务共享存储和访问控制，这些变更会立即在只读服务中生效。如果您已[将合并与摄取分离](#separating-merges)，则可以在任一读写服务上提交语句，但请注意，变更会在合并服务上执行和跟踪。
+
+<Warning>
+  **当其他服务处于空闲状态时，数据库 DDL 可能会挂起**
+
+  `CREATE`、`RENAME` 和 `DROP DATABASE` 语句可能会被仓库中处于空闲或已停止状态的服务阻塞，从而导致挂起。在此拓扑中很容易遇到这种情况，因为只读服务会立即进入空闲。执行数据库级语句时，请使用 [`distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout)，可针对单个查询或整个会话进行设置：
+
+  ```sql
+  CREATE DATABASE otel
+  SETTINGS distributed_ddl_task_timeout=0
+  ```
+
+  手动停止的服务必须重新启动后，才能在其上执行查询。
+</Warning>
+
+物化视图由插入操作触发，因此由读写服务执行。只读服务会像查询其他表一样查询物化视图的目标表，包括为加速查询而[注册到数据源](/zh/clickstack/self-configured/managing/config#materialized-views-settings)的视图。
+
+## 隔离智能体工作负载 {#agentic-workloads}
+
+通过 [MCP 服务器](/zh/clickstack/observability/mcp) 连接的 AI 助手与仪表盘一样，都属于读取流量，但其负载模式有所不同：调查事故的 agent 会在短时间内连续发出大量探索性查询，且查询的时间范围无法事先预知。如果 agent 与 UI 共享同一个只读服务，这类突发流量就会冲击工程师在同一事故期间正在查看的仪表盘。
+
+同样可以采用仓库模式——为 agent 分配独立的只读计算资源：
+
+<Steps>
+  <Step title="添加第二个只读服务" id="agentic-add-service">
+    在仓库中再创建一个只读服务，步骤与[上文的设置](#add-read-only-service)完全相同。它与为 UI 提供服务的服务读取相同的表，无需复制任何数据。
+
+    然后从 Cloud 控制台在该服务上启动一次可观测性 UI，方法同[将可观测性 UI 指向只读服务](#point-clickstack)。Cloud MCP 要求服务同时启用可观测性 UI 和 MCP 本身——请参阅 [MCP 前置条件](/zh/clickstack/observability/mcp#managed-prerequisites)。
+
+    请根据 agent 预期产生的查询负载 (而非容量估算模型中的仪表盘 QPS) 确定该服务的规格，并保持启用自动空闲：智能体的使用通常是间歇性的，因此该服务可以在两次调查之间进入空闲状态。
+  </Step>
+
+  <Step title="在该服务上启用 MCP" id="agentic-enable-mcp">
+    在 ClickHouse Cloud 控制台中打开该只读服务，点击 **Connect**，选择 **Connect with MCP** 并将其开启。请参阅[启用远程 MCP 服务器](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)。
+  </Step>
+
+  <Step title="将 MCP 客户端指向该服务" id="agentic-point-clients">
+    所有服务共用同一个云端 MCP 端点——请求根据 `x-service-id` 请求头进行路由；如果未提供该请求头，请求将发送到您账户使用的第一个可观测性服务。复制现有的 MCP 配置，并添加包含新只读服务 ID 的请求头：
+
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack \
+      --header "x-service-id: <read-only-agent-service-id>"
+    ```
+
+    任何 MCP 客户端都可以携带该请求头——有关 Cursor、VS Code 等工具中的等价配置，请参阅[指定特定服务作为目标](/zh/clickstack/observability/mcp#managed-service-override)。
+  </Step>
+</Steps>
+
+<Warning>
+  **MCP 会将状态写入其目标服务**
+
+  MCP 服务器除了运行查询，还可以创建仪表盘、告警和保存的搜索。与所有[可观测性 UI 状态](#point-clickstack)一样，这些状态仅作用于请求所路由到的服务。agent 在 agent 服务上创建的仪表盘不会出现在工程师所用服务启动的可观测性 UI 中；它在该服务上创建的告警也会占用该服务的计算资源进行评估——而 agent 服务一旦进入空闲状态，就会导致评估延迟或遗漏，详见[下文](#isolating-alerts)。如果 agent 需要创建长期保留的产物，请将其路由到团队所使用的同一服务。
+</Warning>
+
+## 告警 {#alerts}
+
+告警由创建它的那个服务负责评估，因此告警与 UI 使用相同的计算资源——在此拓扑中即为只读服务。
+
+<Note>
+  **Self-managed ClickHouse Observability**
+
+  要启用告警，至少需要一名拥有 **服务管理员** 权限的用户登录过一次可观测性 UI。这一步会预配一个专用数据库用户来运行告警查询，该用户由仓库中的所有服务共享。请参阅指南：[授予 Self-managed ClickHouse Observability 访问权限](/zh/clickstack/self-configured/deployment/managed#configure-access)。
+</Note>
+
+告警评估是一种周期性运行的查询工作负载。为只读服务规划资源规模时，请将其计入 QPS——[容量估算模型](/zh/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions)会将搜索、仪表盘和告警查询合并为一个总体数值来计算。
+
+### 隔离告警评估 {#isolating-alerts}
+
+告警负载无法集中路由，因为告警由用户自行创建：谁在可观测性 UI 中添加告警，告警就会被添加到其当前使用的服务中，并在该服务的计算资源上执行评估。目前没有任何设置能将某个服务的告警转移到别处。
+
+可以隔离的是由您集中管理的告警，即平台团队为整个组织维护的告警，它们通常也是评估最频繁的告警。请在仓库中为这些告警单独分配一个只读服务，并通过在该服务上启动的可观测性 UI 创建它们：
+
+| 服务 | 类型 | 服务对象                |
+| -- | -- | ------------------- |
+| 摄取 | 读写 | OpenTelemetry 采集器   |
+| 查询 | 只读 | 可观测性 UI，以及用户自行创建的告警 |
+| 告警 | 只读 | 由平台团队维护的通用告警        |
+
+<Warning>
+  **在告警服务上禁用自动空闲**
+
+  在服务上配置告警并不能让服务保持唤醒。落到已休眠服务上的告警评估会因等待唤醒而延迟，甚至直接失败，因此启用了自动空闲的告警服务可能会漏掉评估。请在该服务上关闭自动空闲，并按始终在线来规划资源。这一点同样适用于任何执行告警评估的服务：如果告警运行在提供 UI 的服务上，那么该服务同样不能进入空闲状态。
+</Warning>
+
+由于状态按服务独立保存，还存在以下权衡：
+
+* 通用告警及其配套的仪表盘仅存在于告警服务上，在查询服务上工作的用户看不到它们。但无论采用哪种方式，通知都会发送到相同的[目标端](/zh/clickstack/observability/features/alerts)，因此用户失去的只是对告警定义的可见性，而非告警功能本身。
+* 告警服务上的 source 是独立的对象。使用[默认 OpenTelemetry schema](/zh/clickstack/self-configured/deployment/managed#adding-data-sources) 的 source 会被自动检测，但自定义 source 必须同样在该服务上完成配置，告警才能引用它们。
+
+如果同一组告警规模很小，其评估负载与仪表盘流量相比几乎可以忽略不计，那么请将所有内容保留在同一个只读服务上：此时在两处分别维护定义所带来的运维成本反而更高。
+
+## 其他注意事项 {#considerations}
+
+**自动空闲。** 只读服务进入休眠后，收到的第一个查询需要等待服务启动，因此间歇性使用会以略高的延迟换取更低的开销。不要指望告警能阻止服务进入空闲状态——对于任何用于评估告警的服务，请按照[上文](#isolating-alerts)所述禁用自动空闲。持续摄取确实能让读写服务保持唤醒，但如果您的摄取是间歇性或按计划进行的，那么空闲期结束后的第一个批次同样需要等待，表现为遥测数据延迟。
+
+**备份。** 备份仅在主服务上执行，覆盖整个仓库的数据。恢复备份会创建一个全新的服务，该服务不会连接到现有仓库。
+
+**副本数量限制。** 默认情况下，仓库内所有服务的副本总数存在上限——请参阅[使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。
+
+**将可观测性与其他工作负载隔离。** 如果您要在已运行其他工作负载 (例如实时应用程序数据分析) 的服务上添加可观测性 UI，同样可以借助仓库功能为可观测性分配独立的计算资源。请参阅我们的[隔离可观测性工作负载](/zh/clickstack/self-configured/managing/estimating-resources#isolating-workloads)指南。
+
+有关仓库的完整行为和限制，请参阅我们的[仓库](/zh/products/cloud/features/infrastructure/warehouses)指南。

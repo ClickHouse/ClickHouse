@@ -19,30 +19,22 @@ Le tableau de bord avancé est disponible à la fois dans ClickHouse OSS (logici
 et dans Cloud. Dans cet article, nous vous montrerons comment utiliser le tableau de bord avancé dans
 Cloud.
 
-<div id="accessing-the-advanced-dashboard">
-  ## Accéder au tableau de bord avancé
-</div>
+## Accéder au tableau de bord avancé {#accessing-the-advanced-dashboard}
 
-Pour accéder au tableau de bord avancé, accédez à :
+Pour accéder au tableau de bord avancé, accédez à :
 
 * Panneau latéral gauche
   * `Monitoring` → `Advanced dashboard`
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Tableau de bord avancé](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tableau de bord avancé](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+  </Frame>
 </div>
 
-<div id="accessing-the-native-advanced-dashboard">
-  ## Accéder au tableau de bord avancé natif
-</div>
+## Accéder au tableau de bord avancé natif {#accessing-the-native-advanced-dashboard}
 
-Vous pouvez accéder au tableau de bord avancé natif en allant dans :
+Vous pouvez accéder au tableau de bord avancé natif en allant dans :
 
 * Panneau latéral gauche
   * `Monitoring` → `Advanced dashboard`
@@ -52,30 +44,22 @@ Cela ouvrira le tableau de bord avancé natif dans un nouvel onglet. Vous devrez
 authentifier pour accéder au tableau de bord.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Tableau de bord avancé](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tableau de bord avancé](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+  </Frame>
 </div>
 
 Chaque visualisation est associée à une requête SQL qui l&#39;alimente. Vous pouvez
 modifier cette requête en cliquant sur l&#39;icône en forme de stylo.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Tableau de bord avancé](/images/cloud/manage/monitoring/edit_visualization.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tableau de bord avancé](/images/cloud/manage/monitoring/edit_visualization.webp)
+  </Frame>
 </div>
 
 <div id="out-of-box-visualizations">
-  ## Visualisations prêtes à l’emploi
+  ## Visualisations prêtes à l’emploi {#out-of-box-visualizations}
 </div>
 
 Les graphiques par défaut du tableau de bord avancé sont conçus pour offrir une
@@ -83,7 +67,7 @@ visibilité en temps réel sur votre système ClickHouse. Vous trouverez ci-dess
 chaque graphique. Ils sont regroupés en trois catégories pour vous aider à vous y retrouver.
 
 <div id="clickhouse-specific">
-  ### Spécifique à ClickHouse
+  ### Spécifique à ClickHouse {#clickhouse-specific}
 </div>
 
 Ces métriques sont conçues pour surveiller l’état de santé et les performances de votre instance ClickHouse.
@@ -99,7 +83,7 @@ Ces métriques sont conçues pour surveiller l’état de santé et les performa
 | Octets sélectionnés par seconde       | Indique le volume de données lues par les requêtes                                                                   |
 
 <div id="system-health-specific">
-  ### Spécifique à l’état du système
+  ### Spécifique à l’état du système {#system-health-specific}
 </div>
 
 Surveiller le système sous-jacent est tout aussi important que de surveiller ClickHouse lui-même.
@@ -116,7 +100,7 @@ Surveiller le système sous-jacent est tout aussi important que de surveiller Cl
 | Utilisation CPU de l’OS (noyau)              | Utilisation CPU lors de l’exécution de code noyau                                      |
 
 <div id="clickhouse-cloud-specific">
-  ## Spécifique à ClickHouse Cloud
+  ## Spécifique à ClickHouse Cloud {#clickhouse-cloud-specific}
 </div>
 
 ClickHouse Cloud stocke les données dans un stockage objet (de type S3). Surveiller cette
@@ -137,7 +121,7 @@ interface peut aider à détecter des problèmes.
 | Connexions réseau simultanées                    | Suit le nombre actuel de connexions réseau simultanées                 |
 
 <div id="identifying-issues-with-the-advanced-dashboard">
-  ## Identifier les problèmes à l’aide du tableau de bord avancé
+  ## Identifier les problèmes à l’aide du tableau de bord avancé {#identifying-issues-with-the-advanced-dashboard}
 </div>
 
 Disposer de cette vue en temps réel de l’état de santé de votre service ClickHouse aide grandement
@@ -145,40 +129,34 @@ Disposer de cette vue en temps réel de l’état de santé de votre service Cli
 problèmes que vous pouvez repérer à l’aide du tableau de bord avancé.
 
 <div id="unbatched-inserts">
-  ### Insertions non regroupées
+  ### Insertions non regroupées {#unbatched-inserts}
 </div>
 
 Comme indiqué dans la [documentation des bonnes pratiques](/fr/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous), il est recommandé, lorsque c’est possible de manière synchrone, de toujours
-insérer les données par lots dans ClickHouse.
+insérer les données en masse dans ClickHouse.
 
-Une insertion en bloc avec une taille de lot raisonnable réduit le nombre de parts créées
+Une insertion en masse avec une taille de lot raisonnable réduit le nombre de parts créées
 pendant l’ingestion, ce qui se traduit par des écritures sur disque plus efficaces et moins d’opérations
 de fusion.
 
-Les métriques clés pour repérer des insertions non optimisées sont **Ligne inséré** et
+Les métriques clés pour repérer des insertions non optimisées sont **Ligne insérée/s** et
 **Nombre maximal de part par partition**
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Insertions non regroupées](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
-
-</Frame>
-
+  <Frame>
+    ![Insertions non regroupées](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+  </Frame>
 </div>
 
-L’exemple ci-dessus montre deux pics de **Ligne inséré** et de **Nombre maximal de part par partition**
+L’exemple ci-dessus montre deux pics de **Ligne insérée/s** et de **Nombre maximal de part par partition**
 entre 13h et 14h. Cela indique que nous ingérons les données à un rythme raisonnable.
 
-On observe ensuite un autre pic important de **Nombre maximal de part par partition** après 16h, mais un
-**Ligne inséré** très faible. Beaucoup de parts sont créées alors que
+On observe ensuite un autre pic important de **Nombre maximal de part par partition** après 16h, mais une
+**Ligne insérée/s** très faible. Beaucoup de parts sont créées alors que
 très peu de données sont générées, ce qui indique que la taille des parts est
 sous-optimale.
 
-<div id="resource-intensive-query">
-  ### Requête gourmande en ressources
-</div>
+### Requête gourmande en ressources {#resource-intensive-query}
 
 Il est courant d&#39;exécuter des requêtes SQL qui consomment beaucoup de ressources, comme le
 CPU ou la mémoire. Il est toutefois important de surveiller ces requêtes et de comprendre
@@ -192,18 +170,12 @@ Vous trouverez ci-dessous un exemple où l&#39;utilisation du CPU atteint un pic
 nombre de requêtes exécutées par seconde.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Requête gourmande en ressources](/images/cloud/manage/monitoring/resource_intensive_query.webp)
-
-</Frame>
-
+  <Frame>
+    ![Requête gourmande en ressources](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+  </Frame>
 </div>
 
-<div id="bad-primary-key-design">
-  ### Mauvaise conception de la clé primaire
-</div>
+### Mauvaise conception de la clé primaire {#bad-primary-key-design}
 
 Un autre problème que vous pouvez repérer à l’aide du tableau de bord avancé est une mauvaise conception de la clé primaire.
 Comme décrit dans [&quot;Une introduction pratique aux index primaires dans ClickHouse&quot;](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key),
@@ -216,20 +188,16 @@ indiquer à la fois une augmentation générale du débit global des requêtes, 
 sélectionnent un grand nombre de lignes pour être exécutées.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Requête gourmande en ressources](/images/cloud/manage/monitoring/selected_rows_sec.webp)
-
-</Frame>
-
+  <Frame>
+    ![Requête gourmande en ressources](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+  </Frame>
 </div>
 
 En utilisant l’horodatage comme filtre, vous pouvez trouver les requêtes exécutées au moment
 du pic dans la table `system.query_log`.
 
-Par exemple, exécutez une requête qui affiche toutes les requêtes exécutées entre 11 h
-et 11 h un jour donné, afin de comprendre quelles requêtes lisent trop de lignes :
+Par exemple, exécutez une requête qui affiche toutes les requêtes exécutées entre 11 h
+et 11 h un jour donné, afin de comprendre quelles requêtes lisent trop de lignes :
 
 ```sql title="Query"
 SELECT
