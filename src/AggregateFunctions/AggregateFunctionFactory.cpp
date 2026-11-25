@@ -203,14 +203,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         AggregateFunctionPtr nested_function = getImpl(
             name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
-        /// Pure window functions are not real aggregate functions and handle
-        /// nullability themselves. Functions from `Nothing` can return nullptr.
-        if (!nested_function || !nested_function->isOnlyWindowFunction())
-        {
-            auto function = combinator->transformAggregateFunction(
-                nested_function, out_properties, types_without_low_cardinality, parameters);
-            return wrap_internal_nulls(std::move(function), types_without_low_cardinality, parameters);
-        }
+        /// Functions from `Nothing` can return nullptr.
+        auto function = combinator->transformAggregateFunction(
+            nested_function, out_properties, types_without_low_cardinality, parameters);
+        return wrap_internal_nulls(std::move(function), types_without_low_cardinality, parameters);
     }
 
     auto with_original_arguments = getImpl(
