@@ -506,7 +506,8 @@ void collectSymbolsFromELFSymbolTable(
 }
 
 
-bool searchAndCollectSymbolsFromELFSymbolTable(
+/// Returns the symbol table and the string table it read, if it found them.
+std::optional<std::pair<Elf::Section, Elf::Section>> searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     SectionHeaderType section_header_type,
     const char * string_table_name,
@@ -525,11 +526,26 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
             return (symbol_table && string_table);
         }))
     {
-        return false;
+        return std::nullopt;
     }
 
     collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, data);
-    return true;
+    return std::pair(*symbol_table, *string_table);
+}
+
+/// Also records the tables, so that `load` releases their pages once it has selected the symbols.
+/// `elf` must be the `Elf` of an object in `data.objects`, which outlives the load.
+void searchAndCollectSymbolsFromObjectSymbolTable(
+    const Elf & elf,
+    SectionHeaderType section_header_type,
+    const char * string_table_name,
+    SymbolIndex::Data & data)
+{
+    if (auto tables = searchAndCollectSymbolsFromELFSymbolTable(elf, section_header_type, string_table_name, data))
+    {
+        data.symbol_table_sections.emplace_back(&elf, tables->first);
+        data.symbol_table_sections.emplace_back(&elf, tables->second);
+    }
 }
 
 
@@ -812,7 +828,7 @@ bool collectSymbolsFromELF(
     if (!searchAndCollectCompactSymbols(*data.objects.back().elf, data))
     {
         const size_t initial_symbol_count = data.symbols.size();
-        searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data);
+        searchAndCollectSymbolsFromObjectSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data);
         /// `.gnu_debugdata` is produced by our own `SYMBOL_SECTIONS=gnu_debugdata` packaging mode.
         /// Read it only for the main executable, so that stripped system libraries shipping MiniDebugInfo
         /// are not decompressed and kept in memory.
@@ -822,7 +838,7 @@ bool collectSymbolsFromELF(
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
+    searchAndCollectSymbolsFromObjectSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
 #endif
 
     return is_main_executable;
@@ -1198,6 +1214,15 @@ void SymbolIndex::load()
     sort_and_deduplicate(data.symbols);
     for (auto & object : data.objects)
         sort_and_deduplicate(object.symbols);
+
+#if defined(__ELF__)
+    /// The symbols are copied into `data`, and the selection above was the last read of their names at load:
+    /// later lookups fault the string table pages back in from the page cache.
+    for (const auto & [elf, section] : data.symbol_table_sections)
+        elf->releaseSectionPages(section);
+    data.symbol_table_sections.clear();
+    data.symbol_table_sections.shrink_to_fit();
+#endif
 
 #if defined(__ELF__)
     if (data.has_compact_symbols)

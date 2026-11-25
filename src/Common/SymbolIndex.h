@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include <boost/noncopyable.hpp>
 #if defined(__ELF__)
@@ -228,6 +229,8 @@ public:
 #if defined(__ELF__)
         std::vector<std::shared_ptr<const CompactSymbolTable>> compact_symbol_tables;
         bool has_compact_symbols = false;
+        /// Symbol and string tables that the load read from the `Elf` of an object; empty after the load.
+        std::vector<std::pair<const Elf *, Elf::Section>> symbol_table_sections;
 #endif
         std::vector<uint32_t> symbol_scan_order;
         /// BuildID from the Object corresponding to main executable (as opposed to dynamic libraries).
