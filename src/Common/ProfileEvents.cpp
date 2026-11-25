@@ -154,7 +154,6 @@
     M(IcebergMetadataJSONParseMicroseconds, "Total time spent parsing Iceberg `metadata.json` files.", ValueType::Microseconds) \
     M(IcebergMetadataJSONValidations, "Number of times an Iceberg `metadata.json` was checked for the fields the Iceberg specification requires. A file served from the Iceberg metadata cache is checked once.", ValueType::Number) \
     M(IcebergMetadataJSONSchemaRegistrations, "Number of times all schemas and snapshots of an Iceberg `metadata.json` were registered in the schema processor of the table.", ValueType::Number) \
-    M(IcebergMetadataJSONSchemaRegistrationSkips, "Number of times the schemas and snapshots of an Iceberg `metadata.json` were not registered again, because the same parsed object from the Iceberg metadata cache had already been registered for the table.", ValueType::Number) \
     M(IcebergManifestListsRead, "Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \
     M(IcebergManifestListsReadMicroseconds, "Total time spent reading and decoding Iceberg manifest lists from storage.", ValueType::Microseconds) \
     M(IcebergManifestFilesRead, "Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).", ValueType::Number) \

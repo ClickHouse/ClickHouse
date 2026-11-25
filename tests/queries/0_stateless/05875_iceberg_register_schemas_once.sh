@@ -63,8 +63,7 @@ echo "-- profile events"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         substring(log_comment, length('${TABLE}_') + 1) AS name,
-        ProfileEvents['IcebergMetadataJSONSchemaRegistrations'] > 0 AS registered,
-        ProfileEvents['IcebergMetadataJSONSchemaRegistrationSkips'] > 0 AS skipped
+        ProfileEvents['IcebergMetadataJSONSchemaRegistrations'] > 0 AS registered
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '${TABLE}_')
     ORDER BY event_time_microseconds

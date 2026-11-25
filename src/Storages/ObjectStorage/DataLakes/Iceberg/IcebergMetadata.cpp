@@ -108,7 +108,6 @@ extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
 extern const Event IcebergGetTableStateMicroseconds;
 extern const Event IcebergMetadataJSONSchemaRegistrations;
-extern const Event IcebergMetadataJSONSchemaRegistrationSkips;
 }
 
 namespace DB
@@ -467,7 +466,6 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 
     if (schema_processor->isMetadataObjectRegistered(metadata_object))
     {
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONSchemaRegistrationSkips);
         for (size_t i = snapshots->size(); i > 0; --i)
         {
             auto snapshot = snapshots->getObject(static_cast<UInt32>(i - 1));

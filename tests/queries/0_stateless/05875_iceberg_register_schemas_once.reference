@@ -31,10 +31,10 @@
 4	40	y	\N
 5	50	z	0.5
 -- profile events
-cached_1	1	1
-cached_2	0	1
-time_travel_1	0	1
-time_travel_2	0	1
-evolved	1	1
-no_cache_1	1	0
-no_cache_2	1	0
+cached_1	1
+cached_2	0
+time_travel_1	0
+time_travel_2	0
+evolved	1
+no_cache_1	1
+no_cache_2	1
