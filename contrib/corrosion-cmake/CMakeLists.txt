@@ -93,12 +93,20 @@ if (USE_MUSL)
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_C_FLAGS_STRIPPED "${CMAKE_C_FLAGS}")
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_CXX_FLAGS_STRIPPED "${CMAKE_CXX_FLAGS}")
 
-    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
-    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_STUB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include")
     set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
     set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
+    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
+    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
 
-    set(MUSL_C_INCLUDES "-isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_INCLUDE_DIR}")
+    # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
+    # musl header surface that cmake/linux/toolchain-{x86_64,aarch64}.cmake put into CMAKE_*_FLAGS
+    # via MUSL_INCLUDE_FLAGS. Keep this in sync with those toolchain files: the stub headers (e.g.
+    # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
+    # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
+    # the tree. The order matches the toolchain's -isystem order.
+    set(MUSL_C_INCLUDES "-isystem ${MUSL_STUB_INCLUDE_DIR} -isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_INCLUDE_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_KERNEL_HEADERS_DIR}")
 
     set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
 
@@ -145,6 +153,13 @@ endif()
 if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
+    # The C and C++ code built by the crates (e.g. a copy of `zstd` in `zstd-sys`) is third-party,
+    # like the code in `contrib`, which is not checked for unsigned integer overflows either.
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
+    set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
 endif()
 
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
@@ -197,11 +212,30 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
+# metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
+if (ENABLE_CFI)
+    # The final link reads the bitcode of rustc, and LLVM does not read bitcode of a newer version than its own.
+    if (NOT Rust_LLVM_VERSION_MAJOR OR COMPILER_VERSION_MAJOR VERSION_LESS Rust_LLVM_VERSION_MAJOR)
+        message(FATAL_ERROR "ENABLE_CFI requires Clang ${Rust_LLVM_VERSION_MAJOR} or newer, the LLVM version of rustc "
+            "${Rust_VERSION} (${Rust_TOOLCHAIN}); found Clang ${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Clinker-plugin-lto" "-Zsanitizer=cfi" "-Zsanitizer-cfi-normalize-integers")
+    # The next trait solver fails to normalize the projections that the CFI type ids of some trait methods build (an
+    # internal compiler error in Cranelift since nightly-2026-08-22, https://github.com/rust-lang/rust/issues/166055),
+    # so CFI builds use the previous one.
+    list(APPEND RUSTFLAGS "-Znext-solver=no")
+    if (ENABLE_CFI_DIAGNOSTICS)
+        list(APPEND RUSTFLAGS "-Zsanitizer-cfi-diag" "-Zsanitizer-cfi-recover")
+    endif()
+endif()
+
+# rustc refuses to combine a sanitizer, CFI included, with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
 # libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+if (USE_MUSL AND (NOT SANITIZE STREQUAL "" OR ENABLE_CFI))
     list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
