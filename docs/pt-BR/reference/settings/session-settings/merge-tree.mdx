@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="merge_tree_coarse_index_granularity">
-  ## merge_tree_coarse_index_granularity
-</div>
+## merge_tree_coarse_index_granularity {#merge_tree_coarse_index_granularity}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -26,27 +24,21 @@ Valores possíveis:
 
 * Qualquer número inteiro par positivo.
 
-<div id="merge_tree_compact_parts_min_granules_to_multibuffer_read">
-  ## merge_tree_compact_parts_min_granules_to_multibuffer_read
-</div>
+## merge_tree_compact_parts_min_granules_to_multibuffer_read {#merge_tree_compact_parts_min_granules_to_multibuffer_read}
 
 <CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
-Só tem efeito no ClickHouse Cloud. Número de grânulos em uma stripe de uma parte compacta de tabelas MergeTree para usar o leitor multibuffer, que oferece suporte a leitura paralela e prefetch. No caso de leitura a partir de um sistema de arquivos remoto, o uso do leitor multibuffer aumenta o número de requisições de leitura. Uma parte é lida com um único buffer quando contém menos grânulos do que esse limite e também menos grânulos do que o número de colunas que estão sendo lidas, porque, nesse caso, o leitor de buffer único emite menos requisições de leitura do que o leitor multibuffer.
+Só tem efeito no ClickHouse Cloud. Número de grânulos em uma stripe de uma parte compacta de tabelas MergeTree para usar o leitor multibuffer, que oferece suporte a leitura paralela e prefetch. No caso de leitura a partir de um sistema de arquivos remoto, o uso do leitor multibuffer aumenta o número de requisições de leitura.
 
-<div id="merge_tree_determine_task_size_by_prewhere_columns">
-  ## merge_tree_determine_task_size_by_prewhere_columns
-</div>
+## merge_tree_determine_task_size_by_prewhere_columns {#merge_tree_determine_task_size_by_prewhere_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Define se deve usar apenas o tamanho das colunas de prewhere para determinar o tamanho da tarefa de leitura.
 
-<div id="merge_tree_generic_exclusion_search_max_steps">
-  ## merge_tree_generic_exclusion_search_max_steps
-</div>
+## merge_tree_generic_exclusion_search_max_steps {#merge_tree_generic_exclusion_search_max_steps}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -64,9 +56,7 @@ Possible values:
 
 * 0 para passos ilimitados ou qualquer número inteiro positivo.
 
-<div id="merge_tree_max_bytes_to_use_cache">
-  ## merge_tree_max_bytes_to_use_cache
-</div>
+## merge_tree_max_bytes_to_use_cache {#merge_tree_max_bytes_to_use_cache}
 
 <SettingsInfoBlock type="UInt64" default_value="2013265920" />
 
@@ -78,9 +68,7 @@ Valores possíveis:
 
 * Qualquer inteiro positivo.
 
-<div id="merge_tree_max_rows_to_use_cache">
-  ## merge_tree_max_rows_to_use_cache
-</div>
+## merge_tree_max_rows_to_use_cache {#merge_tree_max_rows_to_use_cache}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -92,9 +80,7 @@ Valores possíveis:
 
 * Qualquer número inteiro positivo.
 
-<div id="merge_tree_min_bytes_for_concurrent_read">
-  ## merge_tree_min_bytes_for_concurrent_read
-</div>
+## merge_tree_min_bytes_for_concurrent_read {#merge_tree_min_bytes_for_concurrent_read}
 
 <SettingsInfoBlock type="UInt64" default_value="251658240" />
 
@@ -104,9 +90,7 @@ Valor possível:
 
 * Inteiro positivo.
 
-<div id="merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem">
-  ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
-</div>
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -118,9 +102,7 @@ Valores possíveis:
 
 * Inteiro positivo.
 
-<div id="merge_tree_min_bytes_for_seek">
-  ## merge_tree_min_bytes_for_seek
-</div>
+## merge_tree_min_bytes_for_seek {#merge_tree_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -130,9 +112,7 @@ Valores possíveis:
 
 * Qualquer inteiro positivo.
 
-<div id="merge_tree_min_bytes_per_read_stream">
-  ## merge_tree_min_bytes_per_read_stream
-</div>
+## merge_tree_min_bytes_per_read_stream {#merge_tree_min_bytes_per_read_stream}
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -150,9 +130,7 @@ Valores possíveis:
 
 * Inteiro não negativo.
 
-<div id="merge_tree_min_bytes_per_task_for_remote_reading">
-  ## merge_tree_min_bytes_per_task_for_remote_reading
-</div>
+## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
 
 **Aliases**: `filesystem_prefetch_min_bytes_for_single_read_task`
 
@@ -162,9 +140,7 @@ Valores possíveis:
 
 Número mínimo de bytes lidos por tarefa.
 
-<div id="merge_tree_min_read_task_size">
-  ## merge_tree_min_read_task_size
-</div>
+## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -172,9 +148,7 @@ Número mínimo de bytes lidos por tarefa.
 
 Limite mínimo rígido para o tamanho da tarefa (mesmo quando o número de grânulos é baixo e o número de threads disponíveis é alto, não alocaremos tarefas menores
 
-<div id="merge_tree_min_rows_for_concurrent_read">
-  ## merge_tree_min_rows_for_concurrent_read
-</div>
+## merge_tree_min_rows_for_concurrent_read {#merge_tree_min_rows_for_concurrent_read}
 
 <SettingsInfoBlock type="UInt64" default_value="163840" />
 
@@ -184,9 +158,7 @@ Valores possíveis:
 
 * Inteiro positivo.
 
-<div id="merge_tree_min_rows_for_concurrent_read_for_remote_filesystem">
-  ## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
-</div>
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -198,9 +170,7 @@ Valores possíveis:
 
 * Inteiro positivo.
 
-<div id="merge_tree_min_rows_for_seek">
-  ## merge_tree_min_rows_for_seek
-</div>
+## merge_tree_min_rows_for_seek {#merge_tree_min_rows_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -210,9 +180,7 @@ Valores possíveis:
 
 * Qualquer número inteiro positivo.
 
-<div id="merge_tree_prefetch_json_shared_data_substreams">
-  ## merge_tree_prefetch_json_shared_data_substreams
-</div>
+## merge_tree_prefetch_json_shared_data_substreams {#merge_tree_prefetch_json_shared_data_substreams}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +188,7 @@ Valores possíveis:
 
 Habilita o prefetch de subfluxos de dados compartilhados JSON em partes Wide lidos por meio de uma busca até uma marca. Esse prefetch lê desde o início do grânulo, que geralmente não é a posição a partir da qual o subfluxo é lido, podendo ser desnecessário. Desabilite-o para ignorar esses prefetches.
 
-<div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
-  ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
-</div>
+## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -230,9 +196,7 @@ Habilita o prefetch de subfluxos de dados compartilhados JSON em partes Wide lid
 
 Para testar o `PartsSplitter` - divide os intervalos de leitura em sobrepostos e não sobrepostos sempre que houver leitura do MergeTree, com a probabilidade especificada.
 
-<div id="merge_tree_storage_snapshot_sleep_ms">
-  ## merge_tree_storage_snapshot_sleep_ms
-</div>
+## merge_tree_storage_snapshot_sleep_ms {#merge_tree_storage_snapshot_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -246,17 +210,13 @@ Valores possíveis:
 * 0 - Sem atraso (padrão)
 * N - Atraso em milissegundos
 
-<div id="merge_tree_use_const_size_tasks_for_remote_reading">
-  ## merge_tree_use_const_size_tasks_for_remote_reading
-</div>
+## merge_tree_use_const_size_tasks_for_remote_reading {#merge_tree_use_const_size_tasks_for_remote_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Define se devem ser usadas tarefas de tamanho constante para leitura de uma tabela remota.
 
-<div id="merge_tree_use_deserialization_prefixes_cache">
-  ## merge_tree_use_deserialization_prefixes_cache
-</div>
+## merge_tree_use_deserialization_prefixes_cache {#merge_tree_use_deserialization_prefixes_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -264,9 +224,7 @@ Define se devem ser usadas tarefas de tamanho constante para leitura de uma tabe
 
 Habilita o cache dos metadados das colunas a partir dos prefixos dos arquivos durante a leitura em discos remotos no MergeTree.
 
-<div id="merge_tree_use_prefixes_deserialization_thread_pool">
-  ## merge_tree_use_prefixes_deserialization_thread_pool
-</div>
+## merge_tree_use_prefixes_deserialization_thread_pool {#merge_tree_use_prefixes_deserialization_thread_pool}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -274,9 +232,7 @@ Habilita o cache dos metadados das colunas a partir dos prefixos dos arquivos du
 
 Habilita o uso do pool de threads para a leitura paralela de prefixos em partes Wide do MergeTree. O tamanho desse pool de threads é controlado pela configuração do servidor `max_prefixes_deserialization_thread_pool_size`.
 
-<div id="merge_tree_use_v1_object_and_dynamic_serialization">
-  ## merge_tree_use_v1_object_and_dynamic_serialization
-</div>
+## merge_tree_use_v1_object_and_dynamic_serialization {#merge_tree_use_v1_object_and_dynamic_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

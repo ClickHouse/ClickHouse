@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -15,6 +16,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -83,7 +86,8 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.correlated_subtrees = std::move(correlated_subtrees);
 
     const auto * output = result.filter_actions->dag.getOutputs().at(0);
-    if (output->column && ConstantFilterDescription(*output->column).always_true)
+    /// `arrayJoin` changes the number of rows, so the step is needed even if the filter is always true.
+    if (output->column && ConstantFilterDescription(*output->column).always_true && !result.filter_actions->dag.hasArrayJoin())
         return {};
 
     result.filter_column_name = output->result_name;
@@ -122,7 +126,7 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
-            if (!function_node->isOrdinaryFunction())
+            if (!function_node->isOrdinaryCall())
             {
                 /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
                 /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
@@ -430,18 +434,29 @@ std::optional<WindowAnalysisResult> analyzeWindow(
                 }
             }
 
-            if (types_changed)
+            if (!types_changed)
+                continue;
+
+            if (window_function.general_function)
+            {
+                window_function.general_function = WindowFunctionFactory::instance().get(
+                    window_function.getFunctionName(),
+                    NullsAction::EMPTY,
+                    actual_argument_types,
+                    window_function.function_parameters);
+            }
+            else
             {
                 AggregateFunctionProperties properties;
-                auto new_function = AggregateFunctionFactory::instance().get(
-                    window_function.aggregate_function->getName(),
+                window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+                    window_function.getFunctionName(),
                     NullsAction::EMPTY,
                     actual_argument_types,
                     window_function.function_parameters,
                     properties);
-                window_function.aggregate_function = std::move(new_function);
-                window_function.argument_types = std::move(actual_argument_types);
             }
+
+            window_function.argument_types = std::move(actual_argument_types);
         }
     }
 
@@ -449,7 +464,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
         true /*use_actions_nodes_as_output_columns*/,
@@ -1011,7 +1026,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
     /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
     /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
-    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> keep_inputs;
     if (!source_constants.empty())
         for (const auto * input : project_names_actions->dag.getInputs())
             if (input->column && source_constants.contains(input->result_name))

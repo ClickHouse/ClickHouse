@@ -2,6 +2,7 @@ import base64
 import errno
 import glob
 import http.client
+import io
 import json
 import logging
 import os
@@ -228,7 +229,10 @@ DEFAULT_THREAD_FUZZER_SETTINGS = {
 
 DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
 
-SANITIZER_SIGN = "=================="
+# ASan, MSan and TSan reports start with a `=====` banner; UBSan and CFI diagnostics reports have none.
+SANITIZER_SIGNS = ("==================", ": runtime error: ")
+# For `zgrep` (basic regex alternation).
+SANITIZER_SIGN = "\\|".join(SANITIZER_SIGNS)
 
 CLICKHOUSE_START_COMMAND = (
     "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
@@ -747,6 +751,7 @@ class ClickHouseCluster:
         azurite_default_port=0,
         server_binaries=[],
         with_dolor=False,
+        s3_server="minio",
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -901,7 +906,10 @@ class ClickHouseCluster:
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None  # source for certificates
         self.minio_data_dir = p.join(self.minio_dir, "data")
-        self.minio_host = "minio1"
+        # The S3 server behind `with_minio`: "minio" or "seaweedfs"
+        assert s3_server in ("minio", "seaweedfs"), f"Unknown s3_server {s3_server}"
+        self.s3_server = s3_server
+        self.minio_host = "seaweedfs1" if s3_server == "seaweedfs" else "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
@@ -2053,14 +2061,17 @@ class ClickHouseCluster:
         env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
         env_variables["RESOLVER_LOGS_FS"] = "bind"
 
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
+        compose_file = p.join(
+            docker_compose_yml_dir,
+            (
+                "docker_compose_seaweedfs.yml"
+                if self.s3_server == "seaweedfs"
+                else "docker_compose_minio.yml"
+            ),
         )
+        self.base_cmd.extend(["--file", compose_file])
         self.base_minio_cmd = self.compose_cmd(
-            "--env-file",
-            instance.env_file,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
+            "--env-file", instance.env_file, "--file", compose_file
         )
         return self.base_minio_cmd
 
@@ -2378,6 +2389,7 @@ class ClickHouseCluster:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
@@ -2445,8 +2457,9 @@ class ClickHouseCluster:
         # lost or half-written by an exit-time dump interrupted by the kill.
         # Continuous mode releases the static counter section that per-module
         # coverage reads inside the server, so the two are mutually exclusive.
+        # Per-module coverage merges no profile, so it writes none.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
+            "/dev/null" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -2528,6 +2541,7 @@ class ClickHouseCluster:
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
             cpu_limit=cpu_limit,
+            cpuset=cpuset,
             pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
@@ -2756,6 +2770,7 @@ class ClickHouseCluster:
             )
 
         if minio_certs_dir is not None:
+            assert self.s3_server == "minio", "TLS for the S3 server needs s3_server='minio'"
             if self.minio_certs_dir is None:
                 self.minio_certs_dir = minio_certs_dir
             else:
@@ -3648,9 +3663,35 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_seaweedfs_writable(self, deadline):
+        # SeaweedFS fails writes until it has allocated its first volume
+        minio_client = Minio(
+            f"{self.minio_ip}:{self.minio_port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            # Bounded calls, so that a server that never answers cannot outlast the deadline
+            http_client=urllib3.PoolManager(
+                timeout=urllib3.Timeout(connect=5, read=10), retries=False
+            ),
+        )
+        while True:
+            try:
+                minio_client.put_object(
+                    self.minio_bucket, "write_probe", io.BytesIO(b"ready"), 5
+                )
+                minio_client.remove_object(self.minio_bucket, "write_probe")
+                return
+            except Exception as ex:
+                if time.time() >= deadline:
+                    raise
+                logging.debug("SeaweedFS is not writable yet: %s", str(ex))
+                time.sleep(1)
+
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
-        self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
+        if self.s3_server == "minio":
+            self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
         os.environ["SSL_CERT_FILE"] = p.join(
             self.base_dir, self.minio_dir, "certs", "public.crt"
@@ -3689,6 +3730,10 @@ class ClickHouseCluster:
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
+
+                if self.s3_server == "seaweedfs":
+                    # Own retry: re-running this loop fails on the created buckets
+                    self.wait_seaweedfs_writable(start + timeout)
 
                 self.minio_client = minio_client
                 return
@@ -4766,7 +4811,8 @@ class ClickHouseCluster:
                 # Search for sinitizer signs in docker.log if it's still empty
                 with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
-                        if SANITIZER_SIGN in line:
+                        # Only the banner: other containers log Go panics with `runtime error:`.
+                        if SANITIZER_SIGNS[0] in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
 
@@ -4783,7 +4829,7 @@ class ClickHouseCluster:
                     if not os.path.exists(keeper_stderr):
                         continue
                     with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
+                        if any(sign in line for line in f for sign in SANITIZER_SIGNS):
                             sanitizer_assert_instance = f"zoo{i}"
                             logging.error(
                                 "Sanitizer in Keeper instance zoo%s log %s",
@@ -5132,10 +5178,35 @@ class ClickHouseCluster:
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
 
+    def wait_integration_nodes_stopped(self, nodes, timeout: float = 30) -> None:
+        # Docker Engine before 28.3 returns from `stop` and `kill` before its container list shows the container
+        # stopped (moby/moby#50133), and `docker compose start` skips every container that list shows as running.
+        names = {"/" + self.get_instance_docker_id(node) for node in nodes}
+        deadline = time.monotonic() + timeout
+        while True:
+            running = sorted(
+                name
+                for container in self.docker_client.api.containers(
+                    all=True,
+                    filters={"label": f"com.docker.compose.project={self.project_name}"},
+                )
+                if container["State"] == "running"
+                for name in container["Names"]
+                if name in names
+            )
+            if not running:
+                return
+            if time.monotonic() > deadline:
+                raise Exception(
+                    f"Containers {running} are still listed as running {timeout}s after being stopped"
+                )
+            time.sleep(0.1)
+
     def stop_zookeeper_nodes(self, zk_nodes):
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+        self.wait_integration_nodes_stopped(zk_nodes)
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
@@ -5144,6 +5215,8 @@ class ClickHouseCluster:
         # action. compose parallelizes the services internally.
         logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
         subprocess_check_call(base_cmd + [action] + list(nodes))
+        if action in ("stop", "kill"):
+            self.wait_integration_nodes_stopped(nodes)
         logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
@@ -5192,6 +5265,7 @@ services:
         tmpfs: {tmpfs}
         {mem_limit}
         {cpu_limit}
+        {cpuset}
         {pids_limit}
         cap_add:
             - SYS_PTRACE
@@ -5315,6 +5389,7 @@ class ClickHouseInstance:
         tmpfs=None,
         mem_limit=None,
         cpu_limit=None,
+        cpuset=None,
         pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
@@ -5344,6 +5419,9 @@ class ClickHouseInstance:
             self.cpu_limit = ""
         else:
             self.cpu_limit = f"cpus: {cpu_limit}"
+
+        # CPUs the container may run on, e.g. "0-1" (the `--cpuset-cpus` option of `docker run`).
+        self.cpuset = f'cpuset: "{cpuset}"' if cpuset is not None else ""
 
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
@@ -6574,6 +6652,11 @@ class ClickHouseInstance:
             latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
             if p.exists(latest_version_seccomp_config_path):
                 os.remove(latest_version_seccomp_config_path)
+        delay_merges_after_startup_config_path = (
+            self.delay_merges_after_startup_config_path()
+        )
+        if p.exists(delay_merges_after_startup_config_path):
+            os.remove(delay_merges_after_startup_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6588,6 +6671,18 @@ class ClickHouseInstance:
 
     def latest_version_seccomp_config_path(self):
         return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
+
+    def delay_merges_after_startup_config_path(self):
+        return p.join(self.config_d_dir, "0_common_delay_merges_after_startup.xml")
+
+    def write_delay_merges_after_startup_config(self):
+        # Tests expect background merges right after a restart. Older versions do not know the setting,
+        # so it is written only for the server built from these sources.
+        with open(self.delay_merges_after_startup_config_path(), "w") as f:
+            f.write(
+                f"<{self.config_root_name}><merge_tree><delay_merges_after_startup_seconds>0"
+                f"</delay_merges_after_startup_seconds></merge_tree></{self.config_root_name}>\n"
+            )
 
     def restart_with_latest_version(
         self,
@@ -6627,6 +6722,8 @@ class ClickHouseInstance:
                 f.write(
                     f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
                 )
+        if self.copy_common_configs:
+            self.write_delay_merges_after_startup_config()
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
@@ -6936,6 +7033,20 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        # The isolation of the filesystem of the server depends on whether the container allows namespaces, and,
+        # when it is in force, hides what the tests use outside the paths of the server, such as the ODBC drivers
+        # and the interpreters of the scripts, so it is left at its default, `disabled`. An older server version
+        # would not know the element anyway. The stateless tests cover the isolation.
+        main_config_path = p.join(instance_config_dir, self.main_config_name)
+        with open(main_config_path, "r") as f:
+            main_config = f.read()
+        main_config = re.sub(
+            r"\n[ \t]*<filesystem_isolation>[^<]*</filesystem_isolation>|\nfilesystem_isolation:[^\n]*",
+            "",
+            main_config,
+        )
+        with open(main_config_path, "w") as f:
+            f.write(main_config)
         if self.with_installed_binary:
             # The main config.xml comes from the current sources, and an older server version refuses
             # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
@@ -6996,6 +7107,12 @@ class ClickHouseInstance:
                 self.config_d_dir,
                 self.with_installed_binary,
             )
+        if (
+            self.copy_common_configs
+            and not self.with_installed_binary
+            and not self.cluster.with_dolor
+        ):
+            self.write_delay_merges_after_startup_config()
 
         if not self.cluster.with_dolor:
             write_embedded_config("0_common_instance_users.xml", users_d_dir)
@@ -7172,7 +7289,7 @@ class ClickHouseInstance:
             depends_on += list(ZOOKEEPER_CONTAINERS)
 
         if self.with_minio:
-            depends_on.append("minio1")
+            depends_on.append(self.cluster.minio_host)
 
         if self.with_azurite:
             depends_on.append("azurite1")
@@ -7290,6 +7407,7 @@ class ClickHouseInstance:
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     cpu_limit=self.cpu_limit,
+                    cpuset=self.cpuset,
                     pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
