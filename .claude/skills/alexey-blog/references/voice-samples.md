@@ -17,10 +17,8 @@ Sources, in the author's order of preference:
 `/blog/decorating-a-christmas-tree-with-the-help-of-flaky-tests`,
 `/blog/evolution-of-data-structures-in-yandexmetrica`.
 
-The first five and the paste, LZ4, obfuscation and flaky-tests posts are
-entirely first-person and are the best reference. The ADS-B and Christmas
-gifts posts were partly written by colleagues, and the Yandex.Metrica one is
-an older translation; use them for structure, not for voice.
+All of these posts are written by the author and are equally valid as a
+reference for the voice.
 
 ## Openings
 
