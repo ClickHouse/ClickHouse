@@ -173,10 +173,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         }
     }
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
-    /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
-    /// they must handle the nullability themselves.
-    /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null", unless the function
+    /// handles the nullability itself, such as any_value_respect_nulls.
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
 
@@ -205,11 +203,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         AggregateFunctionPtr nested_function = getImpl(
             name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
-        // Pure window functions are not real aggregate functions. Applying
-        // combinators doesn't make sense for them, they must handle the
-        // nullability themselves. Another special case is functions from Nothing
-        // that are rewritten to AggregateFunctionNothing, in this case
-        // nested_function is nullptr.
+        /// Pure window functions are not real aggregate functions and handle
+        /// nullability themselves. Functions from `Nothing` can return nullptr.
         if (!nested_function || !nested_function->isOnlyWindowFunction())
         {
             auto function = combinator->transformAggregateFunction(

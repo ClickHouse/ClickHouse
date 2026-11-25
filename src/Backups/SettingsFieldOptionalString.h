@@ -16,7 +16,7 @@ struct SettingFieldOptionalString
 
     explicit operator Field() const;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 };
 
 }

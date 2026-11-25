@@ -1,0 +1,121 @@
+<!-- Not for the Iceberg configuration: a `SimpleAggregateFunction` column, and the `AggregatingMergeTree` merge is what is measured. -->
+<test iceberg="0">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!--
+        `timeSeriesGroupArray` is the aggregate function of the samples tables of `TimeSeries` tables: their merges, inserts
+        with `optimize_on_insert` and `FINAL` reads combine rows of the same series and bucket with it, the reads of tables of
+        earlier versions gather one sample per row with it, and the raw samples output of PromQL uses it too.
+        Its result is written once per sample, so these queries measure the cost of the result per sample.
+    -->
+
+    <!-- 40000 series, 4 rows per series, 60 samples per row (15 s apart): 9.6M samples, like 4 unmerged parts of a samples table. -->
+    <create_query>
+        CREATE TABLE ts_group_array_rows
+        (
+            id UInt64,
+            samples Array(Tuple(DateTime64(3, 'UTC'), Float64))
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO ts_group_array_rows
+        SELECT
+            number % 40000 AS id,
+            arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) AS samples
+        FROM numbers(40000 * 4)
+    </fill_query>
+
+    <!-- One part, so that no background merge runs during the queries (the `INSERT` query below keeps merges running). -->
+    <fill_query>OPTIMIZE TABLE ts_group_array_rows FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 1, 'timeseries_group_array: expected 1 active part in ts_group_array_rows')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_group_array_rows' AND active
+    </fill_query>
+
+    <!-- 10000 series, 1000 samples per series, one sample per row: like the samples table of an earlier version. -->
+    <create_query>
+        CREATE TABLE ts_group_array_samples
+        (
+            id UInt64,
+            timestamp DateTime64(3, 'UTC'),
+            value Float64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, timestamp)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO ts_group_array_samples
+        SELECT number % 10000, toDateTime64(1700000000 + intDiv(number, 10000) * 15, 3, 'UTC'), toFloat64(number) / 4
+        FROM numbers(10000 * 1000)
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE ts_group_array_samples FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 1, 'timeseries_group_array: expected 1 active part in ts_group_array_samples')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_group_array_samples' AND active
+    </fill_query>
+
+    <!-- The 9.6M samples of `ts_group_array_rows` as 4 unmerged parts of an `AggregatingMergeTree` table, one part per row of
+         each series: `SELECT ... FINAL` merges them with `AggregatingSortedAlgorithm`, as a merge of a samples table does. -->
+    <create_query>
+        CREATE TABLE ts_group_array_parts
+        (
+            id UInt64,
+            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3, 'UTC'), Float64)))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES ts_group_array_parts</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(0, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(40000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(80000, 40000)</fill_query>
+    <fill_query>INSERT INTO ts_group_array_parts SELECT number % 40000, arrayMap(k -> (toDateTime64(1700000000 + (intDiv(number, 40000) * 60 + k) * 15, 3, 'UTC'), toFloat64(number * 60 + k) / 4), range(60)) FROM numbers(120000, 40000)</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 4, 'timeseries_group_array: expected 4 active parts in ts_group_array_parts')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_group_array_parts' AND active
+    </fill_query>
+
+    <!-- The target of the `INSERT` query below. Merges are stopped so that every run measures the insert alone. -->
+    <create_query>
+        CREATE TABLE ts_group_array_merged
+        (
+            id UInt64,
+            samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3, 'UTC'), Float64)))
+        )
+        ENGINE = AggregatingMergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES ts_group_array_merged</fill_query>
+
+    <query>SELECT id, timeSeriesGroupArray(samples) FROM ts_group_array_rows GROUP BY id FORMAT Null</query>
+    <!-- Control: the same aggregation without the result. -->
+    <query>SELECT id, timeSeriesGroupArrayState(samples) FROM ts_group_array_rows GROUP BY id FORMAT Null</query>
+
+    <query>SELECT id, timeSeriesGroupArray(timestamp, value) FROM ts_group_array_samples GROUP BY id FORMAT Null</query>
+    <!-- Control: the same aggregation without the result. -->
+    <query>SELECT id, timeSeriesGroupArrayState(timestamp, value) FROM ts_group_array_samples GROUP BY id FORMAT Null</query>
+
+    <!-- The read merges the 4 parts row by row; the control reads the same rows without merging them. -->
+    <query>SELECT id, samples FROM ts_group_array_parts FINAL FORMAT Null</query>
+    <query>SELECT id, samples FROM ts_group_array_parts FORMAT Null</query>
+
+    <!-- The insert block holds the 4 rows of every series, so the insert merges them as a merge of the table would. -->
+    <query>INSERT INTO ts_group_array_merged SELECT id, samples FROM ts_group_array_rows SETTINGS optimize_on_insert = 1, max_insert_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_rows</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_samples</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_parts</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_group_array_merged</drop_query>
+</test>
