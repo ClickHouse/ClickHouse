@@ -22,8 +22,8 @@ SET log_query_plans = 1;
 -- the clock, so the statistics assertions are not racing the noise floor.
 SELECT number FROM numbers(1000000) WHERE number % 7 = 0 ORDER BY number DESC LIMIT 3 SETTINGS log_comment = '05045_finish' FORMAT Null;
 
--- A query failing during execution keeps the plan it was running, but has no statistics: they are
--- collected when the pipeline is finalized, which a failing query never reaches.
+-- A query failing during execution keeps the plan it was running, with the statistics measured
+-- until it failed.
 SELECT throwIf(number = 5, '05045_throw') FROM numbers(10) SETTINGS log_comment = '05045_throw'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SET log_query_plans = 0;
@@ -58,7 +58,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
   AND log_comment = '05045_finish';
 
--- A failed query keeps its plan and reports no statistics at all.
+-- A failed query keeps its plan and the statistics measured until it failed.
 SELECT
     'exception',
     count(),

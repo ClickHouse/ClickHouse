@@ -181,6 +181,9 @@ public:
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 
+    /// Hands the work intervals of every thread context that was created to the step profiler.
+    void flushWorkIntervals();
+
     String dump();
 
     size_t getNumThreads() const { return num_threads; }

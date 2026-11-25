@@ -12,6 +12,7 @@
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -215,12 +216,31 @@ void PipelineExecutor::cancel(IProcessor::CancelReason reason)
     graph->cancel(reason);
 }
 
-void PipelineExecutor::cancelWithException(std::exception_ptr cause)
+void PipelineExecutor::cancelWithException(std::exception_ptr cause, const IProcessor * failed_processor)
 {
     /// Recorded before the callback, which can make the other threads throw because of the cancellation.
     std::call_once(cancel_exception_once, [&]
     {
         cancel_exception = std::move(cause);
+
+        /// A processor that throws once the execution is already cancelled (killed, out of time)
+        /// is reacting to the cancellation rather than causing the failure.
+        if (step_profiler && cancel_reason.load() == IProcessor::CancelReason::NotCancelled)
+        {
+            /// A diagnostic, and the cancellation must go on whatever it does: the query may be
+            /// failing because it ran out of memory, and a throw here would leave the other threads
+            /// waiting for a cancellation that never comes.
+            MemoryTrackerBlockerInThread block_memory_tracker;
+            try
+            {
+                step_profiler->recordFailure(cancel_exception, failed_processor);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
         if (exception_callback)
             exception_callback();
     });
@@ -267,6 +287,9 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     }
     catch (...)
     {
+        /// The threads are joined: see `finishProfilingOnException`.
+        finishProfilingOnException();
+
         span.addAttribute(DB::ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
@@ -284,6 +307,9 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
     SCOPE_EXIT({
         if (tasks.isFinished() || std::uncaught_exceptions() > uncaught_exceptions)
             detachSpillables();
+        /// A single thread runs the steps, so on an exception nothing is running anymore.
+        if (std::uncaught_exceptions() > uncaught_exceptions)
+            finishProfilingOnException();
     });
     if (!is_execution_initialized)
     {
@@ -326,8 +352,37 @@ void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
     exception_callback = std::move(callback);
 }
 
+void PipelineExecutor::finishProfilingOnException() noexcept
+{
+    if (!step_profiler)
+        return;
+
+    /// Nothing runs anymore, so what the processors measured is final, and the statistics of a failed
+    /// query report it as they do for a finished one. Called while an exception is on its way, which
+    /// is the one the query must fail with, even if it is the one of running out of memory.
+    step_profiler->markExecutionFinished();
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+    try
+    {
+        tasks.flushWorkIntervals();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    step_profiler->markExecutionStopped();
+}
+
 void PipelineExecutor::finalizeExecution()
 {
+    /// Declared first, so that it runs last: after the hooks below, which the executor runs too.
+    SCOPE_EXIT({
+        if (step_profiler)
+            step_profiler->markExecutionStopped();
+    });
+
     /// Stamped before the epilogue the output formats write in `onPipelineFinished` below, which is
     /// not part of the execution.
     if (step_profiler)
@@ -452,7 +507,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
         {
             auto * spill_target = resources.reservation ? graph->getSpillTarget(*context.getTask()) : nullptr;
             if (!context.executeTask(spill_target))
-                cancelWithException(context.getException());
+                cancelWithException(context.getException(), context.getTask());
 
             if (tasks.isFinished())
                 break;

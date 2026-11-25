@@ -270,6 +270,18 @@ JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured)
     if (captured.max_threads)
         result->add("MaxThreads", *captured.max_threads);
 
+    if (captured.failure)
+    {
+        auto failure = std::make_unique<JSONBuilder::JSONMap>();
+        if (!captured.failure->node_id.empty())
+        {
+            failure->add("NodeId", captured.failure->node_id);
+            failure->add("GroupId", captured.failure->group_id);
+        }
+        failure->add("Processor", captured.failure->processor_name);
+        result->add("Failure", std::move(failure));
+    }
+
     auto output_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & column : captured.output)
         output_array->add(column);

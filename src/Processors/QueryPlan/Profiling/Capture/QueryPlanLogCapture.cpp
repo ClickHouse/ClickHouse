@@ -18,6 +18,8 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+
+#include <algorithm>
 #include <Interpreters/PreparedSets.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -173,15 +175,15 @@ void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const Pret
     captured = CapturedPlan::capture(walk, planExplainOptions(), max_description_length, /*steps_to_stats=*/ nullptr, &pretty_names);
 }
 
-void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
+void QueryPlanLogCapture::captureStatistics(const QueryPipeline & pipeline)
 {
     const StepProfilerPtr profiler = pipeline.getStepProfiler();
 
     if (!captured || !profiler)
         return;
 
-    /// Runs on the query-finish path after the client has already received the result. An exception
-    /// here would fail a query that had already succeeded, so diagnostics must not propagate.
+    /// Runs on the logging path of a query that has finished or failed. An exception here would
+    /// replace the query's own outcome, so diagnostics must not propagate.
     MemoryTrackerBlockerInThread block_memory_tracker;
 
     try
@@ -204,6 +206,41 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
         captured->execution_time_ns = stats.getExecutionTimeNs();
         captured->max_threads = stats.getMaxThreads();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void QueryPlanLogCapture::captureFailure(const QueryPipeline & pipeline)
+{
+    const StepProfilerPtr profiler = pipeline.getStepProfiler();
+
+    if (!captured || !profiler)
+        return;
+
+    if (profiler->hasExecutionStopped())
+        captureStatistics(pipeline);
+
+    /// Runs on the exception path, which must report the query's own exception rather than one of
+    /// its diagnostics. The query may also have failed because it ran out of memory.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        auto failure = profiler->getFailure();
+        if (!failure)
+            return;
+
+        /// The document references nodes by id, so an id that is not one of them is not written.
+        const bool is_node = !failure->step_id.empty()
+            && std::ranges::any_of(captured->nodes, [&](const CapturedStep & node) { return node.id == failure->step_id; });
+
+        captured->failure = CapturedFailure{
+            .node_id = is_node ? std::move(failure->step_id) : String{},
+            .group_id = failure->step_group,
+            .processor_name = std::move(failure->processor_name)};
     }
     catch (...)
     {

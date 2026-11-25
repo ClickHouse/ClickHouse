@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
+#include <Processors/IProcessor.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
@@ -53,6 +54,45 @@ void StepProfiler::markExecutionFinished()
 bool StepProfiler::needCollectWorkIntervals() const
 {
     return collect_work_intervals;
+}
+
+StepFailure StepFailure::of(const IProcessor & processor)
+{
+    return {.step_id = processor.getStepUniqID(), .step_group = processor.getQueryPlanStepGroup(), .processor_name = processor.getName()};
+}
+
+void StepProfiler::addPassedOnException(std::exception_ptr exception, const IProcessor & processor)
+{
+    auto entry = std::make_pair(std::move(exception), StepFailure::of(processor));
+    std::lock_guard lock(mutex);
+    passed_on_exceptions.push_back(std::move(entry));
+}
+
+void StepProfiler::recordFailure(const std::exception_ptr & cause, const IProcessor * thrower)
+{
+    std::lock_guard lock(mutex);
+    if (failure)
+        return;
+
+    /// The same exception object travels through the ports and is rethrown as is, so it is found by
+    /// identity. Only the processor it started from registers it: the ones that forward it do not.
+    for (const auto & [exception, origin] : passed_on_exceptions)
+    {
+        if (exception == cause)
+        {
+            failure = origin;
+            return;
+        }
+    }
+
+    if (thrower)
+        failure = StepFailure::of(*thrower);
+}
+
+std::optional<StepFailure> StepProfiler::getFailure() const
+{
+    std::lock_guard lock(mutex);
+    return failure;
 }
 
 void StepProfiler::addWorkIntervals(WorkIntervals intervals)

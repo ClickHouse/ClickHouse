@@ -36,7 +36,13 @@ public:
 
     /// Records what the pipeline measured. Does not keep the pipeline object, but extracts
     /// the statistics out of it.
-    void captureStatistics(QueryPipeline & pipeline);
+    void captureStatistics(const QueryPipeline & pipeline);
+
+    /// For a query that threw: records which processor, and which step of the plan, threw the
+    /// exception, if the executor knows, and the statistics measured until then. The statistics are
+    /// read only once the executor has stopped, since a query can also fail from outside while its
+    /// threads still run; until then the plan is logged without them.
+    void captureFailure(const QueryPipeline & pipeline);
 
     /// The captured plan, if there is one. Rendering it is the caller's business: this captures,
     /// and only the places that write a plan out decide in what form.

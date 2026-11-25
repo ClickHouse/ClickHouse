@@ -1,0 +1,5 @@
+05876_group_by	ExceptionWhileProcessing	1	AggregatingTransform	Aggregating	1	1
+05876_ok	QueryFinish	0			0	1
+05876_parallel	ExceptionWhileProcessing	1	FilterTransform	Filter	1	1
+05876_select	ExceptionWhileProcessing	1	ExpressionTransform	Expression	1	1
+05876_where	ExceptionWhileProcessing	1	FilterTransform	Filter	1	1

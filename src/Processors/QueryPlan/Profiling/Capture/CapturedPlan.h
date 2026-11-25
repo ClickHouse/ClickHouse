@@ -38,6 +38,18 @@ struct CapturedStep
     PlanProjectionStats projections;
 };
 
+/// Where a query that threw while executing failed.
+struct CapturedFailure
+{
+    /// Id of the node the failing processor belongs to. Empty when that is not a node of the plan:
+    /// a processor added after the plan was built has no step, and a step of a plan that is not
+    /// captured (such as a subquery's) has no node.
+    String node_id;
+    /// The stage of that node, matching a `GroupId` of its statistics. Meaningful only with `node_id`.
+    size_t group_id = 0;
+    String processor_name;
+};
+
 /// A whole query: its own steps and the totals.
 struct CapturedPlan
 {
@@ -48,6 +60,8 @@ struct CapturedPlan
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
+    /// Set only when the processor that threw is known; absent does not mean the query succeeded.
+    std::optional<CapturedFailure> failure;
 
     VectorWithMemoryTracking<CapturedStep> nodes;
 

@@ -14,6 +14,7 @@
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
@@ -238,6 +239,25 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
     {
         setException(std::current_exception());
         success = false;
+    }
+
+    /// Taken on the thread that ran the work, which is the only one writing it.
+    if (step_profiler)
+    {
+        if (auto passed_on_exception = processor->takePassedOnException())
+        {
+            /// A diagnostic: the exception is already on its way, and is what the query must fail with,
+            /// even if it is the one of running out of memory.
+            MemoryTrackerBlockerInThread block_memory_tracker;
+            try
+            {
+                step_profiler->addPassedOnException(std::move(passed_on_exception), *processor);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     UInt64 elapsed_ns = 0;
