@@ -171,6 +171,8 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
+        /// Set when NULL rows keep the decoded values and the type default is not the column zero.
+        DataTypePtr null_default_type;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
         /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
