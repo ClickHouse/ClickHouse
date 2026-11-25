@@ -27,7 +27,7 @@ public:
             const StorageID & table_,
             SharedHeader header,
             const ConstraintsDescription & constraints_,
-            ContextPtr context_);
+            ContextMutablePtr context_);
 
     String getName() const override { return "CheckConstraintsTransform"; }
 

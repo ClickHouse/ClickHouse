@@ -177,7 +177,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressions(
-    const ContextPtr context, const NamesAndTypesList & source_columns_, const StorageID & table_id) const
+    ContextMutablePtr context, const NamesAndTypesList & source_columns_, const StorageID & table_id) const
 {
     auto is_check = [](const ASTPtr & constraint)
     {
@@ -195,10 +195,9 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
         fake_columns.add(ColumnDescription(column.name, column.type), /*after_column=*/ "", /*first=*/ false, /*add_subcolumns=*/ false);
     }
 
-    auto execution_context = Context::createCopy(context);
     /// Named as the real table, so that error messages and qualified names refer to it.
     auto fake_storage = std::make_shared<StorageDummy>(table_id, fake_columns);
-    auto fake_table_expression = std::make_shared<TableNode>(fake_storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(fake_storage, context);
 
     ConstraintsExpressions res;
     res.reserve(constraints.size());
@@ -213,10 +212,10 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
             /// The list wrapper lets a bare subquery be resolved as an expression.
             auto expression_list = make_intrusive<ASTExpressionList>();
             expression_list->children.push_back(constraint_ptr->expr->clone());
-            auto expression = buildQueryTree(expression_list, execution_context);
+            auto expression = buildQueryTree(expression_list, context);
 
             QueryAnalyzer analyzer(/*only_analyze_=*/ false);
-            analyzer.resolve(expression, fake_table_expression, execution_context);
+            analyzer.resolve(expression, fake_table_expression, context);
 
             /// A guard: no SQL path is known to give several expressions here.
             if (expression->as<ListNode &>().getNodes().size() != 1)
@@ -230,7 +229,8 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
             assertNoWindowFunctionNodes(expression, "in CHECK constraint");
 
             auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
-            auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+            /// Not a copy: functions of the returned actions may refer to the context while they are executed.
+            auto planner_context = std::make_shared<PlannerContext>(context, global_planner_context, SelectQueryOptions{});
             collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
 
             auto [constraint_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
@@ -246,7 +246,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
             {
                 auto query_tree = subquery->detachQueryTree();
                 /// As for scalar subqueries; `QueryAnalysisPass` also creates the unique aliases.
-                QueryTreePassManager query_tree_pass_manager(execution_context);
+                QueryTreePassManager query_tree_pass_manager(context);
                 addQueryTreePasses(query_tree_pass_manager);
                 query_tree_pass_manager.run(query_tree);
                 /// The `Planner` mutates the options it is given.
@@ -273,7 +273,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
                 if (input != result_node)
                     outputs.push_back(input);
 
-            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), execution_context);
+            auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), context);
             constraint_dag = ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag));
 
             /// A guard: every input must be a header column, not e.g. a virtual column of the `StorageDummy`.
@@ -296,7 +296,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
             constraint_dag = ActionsDAG::merge(ActionsDAG(ordered_inputs), std::move(constraint_dag));
 
             res.push_back(std::make_shared<ExpressionActions>(
-                std::move(constraint_dag), ExpressionActionsSettings(execution_context, CompileExpressions::yes)));
+                std::move(constraint_dag), ExpressionActionsSettings(context, CompileExpressions::yes)));
         }
         catch (Exception & e)
         {

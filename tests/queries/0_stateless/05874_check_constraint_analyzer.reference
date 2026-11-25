@@ -11,3 +11,4 @@ order	x = 0, tup = tuple(1), z = 2
 final	10
 final	20
 grouping	0
+dynamic	1

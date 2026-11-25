@@ -28,7 +28,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
     SharedHeader header,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    ContextMutablePtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))

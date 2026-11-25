@@ -99,3 +99,8 @@ CREATE TABLE t_grouping (x Int32, CONSTRAINT c CHECK x IN (SELECT k FROM t_rmt G
 INSERT INTO t_grouping VALUES (0);
 INSERT INTO t_grouping VALUES (1); -- { serverError VIOLATED_CONSTRAINT }
 SELECT 'grouping', * FROM t_grouping;
+
+-- A function over `Dynamic` is resolved again at execution; the context it refers to must still exist.
+CREATE TABLE t_dynamic (d Dynamic, CONSTRAINT c CHECK notEmpty(arrayReduceInRanges('sum', [(1, 1)], d))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_dynamic SELECT [toUInt64(1)]::Dynamic;
+SELECT 'dynamic', count() FROM t_dynamic;

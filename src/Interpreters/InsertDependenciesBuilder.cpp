@@ -1416,7 +1416,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies(InputPort * returni
 }
 
 
-std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertContext(const DependencyPath & path)
+std::pair<ContextPtr, ContextMutablePtr> InsertDependenciesBuilder::createSelectInsertContext(const DependencyPath & path)
 {
     const auto & current = path.current();
 
