@@ -45,7 +45,7 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_)
     size_t size = elems.size();
     names.resize(size);
     for (size_t i = 0; i < size; ++i)
-        names[i] = toString(i + 1);
+        names[i] = std::to_string(i + 1);
 }
 
 static std::optional<Exception> checkTupleNames(const Strings & names)
@@ -365,7 +365,7 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = has_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = has_explicit_names ? names[i] : std::to_string(i + 1);
         auto serialization = elems[i]->getSerialization(settings);
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
@@ -375,17 +375,13 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info, true);
-}
-
-SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
-{
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i), use_type_serialization_settings);
+        String elem_name = has_explicit_names ? names[i] : std::to_string(i + 1);
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
@@ -400,14 +396,9 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (const auto & elem : elems)
-    {
-        auto elem_settings = settings;
-        if (!settings.shouldCollectSerializationInfo(*elem))
-            elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-        infos.push_back(elem->createSerializationInfo(elem_settings));
-    }
+        infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
@@ -438,16 +429,9 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
-bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
-{
-    return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
-    {
-        return elem->hasSparseSerializationSubcolumns(settings);
-    });
-}
 
 DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
 {
