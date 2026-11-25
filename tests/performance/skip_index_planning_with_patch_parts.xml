@@ -1,0 +1,90 @@
+<test>
+    <!-- Planning of a query with a skip index looked up the patch parts of every part. -->
+    <settings>
+        <enable_lightweight_update>1</enable_lightweight_update>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <!-- Refresh the statistics cache right after the fill. -->
+    <create_query>
+        CREATE TABLE test_patch_parts_planning
+        (
+            project_id UInt64,
+            id UInt64,
+            value UInt64,
+            s String,
+            INDEX idx_id id TYPE bloom_filter GRANULARITY 1,
+            INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha)
+        )
+        ENGINE = MergeTree ORDER BY project_id
+        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0,
+            parts_to_delay_insert = 100000, parts_to_throw_insert = 100000,
+            refresh_statistics_interval = 1
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES test_patch_parts_planning</fill_query>
+
+    <!-- 2000 parts of 50 rows, one value of `project_id` per part. -->
+    <fill_query>
+        INSERT INTO test_patch_parts_planning SELECT intDiv(number, 50), number, 0, concat('tok', toString(number))
+        FROM numbers(100000)
+        SETTINGS max_block_size = 50, min_insert_block_size_rows = 50, min_insert_block_size_bytes = 0, max_insert_threads = 1
+    </fill_query>
+
+    <!-- 50 patch parts. -->
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 0 AND id = 7</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 40 AND id = 2007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 80 AND id = 4007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 120 AND id = 6007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 160 AND id = 8007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 200 AND id = 10007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 240 AND id = 12007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 280 AND id = 14007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 320 AND id = 16007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 360 AND id = 18007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 400 AND id = 20007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 440 AND id = 22007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 480 AND id = 24007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 520 AND id = 26007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 560 AND id = 28007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 600 AND id = 30007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 640 AND id = 32007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 680 AND id = 34007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 720 AND id = 36007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 760 AND id = 38007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 800 AND id = 40007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 840 AND id = 42007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 880 AND id = 44007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 920 AND id = 46007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 960 AND id = 48007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1000 AND id = 50007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1040 AND id = 52007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1080 AND id = 54007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1120 AND id = 56007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1160 AND id = 58007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1200 AND id = 60007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1240 AND id = 62007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1280 AND id = 64007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1320 AND id = 66007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1360 AND id = 68007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1400 AND id = 70007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1440 AND id = 72007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1480 AND id = 74007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1520 AND id = 76007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1560 AND id = 78007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1600 AND id = 80007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1640 AND id = 82007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1680 AND id = 84007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1720 AND id = 86007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1760 AND id = 88007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1800 AND id = 90007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1840 AND id = 92007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1880 AND id = 94007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1920 AND id = 96007</fill_query>
+    <fill_query>UPDATE test_patch_parts_planning SET value = 1 WHERE project_id = 1960 AND id = 98007</fill_query>
+
+    <query>SELECT count() FROM test_patch_parts_planning WHERE project_id = 777 AND id = 38857</query>
+    <query>SELECT count() FROM test_patch_parts_planning WHERE project_id = 777 AND hasToken(s, 'tok38857')</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_patch_parts_planning</drop_query>
+</test>

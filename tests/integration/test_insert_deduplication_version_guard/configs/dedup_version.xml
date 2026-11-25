@@ -1,0 +1,3 @@
+<clickhouse>
+    <insert_deduplication_version>new_unified_hash</insert_deduplication_version>
+</clickhouse>

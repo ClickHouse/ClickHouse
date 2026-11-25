@@ -148,18 +148,19 @@ void ErrorLog::stepFunction(TimePoint current_time)
         return addrs;
     };
 
-    for (const auto code : ErrorCodes::getCodes())
+    for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
     {
         const auto & error = ErrorCodes::values[code].get();
-        auto & previous = previous_values[code];
-        if (error.local.count != previous.local)
+        /// previous_values is guarded by the mutex held above; thread-safety analysis cannot see the lock
+        /// through the add() callback, so suppress the false positive on the accesses made inside it.
+        if (error.local.count != previous_values.at(code).local)
         {
             this->add([&](ErrorLogElement & element)
             {
                 element = ErrorLogElement {
                     .event_time=event_time,
                     .code=code,
-                    .value=error.local.count - previous.local,
+                    .value=error.local.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).local,
                     .remote=false,
                     .last_error_time=(error.local.error_time_ms / 1000),
                     .last_error_message=error.local.message,
@@ -167,16 +168,16 @@ void ErrorLog::stepFunction(TimePoint current_time)
                     .last_error_trace=to_addrs(error.local.trace)
                 };
             });
-            previous.local = error.local.count;
+            previous_values[code].local = error.local.count;
         }
-        if (error.remote.count != previous.remote)
+        if (error.remote.count != previous_values.at(code).remote)
         {
             add([&](ErrorLogElement & element)
             {
                 element = ErrorLogElement {
                     .event_time=event_time,
                     .code=code,
-                    .value=error.remote.count - previous.remote,
+                    .value=error.remote.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).remote,
                     .remote=true,
                     .last_error_time=(error.remote.error_time_ms / 1000),
                     .last_error_message=error.remote.message,
@@ -184,7 +185,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                     .last_error_trace=to_addrs(error.remote.trace)
                 };
             });
-            previous.remote = error.remote.count;
+            previous_values[code].remote = error.remote.count;
         }
     }
 }

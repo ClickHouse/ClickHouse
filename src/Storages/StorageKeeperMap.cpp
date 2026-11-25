@@ -1956,7 +1956,6 @@ void registerStorageKeeperMap(StorageFactory & factory)
     factory.registerStorage(
         "KeeperMap",
         create,
-        SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,

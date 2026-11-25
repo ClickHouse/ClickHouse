@@ -8,7 +8,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <base/TypeList.h>
 #include <bit>
 
 
@@ -33,8 +32,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-using BitToArrayTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256>;
 
 class FunctionBitmaskToList final : public IFunction
 {
@@ -71,12 +68,18 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr res;
-        TypeListUtils::forEach(BitToArrayTypes{}, [&]<typename T>(TypeList<T>)
-        {
-            if (!res)
-                res = executeType<T>(arguments, input_rows_count);
-        });
-        if (!res)
+        if (!((res = executeType<UInt8>(arguments, input_rows_count))
+            || (res = executeType<UInt16>(arguments, input_rows_count))
+            || (res = executeType<UInt32>(arguments, input_rows_count))
+            || (res = executeType<UInt64>(arguments, input_rows_count))
+            || (res = executeType<UInt128>(arguments, input_rows_count))
+            || (res = executeType<UInt256>(arguments, input_rows_count))
+            || (res = executeType<Int8>(arguments, input_rows_count))
+            || (res = executeType<Int16>(arguments, input_rows_count))
+            || (res = executeType<Int32>(arguments, input_rows_count))
+            || (res = executeType<Int64>(arguments, input_rows_count))
+            || (res = executeType<Int128>(arguments, input_rows_count))
+            || (res = executeType<Int256>(arguments, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                             arguments[0].column->getName(), getName());
 
@@ -316,12 +319,18 @@ public:
         const IColumn * in_column = arguments[0].column.get();
         ColumnPtr result_column;
 
-        TypeListUtils::forEach(BitToArrayTypes{}, [&]<typename T>(TypeList<T>)
-        {
-            if (!result_column)
-                result_column = executeType<T>(in_column, input_rows_count);
-        });
-        if (!result_column)
+        if (!((result_column = executeType<UInt8>(in_column, input_rows_count))
+              || (result_column = executeType<UInt16>(in_column, input_rows_count))
+              || (result_column = executeType<UInt32>(in_column, input_rows_count))
+              || (result_column = executeType<UInt64>(in_column, input_rows_count))
+              || (result_column = executeType<UInt128>(in_column, input_rows_count))
+              || (result_column = executeType<UInt256>(in_column, input_rows_count))
+              || (result_column = executeType<Int8>(in_column, input_rows_count))
+              || (result_column = executeType<Int16>(in_column, input_rows_count))
+              || (result_column = executeType<Int32>(in_column, input_rows_count))
+              || (result_column = executeType<Int64>(in_column, input_rows_count))
+              || (result_column = executeType<Int128>(in_column, input_rows_count))
+              || (result_column = executeType<Int256>(in_column, input_rows_count))))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal column {} of first argument of function {}",

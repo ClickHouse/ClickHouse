@@ -1,5 +1,4 @@
 #include <Databases/DataLake/ICatalog.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -78,7 +77,9 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         });
         storage_type_str = "S3";
     }
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
+    /// Azure Blob File System, secure and plain spelling: both name the same ADLS Gen2 storage.
+    /// The scheme selects the storage engine here; it never selects the wire protocol.
+    else if (storage_type_str == "abfss" || storage_type_str == "abfs")
         storage_type_str = "Azure";
 
     return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
@@ -314,6 +315,32 @@ bool TableMetadata::hasDataLakeSpecificProperties() const
     return data_lake_specific_metadata.has_value();
 }
 
+/// Removes the scheme from `uri` if it names the storage whose scheme is `storage_scheme` (e.g. `s3://`): the same
+/// scheme, or for ADLS Gen2 either spelling, because `abfs://` and `abfss://` name the same storage and a catalog can
+/// report the table location with one and the metadata location with the other.
+static bool removeStorageScheme(std::string & uri, const std::string & storage_scheme)
+{
+    if (uri.starts_with(storage_scheme))
+    {
+        uri.erase(0, storage_scheme.size());
+        return true;
+    }
+
+    if (storage_scheme == "abfs://" || storage_scheme == "abfss://")
+    {
+        for (const std::string_view scheme : {"abfs://", "abfss://"})
+        {
+            if (uri.starts_with(scheme))
+            {
+                uri.erase(0, scheme.size());
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metadata_file_location) const
 {
     std::string metadata_location = iceberg_metadata_file_location;
@@ -322,11 +349,8 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
         std::string data_location = getLocation();
 
         // Use the actual storage type prefix (e.g., s3://, file://, etc.)
-        if (metadata_location.starts_with(storage_type_str))
-            metadata_location = metadata_location.substr(storage_type_str.size());
-        if (data_location.starts_with(storage_type_str))
-            data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
+        removeStorageScheme(metadata_location, storage_type_str);
+        if (!removeStorageScheme(data_location, storage_type_str) && !endpoint.empty() && data_location.starts_with(endpoint))
             data_location = data_location.substr(endpoint.size());
 
         if (metadata_location.starts_with(data_location))
@@ -350,24 +374,6 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
-}
-
-std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
-{
-    if (!table_metadata.isDefaultReadableTable())
-        return FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
-
-    switch (getTableFormat(table_metadata))
-    {
-        case DataLakeTableFormat::UNKNOWN:
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table is readable, but its catalog reports no data lake format");
-        case DataLakeTableFormat::DELTA:
-            return "DeltaLake";
-        case DataLakeTableFormat::ICEBERG:
-            return "Iceberg";
-        case DataLakeTableFormat::PAIMON:
-            return "Paimon";
-    }
 }
 
 CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
@@ -419,17 +425,12 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
     return {};
 }
 
-std::optional<std::string> ICatalog::getDefaultTableLocation(const std::string & /*namespace_name*/, const std::string & /*table_name*/) const
-{
-    return std::nullopt;
-}
-
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
@@ -447,16 +448,6 @@ bool ICatalog::updateSchema(
     Int32 /*previous_schema_id*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
-}
-
-Poco::JSON::Object::Ptr ICatalog::removeSnapshots(
-    const String & /*namespace_name*/,
-    const String & /*table_name*/,
-    Poco::JSON::Object::Ptr /*base_metadata*/,
-    const std::vector<Int64> & /*snapshot_ids*/,
-    const std::vector<String> & /*ref_names*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshots is not implemented");
 }
 
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const

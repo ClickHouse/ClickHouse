@@ -44,7 +44,6 @@ public:
     const DataTypes & getArgumentsDataTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
     String getName() const override;
-    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

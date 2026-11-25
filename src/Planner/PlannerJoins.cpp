@@ -1023,33 +1023,6 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join)
-{
-    StoragePtr storage;
-
-    if (auto * table_node = table_expression->as<TableNode>())
-        storage = table_node->getStorage();
-    else if (auto * table_function = table_expression->as<TableFunctionNode>())
-        storage = table_function->getStorage();
-
-    auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
-    if (storage_join)
-    {
-        table_join->setStorageJoin(storage_join);
-        return;
-    }
-
-    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT) && !table_join->isEnabledAlgorithm(JoinAlgorithm::DEFAULT))
-        return;
-
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
-        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
-        table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_key_value)
-        table_join->setStorageJoin(storage_key_value);
-}
-
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1297,12 +1270,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
-        /// Without a spill threshold `grace_hash` cannot run, but `join_algorithm` is a preference list:
-        /// leave it to the next algorithm. Listed alone, the constructor says what to set.
-        if (!table_join->legacyJoinSizeLimitsTriggerSpilling() && params.max_bytes_before_external_join == 0
-            && table_join->getEnabledJoinAlgorithms().size() > 1)
-            return {};
-
         if (!table_join->getTempDataOnDisk())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -1310,9 +1277,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (GraceHashJoin::isSupported(table_join))
         {
-            /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
-            /// Legacy mode gets 0, which is what standalone `grace_hash` was built with before the
-            /// threshold applied to it, so the size limits stay its only spill trigger.
             return std::make_shared<GraceHashJoin>(
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
@@ -1320,8 +1284,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 left_table_expression_header,
                 right_table_expression_header,
                 table_join->getTempDataOnDisk(),
-                params.join_any_take_last_row,
-                table_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : params.max_bytes_before_external_join);
+                params.join_any_take_last_row);
         }
     }
 

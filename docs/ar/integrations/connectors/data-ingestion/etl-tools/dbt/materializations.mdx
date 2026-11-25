@@ -13,7 +13,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يغطي هذا القسم جميع خيارات التجسيد المتاحة في dbt-clickhouse، بما في ذلك الميزات التجريبية.
 
-## التهيئات العامة لـ التجسيد {#general-materialization-configurations}
+<div id="general-materialization-configurations">
+  ## التهيئات العامة لـ التجسيد
+</div>
 
 يوضح الجدول التالي التهيئات المشتركة بين بعض استراتيجيات التجسيد المتاحة. للحصول على معلومات تفصيلية حول التهيئات العامة لنماذج dbt، راجع [توثيق dbt](https://docs.getdbt.com/category/general-configs):
 
@@ -29,7 +31,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | sql&#95;security   | مستخدم ClickHouse الذي سيُستخدم عند تنفيذ query الأساسية الخاصة بـ view. [القيم المقبولة](/ar/reference/statements/create/view#sql_security): `definer`, `invoker`. |                           |
 | definer            | إذا تم تعيين `sql_security` إلى `definer`، فيجب عليك تحديد أي مستخدم موجود أو `CURRENT_USER` في عبارة `definer`.                                                 |                           |
 
-### محركات الجداول المدعومة {#supported-table-engines}
+<div id="supported-table-engines">
+  ### محركات الجداول المدعومة
+</div>
 
 | النوع                  | التفاصيل                                                                         |
 | ---------------------- | -------------------------------------------------------------------------------- |
@@ -42,7 +46,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 **ملاحظة**: بالنسبة إلى materialized views، فجميع محركات *MergeTree مدعومة.
 
-#### محركات الجداول التجريبية المدعومة {#experimental-supported-table-engines}
+<div id="experimental-supported-table-engines">
+  #### محركات الجداول التجريبية المدعومة
+</div>
 
 | النوع            | التفاصيل                                                      |
 | ---------------- | ------------------------------------------------------------- |
@@ -52,7 +58,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 إذا واجهت مشكلات عند الاتصال بـ ClickHouse من dbt باستخدام أحد المحركات المذكورة أعلاه، فيُرجى الإبلاغ عن
 مشكلة [هنا](https://github.com/ClickHouse/dbt-clickhouse/issues).
 
-### ملاحظة حول إعدادات النموذج {#a-note-on-model-settings}
+<div id="a-note-on-model-settings">
+  ### ملاحظة حول إعدادات النموذج
+</div>
 
 يحتوي ClickHouse على عدة أنواع/مستويات من &quot;الإعدادات&quot;. في إعدادات النموذج أعلاه، يمكن ضبط نوعين منها.
 يشير `settings` إلى بند `SETTINGS`
@@ -65,16 +73,20 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 في جدول `system.settings`.) وبوجه عام، يُوصى باستخدام القيم الافتراضية، وينبغي التحقق بعناية من أي استخدام لهذه الخصائص
 واختباره.
 
-### تهيئة العمود {#column-configuration}
+<div id="column-configuration">
+  ### إعدادات العمود
+</div>
 
-> ***ملاحظة:*** تتطلب خيارات تهيئة العمود أدناه تفعيل [عقود النموذج](https://docs.getdbt.com/docs/collaborate/govern/model-contracts).
+> ***ملاحظة:*** تتطلب خيارات إعدادات العمود أدناه تفعيل [عقود النموذج](https://docs.getdbt.com/docs/collaborate/govern/model-contracts).
 
 | الخيار | الوصف                                                                                                                                                                                                                        | القيمة الافتراضية إن وجدت |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| codec  | سلسلة نصية تتكوّن من الوسيطات الممرَّرة إلى `CODEC()` في تعريف DDL الخاص بالعمود. على سبيل المثال: `codec: "Delta, ZSTD"` سيُولَّد بالشكل `CODEC(Delta, ZSTD)`.                                                              |                           |
-| ttl    | سلسلة نصية تتكوّن من [تعبير TTL (time-to-live)](/ar/concepts/features/operations/delete/ttl) يحدّد قاعدة TTL في تعريف DDL الخاص بالعمود. على سبيل المثال: `ttl: ts + INTERVAL 1 DAY` سيُولَّد بالشكل `TTL ts + INTERVAL 1 DAY`. |                           |
+| codec  | سلسلة نصية تتكوّن من الوسيطات الممرَّرة إلى `CODEC()` في تعريف DDL الخاص بالعمود. على سبيل المثال: `codec: "Delta, ZSTD"` سيُولَّد بالشكل `CODEC(Delta, ZSTD)`.                                                              |                           |
+| ttl    | سلسلة نصية تتكوّن من [تعبير TTL (time-to-live)](/ar/concepts/features/operations/delete/ttl) يحدّد قاعدة TTL في تعريف DDL الخاص بالعمود. على سبيل المثال: `ttl: ts + INTERVAL 1 DAY` سيُولَّد بالشكل `TTL ts + INTERVAL 1 DAY`. |                           |
 
-#### مثال على إعداد المخطط {#example-of-schema-configuration}
+<div id="example-of-schema-configuration">
+  #### مثال على إعداد المخطط
+</div>
 
 ```yaml
 models:
@@ -92,7 +104,9 @@ models:
         ttl: ts + INTERVAL 1 DAY
 ```
 
-#### إضافة أنواع معقدة {#adding-complex-types}
+<div id="adding-complex-types">
+  #### إضافة أنواع معقدة
+</div>
 
 يحدّد dbt تلقائيًا نوع البيانات لكل عمود من خلال تحليل SQL المستخدم لإنشاء النموذج. ومع ذلك، قد لا تتمكّن هذه العملية في بعض الحالات من تحديد نوع البيانات بدقة، مما يؤدي إلى تعارضات مع الأنواع المحددة في خاصية `data_type` الخاصة بالعقد. ولمعالجة ذلك، نوصي باستخدام الدالة `CAST()` في SQL الخاص بالنموذج لتحديد النوع المطلوب صراحةً. على سبيل المثال:
 
@@ -109,14 +123,16 @@ select
   -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
   -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
-  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
+  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count, 
   -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
 group by event_type
 ```
 
-## التجسيد: عرض {#materialization-view}
+<div id="materialization-view">
+  ## التجسيد: عرض
+</div>
 
 يمكن إنشاء نموذج dbt على هيئة [عرض في ClickHouse](/ar/reference/functions/table-functions/view)
 وتهيئته باستخدام الصيغة التالية:
@@ -135,7 +151,9 @@ models:
 {{ config(materialized = "view") }}
 ```
 
-## التجسيد: جدول {#materialization-table}
+<div id="materialization-table">
+  ## التجسيد: جدول
+</div>
 
 يمكن إنشاء نموذج dbt كـ [جدول ClickHouse](/ar/reference/system-tables/tables)،
 وتهيئته باستخدام الصيغة التالية:
@@ -164,7 +182,9 @@ models:
 ) }}
 ```
 
-### فهارس تخطي البيانات {#data-skipping-indexes}
+<div id="data-skipping-indexes">
+  ### فهارس تخطي البيانات
+</div>
 
 يمكنك إضافة [فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes) ضمن تجسيدات `table` باستخدام إعداد `indexes`:
 
@@ -178,14 +198,18 @@ models:
 ) }}
 ```
 
-### الإسقاطات {#projections}
+<div id="projections">
+  ### الإسقاطات
+</div>
 
 يمكنك إضافة [الإسقاطات](/ar/concepts/features/projections/projections) إلى نمطي الـ التجسيد `table` و`distributed_table` باستخدام إعداد `projections`. يتطلب كل إدخال إسقاط مفتاح `query` أو `index`، وليس كليهما.
 
 **ملاحظة**: بالنسبة إلى الجداول الموزعة، يُطبَّق الإسقاط على الجداول `_local`، لا على جدول الوكيل الموزَّع.
 **ملاحظة**: يؤدي تحديد كل من `query` و`index` في إدخال الإسقاط نفسه إلى ظهور خطأ في وقت الترجمة البرمجية.
 
-#### إسقاطات الاستعلامات {#query-projections}
+<div id="query-projections">
+  #### إسقاطات الاستعلامات
+</div>
 
 استخدم `query` لتعريف استعلام إسقاط كامل:
 
@@ -201,7 +225,9 @@ models:
 ) }}
 ```
 
-#### إسقاطات الفهارس {#index-projections}
+<div id="index-projections">
+  #### إسقاطات الفهارس
+</div>
 
 استخدم `index` كاختصار نحوي لإسقاطات [الفهارس](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections) خفيفة الوزن التي تستخدم العمود الافتراضي `_part_offset`. مرّر اسم عمود واحد أو قائمة أعمدة للترتيب وفقًا لها:
 
@@ -236,7 +262,9 @@ models:
 | 26.1+            | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
 | 25.8 – 26.0      | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
-## التجسيد: incremental {#materialization-incremental}
+<div id="materialization-incremental">
+  ## التجسيد: incremental
+</div>
 
 ستُعاد إعادة إنشاء نموذج الجدول عند كل تنفيذ لـ dbt. وقد يكون ذلك غير عملي ومكلفًا للغاية عند التعامل مع مجموعات نتائج كبيرة أو تحويلات معقدة. ولمعالجة هذا التحدي وتقليل وقت البناء، يمكن إنشاء نموذج dbt كجدول ClickHouse من نوع incremental، ويُضبط باستخدام البنية التالية:
 
@@ -268,22 +296,28 @@ models:
 ) }}
 ```
 
-### التهيئة {#incremental-configurations}
+<div id="incremental-configurations">
+  ### الإعدادات
+</div>
 
-التهيئة الخاصة بهذا النوع من التجسيد مُدرجة أدناه:
+الإعدادات الخاصة بهذا النوع من التجسيد مُدرجة أدناه:
 
 | الخيار                   | الوصف                                                                                                                                                                                                                                                          | مطلوب؟                                                                       |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `unique_key`             | مجموعة من أسماء الأعمدة التي تُعرّف الصفوف بشكل فريد. لمزيد من التفاصيل حول قيود التفرد، راجع [هنا](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                     | مطلوب. إذا لم يتم توفيره، فستُضاف الصفوف المعدّلة مرتين إلى الجدول التزايدي. |
 | `inserts_only`           | تم إهماله لصالح `strategy` التزايدية `append`، التي تعمل بالطريقة نفسها. إذا تم ضبطه على True لنموذج `incremental`، فستُدرَج التحديثات التزايدية مباشرةً في الجدول الهدف دون إنشاء جدول وسيط. إذا تم تعيين `inserts_only`، فسيتم تجاهل `incremental_strategy`. | اختياري (الافتراضي: `False`)                                                 |
-| `incremental_strategy`   | الاستراتيجية المستخدمة للتجسيد التزايدي.  الاستراتيجيات المدعومة هي `delete+insert` و`append` و`insert_overwrite` و`microbatch`.  لمزيد من التفاصيل حول الاستراتيجيات، راجع [هنا](#incremental-model-strategies)                                          | اختياري (الافتراضي: &#39;default&#39;)                                       |
-| `incremental_predicates` | شروط إضافية تُطبَّق على التجسيد التزايدي (تُطبَّق فقط على استراتيجية `delete+insert`)                                                                                                                                                                     | اختياري                                                                      |
+| `incremental_strategy`   | الاستراتيجية المستخدمة للتجسيد `incremental`.  الاستراتيجيات المدعومة هي `delete+insert` و`append` و`insert_overwrite` و`microbatch`.  لمزيد من التفاصيل حول الاستراتيجيات، راجع [هنا](#incremental-model-strategies)                                          | اختياري (الافتراضي: &#39;default&#39;)                                       |
+| `incremental_predicates` | شروط إضافية تُطبَّق على التجسيد `incremental` (تُطبَّق فقط على استراتيجية `delete+insert`)                                                                                                                                                                     | اختياري                                                                      |
 
-### استراتيجيات النماذج التزايدية {#incremental-model-strategies}
+<div id="incremental-model-strategies">
+  ### استراتيجيات النماذج التزايدية
+</div>
 
-يدعم `dbt-clickhouse` استراتيجيات النماذج التزايدية التالية.
+يدعم `dbt-clickhouse` ثلاث استراتيجيات للنماذج التزايدية.
 
-#### الاستراتيجية الافتراضية (القديمة) {#default-legacy-strategy}
+<div id="default-legacy-strategy">
+  #### الاستراتيجية الافتراضية (القديمة)
+</div>
 
 تاريخيًا، لم يكن لدى ClickHouse سوى دعم محدود للتحديثات وعمليات الحذف، وذلك على شكل &quot;mutations&quot; غير متزامنة.
 ولمحاكاة سلوك dbt المتوقع،
@@ -294,7 +328,9 @@ models:
 خطأ ما قبل اكتمال العملية؛ ولكن نظرًا لأنها تتضمن نسخًا كاملًا للجدول الأصلي، فقد تكون
 مكلفة جدًا وبطيئة في التنفيذ.
 
-#### استراتيجية Delete+Insert {#delete-insert-strategy}
+<div id="delete-insert-strategy">
+  #### استراتيجية Delete+Insert
+</div>
 
 تستخدم استراتيجية `delete+insert` [عمليات الحذف خفيفة الوزن](/ar/concepts/features/operations/delete/lightweight-delete) لإزالة الصفوف المتأثرة، ثم تُدرج الصفوف الجديدة. ولأنها لا تنسخ الجدول بأكمله، فإن أداءها أفضل بكثير من استراتيجية &quot;legacy&quot;. يؤدي تعيين `use_lw_deletes: true` في ملف التعريف إلى جعل `delete+insert` استراتيجية التزايدية الافتراضية.
 
@@ -311,7 +347,9 @@ models:
   المحدَّثة أو المحذوفة. ولضمان نتائج متسقة، ينبغي أن تقتصر المسندات التزايدية على الاستعلامات الفرعية التي تتعامل مع
   بيانات لن تُعدَّل أثناء التجسيد التزايدي.
 
-#### استراتيجية Microbatch (تتطلب dbt-core &gt;= 1.9) {#microbatch-strategy}
+<div id="microbatch-strategy">
+  #### استراتيجية Microbatch (تتطلب dbt-core &gt;= 1.9)
+</div>
 
 تُعد الاستراتيجية التزايدية `microbatch` إحدى ميزات dbt-core منذ الإصدار 1.9، وقد صُممت للتعامل بكفاءة مع تحويلات البيانات الكبيرة ذات السلاسل الزمنية. وفي dbt-clickhouse، تستند هذه الاستراتيجية إلى الاستراتيجية التزايدية الحالية `delete_insert` من خلال تقسيم الزيادة إلى دفعات زمنية محددة مسبقًا استنادًا إلى إعدادات النموذج `event_time` و
 `batch_size`.
@@ -324,7 +362,9 @@ models:
 
 للاطلاع على استخدام microbatch بالتفصيل، راجع [الوثائق الرسمية](https://docs.getdbt.com/docs/build/incremental-microbatch).
 
-##### إعدادات Microbatch المتاحة {#available-microbatch-configurations}
+<div id="available-microbatch-configurations">
+  ##### إعدادات Microbatch المتاحة
+</div>
 
 | Option                 | Description                                                                                                                                                                                                                                                                                                                                    | Default if any |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
@@ -334,7 +374,9 @@ models:
 | lookback               | يعالج X دفعات تسبق أحدث إشارة مرجعية لالتقاط السجلات التي تصل متأخرة.                                                                                                                                                                                                                                                                          | 1              |
 | concurrent&#95;batches | يتجاوز الاكتشاف التلقائي في dbt لتشغيل الدفعات بشكل متزامن (في الوقت نفسه). اقرأ المزيد عن [إعداد concurrent batches](https://docs.getdbt.com/docs/build/incremental-microbatch#configure-concurrent_batches). يؤدي ضبطه على true إلى تشغيل الدفعات بشكل متزامن (بالتوازي)، بينما يؤدي false إلى تشغيل الدفعات بشكل تسلسلي (واحدة تلو الأخرى). |                |
 
-#### استراتيجية الإلحاق {#append-strategy}
+<div id="append-strategy">
+  #### استراتيجية الإلحاق
+</div>
 
 تحل هذه الاستراتيجية محل الإعداد `inserts_only` في الإصدارات السابقة من dbt-clickhouse. ويعتمد هذا النهج ببساطة على إضافة
 صفوف جديدة إلى العلاقة الحالية.
@@ -342,7 +384,9 @@ models:
 إذا كانت الصفوف المكررة إما مسموحًا بها
 في البيانات أو مستبعَدة بواسطة الاستعلام التزايدي أو عبارة `WHERE`/عامل التصفية.
 
-#### استراتيجية insert_overwrite (تجريبية) {#insert-overwrite-strategy}
+<div id="insert-overwrite-strategy">
+  #### استراتيجية insert_overwrite (تجريبية)
+</div>
 
 > [IMPORTANT]
 > حاليًا، لا تعمل استراتيجية insert&#95;overwrite بشكل كامل مع التجسيدات الموزعة.
@@ -352,30 +396,36 @@ models:
 1. إنشاء جدول مرحلي (مؤقت) له البنية نفسها الخاصة بعلاقة النموذج التزايدي:
    `CREATE TABLE <staging> AS <target>`.
 2. إدراج السجلات الجديدة فقط (الناتجة عن `SELECT`) في الجدول المرحلي.
-3. استبدال التقسيمات الجديدة فقط (الموجودة في الجدول المرحلي) في الجدول الهدف.
+3. استبدال الأقسام الجديدة فقط (الموجودة في الجدول المرحلي) في الجدول الهدف.
 
 يوفّر هذا النهج المزايا التالية:
 
 * إنه أسرع من الاستراتيجية الافتراضية لأنه لا ينسخ الجدول بأكمله.
 * إنه أكثر أمانًا من الاستراتيجيات الأخرى لأنه لا يعدّل الجدول الأصلي حتى تكتمل عملية INSERT
   بنجاح: ففي حال حدوث فشلٍ أثناء التنفيذ، لا يتم تعديل الجدول الأصلي.
-* يطبّق أفضل ممارسات هندسة البيانات المتعلقة بـ&quot;عدم قابلية التقسيمات للتغيير&quot;، مما يبسّط المعالجة
+* يطبّق أفضل ممارسات هندسة البيانات المتعلقة بـ&quot;عدم قابلية الأقسام للتغيير&quot;، مما يبسّط المعالجة
   التزايدية والمتوازية للبيانات، وعمليات التراجع، وغير ذلك.
 
-تتطلب هذه الاستراتيجية تعيين `partition_by` في تهيئة النموذج. وتتجاهل جميع
-المعلمات الأخرى الخاصة بالاستراتيجية في تهيئة النموذج.
+تتطلب هذه الاستراتيجية تعيين `partition_by` في إعدادات النموذج. وتتجاهل جميع
+المعلمات الأخرى الخاصة بالاستراتيجية في إعدادات النموذج.
 
-## التجسيد: materialized_view {#materialized-view}
+<div id="materialized-view">
+  ## التجسيد: materialized_view
+</div>
 
 ينشئ تجسيد `materialized_view` [عرضًا ماديًا في ClickHouse](/ar/reference/statements/create/view#materialized-view) يعمل كمشغّل إدراج، إذ يحوّل الصفوف الجديدة من الجدول المصدر ويُدرجها تلقائيًا في الجدول الهدف. ويُعد هذا أحد أقوى أساليب التجسيد المتاحة في dbt-clickhouse.
 
 نظرًا لتفاصيله، لهذا التجسيد صفحة مخصّصة مستقلة. **[انتقل إلى دليل العروض المادية](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)** للاطلاع على الوثائق الكاملة
 
-## التجسيد: قاموس (تجريبي) {#materialization-dictionary}
+<div id="materialization-dictionary">
+  ## التجسيد: قاموس (تجريبي)
+</div>
 
 يمكن إنشاء نموذج dbt بصفته [قاموس](/ar/concepts/features/dictionaries/index) في ClickHouse. عند كل `dbt run`، يُستبدل الـ قاموس بتعريف النموذج الحالي باستخدام `CREATE OR REPLACE DICTIONARY`.
 
-### التهيئات {#dictionary-configurations}
+<div id="dictionary-configurations">
+  ### التهيئات
+</div>
 
 | الخيار                 | الوصف                                                                                                                                                                                                                      | مطلوب         |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
@@ -391,7 +441,9 @@ models:
 | `url`, `format`        | لمصدر `http` فقط. عنوان URL لملف المصدر وتنسيق الإدخال الخاص به.                                                                                                                                                           | نعم لـ `http` |
 | `range`                | عبارة `RANGE` لتخطيطات `RANGE_HASHED()`، مثل `'min start max stop'`.                                                                                                                                                       |               |
 
-### مثال باستخدام مصدر ClickHouse {#dictionary-clickhouse-source-example}
+<div id="dictionary-clickhouse-source-example">
+  ### مثال باستخدام مصدر ClickHouse
+</div>
 
 يصبح استعلام SQL الخاص بالنموذج هو استعلام مصدر القاموس:
 
@@ -410,7 +462,9 @@ models:
 select id, name from {{ source('raw', 'people') }}
 ```
 
-### مثال باستخدام مصدر HTTP {#dictionary-http-source-example}
+<div id="dictionary-http-source-example">
+  ### مثال باستخدام مصدر HTTP
+</div>
 
 عند استخدام `source_type='http'` (أو خيار `table`)، لا يُستخدم SQL الخاص بالنموذج كمصدر، لكن dbt لا يزال يتطلب body — لذا استخدم العنصر النائب `select 1`:
 
@@ -435,7 +489,9 @@ select 1
 
 راجع [اختبارات قاموس](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py) للاطلاع على مزيد من الأمثلة، بما في ذلك قواميس من النوعين range وdirect.
 
-## التجسيد: distributed_table (تجريبي) {#materialization-distributed-table}
+<div id="materialization-distributed-table">
+  ## التجسيد: distributed_table (تجريبي)
+</div>
 
 يُنشأ الجدول الموزع باتباع الخطوات التالية:
 
@@ -451,7 +507,9 @@ select 1
   التزايدي اللاحقة بشكل صحيح. وقد يؤدي ذلك إلى تنفيذ بعض عمليات insert في الجداول الموزعة ببطء أكبر من
   المتوقع.
 
-### مثال على نموذج لجدول موزع {#distributed-table-model-example}
+<div id="distributed-table-model-example">
+  ### مثال على نموذج لجدول موزع
+</div>
 
 ```sql
 {{
@@ -467,7 +525,9 @@ select id, created_at, item
 from {{ source('db', 'table') }}
 ```
 
-### عملية الترحيل المُنشأة {#distributed-table-generated-migrations}
+<div id="distributed-table-generated-migrations">
+  ### عملية الترحيل المُنشأة
+</div>
 
 ```sql
 CREATE TABLE db.table_local on cluster cluster (
@@ -486,7 +546,9 @@ CREATE TABLE db.table on cluster cluster (
     ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
 ```
 
-### الإعدادات {#distributed-table-configurations}
+<div id="incremental-configurations">
+  ### الإعدادات
+</div>
 
 تُدرج أدناه الإعدادات الخاصة بنوع materialization هذا:
 
@@ -494,7 +556,9 @@ CREATE TABLE db.table on cluster cluster (
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | sharding&#95;key | يحدد مفتاح التقسيم خادم الوجهة عند الإدراج في جدول بمحرك Distributed. ويمكن أن يكون مفتاح التقسيم عشوائيًا أو ناتجًا عن دالة hash | `rand()`)                 |
 
-## materialization: distributed_incremental (تجريبية) {#materialization-distributed-incremental}
+<div id="materialization-distributed-incremental">
+  ## materialization: distributed_incremental (تجريبية)
+</div>
 
 نموذج تزايدي يستند إلى الفكرة نفسها التي يقوم عليها الجدول الموزّع، وتكمن الصعوبة الرئيسية في معالجة جميع
 الاستراتيجيات التزايدية على نحو صحيح.
@@ -506,7 +570,9 @@ CREATE TABLE db.table on cluster cluster (
 لا تُستبدل إلا جداول الشاردات، لأن الجدول الموزّع لا يحتفظ بالبيانات.
 ولا يُعاد تحميل الجدول الموزّع إلا عند تمكين وضع full&#95;refresh أو عند احتمال تغيّر بنية الجدول.
 
-### مثال لنموذج distributed incremental {#distributed-incremental-model-example}
+<div id="distributed-incremental-model-example">
+  ### مثال لنموذج distributed incremental
+</div>
 
 ```sql
 {{
@@ -522,7 +588,9 @@ select id, created_at, item
 from {{ source('db', 'table') }}
 ```
 
-### عمليات الترحيل المُنشأة {#distributed-incremental-generated-migrations}
+<div id="distributed-incremental-generated-migrations">
+  ### عمليات الترحيل المُنشأة
+</div>
 
 ```sql
 CREATE TABLE db.table_local on cluster cluster (
@@ -540,41 +608,32 @@ CREATE TABLE db.table on cluster cluster (
     ENGINE = Distributed ('cluster', 'db', 'table_local', cityHash64(id));
 ```
 
-## Snapshot {#snapshot}
+<div id="snapshot">
+  ## لقطة زمنية
+</div>
 
-تُسجّل [snapshots](https://docs.getdbt.com/docs/build/snapshots) في dbt كيفية تغيّر rows الخاصة بـ model قابل للتعديل مع مرور الوقت على هيئة [dimensions بطيئة التغيّر من النوع 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)، بحيث يستطيع المحللون &quot;العودة بالزمن&quot; لرؤية حالة سابقة لأحد النماذج. يدعم adapter الخاص بـ ClickHouse استراتيجيتي `timestamp` و `check` كلتيهما. فهو يبني كل إصدار جديد من table الخاص بـ snapshot في جدول مرحلي ثم يُبدّله باستخدام `EXCHANGE TABLES` (أو عبر drop وإعادة تسمية في حال عدم قدرة server على تبديل الجداول)، وبذلك يرى القرّاء دائمًا إصدارًا كاملًا من snapshot.
+تتيح لقطات dbt تسجيل التغييرات التي تطرأ على نموذج قابل للتعديل بمرور الوقت. ويتيح ذلك بدوره تنفيذ
+استعلامات على النماذج عند نقطة زمنية محددة، بحيث يمكن للمحللين &quot;الرجوع بالزمن&quot; للاطلاع على الحالة السابقة للنموذج. وهذه الوظيفة
+مدعومة من خلال موصل ClickHouse، ويجري تكوينها باستخدام الصيغة التالية:
 
-بدءًا من الإصدار 1.9 من dbt، تُعرَّف snapshots بصيغة YAML، في `snapshots/<name>.yml`:
-
-```yaml
-snapshots:
-  - name: <snapshot-name>
-    relation: ref('<model-name>')
-    config:
-      unique_key: <column-name>
-      strategy: timestamp             # or check
-      updated_at: <column-name>       # timestamp strategy
-      # check_cols: [<column-name>, ...]  # check strategy
-```
-
-لا تزال صيغة Jinja القديمة في `snapshots/<name>.sql` تعمل:
+كتلة config في `snapshots/<model_name>.sql`:
 
 ```python
-{% snapshot <snapshot-name> %}
 {{
    config(
+     schema = "<schema-name>",
      unique_key = "<column-name>",
      strategy = "<strategy>",
      updated_at = "<updated-at-column-name>",
    )
 }}
-select * from {{ ref('<model-name>') }}
-{% endsnapshot %}
 ```
 
-للاطلاع على مثال تطبيقي على Jaffle Shop، راجع [قسم snapshot في الأدلة](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). وللاطلاع على جميع الخيارات، راجع الصفحة المرجعية [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
+لمزيد من المعلومات حول التهيئة، اطّلِع على صفحة [مرجع إعدادات اللقطات](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs).
 
-## العقود والقيود {#contracts-and-constraints}
+<div id="contracts-and-constraints">
+  ## العقود والقيود
+</div>
 
 لا تُدعَم إلا عقود أنواع الأعمدة المتطابقة تمامًا. على سبيل المثال، سيفشل العقد الذي يحدد نوع العمود UInt32 إذا كان الـ model
 يعيد UInt64 أو أي نوع عدد صحيح آخر.

@@ -2,29 +2,41 @@
 sidebarTitle: '从 MySQL 向 ClickHouse 摄取数据'
 description: '将您的 MySQL 或 MariaDB 数据库中的数据无缝摄取到 ClickHouse Cloud。'
 slug: /integrations/clickpipes/mysql
-title: '从 MySQL 向 ClickHouse 摄取数据（使用 CDC（变更数据捕获））'
+title: '从 MySQL 向 ClickHouse 摄取数据（使用 CDC）'
 doc_type: 'guide'
-keywords: ['MySQL', 'ClickPipes', 'CDC（变更数据捕获）', '变更数据捕获', '数据库复制']
+keywords: ['MySQL', 'ClickPipes', 'CDC', '变更数据捕获', '数据库复制']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/zh/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.mdx';
 
-MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)  (变更数据捕获)&#x20;**。
+<BetaBadge />
+
+<Info>
+  通过 ClickPipes 将数据从 MySQL 摄取到 ClickHouse Cloud 目前处于 Public Beta 阶段。
+</Info>
+
+MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)&#x20;**。
 
 MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 [//]: # "TODO 一次性摄取管道不需要配置 binlog 复制。这一点过去经常让人困惑，因此我们还应提供批量加载所需的最低要求，以免把用户吓跑。"
 
 开始之前，您首先需要确保 MySQL 数据库已正确配置为支持 binlog 复制。具体配置步骤取决于您部署 MySQL 的方式，因此请按照下方对应的指南进行操作：
 
-### 支持的数据源 {#supported-data-sources}
+<div id="supported-data-sources">
+  ### 支持的数据源
+</div>
 
 | 名称                                                | 标志 | 详情                                                                                                            |
 | ------------------------------------------------- | -- | ------------------------------------------------------------------------------------------------------------- |
@@ -38,7 +50,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 设置好源 MySQL 数据库后，您就可以继续创建 ClickPipe。
 
-## 创建你的 ClickPipe {#create-your-clickpipe}
+<div id="create-your-clickpipe">
+  ## 创建你的 ClickPipe
+</div>
 
 请确保你已登录到 ClickHouse Cloud 账户。如果你还没有账户，可以在[这里](https://cloud.clickhouse.com/)注册。
 
@@ -56,7 +70,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="选择 MySQL" size="lg" border />
 
-### 添加源 MySQL 数据库连接 {#add-your-source-mysql-database-connection}
+<div id="add-your-source-mysql-database-connection">
+  ### 添加源 MySQL 数据库连接
+</div>
 
 4. 填写你在前置条件步骤中配置的源 MySQL 数据库连接信息。
 
@@ -67,11 +83,15 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="填写连接信息" size="lg" border />
 
-#### &#x20;(可选) 修改 TLS 设置 {#optional-changing-tls-settings}
+<div id="optional-changing-tls-settings">
+  #### &#x20;(可选) 修改 TLS 设置
+</div>
 
 <ChangingTLSSettings />
 
-#### &#x20;(可选) 设置 SSH 隧道 {#optional-set-up-ssh-tunneling}
+<div id="optional-set-up-ssh-tunneling">
+  #### &#x20;(可选) 设置 SSH 隧道
+</div>
 
 如果源 MySQL 数据库无法从公网访问，您可以指定 SSH 隧道连接信息。
 
@@ -91,7 +111,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 填写完连接信息后，点击 `Next`。
 
-#### 配置高级设置 {#advanced-settings}
+<div id="advanced-settings">
+  #### 配置高级设置
+</div>
 
 如有需要，您可以配置高级设置。以下是各项设置的简要说明：
 
@@ -102,7 +124,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 * **快照并行表数量**：指初始快照期间并行拉取的表数量。当您有大量表，并希望控制并行拉取的表数量时，此设置会很有用。
 * **Server ID**：用于设置 MySQL binlog 复制的服务器 ID 的可选参数。若未设置，ClickPipes 将生成一个随机服务器 ID，并且该 ID 在 ClickPipe 生命周期内可能发生变化。您可以使用它在源端 MySQL 服务器上以确定性方式标识您的 ClickPipe。
 
-### 配置表 {#configure-the-tables}
+<div id="configure-the-tables">
+  ### 配置表
+</div>
 
 5. 在此，您可以为 ClickPipe 选择目标数据库。您既可以选择现有数据库，也可以新建数据库。
 
@@ -112,7 +136,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 7. <SettingPartitionBy />
 
-### 查看权限并启动 ClickPipe {#review-permissions-and-start-the-clickpipe}
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 查看权限并启动 ClickPipe
+</div>
 
 8. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
 
@@ -120,7 +146,9 @@ MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过
 
 最后，请参阅 [&quot;ClickPipes for MySQL 常见问题&quot;](/zh/integrations/clickpipes/mysql/faq) 页面，了解常见问题及其解决方法的更多信息。
 
-## 后续步骤？ {#whats-next}
+<div id="whats-next">
+  ## 后续步骤？
+</div>
 
 [//]: # "TODO 编写一份 MySQL 专用迁移指南和最佳实践，类似于现有的 PostgreSQL 指南。当前迁移指南指向 MySQL 表引擎，这并不理想。"
 

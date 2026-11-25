@@ -50,12 +50,14 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    ISerialization::KindSet allowed_kinds_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
     , block_missing_values(block_missing_values_)
+    , allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -305,14 +307,6 @@ Block NativeReader::read()
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
 
-                    column.type = header_column.type;
-                }
-                else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
-                {
-                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
-                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header, where the query
-                    /// expects the version of the header. So relabel the column with the header type.
-                    column.column = relabelAggregateStateVersions(column.column, header_column.type);
                     column.type = header_column.type;
                 }
             }

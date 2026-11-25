@@ -479,7 +479,7 @@ public:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     /// Return mutation commands for part which could be not applied to

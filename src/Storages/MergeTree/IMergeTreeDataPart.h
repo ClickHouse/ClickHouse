@@ -118,7 +118,6 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
-    PINNED_BY_DELETE_BITMAP,
     REMOVE,
     REMOVE_ROLLED_BACK,
     REMOVE_RETRY,
@@ -271,9 +270,6 @@ public:
 
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
-
-    /// Whether the columns cache can hold entries of this part at all, by its type and its table.
-    bool mayStoreColumnsInColumnsCache() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -473,7 +469,8 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
+    /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
+    /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
 
     NameSet invalidated_system_columns;
