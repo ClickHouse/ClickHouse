@@ -66,6 +66,7 @@ namespace
 static constexpr size_t max_array_size_as_field = 1000000;
 
 static constexpr size_t max_average_array_size_to_gather = 16;
+static constexpr size_t max_elements_to_gather_at_once = 65536;
 
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
@@ -1497,27 +1498,61 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (current_offset > limit * max_average_array_size_to_gather)
     {
         auto res_data = data->cloneEmpty();
-        res_data->reserve(current_offset);
         for (size_t i = 0; i < limit; ++i)
             res_data->insertRangeFrom(*data, offsetAt(indexes[i]), sizeAt(indexes[i]));
         return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
     }
 
-    auto nested_indexes_column = ColumnUInt64::create(current_offset);
-    UInt64 * nested_indexes = nested_indexes_column->getData().data();
-    for (size_t i = 0; i < limit; ++i)
-    {
-        const size_t offset = offsetAt(indexes[i]);
-        const size_t size = sizeAt(indexes[i]);
-        for (size_t j = 0; j < size; ++j)
-            nested_indexes[j] = offset + j;
-        nested_indexes += size;
-    }
-
     /// Build the nested result first: an empty clone of `data` copies its whole nested structure, which for
     /// `Dynamic` is as deep as the data, and every level of this recursion would hold one.
-    ColumnPtr res_data = current_offset != 0 ? data->index(*nested_indexes_column, current_offset) : data->cloneEmpty();
-    return ColumnArray::create(res_data, std::move(res_offsets_column));
+    MutableColumnPtr res_data;
+    auto append = [&](ColumnPtr part)
+    {
+        if (res_data)
+            res_data->insertRangeFrom(*part, 0, part->size());
+        else
+            res_data = IColumn::mutate(std::move(part));
+    };
+
+    auto nested_indexes_column = ColumnUInt64::create(std::min(current_offset, max_elements_to_gather_at_once));
+    UInt64 * nested_indexes = nested_indexes_column->getData().data();
+
+    size_t begin = 0;
+    while (begin < limit)
+    {
+        const size_t chunk_start = res_offsets[begin - 1];
+        const size_t end = std::upper_bound(
+            res_offsets.begin() + begin, res_offsets.begin() + limit, chunk_start + max_elements_to_gather_at_once) - res_offsets.begin();
+
+        if (end == begin)
+        {
+            if (!res_data)
+                res_data = data->cloneEmpty();
+            res_data->insertRangeFrom(*data, offsetAt(indexes[begin]), sizeAt(indexes[begin]));
+            ++begin;
+            continue;
+        }
+
+        const size_t chunk_size = res_offsets[end - 1] - chunk_start;
+        if (chunk_size != 0)
+        {
+            UInt64 * out = nested_indexes;
+            for (size_t i = begin; i < end; ++i)
+            {
+                const size_t offset = offsetAt(indexes[i]);
+                const size_t size = sizeAt(indexes[i]);
+                for (size_t j = 0; j < size; ++j)
+                    out[j] = offset + j;
+                out += size;
+            }
+            append(data->index(*nested_indexes_column, chunk_size));
+        }
+        begin = end;
+    }
+
+    if (!res_data)
+        res_data = data->cloneEmpty();
+    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
