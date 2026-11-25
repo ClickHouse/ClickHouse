@@ -432,7 +432,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
-    AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
@@ -508,8 +507,8 @@ class JobNames:
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
     # Unit-test (gtest) bugfix validation. Unlike the functional/integration
-    # validators above, this is a single AMD-only job: it builds a merge-base
-    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # validators above, this is a single ARM-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (ARM ASan+UBSan) in-job and reports
     # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
     # aggregation in `new_tests_check.py`.
     BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
@@ -569,7 +568,6 @@ class ArtifactNames:
     CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
-    CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
@@ -578,9 +576,9 @@ class ArtifactNames:
 
     FAST_TEST = "FAST_TEST"
 
-    UNITTEST_AMD_DEBUG = "UNITTEST_AMD_DEBUG"
-    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
+    UNITTEST_ARM_DEBUG = "UNITTEST_ARM_DEBUG"
+    UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
+    UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
@@ -746,7 +744,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_FREEBSD,
             ArtifactNames.CH_PPC64LE,
             ArtifactNames.CH_AMD_COMPAT,
-            ArtifactNames.CH_AMD_MUSL,
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
@@ -858,9 +855,9 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_DEBUG,
-            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_ARM_DEBUG,
+            ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ArtifactNames.UNITTEST_ARM_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]

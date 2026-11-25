@@ -955,6 +955,8 @@
          with an empty user name). Set to an empty value to reject such connections.
          Never applied to interserver connections.
          Can be overridden per endpoint in the <protocols> section with the same tag.
+
+         The substituted user is authenticated as usual (password, <networks>, ...).
     -->
     <!-- <default_session_user>default</default_session_user> -->
 
@@ -1000,7 +1002,8 @@
 
     <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
          namespace where only the paths it needs according to this configuration are visible - its data, logs,
-         configuration, certificates, a few system files - and nothing else, in particular no shell.
+         configuration, certificates, the credentials of the clouds (as the tokens of the service accounts of Kubernetes),
+         a few system files - and nothing else, in particular no shell.
          With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
          runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
          line) turns it off.

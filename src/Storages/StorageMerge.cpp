@@ -25,9 +25,13 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -63,6 +67,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
@@ -598,6 +603,117 @@ bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
         || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
 }
 
+std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTypePtr & from, const DataTypePtr & to, bool & renamed)
+{
+    if (from->equals(*to))
+        return {from, to};
+
+    const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get());
+    const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get());
+    if (from_nullable || to_nullable)
+    {
+        const auto & from_nested = from_nullable ? from_nullable->getNestedType() : from;
+        const auto & to_nested = to_nullable ? to_nullable->getNestedType() : to;
+        auto [new_from_nested, new_to_nested] = nameTupleElementsByPositionImpl(from_nested, to_nested, renamed);
+        return {
+            new_from_nested == from_nested ? from : (from_nullable ? std::make_shared<DataTypeNullable>(new_from_nested) : new_from_nested),
+            new_to_nested == to_nested ? to : (to_nullable ? std::make_shared<DataTypeNullable>(new_to_nested) : new_to_nested)};
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        auto [from_nested, to_nested] = nameTupleElementsByPositionImpl(from_array->getNestedType(), to_array->getNestedType(), renamed);
+        return {
+            from_nested == from_array->getNestedType() ? from : std::make_shared<DataTypeArray>(from_nested),
+            to_nested == to_array->getNestedType() ? to : std::make_shared<DataTypeArray>(to_nested)};
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        auto [from_key, to_key] = nameTupleElementsByPositionImpl(from_map->getKeyType(), to_map->getKeyType(), renamed);
+        auto [from_value, to_value] = nameTupleElementsByPositionImpl(from_map->getValueType(), to_map->getValueType(), renamed);
+        return {
+            from_key == from_map->getKeyType() && from_value == from_map->getValueType() ? from : std::make_shared<DataTypeMap>(from_key, from_value),
+            to_key == to_map->getKeyType() && to_value == to_map->getValueType() ? to : std::make_shared<DataTypeMap>(to_key, to_value)};
+    }
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple || from_tuple->getElements().empty() || to_tuple->getElements().empty())
+        return {from, to};
+
+    DataTypes from_elements = from_tuple->getElements();
+    DataTypes to_elements = to_tuple->getElements();
+    const auto & to_names = to_tuple->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> from_positions;
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+    }
+
+    const bool by_name = std::ranges::any_of(to_names, [&](const auto & name) { return from_positions.contains(name); });
+    const bool rename = !from_tuple->hasExplicitNames() && !to_tuple->hasExplicitNames() && from_elements.size() != to_elements.size();
+    if (!by_name && !rename && from_elements.size() != to_elements.size())
+        return {from, to};
+
+    if (by_name)
+    {
+        for (size_t i = 0; i < to_elements.size(); ++i)
+            if (auto it = from_positions.find(to_names[i]); it != from_positions.end())
+                std::tie(from_elements[it->second], to_elements[i])
+                    = nameTupleElementsByPositionImpl(from_elements[it->second], to_elements[i], renamed);
+    }
+    else
+    {
+        for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+            std::tie(from_elements[i], to_elements[i]) = nameTupleElementsByPositionImpl(from_elements[i], to_elements[i], renamed);
+    }
+
+    renamed |= rename;
+    auto rebuild = [&](const DataTypePtr & type, const DataTypeTuple & tuple, const DataTypes & elements) -> DataTypePtr
+    {
+        if (rename)
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        if (elements == tuple.getElements())
+            return type;
+        if (tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    };
+    return {rebuild(from, *from_tuple, from_elements), rebuild(to, *to_tuple, to_elements)};
+}
+
+/// Elements of two unnamed tuples are paired by position: missing trailing elements get default values and extra ones
+/// are dropped, as for missing and extra columns. Returns copies of both types in which such tuples are named by position.
+std::optional<std::pair<DataTypePtr, DataTypePtr>> nameTupleElementsByPosition(const DataTypePtr & from, const DataTypePtr & to)
+{
+    bool renamed = false;
+    auto named = nameTupleElementsByPositionImpl(from, to, renamed);
+    if (!renamed)
+        return {};
+    return named;
+}
+
+const ActionsDAG::Node & addCastWithTupleElementsByPosition(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & to, ContextPtr context)
+{
+    const auto named = nameTupleElementsByPosition(node.result_type, to);
+    if (!named)
+        return dag.addCast(node, to, {}, context);
+
+    const auto & from_named = dag.addCast(node, named->first, {}, context);
+    const auto & to_named = dag.addCast(from_named, named->second, {}, context);
+    return dag.addCast(to_named, to, {}, context);
+}
+
 }
 
 bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
@@ -919,6 +1035,47 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    /// Follow only the ordered pipeline that reaches the sort. The children of a `UnionStep` all
+    /// belong to it, but for any other step with several children (a set-creating step, a join) only
+    /// the first one does: the others build sets or the right side of a join from unrelated reads,
+    /// which the residual work of the main pipeline does not run on.
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        for (auto * child : node->children)
+            preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    }
+    else if (!node->children.empty())
+    {
+        preferMultipleStreamsForResidualCPUWork(node->children.front(), passed_residual_cpu_step);
+    }
+}
+
 namespace
 {
 
@@ -1002,6 +1159,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    /// Residual per-row work of the outer query is pushed *into* the child plans, above the child
+    /// reads, where `PrefetchingConcatProcessor` would collapse the streams and serialize it. Only
+    /// here are the child plans final (filter push-down runs after `requestReadingInOrder`), so this
+    /// is the earliest point at which the check can see those steps.
+    if (order_info)
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -2379,8 +2545,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
+    /// Before `applyFilters`, the filters already pushed down to this step exclude tables too: every child applies them.
+    std::optional<ActionsDAG> pushed_down_filters_dag;
+    const ActionsDAG * filter_dag = filter_actions_dag.get();
+    if (!filter_dag && !pushed_down_filters.empty())
+    {
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & filter_info : pushed_down_filters)
+            filter_nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        pushed_down_filters_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (pushed_down_filters_dag)
+            filter_dag = &*pushed_down_filters_dag;
+    }
+
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
+    if (filter_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -2388,7 +2567,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -2754,8 +2933,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
                 auto [it, inserted] = converted_columns.emplace(name_in_storage, nullptr);
                 if (inserted)
-                    it->second = &extract_subcolumns_dag.addCast(
-                        extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, {}, local_context);
+                    it->second = &addCastWithTupleElementsByPosition(
+                        extract_subcolumns_dag, extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, local_context);
 
                 auto subcolumn_name_type = std::make_shared<DataTypeString>();
                 auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
@@ -2836,6 +3015,29 @@ void ReadFromMerge::convertAndFilterSourceStream(
         }
     }
 
+    {
+        ActionsDAG tuple_elements_dag(current_step_columns);
+        auto & outputs = tuple_elements_dag.getOutputs();
+        bool has_tuple_elements_by_position = false;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (!nameTupleElementsByPosition(current_step_columns[i].type, converted_columns[i].type))
+                continue;
+
+            const auto & cast_node = addCastWithTupleElementsByPosition(tuple_elements_dag, *outputs[i], converted_columns[i].type, local_context);
+            outputs[i] = &tuple_elements_dag.addAlias(cast_node, current_step_columns[i].name);
+            has_tuple_elements_by_position = true;
+        }
+
+        if (has_tuple_elements_by_position)
+        {
+            auto tuple_elements_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(tuple_elements_dag));
+            tuple_elements_step->setStepDescription("Convert tuples with different numbers of elements to the Merge table types");
+            child.plan.addStep(std::move(tuple_elements_step));
+            current_step_columns = child.plan.getCurrentHeader()->getColumnsWithTypeAndName();
+        }
+    }
+
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
@@ -2887,8 +3089,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
             adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
-            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
         }
+
+        /// `columns_to_fill` has each name once, but the header repeats a column the query selects twice.
+        adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -2968,6 +3172,21 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table. Only the reads of
+    /// the ordered pipeline are affected: `preferMultipleStreamsForResidualCPUWork` follows all
+    /// branches of a `UnionStep` but only the first child of a join or a set-creating step, so the
+    /// build side of a join or the source of a set keeps `PrefetchingConcatProcessor`.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ true);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)

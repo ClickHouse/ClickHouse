@@ -49,6 +49,8 @@ namespace Setting
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsUInt64 distributed_group_by_top_k;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -111,7 +113,6 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
-    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_query_condition_cache_for_time_conditions;
@@ -144,8 +145,10 @@ namespace Setting
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
     extern const SettingsFloat automatic_parallel_replicas_statistics_drift_ratio;
     extern const SettingsBool automatic_parallel_replicas_remember_boundary;
+    extern const SettingsUInt64 automatic_parallel_replicas_undecided_retry_after_executions;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    extern const SettingsBool automatic_parallel_replicas_ignore_thresholds;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 distributed_plan_min_rows_per_reader;
@@ -265,9 +268,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
     filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
-    /// Without `use_primary_key` the copy would just be a full scan filter
-    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
-        && from[Setting::use_primary_key];
+    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_propagate_predicate_across_join];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_lower_array_join_function];
     legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
@@ -296,6 +298,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
+    max_rows_to_group_by = from[Setting::max_rows_to_group_by];
     enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
     top_k_through_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_array_join];
@@ -488,10 +491,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
     automatic_parallel_replicas_statistics_drift_ratio = from[Setting::automatic_parallel_replicas_statistics_drift_ratio];
     automatic_parallel_replicas_remember_boundary = from[Setting::automatic_parallel_replicas_remember_boundary];
+    automatic_parallel_replicas_undecided_retry_after_executions = from[Setting::automatic_parallel_replicas_undecided_retry_after_executions];
     parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+    automatic_parallel_replicas_ignore_thresholds = from[Setting::automatic_parallel_replicas_ignore_thresholds];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
@@ -503,6 +508,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getPreparedSetsCache())
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
+    if (from->canUseParallelReplicasOnFollower())
+        distributed_group_by_top_k = from->getSettingsRef()[Setting::distributed_group_by_top_k];
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
