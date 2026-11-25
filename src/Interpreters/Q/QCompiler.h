@@ -7,6 +7,7 @@
 
 #include <map>
 #include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -187,6 +188,25 @@ private:
     ContextPtr context;
     size_t name_counter = 0;
 
+    /// The limit of the expansion of the program (the setting `max_expanded_ast_elements`), or zero for no limit.
+    ///
+    /// The values of a q program share their ASTs: `a:a+a` refers to the previous `a` twice, and a function is inlined
+    /// with its argument wherever it mentions the parameter. So a short program can denote an expression of exponential
+    /// size, while the generated query, and every copy made on the way to it, holds a separate subtree per reference.
+    /// Two things are limited: the size of every value when expanded (`checkExpandedSize`), and the total number of
+    /// the elements copied (`cloneForQuery`). Both are checked before the work is done, so the work is bounded as well.
+    size_t max_expanded_elements = 0;
+
+    /// The expanded sizes of the ASTs of the values compiled so far. A new value is made of the previous ones and a few
+    /// new elements, so only the new elements are counted. The ASTs are held here, so that an address is not reused.
+    std::unordered_map<const IAST *, std::pair<ASTPtr, size_t>> expanded_sizes;
+
+    void checkExpandedSize(const ASTPtr & ast);
+    void checkExpandedSize(const QValue & value);
+
+    QValue compileNode(const QNodePtr & node, QEnvironment & env, QScope * scope);
+    QValue applyFunction(const QFunctionPtr & function, QValues args, QEnvironment & env, QScope * scope, size_t offset);
+
     QValue compileName(const QNodePtr & node, QEnvironment & env, QScope * scope, bool function_position);
     QValue compileLiteral(const QNode & node);
     QValue compileApply(const QNodePtr & node, QEnvironment & env, QScope * scope);
@@ -239,6 +259,10 @@ struct QSelectBuilder
     /// Returns an `ASTSelectWithUnionQuery`.
     [[nodiscard]] ASTPtr build() const;
 };
+
+/// A copy of an AST for the generated query. It is charged to the budget of the program being compiled:
+/// see `QCompiler::max_expanded_elements`.
+ASTPtr cloneForQuery(const ASTPtr & ast);
 
 /// An expression with an alias.
 ASTPtr withAlias(ASTPtr ast, const String & alias);

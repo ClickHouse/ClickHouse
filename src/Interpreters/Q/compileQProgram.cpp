@@ -6,6 +6,7 @@
 #include <Access/ContextAccess.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -41,12 +42,18 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_expanded_ast_elements;
+}
+
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_RECURSION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
@@ -54,6 +61,47 @@ namespace ErrorCodes
 
 namespace QCompilerInternals
 {
+
+namespace
+{
+
+/// The elements copied into the generated query by the compilation that runs in this thread, see `cloneForQuery`.
+/// The copies are made by helpers that build pieces of a query (`withAlias`, `QSelectBuilder::build`) all over
+/// the compiler, so the budget is found through the thread instead of being passed to every one of them.
+struct CopyBudget
+{
+    size_t max_elements = 0;
+    size_t copied_elements = 0;
+};
+
+thread_local CopyBudget * copy_budget = nullptr;
+
+[[noreturn]] void throwTooBigExpansion(size_t max_elements)
+{
+    throw Exception(ErrorCodes::TOO_BIG_AST,
+        "The q program expands into a query of more than {} elements (see the setting `max_expanded_ast_elements`)", max_elements);
+}
+
+}
+
+ASTPtr cloneForQuery(const ASTPtr & ast)
+{
+    if (copy_budget && copy_budget->max_elements)
+    {
+        /// Counting before copying keeps the work within the limit: nothing is copied once the budget is spent.
+        std::vector<const IAST *> pending{ast.get()};
+        while (!pending.empty())
+        {
+            const IAST * node = pending.back();
+            pending.pop_back();
+            if (++copy_budget->copied_elements > copy_budget->max_elements)
+                throwTooBigExpansion(copy_budget->max_elements);
+            for (const auto & child : node->children)
+                pending.push_back(child.get());
+        }
+    }
+    return ast->clone();
+}
 
 void throwQError(int code, size_t offset, const String & message)
 {
@@ -84,7 +132,7 @@ ASTPtr makeExpressionList(ASTs children)
 
 ASTPtr withAlias(ASTPtr ast, const String & alias)
 {
-    ASTPtr result = ast->clone();
+    ASTPtr result = cloneForQuery(ast);
     if (auto * with_alias = dynamic_cast<ASTWithAlias *>(result.get()))
         with_alias->setAlias(alias);
     else
@@ -128,7 +176,7 @@ ASTPtr QSelectBuilder::build() const
     {
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         auto element = make_intrusive<ASTTablesInSelectQueryElement>();
-        element->table_expression = from->clone();
+        element->table_expression = cloneForQuery(from);
         element->children.push_back(element->table_expression);
         tables->children.push_back(element);
 
@@ -158,7 +206,7 @@ ASTPtr QSelectBuilder::build() const
     }
 
     if (where)
-        query->setExpression(ASTSelectQuery::Expression::WHERE, where->clone());
+        query->setExpression(ASTSelectQuery::Expression::WHERE, cloneForQuery(where));
     if (!group_by.empty())
         query->setExpression(ASTSelectQuery::Expression::GROUP_BY, makeExpressionList(group_by));
     if (!order_by.empty())
@@ -175,9 +223,9 @@ ASTPtr QSelectBuilder::build() const
         query->setExpression(ASTSelectQuery::Expression::ORDER_BY, makeExpressionList(std::move(elements)));
     }
     if (limit)
-        query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, limit->clone());
+        query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, cloneForQuery(limit));
     if (offset)
-        query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, offset->clone());
+        query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, cloneForQuery(offset));
     query->normalizeChildrenOrder();
 
     auto result = make_intrusive<ASTSelectWithUnionQuery>();
@@ -471,7 +519,7 @@ void windowizeImpl(ASTPtr & ast, const ASTs & partition)
         {
             ASTs keys;
             for (const auto & key : partition)
-                keys.push_back(key->clone());
+                keys.push_back(cloneForQuery(key));
             definition->partition_by = makeExpressionList(std::move(keys));
             definition->children.push_back(definition->partition_by);
         }
@@ -576,8 +624,45 @@ void checkNoReservedNames(const NamesAndTypesList & columns)
 
 }
 
-QCompiler::QCompiler(ContextPtr context_) : context(std::move(context_))
+QCompiler::QCompiler(ContextPtr context_)
+    : context(std::move(context_)), max_expanded_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
 {
+}
+
+void QCompiler::checkExpandedSize(const ASTPtr & ast)
+{
+    if (!max_expanded_elements || !ast || expanded_sizes.contains(ast.get()))
+        return;
+
+    /// The size of the AST as a tree: an element is counted once per every reference to it. The ASTs of the values
+    /// that are already counted are not walked again, and the count stops at the limit.
+    size_t size = 0;
+    std::vector<const IAST *> pending{ast.get()};
+    while (!pending.empty())
+    {
+        const IAST * node = pending.back();
+        pending.pop_back();
+        if (auto it = expanded_sizes.find(node); it != expanded_sizes.end())
+        {
+            size += it->second.second;
+        }
+        else
+        {
+            ++size;
+            for (const auto & child : node->children)
+                pending.push_back(child.get());
+        }
+        if (size > max_expanded_elements)
+            throwTooBigExpansion(max_expanded_elements);
+    }
+    expanded_sizes.emplace(ast.get(), std::pair(ast, size));
+}
+
+void QCompiler::checkExpandedSize(const QValue & value)
+{
+    checkExpandedSize(value.ast);
+    if (value.table)
+        checkExpandedSize(value.table->table_expression);
 }
 
 String QCompiler::newName()
@@ -601,6 +686,8 @@ QValue QCompiler::scalar(ASTPtr ast, size_t depth)
 
 QValue QCompiler::makeTable(ASTPtr select_query, Names keys)
 {
+    /// The query is analyzed for its structure right here, so it is checked first.
+    checkExpandedSize(select_query);
     auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query, context);
     auto table = std::make_shared<QTable>();
     table->table_expression = makeSubqueryTableExpression(select_query);
@@ -652,7 +739,7 @@ QValue QCompiler::toScalar(const QValue & value, size_t offset)
 
 ASTPtr QCompiler::windowize(const ASTPtr & ast, const ASTs & partition, QScope * scope)
 {
-    ASTPtr result = ast->clone();
+    ASTPtr result = cloneForQuery(ast);
     windowizeImpl(result, partition);
     if (scope)
         scope->uses_row_number = true;
@@ -689,7 +776,7 @@ ASTPtr QCompiler::makeWindowFunction(const String & function, ASTs args, QScope 
     {
         ASTs keys;
         for (const auto & key : scope->partition)
-            keys.push_back(key->clone());
+            keys.push_back(cloneForQuery(key));
         definition->partition_by = makeExpressionList(std::move(keys));
         definition->children.push_back(definition->partition_by);
     }
@@ -1151,6 +1238,15 @@ QValue QCompiler::compileLambdaCall(const QNode & lambda, QValues args, QEnviron
 
 QValue QCompiler::apply(const QFunctionPtr & function, QValues args, QEnvironment & env, QScope * scope, size_t offset)
 {
+    /// A function is applied not only where the program says so, but also by the adverbs and by other functions.
+    checkStackSize();
+    QValue result = applyFunction(function, std::move(args), env, scope, offset);
+    checkExpandedSize(result);
+    return result;
+}
+
+QValue QCompiler::applyFunction(const QFunctionPtr & function, QValues args, QEnvironment & env, QScope * scope, size_t offset)
+{
     /// Fill the elided arguments of a projection.
     if (!function->bound.empty())
     {
@@ -1389,7 +1485,13 @@ QValue QCompiler::compile(const QNodePtr & node, QEnvironment & env, QScope * sc
 {
     /// The tree of a q program can be as deep as `max_parser_depth`, and every level takes several frames here.
     checkStackSize();
+    QValue result = compileNode(node, env, scope);
+    checkExpandedSize(result);
+    return result;
+}
 
+QValue QCompiler::compileNode(const QNodePtr & node, QEnvironment & env, QScope * scope)
+{
     if (!node)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "An empty expression in the q program");
 
@@ -2176,6 +2278,11 @@ ASTPtr QCompiler::finalQuery(const QValue & value, const QNodePtr & statement)
 
 ASTPtr QCompiler::compileProgram(const QProgram & program)
 {
+    CopyBudget budget{max_expanded_elements, 0};
+    CopyBudget * previous_budget = copy_budget;
+    copy_budget = &budget;
+    SCOPE_EXIT({ copy_budget = previous_budget; });
+
     QEnvironment globals;
     std::optional<QValue> result;
     QNodePtr result_statement;
