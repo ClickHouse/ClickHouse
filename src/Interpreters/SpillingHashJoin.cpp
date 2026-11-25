@@ -178,9 +178,7 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
         return addBlockToExternalJoin(block, num_rows, context);
     }
 
-    /// A reserve that the build would not grow leaves the rule above nothing to decide. The size statistics hold no bytes, so
-    /// the first block, prepared as the join stores it, gives the bytes of a row. The maps take the reserve at their first
-    /// insert, which comes after this.
+    /// The size statistics hold no bytes, so the first block gives the bytes of a row. The maps reserve at their first insert, after this.
     if (robin_hood_under_memory_pressure && block.rows())
         std::call_once(
             reserve_checked,

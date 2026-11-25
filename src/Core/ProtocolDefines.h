@@ -272,8 +272,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
-/// First query-plan serialization version that carries the `enable_robin_hood_hash_for_joins_under_memory_pressure` plan
-/// setting. Gates writing it in `JoinSettings::updatePlanSettings`.
+/// First query-plan serialization version that carries the `enable_robin_hood_hash_for_joins_under_memory_pressure` plan setting.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROBIN_HOOD_UNDER_MEMORY_PRESSURE = 22;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
