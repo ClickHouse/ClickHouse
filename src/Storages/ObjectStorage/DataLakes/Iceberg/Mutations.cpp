@@ -952,7 +952,7 @@ void mutate(
             /* use_uuid_in_metadata */ catalog != nullptr,
             CompressionMethod::None,
             write_format);
-        filename_generator.setBaseMetadataFile(last_version, metadata_path);
+        filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
@@ -1137,7 +1137,7 @@ void alter(
             /* use_uuid_in_metadata */ catalog != nullptr,
             CompressionMethod::None,
             write_format);
-        filename_generator.setBaseMetadataFile(last_version, metadata_path);
+        filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
