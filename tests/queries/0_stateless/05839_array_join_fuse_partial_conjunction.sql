@@ -65,6 +65,14 @@ SELECT groupArray(id) FROM (SELECT id FROM t_aj_partial ARRAY JOIN A AS a WHERE 
 
 DROP TABLE t_aj_partial;
 
+SELECT '-- the query reads the value of the filter: the totals row keeps it';
+SELECT a, s, a = 20 AND rand() >= 0 AS f
+FROM (SELECT sum(number) AS s FROM numbers(4) GROUP BY bitAnd(number, 1) WITH TOTALS) ARRAY JOIN [10, 20] AS a
+WHERE f ORDER BY a, s;
+SELECT arrayJoin([10, 20]) AS a, s, toString(a = 20 AND rand() >= 0) AS g
+FROM (SELECT sum(number) AS s FROM numbers(4) GROUP BY bitAnd(number, 1) WITH TOTALS)
+WHERE a = 20 AND rand() >= 0 ORDER BY a, s;
+
 SELECT '-- a conjunct that can throw keeps its guard above: no fusion';
 DROP TABLE IF EXISTS t_aj_partial_throw;
 CREATE TABLE t_aj_partial_throw (A Array(Int64)) ENGINE = Memory;

@@ -25,6 +25,15 @@
 -- the step does not read a column that only the conjunct above reads
 ['String']
 [4,14,24,34,44,54]
+-- the query reads the value of the filter: the totals row keeps it
+20	2	1
+20	4	1
+
+10	6	0
+20	2	1
+20	4	1
+
+10	6	0
 -- a conjunct that can throw keeps its guard above: no fusion
 0
 1
