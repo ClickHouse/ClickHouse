@@ -405,7 +405,9 @@ A configuração de carga de trabalho `max_waiting_queries` limita o número de 
 
 ## Armazenamento de cargas de trabalho e recursos {#workload_entity_storage}
 
-As definições de todas as cargas de trabalho e de todos os recursos, na forma de instruções `CREATE WORKLOAD` e `CREATE RESOURCE`, são armazenadas de forma persistente em disco, em `workload_path`, ou no ZooKeeper, em `workload_zookeeper_path`. Recomenda-se usar o armazenamento no ZooKeeper para garantir consistência entre os nós. Como alternativa, a cláusula `ON CLUSTER` pode ser usada em conjunto com o armazenamento em disco.
+As definições de todas as cargas de trabalho e de todos os recursos, na forma de consultas `CREATE WORKLOAD` e `CREATE RESOURCE`, são armazenadas de forma persistente em disco, em `workload_path`, ou no ZooKeeper, em `workload_zookeeper_path`. Recomenda-se usar o armazenamento no ZooKeeper para garantir consistência entre os nós. Como alternativa, a cláusula `ON CLUSTER` pode ser usada em conjunto com o armazenamento em disco.
+
+Para criar e remover cargas de trabalho e recursos, são necessários os privilégios `CREATE WORKLOAD`, `CREATE RESOURCE`, `DROP WORKLOAD` e `DROP RESOURCE`. Eles não fazem parte dos grupos de privilégios `CREATE` e `DROP`, portanto precisam ser concedidos explicitamente ou por meio de `GRANT ALL`.
 
 ## Cargas de trabalho e recursos baseados em configuração {#config_based_workloads}
 

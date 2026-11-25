@@ -10,7 +10,7 @@ doc_type: 'guide'
 ClickHouse® — это высокопроизводительная столбцовая система управления базами данных SQL (СУБД) для онлайн-аналитической обработки (OLAP). Она доступна как в виде [программного обеспечения с открытым исходным кодом](https://github.com/ClickHouse/ClickHouse), так и в виде [облачного сервиса](https://clickhouse.com/cloud).
 
 <div id="what-are-analytics">
-  ## Что такое аналитика?
+  ## Что такое аналитика? {#what-are-analytics}
 </div>
 
 Под аналитикой, также известной как OLAP (онлайн-аналитическая обработка), понимаются SQL-запросы со сложными вычислениями (например, агрегациями, обработкой строк, арифметическими операциями) над огромными наборами данных.
@@ -19,9 +19,7 @@ ClickHouse® — это высокопроизводительная столб�
 
 Во многих сценариях [аналитические запросы должны работать «в реальном времени»](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), то есть возвращать результат менее чем за одну секунду.
 
-<div id="row-oriented-vs-column-oriented-storage">
-  ## Строко-ориентированное и столбцовое хранение
-</div>
+## Строко-ориентированное и столбцовое хранение {#row-oriented-vs-column-oriented-storage}
 
 Такого уровня производительности можно добиться только при правильной &quot;ориентации&quot; данных.
 
@@ -50,13 +48,9 @@ LIMIT 8;
 Вы можете [выполнить этот запрос в Песочнице ClickHouse](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), который выбирает и фильтрует [всего несколько из более чем 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) существующих столбцов, и возвращает результат за миллисекунды:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Пример запроса в столбцовой базе данных](/images/column-oriented-example-query.webp)
-
-</Frame>
-
+  <Frame>
+    ![Пример запроса в столбцовой базе данных](/images/column-oriented-example-query.webp)
+  </Frame>
 </div>
 
 Как видно из раздела статистики на диаграмме выше, запрос обработал 100 миллионов строк за 92 миллисекунды — это чуть более 1 миллиарда строк в секунду или чуть менее 7 ГБ данных в секунду.
@@ -66,13 +60,9 @@ LIMIT 8;
 В строко-ориентированной базе данных, хотя приведённый выше запрос обрабатывает лишь несколько существующих столбцов, системе всё равно приходится загружать с диска в память данные из остальных столбцов. Причина в том, что данные хранятся на диске в [блоках](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (обычно фиксированного размера, например 4 КБ или 8 КБ). Блоки — это наименьшие единицы данных, считываемые с диска в память. Когда приложение или база данных запрашивает данные, подсистема дискового ввода-вывода операционной системы считывает с диска необходимые блоки. Даже если нужна только часть блока, в память всё равно считывается весь блок (это обусловлено устройством дисков и файловых систем):
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Структура строко-ориентированной базы данных](/images/row-oriented.webp)
-
-</Frame>
-
+  <Frame>
+    ![Структура строко-ориентированной базы данных](/images/row-oriented.webp)
+  </Frame>
 </div>
 
 **Столбцовая СУБД**
@@ -81,47 +71,43 @@ LIMIT 8;
 Поскольку блочное хранение и передача данных с диска в память соответствуют шаблону доступа к данным в аналитических запросах, с диска считываются только столбцы, необходимые для запроса, что позволяет избежать лишних операций ввода-вывода для неиспользуемых данных. Это [намного быстрее](https://benchmark.clickhouse.com/) по сравнению с построчным хранением, при котором считываются целые строки (включая нерелевантные столбцы):
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Структура столбцовой базы данных](/images/column-oriented.webp)
-
-</Frame>
-
+  <Frame>
+    ![Структура столбцовой базы данных](/images/column-oriented.webp)
+  </Frame>
 </div>
 
 <div id="data-replication-and-integrity">
-  ## Репликация данных и их целостность
+  ## Репликация данных и их целостность {#data-replication-and-integrity}
 </div>
 
 ClickHouse использует асинхронную мультимастерную репликацию, чтобы обеспечить избыточное хранение данных на нескольких узлах. После записи на любую доступную реплику все остальные реплики в фоновом режиме получают свои копии. Система поддерживает одинаковые данные на разных репликах. После большинства сбоев восстановление выполняется автоматически, а в сложных случаях — полуавтоматически.
 
 <div id="role-based-access-control">
-  ## Ролевое управление доступом
+  ## Ролевое управление доступом {#role-based-access-control}
 </div>
 
 ClickHouse поддерживает управление учетными записями пользователей с помощью SQL-запросов и позволяет настраивать ролевое управление доступом, аналогично стандарту ANSI SQL и популярным системам управления реляционными базами данных.
 
 <div id="sql-support">
-  ## Поддержка SQL
+  ## Поддержка SQL {#sql-support}
 </div>
 
 ClickHouse поддерживает [декларативный язык запросов на основе SQL](/ru/reference/home), который во многих случаях соответствует стандарту ANSI SQL. Поддерживаются такие секции запросов, как [GROUP BY](/ru/reference/statements/select/group-by), [ORDER BY](/ru/reference/statements/select/order-by), подзапросы в [FROM](/ru/reference/statements/select/from), секция [JOIN](/ru/reference/statements/select/join), оператор [IN](/ru/reference/statements/in), [оконные функции](/ru/reference/functions/window-functions/index) и скалярные подзапросы.
 
 <div id="approximate-calculation">
-  ## Приблизительные вычисления
+  ## Приблизительные вычисления {#approximate-calculation}
 </div>
 
 ClickHouse позволяет жертвовать точностью ради производительности. Например, некоторые его агрегатные функции приблизительно вычисляют количество уникальных значений, медиану и квантили. Кроме того, запросы можно выполнять на выборке данных, чтобы быстро получать приблизительный результат. Наконец, агрегации можно выполнять для ограниченного числа ключей, а не для всех. В зависимости от того, насколько неравномерно распределены ключи, это позволяет получить достаточно точный результат, затрачивая значительно меньше ресурсов, чем при точном вычислении.
 
 <div id="adaptive-join-algorithms">
-  ## Адаптивные алгоритмы JOIN
+  ## Адаптивные алгоритмы JOIN {#adaptive-join-algorithms}
 </div>
 
 ClickHouse адаптивно выбирает алгоритм JOIN: начинает с быстрых hash JOIN, а если больших таблиц больше одной — переключается на merge JOIN.
 
 <div id="superior-query-performance">
-  ## Превосходная производительность запросов
+  ## Превосходная производительность запросов {#superior-query-performance}
 </div>
 
 ClickHouse хорошо известен своей исключительно высокой производительностью запросов.
