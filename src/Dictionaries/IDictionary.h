@@ -457,14 +457,14 @@ public:
 
         /// Blank attributes for NULL-key rows so a coincidental match yields defaults like a miss.
         if (!key_row_is_null.empty())
-            for (auto & result_column : result_columns)
-                result_column = JoinCommon::filterWithBlanks(result_column, out_null_map);
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i] = JoinCommon::filterWithBlanks(result_columns[i], out_null_map, /*inverse_filter*/ false, result_types[i]);
 
         /// Result block should consist of key columns and then attributes
-        for (const auto & key_col : key_columns)
+        for (size_t i = 0; i < key_columns.size(); ++i)
         {
             /// Insert default values for keys that were not found
-            ColumnPtr filtered_key_col = JoinCommon::filterWithBlanks(key_col, out_null_map);
+            ColumnPtr filtered_key_col = JoinCommon::filterWithBlanks(key_columns[i], out_null_map, /*inverse_filter*/ false, key_types[i]);
             result_columns.insert(result_columns.begin(), filtered_key_col);
         }
 

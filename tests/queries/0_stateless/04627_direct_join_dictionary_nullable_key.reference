@@ -31,3 +31,13 @@ a	A
 \N	
 Direct join is still chosen for the Nullable key
 1
+Type defaults of not-matched rows, Nullable key
+a	2000-01-01
+b	1900-01-01
+\N	1900-01-01
+Type defaults of not-matched rows, non-Nullable key
+a	2000-01-01
+b	1900-01-01
+Type default of a not-found Date32 dictionary key
+2000-01-01	2000-01-01	A
+2000-01-02	1900-01-01	
