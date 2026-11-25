@@ -42,19 +42,9 @@ config :logger,
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 
-<Tabs>
-  <Tab title="托管 ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-
-  <Tab title="ClickStack 开源版">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+```
 
 *`OTEL_SERVICE_NAME` 环境变量用于在 ClickStack 用户界面中标识你的服务，你可以将其设置为任意名称。*

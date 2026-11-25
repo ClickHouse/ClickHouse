@@ -2,14 +2,14 @@
 slug: /clickstack/observability/faq
 title: 'FAQ ClickHouse Observability'
 sidebarTitle: 'FAQ'
-description: 'Questions fréquentes sur ClickHouse Observability, en version entièrement gérée ou autogérée : collecte de données, alertes, tableaux de bord et découverte des métriques.'
+description: 'Questions fréquentes sur ClickHouse Observability, en version entièrement gérée ou autogérée : collecte de données, facturation, alertes, tableaux de bord et Découverte des métriques.'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability', 'FAQ', 'alertes', 'tableaux de bord', 'drill-down', 'découverte des métriques']
+keywords: ['ClickHouse Observability', 'FAQ', 'facturation', 'tarification', 'alertes', 'tableaux de bord', 'exploration détaillée', 'Découverte des métriques']
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
-Cette page présente les modes entièrement géré et autogéré de ClickHouse Observability, et répond aux questions fréquentes sur la collecte des données, les alertes, les tableaux de bord et la découverte des métriques.
+Cette page présente les modes entièrement géré et autogéré de ClickHouse Observability, et répond aux questions fréquentes sur la collecte des données, la facturation, les alertes, les tableaux de bord et la Découverte des métriques.
 
 ## Déploiement et collecte des données {#data-collection}
 
@@ -39,6 +39,12 @@ Cette page présente les modes entièrement géré et autogéré de ClickHouse O
   **Autogéré :** utilisez l’endpoint OTLP du collecteur que vous exploitez, ainsi que l’éventuel jeton d’authentification configuré sur son récepteur. Pour le collecteur ClickStack, si vous activez `OTLP_AUTH_TOKEN`, envoyez ce jeton dans l’en-tête `authorization`. Ces éléments sont distincts de l’endpoint et des identifiants de la base de données ClickHouse Cloud que le collecteur utilise pour écrire les données. Pour des exemples, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured).
 
   Respectez le format d’endpoint requis par l’outil que vous utilisez. Les [données d’exemple et démos](/fr/clickstack/observability/example-datasets) fournissent des exemples de configuration pour chaque outil.
+</Accordion>
+
+<Accordion title="Comment ClickHouse Observability est-il facturé ?">
+  **Entièrement géré :** vous payez pour la télémétrie que vous envoyez, et non pour la capacité de calcul et le stockage. Les logs et les traces sont facturés selon leur volume non compressé, et les metrics selon le nombre de points de données plutôt qu’au nombre de séries temporelles. Pendant la bêta publique, les données sont conservées 30 jours. Pour connaître les tarifs en vigueur, consultez la [tarification de ClickHouse](https://clickhouse.com/pricing).
+
+  **Autogéré :** vous payez la capacité de calcul et le stockage de votre service ClickHouse Cloud. La tarification reste identique à celle de Managed ClickStack, l’ancien nom de cette option. Consultez la [tarification de ClickHouse Cloud](/fr/products/cloud/reference/billing/billing-overview).
 </Accordion>
 
 ## Alertes {#alerting}

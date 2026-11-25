@@ -13,9 +13,9 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 本指南使用托管在公共 ClickHouse playground [sql.clickhouse.com](https://sql.clickhouse.com) 上的样本数据集，你可以从本地部署的 ClickStack 连接到它。
 
 <Warning>
-  **托管 ClickStack 不支持**
+  **ClickHouse Observability 不支持**
 
-  使用托管 ClickStack 时不支持远程数据库，因此也不支持此数据集。
+  使用 ClickHouse Observability 时不支持远程数据库，因此也不支持此数据集。
 </Warning>
 
 它包含大约 40 小时的数据，这些数据采集自官方 OpenTelemetry (OTel) Demo 的 ClickHouse 版本。数据会在每晚重新回放，并将时间戳调整到当前时间窗口，以便用户通过 ClickStack 用户界面集成的日志、链路追踪和指标来探索系统行为。

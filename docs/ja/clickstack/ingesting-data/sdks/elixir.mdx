@@ -43,19 +43,9 @@ config :logger,
 
 続いて、OpenTelemetry collector 経由で ClickStack にテレメトリーを送信するため、シェルで以下の環境変数を設定します。
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+```
 
 *`OTEL_SERVICE_NAME` 環境変数は、ClickStack UI でサービスを識別するために使用されます。値には任意の名前を指定できます。*

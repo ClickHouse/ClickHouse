@@ -19,6 +19,10 @@ ClickHouse Cloud는 컴퓨트, 저장소, [데이터 전송](/ko/products/cloud/
 
 ClickHouse Managed Postgres는 컴퓨트, 저장소, 데이터 전송에 대해 ClickHouse Cloud 청구 모델을 따릅니다. 각 Managed Postgres 인스턴스는 백업(backup)을 7일 동안 보관하며, 프로비저닝된 디스크 용량만큼의 백업(backup) 저장소가 기본으로 포함됩니다. 이를 초과하는 백업(backup) 저장소는 해당 리전의 ClickHouse Cloud 저장소 가격으로 청구됩니다. 예를 들어 AWS `us-east-1`에서는 TB-월당 $25.30입니다. 데이터 아웃바운드 트래픽은 [ClickHouse Cloud 데이터 전송 요금](/ko/products/cloud/reference/billing/network-data-transfer)에 따라 청구됩니다. 자세한 내용은 [Managed Postgres 요금](/ko/products/managed-postgres/pricing)을 참조하십시오.
 
+## ClickHouse Observability {#clickhouse-observability}
+
+완전 관리형 [ClickHouse Observability](/ko/clickstack/observability/overview)는 컴퓨트와 저장소를 기준으로 과금되지 않습니다. 로그와 트레이스는 매월 수집된 비압축 데이터 용량을 기준으로, 메트릭은 매월 수집된 데이터 포인트 수를 기준으로 과금됩니다. 공개 베타 기간에는 데이터가 30일간 보존됩니다. 자체 관리형 ClickHouse Observability는 사용자의 ClickHouse Cloud 서비스에서 실행되며, 이 페이지에 설명된 대로 해당 서비스의 컴퓨트 및 저장소 사용량에 따라 과금됩니다. 최신 요금은 [요금 페이지](https://clickhouse.com/pricing)를 참조하십시오.
+
 ## Amazon Web Services (AWS) 예시 {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ ClickHouse Cloud는 클라우드 객체 스토리지를 사용하며, 사용량�
 다음 쿼리를 사용할 수 있습니다:
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

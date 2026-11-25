@@ -22,7 +22,7 @@ ClickStack admite dos formas complementarias de crear alertas: **Alertas de bús
 Cada alerta utiliza uno de dos modos de detección, que se elige en **Alert type** dentro del editor de alertas:
 
 * **Umbral estático**: se activa cuando el valor supera un número que usted define. Es el modo predeterminado y el que se describe en esta página.
-* **Detección de anomalías** (solo en Managed ClickStack): se activa cuando el valor se sale de su rango esperado, aprendido a partir del historial reciente. Consulte [Alertas de detección de anomalías](/es/clickstack/features/anomaly-detection).
+* **Detección de anomalías** (solo en ClickHouse Observability): se activa cuando el valor se sale de su rango esperado, aprendido a partir del historial reciente. Consulte [Alertas de detección de anomalías](/es/clickstack/features/anomaly-detection).
 
 ### 1. Alertas de búsqueda {#search-alerts}
 
@@ -356,7 +356,7 @@ En esta consulta, `ServiceName` es una columna que no es numérica ni de tipo `t
 Crea una alerta cuando el recuento de errores supere una media móvil en más de dos desviaciones estándar. Esto permite detectar picos con respecto al valor de referencia reciente, en lugar de usar un umbral fijo.
 
 <Tip>
-  En Managed ClickStack, las [alertas de detección de anomalías](/es/clickstack/features/anomaly-detection) hacen esto sin necesidad de una consulta SQL personalizada y, además, ofrecen una versión preliminar, una prueba retrospectiva (backtest) y valores de referencia por grupo. Usa el enfoque SQL que se muestra a continuación cuando necesites control total sobre el cálculo del valor de referencia, o en ClickStack Open Source.
+  En ClickHouse Observability, las [alertas de detección de anomalías](/es/clickstack/features/anomaly-detection) hacen esto sin necesidad de una consulta SQL personalizada y, además, ofrecen una versión preliminar, una prueba retrospectiva (backtest) y valores de referencia por grupo. Usa el enfoque SQL que se muestra a continuación cuando necesites control total sobre el cálculo del valor de referencia, o en ClickStack Open Source.
 </Tip>
 
 ```sql

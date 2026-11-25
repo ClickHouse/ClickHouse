@@ -43,20 +43,10 @@ config :logger,
 이후 OpenTelemetry collector를 통해 ClickStack으로 텔레메트리 데이터를 수집하려면
 셸에서 다음 환경 변수를 설정하십시오:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+```
 
 *`OTEL_SERVICE_NAME` 환경 변수는 ClickStack UI에서 서비스를 식별하는 데 사용되며,
 이름은 원하는 값으로 지정할 수 있습니다.*

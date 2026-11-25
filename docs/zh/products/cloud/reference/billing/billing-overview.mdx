@@ -19,6 +19,10 @@ ClickHouse Cloud 按计算资源、存储、[数据传输](/zh/products/cloud/re
 
 ClickHouse Managed Postgres 的计算资源、存储和数据传输均沿用 ClickHouse Cloud 的计费模式。每个 Managed Postgres 实例的备份保留 7 天，并免费包含与已预配磁盘容量相等的备份存储。超出部分的备份存储按您所在区域的 ClickHouse Cloud 存储价格计费，例如 AWS `us-east-1` 区域为每 TB 每月 $25.30。数据出站流量按 [ClickHouse Cloud 数据传输费率](/zh/products/cloud/reference/billing/network-data-transfer)计费。详情请参阅 [Managed Postgres 定价](/zh/products/managed-postgres/pricing)。
 
+## ClickHouse Observability {#clickhouse-observability}
+
+全托管的 [ClickHouse Observability](/zh/clickstack/observability/overview) 不按计算资源和存储计费。日志和链路追踪按每月已摄取的未压缩数据量计费，指标则按每月已摄取的数据点数量计费。公开测试版期间，数据保留 30 天。Self-managed ClickHouse Observability 运行在您的 ClickHouse Cloud 服务上，按其计算资源和存储计费，详见本页说明。如需了解当前费率，请参阅[定价页面](https://clickhouse.com/pricing)。
+
 ## Amazon Web Services (AWS) 示例 {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ ClickHouse Cloud 使用云对象存储，使用量按存储在 ClickHouse 表中
 你可以使用以下查询：
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

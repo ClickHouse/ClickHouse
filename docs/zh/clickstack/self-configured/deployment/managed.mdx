@@ -86,7 +86,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
     <Steps>
       <Step title="选择服务" id="select-service">
-        在 ClickHouse Cloud 首页，选择要启用托管 ClickStack 的服务。
+        在 ClickHouse Cloud 首页，选择要启用 Self-managed ClickHouse Observability 的服务。
 
         <Warning>
           **估算资源**
@@ -103,7 +103,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         </div>
       </Step>
 
-      <Step title="打开 ClickStack 用户界面" id="navigate-to-the-clickstack-ui-existing">
+      <Step title="前往 ClickStack 用户界面" id="navigate-to-the-clickstack-ui-existing">
         从左侧导航菜单中选择 &#39;ClickStack&#39;。系统会将您重定向到 ClickStack 用户界面，并根据您的 ClickHouse Cloud 权限自动完成身份验证。
 
         如果您的服务中已存在 OpenTelemetry 表，系统会自动检测这些表并创建相应的数据源。
@@ -125,7 +125,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         如果此步骤成功，那么大功告成，一切就绪 🎉；否则，请继续设置数据摄取。
       </Step>
 
-      <Step title="配置数据摄取" id="setup-ingestion-existing-service">
+      <Step title="设置摄取" id="setup-ingestion-existing-service">
         如果自动检测失败，或者当前尚无任何表，系统将提示您配置数据摄取。
 
         <div className="ch-image-lg">
@@ -276,7 +276,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step title="进入 ClickStack 用户界面" id="navigate-to-clickstack-ui-existing-service">
+      <Step title="前往 ClickStack 用户界面" id="navigate-to-clickstack-ui-existing-service">
         完成摄取设置并开始发送数据后，选择 &quot;Next&quot;。
 
         <Tabs>

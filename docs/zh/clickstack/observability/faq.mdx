@@ -2,14 +2,14 @@
 slug: /clickstack/observability/faq
 title: 'ClickHouse Observability 常见问题'
 sidebarTitle: '常见问题'
-description: '关于全托管和自管理 ClickHouse Observability、数据采集、告警、仪表盘及指标发现的常见问题解答。'
+description: '关于全托管和自管理 ClickHouse Observability、数据采集、计费、告警、仪表盘及指标发现的常见问题解答。'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability', '常见问题', '告警', '仪表盘', '下钻', '指标发现']
+keywords: ['ClickHouse Observability', '常见问题', '计费', '定价', '告警', '仪表盘', '下钻', '指标发现']
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
-本页介绍 ClickHouse Observability 的全托管模式和自管理模式，并解答有关数据采集、告警、仪表盘和指标发现的常见问题。
+本页介绍 ClickHouse Observability 的全托管模式和自管理模式，并解答有关数据采集、计费、告警、仪表盘和指标发现的常见问题。
 
 ## 部署与数据采集 {#data-collection}
 
@@ -39,6 +39,12 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
   **自管理：** 使用您所运行采集器的 OTLP 端点，以及其接收器上配置的身份验证令牌 (如有) 。对于 ClickStack 采集器，如果启用了 `OTLP_AUTH_TOKEN`，请在 `authorization` 请求头中发送该令牌。这些信息与采集器写入数据时所用的 ClickHouse Cloud 数据库端点和凭据相互独立。示例请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured)。
 
   请按照所用工具要求的格式填写端点。[示例数据和演示](/zh/clickstack/observability/example-datasets)中提供了各工具的配置示例。
+</Accordion>
+
+<Accordion title="ClickHouse Observability 如何计费？">
+  **全托管：** 按发送的遥测数据量付费，而非按计算资源和存储付费。日志和链路追踪按未压缩数据量计费，指标则按数据点数量计费，而非按时间序列计费。公开 Beta 阶段，数据保留 30 天。当前费率请参阅 [ClickHouse 定价](https://clickhouse.com/pricing)。
+
+  **自管理：** 按 ClickHouse Cloud 服务的计算资源和存储付费。定价与 Managed ClickStack (此选项的原名称) 相同。详情请参阅 [ClickHouse Cloud 定价](/zh/products/cloud/reference/billing/billing-overview)。
 </Accordion>
 
 ## 告警 {#alerting}

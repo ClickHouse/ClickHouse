@@ -22,7 +22,7 @@ O ClickStack oferece duas maneiras complementares de criar alertas: **Alertas de
 Cada alerta usa um de dois modos de detecção, selecionado em **Alert type** no editor de alertas:
 
 * **Limiar estático**: dispara quando o valor ultrapassa um número definido por você. Este é o modo padrão e o descrito nesta página.
-* **Detecção de anomalias** (somente no Managed ClickStack): dispara quando o valor sai do intervalo esperado, aprendido com base no histórico recente. Consulte [Alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection).
+* **Detecção de anomalias** (somente no ClickHouse Observability): dispara quando o valor sai do intervalo esperado, aprendido com base no histórico recente. Consulte [Alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection).
 
 ### 1. Alertas de busca {#search-alerts}
 
@@ -356,7 +356,7 @@ Nesta consulta, `ServiceName` é uma coluna não numérica e que não é de time
 Alerta para contagens excessivas de erros que ultrapassam uma média móvel em mais de dois desvios padrão. Isso detecta picos em relação ao comportamento de referência recente, em vez de um limiar fixo.
 
 <Tip>
-  No Managed ClickStack, os [alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection) fazem isso sem SQL personalizado, além de oferecerem uma prévia, um backtest e valores de referência por grupo. Use a abordagem com SQL abaixo quando precisar de controle total sobre o cálculo do valor de referência ou se estiver usando o ClickStack Open Source.
+  No ClickHouse Observability, os [alertas de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection) fazem isso sem SQL personalizado, além de oferecerem uma prévia, um backtest e valores de referência por grupo. Use a abordagem com SQL abaixo quando precisar de controle total sobre o cálculo do valor de referência ou se estiver usando o ClickStack Open Source.
 </Tip>
 
 ```sql

@@ -19,6 +19,10 @@ keywords: ['ClickHouse Cloud', 'ценообразование', 'Биллинг
 
 ClickHouse Managed Postgres использует модель Биллинга ClickHouse Cloud для вычислительных ресурсов, хранилища и передачи данных. Каждый инстанс Managed Postgres хранит резервные копии в течение 7 дней, а хранилище для резервных копий объёмом, равным выделенной ёмкости диска, уже включено в стоимость. Дополнительное хранилище для резервных копий оплачивается по цене хранилища ClickHouse Cloud в вашем регионе, например $25.30 за ТБ в месяц в AWS `us-east-1`. Исходящий трафик оплачивается по [тарифам ClickHouse Cloud на передачу данных](/ru/products/cloud/reference/billing/network-data-transfer). Подробнее см. в разделе [Ценообразование Managed Postgres](/ru/products/managed-postgres/pricing).
 
+## ClickHouse Observability {#clickhouse-observability}
+
+Полностью управляемый [ClickHouse Observability](/ru/clickstack/observability/overview) тарифицируется не по вычислительным ресурсам и хранилищу. Журналы и данные трассировки тарифицируются по несжатому объёму, а метрики — по количеству точек данных, загруженных за месяц. В период публичной бета-версии данные хранятся 30 дней. Самостоятельно управляемый ClickHouse Observability работает в вашем сервисе ClickHouse Cloud, и оплачиваются используемые им вычислительные ресурсы и хранилище, как описано на этой странице. Актуальные тарифы приведены на [странице с ценами](https://clickhouse.com/pricing).
+
 ## Пример для Amazon Web Services (AWS) {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ ClickHouse Cloud использует облачное объектное хра
 Вы можете использовать запрос:
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

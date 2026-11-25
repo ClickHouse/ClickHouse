@@ -19,6 +19,10 @@ Pour comprendre ce qui peut avoir un impact sur votre facture et découvrir comm
 
 ClickHouse Managed Postgres suit le modèle de facturation de ClickHouse Cloud pour la capacité de calcul, le stockage et le transfert de données. Chaque instance Managed Postgres conserve ses sauvegardes pendant 7 jours, et un stockage de sauvegarde équivalent à la capacité de disque provisionnée est inclus. Tout stockage de sauvegarde supplémentaire est facturé au prix du stockage ClickHouse Cloud dans votre région, par exemple $25.30 par To-mois dans la région AWS `us-east-1`. Le trafic sortant est facturé selon les [tarifs de transfert de données de ClickHouse Cloud](/fr/products/cloud/reference/billing/network-data-transfer). Pour plus de détails, consultez la page [Tarification de Managed Postgres](/fr/products/managed-postgres/pricing).
 
+## ClickHouse Observability {#clickhouse-observability}
+
+La version entièrement gérée de [ClickHouse Observability](/fr/clickstack/observability/overview) n’est pas facturée en fonction de la capacité de calcul et du stockage. Les logs et les traces sont facturés selon leur volume décompressé, et les metrics selon le nombre de points de données, ingérés chaque mois. Pendant la bêta publique, les données sont conservées 30 jours. Self-managed ClickHouse Observability s’exécute sur votre service ClickHouse Cloud ; sa capacité de calcul et son stockage sont facturés comme décrit sur cette page. Pour connaître les tarifs en vigueur, consultez la [page de tarification](https://clickhouse.com/pricing).
+
 ## Exemple Amazon Web Services (AWS) {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ Le seul moyen pratique de le savoir avec précision est d’ingérer votre jeu d
 Vous pouvez utiliser la requête :
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

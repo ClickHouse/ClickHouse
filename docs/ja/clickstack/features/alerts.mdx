@@ -22,7 +22,7 @@ ClickStack では、アラートを作成する方法として、互いを補完
 各アラートでは、2 つの検出モードのいずれかを使用します。モードはアラートエディターの **Alert type** で選択します。
 
 * **Static threshold**: 値が指定した数値を超えたときに発報します。デフォルトのモードであり、本ページではこのモードについて説明します。
-* **Anomaly detection**(Managed ClickStack のみ): 直近の履歴から学習した想定範囲を値が外れたときに発報します。詳しくは [異常検知アラート](/ja/clickstack/features/anomaly-detection) を参照してください。
+* **異常検知**(ClickHouse オブザーバビリティのみ): 直近の履歴から学習した想定範囲を値が外れたときに発報します。詳しくは [異常検知アラート](/ja/clickstack/features/anomaly-detection) を参照してください。
 
 ### 1. 検索アラート {#search-alerts}
 
@@ -356,7 +356,7 @@ WHERE request_count > 10
 エラー数が移動平均を2標準偏差超えて上回った場合にアラートを発します。これにより、固定のしきい値ではなく、直近のベースライン動作に対するスパイクを検出できます。
 
 <Tip>
-  Managed ClickStack では、[異常検知アラート](/ja/clickstack/features/anomaly-detection) を使えばカスタム SQL を書かずに同じことを実現でき、さらにプレビュー、バックテスト、グループごとのベースラインも利用できます。ベースラインの計算を完全に制御したい場合や、ClickStack Open Source を使用している場合は、以下の SQL によるアプローチを使用してください。
+  ClickHouse オブザーバビリティでは、[異常検知アラート](/ja/clickstack/features/anomaly-detection) を使えばカスタム SQL を書かずに同じことを実現でき、さらにプレビュー、バックテスト、グループごとのベースラインも利用できます。ベースラインの計算を完全に制御したい場合や、ClickStack Open Source を使用している場合は、以下の SQL によるアプローチを使用してください。
 </Tip>
 
 ```sql

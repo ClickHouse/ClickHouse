@@ -22,7 +22,7 @@ ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, �
 각 알림은 두 가지 감지 모드 중 하나를 사용하며, 모드는 알림 편집기의 **Alert type**에서 선택합니다.
 
 * **Static threshold**: 값이 지정한 숫자를 넘으면 알림이 발생합니다. 기본 모드이며, 이 페이지에서 설명하는 모드입니다.
-* **이상 탐지** (Managed ClickStack 전용): 최근 이력을 바탕으로 학습한 예상 범위를 값이 벗어나면 알림이 발생합니다. 자세한 내용은 [이상 탐지 알림](/ko/clickstack/features/anomaly-detection)을 참조하십시오.
+* **이상 탐지** (ClickHouse Observability 전용): 최근 이력을 바탕으로 학습한 예상 범위를 값이 벗어나면 알림이 발생합니다. 자세한 내용은 [이상 탐지 알림](/ko/clickstack/features/anomaly-detection)을 참조하십시오.
 
 ### 1. 검색 알림 {#search-alerts}
 
@@ -355,10 +355,10 @@ WHERE request_count > 10
 
 #### 후행 평균을 사용한 이상 탐지(시계열) {#example-anomaly-detection}
 
-이동 평균을 두 표준편차 이상 초과하는 과도한 오류 수에 대해 알림을 설정합니다. 이렇게 하면 고정된 임계값 대신 최근 기준 수준과 비교한 급증을 포착할 수 있습니다.
+이동 평균을 두 표준편차 이상 초과하는 과도한 오류 수에 대해 알림을 설정합니다. 이렇게 하면 고정된 임계값 대신 최근 기준값과 비교한 급증을 포착할 수 있습니다.
 
 <Tip>
-  Managed ClickStack에서는 [이상 탐지 알림](/ko/clickstack/features/anomaly-detection)을 사용하면 사용자 정의 SQL 없이 동일한 작업을 수행할 수 있으며, 프리뷰, 백테스트, 그룹별 기준값 기능도 함께 제공됩니다. 기준값 계산을 세밀하게 직접 제어해야 하거나 ClickStack Open Source를 사용한다면 아래의 SQL 방식을 사용하세요.
+  ClickHouse Observability에서는 [이상 탐지 알림](/ko/clickstack/features/anomaly-detection)을 사용하면 사용자 정의 SQL 없이 동일한 작업을 수행할 수 있으며, 프리뷰, 백테스트, 그룹별 기준값 기능도 함께 제공됩니다. 기준값 계산을 세밀하게 직접 제어해야 하거나 ClickStack Open Source를 사용한다면 아래의 SQL 방식을 사용하세요.
 </Tip>
 
 ```sql
@@ -402,7 +402,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 ```
 
 **표시 유형**: 선
-**임계값**: `> 0` (이동 기준선을 초과하는 오류가 감지되면 트리거됨)
+**임계값**: `> 0` (이동 기준값을 초과하는 오류가 감지되면 트리거됨)
 
 이 쿼리는 이동 윈도우 계산의 초기값을 만들기 위해 날짜 범위 시작 *이전* 30개의 인터벌을 가져온 다음, 최종 출력이 평가 윈도우만 포함하도록 필터링합니다.
 

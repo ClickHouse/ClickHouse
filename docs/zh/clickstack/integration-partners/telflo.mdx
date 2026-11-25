@@ -17,7 +17,7 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
   本指南介绍如何将遥测数据从由 Telflo 管理的 OpenTelemetry 收集器发送到 ClickStack。您将学习如何：
 
   * 在 Telflo 的可视化编辑器中或通过命令行客户端构建采集器配置
-  * 将遥测数据发送到开源版或 Self-managed ClickHouse Observability，或直接写入 ClickHouse
+  * 将遥测数据发送到 ClickStack 开源版，或直接写入 ClickHouse
   * 将配置远程部署到采集器机群
   * 确认遥测数据已进入 ClickStack 或您的 ClickHouse 表
 
@@ -59,11 +59,10 @@ Telflo 提供：
 
 ## 前置条件 {#prerequisites}
 
-* 一个目标端：[开源 ClickStack](/zh/clickstack/getting-started/oss)、[Self-managed ClickHouse Observability](/zh/clickstack/self-configured/getting-started/managed)，或自管理的 ClickHouse 实例
+* 一个目标端：[开源 ClickStack](/zh/clickstack/getting-started/oss) 或自管理的 ClickHouse 实例
 * Telflo 账户 ([在 telflo.com 创建账户](https://telflo.com))
 * 运行采集器的环境：一台 VM 或一个 Kubernetes 集群
 * **开源 ClickStack**：你的 ClickStack OTLP 端点 (HTTP 为 `4318`，gRPC 为 `4317`) 以及摄取 API key，可在 ClickStack 用户界面的 **Team Settings → API Keys** 中找到 ([参考文档见此](/zh/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-* **Self-managed ClickHouse Observability**：你的 ClickHouse Cloud 服务端点 (端口 `8443`) 以及一个摄取用户 (参见[创建摄取用户](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user))
 * **自管理 ClickHouse**：你的 ClickHouse 端点、用于存放 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)的数据库，以及具备创建和写入这些表权限的用户 (参见[创建摄取用户](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
 * 从采集器到你的 ClickStack 或 ClickHouse 端点的网络连通性
 
@@ -82,7 +81,7 @@ Telflo 提供：
   </Step>
 
   <Step title="添加 exporter" id="add-exporter">
-    三种方式使用相同的编辑器、相同的发布步骤和相同的 fleet，唯一的区别在于 exporter。请选择与你的部署相对应的选项卡：开源 ClickStack 通过 OTLP 并配合摄取密钥接收数据；Self-managed ClickHouse Observability 和自管理 ClickHouse 则直接写入 ClickStack 表。
+    两种方式使用相同的编辑器、相同的发布步骤和相同的 fleet，唯一的区别在于 exporter。请选择与你的部署相对应的选项卡：开源 ClickStack 通过 OTLP 并配合摄取密钥接收数据；自管理 ClickHouse 则直接写入 ClickStack 表。
 
     <Tabs>
       <Tab title="开源 ClickStack">
@@ -91,17 +90,6 @@ Telflo 提供：
         3. 在 **HTTP Headers** 下点击 **Add header**，然后在 **Header name** 中填入 `authorization`，在 **Header value** 中填入 `${env:CLICKSTACK_INGESTION_KEY}`。Telflo 会在你安装 collector 时提示输入该值，因此密钥不会存储在配置中。
 
         如需使用 gRPC，请在端口 `4317` 上使用 **OTLP** exporter，并在 **gRPC Metadata Headers** 下设置相同的请求头。
-      </Tab>
-
-      <Tab title="Self-managed ClickHouse Observability">
-        Self-managed ClickHouse Observability 不附带 gateway collector，因此没有托管的 OTLP 端点可供发送 telemetry。你在此处配置的 collector 即充当该 [gateway](/zh/clickstack/ingesting-data/collector#collector-roles)：为其配置一个 **OTLP** receiver 以及 ClickHouse exporter，它便会写入你的 ClickHouse Cloud 服务。随后，你的 SDK 和 agent collector 通过 `4318` (HTTP) 或 `4317` (gRPC) 向其发送 OTLP 数据。
-
-        1. 将 **ClickHouse** exporter 拖到画布上。
-        2. 在 **Endpoint** 中填入你的 ClickHouse Cloud 服务端点 (端口 `8443`) ，将 **Database** 设置为 `default`，并将 **Username** 设置为你的摄取用户。
-        3. 将 **Password** 设置为 `${env:CLICKHOUSE_PASSWORD}`。Telflo 会在你安装 collector 时提示输入该值，因此该 credential 不会存储在配置中。
-        4. 在 **Schema &amp; Tables** 下：如果 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)尚不存在，请保持 **Create Schema on Startup** 为开启状态，exporter 会自动创建这些表。表创建完成后再将其关闭。
-
-        请在 exporter 上游保留 **Batch**：ClickHouse 在批量 insert 时性能最佳。如果你已经运行了一个 [ClickStack collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 作为 OTLP gateway，也可以改为按照开源 ClickStack 的步骤操作，将你在该 collector 上设置的 [`OTLP_AUTH_TOKEN`](/zh/clickstack/ingesting-data/collector#securing-the-collector) 作为请求头的值。
       </Tab>
 
       <Tab title="自管理 ClickHouse">
@@ -147,7 +135,7 @@ Telflo 提供：
   </Step>
 
   <Step title="验证遥测数据" id="verify-telemetry">
-    打开 ClickStack 用户界面，在 **搜索** 视图中搜索你的某个服务；查看指标请使用 **Chart Explorer**。若使用 Self-managed ClickHouse Observability，请在 ClickHouse Cloud 控制台中打开你的服务并点击 **Launch ClickStack**。若使用自管理 ClickHouse，则可直接查询 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)，例如 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`。
+    打开 ClickStack 用户界面，在 **搜索** 视图中搜索你的某个服务；查看指标请使用 **Chart Explorer**。若使用自管理 ClickHouse，则可直接查询 [ClickStack 表](/zh/clickstack/ingesting-data/schemas)，例如 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`。
   </Step>
 </Steps>
 

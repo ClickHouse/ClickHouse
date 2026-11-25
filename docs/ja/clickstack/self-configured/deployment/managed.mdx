@@ -86,7 +86,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
     <Steps>
       <Step title="サービスを選択" id="select-service">
-        ClickHouse Cloud のランディングページで、Managed ClickStack を有効化するサービスを選択します。
+        ClickHouse Cloud のランディングページで、Self-managed ClickHouse Observability を有効化するサービスを選択します。
 
         <Warning>
           **リソースの見積もり**
@@ -103,7 +103,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
         </div>
       </Step>
 
-      <Step title="ClickStack UIにアクセスする" id="navigate-to-the-clickstack-ui-existing">
+      <Step title="ClickStack UI に移動する" id="navigate-to-the-clickstack-ui-existing">
         左側のナビゲーションメニューから &#39;ClickStack&#39; を選択します。ClickStack UI にリダイレクトされ、ClickHouse Cloud のアクセス許可に基づいて自動的に認証されます。
 
         サービス内に OpenTelemetry テーブルがすでに存在する場合は、それらが自動検出され、対応するデータソースが作成されます。
@@ -125,7 +125,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
         このステップが成功すれば、セットアップは完了です 🎉。うまくいかなかった場合は、インジェストの設定に進んでください。
       </Step>
 
-      <Step title="インジェストの設定" id="setup-ingestion-existing-service">
+      <Step title="インジェストを設定する" id="setup-ingestion-existing-service">
         自動検出に失敗した場合、または既存のテーブルがない場合は、インジェストの設定を求めるメッセージが表示されます。
 
         <div className="ch-image-lg">

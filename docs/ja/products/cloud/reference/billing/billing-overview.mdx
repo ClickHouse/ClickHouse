@@ -19,6 +19,10 @@ ClickHouse Cloud は、コンピュート、ストレージ、[データ転送](
 
 ClickHouse Managed Postgres では、コンピュート、ストレージ、データ転送に ClickHouse Cloud の請求モデルが適用されます。各 Managed Postgres インスタンスのバックアップは 7 日間保持され、プロビジョニング済みのディスク容量と同量のバックアップストレージが料金に含まれます。これを超えるバックアップストレージは、ご利用のリージョンにおける ClickHouse Cloud のストレージ料金で請求されます (例: AWS `us-east-1` では 1 TB・月あたり $25.30) 。データのエグレスには [ClickHouse Cloud のデータ転送料金](/ja/products/cloud/reference/billing/network-data-transfer)が適用されます。詳細については [Managed Postgres の料金体系](/ja/products/managed-postgres/pricing)を参照してください。
 
+## ClickHouse オブザーバビリティ {#clickhouse-observability}
+
+完全マネージド型の [ClickHouse オブザーバビリティ](/ja/clickstack/observability/overview) は、コンピュートとストレージに基づく課金ではありません。毎月取り込まれたデータについて、ログとトレースは非圧縮のデータ量に基づいて、メトリクスはデータポイント数に基づいて課金されます。パブリックベータ期間中、データの保持期間は 30 日間です。Self-managed ClickHouse Observability はお客様の ClickHouse Cloud サービス上で動作し、本ページで説明しているとおり、そのコンピュートとストレージに対して課金されます。最新の料金については、[料金体系のページ](https://clickhouse.com/pricing)を参照してください。
+
 ## Amazon Web Services (AWS) の例 {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ ClickHouse Cloud はクラウドオブジェクトストレージを使用して
 次のクエリを使用できます。
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

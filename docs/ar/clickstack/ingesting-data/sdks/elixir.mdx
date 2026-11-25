@@ -44,20 +44,10 @@ config :logger,
 بعد ذلك، ستحتاج إلى تهيئة متغيرات البيئة التالية في
 الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
 
-<Tabs>
-  <Tab title="Managed ClickStack">
-    ```shell
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-
-  <Tab title="ClickStack Open Source">
-    ```shell
-    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
-    ```
-  </Tab>
-</Tabs>
+```shell
+export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
+```
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعرّف على خدمتك
 في واجهة مستخدم ClickStack، ويمكن أن يكون أي اسم تختاره.*

@@ -2,14 +2,14 @@
 slug: /clickstack/observability/faq
 title: 'ClickHouse オブザーバビリティに関するよくある質問'
 sidebarTitle: 'よくある質問'
-description: '完全マネージド型およびセルフマネージドの ClickHouse オブザーバビリティ、データ収集、アラート、ダッシュボード、メトリクス検出に関するよくある質問です。'
+description: '完全マネージド型およびセルフマネージドの ClickHouse オブザーバビリティ、データ収集、請求、アラート、ダッシュボード、メトリクス検出に関するよくある質問です。'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability', 'FAQ', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
+keywords: ['ClickHouse Observability', 'FAQ', 'billing', 'pricing', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
-このページでは、ClickHouse オブザーバビリティの完全マネージド型モードとセルフマネージドモードについて説明するとともに、データ収集、アラート、ダッシュボード、メトリクス検出に関するよくある質問にお答えします。
+このページでは、ClickHouse オブザーバビリティの完全マネージド型モードとセルフマネージドモードについて説明するとともに、データ収集、請求、アラート、ダッシュボード、メトリクス検出に関するよくある質問にお答えします。
 
 ## デプロイメントとデータ収集 {#data-collection}
 
@@ -39,6 +39,12 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
   **セルフマネージド:** 自身で運用している collector の OTLP エンドポイントと、そのレシーバーに設定された認証トークン (設定している場合) を使用します。ClickStack コレクターで `OTLP_AUTH_TOKEN` を有効にしている場合は、そのトークンを `authorization` ヘッダーで送信します。これらは、collector がデータの書き込みに使用する ClickHouse Cloud のデータベースエンドポイントおよび認証情報とは別のものです。例については [OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) を参照してください。
 
   エンドポイントは、使用するツールが要求する形式で指定してください。[サンプルデータとデモ](/ja/clickstack/observability/example-datasets) に、各ツールの設定例が掲載されています。
+</Accordion>
+
+<Accordion title="ClickHouse オブザーバビリティの料金はどのように請求されますか？">
+  **完全マネージド型:** 料金はコンピュートやストレージではなく、送信したテレメトリーの量に応じて発生します。ログとトレースは非圧縮時のデータ量、メトリクスは時系列数ではなくデータポイント数に基づいて請求されます。パブリックベータ期間中、データは 30 日間保持されます。最新の料金については、[ClickHouse の料金体系](https://clickhouse.com/pricing) を参照してください。
+
+  **セルフマネージド:** ClickHouse Cloud サービスのコンピュートとストレージに対して料金が発生します。料金体系は、このオプションの旧称である Managed ClickStack から変更はありません。詳細は [ClickHouse Cloud の料金体系](/ja/products/cloud/reference/billing/billing-overview) を参照してください。
 </Accordion>
 
 ## アラート {#alerting}

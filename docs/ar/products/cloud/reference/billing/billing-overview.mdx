@@ -19,6 +19,10 @@ keywords: ['ClickHouse Cloud', 'التسعير', 'الفوترة', 'تكاليف
 
 يتبع ClickHouse Managed Postgres نموذج الفوترة المعتمد في ClickHouse Cloud للقدرة الحاسوبية والتخزين ونقل البيانات. يحتفظ كل مثيل Managed Postgres بالنسخ الاحتياطية لمدة 7 أيام، ويشمل ذلك مساحة تخزين للنسخ الاحتياطية تعادل سعة القرص التي تم توفيرها. أما مساحة تخزين النسخ الاحتياطية الإضافية، فتُحتسب وفق سعر التخزين في ClickHouse Cloud لمنطقتك، على سبيل المثال $25.30 لكل تيرابايت شهريًا في AWS `us-east-1`. وتُحتسب حركة مرور الشبكة الصادرة للبيانات وفق [أسعار نقل البيانات في ClickHouse Cloud](/ar/products/cloud/reference/billing/network-data-transfer). راجع [تسعير Managed Postgres](/ar/products/managed-postgres/pricing) للاطلاع على مزيد من التفاصيل.
 
+## ClickHouse Observability {#clickhouse-observability}
+
+لا تُحتسب رسوم [ClickHouse Observability](/ar/clickstack/observability/overview) المُدارة بالكامل على أساس القدرة الحاسوبية والتخزين، بل تُحتسب رسوم السجلات وبيانات التتبّع وفقًا لحجمها غير المضغوط، ورسوم المقاييس وفقًا لعدد نقاط البيانات التي يتم استيعابها شهريًا. وخلال مرحلة البيتا العامة، يُحتفظ بالبيانات لمدة 30 يومًا. أما Self-managed ClickHouse Observability فتعمل على خدمة ClickHouse Cloud الخاصة بك، وتُحتسب رسومها بناءً على ما تستهلكه من القدرة الحاسوبية والتخزين، كما هو موضح في هذه الصفحة. للاطلاع على الأسعار الحالية، راجع [صفحة التسعير](https://clickhouse.com/pricing).
+
 ## مثال Amazon Web Services ‏(AWS) {#amazon-web-services-aws-example}
 
 <Note>
@@ -252,8 +256,8 @@ keywords: ['ClickHouse Cloud', 'التسعير', 'الفوترة', 'تكاليف
 يمكنك استخدام الاستعلام:
 
 ```sql title="Estimating compression"
-SELECT formatReadableSize(total_bytes) 
-FROM system.tables 
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
 WHERE name = <your table name>
 ```
 

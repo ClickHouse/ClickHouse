@@ -22,7 +22,7 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 每个告警可采用以下两种检测模式之一，在告警编辑器的 **Alert type** 中进行选择：
 
 * **静态阈值**：当值越过您设定的数值时触发。这是默认模式，也是本页介绍的模式。
-* **异常检测** (仅限托管 ClickStack) ：当值超出基于近期历史数据学习得出的预期范围时触发。请参阅[异常检测告警](/zh/clickstack/features/anomaly-detection)。
+* **异常检测** (仅限 ClickHouse Observability) ：当值超出基于近期历史数据学习得出的预期范围时触发。请参阅[异常检测告警](/zh/clickstack/features/anomaly-detection)。
 
 ### 1. 搜索告警 {#search-alerts}
 
@@ -356,7 +356,7 @@ WHERE request_count > 10
 对超出滚动平均值两个标准差以上的错误计数设置告警。这有助于捕捉相对于近期基线行为的突增，而不是依赖固定阈值。
 
 <Tip>
-  在托管 ClickStack 上，[异常检测告警](/zh/clickstack/features/anomaly-detection)无需编写自定义 SQL 即可实现同样的效果，还额外提供预览、回测以及按分组计算的基线。如果需要完全掌控基线的计算方式，或者使用的是 ClickStack 开源版，请采用下面的 SQL 方法。
+  在 ClickHouse Observability 上，[异常检测告警](/zh/clickstack/features/anomaly-detection)无需编写自定义 SQL 即可实现同样的效果，还额外提供预览、回测以及按分组计算的基线。如果需要完全掌控基线的计算方式，或者使用的是 ClickStack 开源版，请采用下面的 SQL 方法。
 </Tip>
 
 ```sql

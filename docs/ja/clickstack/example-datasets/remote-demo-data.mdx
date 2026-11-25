@@ -13,9 +13,9 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 このガイドでは、公開 ClickHouse playground の [sql.clickhouse.com](https://sql.clickhouse.com) でホストされているサンプルデータセットを使用します。このデータセットには、ローカルの ClickStack デプロイメントから接続できます。
 
 <Warning>
-  **Managed ClickStack ではサポートされていません**
+  **ClickHouse オブザーバビリティではサポートされていません**
 
-  Managed ClickStack ではリモートデータベースはサポートされていません。そのため、このデータセットもサポート対象外です。
+  ClickHouse オブザーバビリティではリモートデータベースはサポートされていません。そのため、このデータセットもサポート対象外です。
 </Warning>
 
 このデータセットには、公式 OpenTelemetry (OTel) デモの ClickHouse 版から取得した約 40 時間分のデータが含まれています。データは毎晩再生され、タイムスタンプは現在の時間帯に合わせて調整されるため、ClickStack UI に統合されたログ、トレース、メトリクスを使ってシステムの挙動を確認できます。
