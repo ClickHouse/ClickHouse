@@ -399,15 +399,15 @@ bool mayStopReadingEarly(const SelectQueryInfo & query_info)
 /// predicate counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
 {
-    /// The read may return only some of the rows for a reason other than `has_predicates`: it limits or samples them,
-    /// skips deleted rows, may stop early, or filters them by a predicate that is not attributed to the columns it
-    /// reads, such as the one of a `FilterStep` further up.
-    bool may_drop_rows = false;
+    /// The read may return only some of the rows for a reason other than `has_attributable_predicates`: it limits or
+    /// samples them, skips deleted rows, may stop early, or filters them by a predicate that is not attributed to the
+    /// columns it reads, such as the one of a `FilterStep` further up.
+    bool may_drop_rows_otherwise = false;
     /// The read has predicates that may drop rows and that may be attributed to the columns they read (see
     /// `getColumnsReadByPredicates`): the predicate of the parent `FilterStep`, the row-level filter, the PREWHERE or the
     /// filter pushed into the read. This includes a runtime filter, which prunes nothing at plan time but drops rows by
     /// its key column.
-    bool has_predicates = false;
+    bool has_attributable_predicates = false;
     /// The read may return values that the statistics did not measure.
     bool may_rewrite_values = false;
     /// The `n` of a top-K read (`ORDER BY ... LIMIT n`), see `mayDropRows`. The `__topKFilter` PREWHERE that a later
@@ -420,12 +420,15 @@ struct ReadCoverage
     /// have been seen. So if nothing else drops rows, it keeps all `selected_rows` if there are at most `n`.
     [[nodiscard]] bool mayDropRows(UInt64 selected_rows) const
     {
-        return may_drop_rows || has_predicates || (top_k_limit && selected_rows > *top_k_limit);
+        return may_drop_rows_otherwise || has_attributable_predicates || (top_k_limit && selected_rows > *top_k_limit);
     }
 
     /// Whether the predicates are the only possible cause of dropped rows, so that the columns they read decide which
     /// rows are dropped. A top-K read can also drop rows by its sort key.
-    [[nodiscard]] bool onlyPredicatesMayDropRows() const { return has_predicates && !may_drop_rows && !top_k_limit; }
+    [[nodiscard]] bool onlyPredicatesMayDropRows() const
+    {
+        return has_attributable_predicates && !may_drop_rows_otherwise && !top_k_limit;
+    }
 
     /// Records in the column statistics of `stats` what the read may drop or rewrite. `columns_read_by_predicates`, which
     /// are given only if `onlyPredicatesMayDropRows`, decide which rows are dropped: the other columns record
@@ -647,9 +650,9 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
     const bool has_on_the_fly_data_changes = hasOnTheFlyDataChanges(reading);
 
     return ReadCoverage{
-        .may_drop_rows = has_unattributed_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
-            || mayStopReadingEarly(query_info),
-        .has_predicates
+        .may_drop_rows_otherwise = has_unattributed_predicates || has_row_selecting_modifiers || has_deleted_rows
+            || has_on_the_fly_data_changes || mayStopReadingEarly(query_info),
+        .has_attributable_predicates
         = filter.parentPredicate() || reading.getPrewhereInfo() || reading.getRowLevelFilter() || reading.getFilterActionsDAG(),
         /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
         /// `FINAL` read counts, so that new merge modes fail closed.
@@ -826,9 +829,9 @@ std::optional<RelationStats> estimateDirectRelationStats(QueryPlan::Node & node,
         /// The manifest statistics describe every row of the remaining files, deleted rows included.
         /// The predicates of the read are not attributed to columns.
         const ReadCoverage coverage{
-            .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
+            .may_drop_rows_otherwise = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
                 || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
-            .has_predicates = false,
+            .has_attributable_predicates = false,
             .may_rewrite_values = false,
             .top_k_limit = std::nullopt};
 
