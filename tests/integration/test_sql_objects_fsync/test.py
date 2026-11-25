@@ -189,8 +189,10 @@ def test_corrupt_named_collection_does_not_brick_startup():
 
     # Error statistics are readable without the right to see a collection or its secrets, so the
     # parse error is recorded there without the text or the name.
-    assert node.query("SELECT count() FROM system.errors WHERE name = 'SYNTAX_ERROR'").strip() == "1", (
-        "the parse error of the corrupt file was not recorded, so the checks below prove nothing"
+    # `system.errors` keeps the newest message only, so the count is what shows that the parser's own
+    # exception, which quotes the secret, was not recorded before the one replacing it.
+    assert node.query("SELECT sum(value) FROM system.errors WHERE name = 'SYNTAX_ERROR'").strip() == "1", (
+        "the parse error of the corrupt file was not recorded exactly once"
     )
     assert _secret_in_error_statistics() == 0, (
         "the credential in the unparseable metadata file must not reach system.errors"
