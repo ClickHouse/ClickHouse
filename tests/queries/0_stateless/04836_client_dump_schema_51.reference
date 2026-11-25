@@ -23,3 +23,16 @@ ttl_where_dictionary: dump failed: 1
 would run when the table is loaded
 ttl_where_dictionary: table dumped: 0
 ttl_where_dictionary: no command ran
+--- a table named on the right of IN in a TTL or a projection, or in an ALIAS column a projection reads, is refused ---
+ttl_where_in_named_table: dump failed: 1
+would run when the table is loaded
+ttl_where_in_named_table: table dumped: 0
+ttl_where_in_named_table: no command ran
+projection_in_named_table: dump failed: 1
+would run when the table is loaded
+projection_in_named_table: table dumped: 0
+projection_in_named_table: no command ran
+projection_alias_in_named_table: dump failed: 1
+would run when the table is loaded
+projection_alias_in_named_table: table dumped: 0
+projection_alias_in_named_table: no command ran

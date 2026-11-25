@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -240,6 +241,12 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
         if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call, aliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage());
+        /// `x IN t` reads the table `t` when the expression is analyzed.
+        if (const auto * call = node->as<ASTFunction>(); call && functionIsInOrGlobalInOperator(call->name) && call->arguments
+            && call->arguments->children.size() == 2 && call->arguments->children[1]->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the read of the table in {} would run when the table is loaded",
                 backQuote(create.getTable()), call->formatForErrorMessage());
         if (node->as<ASTSubquery>() && !computesFromLiterals(*node))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,

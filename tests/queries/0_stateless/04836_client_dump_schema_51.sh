@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 
 # --dump-schema of a data path dumps a table whose TTL or projection holds a subquery of literals only, and refuses one whose
-# subquery reads a table or names a column or an alias, before a command runs.
+# subquery reads a table or names a column or an alias, or that names a table on the right of IN, before a command runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,3 +52,9 @@ dump_with_commands ttl_where_with_dictionary "$table) ENGINE = MergeTree ORDER B
 echo '--- a dictionary lookup on constants inside a subquery of literals is refused ---'
 dump_with_commands ttl_where_dictionary "$table) ENGINE = MergeTree ORDER BY k
     TTL ts DELETE WHERE k < (SELECT dictGetUInt64('d.rules', 'v', toUInt64(1)))"
+
+echo '--- a table named on the right of IN in a TTL or a projection, or in an ALIAS column a projection reads, is refused ---'
+dump_with_commands ttl_where_in_named_table "$table) ENGINE = MergeTree ORDER BY k TTL ts DELETE WHERE k NOT IN d.commands"
+dump_with_commands projection_in_named_table "$table, PROJECTION p (SELECT k WHERE k IN d.commands ORDER BY k)) ENGINE = MergeTree ORDER BY k"
+dump_with_commands projection_alias_in_named_table "$table, a UInt8 ALIAS k IN d.commands, PROJECTION p (SELECT k, a ORDER BY k))
+    ENGINE = MergeTree ORDER BY k"
