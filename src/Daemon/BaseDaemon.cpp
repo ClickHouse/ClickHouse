@@ -271,15 +271,6 @@ void BaseDaemon::initialize(Application & self)
     initCoverageFromEnvironment(config().getString("logger.log", ""));
 #endif
 
-#if USE_JEMALLOC
-    Jemalloc::setup(
-        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
-        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
-        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
-        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
-        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
-#endif
-
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
     if (config().has("umask"))
@@ -291,12 +282,27 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
+    /// It decrypts the encrypted elements of the configuration, so that the values read from `config` below are
+    /// plain. It also writes the preprocessed configuration into the `path` of the configuration file, which may be
+    /// hidden by the isolation of the filesystem in `beforeStartingThreads`.
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
     , true // skip loading encryption keys from ZK
 #endif
     );
 
+    /// No thread but the background threads of jemalloc has been started up to this point, and `Jemalloc::setup`
+    /// below configures them.
+    beforeStartingThreads();
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        config().getBool(Jemalloc::config_enable_global_profiler, Jemalloc::default_enable_global_profiler),
+        config().getBool(Jemalloc::config_enable_background_threads, Jemalloc::default_enable_background_threads),
+        config().getUInt64(Jemalloc::config_max_background_threads_num, Jemalloc::default_max_background_threads_num),
+        config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
+        config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
+#endif
 
 #if defined(OS_LINUX)
     /// Configure RLIMIT_SIGPENDING
@@ -640,7 +646,7 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
-        /// Temporarily close the logging thread and open it in each process later
+        /// Temporarily close the logging thread and reopen it in the child process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
             async_channel->closeAndJoinThreads();
@@ -660,7 +666,8 @@ void BaseDaemon::setupWatchdog()
         }
 #endif
 
-        if (async_channel)
+        /// The watchdog logs synchronously: it calls `_exit` right after logging how the child ended.
+        if (async_channel && pid == 0)
             async_channel->open();
 
         if (-1 == pid)

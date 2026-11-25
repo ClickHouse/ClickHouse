@@ -51,24 +51,13 @@ struct PrewhereInfo
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
-    /// Set when only a leading part of the PREWHERE conjunction consists of conjuncts of
-    /// `SelectQueryInfo::filter_actions_dag`. Marks emptied by that part alone are recorded under its key.
-    struct QueryConditionCacheAttribution
-    {
-        UInt64 key;
-        String condition;
-        /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
-        VectorWithMemoryTracking<UInt64> conjunct_hashes;
-    };
-    std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
-
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
-    PrewhereInfo clone() const;
+    [[nodiscard]] PrewhereInfo clone() const;
 
     void serialize(QueryPlanStepSerialization & ctx) const;
     static PrewhereInfo deserialize(QueryPlanStepDeserialization & ctx);
@@ -81,7 +70,7 @@ struct FilterDAGInfo
     String column_name;
     bool do_remove_column = false;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
     void serialize(QueryPlanStepSerialization & ctx) const;
     static FilterDAGInfo deserialize(QueryPlanStepDeserialization & ctx);
@@ -222,7 +211,7 @@ struct SelectQueryInfo
     /// If query has aggregate functions
     bool has_aggregates = false;
 
-    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
+    [[nodiscard]] ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
@@ -238,14 +227,14 @@ struct SelectQueryInfo
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
-    bool isFinal() const;
+    [[nodiscard]] bool isFinal() const;
 
     /// Whether the table expression has the STREAM modifier.
-    bool isStream() const;
+    [[nodiscard]] bool isStream() const;
 
     /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
-    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
-    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// The name of the column the planner reads from `storage` only to count the rows, if no filter it attaches later reads it too.
     [[nodiscard]] std::optional<String> getRowCountOnlyColumnName(const IStorage & storage, const ContextPtr & context) const;
@@ -254,6 +243,6 @@ struct SelectQueryInfo
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
-    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+    [[nodiscard]] UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
 };
 }

@@ -101,7 +101,7 @@ SELECT 'grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key
 SETTINGS join_algorithm = 'grace_hash';
 
 SELECT 'default list', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'direct,hash,ie_join';
+SETTINGS join_algorithm = 'direct,hash,inequality';
 
 -- INNER ALL pushes the residual down to a post-join filter instead of building a mixed
 -- condition, so it is algorithm-independent and reads 1 matched row both ways.
@@ -169,7 +169,7 @@ DROP TABLE IF EXISTS t3;
 CREATE TABLE t3 (key UInt64, a UInt32) ENGINE = Memory;
 INSERT INTO t3 VALUES (1, 1), (2, 2), (3, 3);
 
--- join_algorithm defaults to 'direct,hash,ie_join', so DirectKeyValueJoin is tried
+-- join_algorithm defaults to 'direct,hash,inequality', so DirectKeyValueJoin is tried
 -- first and used to drop the residual. No pair satisfies a * 10 < d.a here, so every left
 -- row is unmatched. A dictionary fills unmatched rows with the attribute default (0)
 -- rather than NULL, so the oracle uses 0 for them too => count 3, sum 0.
