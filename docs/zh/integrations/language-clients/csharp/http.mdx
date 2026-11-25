@@ -11,8 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 用于连接 ClickHouse 的官方 C# 客户端。
 客户端源代码位于 [GitHub 仓库](https://github.com/ClickHouse/clickhouse-cs)。
 最初由 [Oleg V. Kozlyuk](https://github.com/DarkWanderer) 开发。
@@ -21,7 +19,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **`ClickHouseClient`** (推荐) ：适合以单例模式使用的高级线程安全客户端。提供简洁的异步 API，支持查询和批量插入。适用于大多数应用程序。
 
-* **ADO.NET** (`ClickHouseDataSource`、`ClickHouseConnection`、`ClickHouseCommand`) ：标准的 .NET 数据库抽象。集成 ORM (Dapper、Linq2db) 或需要兼容 ADO.NET 时必须使用。`ClickHouseBulkCopy` 是一个辅助类，可通过 ADO.NET 连接高效插入数据。`ClickHouseBulkCopy` 已弃用，将在后续版本中移除；请改用 `ClickHouseClient.InsertBinaryAsync`。
+* **ADO.NET** (`ClickHouseDataSource`、`ClickHouseConnection`、`ClickHouseCommand`) ：标准的 .NET 数据库抽象。集成 ORM (Dapper、Linq2db) 或需要兼容 ADO.NET 时必须使用。`ClickHouseBulkCopy` 是一个辅助类，可通过 ADO.NET 连接高效插入数据。`ClickHouseBulkCopy` 已弃用，将在后续版本发布中移除；请改用 `ClickHouseClient.InsertBinaryAsync`。
 
 两套 API 共用底层的 HTTP 连接池，可在同一个应用程序中搭配使用。
 
@@ -310,11 +308,19 @@ ClickHouse Cloud 服务的连接信息可在 ClickHouse Cloud 控制台中查看
 
 选择一个服务，然后点击 **Connect**：
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 服务的连接按钮" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud 服务的连接按钮](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 选择 **C#**，下方将显示连接信息。
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# 连接信息" border />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud C# 连接信息](/images/_snippets/connection-details-csharp.webp)
+  </Frame>
+</div>
 
 如果使用自管理 ClickHouse，连接信息由 ClickHouse 管理员提供。
 
@@ -1901,15 +1907,15 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 驱动程序写入值时会根据 `DateTime.Kind` 进行处理：
 
-| DateTime.Kind | HTTP 参数                       | 批量写入            |
+| DateTime.Kind | HTTP 参数                       | 批量复制            |
 | ------------- | ----------------------------- | --------------- |
-| Utc           | 保持原有时间点                       | 保持原有时间点         |
-| Local         | 保持原有时间点                       | 保持原有时间点         |
+| Utc           | 时刻保持不变                       | 时刻保持不变         |
+| Local         | 时刻保持不变                       | 时刻保持不变         |
 | Unspecified   | 按参数类型的时区 (默认为 UTC) 所对应的当地时间处理 | 按列的时区所对应的当地时间处理 |
 
 `DateTimeOffset` 值始终保持原有时间点。
 
-**示例：UTC DateTime (保持原有时间点)&#x20;**
+**示例：UTC DateTime (时刻保持不变)&#x20;**
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
@@ -1926,7 +1932,7 @@ var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);
 // Read back from DateTime('Europe/Amsterdam') column: 14:30
 ```
 
-**建议：**为了让行为尽可能简单、可预测，所有日期时间操作都应使用 `DateTimeKind.Utc` 或 `DateTimeOffset`。这样，无论服务器时区、客户端时区或列时区如何设置，代码的行为都能保持一致。
+**建议：**&#x4E3A;了让行为尽可能简单、可预测，所有日期时间操作都应使用 `DateTimeKind.Utc` 或 `DateTimeOffset`。这样，无论服务器时区、客户端时区或列时区如何设置，代码的行为都能保持一致。
 
 #### HTTP 参数与批量复制 {#datetime-http-param-vs-bulkcopy}
 

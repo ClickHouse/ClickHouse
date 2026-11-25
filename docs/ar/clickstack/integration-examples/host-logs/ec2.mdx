@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'مراقبة النظام', 'البيانات الوصفية السحابية']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **باختصار**
 
-  اجمع سجلات نظام EC2 واعرضها بصريًا في ClickStack باستخدام OpenTelemetry Collector مع إثراء تلقائي بالبيانات الوصفية لـ EC2 (معرّف المثيل، المنطقة، منطقة التوافر، نوع المثيل). يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+  اجمع سجلات نظام EC2 واعرضها بصريًا في ClickStack باستخدام مُجمِّع OpenTelemetry مع إثراء تلقائي بالبيانات الوصفية لـ EC2 (معرّف المثيل، المنطقة، منطقة التوافر، نوع المثيل). يتضمن مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
 </Info>
 
 <div id="existing-ec2">
-  ## التكامل مع مثيل EC2 حالي
+  ## التكامل مع مثيل EC2 حالي {#existing-ec2}
 </div>
 
 يغطي هذا القسم تثبيت OpenTelemetry Collector على مثيلات EC2 لديك لجمع سجلات النظام وإرسالها إلى ClickStack مع إثرائها تلقائيًا ببيانات EC2 الوصفية. هذه المعمارية الموزعة جاهزة لبيئات الإنتاج وقابلة للتوسع عبر مثيلات متعددة.
@@ -32,7 +30,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا كنت ترغب في اختبار تكامل سجلات مضيف EC2 قبل تهيئة مثيل الإنتاج لديك، فيمكنك استخدام إعدادنا المهيأ مسبقًا والبيانات النموذجية في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/host-logs/ec2#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات الأساسية
+  ##### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل (يمكن أن يكون داخل بنيتك التحتية، أو على السحابة، أو محليًا)
@@ -274,16 +272,16 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **للاستخدام في بيئة الإنتاج**
 
-      اضبط المُجمِّع ليعمل كخدمة ضمن systemd بحيث يبدأ تلقائيًا عند الإقلاع ويُعاد تشغيله عند حدوث فشل. راجع [وثائق OpenTelemetry Collector](https://opentelemetry.io/docs/collector/deployment/) لمزيد من التفاصيل.
+      اضبط المُجمِّع ليعمل كخدمة ضمن systemd بحيث يبدأ تلقائيًا عند الإقلاع ويُعاد تشغيله عند حدوث فشل. راجع [وثائق OpenTelemetry Collector](https://opentelemetry.io/docs/collector/deployment/) لمزيد من التفاصيل.
     </Info>
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
-    بمجرد تشغيل المجمّع، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق مع بيانات EC2 الوصفية:
+  <Step title="التحقق من السجلات في واجهة مستخدم ClickStack" id="verifying-logs">
+    بمجرد تشغيل المجمّع، سجّل الدخول إلى واجهة مستخدم ClickStack وتحقّق من أن السجلات تتدفّق مع بيانات EC2 الوصفية:
 
     1. انتقل إلى عرض البحث
     2. اضبط المصدر على `Logs`
-    3. صفِّ حسب `source:ec2-host-logs`
+    3. صفِّ حسب `source:ec2-host-logs`
     4. انقر على إدخال سجل لتوسيعه
     5. تحقّق من ظهور بيانات EC2 الوصفية ضمن سمات المورد:
        * `cloud.provider`
@@ -292,14 +290,22 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (نوع المثيل)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="عرض البحث لسجلات EC2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض البحث لسجلات EC2](/images/clickstack/host-logs/ec2/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="تفاصيل سجل EC2 التي تعرض البيانات الوصفية" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تفاصيل سجل EC2 التي تعرض البيانات الوصفية](/images/clickstack/host-logs/ec2/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة بيانات تجريبية
+  ## مجموعة بيانات تجريبية {#demo-dataset}
 </div>
 
 للمستخدمين الذين يريدون اختبار تكامل سجلات مضيف EC2 قبل تهيئة مثيلات الإنتاج لديهم، نوفّر مجموعة بيانات تجريبية تتضمن بيانات EC2 وصفية مُحاكاة.
@@ -404,27 +410,35 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
       -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
       -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
       -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+      clickhouse/clickstack-all-in-one:latest
     ```
   </Step>
 
-  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
+  <Step title="تحقّق من السجلات في واجهة مستخدم ClickStack" id="verify-demo-logs">
     بمجرد تشغيل الـ collector:
 
-    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    1. افتح [واجهة مستخدم ClickStack](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
     2. انتقل إلى واجهة البحث واضبط المصدر على `Logs`
     3. اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
-    4. صفِّ النتائج باستخدام `source:ec2-demo`
+    4. صفِّ النتائج باستخدام `source:ec2-demo`
     5. وسّع إدخال سجل لعرض بيانات EC2 الوصفية ضمن سمات المورد
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="واجهة البحث لسجلات EC2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![واجهة البحث لسجلات EC2](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="تفاصيل سجل EC2 مع البيانات الوصفية" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تفاصيل سجل EC2 مع البيانات الوصفية](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+      </Frame>
+    </div>
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
 
     يُفترض أن ترى سجلات تتضمن سياق EC2 مُحاكى، بما في ذلك:
@@ -436,9 +450,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصورات {#dashboards}
 
 لمساعدتك على بدء مراقبة سجلات مضيف EC2 باستخدام ClickStack، نوفر تصورات أساسية تتضمن سياق السحابة.
 
@@ -447,21 +459,33 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">تنزيل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="استيراد لوحة المعلومات الجاهزة" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
+  <Step title="استيراد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. ارفع ملف `host-logs-dashboard.json` وانقر على **Finish Import**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إنهاء الاستيراد" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![إنهاء الاستيراد](/images/clickstack/host-logs/import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="عرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات سجلات EC2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات سجلات EC2](/images/clickstack/host-logs/host-logs-dashboard.webp)
+      </Frame>
+    </div>
 
     يمكنك تصفية تصورات لوحة المعلومات حسب سياق EC2:
 
@@ -476,11 +500,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="no-metadata">
-  ### عدم ظهور البيانات الوصفية لـ EC2 في السجلات
+  ### عدم ظهور البيانات الوصفية لـ EC2 في السجلات {#no-metadata}
 </div>
 
 **تحقق من إمكانية الوصول إلى خدمة البيانات الوصفية لـ EC2:**
@@ -508,9 +532,7 @@ sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetectio
 # If running in foreground, check stdout
 ```
 
-<div id="no-logs">
-  ### عدم ظهور أي سجلات في HyperDX
-</div>
+### عدم ظهور أي سجلات في واجهة مستخدم ClickStack {#no-logs}
 
 **تحقق من وجود ملفات السجل وأنه تتم الكتابة إليها:**
 
@@ -534,7 +556,7 @@ curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
 # Should get a response (even if error, means endpoint is reachable)
 ```
 
-**تحقق من سجلات المُجمِّع بحثًا عن أخطاء:**
+**تحقق من سجلات المُجمِّع بحثًا عن أخطاء:**
 
 ```bash
 # If running in foreground
@@ -545,7 +567,7 @@ sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
 ```
 
 <div id="logs-not-parsing">
-  ### يتم تحليل السجلات بشكل غير صحيح
+  ### يتم تحليل السجلات بشكل غير صحيح {#logs-not-parsing}
 </div>
 
 **تحقق من تنسيق syslog لديك:**
@@ -567,7 +589,7 @@ tail -5 /var/log/messages
 إذا لم يكن التنسيق لديك مطابقًا، فاستخدم علامة تبويب التهيئة المناسبة في قسم [إنشاء تهيئة collector](#create-config) وفقًا للتوزيعة التي تستخدمها.
 
 <div id="systemd-issues">
-  ### تعذّر بدء تشغيل المُجمِّع كخدمة systemd
+  ### تعذّر بدء تشغيل المُجمِّع كخدمة systemd {#systemd-issues}
 </div>
 
 **تحقق من حالة الخدمة:**
@@ -589,7 +611,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * مشكلات في الأذونات عند قراءة ملفات السجل
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) لأحداث النظام الحرجة (تعطل الخدمة، إخفاقات المصادقة، تحذيرات القرص)
@@ -597,8 +619,6 @@ sudo journalctl -u otelcol-contrib -n 50
 * اربط سجلات مضيف EC2 بسجلات التطبيق لاستكشاف الأخطاء وإصلاحها بشكل شامل
 * أنشئ لوحات معلومات مخصصة لمراقبة الأمان (محاولات SSH، استخدام sudo، عمليات حظر جدار الحماية)
 
-<div id="going-to-production">
-  ## الانتقال إلى الإنتاج
-</div>
+## الانتقال إلى الإنتاج {#going-to-production}
 
 يثبّت هذا الدليل مجمّع OpenTelemetry مباشرةً على مثيلات EC2، وهذا هو النمط الموصى به في بيئات الإنتاج للمراقبة على مستوى المضيف. ولإدارة مكوّنات المجمّع عبر عدد كبير من المثيلات، فكّر في استخدام أدوات إدارة التهيئة (Ansible وChef وPuppet) أو OpenTelemetry Operator في بيئات Kubernetes. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على تهيئة بيئة الإنتاج.

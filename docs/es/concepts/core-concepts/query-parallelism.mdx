@@ -7,29 +7,31 @@ doc_type: 'guide'
 keywords: ['procesamiento paralelo', 'optimización de consultas', 'rendimiento', 'multihilo', 'buenas prácticas']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse está [diseñado para ser rápido](/es/get-started/about/why-clickhouse-is-so-fast). Ejecuta consultas de forma altamente paralela: usa todos los núcleos de CPU disponibles, distribuye los datos entre lanes de procesamiento y, a menudo, lleva el hardware casi hasta sus límites.
 
 Esta guía explica cómo funciona el paralelismo de consultas en ClickHouse y cómo puedes ajustarlo o supervisarlo para mejorar el rendimiento en cargas de trabajo a gran escala.
 
 Usamos una consulta de agregación en el conjunto de datos [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) para ilustrar conceptos clave.
 
-<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
-  ## Paso a paso: cómo ClickHouse paraleliza una consulta de agregación
-</div>
+## Paso a paso: cómo ClickHouse paraleliza una consulta de agregación {#step-by-step-how-clickHouse-parallelizes-an-aggregation-query}
 
 Cuando ClickHouse ① ejecuta una consulta de agregación con un filtro en la clave primaria de la tabla, ② carga el índice primario en memoria para ③ identificar qué gránulos deben procesarse y cuáles pueden omitirse de forma segura:
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Análisis del índice" />
-
-<div id="distributing-work-across-processing-lanes">
-  ### Distribución del trabajo entre lanes de procesamiento
+<div className="ch-image-md">
+  <Frame>
+    ![Análisis de índices](/images/guides/best-practices/query-parallelism_01.webp)
+  </Frame>
 </div>
+
+### Distribución del trabajo entre lanes de procesamiento {#distributing-work-across-processing-lanes}
 
 Los datos seleccionados se distribuyen luego [dinámicamente](#load-balancing-across-processing-lanes) entre `n` [lanes de procesamiento](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) en paralelo, que transfieren y procesan los datos [bloque](/es/resources/develop-contribute/introduction/architecture#block) a bloque hasta obtener el resultado final:
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 lanes de procesamiento en paralelo" />
+<div className="ch-image-md">
+  <Frame>
+    ![4 lanes de procesamiento en paralelo](/images/guides/best-practices/query-parallelism_02.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -39,7 +41,11 @@ La cantidad de `n` lanes de procesamiento en paralelo está controlada por la co
 
 En una máquina con `8` núcleos, el rendimiento del procesamiento de consultas aproximadamente se duplicaría (aunque el uso de memoria también aumentaría en consecuencia), ya que más lanes procesan datos en paralelo:
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 lanes de procesamiento en paralelo" />
+<div className="ch-image-md">
+  <Frame>
+    ![8 lanes de procesamiento en paralelo](/images/guides/best-practices/query-parallelism_03.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -47,13 +53,15 @@ En una máquina con `8` núcleos, el rendimiento del procesamiento de consultas 
 
 Una distribución eficiente de los lanes es clave para maximizar el uso de la CPU y reducir el tiempo total de consulta.
 
-<div id="processing-queries-on-sharded-tables">
-  ### Procesamiento de consultas en tablas segmentadas
-</div>
+### Procesamiento de consultas en tablas segmentadas {#processing-queries-on-sharded-tables}
 
 Cuando los datos de una tabla se distribuyen entre varios servidores en forma de [segmentos](/es/guides/oss/deployment-and-scaling/shards), cada servidor procesa su segmento en paralelo. Dentro de cada servidor, los datos locales se procesan mediante lanes de procesamiento en paralelo, tal como se describió anteriormente:
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Lanes distribuidos" />
+<div className="ch-image-md">
+  <Frame>
+    ![Lanes distribuidos](/images/guides/best-practices/query-parallelism_04.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -69,9 +77,7 @@ Distribuir la carga de consultas entre segmentos permite escalar horizontalmente
   En ClickHouse Cloud, este mismo paralelismo se logra mediante [réplicas paralelas](/es/products/cloud/features/infrastructure/parallel-replicas), que funcionan de forma similar a los segmentos en clústeres shared-nothing. Cada réplica de ClickHouse Cloud —un nodo de cómputo sin estado— procesa una parte de los datos en paralelo y contribuye al resultado final, igual que lo haría un segmento independiente.
 </Info>
 
-<div id="monitoring-query-parallelism">
-  ## Monitorización del paralelismo de las consultas
-</div>
+## Monitorización del paralelismo de las consultas {#monitoring-query-parallelism}
 
 Utiliza estas herramientas para verificar que tu consulta aprovecha al máximo los recursos de CPU disponibles y para diagnosticar cuándo no es así.
 
@@ -95,8 +101,8 @@ SETTINGS send_logs_level='trace';
 
 Podemos ver que
 
-* ① ClickHouse necesita leer 3.609 gránulos (indicados como marks en los logs de traza) a lo largo de 3 rangos de datos.
-* ② Con 59 núcleos de CPU, distribuye este trabajo en 59 stream de procesamiento paralelos, uno por cada lane.
+* ① ClickHouse necesita leer 3.609 gránulos (indicados como marks en los registros de nivel de traza) a lo largo de 3 rangos de datos.
+* ② Con 59 núcleos de CPU, distribuye este trabajo en 59 flujos de procesamiento paralelos, uno por cada lane.
 
 Como alternativa, podemos usar la cláusula [EXPLAIN](/es/reference/statements/explain#explain-pipeline) para inspeccionar el [plan físico de operadores](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), también conocido como el &quot;pipeline de consulta&quot;, de la consulta de agregación:
 
@@ -123,22 +129,26 @@ FROM
     └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Nota: Lea el plan de operadores anterior de abajo hacia arriba. Cada línea representa una etapa del plan de ejecución físico, comenzando con la lectura de datos desde el almacenamiento en la parte inferior y terminando con las etapas finales del procesamiento en la parte superior. Los operadores marcados con `× 59` se ejecutan de forma concurrente sobre regiones de datos no superpuestas a través de 59 lane de procesamiento paralelas. Esto refleja el valor de `max_threads` e ilustra cómo se paraleliza cada etapa de la consulta entre los núcleos de CPU.
+Nota: Lea el plan de operadores anterior de abajo hacia arriba. Cada línea representa una etapa del plan de ejecución físico, comenzando con la lectura de datos desde el almacenamiento en la parte inferior y terminando con los pasos finales del procesamiento en la parte superior. Los operadores marcados con `× 59` se ejecutan de forma concurrente sobre regiones de datos no superpuestas a través de 59 lane de procesamiento paralelas. Esto refleja el valor de `max_threads` e ilustra cómo se paraleliza cada etapa de la consulta entre los núcleos de CPU.
 
 La [web UI integrada](/es/concepts/features/interfaces/http) de ClickHouse (disponible en el endpoint `/play`) puede representar el plan físico anterior como una visualización gráfica. En este ejemplo, establecemos `max_threads` en `4` para mantener la visualización compacta y mostrar solo 4 lane de procesamiento paralelas:
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Pipeline de consulta" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Pipeline de consulta](/images/guides/best-practices/query-parallelism_05.webp)
+  </Frame>
+</div>
 
 Nota: Lea la visualización de izquierda a derecha. Cada fila representa una lane de procesamiento paralelo que transmite datos bloque por bloque, aplicando transformaciones como filtrado, agregación y etapas finales de procesamiento. En este ejemplo, puede ver cuatro lane paralelas correspondientes a la configuración `max_threads = 4`.
 
 <div id="load-balancing-across-processing-lanes">
-  ### Balanceo de carga entre lanes de procesamiento
+  ### Balanceo de carga entre lanes de procesamiento {#load-balancing-across-processing-lanes}
 </div>
 
 Ten en cuenta que los operadores `Resize` del plan físico anterior [reparticionan y redistribuyen](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) los flujos de bloques de datos entre lanes de procesamiento para mantener un uso equilibrado. Este reequilibrio es especialmente importante cuando los rangos de datos varían en la cantidad de filas que coinciden con los predicados de la consulta; de lo contrario, algunas lanes pueden sobrecargarse mientras otras permanecen inactivas. Al redistribuir el trabajo, las lanes más rápidas ayudan en la práctica a las más lentas, lo que optimiza el tiempo de ejecución general de la consulta.
 
 <div id="why-max-threads-isnt-always-respected">
-  ## Por qué no siempre se respeta max_threads
+  ## Por qué no siempre se respeta max_threads {#why-max-threads-isnt-always-respected}
 </div>
 
 Como se mencionó anteriormente, el número de `n` lanes de procesamiento en paralelo está determinado por la configuración `max_threads`, que de forma predeterminada coincide con el número de núcleos de CPU disponibles para ClickHouse en el servidor:
@@ -270,7 +280,7 @@ Ahora ClickHouse usa 59 streams concurrentes para escanear los datos, respetando
 Esto demuestra que, para consultas sobre conjuntos de datos pequeños, ClickHouse limita intencionalmente la concurrencia. Use las sobrescrituras de configuración solo para pruebas, no en producción, ya que pueden provocar una ejecución ineficiente o contención de recursos.
 
 <div id="key-takeaways">
-  ## Puntos clave
+  ## Puntos clave {#key-takeaways}
 </div>
 
 * ClickHouse paraleliza las consultas mediante lanes de procesamiento vinculados a `max_threads`.
@@ -278,7 +288,7 @@ Esto demuestra que, para consultas sobre conjuntos de datos pequeños, ClickHous
 * Usa `EXPLAIN PIPELINE` y los logs de nivel trace para analizar el uso de lanes.
 
 <div id="where-to-find-more-information">
-  ## Dónde encontrar más información
+  ## Dónde encontrar más información {#where-to-find-more-information}
 </div>
 
 Si quieres profundizar en cómo ClickHouse ejecuta consultas en paralelo y cómo logra un alto rendimiento a gran escala, explora los siguientes recursos:

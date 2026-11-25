@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 
 #include <functional>
 
@@ -436,7 +436,7 @@ struct ReplaceStringImpl
             /// The copy above is one bulk operation, but filling the offsets is an unbounded per-row loop.
             for (size_t i = 1; i <= input_rows_count; ++i)
             {
-                res_offsets[i - 1] = i * n;
+                res_offsets[static_cast<ssize_t>(i) - 1] = i * n;
                 budget.charge();
             }
             return;

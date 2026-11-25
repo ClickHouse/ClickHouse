@@ -16,6 +16,7 @@ namespace DB
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
     class ActionsDAG;
+    struct FormatSettings;
 
     struct ReadFromFormatInfo
     {
@@ -37,9 +38,16 @@ namespace DB
         NamesAndTypesList requested_columns;
         /// The list of requested virtual columns.
         NamesAndTypesList requested_virtual_columns;
+        /// Columns of `source_header` that the format reads under other names (the physical names of a Delta
+        /// Lake table with column mapping). `format_header` can have another column under such a name.
+        NameSet columns_read_under_other_names;
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        /// `Map` columns of `format_header` whose every requested use is `keys` (resp. `values`) and that no default expression
+        /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
+        NameSet map_columns_read_by_keys;
+        NameSet map_columns_read_by_values;
 
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
@@ -49,9 +57,16 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        /// True if the format returns the column `name` of type `type` as read from the file, so the file's statistics describe it.
+        bool formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const;
+        bool hasDefaultOfColumnOrParent(const String & name) const;
+        bool defaultsDependOnTheirBlock(const ContextPtr & context) const;
         /// The filter without the conjuncts on hive partition and virtual columns:
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;
+        /// Whether the format reads `column` as stored and its bounds cover every value: a default is computed after
+        /// skipping, float bounds omit NaN, `String` bounds of a fixed-length array keep padding, other types may lack bounds.
+        bool canSkipDataByStatisticsOf(const ColumnWithTypeAndName & column) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
         /// applies it via `FormatFilterInfo` and keeps its input columns, because:
         /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
@@ -72,6 +87,8 @@ namespace DB
     /// storage must agree on this, otherwise the pushdown silently becomes a no-op on one
     /// entrypoint while working on another.
     bool formatNeedsEagerKeyConditionSets(const String & format_name);
+
+    bool formatSkipsDataByStatistics(const String & format_name, const FormatSettings & format_settings);
 
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(
