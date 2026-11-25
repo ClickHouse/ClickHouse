@@ -450,9 +450,6 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (!params.enable_adaptive_aggregator)
         return "disabled by the setting";
 
-    if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
-        return "the aggregation is single-stream";
-
     if (params.only_merge)
         return "the step only merges";
 
@@ -490,8 +487,8 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (skip_merging)
         return "the merge phase is skipped";
 
-    if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
-        return "two-level aggregation is disabled";
+    if (!final && params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
+        return "two-level aggregation is disabled for a partial aggregation";
 
     /// The verdict of a prior run found the staged streams repeat-dominated (see
     /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again.
@@ -499,45 +496,27 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     /// statistics-driven initialization, exactly as if the feature were off. A run that may not thaw does not
     /// ask: the verdict is the thaw's. A run with the top-K pruning asks for the verdict of its own runs,
     /// because it keeps its statistics apart from those of the query without its `LIMIT` (see
-    /// `setAggregationHashTableCacheKeys`).
+    /// `setAggregationHashTableCacheKeys`). A run with one stream, which has a lone producer, and a run with
+    /// several ask for the verdict of their own kind, because the two thaw by different bounds (see
+    /// `AggregationEntry`).
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
+        if (hint && hint->adaptiveStagingRepeatDominated(/*lone_producer=*/pipeline.getNumStreams() == 1))
             return "a prior run measured the staged streams as repeat-dominated";
     }
 
-    /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
-    bool has_nullable_key = false;
+    /// TODO (nihalzp): Support LowCardinality keys.
     for (const auto & key : params.keys)
     {
-        const auto & type = pipeline.getHeader().getByName(key).type;
-        if (type->lowCardinality())
+        if (pipeline.getHeader().getByName(key).type->lowCardinality())
             return "a key is LowCardinality";
-        has_nullable_key |= type->isNullable();
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
         return "the aggregation method has no two-level form";
-
-    /// A missed row is staged with the key its method builds. These methods pack the null map into that key; the single-key
-    /// Nullable methods keep NULL in a separate cell of the table instead, which the staging bypasses.
-    if (has_nullable_key)
-    {
-        using Type = AggregatedDataVariants::Type;
-        switch (method)
-        {
-            case Type::nullable_keys128:
-            case Type::nullable_keys256:
-            case Type::nullable_serialized:
-            case Type::nullable_prealloc_serialized:
-                break;
-            default:
-                return "a Nullable key is kept in a separate null-key cell";
-        }
-    }
 
     return nullptr;
 }
@@ -983,8 +962,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// step (and to the whole pipeline execution) without any parallelism to gain.
     const size_t streams_after_aggregation = (should_produce_results_in_order_of_bucket_number || params.keys.empty()) ? 1 : max_threads;
 
-    /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    /// If there are several sources, then we perform parallel aggregation. A single source takes this branch
+    /// too when the adaptive aggregator engages, because only this branch creates the adaptive session.
+    if (pipeline.getNumStreams() > 1 || use_adaptive_aggregator)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
@@ -1634,6 +1614,44 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    const auto & input_header = *ctx.input_headers.front();
+    if (only_merge)
+    {
+        /// The step merges the states only for an aggregate projection, which is never combined with grouping sets
+        /// (see `canUseProjection`), and the per-set aggregation would not see the layout checked below.
+        if (has_grouping_sets)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The merge-only aggregation with grouping sets in a serialized query plan");
+        /// `AggregatingInOrderTransform` addresses the whole input with a mask built for the keys and the states only.
+        checkDeserializedMergeOnlyInput(keys, aggregates, input_header);
+    }
+    else
+    {
+        checkDeserializedAggregateOutputNames(keys, aggregates);
+        checkDeserializedAggregateArguments(aggregates, input_header);
+    }
+
+    /// `AggregatingInOrderTransform` takes the first columns of `group_by_sort_description` as the ones the input
+    /// is sorted by and looks them up among the keys of its output, and `less` compares the key columns at those positions.
+    if (sort_description_for_merging.size() > group_by_sort_description.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The sort description for merging of a deserialized in-order aggregation has {} columns, "
+            "more than the {} columns of the `GROUP BY` sort description",
+            sort_description_for_merging.size(), group_by_sort_description.size());
+    for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
+        if (sort_description_for_merging[i] != group_by_sort_description[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The sort description for merging of a deserialized in-order aggregation is not a prefix of "
+                "the `GROUP BY` sort description: {} at position {} instead of {}",
+                sort_description_for_merging[i].column_name, i, group_by_sort_description[i].column_name);
+    if (!group_by_sort_description.empty())
+    {
+        NameSet key_names(keys.begin(), keys.end());
+        for (const auto & column : group_by_sort_description)
+            if (!key_names.contains(column.column_name))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The `GROUP BY` sort description of a deserialized in-order aggregation refers to {}, which is not a key",
+                    column.column_name);
+    }
 
     UInt64 stats_key = 0;
     if (has_stats_key)

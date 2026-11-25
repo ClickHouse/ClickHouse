@@ -263,6 +263,10 @@
     M(KeeperReadRequestQueueLockWaitMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
+    M(KeeperLogStoreAppend) \
+    M(KeeperLogStoreAppendMicroseconds) \
+    M(KeeperSnapshotWriteMicroseconds) \
+    M(KeeperSnapshotApplyMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
     M(KeeperBatchMaxReadCount) \
@@ -409,7 +413,7 @@ namespace ProfileEvents
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Event> keeper_profile_events
+[[clang::no_destroy]] extern const std::vector<Event> keeper_profile_events
 {
     APPLY_FOR_KEEPER_PROFILE_EVENTS(M)
 };
@@ -495,7 +499,7 @@ namespace CurrentMetrics
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Metric> keeper_metrics
+[[clang::no_destroy]] extern const std::vector<Metric> keeper_metrics
 {
     APPLY_FOR_KEEPER_METRICS(M)
 };

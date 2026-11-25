@@ -6,7 +6,7 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
-「Start Ingestion」を選択すると、インジェストソースを選択するよう求められます。Managed ClickStack では、主要なインジェストソースとして OpenTelemetry と [Vector](https://vector.dev/) をサポートしています。一方で、ユーザーは [ClickHouse Cloud でサポートされているインテグレーション](/ja/integrations/home) のいずれかを使用して、独自のスキーマでデータを ClickHouse に直接送信することもできます。
+「Start Ingestion」を選択すると、インジェストソースを選択するよう求められます。このサービスでは、主要なインジェストソースとして OpenTelemetry と [Vector](https://vector.dev/) をサポートしています。一方で、ユーザーは [ClickHouse Cloud でサポートされているインテグレーション](/ja/integrations/home) のいずれかを使用して、独自のスキーマでデータを ClickHouse に直接送信することもできます。
 
 <img src="/images/clickstack/getting-started/select_source.webp" alt="" />
 
@@ -19,11 +19,11 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    Managed ClickStack に OpenTelemetry データを送信するには、OpenTelemetry Collector を使用することを推奨します。collector は、アプリケーション (および他の collector) から OpenTelemetry データを受信し、ClickHouse Cloud に転送するゲートウェイとして機能します。
+    サービスに OpenTelemetry データを送信するには、OpenTelemetry Collector を使用することを推奨します。collector は、アプリケーション (および他の collector) から OpenTelemetry データを受信し、ClickHouse Cloud に転送するゲートウェイとして機能します。
 
     まだ collector を実行していない場合は、以下の手順で起動してください。既存の collector がある場合は、設定例も用意されています。
 
-    ### collector を起動する
+### collector を起動する {#start-a-collector}
 
     以下では、追加の処理を含み、ClickHouse Cloud 向けに最適化された、推奨構成である **ClickStack distribution of the OpenTelemetry Collector** を使用することを前提としています。独自の OpenTelemetry Collector を使用する場合は、[&quot;既存の collector を設定する。&quot;](#configure-existing-collectors) を参照してください。
 
@@ -36,12 +36,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
     <Info>
       **本番環境へのデプロイ**
 
-      このコマンドでは Managed ClickStack への接続に `default` ユーザーを使用していますが、[本番環境に移行する](/ja/clickstack/managing/production#create-a-database-ingestion-user-managed) 際は、専用ユーザーを作成し、設定を変更する必要があります。
+      このコマンドではサービスへの接続に `default` ユーザーを使用していますが、[本番環境に移行する](/ja/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed) 際は、専用ユーザーを作成し、設定を変更する必要があります。
     </Info>
 
     この 1 つのコマンドを実行すると、ポート 4317 (gRPC) および 4318 (HTTP) で OTLP endpoint を公開した ClickStack collector が起動します。すでに OpenTelemetry のインストルメンテーションと agent がある場合は、すぐにこれらの endpoint へのテレメトリー データ送信を開始できます。
 
-    ### 既存の collector を設定する
+### 既存の collector を設定する {#configure-existing-collectors}
 
     既存の OpenTelemetry Collectors を設定したり、独自の distribution の collector を使用したりすることも可能です。
 
@@ -57,22 +57,22 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 
-    OpenTelemetry collector の設定について詳しくは、[&quot;OpenTelemetry でインジェストする。&quot;](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+    OpenTelemetry collector の設定について詳しくは、[&quot;OpenTelemetry でインジェストする。&quot;](/ja/clickstack/self-configured/ingesting-data/collector) を参照してください。
 
-    ### インジェストを開始する (任意)
+### インジェストを開始する (任意) {#start-ingestion-optional}
 
     OpenTelemetry でインストルメントする既存のアプリケーションやインフラストラクチャがある場合は、UI からリンクされている該当ガイドに進んでください。
 
-    traces と logs を収集するようアプリケーションをインストルメントするには、[サポートされている言語 SDKs](/ja/clickstack/ingesting-data/sdks/index) を使用してください。これらは、Managed ClickStack へのインジェスト用ゲートウェイとして動作する OpenTelemetry Collector にデータを送信します。
+    traces と logs を収集するようアプリケーションをインストルメントするには、[言語 SDK ガイド](/ja/clickstack/observability/ingesting-data/sdks/index) のセルフマネージド向け手順に従ってください。これらは、サービスへのインジェスト用ゲートウェイとして動作する OpenTelemetry Collector にデータを送信します。
 
-    logs は、agent モードで実行され、同じ collector にデータを転送する [OpenTelemetry Collectors を使用して収集](/ja/clickstack/integration-examples/host-logs) できます。Kubernetes の監視については、[専用ガイド](/ja/clickstack/integration-examples/kubernetes) を参照してください。その他のインテグレーションについては、[quickstart ガイド](/ja/clickstack/integration-examples/index) を参照してください。
+    logs は、agent モードで実行され、同じ collector にデータを転送する [OpenTelemetry Collectors を使用して収集](/ja/clickstack/observability/integration-examples/host-logs#self-managed) できます。Kubernetes の監視については、[専用ガイド](/ja/clickstack/observability/integration-examples/kubernetes#self-managed) を参照してください。その他のインテグレーションについては、[quickstart ガイド](/ja/clickstack/observability/integration-examples/index) を参照してください。
 
-    ### デモデータ
+### デモデータ {#demo-data}
 
     既存のデータがない場合は、サンプル dataset のいずれかを試すこともできます。
 
-    * [Example dataset](/ja/clickstack/example-datasets/sample-data) - 公開デモからサンプル dataset を読み込みます。単純な問題を診断できます。
-    * [ローカルファイルとメトリクス](/ja/clickstack/example-datasets/local-data) - ローカル OTel collector を使用してローカルファイルを読み込み、OSX または Linux 上でシステムを監視します。
+    * [Example dataset](/ja/clickstack/observability/example-datasets/sample-data#self-managed) - 公開デモからサンプル dataset を読み込みます。単純な問題を診断できます。
+    * [ローカルファイルとメトリクス](/ja/clickstack/observability/example-datasets/local-data#self-managed) - ローカル OTel collector を使用してローカルファイルを読み込み、OSX または Linux 上でシステムを監視します。
 
     <br />
   </Tab>
@@ -85,12 +85,12 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
     <Info>
       **Timestamp は必須**
 
-      Managed ClickStack で唯一の必須要件は、データに **timestamp カラム** (または同等の時刻フィールド) が含まれていることです。これは ClickStack UI でログソースを設定する際に指定できます。
+      このサービスで唯一の必須要件は、データに **timestamp カラム** (または同等の時刻フィールド) が含まれていることです。これは ClickStack UI でログソースを設定する際に指定できます。
     </Info>
 
     以下では、インジェストパイプラインがあらかじめ設定され、データを送信している Vector のインスタンスがすでに稼働していることを前提とします。
 
-    ### データベースとテーブルを作成する
+### データベースとテーブルを作成する {#create-a-database-and-table}
 
     Vector では、データを取り込む前にテーブルとスキーマを定義しておく必要があります。
 
@@ -126,13 +126,13 @@ import ManagedIngestionExampleOtelConfig from '/snippets/ja/clickstack/_config_e
 
     テーブルは、Vector が生成する出力スキーマに合わせる必要があります。推奨される[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従って、データに合わせて必要に応じてスキーマを調整してください。
 
-    ClickHouse における[主キー](/ja/concepts/core-concepts/primary-indexes)の仕組みを理解し、アクセスパターンに基づいてソートキーを選ぶことを強く推奨します。主キーの選び方については、[ClickStack 向け](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)のガイダンスを参照してください。
+    ClickHouse における[主キー](/ja/concepts/core-concepts/primary-indexes)の仕組みを理解し、アクセスパターンに基づいてソートキーを選ぶことを強く推奨します。主キーの選び方については、[ClickStack 向け](/ja/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key)のガイダンスを参照してください。
 
     テーブルを作成したら、表示されている設定スニペットをコピーしてください。既存のパイプラインを利用するように input を調整し、必要に応じてターゲットテーブルとデータベースも変更してください。認証情報は事前に入力されているはずです。
 
     <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
 
-    Vector を使ったデータ取り込みのその他の例については、[&quot;Vector で取り込む&quot;](/ja/clickstack/ingesting-data/vector)または高度なオプションについては [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) を参照してください。
+    Vector を使ったデータ取り込みのその他の例については、[&quot;Vector で取り込む&quot;](/ja/clickstack/observability/ingesting-data/vector#self-managed)または高度なオプションについては [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) を参照してください。
 
     <br />
   </Tab>

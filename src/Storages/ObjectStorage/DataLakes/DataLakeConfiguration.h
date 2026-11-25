@@ -59,16 +59,16 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern const DataLakeStorageSettingsString object_storage_endpoint;
     extern const DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern const DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern const DataLakeStorageSettingsSecretString storage_aws_secret_access_key;
     extern const DataLakeStorageSettingsString storage_region;
     extern const DataLakeStorageSettingsString storage_aws_role_arn;
     extern const DataLakeStorageSettingsString storage_aws_role_session_name;
     extern const DataLakeStorageSettingsString storage_catalog_url;
     extern const DataLakeStorageSettingsString storage_warehouse;
-    extern const DataLakeStorageSettingsString storage_catalog_credential;
+    extern const DataLakeStorageSettingsSecretString storage_catalog_credential;
 
     extern const DataLakeStorageSettingsString storage_auth_scope;
-    extern const DataLakeStorageSettingsString storage_auth_header;
+    extern const DataLakeStorageSettingsSecretString storage_auth_header;
     extern const DataLakeStorageSettingsString storage_oauth_server_uri;
     extern const DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
@@ -411,6 +411,7 @@ public:
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         const std::optional<FormatSettings> & format_settings,
@@ -425,6 +426,7 @@ public:
         /// external Iceberg readers such as Spark.
         return getMetadata()->write(
             sample_block,
+            metadata_snapshot,
             table_id,
             object_storage,
             shared_from_this(),
