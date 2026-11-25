@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: a JOIN on a MATERIALIZED CTE over-counts under parallel replicas, a separate defect
+
 -- The IN set that query_plan_convert_join_to_in makes from a right side reading a MATERIALIZED CTE
 -- was built for index analysis before the CTE was materialized.
 
@@ -15,6 +18,12 @@ INSERT INTO t_join_to_in_cte SELECT number FROM numbers(10000);
 -- Primary key analysis.
 WITH s AS MATERIALIZED (SELECT number AS k FROM numbers(10))
 SELECT count() FROM t_join_to_in_cte AS a INNER JOIN s ON a.k = s.k WHERE a.k IN (SELECT k FROM s);
+
+-- The rewrite is kept.
+SELECT count() > 0 FROM (
+    EXPLAIN WITH s AS MATERIALIZED (SELECT number AS k FROM numbers(10))
+    SELECT count() FROM t_join_to_in_cte AS a INNER JOIN s ON a.k = s.k WHERE a.k IN (SELECT k FROM s)
+) WHERE explain ILIKE '%Calculate join left keys%';
 
 -- The CTE is read only by joins.
 WITH s AS MATERIALIZED (SELECT number AS k FROM numbers(10))
@@ -54,6 +63,20 @@ SELECT count() FROM t_join_to_in_cte AS a
 INNER JOIN (SELECT * FROM merge(currentDatabase(), '^t_join_to_in_cte_2$') WHERE v IN (SELECT k FROM s)) AS r ON a.k = r.k
 WHERE a.k IN (SELECT k FROM s)
 SETTINGS optimize_move_to_prewhere = 0;
+
+-- A remote read on the right side, filtered by a set reading the CTE.
+WITH s AS MATERIALIZED (SELECT number AS k FROM numbers(10))
+SELECT count() FROM t_join_to_in_cte AS a
+INNER JOIN (SELECT k FROM remote('127.0.0.2', currentDatabase(), t_join_to_in_cte_2) WHERE v IN (SELECT k FROM s)) AS r ON a.k = r.k
+WHERE a.k IN (SELECT k FROM s);
+
+-- Parallel replicas without a local plan on the right side.
+WITH s AS MATERIALIZED (SELECT number AS k FROM numbers(10))
+SELECT count() FROM merge(currentDatabase(), '^t_join_to_in_cte_bf$') AS a
+INNER JOIN (SELECT k FROM t_join_to_in_cte_2 WHERE v IN (SELECT k FROM s)) AS r ON a.k = r.k
+WHERE a.k IN (SELECT k FROM s)
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_for_queries_with_multiple_tables = 1, parallel_replicas_local_plan = 0;
 
 DROP TABLE t_join_to_in_cte;
 DROP TABLE t_join_to_in_cte_bf;

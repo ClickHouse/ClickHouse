@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageMerge.h>
 
@@ -209,7 +210,19 @@ struct CTEsToMaterialize
                 for (const auto & cte : collectMaterializedCTEsFromQueryTree(merge->getQueryInfo().query_tree))
                     addCTE(cte);
             }
-            /// Building these sets strips the gates of their own plans.
+            /// The shards read these CTEs by name, and an unbuilt one is not sent.
+            else if (const auto * remote = typeid_cast<const ReadFromRemote *>(step))
+            {
+                for (const auto & shard : remote->getShards())
+                    for (const auto & cte : collectMaterializedCTEsFromQueryTree(shard.query_tree))
+                        addCTE(cte);
+            }
+            else if (const auto * replicas = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(replicas->getQueryTree()))
+                    addCTE(cte);
+            }
+            /// A deferred build of these sets strips the gates of their own plans.
             else if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(step))
             {
                 for (const auto & set : delayed->getSets())
