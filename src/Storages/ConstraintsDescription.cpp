@@ -37,6 +37,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerSteps.h>
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -252,10 +253,12 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
                 /// The `Planner` mutates the options it is given.
                 auto subquery_options = SelectQueryOptions{}.subquery();
                 subquery_options.forceMaterializeCTE();
+                /// Planned as in `addBuildSubqueriesForSetsStepIfNeeded`; the filters let e.g. `Distributed` skip shards.
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    std::make_shared<GlobalPlannerContext>(
+                        nullptr, nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
                 subquery_planner.buildQueryPlanIfNeeded();
                 subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
             }
