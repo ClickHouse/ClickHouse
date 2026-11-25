@@ -42,6 +42,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <base/scope_guard.h>
 #include <deque>
 #include <limits>
@@ -1115,10 +1116,6 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    /// Skipped by IF [NOT] EXISTS, see AlterCommands::prepare.
-    if (params[0].ignore)
-        return;
-
     size_t i = 0;
     bool succeeded = false;
     while (i < MAX_TRANSACTION_RETRIES)
@@ -1145,6 +1142,21 @@ void alter(
         filename_generator.setCompressionMethod(compression_method);
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
+
+        /// ClickHouse's copy of the schema may lag other writers, so `IF [NOT] EXISTS` is decided on the latest one.
+        const auto & command = params[0];
+        if (command.if_exists || command.if_not_exists)
+        {
+            const auto fields = getCurrentSchema(metadata)->getArray(Iceberg::f_fields);
+            bool column_exists = false;
+            for (UInt32 field_index = 0; field_index < fields->size() && !column_exists; ++field_index)
+                column_exists = fields->getObject(field_index)->getValue<String>(Iceberg::f_name) == command.column_name;
+            if (command.if_not_exists ? column_exists : !column_exists)
+                return;
+        }
+        if (command.type == AlterCommand::Type::ADD_COLUMN && !command.data_type)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Data type have to be specified for column {} to add", backQuote(command.column_name));
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 

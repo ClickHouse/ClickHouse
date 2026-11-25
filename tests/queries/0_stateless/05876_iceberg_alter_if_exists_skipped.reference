@@ -1,3 +1,8 @@
 x	Nullable(Int64)
 y	Nullable(String)
 1	\N
+0
+1
+x	Nullable(Int64)
+y	Nullable(String)
+1	\N

@@ -13,6 +13,11 @@ FROM system.server_settings WHERE name = 'user_files_path';
 CREATE TABLE t (x Nullable(Int64)) ENGINE = IcebergLocal((SELECT path FROM iceberg_path));
 INSERT INTO t VALUES (1);
 ALTER TABLE t ADD COLUMN y Nullable(String);
+-- A second table on the same Iceberg table, its schema is not refreshed by ALTERs of `t`.
+CREATE TABLE t2 ENGINE = IcebergLocal((SELECT path FROM iceberg_path));
+
+CREATE TEMPORARY TABLE metadata_files AS
+SELECT count(DISTINCT _file) AS c FROM file(concat((SELECT path FROM iceberg_path), 'metadata/*.metadata.json'), 'LineAsString');
 
 -- Each command below is skipped by its IF [NOT] EXISTS clause.
 ALTER TABLE t ADD COLUMN IF NOT EXISTS y DEFAULT 'a';
@@ -23,5 +28,20 @@ ALTER TABLE t RENAME COLUMN IF EXISTS z TO w;
 
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position;
 SELECT * FROM t ORDER BY x;
+SELECT count(DISTINCT _file) - (SELECT c FROM metadata_files)
+FROM file(concat((SELECT path FROM iceberg_path), 'metadata/*.metadata.json'), 'LineAsString');
 
+-- IF [NOT] EXISTS is decided on the latest schema, not on the stale one of `t2`.
+ALTER TABLE t DROP COLUMN y;
+SELECT count(DISTINCT _file) - (SELECT c FROM metadata_files)
+FROM file(concat((SELECT path FROM iceberg_path), 'metadata/*.metadata.json'), 'LineAsString');
+ALTER TABLE t2 ADD COLUMN IF NOT EXISTS y DEFAULT 'a'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t2 ADD COLUMN IF NOT EXISTS y Nullable(String);
+ALTER TABLE t ADD COLUMN z Nullable(Int64);
+ALTER TABLE t2 DROP COLUMN IF EXISTS z;
+
+DESCRIBE TABLE t SETTINGS describe_compact_output = 1;
+SELECT * FROM t ORDER BY x;
+
+DROP TABLE t2;
 DROP TABLE t;
