@@ -677,8 +677,14 @@ MutationsInterpreter::MutationsInterpreter(
     auto persistent_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
+    /// `CLEAR COLUMN` of `_block_number` / `_block_offset` removes both of them from the part, so a rewrite of the part must not keep their stored values.
+    const bool clears_block_columns = std::ranges::any_of(commands, [&](const MutationCommand & command) { return command.isClearOfBlockColumns(*metadata_snapshot); });
+
     for (const auto & column : persistent_virtuals)
     {
+        if (clears_block_columns && (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name))
+            continue;
+
         if (part_columns.has(column.name) && !available_columns_set.contains(column.name))
             available_columns.push_back(column.name);
     }
@@ -1702,9 +1708,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.isClearOfBlockColumns(*metadata_snapshot))
         {
-            /// `MutateTask` only marks the stored values of `_block_number` and `_block_offset` as invalidated
-            /// in the new part, which then ignores the indices and projections that use them. Rebuilding
-            /// dependents with the default value of the column, as below, would make them wrong instead.
+            /// `MutateTask` removes `_block_number` and `_block_offset` from the part, together with the indices and
+            /// projections that use them. Rebuilding them with the default value of the column, as below, would make
+            /// them wrong: the part reads the columns as `min_block` and `_part_offset`.
             continue;
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)

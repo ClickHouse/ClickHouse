@@ -64,11 +64,10 @@ public:
     /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
     void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
 
-    /// Set the ranges of the block columns whose stored values `part` invalidates (see
-    /// `IMergeTreeDataPart::isSystemColumnInvalidated`) to the ones `load` gives them: the ranges of `min_block`
-    /// and `_part_offset` of a part with `rows_count` rows, which the reader returns instead. No-op for an
-    /// uninitialized index, and for the columns past its width.
-    void setInvalidatedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot);
+    /// Set the ranges of `_block_number` and `_block_offset` to the ones of a part with the block range of `part` and
+    /// `rows_count` rows that does not store these columns: the reader returns `min_block` and `_part_offset` for them.
+    /// No-op for an uninitialized index, and for the columns past its width.
+    void setComputedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot);
     [[nodiscard]] Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
 
     /// The range of `_block_number` or `_block_offset` in a part with `rows_count` rows that does not read the column

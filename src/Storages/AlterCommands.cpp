@@ -2547,7 +2547,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (command.isClearOfBlockColumns(*metadata))
             {
-                /// Nothing to check: the columns stay in the table, and the mutation only invalidates their stored values.
+                /// Nothing to check: the columns stay in the table, the mutation only removes them from the parts.
             }
             else if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {

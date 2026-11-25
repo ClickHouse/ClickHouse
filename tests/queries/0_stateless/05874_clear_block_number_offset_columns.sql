@@ -46,7 +46,7 @@ ALTER TABLE t_clear_block_packed CLEAR COLUMN _block_number;
 
 SELECT 'after';
 SELECT table, part_type, part_storage_type FROM system.parts WHERE database = currentDatabase() AND table LIKE 't_clear_block_%' AND active ORDER BY table;
--- The stored values stay in the part until the next merge.
+-- The columns are removed from the parts.
 SELECT table, column FROM system.parts_columns WHERE database = currentDatabase() AND table LIKE 't_clear_block_%' AND active AND column LIKE '\\_block\\_%' ORDER BY table, column;
 SELECT 'wide', id, _block_number, _block_offset FROM t_clear_block_wide ORDER BY id;
 SELECT 'compact', id, _block_number, _block_offset FROM t_clear_block_compact ORDER BY id;
@@ -78,8 +78,8 @@ DROP TABLE t_clear_block_wide;
 DROP TABLE t_clear_block_compact;
 DROP TABLE t_clear_block_packed;
 
--- Either name clears both columns. The part min/max index, the skip indices and the projections built from the stored
--- values are not used to skip the rows that the part reads now.
+-- Either name clears both columns. The part min/max index gets the ranges of the values the part reads now. The skip
+-- indices and the projections built from the stored values are removed from the part, and the next merge builds them again.
 
 DROP TABLE IF EXISTS t_clear_block_deps;
 
@@ -95,11 +95,15 @@ OPTIMIZE TABLE t_clear_block_deps FINAL;
 
 SELECT 'deps before';
 SELECT id, _block_number, _block_offset FROM t_clear_block_deps ORDER BY id;
+SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
+SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
 
 ALTER TABLE t_clear_block_deps CLEAR COLUMN _block_offset;
 
 SELECT 'deps after';
 SELECT id, _block_number, _block_offset FROM t_clear_block_deps ORDER BY id;
+SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
+SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
 SELECT id FROM t_clear_block_deps WHERE _block_offset = 3 ORDER BY id;
 SELECT id FROM t_clear_block_deps WHERE _block_number = 1 ORDER BY id;
 SELECT count() FROM t_clear_block_deps WHERE _block_number = 2;
@@ -111,6 +115,13 @@ ATTACH TABLE t_clear_block_deps;
 SELECT 'deps after reload';
 SELECT id FROM t_clear_block_deps WHERE _block_offset = 3 ORDER BY id;
 SELECT id FROM t_clear_block_deps WHERE _block_number = 1 ORDER BY id;
+
+OPTIMIZE TABLE t_clear_block_deps FINAL;
+
+SELECT 'deps after merge';
+SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
+SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_clear_block_deps' AND active;
+SELECT id, _block_number, _block_offset FROM t_clear_block_deps WHERE _block_offset = 3 ORDER BY id;
 
 DROP TABLE t_clear_block_deps;
 

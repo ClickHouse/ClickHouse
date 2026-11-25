@@ -241,7 +241,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     {
         /// `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) is applied by the
         /// mutation alone: the reader matches pending patch parts by the stored values, so they must stay
-        /// readable until the mutation applies the patches and invalidates the stored values.
+        /// readable until the mutation applies the patches and removes the stored values.
         if (command.clear && (command.column_name == BlockNumberColumn::name || command.column_name == BlockOffsetColumn::name))
             return;
 

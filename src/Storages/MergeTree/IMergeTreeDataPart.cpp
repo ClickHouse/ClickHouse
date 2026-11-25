@@ -447,7 +447,7 @@ std::optional<Range> MergeTreePartMinMaxIndex::getComputedBlockColumnRange(
     return std::nullopt;
 }
 
-void MergeTreePartMinMaxIndex::setInvalidatedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot)
+void MergeTreePartMinMaxIndex::setComputedBlockColumns(const IMergeTreeDataPart & part, size_t rows_count, const StorageMetadataPtr & metadata_snapshot)
 {
     if (!initialized)
         return;
@@ -458,11 +458,8 @@ void MergeTreePartMinMaxIndex::setInvalidatedBlockColumns(const IMergeTreeDataPa
         if (i >= hyperrectangle.size())
             break;
 
-        if (part.isSystemColumnInvalidated(column_name))
-        {
-            if (auto range = getComputedBlockColumnRange(column_name, part, rows_count, *metadata_snapshot))
-                hyperrectangle[i] = std::move(*range);
-        }
+        if (auto range = getComputedBlockColumnRange(column_name, part, rows_count, *metadata_snapshot))
+            hyperrectangle[i] = std::move(*range);
 
         ++i;
     }
