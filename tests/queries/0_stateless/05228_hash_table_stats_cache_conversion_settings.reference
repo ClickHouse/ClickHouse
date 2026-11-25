@@ -1,2 +1,5 @@
 preallocated after the other session	0
 preallocated after a repeat	1
+preallocated after a changed format setting	0
+preallocated after another value of it	0
+preallocated after a repeat of it	1

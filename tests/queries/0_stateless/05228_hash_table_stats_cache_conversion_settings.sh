@@ -37,3 +37,29 @@ $CLICKHOUSE_LOCAL \
     SELECT toFloat64(s) FROM t_stats GROUP BY 1 FORMAT Null SETTINGS precise_float_parsing = 0;
     SELECT 'preallocated after a repeat', sum(value) > 0 FROM system.events WHERE event = 'AggregationPreallocatedElementsInHashTables';
 "
+
+# `date_time_output_format` changes what `toString` of an `Array(DateTime)` returns, and the key sees it only through
+# the hash of the changed format settings (`getFormatSettingsHash`): each of its values gets a key of its own.
+# `optimize_injective_functions_in_group_by` is off, or the aggregation key would be `d` itself.
+$CLICKHOUSE_LOCAL \
+    --optimize_aggregation_in_order=0 \
+    --optimize_injective_functions_in_group_by=0 \
+    --collect_hash_table_stats_during_aggregation=1 \
+    --max_size_to_preallocate_for_aggregation=1000000000000 \
+    --max_threads=1 \
+    --max_bytes_before_external_group_by=0 \
+    --max_bytes_ratio_before_external_group_by=0 \
+    -q "
+    CREATE TABLE t_dt (d Array(DateTime('UTC'))) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO t_dt SELECT [toDateTime(number, 'UTC')] FROM numbers(650000);
+
+    SELECT toString(d) FROM t_dt GROUP BY 1 FORMAT Null;
+    SELECT toString(d) FROM t_dt GROUP BY 1 FORMAT Null SETTINGS date_time_output_format = 'iso';
+    SELECT 'preallocated after a changed format setting', sum(value) FROM system.events WHERE event = 'AggregationPreallocatedElementsInHashTables';
+
+    SELECT toString(d) FROM t_dt GROUP BY 1 FORMAT Null SETTINGS date_time_output_format = 'unix_timestamp';
+    SELECT 'preallocated after another value of it', sum(value) FROM system.events WHERE event = 'AggregationPreallocatedElementsInHashTables';
+
+    SELECT toString(d) FROM t_dt GROUP BY 1 FORMAT Null SETTINGS date_time_output_format = 'unix_timestamp';
+    SELECT 'preallocated after a repeat of it', sum(value) > 0 FROM system.events WHERE event = 'AggregationPreallocatedElementsInHashTables';
+"
