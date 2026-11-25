@@ -534,7 +534,7 @@ public:
     /// Whether an atom can claim a key value that carries a nested `NULL` or `NaN` as matching, see
     /// `mayReadNullKeyValue`. Such a value can sit anywhere inside a range, so the analysis never answers
     /// `can_be_false = false` for it, whatever the range is, and no range of marks can be exact.
-    bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
+    [[nodiscard]] bool mayClaimNestedNullOrNaN(const DataTypes & key_types) const;
 
     [[nodiscard]] bool isSinglePoint() const { return single_point; }
 
