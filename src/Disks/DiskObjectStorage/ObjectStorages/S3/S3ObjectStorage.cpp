@@ -507,9 +507,21 @@ ObjectStorageListResult S3ObjectStorage::listObjectsSingleLevel(
 
     const auto & result = outcome.GetResult();
 
+    /// The same as in `S3IteratorAsync`: the listing describes the current version of each object, but the
+    /// objects are read at the version selected by `?versionId=`, whose size, `ETag` and tags can differ
+    /// (and the size bounds the read). So the metadata is left unset, to be requested with a `HEAD` of the
+    /// selected version where it is needed.
+    const bool reads_explicit_version = !uri.version_id.empty();
+
     ObjectStorageListResult res;
     for (const auto & object : result.GetContents())
     {
+        if (reads_explicit_version)
+        {
+            res.objects.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey())));
+            continue;
+        }
+
         ObjectMetadata metadata{
             .size_bytes = static_cast<uint64_t>(object.GetSize()),
             .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
