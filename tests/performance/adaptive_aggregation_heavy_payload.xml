@@ -6,10 +6,10 @@
          string key (URL) and the mildly skewed key with a heavy argument (UserID, whose top
          16K keys cover only ~7% of rows) are the known weak shapes these queries track. The
          light-argument control on the same scan isolates the payload cost from the scan. -->
-    <query>SELECT WatchID, min(URL) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
-    <query>SELECT WatchID, argMin(Title, EventTime) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
-    <query>SELECT URL, min(Title) FROM hits_100m_single GROUP BY URL FORMAT Null</query>
-    <query>SELECT UserID, min(URL) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
+    <query disabled="1">SELECT WatchID, min(URL) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+    <query disabled="1">SELECT WatchID, argMin(Title, EventTime) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
+    <query disabled="1">SELECT URL, min(Title) FROM hits_100m_single GROUP BY URL FORMAT Null</query>
+    <query disabled="1">SELECT UserID, min(URL) FROM hits_100m_single GROUP BY UserID FORMAT Null</query>
     <query>SELECT WatchID, sum(length(URL)) FROM hits_100m_single GROUP BY WatchID FORMAT Null</query>
 
     <!-- The keeping side of the thaw verdict, next to the firing shapes above. The stream
@@ -17,4 +17,11 @@
          within each producer. One narrow argument column serves all three aggregates, so
          staging remains cheaper than retaining and merging their separate local states. -->
     <query>SELECT number % 800000 AS k, avg(number), sum(number), max(number) FROM numbers_mt(10000000) GROUP BY k FORMAT Null</query>
+
+    <!-- The five hits_100m_single queries above, on hits_10m_single. -->
+    <query>SELECT WatchID, min(URL) FROM hits_10m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT WatchID, argMin(Title, EventTime) FROM hits_10m_single GROUP BY WatchID FORMAT Null</query>
+    <query>SELECT URL, min(Title) FROM hits_10m_single GROUP BY URL FORMAT Null</query>
+    <query>SELECT UserID, min(URL) FROM hits_10m_single GROUP BY UserID FORMAT Null</query>
+    <query>SELECT WatchID, sum(length(URL)) FROM hits_10m_single GROUP BY WatchID FORMAT Null</query>
 </test>

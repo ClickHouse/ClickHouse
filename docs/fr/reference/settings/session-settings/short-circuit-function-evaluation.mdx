@@ -17,9 +17,9 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
-Permet de calculer les fonctions [if](/fr/reference/functions/regular-functions/conditional-functions#if), [multiIf](/fr/reference/functions/regular-functions/conditional-functions#multiIf), [and](/fr/reference/functions/regular-functions/logical-functions#and) et [or](/fr/reference/functions/regular-functions/logical-functions#or) selon le principe de l’[évaluation en court-circuit](https://en.wikipedia.org/wiki/Short-circuit_evaluation). Cela permet d’optimiser l’exécution des expressions complexes dans ces fonctions et d’éviter d’éventuelles exceptions (comme une division par zéro lorsqu’elle n’est pas attendue).
+Permet de calculer les fonctions [if](/fr/reference/functions/regular-functions/conditional-functions#if), [multiIf](/fr/reference/functions/regular-functions/conditional-functions#multiIf), [and](/fr/reference/functions/regular-functions/logical-functions#and), [or](/fr/reference/functions/regular-functions/logical-functions#or), [coalesce](/fr/reference/functions/regular-functions/functions-for-nulls#coalesce) et [ifNull](/fr/reference/functions/regular-functions/functions-for-nulls#ifNull) selon le principe de l’[évaluation en court-circuit](https://en.wikipedia.org/wiki/Short-circuit_evaluation). Cela permet d’optimiser l’exécution des expressions complexes dans ces fonctions et d’éviter d’éventuelles exceptions (comme une division par zéro lorsqu’elle n’est pas attendue).
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `enable` — Active l’évaluation en court-circuit pour les fonctions qui s’y prêtent (celles qui peuvent lever une exception ou sont coûteuses en calcul).
 * `force_enable` — Active l’évaluation en court-circuit pour toutes les fonctions.

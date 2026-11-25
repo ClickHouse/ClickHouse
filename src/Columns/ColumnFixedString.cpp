@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <IO/WriteHelpers.h>
@@ -223,7 +224,7 @@ struct ColumnFixedString::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
 
@@ -454,8 +455,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(size()) - 1;
     chars.resize_fill(mask.size() * n);
     while (index >= 0)
     {
@@ -467,6 +468,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
         }
+        else
+            memset(&chars[index * n], 0, n);
 
         --index;
     }
@@ -599,6 +602,44 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
 bool ColumnFixedString::hasOnlyTypeDefaults() const
 {
     return memoryIsZero(chars.data(), 0, chars.size());
+}
+
+ColumnPtr ColumnFixedString::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    const auto & default_column = assert_cast<const ColumnFixedString &>(column_with_default_value.getDataColumn());
+    if (default_column.getN() != n)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t total_bytes = fixedStringBytes(n, total_rows);
+    auto res = ColumnFixedString::create(n);
+    auto & res_chars = res->getChars();
+    res_chars.reserve_exact(total_bytes);
+
+    if (default_column.isDefaultAt(0))
+    {
+        res_chars.resize_fill(total_bytes);
+    }
+    else
+    {
+        res_chars.resize(total_bytes);
+        for (size_t pos = 0; pos < res_chars.size(); pos += n)
+            memcpySmallAllowReadWriteOverflow15(&res_chars[pos], default_column.chars.data(), n);
+    }
+
+    /// Plain memcpy: an overflowing copy would overwrite the following rows.
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        const size_t position = offsets[i];
+        if (position >= total_rows) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset of a non-default value {} is out of range [0, {})", position, total_rows);
+        memcpy(&res_chars[position * n], &chars[(i + shift) * n], n);
+    }
+
+    return res;
 }
 
 void ColumnFixedString::serializeAsComparable(size_t row, String & out) const

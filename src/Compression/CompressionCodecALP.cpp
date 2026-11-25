@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -140,18 +141,18 @@ public:
     };
 
     explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
-    String getDescription() const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    [[nodiscard]] String getDescription() const override;
 
 private:
     UInt8 float_width;
@@ -703,6 +704,7 @@ private:
         return total_size;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt8 calculateEncodeBits(const Int64 min_value, const Int64 max_value)
     {
         if (unlikely(min_value > max_value))

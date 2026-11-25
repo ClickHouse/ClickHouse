@@ -83,11 +83,13 @@ Takes effect only together with `make_distributed_plan = 1`: the setting alone d
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}]}]}/>
 
-Allow to clean up old data files during Iceberg compaction.
+Allow to clean up old data files of Iceberg tables with background compaction.
 
-The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
-way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
-of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
+A background task of the table expires the snapshots that a newer one replaced longer than `iceberg_compaction_data_cleanup` ago,
+except those that branches and tags reference, the same way as `expire_snapshots`: removes them from the table metadata and deletes
+the files that no other snapshot references. It also drops the metadata files replaced as long ago from the metadata log and deletes
+them, unless a transactional catalog writes the metadata of the table. The snapshots that a query on any replica is reading stay
+until a later run. Does nothing for a table of the format version 1.
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -185,6 +187,15 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. When disabled, the serialized method is used."}]}]}/>
+
+Use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. Any of these keys can be `LowCardinality`. A key with an empty string is stored by its fixed-width values alone, in cells as narrow as fixed-width keys; the other keys are stored as the fixed-width values and a packed reference to the string, which keeps strings of up to 11 bytes inline, or of up to 15 bytes when the fixed-width values take at most 4 bytes. A `GROUP BY` without aggregate functions stores the keys alone, with no room for aggregate states, so it uses less memory.
+When disabled, the serialized method is used.
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **Aliases**: `allow_experimental_full_text_index`
@@ -240,7 +251,7 @@ Propagate WITH statements to UNION queries and all subqueries
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: `GROUP BY key [ORDER BY key] LIMIT n` publishes the top-K heap boundary to the `MergeTree` reading step, which filters rows and skips granules by it. `compatibility` below 26.10 disables it."}]}]}/>
 
-For [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -554,7 +565,7 @@ Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nu
 
 Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
 
-The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join whose right side is estimated at fewer rows than `min_rows_for_packed_string_keys_in_hash_join` is not affected either.
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 
@@ -941,11 +952,11 @@ Enable the `ytsaurus` table function for integration with YTsaurus.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "The `ZXC` compression codec was moved to Beta."}]}]}/>
 
 Enables the `ZXC` compression codec.
 
