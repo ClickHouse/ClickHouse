@@ -53,8 +53,10 @@ void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, C
     {
         DiskFromAST::ensureDiskIsNotCustom(value->safeGet<String>(), context);
     }
-    [[maybe_unused]] auto disk = context->getDisk(value->safeGet<String>());
+    auto disk = context->getDisk(value->safeGet<String>());
     chassert(disk);
+    if (!is_loading_from_existing_metadata)
+        DiskFromAST::checkDiskSourceAccess(disk, context);
 
     applyChanges(changes);
 }

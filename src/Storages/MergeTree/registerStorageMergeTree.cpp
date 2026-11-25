@@ -34,7 +34,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/StoragePolicy.h>
@@ -979,6 +978,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
             args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
+        if ((*storage_settings)[MergeTreeSetting::disk].changed)
+            args.getDisk((*storage_settings)[MergeTreeSetting::disk]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -1317,7 +1318,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        .get_export_access_fn = &DiskFromAST::getSourceAccessOfSettings,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{

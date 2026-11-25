@@ -584,6 +584,19 @@ void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & datab
     }
 }
 
+bool definesDisk(const ASTAlterQuery & alter)
+{
+    return std::ranges::any_of(alter.command_list->children, [](const ASTPtr & child)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        return command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes
+            && std::ranges::any_of(command.settings_changes->as<const ASTSetQuery &>().changes, [](const SettingChange & change)
+            {
+                return change.name == "disk" && change.value.getType() != Field::Types::String;
+            });
+    });
+}
+
 }
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -971,6 +984,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
     }
+
+    if (!alter.cluster.empty() && definesDisk(alter))
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE);
 
     return required_access;
 }

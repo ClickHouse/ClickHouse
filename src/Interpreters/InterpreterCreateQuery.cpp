@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <memory>
 
@@ -33,8 +34,6 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
-
-#include <Disks/DiskFromAST.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -1043,6 +1042,21 @@ void throwIfEngineIsUnknownAndNotGranted(
                         engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
                     engine_name, StorageFactory::instance().getHintsMessage(engine_name));
+}
+
+bool definesDisk(const ASTCreateQuery & create)
+{
+    auto defines_disk = [](const ASTStorage * storage)
+    {
+        return storage && storage->settings && std::ranges::any_of(storage->settings->changes, [](const SettingChange & change)
+        {
+            return change.name == "disk" && change.value.getType() != Field::Types::String;
+        });
+    };
+
+    if (defines_disk(create.storage))
+        return true;
+    return create.targets && std::ranges::any_of(create.targets->getInnerEngines(), defines_disk);
 }
 
 }
@@ -4342,12 +4356,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
-    /// Also before an engine is named: a database engine is not in `StorageFactory`, and legacy `ON CLUSTER` sends the query as written.
-    if (create.storage)
-        required_access.append_range(DiskFromAST::getSourceAccess(create.storage->ptr()));
-    if (create.targets)
-        for (ASTStorage * inner_engine : create.targets->getInnerEngines())
-            required_access.append_range(DiskFromAST::getSourceAccess(inner_engine->ptr()));
+
+    if (!create.cluster.empty() && definesDisk(create))
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE);
 
     return required_access;
 }

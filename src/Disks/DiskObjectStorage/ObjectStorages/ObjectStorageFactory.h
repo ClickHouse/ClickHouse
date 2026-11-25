@@ -1,9 +1,6 @@
 #pragma once
 #include <boost/noncopyable.hpp>
-#include <Access/Common/AccessType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -32,22 +29,9 @@ public:
         bool run_local_paths_check,
         RemoteHostFilterCheck remote_host_filter_check)>;
 
-    /// The source a user needs a grant on to define a disk of this type in SQL.
-    struct SourceAccess
-    {
-        AccessTypeObjects::Source source;
-        /// The type cannot write by contract, so `READ` is enough.
-        bool read_only = false;
-    };
-
     static ObjectStorageFactory & instance();
 
-    void registerObjectStorageType(const std::string & type, Creator creator, std::optional<SourceAccess> source_access);
-
-    bool isRegistered(const std::string & type) const;
-
-    /// The source declared by a registered type, `std::nullopt` if it has none or is not registered.
-    std::optional<SourceAccess> getSourceAccessObject(const std::string & type) const;
+    void registerObjectStorageType(const std::string & type, Creator creator);
 
     ObjectStoragePtr create(
         const std::string & name,
@@ -61,13 +45,7 @@ public:
     void clearRegistry();
 
 private:
-    struct RegisteredType
-    {
-        Creator creator;
-        std::optional<SourceAccess> source_access;
-    };
-
-    using Registry = std::unordered_map<String, RegisteredType>;
+    using Registry = std::unordered_map<String, Creator>;
     Registry registry;
 };
 

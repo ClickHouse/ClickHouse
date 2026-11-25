@@ -7,9 +7,7 @@
 namespace DB
 {
 
-class AccessRightsElements;
 class IDisk;
-class SettingsChanges;
 using DiskPtr = std::shared_ptr<IDisk>;
 
 namespace DiskFromAST
@@ -20,14 +18,11 @@ namespace DiskFromAST
     /// credentials, or a storage policy with one. For a table definition selecting a disk or a policy by name.
     void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context);
     void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context);
+    void checkDiskSourceAccess(const DiskPtr & disk, ContextPtr context);
     /// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`),
     /// so its credentials markers are kept as they are: they keep the identity of the disk, and are not honored unless `attach`.
     std::string createCustomDisk(
         const ASTPtr & disk_function, ContextPtr context, bool attach, bool for_system_database = false, bool stored_definition = false);
-
-    /// The source grants needed to define the disks of every `disk` setting in the subtree, nested disks included.
-    AccessRightsElements getSourceAccess(const ASTPtr & ast);
-    AccessRightsElements getSourceAccessOfSettings(const SettingsChanges & changes);
 }
 
 }
