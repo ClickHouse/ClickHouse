@@ -1198,6 +1198,15 @@ def test_identity_partition_column_nested_field_in_reader_prewhere(
         ).strip()
         == "1"
     )
+    # The filtered tuple is also returned, while the data files do not store it.
+    assert (
+        instance.query(
+            f"SELECT s FROM {table_expression}"
+            f" PREWHERE tupleElement(tupleElement(s, 't'), 'c') = 'x'",
+            settings=settings,
+        ).strip()
+        == "(('x',NULL))"
+    )
 
 
 ARRAY_ELEMENT_STRUCT = StructType(

@@ -585,6 +585,7 @@ static ActionsDAG substituteIdentityPartitionColumns(
     };
 
     ActionsDAG substitution;
+    std::unordered_set<String> read_columns;
     for (const auto & [column_name, sites] : collectIdentitySubstitutions(identity_partition_columns, find_required))
     {
         const DataTypePtr & type = *find_required(String(column_name));
@@ -597,13 +598,28 @@ static ActionsDAG substituteIdentityPartitionColumns(
 
         if (reads_column)
         {
+            read_columns.emplace(column_name);
             for (const auto & [path, value] : sites)
                 node = &addIdentityElementReplacement(substitution, *node, *path, *value);
         }
         substitution.getOutputs().push_back(&substitution.materializeNode(*node));
     }
 
-    return ActionsDAG::merge(std::move(substitution), dag.clone());
+    auto result = ActionsDAG::merge(std::move(substitution), dag.clone());
+
+    /// A read column passed through stays the input: the reader does not read a column the filter outputs.
+    for (size_t i = 0; i < dag.getOutputs().size(); ++i)
+    {
+        const auto * output = dag.getOutputs()[i];
+        if (output->type != ActionsDAG::ActionType::INPUT || !read_columns.contains(output->result_name))
+            continue;
+        const auto & inputs = result.getInputs();
+        auto input = std::ranges::find_if(inputs, [&](const auto * node) { return node->result_name == output->result_name; });
+        if (input != inputs.end())
+            result.getOutputs()[i] = *input;
+    }
+    result.removeUnusedActions(false);
+    return result;
 }
 
 /// Returns `filter` rewritten to read the columns `schema_transform` reads (the data file's own), or nullptr
