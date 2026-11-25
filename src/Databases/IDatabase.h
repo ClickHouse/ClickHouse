@@ -253,6 +253,10 @@ public:
     /// The database's `max_rows` limit; 0 means unlimited/unsupported.
     virtual UInt64 getMaxRows() const { return 0; }
 
+    /// False for a database that only exposes the tables of other databases, such as `Overlay`:
+    /// listing its tables lists the tables of its sources, and the storages it returns are not the source tables themselves.
+    virtual bool ownsTables() const { return true; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
