@@ -7243,9 +7243,9 @@ consistency between the schema used during query analysis and the schema used du
 )", 0, \
         {"26.3", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."}) \
     DECLARE(Bool, use_delta_lake_metadata_cache, false, R"(
-If turned on, the `DeltaLake` table engine and table functions keep the list of data files of each version of a table in the Delta Lake metadata cache, so that the queries to the same version do not list the files from the log again.
+If turned on, the `DeltaLake` table engine and table functions keep the scan metadata of each version of a table (the data files with their statistics and partition values) in the Delta Lake metadata cache, so that the queries to the same version do not replay the log again.
 
-The files of a version are listed without the filter of the query, to be reused by other queries. So with this setting, the files are skipped only by the partition values, and not by the statistics in the log.
+The scan metadata of a version is listed without the filter of a query, and delta-kernel applies the filter of each query to it, skipping the files by their statistics and partition values as without the cache.
 
 Possible values:
 

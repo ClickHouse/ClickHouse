@@ -23,33 +23,10 @@ namespace CurrentMetrics
 namespace DeltaLake
 {
 
-size_t SnapshotDataFiles::getFileWeight(const ScannedDataFile & file)
+CachedScanMetadata::CachedScanMetadata(::SharedCachedScanMetadata * handle_)
+    : handle(handle_)
+    , memory_size(::cached_scan_metadata_memory_size(handle.get()))
 {
-    return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
-}
-
-SnapshotDataFilesCollector::SnapshotDataFilesCollector(size_t max_weight_)
-    : max_weight(max_weight_)
-{
-}
-
-void SnapshotDataFilesCollector::add(const ScannedDataFilePtr & file)
-{
-    if (!active)
-        return;
-    weight += SnapshotDataFiles::getFileWeight(*file);
-    if (weight > max_weight)
-    {
-        active = false;
-        data_files.files = {};
-        return;
-    }
-    data_files.files.push_back(file);
-}
-
-std::shared_ptr<SnapshotDataFiles> SnapshotDataFilesCollector::release()
-{
-    return std::make_shared<SnapshotDataFiles>(std::move(data_files));
 }
 
 }
@@ -57,12 +34,9 @@ std::shared_ptr<SnapshotDataFiles> SnapshotDataFilesCollector::release()
 namespace DB
 {
 
-size_t DeltaLakeMetadataCacheWeightFunction::operator()(const DeltaLake::SnapshotDataFiles & data_files) const
+size_t DeltaLakeMetadataCacheWeightFunction::operator()(const DeltaLake::CachedScanMetadata & scan_metadata) const
 {
-    size_t weight = sizeof(DeltaLake::SnapshotDataFiles);
-    for (const auto & file : data_files.files)
-        weight += DeltaLake::SnapshotDataFiles::getFileWeight(*file);
-    return weight;
+    return sizeof(DeltaLake::CachedScanMetadata) + scan_metadata.memory_size;
 }
 
 DeltaLakeMetadataCache::DeltaLakeMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)

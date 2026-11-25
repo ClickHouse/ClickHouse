@@ -62,7 +62,6 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
-    extern const char delta_lake_stats_scan_callback_throw[];
     extern const char delta_lake_metadata_callback_throw[];
 }
 
@@ -79,10 +78,89 @@ bool hasDeletionVector(::SharedDvInfo * dv_info_ptr)
     return dv_info_ptr && ::dv_info_has_vector(dv_info_ptr);
 }
 
+std::shared_ptr<CachedScanMetadata> buildCachedScanMetadata(
+    ::SharedSnapshot * snapshot,
+    ::SharedExternEngine * engine,
+    size_t version,
+    const std::function<bool()> & is_cancelled)
+{
+    using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
+    using KernelScanMetadataIterator = KernelPointerWrapper<::SharedScanMetadataIterator, ::free_scan_metadata_iter>;
+    using KernelExclusiveCachedScanMetadata
+        = KernelPointerWrapper<::ExclusiveCachedScanMetadata, ::free_exclusive_cached_scan_metadata>;
+
+    KernelScan scan(KernelUtils::unwrapResult(::scan(snapshot, engine, /* predicate */nullptr, /* schema */nullptr), "scan"));
+    KernelScanMetadataIterator scan_metadata_iterator(
+        KernelUtils::unwrapResult(::scan_metadata_iter_init(engine, scan.get()), "scan_metadata_iter_init"));
+
+    struct Builder
+    {
+        KernelExclusiveCachedScanMetadata cached;
+        ::SharedExternEngine * engine;
+        std::exception_ptr exception;
+    };
+    Builder builder{KernelExclusiveCachedScanMetadata(::cached_scan_metadata_new(version)), engine, {}};
+
+    while (!is_cancelled())
+    {
+        const bool have_scan_metadata = KernelUtils::unwrapResult(
+            ::scan_metadata_next(
+                scan_metadata_iterator.get(),
+                &builder,
+                [](void * context, ::SharedScanMetadata * scan_metadata)
+                {
+                    auto * current = static_cast<Builder *>(context);
+                    SCOPE_EXIT({ ::free_scan_metadata(scan_metadata); });
+                    try
+                    {
+                        auto * cached = current->cached.get();
+                        const size_t num_files = KernelUtils::unwrapResult(
+                            ::cached_scan_metadata_add(&cached, scan_metadata, current->engine), "cached_scan_metadata_add");
+                        ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles, num_files);
+                    }
+                    catch (...)
+                    {
+                        current->exception = std::current_exception();
+                    }
+                }),
+            "scan_metadata_next");
+
+        if (builder.exception)
+            std::rethrow_exception(builder.exception);
+
+        if (!have_scan_metadata)
+            return std::make_shared<CachedScanMetadata>(::cached_scan_metadata_finish(builder.cached.release()));
+    }
+    return nullptr;
+}
+
+bool fitsIntoMetadataCache(const CachedScanMetadata & scan_metadata, const DB::DeltaLakeMetadataCache & metadata_cache)
+{
+    return DB::DeltaLakeMetadataCacheWeightFunction{}(scan_metadata) <= metadata_cache.maxSizeInBytes();
+}
+
 }
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
 {
+private:
+    /// Struct to hold ObjectInfo along with FFI handles for lazy parsing
+    struct ScannedDataFile
+    {
+        DB::ObjectInfoPtr object;
+        KernelDvInfo dv_info_handle;
+        std::optional<KernelExpression> transform_handle;
+
+        ScannedDataFile(
+            DB::ObjectInfoPtr object_,
+            KernelDvInfo dv_info_,
+            std::optional<KernelExpression> transform_)
+            : object(std::move(object_))
+            , dv_info_handle(std::move(dv_info_))
+            , transform_handle(std::move(transform_))
+        {}
+    };
+
 public:
     using UpdateStatsFunc = std::function<void(SnapshotStats &&)>;
 
@@ -103,7 +181,7 @@ public:
         UpdateStatsFunc update_stats_func_,
         DB::DeltaLakeMetadataCachePtr metadata_cache_,
         String metadata_cache_key_,
-        DB::DeltaLakeMetadataCache::MappedPtr cached_data_files_,
+        CachedScanMetadataPtr cached_scan_metadata_,
         LoggerPtr log_)
         : DB::WithContext(query_context_)
         , kernel_snapshot_state(kernel_snapshot_state_)
@@ -121,6 +199,7 @@ public:
         , update_stats_func(update_stats_func_)
         , metadata_cache(std::move(metadata_cache_))
         , metadata_cache_key(std::move(metadata_cache_key_))
+        , cached_scan_metadata(std::move(cached_scan_metadata_))
     {
         if (filter_)
         {
@@ -146,17 +225,6 @@ public:
 
             for (auto & name : partition_columns)
                 name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
-        }
-
-        use_engine_predicate = filter.has_value() && enable_engine_predicate && !metadata_cache;
-        if (metadata_cache && !cached_data_files_)
-            collector.emplace(metadata_cache->maxSizeInBytes());
-
-        if (cached_data_files_)
-        {
-            data_files.assign(cached_data_files_->files.begin(), cached_data_files_->files.end());
-            iterator_finished = true;
-            return;
         }
 
         thread = ThreadFromGlobalPool(
@@ -198,7 +266,7 @@ public:
 
     void initScanState()
     {
-        if (use_engine_predicate)
+        if (filter.has_value() && enable_engine_predicate)
         {
             auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
             scan = KernelUtils::unwrapResult(
@@ -220,9 +288,15 @@ public:
                 "scan");
         }
 
-        scan_data_iterator = KernelUtils::unwrapResult(
-            ::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
-            "scan_metadata_iter_init");
+        if (cached_scan_metadata)
+            scan_data_iterator = KernelUtils::unwrapResult(
+                ::scan_metadata_iter_init_from_cached(
+                    kernel_snapshot_state->engine.get(), scan.get(), cached_scan_metadata->handle.get()),
+                "scan_metadata_iter_init_from_cached");
+        else
+            scan_data_iterator = KernelUtils::unwrapResult(
+                ::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
+                "scan_metadata_iter_init");
     }
 
     /// One-shot retry on stale-credentials errors. Safe only when no files have been
@@ -297,6 +371,20 @@ public:
             {
                 try
                 {
+                    if (metadata_cache && !cached_scan_metadata)
+                    {
+                        auto built = buildCachedScanMetadata(
+                            kernel_snapshot_state->snapshot.get(),
+                            kernel_snapshot_state->engine.get(),
+                            kernel_snapshot_state->snapshot_version,
+                            [this] { return shutdown.load(); });
+                        if (!built)
+                            return;
+                        if (fitsIntoMetadataCache(*built, *metadata_cache))
+                            metadata_cache->set(metadata_cache_key, built);
+                        cached_scan_metadata = std::move(built);
+                    }
+
                     initScanState();
 
                     LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
@@ -325,17 +413,12 @@ public:
                         }
                         else
                         {
-                            bool scan_completed = false;
                             {
                                 std::lock_guard lock(next_mutex);
                                 iterator_finished = true;
-                                scan_completed = !scan_exception && !shutdown;
                                 LOG_TEST(log, "Set finished");
                             }
                             data_files_cv.notify_all();
-
-                            if (collector && collector->isActive() && scan_completed)
-                                metadata_cache->set(metadata_cache_key, collector->release());
 
                             LOG_TRACE(
                                 log, "All data files at version {} were listed "
@@ -348,7 +431,7 @@ public:
 
                             if (update_stats_func
                                 && !scan_exception
-                                && !use_engine_predicate)
+                                && (!filter.has_value() || !enable_engine_predicate))
                             {
                                 update_stats_func(SnapshotStats{
                                     .total_bytes = total_bytes,
@@ -393,7 +476,7 @@ public:
     {
         while (true)
         {
-            ScannedDataFilePtr scan_item;
+            std::optional<ScannedDataFile> scan_item;
             {
                 std::unique_lock lock(next_mutex);
 
@@ -424,12 +507,7 @@ public:
 
             schedule_next_batch_cv.notify_one();
 
-            std::string full_path = helper->resolveDataFilePath(scan_item->path, getContext());
-            DB::ObjectInfoPtr object = scan_item->size > 0
-                ? std::make_shared<DB::ObjectInfoWithFileSizeHint>(DB::RelativePathWithMetadata(std::move(full_path)), static_cast<size_t>(scan_item->size))
-                : std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
-            object->data_lake_metadata.emplace();
-            object->data_lake_metadata->num_rows = scan_item->num_records;
+            auto object = std::move(scan_item->object);
 
             /// Needed for partition values.
             parseTransformHandle(*scan_item, object);
@@ -449,17 +527,17 @@ public:
         }
     }
 
-    void parseTransformHandle(const ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
+    void parseTransformHandle(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
     {
         auto & metadata = object->data_lake_metadata;
         chassert(metadata.has_value());
 
-        if (scan_item.transform.has_value())
+        if (scan_item.transform_handle.has_value())
         {
             if (!partition_columns.empty())
             {
                 metadata->schema_transform = visitScanCallbackExpression(
-                    scan_item.transform->get(),
+                    scan_item.transform_handle->get(),
                     read_schema,
                     expression_schema,
                     enable_expression_visitor_logging);
@@ -473,12 +551,12 @@ public:
         }
     }
 
-    void parseDVHandle(const ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
+    void parseDVHandle(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
     {
         auto & metadata = object->data_lake_metadata;
         chassert(metadata.has_value());
 
-        if (auto * dv_info_ptr = scan_item.dv_info.get(); dv_info_ptr && ::dv_info_has_vector(dv_info_ptr))
+        if (auto * dv_info_ptr = scan_item.dv_info_handle.get(); dv_info_ptr && ::dv_info_has_vector(dv_info_ptr))
         {
             /// `row_indexes_from_dv` returns a vector of row indexes
             /// that should be *removed* from the result set
@@ -619,25 +697,22 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        auto file = std::make_shared<ScannedDataFile>();
-        file->path = KernelUtils::fromDeltaString(path);
-        file->size = size;
+        std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
+        DB::ObjectInfoPtr object = size > 0
+            ? std::make_shared<DB::ObjectInfoWithFileSizeHint>(DB::RelativePathWithMetadata(std::move(full_path)), static_cast<size_t>(size))
+            : std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        object->data_lake_metadata.emplace();
         if (stats)
-            file->num_records = stats->num_records;
-        file->dv_info = std::move(dv_info_handle);
-        file->transform = std::move(transform_handle);
+            object->data_lake_metadata->num_rows = stats->num_records;
 
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}",
-            file->path, size, stats ? DB::toString(stats->num_records) : "Unknown");
-
-        if (context->collector)
-            context->collector->add(file);
+            object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
 
         {
             std::lock_guard lock(context->next_mutex);
-            context->data_files.push_back(std::move(file));
+            context->data_files.emplace_back(std::move(object), std::move(dv_info_handle), std::move(transform_handle));
         }
 
         context->total_data_files += 1;
@@ -680,8 +755,7 @@ private:
     const UpdateStatsFunc update_stats_func;
     const DB::DeltaLakeMetadataCachePtr metadata_cache;
     const String metadata_cache_key;
-    bool use_engine_predicate = false;
-    std::optional<SnapshotDataFilesCollector> collector;
+    CachedScanMetadataPtr cached_scan_metadata;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -703,7 +777,7 @@ private:
     /// as current data batch is fully read.
     std::condition_variable schedule_next_batch_cv;
 
-    std::deque<ScannedDataFilePtr> data_files;
+    std::deque<ScannedDataFile> data_files;
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
@@ -729,15 +803,15 @@ size_t TableSnapshot::getVersion() const
     return getVersionUnlocked();
 }
 
+size_t TableSnapshot::getVersionUnlocked() const
+{
+    return getKernelSnapshotState()->snapshot_version;
+}
+
 std::string TableSnapshot::getTableId() const
 {
     std::lock_guard lock(mutex);
     return getKernelSnapshotState()->table_id;
-}
-
-size_t TableSnapshot::getVersionUnlocked() const
-{
-    return getKernelSnapshotState()->snapshot_version;
 }
 
 std::pair<DB::DeltaLakeMetadataCachePtr, String>
@@ -783,27 +857,18 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 {
     auto state = getKernelSnapshotState();
 
+    CachedScanMetadataPtr cached_scan_metadata;
     auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
     if (metadata_cache)
     {
-        if (auto cached_data_files = metadata_cache->get(metadata_cache_key))
+        cached_scan_metadata = metadata_cache->get(metadata_cache_key);
+        if (!cached_scan_metadata)
         {
-            SnapshotStats stats{.total_bytes = 0, .total_rows = 0};
-            for (const auto & file : cached_data_files->files)
-            {
-                *stats.total_bytes += static_cast<size_t>(file->size);
-                if (file->num_records && !hasDeletionVector(file->dv_info.get()) && stats.total_rows)
-                    *stats.total_rows += *file->num_records;
-                else
-                    stats.total_rows = std::nullopt;
-            }
-            LOG_TEST(
-                log, "Snapshot at version {} data files from the metadata cache: {}, total rows: {}, total bytes: {}",
-                state->snapshot_version,
-                cached_data_files->files.size(),
-                stats.total_rows ? DB::toString(*stats.total_rows) : "Unknown",
-                *stats.total_bytes);
-            return stats;
+            auto built = buildCachedScanMetadata(
+                state->snapshot.get(), state->engine.get(), state->snapshot_version, [] { return false; });
+            if (fitsIntoMetadataCache(*built, *metadata_cache))
+                metadata_cache->set(metadata_cache_key, built);
+            cached_scan_metadata = std::move(built);
         }
     }
 
@@ -817,22 +882,21 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         "scan");
 
     KernelScanMetadataIterator fallback_scan_data_iterator;
-    fallback_scan_data_iterator = KernelUtils::unwrapResult(
-        ::scan_metadata_iter_init(
-            state->engine.get(), fallback_scan.get()),
-        "scan_metadata_iter_init");
+    if (cached_scan_metadata)
+        fallback_scan_data_iterator = KernelUtils::unwrapResult(
+            ::scan_metadata_iter_init_from_cached(state->engine.get(), fallback_scan.get(), cached_scan_metadata->handle.get()),
+            "scan_metadata_iter_init_from_cached");
+    else
+        fallback_scan_data_iterator = KernelUtils::unwrapResult(
+            ::scan_metadata_iter_init(
+                state->engine.get(), fallback_scan.get()),
+            "scan_metadata_iter_init");
 
     struct StatsVisitor
     {
-        StatsVisitor(::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight)
-            : engine(engine_)
-        {
-            if (max_cached_weight)
-                collector.emplace(*max_cached_weight);
-        }
+        explicit StatsVisitor(::SharedExternEngine * engine_) : engine(engine_) {}
 
         ::SharedExternEngine * const engine;
-        std::optional<SnapshotDataFilesCollector> collector;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -843,7 +907,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
         static bool visit(
             ::NullableCvoid engine_context,
-            struct ::KernelStringSlice path,
+            struct ::KernelStringSlice /* path */,
             int64_t size,
             int64_t /* mod_time */,
             const ::Stats * stats,
@@ -852,49 +916,22 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
             const struct ::CStringMap * /* deprecated */)
         {
             /// Wrap handles in RAII immediately to ensure cleanup on any exit path
+            /// TODO: Actually we do not need any transforms/dv_info to exist here,
+            /// so it would be better to implement in delta-kernel scanCallback
+            /// which will only collect stats.
             KernelDvInfo dv_info_handle(dv_info);
             std::optional<KernelExpression> transform_handle;
             if (transform)
                 transform_handle.emplace(transform);
 
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
-            try
-            {
-                visitor->total_data_files += 1;
-                visitor->total_bytes += static_cast<size_t>(size);
-                if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
-                    visitor->total_rows.value() += stats->num_records;
-                else
-                    visitor->total_rows = std::nullopt;
-
-                if (visitor->collector)
-                {
-                    ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
-                    fiu_do_on(DB::FailPoints::delta_lake_stats_scan_callback_throw,
-                    {
-                        throw DB::Exception(
-                            DB::ErrorCodes::DELTA_KERNEL_ERROR, "Forced by the delta_lake_stats_scan_callback_throw failpoint");
-                    });
-                }
-
-                if (visitor->collector && visitor->collector->isActive())
-                {
-                    auto file = std::make_shared<ScannedDataFile>();
-                    file->path = KernelUtils::fromDeltaString(path);
-                    file->size = size;
-                    if (stats)
-                        file->num_records = stats->num_records;
-                    file->dv_info = std::move(dv_info_handle);
-                    file->transform = std::move(transform_handle);
-                    visitor->collector->add(file);
-                }
-                return true;
-            }
-            catch (...)
-            {
-                visitor->exception = std::current_exception();
-                return false;
-            }
+            visitor->total_data_files += 1;
+            visitor->total_bytes += static_cast<size_t>(size);
+            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
+                visitor->total_rows.value() += stats->num_records;
+            else
+                visitor->total_rows = std::nullopt;
+            return true;
         }
 
         static void visitData(void * engine_context, ::SharedScanMetadata * scan_metadata)
@@ -923,8 +960,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         }
     };
 
-    StatsVisitor visitor(
-        state->engine.get(), metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt);
+    StatsVisitor visitor(state->engine.get());
 
     while (true)
     {
@@ -942,9 +978,6 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         if (!have_scan_data)
             break;
     }
-
-    if (visitor.collector && visitor.collector->isActive())
-        metadata_cache->set(metadata_cache_key, visitor.collector->release());
 
     LOG_TEST(
         log, "Snapshot at version {} data files: {}, total rows: {}, total bytes: {}",
@@ -1128,9 +1161,9 @@ DB::ObjectIterator TableSnapshot::iterate(
     auto state = getKernelSnapshotState();
 
     auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
-    DB::DeltaLakeMetadataCache::MappedPtr cached_data_files;
+    CachedScanMetadataPtr cached_scan_metadata;
     if (metadata_cache)
-        cached_data_files = metadata_cache->get(metadata_cache_key);
+        cached_scan_metadata = metadata_cache->get(metadata_cache_key);
     auto update_stats_func = [self = shared_from_this(), version = state->snapshot_version, this]
         (SnapshotStats && stats)
         {
@@ -1163,7 +1196,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         std::move(update_stats_func),
         std::move(metadata_cache),
         std::move(metadata_cache_key),
-        std::move(cached_data_files),
+        std::move(cached_scan_metadata),
         log);
 }
 
