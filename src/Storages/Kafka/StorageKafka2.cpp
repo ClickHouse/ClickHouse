@@ -1286,10 +1286,12 @@ void StorageKafka2::threadFunc(size_t idx)
     /// Tasks are created up front for every configured slot, but consumer creation in `startup`
     /// may fail for some slots. Skip work for empty slots without rescheduling, otherwise the
     /// task would repeatedly enter and bail out on every reschedule for the storage's lifetime.
+    IKafkaExceptionInfoSinkPtr exception_sink;
     {
         std::lock_guard lock(consumers_mutex);
         if (idx >= consumers.size() || !consumers[idx])
             return;
+        exception_sink = consumers[idx]->getExceptionInfoSink();
     }
 
     std::optional<StallKind> maybe_stall_reason;
@@ -1376,7 +1378,16 @@ void StorageKafka2::threadFunc(size_t idx)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        /// The task must not throw, otherwise it is not rescheduled.
+        try
+        {
+            exception_sink->setExceptionInfo(getCurrentExceptionMessage(/* with_stacktrace = */ true), /* with_stacktrace = */ false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot record the exception in system.kafka_consumers");
+        }
     }
 
     if (incremented_mv_streamers)
