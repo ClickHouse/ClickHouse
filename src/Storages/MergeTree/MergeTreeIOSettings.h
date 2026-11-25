@@ -226,6 +226,7 @@ struct MergeTreeWriterSettings
     /// Limits for the amount of data buffered before writing a stripe of a Compact part.
     size_t compact_parts_max_bytes_to_buffer{};
     size_t compact_parts_max_granules_to_buffer{};
+    bool compress_per_substream_in_compact_parts{};
     bool apply_adaptive_codec = false;
     UInt64 adaptive_codec_selection_period = 1;
 };
