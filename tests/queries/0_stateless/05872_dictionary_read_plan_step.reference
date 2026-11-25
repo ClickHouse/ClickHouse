@@ -1,0 +1,51 @@
+A JOIN that looks the keys up has no reading step
+1
+0
+0	name_0
+1	name_150
+2	name_300
+3	name_450
+4	name_600
+5	name_750
+6	name_900
+7	
+8	
+9	
+A hash JOIN reads the dictionary
+1
+0	name_0
+1	name_150
+2	name_300
+3	name_450
+4	name_600
+5	name_750
+6	name_900
+7	
+8	
+9	
+Reading the dictionary as a table
+1000	499500	999000
+name_3	3
+name_500	500
+name_999	999
+dict_hashed	1000
+A layout that returns all the columns of its source
+name_3
+name_500
+name_999
+6	3
+1000	500
+1998	999
+1000	999000
+0	name_0
+1	name_150
+2	name_300
+3	name_450
+4	name_600
+5	name_750
+6	name_900
+7	
+8	
+9	
+A dictionary that cannot be read fails when the pipeline is built
+1
