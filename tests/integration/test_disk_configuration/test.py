@@ -321,10 +321,11 @@ def test_table_path_alias_on_reload(start_cluster):
     node.query("ALTER TABLE table_path_alias_on_reload UPDATE y = y WHERE 1 SETTINGS mutations_sync = 1")
 
     def reload_is_rejected():
-        # `SYSTEM RELOAD CONFIG` reloads the storage configuration before it returns.
+        # `SYSTEM RELOAD CONFIG` reloads the storage configuration before it returns. The background reload
+        # of a changed configuration file may be rejected at the same time, so there may be more than one line.
         rejections = int(node.count_in_log(rejected_reload_log_line))
         node.query("SYSTEM RELOAD CONFIG")
-        assert int(node.count_in_log(rejected_reload_log_line)) == rejections + 1
+        assert int(node.count_in_log(rejected_reload_log_line)) > rejections
         assert (
             node.query("SELECT count() FROM system.storage_policies WHERE policy_name = 'reload_policy'")
             == "1\n"
