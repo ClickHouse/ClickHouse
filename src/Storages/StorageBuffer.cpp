@@ -21,6 +21,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -44,6 +45,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
@@ -646,8 +648,12 @@ void StorageBuffer::read(
                 std::move(pipe_from_buffers),
                 storage_snapshot->metadata->virtuals);
 
+        /// The buffers' analyzer rebuilds the `grouping` specializations that do not resolve from the query text.
+        auto query_tree = query_info.query_tree->clone();
+        removeGroupingFunctionSpecializations(query_tree, /*keep_ordinary=*/ true);
+
         auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            = InterpreterSelectQueryAnalyzer(queryNodeToSelectQuery(query_tree), local_context, buffers_select_query_options, storage);
         interpreter.addStorageLimits(*query_info.storage_limits);
         buffers_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -997,7 +1003,12 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
+        /// The allocation can shrink after sorting.
+        size_t new_bytes = buffer.data.allocatedBytes();
+        if (new_bytes >= old_bytes)
+            storage.total_writes.bytes += new_bytes - old_bytes;
+        else
+            storage.total_writes.bytes -= old_bytes - new_bytes;
     }
 };
 

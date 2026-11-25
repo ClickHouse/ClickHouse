@@ -1,0 +1,7 @@
+-- largest k
+[('__name__','m'),('host','h1')]	1970-01-01 00:02:10.000	1
+-- largest UInt64
+-- k is 2^64
+-- k above 2^64
+-- largest calculated k
+[('__name__','m'),('host','h1')]	1970-01-01 00:02:10.000	1

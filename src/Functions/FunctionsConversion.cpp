@@ -1,8 +1,24 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnsCommon.h>
+#include <Common/NaNUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
+#include <Common/re2.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <Interpreters/castColumn.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/JSONExtractTree.h>
+#include <Formats/SchemaInferenceUtils.h>
+
+#if USE_SIMDJSON
+#include <Common/JSONParsers/SimdJSONParser.h>
+#elif USE_RAPIDJSON
+#include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#include <Common/JSONParsers/DummyJSONParser.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -18,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
@@ -1981,6 +1998,1829 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
     }
 }
 
+namespace
+{
+
+#if USE_SIMDJSON
+using JSONParserForConversion = SimdJSONParser;
+#elif USE_RAPIDJSON
+using JSONParserForConversion = RapidJSONParser;
+#else
+using JSONParserForConversion = DummyJSONParser;
+#endif
+
+/// Returns true if the type is "structural" — it influences JSON path routing
+/// and therefore requires full format+parse when added/removed/changed as a typed path.
+/// A Variant is included too: a CAST into it needs the exact source type to be a member, while the
+/// parser picks a member per value, and a Variant keeps its NULLs in the discriminator.
+bool isStructuralTypeForJSON(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & t) { return isObject(t) || isDynamic(t) || isTuple(t) || isMap(t) || isVariant(t); });
+}
+
+/// Strips Nullable from src column/type where dst type is non-Nullable, so that CAST
+/// doesn't throw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN. Handles Nullable(T), Array(Nullable(T)),
+/// and LowCardinality(Nullable(T)) recursively. Returns nullopt for patterns it can't handle.
+/// The value under a NULL can be anything (a Native block carries it as is), so NULL rows get the
+/// nested type default, which is what the parser inserts for a NULL.
+std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    const DataTypePtr & dst_type)
+{
+    bool src_nullable = src_type->isNullable();
+    bool dst_nullable = dst_type->isNullable();
+
+    /// Top-level Nullable(T) -> non-Nullable: unwrap ColumnNullable.
+    if (src_nullable && !dst_nullable)
+    {
+        const auto & col_nullable = assert_cast<const ColumnNullable &>(*src_column);
+        auto nested_type = assert_cast<const DataTypeNullable &>(*src_type).getNestedType();
+        const auto & null_map = col_nullable.getNullMapData();
+        if (memoryIsZero(null_map.data(), 0, null_map.size()))
+            return std::make_pair(col_nullable.getNestedColumnPtr(), nested_type);
+        return std::make_pair(col_nullable.getNestedColumnWithDefaultOnNull(), nested_type);
+    }
+
+    /// Top-level LowCardinality(Nullable(T)) -> non-LowCardinality-Nullable destination.
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_nullable)
+    {
+        const auto & col_lc = assert_cast<const ColumnLowCardinality &>(*src_column);
+        auto new_col = col_lc.cloneWithDefaultOnNull();
+        auto new_type = removeNullableOrLowCardinalityNullable(src_type);
+        return std::make_pair(std::move(new_col), new_type);
+    }
+
+    /// Array(X) -> Array(Y): recurse into nested type.
+    if (isArray(*src_type) && isArray(*dst_type))
+    {
+        const auto & src_array_type = assert_cast<const DataTypeArray &>(*src_type);
+        const auto & dst_array_type = assert_cast<const DataTypeArray &>(*dst_type);
+        const auto & col_array = assert_cast<const ColumnArray &>(*src_column);
+
+        auto nested_result = removeNullableForCast(
+            col_array.getDataPtr(), src_array_type.getNestedType(), dst_array_type.getNestedType());
+        if (!nested_result)
+            return std::nullopt;
+
+        auto new_array_col = ColumnArray::create(nested_result->first, col_array.getOffsetsPtr());
+        auto new_array_type = std::make_shared<DataTypeArray>(nested_result->second);
+        return std::make_pair(std::move(new_array_col), std::move(new_array_type));
+    }
+
+    /// No Nullable mismatch or unhandled pattern.
+    return std::nullopt;
+}
+
+/// Cheap type-only check for the Nullable->non-Nullable mismatch patterns that
+/// removeNullableForCast handles: top-level Nullable(T)/LowCardinality(Nullable(T)) with a
+/// non-Nullable destination, or the same nested inside matching Array(...) types.
+bool hasNullableMismatchForCast(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return true;
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return true;
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return hasNullableMismatchForCast(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return false;
+}
+
+/// True if, at every level where removeNullableForCast strips a Nullable, the destination type's default
+/// is the plain zero a stripped NULL becomes. An Enum element under an Array is not: its default is its
+/// first value, so the Array's own empty default says nothing about it.
+bool strippedNullsGetTrivialDefaults(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return dst_type->isDefaultInsertTrivial();
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return dst_type->isDefaultInsertTrivial();
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return strippedNullsGetTrivialDefaults(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return true;
+}
+
+/// True when `src_type` and `dst_type` differ only by a removable Nullable/LowCardinality(Nullable)
+/// wrapper. Then stripping it leaves every non-null value unchanged and a null exposes the nested
+/// default, which equals the destination default; any other difference would make the exposed source
+/// default diverge from the destination default the parser inserts for a null.
+bool nullableMismatchIsOnlyDifference(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->equals(*dst_type))
+        return true;
+
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return assert_cast<const DataTypeNullable &>(*src_type).getNestedType()->equals(*dst_type);
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return removeNullableOrLowCardinalityNullable(src_type)->equals(*dst_type);
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return nullableMismatchIsOnlyDifference(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return false;
+}
+
+/// Returns true if CAST and format+parse produce different results for the given type, meaning we
+/// must fall back to format+parse: a String with try_infer_numbers_from_strings, which CAST keeps as
+/// String while format+parse infers "123" as Int64. Checks the type itself and all nested subtypes.
+/// A DateTime is converted with CAST, which keeps its instant whatever the time zones and the
+/// date_time_output_format.
+bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    if (!format_settings.json.try_infer_numbers_from_strings)
+        return false;
+    return anyInTypeTree(*type, [](const IDataType & t) { return isStringOrFixedString(t); });
+}
+
+/// True if both types are DateTime or DateTime64 under the same Array nesting, with any Nullable and
+/// LowCardinality wrappers. A CAST between them keeps every instant.
+bool isDateTimeToDateTimeConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_inner = removeLowCardinalityAndNullable(from);
+    auto to_inner = removeLowCardinalityAndNullable(to);
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_inner.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_inner.get());
+    if (from_array && to_array)
+        return isDateTimeToDateTimeConversion(from_array->getNestedType(), to_array->getNestedType());
+    return isDateTimeOrDateTime64(*from_inner) && isDateTimeOrDateTime64(*to_inner);
+}
+
+/// True if a value of `value_type` is a date and time value and goes into a date and time value of
+/// `dest_type`, so the text round trip between them must keep the instant.
+bool convertsDateTimeValue(const DataTypePtr & value_type, const DataTypePtr & dest_type)
+{
+    auto is_date_time = [](const IDataType & t) { return isDateTimeOrDateTime64(t); };
+    return value_type && anyInTypeTree(*value_type, is_date_time) && anyInTypeTree(*dest_type, is_date_time);
+}
+
+/// Returns the type the JSON parser infers in Dynamic for the serialized values of a typed path type,
+/// or nullptr if a CAST to one type cannot reproduce that inference.
+DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    TypeIndex id = type->getTypeId();
+    switch (id)
+    {
+        case TypeIndex::Int64:
+        case TypeIndex::Float64:
+        case TypeIndex::String:
+            return type; /// Already canonical.
+        case TypeIndex::UInt8:
+        {
+            /// Bool, and SimpleAggregateFunction(any, Bool), serialize true/false, which the parser infers as Bool.
+            if (isBool(type))
+                return type;
+            if (isSimpleAggregateFunctionOfBool(*type))
+                return DataTypeFactory::instance().get("Bool");
+            return std::make_shared<DataTypeInt64>();
+        }
+        /// The parser infers Int64 for every integer that fits it, and UInt64 only above Int64 range, so a
+        /// UInt64 is promoted to Int64 when its values fit (see uint64ValuesFitInt64).
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::Int32: [[fallthrough]];
+        case TypeIndex::UInt16: [[fallthrough]];
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::UInt64:
+            return std::make_shared<DataTypeInt64>();
+        /// Not Float32: the parser reads its shortest text, which differs from the Float64 a CAST widens it to.
+        /// Not Decimal either: the parser reads its text as the nearest Float64 (or an Int64 for a whole number),
+        /// while a CAST divides the coefficient by the scale in floating point and can land on another Float64.
+        case TypeIndex::Decimal32: [[fallthrough]];
+        case TypeIndex::Decimal64: [[fallthrough]];
+        case TypeIndex::Decimal128: [[fallthrough]];
+        case TypeIndex::Decimal256:
+            return nullptr;
+        case TypeIndex::Date:
+        {
+            if (format_settings.try_infer_dates)
+                return std::make_shared<DataTypeDate>();
+            return std::make_shared<DataTypeString>();
+        }
+        /// A Date32 value outside the Date range is inferred as another type, which a CAST to Date cannot follow.
+        case TypeIndex::Date32:
+        {
+            if (format_settings.try_infer_dates)
+                return nullptr;
+            return std::make_shared<DataTypeString>();
+        }
+        case TypeIndex::DateTime:
+        {
+            if (format_settings.try_infer_datetimes)
+            {
+                if (format_settings.try_infer_datetimes_only_datetime64)
+                    return std::make_shared<DataTypeDateTime64>(9);
+                return std::make_shared<DataTypeDateTime>();
+            }
+            return std::make_shared<DataTypeString>();
+        }
+        /// Valid only for the values that DateTime64(9) can hold, see fitsIntoMaxScaleDateTime64.
+        case TypeIndex::DateTime64:
+        {
+            if (format_settings.try_infer_datetimes)
+                return std::make_shared<DataTypeDateTime64>(9);
+            return std::make_shared<DataTypeString>();
+        }
+        case TypeIndex::Array:
+        {
+            const auto & array_type = assert_cast<const DataTypeArray &>(*type);
+            auto promoted_nested = getPromotedTypeForDynamicImpl(array_type.getNestedType(), format_settings);
+            if (!promoted_nested)
+                return nullptr;
+            /// Not equals: it ignores the time zone, which a promoted DateTime drops.
+            if (promoted_nested == array_type.getNestedType())
+                return type;
+            return std::make_shared<DataTypeArray>(promoted_nested);
+        }
+        case TypeIndex::Nullable:
+        {
+            const auto & nullable_type = assert_cast<const DataTypeNullable &>(*type);
+            auto promoted_nested = getPromotedTypeForDynamicImpl(nullable_type.getNestedType(), format_settings);
+            if (!promoted_nested)
+                return nullptr;
+            if (promoted_nested == nullable_type.getNestedType())
+                return type;
+            return std::make_shared<DataTypeNullable>(promoted_nested);
+        }
+        /// The parser never infers LowCardinality.
+        case TypeIndex::LowCardinality:
+            return getPromotedTypeForDynamicImpl(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), format_settings);
+        default:
+            return nullptr; /// Not promotable.
+    }
+}
+
+DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    auto promoted = getPromotedTypeForDynamicImpl(type, format_settings);
+    /// The same adjustment as the parser makes to an inferred type, see `DynamicNode::elementToDataType`.
+    if (promoted && format_settings.schema_inference_make_columns_nullable && promoted->haveSubtypes())
+        promoted = makeNullableRecursively(promoted, format_settings);
+    return promoted;
+}
+
+/// A value under a NULL can be anything (a Native column carries it as is), so the scans below skip NULL
+/// rows: a hidden value must not decide a conversion for the real values. `null_map` marks the NULL rows of
+/// `column`; it comes from an enclosing Nullable (for an array element) or is null when there are none.
+
+/// True if the DateTime64 values in rows [begin, end) fit DateTime64(9), the type their promotion casts to.
+/// A later value would saturate there, while the parser keeps its text as a String. Expects no LowCardinality,
+/// see recursiveRemoveLowCardinality.
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return fitsIntoMaxScaleDateTime64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (!fitsIntoMaxScaleDateTime64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
+                return false;
+        }
+        return true;
+    }
+
+    constexpr UInt32 promoted_scale = 9;
+    const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(&type);
+    if (!datetime64_type || datetime64_type->getScale() >= promoted_scale)
+        return true;
+
+    const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(promoted_scale - datetime64_type->getScale());
+    const Int64 max_value = std::numeric_limits<Int64>::max() / multiplier;
+    const Int64 min_value = std::numeric_limits<Int64>::min() / multiplier;
+    const auto & data = assert_cast<const DataTypeDateTime64::ColumnType &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+        if (data[i].value > max_value || data[i].value < min_value)
+            return false;
+    }
+    return true;
+}
+
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
+{
+    return fitsIntoMaxScaleDateTime64(column, type, 0, column.size());
+}
+
+template <typename T>
+bool hasNonFiniteValues(const IColumn & column, size_t begin, size_t end, const NullMap * null_map)
+{
+    const auto & data = assert_cast<const ColumnVector<T> &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+        if (!isFinite(data[i]))
+            return true;
+    }
+    return false;
+}
+
+/// True if a floating-point column holds inf or nan in rows [begin, end). JSON text writes them as strings,
+/// so the parser infers String for them, while a CAST keeps the float type.
+bool hasNonFiniteFloats(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return hasNonFiniteFloats(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (hasNonFiniteFloats(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
+                return true;
+        }
+        return false;
+    }
+
+    switch (type.getTypeId())
+    {
+        case TypeIndex::BFloat16: return hasNonFiniteValues<BFloat16>(column, begin, end, null_map);
+        case TypeIndex::Float32: return hasNonFiniteValues<Float32>(column, begin, end, null_map);
+        case TypeIndex::Float64: return hasNonFiniteValues<Float64>(column, begin, end, null_map);
+        default: return false;
+    }
+}
+
+bool hasNonFiniteFloats(const IColumn & column, const IDataType & type)
+{
+    return hasNonFiniteFloats(column, type, 0, column.size());
+}
+
+/// True if the UInt64 values in rows [begin, end) fit Int64, the type their promotion casts to. The parser
+/// infers UInt64 for a larger value. Expects no LowCardinality, see recursiveRemoveLowCardinality.
+bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type, size_t begin, size_t end, const NullMap * null_map = nullptr)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+        return uint64ValuesFitInt64(column_nullable.getNestedColumn(), *nullable_type->getNestedType(), begin, end, &column_nullable.getNullMapData());
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(column);
+        const auto & offsets = column_array.getOffsets();
+        for (size_t row = begin; row < end; ++row)
+        {
+            if (null_map && (*null_map)[row])
+                continue;
+            if (!uint64ValuesFitInt64(column_array.getData(), *array_type->getNestedType(), offsets[static_cast<ssize_t>(row) - 1], offsets[row]))
+                return false;
+        }
+        return true;
+    }
+
+    if (!isUInt64(type))
+        return true;
+
+    const auto & data = assert_cast<const ColumnUInt64 &>(column).getData();
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (null_map && (*null_map)[i])
+            continue;
+        if (data[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return false;
+    }
+    return true;
+}
+
+bool uint64ValuesFitInt64(const IColumn & column, const IDataType & type)
+{
+    return uint64ValuesFitInt64(column, type, 0, column.size());
+}
+
+/// With read_datetime_number_as_raw_value the parser reads an integer as raw DateTime64 ticks and
+/// rejects some numbers for DateTime, while CAST reads every number as seconds.
+bool parsesDateTimeNumbersUnlikeCast(const DataTypePtr & to_type, const FormatSettings & format_settings)
+{
+    return format_settings.read_datetime_number_as_raw_value
+        && anyInTypeTree(*to_type, [](const IDataType & t) { return isDateTime(t) || isDateTime64(t); });
+}
+
+/// Returns true if CAST(from_type, to_type) produces the same result as
+/// JSON format+parse for the same value.
+bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    auto from_inner = removeNullable(from_type);
+    auto to_inner = removeNullable(to_type);
+
+    /// Int*, UInt*, Float*, Bool — the numeric types that JSON inference produces
+    /// (Int64, UInt64, Float64, Bool) and the typed-path types they can safely
+    /// convert to via accurateCast. Bool is UInt8, so isNativeInteger covers it.
+    auto isIntOrFloat = [](const IDataType & t) -> bool
+    {
+        return isNativeInteger(t) || isFloat(t);
+    };
+
+    auto isDateOrDateTime = [](const IDataType & t) -> bool
+    {
+        return isDateOrDate32(t) || isDateTime(t) || isDateTime64(t);
+    };
+
+    /// From numeric (Int64, UInt64, Float64, Bool in Dynamic) →
+    /// to Int*/UInt*/Float*/Bool/String.
+    /// Exception: Float64 → Float32 narrowing is excluded because accurateCast
+    /// rejects precision loss (the round-trip Float64→Float32→Float64 is not exact),
+    /// while format+parse handles it correctly via text serialization.
+    /// A conversion that can lose a value stays here but is only safe for values that convert exactly,
+    /// which castMatchesParse checks against the data.
+    if (isIntOrFloat(*from_inner) && (isIntOrFloat(*to_inner) || isStringOrFixedString(*to_inner)))
+    {
+        if (isFloat(*from_inner) && isFloat(*to_inner)
+            && from_inner->getSizeOfValueInMemory() > to_inner->getSizeOfValueInMemory())
+            return false;
+        return true;
+    }
+
+    /// From Date/DateTime/DateTime64 → to String, and DateTime/DateTime64 → DateTime/DateTime64, whose
+    /// CAST keeps the instant; castMatchesParse checks that each value fits the destination range.
+    /// The CAST writes the simple text form whatever date_time_output_format says, which is the result
+    /// the conversion is meant to give.
+    /// Cross-cast to numeric is disallowed because CAST interprets the
+    /// internal numeric representation, while format+parse would go through
+    /// a text date representation that cannot be parsed as a number.
+    /// Cross-cast between Date and DateTime/DateTime64 is also disallowed because
+    /// castColumnAccurate may fail on text representations (e.g. DateTime64
+    /// text "2024-01-15 12:30:00" cannot be parsed as Date by the CAST path).
+    if (isDateOrDateTime(*from_inner) && isStringOrFixedString(*to_inner))
+        return true;
+    if (isDateTimeOrDateTime64(*from_inner) && isDateTimeOrDateTime64(*to_inner))
+        return true;
+
+    /// "Simple non-nested" = any type without subtypes: numbers, strings, dates,
+    /// decimals, UUID, IPv4, IPv6, Enum, etc. Types with subtypes (Array, Tuple,
+    /// Map, Nullable, Object, Variant, LowCardinality) are excluded. Dynamic has
+    /// haveSubtypes()=false but is excluded explicitly as it is structural.
+    auto isSimpleNonNested = [](const IDataType & t) -> bool
+    {
+        return !t.haveSubtypes() && !isDynamic(t);
+    };
+
+    /// From String → any simple non-nested type. Both paths go through text parsing, and the CAST
+    /// is built with date_time_input_format (see castColumnWithSettings), so semantics match.
+    if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
+        return true;
+
+    /// Any simple non-nested → String.
+    if (isSimpleNonNested(*from_inner) && isStringOrFixedString(*to_inner))
+        return true;
+
+    /// Array(safe) → Array(safe): recursive.
+    if (isArray(*from_inner) && isArray(*to_inner))
+    {
+        const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
+        const auto & to_arr = assert_cast<const DataTypeArray &>(*to_inner);
+        /// A null element carries no value to convert: the CAST rejects it, while the parser inserts
+        /// the element default. Only the top-level wrapper is handled that way (see removeNullable above).
+        if (hasNullableMismatchForCast(from_arr.getNestedType(), to_arr.getNestedType()))
+            return false;
+        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
+    }
+
+    return false;
+}
+
+/// True if every value of `from` is exactly representable in `to`.
+bool isLosslessNumericWidening(const IDataType & from, const IDataType & to)
+{
+    const size_t from_size = from.getSizeOfValueInMemory();
+    const size_t to_size = to.getSizeOfValueInMemory();
+
+    if (isNativeUInt(from) && isNativeUInt(to))
+        return to_size >= from_size;
+    if (isNativeInteger(from) && isNativeInt(to))
+        return isNativeInt(from) ? to_size >= from_size : to_size > from_size;
+    /// The integer has to fit into the mantissa: 8 bits for BFloat16, 24 for Float32, 53 for Float64.
+    if (isNativeInteger(from) && isFloat(to))
+        return from_size <= to_size / 2;
+    if (isFloat(from) && isFloat(to))
+        return to_size >= from_size;
+    return false;
+}
+
+/// True if a CAST of these values gives the result the conversion must give, which is what parsing their JSON
+/// text gives, except for a DateTime: its text has no time zone, so the CAST, which keeps the instant, is the
+/// reference. For a number the parser checks the range but not exactness, while a CAST wraps or rejects, so
+/// the two agree only on values that convert exactly; checking that per value keeps ordinary numbers on the
+/// CAST, and a DateTime outside the destination range goes to the parser, which saturates it. A number or a
+/// date parsed from the text of a date and time or an address, or an array from a non-array, never matches.
+bool castMatchesParse(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from.get()))
+        return castMatchesParse(column->convertToFullColumnIfLowCardinality(), from_low_cardinality->getDictionaryType(), to);
+
+    /// A null has no value to convert, and the rows under it hold the nested default, which converts.
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const auto & col_nullable = assert_cast<const ColumnNullable &>(*column);
+        return castMatchesParse(col_nullable.getNestedColumnPtr(), from_nullable->getNestedType(), to);
+    }
+
+    auto to_inner = removeNullable(removeLowCardinality(to));
+
+    if (const auto * to_array = typeid_cast<const DataTypeArray *>(to_inner.get()))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+        if (!from_array)
+            return false;
+        const auto & col_array = assert_cast<const ColumnArray &>(*column);
+        return castMatchesParse(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    /// A CAST to FixedString is implemented only from a string; the parser writes any other value as text.
+    if (isFixedString(*to_inner))
+        return isStringOrFixedString(*from);
+
+    /// An enum-to-enum CAST copies the numeric values of members not named in both definitions, and a
+    /// numeric-to-enum CAST can skip membership validation (check_conversion_from_numbers_to_enum), so a
+    /// stored value may be absent from the destination enum. Only an identical enum matches; otherwise the
+    /// parser validates membership.
+    if (isEnum(*to_inner))
+        return from->equals(*to_inner);
+
+    auto all_values_convert_exactly = [&]
+    {
+        auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
+        const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
+        return memoryIsZero(null_map.data(), 0, null_map.size());
+    };
+
+    if (isDateTimeOrDateTime64(*from))
+    {
+        if (isString(*to_inner) || from->equals(*to_inner))
+            return true;
+        return isDateTimeOrDateTime64(*to_inner) && all_values_convert_exactly();
+    }
+
+    /// A reduced-precision float widened by a CAST keeps its exact bits, while the parser reads its shortest
+    /// text (e.g. Float32 0.1 widens to 0.10000000149..., the parser gives 0.1), so only an identical float
+    /// type matches.
+    if (isFloat(*from) && isFloat(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST between a Decimal and a float or another Decimal does decimal arithmetic (e.g. Float64 0.58 to
+    /// Decimal64(2) truncates to 0.57), while the parser reads the text, so only an identical type matches.
+    if (isDecimal(*from) || isDecimal(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST reads a number into Time/Time64 as whole seconds and a Time into a DateTime as 1970-01-01 plus
+    /// the time, while the parser reads the text (ticks, the current date), so only an identical type matches.
+    if (isTimeOrTime64(*from) || isTimeOrTime64(*to_inner))
+        return from->equals(*to_inner);
+
+    /// A CAST writes an Array/Tuple/Map/Variant/Object source in ClickHouse text, not the JSON text the
+    /// parser round trips through, so a structural source to String goes through the parser.
+    if (isStringOrFixedString(*to_inner) && (from->haveSubtypes() || isDynamic(*from)))
+        return false;
+
+    if (!isNumber(*to_inner) || from->equals(*to_inner))
+        return true;
+
+    if (isNumber(*from) && isLosslessNumericWidening(*from, *to_inner))
+        return true;
+
+    if (!isNumber(*from) && !isStringOrFixedString(*from))
+        return false;
+
+    return all_values_convert_exactly();
+}
+
+/// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
+bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
+{
+    const auto & variant_info = col_dynamic.getVariantInfo();
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(
+        *variant_info.variant_type).getVariants();
+
+    /// If shared variant has data, be conservative — fall back.
+    if (!col_dynamic.getSharedVariant().empty())
+        return false;
+
+    const auto & variant_column = col_dynamic.getVariantColumn();
+    for (size_t i = 0; i < variant_types.size(); ++i)
+    {
+        if (i == col_dynamic.getSharedVariantDiscriminator())
+            continue;
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
+            return false;
+        if (!castMatchesParse(variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], dest_type))
+            return false;
+    }
+    return true;
+}
+
+/// True if `path` lies below `ancestor` in the JSON path tree: "a.b" does, "ab" does not.
+bool isDescendantPath(std::string_view path, std::string_view ancestor)
+{
+    return path.size() > ancestor.size() && path.starts_with(ancestor) && path[ancestor.size()] == '.';
+}
+
+struct ObjectConversionPlan
+{
+    /// Typed paths in destination but not in source (need dynamic->typed).
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> new_typed_paths;
+
+    /// Typed paths in source but not in destination (need typed->dynamic).
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> removed_typed_paths;
+
+    /// Typed paths in both but with different types (need CAST).
+    /// Maps path -> (from_type, to_type).
+    UnorderedMapWithMemoryTracking<String, std::pair<DataTypePtr, DataTypePtr>> changed_typed_paths;
+
+    /// Typed paths in both with the same type (reuse column pointer).
+    UnorderedSetWithMemoryTracking<String> unchanged_typed_paths;
+
+    /// New SKIP exact paths (in destination but not in source).
+    UnorderedSetWithMemoryTracking<String> new_skip_paths;
+
+    /// All destination SKIP REGEXP patterns, compiled once for all blocks. Every one is applied, even a
+    /// pattern already in the source type, because its match mode is a setting rather than part of the type,
+    /// so the source may have been filtered under another mode. Shared so the plan stays copyable.
+    VectorWithMemoryTracking<std::shared_ptr<const re2::RE2>> skip_regexps;
+
+    /// Whether max_dynamic_paths or max_dynamic_types changed.
+    bool dynamic_limits_changed = false;
+
+    /// Whether any changed typed path involves a structural type.
+    bool has_structural_type_change = false;
+
+    /// New typed paths with no other destination typed path below them. The parser treats those as
+    /// scalar slots and never descends into an object there, so rows holding data below them are
+    /// invalid; a new typed path that does have one below it makes the parser descend instead.
+    UnorderedSetWithMemoryTracking<String> new_leaf_typed_paths;
+
+    [[nodiscard]] bool canOptimize() const
+    {
+        return !dynamic_limits_changed && !has_structural_type_change;
+    }
+
+    [[nodiscard]] bool isIdentity() const
+    {
+        return new_typed_paths.empty()
+            && removed_typed_paths.empty()
+            && changed_typed_paths.empty()
+            && new_skip_paths.empty()
+            && skip_regexps.empty()
+            && !dynamic_limits_changed;
+    }
+
+    [[nodiscard]] bool hasNewSkipRules() const
+    {
+        return !new_skip_paths.empty() || !skip_regexps.empty();
+    }
+};
+
+ObjectConversionPlan buildObjectConversionPlan(
+    const DataTypeObject & src_type,
+    const DataTypeObject & dst_type)
+{
+    ObjectConversionPlan plan;
+
+    plan.dynamic_limits_changed =
+        (src_type.getMaxDynamicPaths() != dst_type.getMaxDynamicPaths())
+        || (src_type.getMaxDynamicTypes() != dst_type.getMaxDynamicTypes());
+
+    const auto & src_typed = src_type.getTypedPaths();
+    const auto & dst_typed = dst_type.getTypedPaths();
+
+    /// Find new, removed, changed, and unchanged typed paths.
+    for (const auto & [path, dst_path_type] : dst_typed)
+    {
+        auto it = src_typed.find(path);
+        if (it == src_typed.end())
+        {
+            plan.new_typed_paths[path] = dst_path_type;
+            if (isStructuralTypeForJSON(dst_path_type))
+                plan.has_structural_type_change = true;
+        }
+        else
+        {
+            const bool equal = it->second->equals(*dst_path_type);
+            /// equals treats types that serialize differently as the same (Bool vs UInt8, including the
+            /// SimpleAggregateFunction(any, Bool) wrapper and these nested in any carrier). Reuse the column
+            /// unchanged only when the types are also textually identical; otherwise force the format+parse
+            /// fallback so the stored values are normalized rather than reused as raw bytes.
+            const bool reuse_unsafe = equal && it->second->getName() != dst_path_type->getName();
+            if (!equal || reuse_unsafe)
+            {
+                plan.changed_typed_paths[path] = {it->second, dst_path_type};
+                if (isStructuralTypeForJSON(it->second) || isStructuralTypeForJSON(dst_path_type) || reuse_unsafe)
+                    plan.has_structural_type_change = true;
+            }
+            else
+            {
+                plan.unchanged_typed_paths.insert(path);
+            }
+        }
+    }
+
+    for (const auto & [path, src_path_type] : src_typed)
+    {
+        if (!dst_typed.contains(path))
+        {
+            plan.removed_typed_paths[path] = src_path_type;
+            if (isStructuralTypeForJSON(src_path_type))
+                plan.has_structural_type_change = true;
+        }
+    }
+
+    /// Find new skip rules.
+    const auto & src_skip = src_type.getPathsToSkip();
+    const auto & dst_skip = dst_type.getPathsToSkip();
+    for (const auto & path : dst_skip)
+    {
+        if (!src_skip.contains(path))
+            plan.new_skip_paths.insert(path);
+    }
+
+    for (const auto & [path, _] : plan.new_typed_paths)
+    {
+        auto is_below_path = [&](const auto & entry) { return isDescendantPath(entry.first, path); };
+        if (std::none_of(dst_typed.begin(), dst_typed.end(), is_below_path))
+            plan.new_leaf_typed_paths.insert(path);
+    }
+
+    /// Apply every destination regexp, including one already in the source type: its match mode is a
+    /// setting, so the source may have been filtered under another mode (see shouldSkip). A true
+    /// self-conversion is handled earlier by the identity wrapper, so this does not re-filter a no-op cast.
+    for (const auto & regexp : dst_type.getPathRegexpsToSkip())
+        plan.skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
+
+    return plan;
+}
+
+/// Check if any shared data entry matches a new typed path (binary search per row).
+bool sharedDataIsAffectedByNewTypedPaths(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan)
+{
+    auto [paths_col, values_col] = src.getSharedDataPathsAndValues();
+    if (paths_col->empty())
+        return false;
+
+    const auto & shared_data_offsets = src.getSharedDataOffsets();
+    for (size_t row = 0; row < shared_data_offsets.size(); ++row)
+    {
+        size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
+        size_t end = shared_data_offsets[row];
+        if (start == end)
+            continue;
+
+        for (const auto & [path, _] : plan.new_typed_paths)
+        {
+            size_t lower_bound = ColumnObject::findPathLowerBoundInSharedData(path, *paths_col, start, end);
+            if (lower_bound < end && paths_col->getDataAt(lower_bound) == path)
+                return true;
+        }
+    }
+    return false;
+}
+
+/// Check if any shared data entry is affected by new typed paths or skip rules (linear scan).
+template <typename SkipPredicate>
+bool sharedDataIsAffected(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan,
+    const SkipPredicate & shouldSkip)
+{
+    auto [paths_col, values_col] = src.getSharedDataPathsAndValues();
+    if (paths_col->empty())
+        return false;
+
+    for (size_t i = 0; i < paths_col->size(); ++i)
+    {
+        auto path = paths_col->getDataAt(i);
+        if (plan.new_typed_paths.contains(String(path)))
+            return true;
+        if (shouldSkip(path))
+            return true;
+    }
+    return false;
+}
+
+/// True if a row holds source data below a new leaf typed path that has no scalar value at the leaf
+/// itself. The optimized path cannot build the leaf from such a row: depending on the leaf type the
+/// parser rejects the object, stringifies it, or infers a variant, and it never reuses the paths
+/// below. Such a block is handed to format+parse, which reproduces whatever the parser would do.
+bool newLeafTypedPathsNeedFormatParse(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan,
+    size_t rows,
+    bool skip_null_typed_paths)
+{
+    /// An empty block reads no value, so nothing is below any leaf.
+    if (plan.new_leaf_typed_paths.empty() || rows == 0)
+        return false;
+
+    const auto & src_typed_paths = src.getTypedPaths();
+    const auto & src_dynamic_paths = src.getDynamicPaths();
+    const auto & sorted_dynamic_paths = src.getSortedDynamicPaths();
+    auto [shared_data_paths, shared_data_values] = src.getSharedDataPathsAndValues();
+    const auto & shared_data_offsets = src.getSharedDataOffsets();
+    const bool has_shared_data = !shared_data_paths->empty();
+
+    /// A dynamic path column is NULL exactly in the rows where the path is absent, and ColumnVariant
+    /// counts its NULLs from the variant sizes without touching the data.
+    auto absent_rows = [](const IColumn & column) { return column.getNumberOfDefaultRows(); };
+
+    struct Leaf
+    {
+        std::string_view path;
+        String descendant_prefix;                   /// "<path>.", the start of the range of paths below the leaf
+        const IColumn * scalar = nullptr;           /// dynamic path at the leaf, absent in some rows
+        VectorWithMemoryTracking<const IColumn *> below;
+        bool always_below = false;                  /// data below the leaf in every row
+    };
+
+    VectorWithMemoryTracking<Leaf> leaves;
+
+    for (const auto & path : plan.new_leaf_typed_paths)
+    {
+        Leaf leaf;
+        leaf.path = path;
+        leaf.descendant_prefix = path + '.';
+
+        if (auto it = src_dynamic_paths.find(path); it != src_dynamic_paths.end())
+        {
+            size_t absent = absent_rows(*it->second);
+            /// A scalar in every row, so the parser always fills the typed path.
+            if (absent == 0)
+                continue;
+            if (absent != rows)
+                leaf.scalar = it->second.get();
+        }
+
+        /// A source typed path below the leaf is necessarily removed, since a destination path below the
+        /// leaf would have kept it out of new_leaf_typed_paths. A typed path holds a value in every row,
+        /// except a Nullable one under type_json_skip_null_typed_paths: the serializer omits it where it is
+        /// null, so it is checked per row like a dynamic path.
+        for (const auto & [removed_path, removed_type] : plan.removed_typed_paths)
+        {
+            if (!isDescendantPath(removed_path, path))
+                continue;
+            if (skip_null_typed_paths && (removed_type->isNullable() || removed_type->isLowCardinalityNullable()))
+                leaf.below.push_back(src_typed_paths.at(removed_path).get());
+            else
+                leaf.always_below = true;
+        }
+
+        /// Everything below the leaf is one contiguous range starting at "<leaf>.".
+        for (auto it = sorted_dynamic_paths.lower_bound(leaf.descendant_prefix); it != sorted_dynamic_paths.end() && it->starts_with(leaf.descendant_prefix); ++it)
+        {
+            const auto & column = src_dynamic_paths.at(String(*it));
+            size_t absent = absent_rows(*column);
+            if (absent == rows)
+                continue;
+            if (absent == 0)
+                leaf.always_below = true;
+            else
+                leaf.below.push_back(column.get());
+        }
+
+        /// Nothing below this leaf in this source, so no row can be invalid.
+        if (!leaf.always_below && leaf.below.empty() && !has_shared_data)
+            continue;
+
+        /// Every row holds data below the leaf and nothing can supply a scalar.
+        if (leaf.always_below && !leaf.scalar && !has_shared_data)
+            return true;
+
+        leaves.push_back(std::move(leaf));
+    }
+
+    if (leaves.empty())
+        return false;
+
+    /// Sorted so the lower bound found for one leaf bounds the search for the next one in the row.
+    std::sort(leaves.begin(), leaves.end(), [](const Leaf & lhs, const Leaf & rhs) { return lhs.path < rhs.path; });
+
+    for (size_t row = 0; row != rows; ++row)
+    {
+        size_t search_start = has_shared_data ? shared_data_offsets[static_cast<ssize_t>(row) - 1] : 0;
+        const size_t search_end = has_shared_data ? shared_data_offsets[row] : 0;
+
+        for (const auto & leaf : leaves)
+        {
+            if (leaf.scalar && !leaf.scalar->isNullAt(row))
+                continue;
+
+            bool has_value_below = leaf.always_below;
+
+            if (search_start != search_end)
+            {
+                /// The leaf itself and the range below it ("<leaf>.") need separate lookups: a sibling key
+                /// such as "a!" sorts between "a" and "a.", so a single lower bound of "a" could stop there
+                /// and miss "a.b". Paths are sorted within a row and leaves across rows, so the bounds advance.
+                size_t exact_lower_bound
+                    = ColumnObject::findPathLowerBoundInSharedData(leaf.path, *shared_data_paths, search_start, search_end);
+                search_start = exact_lower_bound;
+                if (exact_lower_bound != search_end && shared_data_paths->getDataAt(exact_lower_bound) == leaf.path)
+                    continue;
+                size_t below_lower_bound
+                    = ColumnObject::findPathLowerBoundInSharedData(leaf.descendant_prefix, *shared_data_paths, exact_lower_bound, search_end);
+                if (below_lower_bound != search_end && isDescendantPath(shared_data_paths->getDataAt(below_lower_bound), leaf.path))
+                    has_value_below = true;
+            }
+
+            if (!has_value_below)
+            {
+                for (const auto * column : leaf.below)
+                {
+                    if (!column->isNullAt(row))
+                    {
+                        has_value_below = true;
+                        break;
+                    }
+                }
+            }
+
+            if (has_value_below)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
+/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
+/// being written as null.
+FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
+{
+    FormatSettings result = format_settings;
+    result.json.quote_64bit_integers = false;
+    result.json.quote_denormals = true;
+    /// An internal round trip must be lossless and independent of the user's presentation settings, which
+    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
+    result.float_precision = 0;
+    result.bool_true_representation = "true";
+    result.bool_false_representation = "false";
+    return result;
+}
+
+/// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
+/// value converted through text does not depend on date_time_output_format or on how it is stored.
+FormatSettings getJSONRoundTripFormatSettingsForValues(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::Simple;
+    return result;
+}
+
+/// The round trip of date and time values into date and time values: text holds the wall clock of a
+/// DateTime without its time zone, so it would come back at another instant in another zone or in the
+/// repeated hour of a daylight saving time fall-back. ISO text in UTC carries the instant; it is ours,
+/// so it is read with best effort whatever date_time_input_format says for user text.
+FormatSettings getJSONRoundTripFormatSettingsForInstants(const FormatSettings & format_settings)
+{
+    FormatSettings result = getJSONRoundTripFormatSettings(format_settings);
+    result.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
+    result.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
+    return result;
+}
+
+/// Convert a single typed path column to ColumnDynamic.
+/// Uses the JSON parser + DynamicNode path (via buildJSONExtractTree) to ensure
+/// type inference matches the standard Object deserialization pipeline.
+ColumnPtr convertTypedColumnToDynamic(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    size_t max_dynamic_types,
+    size_t rows,
+    const FormatSettings & format_settings)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & col_dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
+    col_dynamic.reserve(rows);
+
+    auto src_serialization = src_type->getDefaultSerialization();
+    auto dynamic_node = buildJSONExtractTree<JSONParserForConversion>(dynamic_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    /// A nested JSON value reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+
+    const FormatSettings values_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
+    const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
+
+    /// A row whose date and time values the parser infers as date and time values again keeps their instants
+    /// through ISO text in UTC. Any other row, such as one with a DateTime64 outside DateTime64(9), which is
+    /// inferred as a String, is written as a CAST to String writes it.
+    const bool infers_date_times = format_settings.try_infer_datetimes
+        && anyInTypeTree(*src_type, [](const IDataType & t) { return isDateTimeOrDateTime64(t); });
+    const ColumnPtr full_column = infers_date_times ? recursiveRemoveLowCardinality(src_column) : nullptr;
+    const DataTypePtr full_type = infers_date_times ? recursiveRemoveLowCardinality(src_type) : nullptr;
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const FormatSettings & json_format_settings = infers_date_times && fitsIntoMaxScaleDateTime64(*full_column, *full_type, i, i + 1)
+            ? instants_format_settings
+            : values_format_settings;
+
+        write_buf.restart();
+        src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
+
+        String error;
+        if (!dynamic_node->insertResultToColumn(col_dynamic, element, insert_settings, json_format_settings, error))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into Dynamic column during type conversion: {}", error);
+    }
+
+    return dynamic_column;
+}
+
+/// Convert a ColumnDynamic to a typed column.
+/// Uses the JSON parser + typed node path (via buildJSONExtractTree) to ensure
+/// value extraction matches the standard Object deserialization pipeline.
+/// When skip_on_failure is true, rows that fail parsing or type coercion get a default
+/// value instead of raising an exception (matches `type_json_skip_invalid_typed_paths` behavior).
+ColumnPtr convertDynamicColumnToTyped(
+    const ColumnPtr & src_column,
+    const DataTypePtr & dest_type,
+    size_t rows,
+    const FormatSettings & format_settings,
+    bool skip_on_failure = false)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>();
+    auto dest_column = dest_type->createColumn();
+    auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+    auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    /// A nested JSON destination reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+
+    const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
+    const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
+    const auto & col_dynamic = assert_cast<const ColumnDynamic &>(*src_column);
+    const bool dest_has_date_time = anyInTypeTree(*dest_type, [](const IDataType & t) { return isDateTimeOrDateTime64(t); });
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (src_column->isNullAt(i))
+        {
+            dest_type->insertDefaultInto(*dest_column);
+            continue;
+        }
+
+        const FormatSettings & json_format_settings = dest_has_date_time && convertsDateTimeValue(col_dynamic.getTypeAt(i), dest_type)
+            ? instants_format_settings
+            : round_trip_format_settings;
+
+        write_buf.restart();
+        dynamic_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+        {
+            if (skip_on_failure)
+            {
+                dest_type->insertDefaultInto(*dest_column);
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
+        }
+
+        String error;
+        if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+        {
+            if (skip_on_failure)
+            {
+                dest_type->insertDefaultInto(*dest_column);
+                continue;
+            }
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+        }
+    }
+
+    return dest_column;
+}
+
+/// Convert a typed column from one type to another using format+parse.
+/// On each row, serializes the source value to JSON text, parses it, and inserts via
+/// the JSONExtractTree node for the destination type.
+/// When skip_on_failure is true, rows that fail parsing or type coercion get a default
+/// value (matches `type_json_skip_invalid_typed_paths` behavior); otherwise the failure
+/// is propagated as an exception, matching the strict legacy format+parse contract.
+ColumnPtr convertTypedColumnToTyped(
+    const ColumnPtr & src_column,
+    const DataTypePtr & src_type,
+    const DataTypePtr & dest_type,
+    size_t rows,
+    const FormatSettings & format_settings,
+    bool skip_on_failure)
+{
+    auto dest_column = dest_type->createColumn();
+    auto src_serialization = src_type->getDefaultSerialization();
+    auto typed_node = buildJSONExtractTree<JSONParserForConversion>(dest_type, "JSON type conversion");
+    JSONParserForConversion parser;
+    /// A nested JSON destination reads these object-parser flags, so take them from the format settings as
+    /// SerializationJSON::deserializeObject does; a default construction would change stored keys and paths.
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = format_settings.json.json_type_escape_dots_in_keys;
+    insert_settings.skip_invalid_typed_paths = format_settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+
+    FormatSettings json_format_settings = isDateTimeToDateTimeConversion(src_type, dest_type)
+        ? getJSONRoundTripFormatSettingsForInstants(format_settings)
+        : getJSONRoundTripFormatSettingsForValues(format_settings);
+
+    /// A null under type_json_skip_null_typed_paths is not written at all, so the value never reaches
+    /// the parser and the destination keeps its default. Serializing it as `null` instead would make
+    /// the destination node reject it. The type decides, as a LowCardinality column is not Nullable itself.
+    const bool null_omits_path = format_settings.json.type_json_skip_null_typed_paths && removeLowCardinality(src_type)->isNullable();
+
+    WriteBufferFromOwnString write_buf;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (null_omits_path && src_column->isNullAt(i))
+        {
+            dest_type->insertDefaultInto(*dest_column);
+            continue;
+        }
+
+        write_buf.restart();
+        src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
+
+        JSONParserForConversion::Element element;
+        if (!parser.parse(write_buf.str(), element))
+        {
+            if (skip_on_failure)
+            {
+                dest_type->insertDefaultInto(*dest_column);
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
+        }
+
+        String error;
+        if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
+        {
+            if (skip_on_failure)
+            {
+                dest_type->insertDefaultInto(*dest_column);
+                continue;
+            }
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+        }
+    }
+
+    return dest_column;
+}
+
+/// Same as castColumn(), except that the CAST is built from the given conversion settings.
+/// castColumn() builds it without a context, which silently discards every user setting.
+ColumnPtr castColumnWithSettings(
+    const ColumnWithTypeAndName & arg,
+    const DataTypePtr & type,
+    const FunctionConvertSettingsPtr & convert_settings,
+    CastType cast_type)
+{
+    if (arg.type->equals(*type))
+        return arg.column;
+
+    ColumnsWithTypeAndName arguments
+    {
+        arg,
+        {
+            DataTypeString().createColumnConst(arg.column->size(), type->getName()),
+            std::make_shared<DataTypeString>(),
+            ""
+        }
+    };
+
+    auto func_cast = createFunctionBaseCast(
+        convert_settings, cast_type == CastType::accurate ? "accurateCast" : "_CAST", arguments, type, {}, cast_type);
+    return func_cast->execute(arguments, type, arg.column->size(), /* dry_run = */ false);
+}
+
+/// A CAST from a string to Nullable(T) returns NULL for a value it cannot parse, while the parser rejects it.
+/// Casting a non-Nullable source to T and wrapping the result in Nullable keeps the rejection. Returns nullptr
+/// for a Nullable string source to a Nullable destination: the rows under its NULLs hold an empty string,
+/// which a strict CAST would reject, so that case has to go through the parser.
+ColumnPtr castColumnRejectingInvalid(
+    const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to, const FunctionConvertSettingsPtr & convert_settings)
+{
+    const bool from_nullable = from->isNullable() || from->isLowCardinalityNullable();
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get()); to_nullable && !from_nullable)
+    {
+        auto nested = castColumnRejectingInvalid(column, from, to_nullable->getNestedType(), convert_settings);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        const auto & col_array = assert_cast<const ColumnArray &>(*column);
+        auto nested = castColumnRejectingInvalid(col_array.getDataPtr(), from_array->getNestedType(), to_array->getNestedType(), convert_settings);
+        return nested ? ColumnArray::create(nested, col_array.getOffsetsPtr()) : nullptr;
+    }
+
+    if (from_nullable && isStringOrFixedString(*removeNullable(removeLowCardinality(from))) && removeLowCardinality(to)->isNullable())
+        return nullptr;
+
+    return castColumnWithSettings({column, from, ""}, to, convert_settings, CastType::nonAccurate);
+}
+
+/// Main optimized Object-to-Object conversion.
+ColumnPtr convertObjectColumns(
+    const ColumnPtr & src_col_ptr,
+    const DataTypeObject & dst_type,
+    const ObjectConversionPlan & plan,
+    size_t rows,
+    const FormatSettings & format_settings,
+    const FunctionConvertSettingsPtr & convert_settings)
+{
+    const auto & src = assert_cast<const ColumnObject &>(*src_col_ptr);
+    const auto & src_typed_paths = src.getTypedPaths();
+    const auto & src_dynamic_paths = src.getDynamicPaths();
+
+    size_t dst_global_max_dynamic_paths = dst_type.getMaxDynamicPaths();
+    size_t dst_max_dynamic_types = dst_type.getMaxDynamicTypes();
+
+    /// ======================== Phase 1: Build skip predicate ========================
+
+    const bool has_new_skip_rules = plan.hasNewSkipRules();
+
+    auto shouldSkip = [&](std::string_view path) -> bool
+    {
+        if (!has_new_skip_rules)
+            return false;
+
+        for (const auto & skip_path : plan.new_skip_paths)
+        {
+            if (path == skip_path || isDescendantPath(path, skip_path))
+                return true;
+        }
+
+        /// The parser applies SKIP REGEXP while descending each object level, so a match on any ancestor
+        /// removes its whole subtree. Test every ancestor prefix as well as the full path, starting with
+        /// the root object's own empty path: a match there skips the whole document.
+        const bool partial = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+        auto matchesRegexp = [partial](std::string_view prefix, const auto & regexp)
+        {
+            const re2::StringPiece piece(prefix.data(), prefix.size());
+            return partial ? RE2::PartialMatch(piece, *regexp) : RE2::FullMatch(piece, *regexp);
+        };
+
+        for (const auto & regexp : plan.skip_regexps)
+        {
+            if (matchesRegexp({}, regexp))
+                return true;
+
+            for (size_t pos = 0;;)
+            {
+                size_t dot = path.find('.', pos);
+                std::string_view prefix = dot == std::string_view::npos ? path : path.substr(0, dot);
+                if (matchesRegexp(prefix, regexp))
+                    return true;
+                if (dot == std::string_view::npos)
+                    break;
+                pos = dot + 1;
+            }
+        }
+
+        return false;
+    };
+
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
+
+    /// A new leaf typed path with source data below it (an object in that row) is left to format+parse:
+    /// the optimized path cannot build the leaf from the reused sub-columns, and what the parser does
+    /// there depends on the leaf type (reject, stringify, infer).
+    if (newLeafTypedPathsNeedFormatParse(src, plan, rows, format_settings.json.type_json_skip_null_typed_paths))
+        return {};
+
+    /// ======================== Phase 2: Classify source dynamic paths ========================
+
+    /// Paths that stay as dynamic (not skipped, not promoted to typed).
+    VectorWithMemoryTracking<String> src_dynamic_paths_to_reuse;
+    /// Paths that become typed paths in destination.
+    UnorderedSetWithMemoryTracking<String> src_dynamic_paths_to_typed;
+
+    for (const auto & [path, _col] : src_dynamic_paths)
+    {
+        if (shouldSkip(path))
+            continue;
+        if (plan.new_typed_paths.contains(path))
+            src_dynamic_paths_to_typed.insert(path);
+        else
+            src_dynamic_paths_to_reuse.push_back(path);
+    }
+
+    /// ======================== Phase 3: Build destination typed paths ========================
+
+    using PathToColumnMap = UnorderedMapWithMemoryTracking<String, ColumnPtr>;
+    PathToColumnMap dst_typed_columns;
+
+    const auto & dst_typed_path_types = dst_type.getTypedPaths();
+
+    /// Unchanged typed paths: reuse by pointer (unless a new skip rule matches).
+    for (const auto & path : plan.unchanged_typed_paths)
+    {
+        if (shouldSkip(path))
+        {
+            /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
+            const auto & type = dst_typed_path_types.at(path);
+            auto col = type->createColumn();
+            type->insertManyDefaultsInto(*col, rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+            dst_typed_columns[path] = it->second;
+        }
+    }
+
+    /// Changed typed paths: CAST (unless a new skip rule matches).
+    for (const auto & [path, type_pair] : plan.changed_typed_paths)
+    {
+        const auto & [from_tp, to_tp] = type_pair;
+        if (shouldSkip(path))
+        {
+            auto col = to_tp->createColumn();
+            to_tp->insertManyDefaultsInto(*col, rows);
+            dst_typed_columns[path] = std::move(col);
+        }
+        else
+        {
+            auto it = src_typed_paths.find(path);
+
+            /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
+            /// destination default: nothing but the Nullable wrapper may differ (else the converted source
+            /// default diverges from the destination default), the destination default must be the plain
+            /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
+            /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
+            /// path itself is the dropped Nullable, since then it is left out of the serialized object.
+            /// Between DateTime types the defaults are the same instant, so the nested types may differ.
+            const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
+            const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
+            const bool can_strip_nullable = nullable_mismatch
+                && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
+                && strippedNullsGetTrivialDefaults(from_tp, to_tp)
+                && (format_settings.null_as_default
+                    || (format_settings.json.type_json_skip_null_typed_paths
+                        && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
+
+            /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
+            if ((!converts_instants
+                    && (skip_invalid
+                        || needsFormatParseFallback(from_tp, format_settings)
+                        || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
+                || (nullable_mismatch && !can_strip_nullable))
+            {
+                dst_typed_columns[path]
+                    = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
+            }
+            else
+            {
+                auto src_col = it->second;
+                auto src_type = from_tp;
+
+                /// Strip Nullable where destination is non-Nullable to avoid
+                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
+                /// type default, which is what the parser inserts here (see can_strip_nullable).
+                if (nullable_mismatch)
+                {
+                    if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
+                    {
+                        src_col = std::move(stripped->first);
+                        src_type = std::move(stripped->second);
+                    }
+                }
+
+                ColumnPtr cast_result;
+                if (castMatchesParse(src_col, src_type, to_tp))
+                    cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
+
+                dst_typed_columns[path] = cast_result
+                    ? cast_result
+                    : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
+            }
+        }
+    }
+
+    /// New typed paths from dynamic.
+    for (const auto & path : src_dynamic_paths_to_typed)
+    {
+        auto it_type = plan.new_typed_paths.find(path);
+        auto it_col = src_dynamic_paths.find(path);
+        const auto & dynamic_col = assert_cast<const ColumnDynamic &>(*it_col->second);
+
+        if (skip_invalid)
+        {
+            /// When type_json_skip_invalid_typed_paths is enabled, always use format+parse
+            /// with per-row failure handling to match the JSON parser contract.
+            dst_typed_columns[path] = convertDynamicColumnToTyped(
+                it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
+        }
+        else if (it_type->second->isDefaultInsertTrivial()
+            && canCastDynamicToTyped(dynamic_col, it_type->second))
+        {
+            /// CAST fills an absent (NULL) row with the plain zero, so it is only correct for a destination
+            /// whose default is that zero; an Enum and the like need the parser's insertDefaultInto.
+            auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+            dst_typed_columns[path] = castColumnWithSettings(
+                {it_col->second, dynamic_type, ""}, it_type->second, convert_settings, CastType::accurate);
+        }
+        else
+        {
+            dst_typed_columns[path] = convertDynamicColumnToTyped(
+                it_col->second, it_type->second, rows, format_settings);
+        }
+    }
+
+    /// New typed paths not from dynamic — will be filled from shared data in Phase 7 or defaults in Phase 8.
+    /// Create empty mutable columns for them now.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> new_typed_path_mutable_columns;
+    for (const auto & [path, tp] : plan.new_typed_paths)
+    {
+        if (!src_dynamic_paths_to_typed.contains(path))
+        {
+            new_typed_path_mutable_columns[path] = tp->createColumn();
+            new_typed_path_mutable_columns[path]->reserve(rows);
+        }
+    }
+
+    /// ======================== Phase 4: Build destination dynamic paths ========================
+
+    PathToColumnMap dst_dynamic_columns;
+
+    for (const auto & path : src_dynamic_paths_to_reuse)
+    {
+        auto it = src_dynamic_paths.find(path);
+        dst_dynamic_columns[path] = it->second;
+    }
+
+    /// ======================== Phase 5: Convert removed typed paths ========================
+
+    /// A limit that parsing settings put on the source instance rather than on the type travels with
+    /// the data (see ColumnObject::insertRangeFrom), so a path promoted here must fit within it and
+    /// overflow into shared data otherwise. Paths already materialised cannot be taken back, so the
+    /// bound cannot go below their number.
+    size_t dst_max_dynamic_paths_upper_bound
+        = std::max(std::min(dst_global_max_dynamic_paths, src.getMaxDynamicPathsUpperBound()), dst_dynamic_columns.size());
+
+    size_t available_dynamic_slots = dst_max_dynamic_paths_upper_bound > dst_dynamic_columns.size()
+        ? dst_max_dynamic_paths_upper_bound - dst_dynamic_columns.size()
+        : 0;
+
+    /// Sort removed typed paths for deterministic ordering.
+    VectorWithMemoryTracking<String> sorted_removed_typed_paths;
+    sorted_removed_typed_paths.reserve(plan.removed_typed_paths.size());
+    for (const auto & [path, _] : plan.removed_typed_paths)
+        sorted_removed_typed_paths.push_back(path);
+    std::sort(sorted_removed_typed_paths.begin(), sorted_removed_typed_paths.end());
+
+    /// Removed typed paths that overflow into shared data: (path, ColumnDynamic).
+    VectorWithMemoryTracking<std::pair<String, ColumnPtr>> removed_typed_paths_to_shared_data;
+
+    for (const auto & path : sorted_removed_typed_paths)
+    {
+        /// Skip removed typed paths that match destination skip rules.
+        if (shouldSkip(path))
+            continue;
+
+        auto it_type = plan.removed_typed_paths.find(path);
+        auto it_col = src_typed_paths.find(path);
+
+        /// Produce a ColumnDynamic from the typed column.
+        /// Check if settings require format+parse fallback before trying the fast CAST path.
+        ColumnPtr dynamic_col;
+        auto promoted = needsFormatParseFallback(it_type->second, format_settings)
+            ? nullptr
+            : getPromotedTypeForDynamic(it_type->second, format_settings);
+        if (promoted)
+        {
+            auto full_column = recursiveRemoveLowCardinality(it_col->second);
+            auto full_type = recursiveRemoveLowCardinality(it_type->second);
+            if (!fitsIntoMaxScaleDateTime64(*full_column, *full_type) || hasNonFiniteFloats(*full_column, *full_type)
+                || !uint64ValuesFitInt64(*full_column, *full_type))
+                promoted = nullptr;
+        }
+        if (promoted)
+        {
+            auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+            ColumnPtr promoted_col = promoted->equals(*it_type->second)
+                ? it_col->second->getPtr()
+                : castColumnWithSettings({it_col->second, it_type->second, ""}, promoted, convert_settings, CastType::nonAccurate);
+            dynamic_col = castColumnWithSettings({promoted_col, promoted, ""}, dynamic_type, convert_settings, CastType::nonAccurate);
+        }
+        else
+        {
+            dynamic_col = convertTypedColumnToDynamic(
+                it_col->second, it_type->second, dst_max_dynamic_types, rows, format_settings);
+        }
+
+        if (available_dynamic_slots > 0)
+        {
+            dst_dynamic_columns[path] = std::move(dynamic_col);
+            --available_dynamic_slots;
+        }
+        else
+        {
+            removed_typed_paths_to_shared_data.emplace_back(path, std::move(dynamic_col));
+        }
+    }
+
+    /// ======================== Phase 6: Determine whether shared data can be reused ========================
+
+    bool shared_data_reusable = true;
+
+    if (!removed_typed_paths_to_shared_data.empty())
+    {
+        shared_data_reusable = false;
+    }
+    else if (plan.new_typed_paths.size() > src_dynamic_paths_to_typed.size() || plan.hasNewSkipRules())
+    {
+        /// Some new typed paths were not in dynamic — they might be in shared data.
+        /// Or skip rules might affect shared data entries.
+        if (plan.hasNewSkipRules())
+        {
+            shared_data_reusable = !sharedDataIsAffected(src, plan, shouldSkip);
+        }
+        else
+        {
+            shared_data_reusable = !sharedDataIsAffectedByNewTypedPaths(src, plan);
+        }
+    }
+
+    /// ======================== Phase 7: Rebuild shared data (if needed) ========================
+
+    ColumnPtr dst_shared_data;
+
+    if (shared_data_reusable)
+    {
+        /// Reuse the source shared data by pointer (COW handles copy-on-write).
+        dst_shared_data = src.getSharedDataNestedColumn().getPtr();
+    }
+    else
+    {
+        /// Rebuild shared data row-by-row.
+        MutableColumns paths_and_values;
+        paths_and_values.emplace_back(ColumnString::create());
+        paths_and_values.emplace_back(ColumnString::create());
+        auto dst_shared_data_col = ColumnArray::create(ColumnTuple::create(std::move(paths_and_values)));
+        auto & dst_shared_offsets = dst_shared_data_col->getOffsets();
+        auto & dst_shared_tuple = assert_cast<ColumnTuple &>(dst_shared_data_col->getData());
+        auto & dst_shared_paths_col = assert_cast<ColumnString &>(dst_shared_tuple.getColumn(0));
+        auto & dst_shared_values_col = assert_cast<ColumnString &>(dst_shared_tuple.getColumn(1));
+
+        dst_shared_offsets.reserve(rows);
+
+        /// Pre-allocate reusable ColumnDynamic for deserializing shared data entries.
+        auto reusable_dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
+        auto reusable_dynamic_col = reusable_dynamic_type->createColumn();
+        auto reusable_dynamic_serialization = reusable_dynamic_type->getDefaultSerialization();
+
+        /// Prepare typed nodes for new typed paths that come from shared data.
+        /// Uses the JSON parser + typed node path to match Object deserialization behavior.
+        using TypedNodePtr = std::unique_ptr<JSONExtractTreeNode<JSONParserForConversion>>;
+        UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
+        JSONParserForConversion shared_data_parser;
+        JSONExtractInsertSettings shared_data_insert_settings;
+        const FormatSettings round_trip_format_settings = getJSONRoundTripFormatSettingsForValues(format_settings);
+        const FormatSettings instants_format_settings = getJSONRoundTripFormatSettingsForInstants(format_settings);
+
+        for (const auto & [path, _] : new_typed_path_mutable_columns)
+            new_typed_path_nodes[path] = buildJSONExtractTree<JSONParserForConversion>(plan.new_typed_paths.at(path), "JSON type conversion");
+
+        /// Track which new typed paths got a value in each row.
+        UnorderedSetWithMemoryTracking<String> populated_in_row;
+
+        const auto & src_shared_offsets = src.getSharedDataOffsets();
+        auto [src_paths_col, src_values_col] = src.getSharedDataPathsAndValues();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            size_t src_start = src_shared_offsets[static_cast<ssize_t>(row) - 1];
+            size_t src_end = src_shared_offsets[row];
+
+            populated_in_row.clear();
+
+            /// Merge source shared data entries with removed typed paths going to shared data.
+            /// Both are sorted by path name, so we do a merge.
+            size_t src_idx = src_start;
+            size_t removed_idx = 0;
+
+            auto writeSourceEntry = [&](size_t idx)
+            {
+                auto path = src_paths_col->getDataAt(idx);
+
+                /// Check skip rules first — skip wins over typed-path promotion.
+                if (shouldSkip(path))
+                    return;
+
+                /// Check if this path should become a new typed path.
+                auto it = new_typed_path_mutable_columns.find(String(path));
+                if (it != new_typed_path_mutable_columns.end())
+                {
+                    /// Deserialize from shared data into reusable Dynamic, serialize to JSON text,
+                    /// then parse with JSON parser + typed node to match Object deserialization behavior.
+                    ColumnObject::deserializeValueFromSharedData(src_values_col, idx, *reusable_dynamic_col);
+                    const size_t value_row = reusable_dynamic_col->size() - 1;
+                    const auto value_type = assert_cast<const ColumnDynamic &>(*reusable_dynamic_col).getTypeAt(value_row);
+                    const FormatSettings & json_format_settings = convertsDateTimeValue(value_type, plan.new_typed_paths.at(String(path)))
+                        ? instants_format_settings
+                        : round_trip_format_settings;
+                    WriteBufferFromOwnString write_buf;
+                    reusable_dynamic_serialization->serializeTextJSON(*reusable_dynamic_col, value_row, write_buf, json_format_settings);
+                    reusable_dynamic_col->popBack(1);
+
+                    JSONParserForConversion::Element element;
+                    if (!shared_data_parser.parse(write_buf.str(), element))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Cannot parse JSON value during type conversion: {}",
+                            write_buf.str().substr(0, 100));
+                    }
+
+                    String error;
+                    if (!new_typed_path_nodes.at(String(path))->insertResultToColumn(*it->second, element, shared_data_insert_settings, json_format_settings, error))
+                    {
+                        if (skip_invalid)
+                            return; /// Leave unpopulated — default will be inserted at the end of the row.
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+                    }
+
+                    populated_in_row.insert(String(path));
+                    return;
+                }
+
+                /// Copy entry to destination.
+                dst_shared_paths_col.insertData(path.data(), path.size());
+                auto value = src_values_col->getDataAt(idx);
+                dst_shared_values_col.insertData(value.data(), value.size());
+            };
+
+            while (src_idx < src_end && removed_idx < removed_typed_paths_to_shared_data.size())
+            {
+                auto src_path = src_paths_col->getDataAt(src_idx);
+                const auto & removed_path = removed_typed_paths_to_shared_data[removed_idx].first;
+
+                if (src_path < removed_path)
+                {
+                    writeSourceEntry(src_idx);
+                    ++src_idx;
+                }
+                else
+                {
+                    /// Serialize the removed typed path entry into shared data.
+                    const auto & removed_dynamic_col = assert_cast<const ColumnDynamic &>(*removed_typed_paths_to_shared_data[removed_idx].second);
+                    ColumnObject::serializePathAndValueIntoSharedData(&dst_shared_paths_col, &dst_shared_values_col, removed_path, removed_dynamic_col, row);
+                    ++removed_idx;
+                }
+            }
+
+            /// Remaining source entries.
+            while (src_idx < src_end)
+            {
+                writeSourceEntry(src_idx);
+                ++src_idx;
+            }
+
+            /// Remaining removed typed path entries.
+            while (removed_idx < removed_typed_paths_to_shared_data.size())
+            {
+                const auto & removed_path = removed_typed_paths_to_shared_data[removed_idx].first;
+                const auto & removed_dynamic_col = assert_cast<const ColumnDynamic &>(*removed_typed_paths_to_shared_data[removed_idx].second);
+                ColumnObject::serializePathAndValueIntoSharedData(&dst_shared_paths_col, &dst_shared_values_col, removed_path, removed_dynamic_col, row);
+                ++removed_idx;
+            }
+
+            dst_shared_offsets.push_back(dst_shared_paths_col.size());
+
+            /// Insert defaults for new typed paths that didn't get a value in this row.
+            for (auto & [path, col] : new_typed_path_mutable_columns)
+            {
+                if (!populated_in_row.contains(path))
+                    plan.new_typed_paths.at(path)->insertDefaultInto(*col);
+            }
+        }
+
+        dst_shared_data = std::move(dst_shared_data_col);
+    }
+
+    /// ======================== Phase 8: Lock dynamic structure and fill defaults ========================
+
+    /// Fill defaults for new typed paths that were not populated at all (absent in both dynamic and shared data).
+    for (auto & [path, col] : new_typed_path_mutable_columns)
+    {
+        if (col->empty())
+        {
+            /// Path was absent — fill entirely with defaults.
+            plan.new_typed_paths.at(path)->insertManyDefaultsInto(*col, rows);
+        }
+        dst_typed_columns[path] = std::move(col);
+    }
+
+    /// Lock max_dynamic_paths if shared data is non-empty.
+    size_t effective_max_dynamic_paths = dst_global_max_dynamic_paths;
+    if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
+        effective_max_dynamic_paths = dst_dynamic_columns.size();
+
+    /// Phase 5 computed the bound before promoting paths; paths already materialised cannot be taken
+    /// back, so the bound cannot go below their final number.
+    dst_max_dynamic_paths_upper_bound = std::max(dst_max_dynamic_paths_upper_bound, dst_dynamic_columns.size());
+    effective_max_dynamic_paths = std::min(effective_max_dynamic_paths, dst_max_dynamic_paths_upper_bound);
+
+    return ColumnObject::create(
+        dst_typed_columns,
+        dst_dynamic_columns,
+        dst_shared_data,
+        effective_max_dynamic_paths,
+        dst_max_dynamic_paths_upper_bound,
+        dst_global_max_dynamic_paths,
+        dst_max_dynamic_types);
+}
+
+/// Format+parse fallback for Object->Object conversion (existing approach).
+ColumnPtr convertObjectViaFormatParse(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    const ColumnNullable * nullable_source,
+    size_t input_rows_count,
+    const FunctionConvertSettings & cast_settings,
+    bool requested_result_is_nullable,
+    CastType cast_type)
+{
+    auto json_string = ColumnString::create();
+    ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+    auto & write_buffer = write_helper.getWriteBuffer();
+    FormatSettings format_settings = getJSONRoundTripFormatSettings(cast_settings.format_settings);
+    auto serialization = arguments[0].type->getDefaultSerialization();
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
+        write_helper.finishRow();
+    }
+    write_helper.finalize();
+
+    ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+    if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+        return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+
+    return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, cast_settings);
+}
+
+} /// anonymous namespace
+
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
@@ -1999,44 +3839,70 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
+    /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON
+        && to_object->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+    {
+        auto plan = buildObjectConversionPlan(*from_object, *to_object);
+
+        /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
+        if (plan.isIdentity())
+        {
+            return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
+            {
+                return arguments[0].column;
+            };
+        }
+
+        /// Optimized path: reuse sub-columns by pointer, CAST only changed paths.
+        /// Skip for accurateCastOrNull — the format+parse fallback already handles
+        /// OrNull semantics (catches exceptions and returns NULL on failure).
+        if (plan.canOptimize() && settings.json_use_optimized_type_conversion
+            && cast_type != CastType::accurateOrNull)
+        {
+            auto captured_format_settings = settings.format_settings;
+            /// The nested CASTs must reproduce what the JSON parser would do, so they parse date/time with
+            /// date_time_input_format rather than cast_string_to_date_time_mode, and follow the parser's
+            /// overflow policy: it throws only when date_time_overflow_behavior is 'throw' and otherwise
+            /// saturates (see JSONExtractTree). NULLs in a Dynamic become defaults instead of throwing.
+            /// The constructor drops the CAST-only flags that the parser does not honour.
+            auto overflow_behavior = captured_format_settings.throwOnDateTimeOverflow()
+                ? FormatSettings::DateTimeOverflowBehavior::Throw
+                : FormatSettings::DateTimeOverflowBehavior::Saturate;
+            auto captured_convert_settings = std::make_shared<const FunctionConvertSettings>(
+                settings,
+                overflow_behavior,
+                captured_format_settings.date_time_input_format,
+                /*cast_keep_nullable_=*/false);
+            return [this, requested_result_is_nullable, captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+            {
+                const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
+                if (auto result = convertObjectColumns(
+                        arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_convert_settings))
+                    return result;
+
+                /// The block needs semantics the optimized path cannot reproduce.
+                return convertObjectViaFormatParse(
+                    arguments, result_type, nullable_source, input_rows_count,
+                    settings, requested_result_is_nullable, cast_type);
+            };
+        }
+
+        /// Fall through to format+parse below.
+    }
+
     /// Cast Tuple/Object/Map/JSON to JSON type through serializing into JSON string and parsing back into JSON column.
-    /// Potentially we can do smarter conversion Tuple -> JSON with type preservation, but it's questionable how exactly Tuple should be
-    /// converted to JSON (for example, should we recursively convert nested Array(Tuple) to Array(JSON) or not, should we infer types from String fields, etc).
-    /// Proper implementation of a conversion between 2 different JSON types is really complex, because different JSON types
-    /// can have different parameters:
-    /// - set of typed paths
-    /// - set of skip rules
-    /// - max_dynamic_paths/max_dynamic_types parameters
-    /// Also max_dynamic_paths/max_dynamic_types parameters of nested JSON types depend on current max_dynamic_paths/max_dynamic_types,
-    /// so if these parameters are changed, we have to recursively find all nested JSON types and change their parameters as well.
-    /// It's all complicates the implementation and last attempt to implement it led to several bugs.
-    /// So for now let's perform this conversion through cast to String and parsing new JSON back from it.
-    /// It's not effective, but 100% accurate.
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
-            auto json_string = ColumnString::create();
-            ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
-            auto & write_buffer = write_helper.getWriteBuffer();
-            FormatSettings format_settings = settings.format_settings;
-            auto serialization = arguments[0].type->getDefaultSerialization();
-            format_settings.json.quote_64bit_integers = false;
-            /// JSON has no number for inf and nan, unquoted they would be written as null.
-            format_settings.json.quote_denormals = true;
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                write_helper.finishRow();
-            }
-            write_helper.finalize();
-
-            ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
-            if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
-
-            return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
+            return convertObjectViaFormatParse(
+                arguments, result_type, nullable_source, input_rows_count,
+                settings, requested_result_is_nullable, cast_type);
         };
     }
 
@@ -3154,6 +5020,27 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
     };
 }
 
+/// Converts only the rows that are not NULL in `null_map`; the NULL rows get default values.
+static ColumnPtr convertNotNullRows(
+    const FunctionCast::WrapperType & wrapper,
+    ColumnsWithTypeAndName & nested_args,
+    const NullMap & null_map,
+    const DataTypePtr & nested_type,
+    size_t input_rows_count)
+{
+    IColumn::Filter not_null(input_rows_count);
+    for (size_t row = 0; row < input_rows_count; ++row)
+        not_null[row] = !null_map[row];
+    const size_t rows_without_nulls = countBytesInFilter(not_null);
+
+    for (auto & column : nested_args)
+        column.column = column.column->filter(not_null, rows_without_nulls);
+
+    auto res = IColumn::mutate(wrapper(nested_args, nested_type, nullptr, rows_without_nulls));
+    res->expand(not_null, /* inverted */ false);
+    return res;
+}
+
 FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool report_failures_as_null) const
 {
@@ -3173,6 +5060,10 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
+    /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
     const bool requested_result_is_nullable = (result_is_nullable && !strict_text_conversion) || report_failures_as_null;
@@ -3181,8 +5072,6 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
-
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
@@ -3217,21 +5106,9 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
                     return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
                 if (rows_with_nulls != 0)
-                {
-                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
-
-                    IColumn::Filter not_null(input_rows_count);
-                    for (size_t row = 0; row < input_rows_count; ++row)
-                        not_null[row] = !null_map[row];
-
-                    for (auto & column : tmp_args)
-                        column.column = column.column->filter(not_null, rows_without_nulls);
-
-                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
-                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
-                    mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
-                }
+                    return wrapInNullable(
+                        convertNotNullRows(wrapper, tmp_args, null_map, nested_type, input_rows_count),
+                        nullable_column.getNullMapColumnPtr());
             }
 
             /// Perform the requested conversion.
@@ -3249,7 +5126,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     {
         /// Conversion from Nullable to non-Nullable.
 
-        return [wrapper, skip_not_null_check, report_failures_as_null]
+        return [wrapper, skip_not_null_check, report_failures_as_null, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             auto tmp_args = createBlockWithNestedColumns(arguments);
@@ -3272,7 +5149,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
             }
 
             const ColumnNullable * nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
-            auto tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
+            ColumnPtr tmp_res;
+            if (report_failures_as_null && exclude_source_nulls && nullable_source
+                && !memoryIsZero(nullable_source->getNullMapData().data(), 0, input_rows_count))
+                tmp_res = convertNotNullRows(wrapper, tmp_args, nullable_source->getNullMapData(), nested_type, input_rows_count);
+            else
+                tmp_res = wrapper(tmp_args, nested_type, nullable_source, input_rows_count);
 
             /// A conversion asked to report its failures as NULL returns ColumnNullable where source NULLs
             /// and conversion-failure NULLs are merged. This happens for Tuple element conversions under
@@ -3298,7 +5180,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
-    if (isUInt8(from_type) && isBool(to_type))
+    if (isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
         return createUInt8ToBoolWrapper(from_type, to_type);
 
     /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
@@ -3545,6 +5427,18 @@ FunctionBasePtr createFunctionBaseCast(
             return true;
         }))
     {
+    }
+    else if (isBool(monotonicity_result_type) || isSimpleAggregateFunctionOfBool(*monotonicity_result_type))
+    {
+        /// Every nonzero value becomes 1, so the cast is not injective, and unlike the cast into `UInt8`
+        /// it does not throw for a `DateTime64` outside of the `UInt8` range.
+        monotonicity = [](const IDataType & type, const Field & left, const Field & right)
+        {
+            auto result = detail::ToNumberMonotonicity<UInt8>::get(type, left, right);
+            result.is_strict = false;
+            result.is_always_monotonic_where_defined = false;
+            return result;
+        };
     }
     else if (castTypeToEither<
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
@@ -3793,7 +5687,7 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 using LeftFieldType = typename LeftDataType::FieldType;
                 using RightFieldType = typename RightDataType::FieldType;
 
-                if (isBool(right.getPtr()))
+                if (isBool(right.getPtr()) || isSimpleAggregateFunctionOfBool(right))
                 {
                     /// nativeBoolCast returns i1, but Bool (UInt8) needs i8
                     auto * bool_value = nativeBoolCast(builder, left.getPtr(), input_value);
