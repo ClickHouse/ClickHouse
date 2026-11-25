@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Les projections hypothétiques sont des projections virtuelles, dont la portée est limitée à la session, que vous pouvez attacher à une table de la famille `MergeTree` sans réellement les construire ni les stocker. Elles n&#39;existent qu&#39;au sein de la session en cours et sont répertoriées par [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif).
 
-`EXPLAIN WHATIF` estime, pour les projections hypothétiques ordinaires (triées), le nombre de marques et de lignes que leur lecture parcourrait pour une requête, ainsi que la probabilité que l&#39;optimiseur de requêtes les choisisse plutôt que la table de base. Toutes les projections ne font pas l&#39;objet d&#39;une estimation : c&#39;est notamment le cas des projections agrégées et de celles comportant une clause `WHERE`. Chaque projection candidate non estimée est répertoriée avec la raison de cette absence d&#39;estimation. Consultez [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif) pour obtenir la liste complète. Les projections hypothétiques de la session sont également visibles dans [`system.hypothetical_projections`](/fr/reference/system-tables/hypothetical_projections).
+`EXPLAIN WHATIF` fournit une estimation pour les projections hypothétiques ordinaires (triées) et agrégées. Pour une requête donnée, il indique le nombre de marques et de lignes que la lecture de la projection parcourrait. Il indique également si l&#39;optimiseur de requêtes choisirait la projection plutôt que la table de base. Il ne fournit pas d&#39;estimation pour certaines autres projections, et répertorie chacune de ces projections candidates avec la raison correspondante. Consultez [`EXPLAIN WHATIF`](/fr/reference/statements/explain#explain-whatif) pour obtenir la liste complète. Les projections hypothétiques de la session sont également visibles dans [`system.hypothetical_projections`](/fr/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 
@@ -58,6 +58,7 @@ Supprime toutes les projections hypothétiques définies dans la session en cour
 * Les projections hypothétiques n&#39;existent que dans la **session en cours** : elles sont invisibles pour les autres sessions et supprimées à la fin de celle-ci.
 * Le fait d&#39;en définir une ou d&#39;en supprimer une ne construit aucune projection et n&#39;affecte jamais les requêtes ordinaires sur la table.
 * Consultez les projections hypothétiques de la session en cours via [`system.hypothetical_projections`](/fr/reference/system-tables/hypothetical_projections).
+* `CREATE` enregistre les colonnes lues par la projection, avec leurs types et leurs valeurs par défaut, ainsi que la liste ordonnée des colonnes auxquelles correspond chaque `*` ou `COLUMNS('regexp')`. Si un `ALTER` modifie ultérieurement l&#39;une d&#39;elles, `EXPLAIN WHATIF` renvoie `status: not_applicable` et indique la modification concernée. Exécutez à nouveau `CREATE HYPOTHETICAL PROJECTION` pour utiliser la nouvelle structure.
 
 ## Privilèges requis {#required-privileges}
 

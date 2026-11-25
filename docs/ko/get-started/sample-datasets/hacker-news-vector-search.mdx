@@ -7,9 +7,7 @@ keywords: ['시맨틱 검색', '벡터 유사도', '근사 최근접 이웃', '�
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## 소개
-</div>
+## 소개 {#introduction}
 
 [Hacker News 데이터셋](https://news.ycombinator.com/)에는 2,874만 건의
 게시물과 해당 벡터 임베딩이 포함되어 있습니다. 임베딩은 [SentenceTransformers](https://sbert.net/) 모델 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)를 사용해 생성되었습니다. 각 임베딩 벡터의 차원은 `384`입니다.
@@ -17,17 +15,13 @@ doc_type: 'guide'
 이 데이터셋은 사용자 생성 텍스트 데이터를 기반으로 구축된 대규모
 실제 벡터 검색 애플리케이션의 설계, 사이징, 성능 측면을 살펴보는 데 활용할 수 있습니다.
 
-<div id="dataset-details">
-  ## 데이터셋 세부 정보
-</div>
+## 데이터셋 세부 정보 {#dataset-details}
 
 벡터 임베딩이 포함된 전체 데이터셋은 ClickHouse에서 [S3 버킷](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)의 단일 `Parquet` 파일로 제공합니다.
 
 먼저 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)를 참고하여 이 데이터셋에 필요한 스토리지(Storage) 및 메모리 요구 사항을 추정하는 사이징 작업을 수행하는 것이 좋습니다.
 
-<div id="steps">
-  ## 단계
-</div>
+## 단계 {#steps}
 
 <Steps>
   <Step title="테이블 생성" id="create-table">
@@ -107,7 +101,7 @@ doc_type: 'guide'
 
     이 HackerNews 데이터셋에는 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 모델로 생성된 벡터 임베딩이 포함되어 있습니다.
 
-    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers` Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
+    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers1 Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT&#96; 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -210,7 +204,7 @@ doc_type: 'guide'
     ---------
     ```
 
-    ## 요약 데모 애플리케이션
+## 요약 데모 애플리케이션 {#summarization-demo-application}
 
     위의 예시에서는 ClickHouse를 사용한 시맨틱 검색(semantic search) 및 문서 검색 방법을 살펴보았습니다.
 

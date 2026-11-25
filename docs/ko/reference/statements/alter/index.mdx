@@ -31,15 +31,15 @@ doc_type: 'reference'
   대부분의 `ALTER TABLE` 쿼리는 [*MergeTree](/ko/reference/engines/table-engines/mergetree-family/index), [Merge](/ko/reference/engines/table-engines/special/merge), [Distributed](/ko/reference/engines/table-engines/special/distributed) 테이블에서만 지원됩니다.
 </Note>
 
-다음 `ALTER` SQL 문은 뷰를 수정합니다:
+다음 `ALTER` SQL 문(statements)은 뷰를 수정합니다:
 
-| SQL 문                                                            | 설명                                                                         |
+| SQL 문(statements)                                                            | 설명                                                                         |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [ALTER TABLE ... MODIFY QUERY](/ko/reference/statements/alter/view) | [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view)의 구조를 수정합니다. |
 
-다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 엔터티를 수정합니다:
+다음 `ALTER` SQL 문(statements)은 역할 기반 접근 제어와 관련된 엔터티를 수정합니다:
 
-| SQL 문                                                            |
+| SQL 문(statements)                                                            |
 | ---------------------------------------------------------------- |
 | [USER](/ko/reference/statements/alter/user)                         |
 | [ROLE](/ko/reference/statements/alter/role)                         |
@@ -48,11 +48,13 @@ doc_type: 'reference'
 | [MASKING POLICY](/ko/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ko/reference/statements/alter/settings-profile) |
 
-| SQL 문                                                                             | 설명                                                                                      |
+| SQL 문(statements)                                                                             | 설명                                                                                      |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)             | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
 | [ALTER DATABASE ... MODIFY COMMENT](/ko/reference/statements/alter/database-comment) | 이전 설정 여부와 관계없이 데이터베이스 주석을 추가, 수정 또는 제거합니다.                                              |
+| [ALTER DATABASE ... MODIFY SETTING](/ko/reference/statements/alter/database-setting) | 데이터베이스 엔진의 설정을 변경합니다.                                                                   |
 | [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)            | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
+| [ALTER HANDLER](/ko/reference/statements/create/handler#alter-handler)               | [CREATE HANDLER](/ko/reference/statements/create/handler)로 생성한, SQL로 정의된 HTTP 핸들러를 수정합니다.  |
 
 ## 하나의 `ALTER`에서 여러 작업 결합하기 {#combining-actions}
 

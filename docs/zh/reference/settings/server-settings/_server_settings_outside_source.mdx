@@ -65,8 +65,8 @@ title: 源代码之外的服务器设置
     ('compare_collected_metadata', 'Bool', '如果为 true，则将已收集的元数据与现有元数据进行比较，以确保它们在备份期间未发生变化。', 'true'),
     ('create_table_timeout', 'UInt64', '恢复期间创建表的超时时间（毫秒）。', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', '在协调备份/恢复过程中遇到 bad version 错误后，允许重试的最大次数。', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最长休眠时间（毫秒）。', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最短休眠时间（毫秒）。', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最长休眠时间（毫秒）。', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '下次尝试收集元数据前的最短休眠时间（毫秒）。', '100'),
     ('remove_backup_files_after_failure', 'Bool', '如果 `BACKUP` 命令失败，ClickHouse 会尝试删除失败前已复制到备份中的文件；否则将保留这些已复制的文件。', 'true'),
     ('sync_period_ms', 'UInt64', '协调备份/恢复的同步周期（毫秒）。', '5000'),
     ('test_inject_sleep', 'Bool', '与测试相关的休眠时间', 'false'),
@@ -87,8 +87,8 @@ title: 源代码之外的服务器设置
 | `compare_collected_metadata`                        | Bool   | 如果为 true，则将收集到的元数据与现有元数据进行比较，以确保它们在备份期间未发生变化。                  | `true`                |
 | `create_table_timeout`                              | UInt64 | 恢复期间创建表的超时时间 (毫秒) 。                                            | `300000`              |
 | `max_attempts_after_bad_version`                    | UInt64 | 在协调备份/恢复过程中遇到 bad version 错误后，允许重试的最大次数。                       | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最长休眠时间 (毫秒) 。                                       | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最短休眠时间 (毫秒) 。                                       | `5000`                |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最长休眠时间 (毫秒) 。                                       | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 下次尝试收集元数据前的最短休眠时间 (毫秒) 。                                       | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | 如果 `BACKUP` 命令失败，ClickHouse 会尝试删除在失败前已复制到备份中的文件；否则会保留这些已复制的文件。 | `true`                |
 | `sync_period_ms`                                    | UInt64 | 协调备份/恢复的同步周期 (毫秒) 。                                            | `5000`                |
 | `test_inject_sleep`                                 | Bool   | 用于测试的休眠设置                                                      | `false`               |
@@ -190,7 +190,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 * `min_part_size` – 数据分区片段的最小大小。
 * `min_part_size_ratio` – 数据分区片段大小与表大小的比率。
 * `method` – 压缩方法。可选值：`lz4`, `lz4hc`, `zstd`,`deflate_qpl`。
-* `level` – 压缩级别。参见 [Codecs](/zh/reference/statements/create/table/codec#general-purpose-codecs)。
+* `level` – 压缩级别。参见 [编解码器](/zh/reference/statements/create/table/codec#general-purpose-codecs)。
 
 <Note>
   你可以配置多个 `<case>` 段。
@@ -202,7 +202,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 * 如果某个数据分区片段匹配多组条件，ClickHouse 会使用最后一个匹配的条件组 (`<case>` 段按顺序检查，每个匹配的段都会覆盖之前的选择) 。
 
 <Note>
-  如果某个数据分区片段未满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，达到或超过该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：对于刚刚插入的 part 为 `0`，对于 merge 或 mutation 则为源 parts 的大小。因此，会缩减输入数据的 rewrite (例如 `TTL DELETE` 或 collapsing merge) 会按输入大小进行归类，可能生成一个虽然低于阈值但仍使用 `ZSTD(3)` 的 part。
+  如果某个数据分区片段未满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，达到或超过该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：对于刚刚插入的 part 为插入块的未压缩大小，对于 merge 或 mutation 则为源 parts 的大小。因此，小批量插入会使用 `LZ4` 写入，而大批量插入会直接使用 `ZSTD(3)` 写入。会缩减输入数据的 rewrite (例如 `TTL DELETE` 或 collapsing merge) 因此会按输入大小进行归类，可能生成一个虽然低于阈值但仍使用 `ZSTD(3)` 的 part。
 </Note>
 
 **示例**
@@ -552,11 +552,11 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 
 **示例**
 
-访问 `http://localhost: http_port` 时，将打开 `https://tabix.io/`。
+访问 `http://localhost: http_port` 时，将打开内置的 Web UI (`/play`)。
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 
@@ -757,7 +757,7 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#logger}
+## 日志记录器 {#logger}
 
 日志消息的位置和格式。
 
@@ -769,17 +769,17 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 | `async_queue_max_size`       | 使用异步日志时，队列中等待写出的消息最大保留数量。超出的消息将被丢弃                                                                           |
 | `console`                    | 启用控制台日志输出。设置为 `1` 或 `true` 以启用。如果 ClickHouse 未以守护进程模式运行，默认值为 `1`，否则为 `0`。                                    |
 | `console_log_level`          | 控制台输出的日志级别。默认为 `level`。                                                                                      |
-| `console_shutdown_log_level` | 关闭级别用于在 server 关闭时设置控制台日志级别。                                                                                 |
-| `console_startup_log_level`  | 启动级别用于在 server 启动时设置控制台日志级别。启动完成后，日志级别会恢复为 `console_log_level` 设置                                            |
+| `console_shutdown_log_level` | 关闭级别用于在 服务端 关闭时设置控制台日志级别。                                                                                 |
+| `console_startup_log_level`  | 启动级别用于在 服务端 启动时设置控制台日志级别。启动完成后，日志级别会恢复为 `console_log_level` 设置                                            |
 | `count`                      | 轮转策略：ClickHouse 最多保留多少个历史日志文件。                                                                               |
 | `errorlog`                   | 错误日志文件的路径。                                                                                                   |
 | `formatting.type`            | 控制台输出的日志格式。目前仅支持 `json`                                                                                      |
 | `level`                      | 日志级别。可接受的值：`none` (关闭日志) 、`fatal`、`critical`、`error`、`warning`、`notice`、`information`、`debug`、`trace`、`test` |
 | `log`                        | 日志文件的路径。                                                                                                     |
 | `rotation`                   | 轮转策略：控制日志文件何时轮转。轮转可以基于大小、时间，或两者结合。示例：100M、daily、100M,daily。一旦日志文件超过指定大小，或达到指定时间间隔，就会被重命名并归档，同时创建新的日志文件。      |
-| `shutdown_level`             | 关闭级别用于在 server 关闭时设置根 logger 级别。                                                                             |
+| `shutdown_level`             | 关闭级别用于在 服务端 关闭时设置根 日志记录器 级别。                                                                             |
 | `size`                       | 轮转策略：日志文件的最大大小 (以字节为单位) 。一旦日志文件大小超过此阈值，就会被重命名并归档，同时创建新的日志文件。                                                 |
-| `startup_level`              | 启动级别用于在 server 启动时设置根 logger 级别。启动完成后，日志级别会恢复为 `level` 设置                                                    |
+| `startup_level`              | 启动级别用于在 服务端 启动时设置根 日志记录器 级别。启动完成后，日志级别会恢复为 `level` 设置                                                    |
 | `stream_compress`            | 使用 LZ4 压缩日志消息。设置为 `1` 或 `true` 以启用。                                                                          |
 | `syslog_level`               | 输出到 syslog 时使用的日志级别。                                                                                         |
 | `use_syslog`                 | 同时将日志输出转发到 syslog。                                                                                           |
@@ -790,45 +790,45 @@ ClickHouse 支持动态轮换服务器间凭据，无需为更新配置而同时
 
 “Example”列显示的是在 `2023-07-06 18:32:07` 时的输出。
 
-| 说明符  | 描述                                                                                                              | 示例                         |
-| ---- | --------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `%%` | 字面量 %                                                                                                           | `%`                        |
-| `%n` | 换行符                                                                                                             |                            |
-| `%t` | 水平制表符                                                                                                           |                            |
-| `%Y` | 以十进制数表示的年份，例如 2017                                                                                              | `2023`                     |
-| `%y` | 以十进制数表示的年份后 2 位 (范围 [00,99])                                                                                    | `23`                       |
-| `%C` | 以十进制数表示的年份前 2 位 (范围 [00,99])                                                                                    | `20`                       |
-| `%G` | 四位数的 [ISO 8601 基于周的年份](https://en.wikipedia.org/wiki/ISO_8601#Week_dates)，即包含指定周的年份。通常仅与 &#96;%V&#96;&#96; 一起使用 | `2023`                     |
-| `%g` | [ISO 8601 基于周的年份](https://en.wikipedia.org/wiki/ISO_8601#Week_dates)的后 2 位，即包含指定周的年份                            | `23`                       |
-| `%b` | 缩写月份名称，例如 Oct (取决于区域设置)                                                                                         | `Jul`                      |
-| `%h` | `%b` 的同义写法                                                                                                      | `Jul`                      |
-| `%B` | 完整月份名称，例如 October (取决于区域设置)                                                                                     | `July`                     |
-| `%m` | 以十进制数表示的月份 (范围 [01,12])                                                                                         | `07`                       |
-| `%U` | 以十进制数表示的年内周数 (星期日为一周的第一天)  (范围 [00,53])                                                                         | `27`                       |
-| `%W` | 以十进制数表示的年内周数 (星期一为一周的第一天)  (范围 [00,53])                                                                         | `27`                       |
-| `%V` | ISO 8601 周数 (范围 [01,53])                                                                                        | `27`                       |
-| `%j` | 以十进制数表示的一年中的第几天 (范围 [001,366])                                                                                  | `187`                      |
-| `%d` | 以零填充的十进制数表示的日 (范围 [01,31]) 。个位数前补零。                                                                             | `06`                       |
-| `%e` | 以空格填充的十进制数表示的日 (范围 [1,31]) 。个位数前补一个空格。                                                                          | `&nbsp; 6`                 |
-| `%a` | 缩写星期名称，例如 Fri (取决于区域设置)                                                                                         | `Thu`                      |
-| `%A` | 完整星期名称，例如 Friday (取决于区域设置)                                                                                      | `Thursday`                 |
-| `%w` | 以整数表示的星期几，其中星期日为 0 (范围 [0-6])                                                                                   | `4`                        |
-| `%u` | 以十进制数表示的星期几，其中星期一为 1 (ISO 8601 格式)  (范围 [1-7])                                                                  | `4`                        |
-| `%H` | 以十进制数表示的小时，24 小时制 (范围 [00-23])                                                                                  | `18`                       |
-| `%I` | 以十进制数表示的小时，12 小时制 (范围 [01,12])                                                                                  | `06`                       |
-| `%M` | 以十进制数表示的分钟 (范围 [00,59])                                                                                         | `32`                       |
-| `%S` | 以十进制数表示的秒 (范围 [00,60])                                                                                          | `07`                       |
-| `%c` | 标准日期时间字符串，例如 Sun Oct 17 04:41:13 2010 (取决于区域设置)                                                                 | `Thu Jul  6 18:32:07 2023` |
-| `%x` | 本地化日期表示 (取决于区域设置)                                                                                               | `07/06/23`                 |
-| `%X` | 本地化时间表示，例如 18:40:20 或 6:40:20 PM (取决于区域设置)                                                                      | `18:32:07`                 |
-| `%D` | 简短的 MM/DD/YY 日期，等同于 `%m/%d/%y`                                                                                  | `07/06/23`                 |
-| `%F` | 简短的 YYYY-MM-DD 日期，等同于 %Y-%m-%d                                                                                  | `2023-07-06`               |
-| `%r` | 本地化的 12 小时制时间 (取决于区域设置)                                                                                         | `06:32:07 PM`              |
-| `%R` | 等同于 &quot;%H:%M&quot;                                                                                           | `18:32`                    |
-| `%T` | 等同于 &quot;%H:%M:%S&quot; (即 ISO 8601 时间格式)                                                                      | `18:32:07`                 |
-| `%p` | 本地化的上午或下午标识 (取决于区域设置)                                                                                           | `PM`                       |
-| `%z` | ISO 8601 格式的 UTC 偏移量 (例如 -0430) ；如果时区信息不可用，则不显示任何字符                                                             | `+0800`                    |
-| `%Z` | 取决于区域设置的时区名称或缩写；如果时区信息不可用，则不显示任何字符                                                                              | `Z AWST `                  |
+| 说明符  | 描述                                                                                                 | 示例                         |
+| ---- | -------------------------------------------------------------------------------------------------- | -------------------------- |
+| `%%` | 字面量 %                                                                                              | `%`                        |
+| `%n` | 换行符                                                                                                |                            |
+| `%t` | 水平制表符                                                                                              |                            |
+| `%Y` | 以十进制数表示的年份，例如 2017                                                                                 | `2023`                     |
+| `%y` | 以十进制数表示的年份后 2 位 (范围 [00,99])                                                                       | `23`                       |
+| `%C` | 以十进制数表示的年份前 2 位 (范围 [00,99])                                                                       | `20`                       |
+| `%G` | 四位数的 [ISO 8601 基于周的年份](https://en.wikipedia.org/wiki/ISO_8601#Week_dates)，即包含指定周的年份。通常仅与 `%V` 一起使用 | `2023`                     |
+| `%g` | [ISO 8601 基于周的年份](https://en.wikipedia.org/wiki/ISO_8601#Week_dates)的后 2 位，即包含指定周的年份               | `23`                       |
+| `%b` | 缩写月份名称，例如 Oct (取决于区域设置)                                                                            | `Jul`                      |
+| `%h` | `%b` 的同义写法                                                                                         | `Jul`                      |
+| `%B` | 完整月份名称，例如 October (取决于区域设置)                                                                        | `July`                     |
+| `%m` | 以十进制数表示的月份 (范围 [01,12])                                                                            | `07`                       |
+| `%U` | 以十进制数表示的年内周数 (星期日为一周的第一天)  (范围 [00,53])                                                            | `27`                       |
+| `%W` | 以十进制数表示的年内周数 (星期一为一周的第一天)  (范围 [00,53])                                                            | `27`                       |
+| `%V` | ISO 8601 周数 (范围 [01,53])                                                                           | `27`                       |
+| `%j` | 以十进制数表示的一年中的第几天 (范围 [001,366])                                                                     | `187`                      |
+| `%d` | 以零填充的十进制数表示的日 (范围 [01,31]) 。个位数前补零。                                                                | `06`                       |
+| `%e` | 以空格填充的十进制数表示的日 (范围 [1,31]) 。个位数前补一个空格。                                                             | `&nbsp; 6`                 |
+| `%a` | 缩写星期名称，例如 Fri (取决于区域设置)                                                                            | `Thu`                      |
+| `%A` | 完整星期名称，例如 Friday (取决于区域设置)                                                                         | `Thursday`                 |
+| `%w` | 以整数表示的星期几，其中星期日为 0 (范围 [0-6])                                                                      | `4`                        |
+| `%u` | 以十进制数表示的星期几，其中星期一为 1 (ISO 8601 格式)  (范围 [1-7])                                                     | `4`                        |
+| `%H` | 以十进制数表示的小时，24 小时制 (范围 [00-23])                                                                     | `18`                       |
+| `%I` | 以十进制数表示的小时，12 小时制 (范围 [01,12])                                                                     | `06`                       |
+| `%M` | 以十进制数表示的分钟 (范围 [00,59])                                                                            | `32`                       |
+| `%S` | 以十进制数表示的秒 (范围 [00,60])                                                                             | `07`                       |
+| `%c` | 标准日期时间字符串，例如 Sun Oct 17 04:41:13 2010 (取决于区域设置)                                                    | `Thu Jul  6 18:32:07 2023` |
+| `%x` | 本地化日期表示 (取决于区域设置)                                                                                  | `07/06/23`                 |
+| `%X` | 本地化时间表示，例如 18:40:20 或 6:40:20 PM (取决于区域设置)                                                         | `18:32:07`                 |
+| `%D` | 简短的 MM/DD/YY 日期，等同于 `%m/%d/%y`                                                                     | `07/06/23`                 |
+| `%F` | 简短的 YYYY-MM-DD 日期，等同于 %Y-%m-%d                                                                     | `2023-07-06`               |
+| `%r` | 本地化的 12 小时制时间 (取决于区域设置)                                                                            | `06:32:07 PM`              |
+| `%R` | 等同于 &quot;%H:%M&quot;                                                                              | `18:32`                    |
+| `%T` | 等同于 &quot;%H:%M:%S&quot; (即 ISO 8601 时间格式)                                                         | `18:32:07`                 |
+| `%p` | 本地化的上午或下午标识 (取决于区域设置)                                                                              | `PM`                       |
+| `%z` | ISO 8601 格式的 UTC 偏移量 (例如 -0430) ；如果时区信息不可用，则不显示任何字符                                                | `+0800`                    |
+| `%Z` | 取决于区域设置的时区名称或缩写；如果时区信息不可用，则不显示任何字符                                                                 | `Z AWST `                  |
 
 **示例**
 
@@ -1192,8 +1192,8 @@ DDL 查询只会等待同一组中的副本。
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1532,9 +1532,9 @@ curl 127.0.0.1:9363/metrics
 
 此外：
 
-| 设置      | 说明                            | 默认值     |
-| ------- | ----------------------------- | ------- |
-| `level` | 将存储到表中的最高消息级别 (默认为 `Trace`) 。 | `Trace` |
+| 设置      | 说明                                                                                                                                                                                        | 默认值                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `level` | 存储到表中的最高消息级别。显式设置时，根日志记录器级别会至少提升到该值，因此 `text_log` 记录的内容可以比服务器日志文件 (`logger.level`) 更详细。未设置时，将按已配置的各日志输出 (`logger.level`、`console_log_level`、`errorlog_level`、`syslog_level`) 中最详细的级别存储消息。 | `Trace` (未设置时受其他日志输出的限制) |
 
 **示例**
 
@@ -1801,6 +1801,7 @@ curl 127.0.0.1:9363/metrics
 * 适用于端点由多方共享的场景，例如路径风格的 AWS endpoint `s3.us-west-2.amazonaws.com`：此时若放行整个主机，该主机上的所有桶都会被放行。
 * 桶名取自解析后的 S3 URL，因此该条目可同时匹配 `https://s3.us-west-2.amazonaws.com/my-bucket/...` 和 `https://my-bucket.s3.us-west-2.amazonaws.com/...`。
 * 仅适用于 S3 URL：`s3` 表函数和引擎、`S3` 数据库引擎、到 `S3` 的 `BACKUP`/`RESTORE`，以及在 SQL 中通过 `disk` 函数创建的 S3 磁盘。
+* 在 SQL 中创建的 S3 磁盘会在执行创建它的查询时接受检查。对于在设置该列表之前就已存在的磁盘，或由不含此检查的版本创建的磁盘，服务端启动时仍会照常加载 (包括已删除但尚未被彻底清除的表) ，因此 `UNDROP TABLE` 依然可用；服务端会在日志和 `system.warnings` 中报告此类磁盘。
 * S3 返回的永久重定向 (301) 同样会依据桶条目进行检查，但临时重定向 (307) 仅按主机检查，因此当列表中只包含 `\<s3_bucket\>` 条目时，此类重定向会被拒绝。
 
 例如：
@@ -1934,10 +1935,11 @@ curl 127.0.0.1:9363/metrics
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `enable_read_write_grants`                      | 启用针对外部数据源 (如 `S3`、`HDFS`、`Kafka` 等) 的 `READ` 和 `WRITE` 特权分离。自 25.7 版本起可用。设为 `true` 时，可以为数据源分别授予 `READ` 和 `WRITE`，而不是使用同时涵盖两者的单一授权。                                                                                                                                      | `false` |
 | `on_cluster_queries_require_cluster_grant`      | 设置 `ON CLUSTER` 查询是否需要 `CLUSTER` 授权。                                                                                                                                                                                                                                    | `true`  |
+| `readonly_restricts_set_role`                   | 设置当会话或查询处于 readonly 状态时，是否拒绝执行 `SET ROLE` 语句。设为 `false` 时，`readonly` 不会限制 `SET ROLE`。`role` HTTP 查询参数不受影响。                                                                                                                                                              | `false` |
 | `role_cache_expiration_time_seconds`            | 设置角色自上次访问后在角色缓存中保留的秒数。                                                                                                                                                                                                                                                  | `600`   |
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                   | `true`  |
-| `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及一些常量表，如 `one`、`contributors`) 仍对所有人开放；此外，如果已授予 `SHOW` 权限 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
-| `settings_constraints_replace_previous`         | 设置 settings profile 中某个设置的约束，是否会覆盖该设置之前的约束 (定义于其他 profile 中) 的作用，包括新约束未设置的字段。它还会启用 `changeable_in_readonly` 约束类型。                                                                                                                                                       | `true`  |
+| `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及一些常量表，如 `one`、`contributors`) 仍对所有人开放；此外，如果已授予 `SHOW` 特权 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
+| `settings_constraints_replace_previous`         | 设置设置配置文件中某个设置的约束，是否会覆盖该设置之前的约束 (定义于其他配置文件中) 的作用，包括新约束未设置的字段。它还会启用 `changeable_in_readonly` 约束类型。                                                                                                                                                       | `true`  |
 | `table_engines_require_grant`                   | 设置使用特定表引擎创建表时是否需要授权。ClickHouse Cloud 不支持此功能。                                                                                                                                                                                                                            | `false` |
 | `throw_on_unmatched_row_policies`               | 设置当表存在行策略，但当前用户没有任何匹配的行策略时，从该表读取是否应抛出异常。                                                                                                                                                                                                                                | `false` |
 | `users_without_row_policies_can_read_rows`      | 设置没有允许型行策略的用户是否仍可通过 `SELECT` 查询读取行。例如，如果有两个用户 A 和 B，且仅为 A 定义了行策略，那么当此设置为 true 时，用户 B 将看到所有行；当此设置为 false 时，用户 B 将看不到任何行。                                                                                                                                                 | `true`  |
@@ -1953,6 +1955,7 @@ curl 127.0.0.1:9363/metrics
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
+    <readonly_restricts_set_role>false</readonly_restricts_set_role>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>

@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'Подключите arcodash к ClickHouse через HTTP-интерфейс, чтобы создавать панели мониторинга на основе SQL-запросов и настраивать проверки данных по расписанию.'
+title: 'Подключение arcodash к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration) — это облачный BI-инструмент со встроенными проверками данных: SQL-панели мониторинга, AI-ассистент для написания запросов и проверки по расписанию с оповещениями по электронной почте, в Slack, Teams, через вебхук или PagerDuty. Он подключается к ClickHouse через HTTP(S)-интерфейс.
+
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    Для подключения arcodash понадобятся хост, HTTP-порт (`8123` или `8443` для ClickHouse Cloud с HTTPS), имя пользователя, пароль и база данных.
+  </Step>
+
+  <Step title="Создайте пользователя с правом только на чтение" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    Обозреватель схемы получает данные из `system.columns`.
+  </Step>
+
+  <Step title="Добавьте коннектор" id="3-add-the-connector">
+    В arcodash выберите **Connect** &gt; **ClickHouse** и укажите хост, порт, имя пользователя, пароль и базу данных. Для ClickHouse Cloud включите HTTPS, после чего запустите проверку соединения.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="Форма коннектора ClickHouse в arcodash" border />
+  </Step>
+
+  <Step title="Выполните запрос и проверку" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    Сохраните запрос как монитор для `seconds_since_last_row` с условием `>` `3600`, чтобы получать оповещение, когда в таблицу перестают поступать данные.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="Монитор arcodash для запроса к ClickHouse" border />
+  </Step>
+</Steps>
+
+## Ограничения {#limitations}
+
+* arcodash использует только HTTP-интерфейс, а не нативный порт `9000`.
+* arcodash самостоятельно добавляет в конец запроса предложение `FORMAT`, поэтому запросы не должны заканчиваться собственным `FORMAT`.
+* Результаты ограничены 10,000 строками на запрос.
+* arcodash не публикует список фиксированных исходящих IP-адресов, поэтому сервер ClickHouse должен быть доступен из интернета.

@@ -1,15 +1,12 @@
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/PODArray.h>
-
-#include <arrow/buffer.h>
-#include <arrow/memory_pool.h>
-#include <arrow/util/bpacking_internal.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <bit>
-#include <climits>
 #include <limits>
 #include <optional>
 #include <tuple>
@@ -18,7 +15,6 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Parquet
@@ -177,7 +173,7 @@ struct ALPPage
                 "ALP page has {} bytes after its last vector", body_size - expected_offset);
     }
 
-    size_t vectorLength(size_t vector_idx) const
+    [[nodiscard]] size_t vectorLength(size_t vector_idx) const
     {
         chassert(vector_idx < num_vectors);
         return std::min(vector_size, num_elements - (vector_idx << log_vector_size));
@@ -228,17 +224,15 @@ struct ALPPage
         }
         else
         {
-            /// The unpacker may read further than `packed_size` (but not past `max_read_bytes`)
-            /// to use wider loads. Everything up to the end of the page is ours to read.
-            arrow::internal::unpack<Exact>(
-                reinterpret_cast<const uint8_t *>(ptr), deltas,
-                {.batch_size = static_cast<int>(n), .bit_width = static_cast<int>(bit_width), .bit_offset = 0,
-                 .max_read_bytes = static_cast<int>(std::min(available, size_t(INT_MAX)))});
+            /// The unpacker may read further than `packed_size` to use wider loads.
+            /// Everything up to the end of the page is ours to read.
+            const UInt8 * packed = reinterpret_cast<const UInt8 *>(ptr);
+            unpackBits<Exact>(packed, packed + available, 0, bit_width, deltas, n);
 
             /// The deltas are added in unsigned arithmetic (wrapping, as the specification says),
             /// then reinterpreted as signed.
             for (size_t i = 0; i < n; ++i)
-                out[i] = static_cast<T>(static_cast<Signed>(deltas[i] + frame_of_reference)) * multiplier_factor * multiplier_exponent;
+                out[i] = static_cast<T>(static_cast<Signed>(common::addIgnoreOverflow(deltas[i], frame_of_reference))) * multiplier_factor * multiplier_exponent;
         }
         ptr += packed_size;
 
@@ -424,7 +418,7 @@ public:
     }
 
 private:
-    std::vector<ExponentAndFactor> candidates;
+    VectorWithMemoryTracking<ExponentAndFactor> candidates;
 
     PaddedPODArray<Signed> encoded;
     PaddedPODArray<UInt8> is_exception;
@@ -478,7 +472,7 @@ private:
     /// Fibonacci hashing of the block number: deterministic and well spread.
     static size_t offsetInBlock(size_t block_idx, size_t block_size)
     {
-        return ((block_idx * 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
+        return (common::mulIgnoreOverflow(block_idx, 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
     }
 
     /// Encodes one value as the specification describes, then decodes it back. The result is an
@@ -502,7 +496,7 @@ private:
 
     /// Estimated size in bits of the encoded `sample` (bit-packed values and exceptions).
     /// Returns nullopt if `require_two_encodable` and fewer than two values are not exceptions.
-    std::optional<size_t> estimateSize(ExponentAndFactor params, bool require_two_encodable) const
+    [[nodiscard]] std::optional<size_t> estimateSize(ExponentAndFactor params, bool require_two_encodable) const
     {
         const T encode_multiplier_exponent = Traits::pow10[params.exponent];
         const T encode_multiplier_factor = Traits::neg_pow10[params.factor];
@@ -528,7 +522,7 @@ private:
 
         size_t bit_width = 0;
         if (num_encodable > 0)
-            bit_width = std::bit_width(static_cast<UInt64>(static_cast<Exact>(max) - static_cast<Exact>(min)));
+            bit_width = std::bit_width(static_cast<UInt64>(common::subIgnoreOverflow(static_cast<Exact>(max), static_cast<Exact>(min))));
         return sample.size() * bit_width + num_exceptions * (sizeof(UInt16) + sizeof(T)) * 8;
     }
 
@@ -583,7 +577,7 @@ private:
             ExponentAndFactor params;
             UInt32 wins = 0;
         };
-        std::vector<Candidate> found;
+        VectorWithMemoryTracking<Candidate> found;
         for (UInt8 exponent = 0; exponent <= Traits::max_exponent; ++exponent)
             for (UInt8 factor = 0; factor <= exponent; ++factor)
                 if (wins[exponent][factor])
@@ -673,7 +667,7 @@ private:
             max = std::max(max, encoded[i]);
         }
         const Exact frame_of_reference = static_cast<Exact>(min);
-        const UInt8 bit_width = static_cast<UInt8>(std::bit_width(static_cast<UInt64>(static_cast<Exact>(max) - frame_of_reference)));
+        const UInt8 bit_width = static_cast<UInt8>(std::bit_width(static_cast<UInt64>(common::subIgnoreOverflow(static_cast<Exact>(max), frame_of_reference))));
 
         const size_t packed_size = (n * bit_width + 7) / 8;
         const size_t vector_size = vectorHeaderSize<T>() + packed_size + num_exceptions * (sizeof(UInt16) + sizeof(T));
@@ -698,7 +692,7 @@ private:
             char * pos = ptr;
             for (size_t i = 0; i < n; ++i)
             {
-                const UInt64 delta = static_cast<Exact>(static_cast<Exact>(encoded[i]) - frame_of_reference);
+                const UInt64 delta = common::subIgnoreOverflow(static_cast<Exact>(encoded[i]), frame_of_reference);
                 accumulator |= delta << accumulated_bits;
                 accumulated_bits += bit_width;
                 if (accumulated_bits >= 64)
@@ -724,67 +718,6 @@ private:
     }
 };
 
-/// Adapts `ALPPageEncoder` to the encoder interface of Arrow that the writer uses for other encodings.
-template <typename DType>
-class ALPEncoder final : public parquet::TypedEncoder<DType>
-{
-public:
-    using T = typename DType::c_type;
-    using parquet::TypedEncoder<DType>::Put;
-
-    int64_t EstimatedDataEncodedSize() override
-    {
-        return static_cast<int64_t>(values.size() * sizeof(T));
-    }
-
-    std::shared_ptr<parquet::Buffer> FlushValues() override
-    {
-        std::shared_ptr<parquet::Buffer> result;
-        if (page_encoder.encodePage(values.data(), values.size(), encoded))
-        {
-            last_page_encoding = static_cast<parquet::Encoding::type>(parq::Encoding::ALP);
-            result = arrow::Buffer::FromString(std::string(encoded.data(), encoded.size()));
-        }
-        else
-        {
-            last_page_encoding = parquet::Encoding::PLAIN;
-            result = arrow::Buffer::FromString(std::string(reinterpret_cast<const char *>(values.data()), values.size() * sizeof(T)));
-        }
-        values.clear();
-        return result;
-    }
-
-    parquet::Encoding::type encoding() const override { return last_page_encoding; }
-
-    void Put(const T * src, int num_values) override
-    {
-        values.insert(src, src + num_values);
-    }
-
-    void Put(const arrow::Array &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Putting an Arrow array into ALP encoder is not implemented");
-    }
-
-    void PutSpaced(const T *, int, const uint8_t *, int64_t) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Putting spaced values into ALP encoder is not implemented");
-    }
-
-    int64_t ReportUnencodedDataBytes() override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReportUnencodedDataBytes is only for BYTE_ARRAY");
-    }
-
-    arrow::MemoryPool * memory_pool() const override { return arrow::default_memory_pool(); }
-
-private:
-    PODArray<T> values;
-    ALPPageEncoder<T> page_encoder;
-    PaddedPODArray<char> encoded;
-    parquet::Encoding::type last_page_encoding = static_cast<parquet::Encoding::type>(parq::Encoding::ALP);
-};
-
 }
 
 std::unique_ptr<PageDecoder> makeALPDecoder(
@@ -798,14 +731,37 @@ std::unique_ptr<PageDecoder> makeALPDecoder(
     }
 }
 
-std::unique_ptr<parquet::TypedEncoder<parquet::FloatType>> makeALPFloatEncoder()
+template <typename T>
+struct ALPEncoder<T>::PageEncoder : public ALPPageEncoder<T>
 {
-    return std::make_unique<ALPEncoder<parquet::FloatType>>();
+};
+
+template <typename T>
+ALPEncoder<T>::ALPEncoder() : page_encoder(std::make_unique<PageEncoder>())
+{
 }
 
-std::unique_ptr<parquet::TypedEncoder<parquet::DoubleType>> makeALPDoubleEncoder()
+template <typename T>
+ALPEncoder<T>::~ALPEncoder() = default;
+
+template <typename T>
+void ALPEncoder<T>::flush(PODArray<char> & out)
 {
-    return std::make_unique<ALPEncoder<parquet::DoubleType>>();
+    if (page_encoder->encodePage(values.data(), values.size(), encoded))
+    {
+        last_page_encoding = parq::Encoding::ALP;
+        out.insert(encoded.begin(), encoded.end());
+    }
+    else
+    {
+        last_page_encoding = parq::Encoding::PLAIN;
+        const char * data = reinterpret_cast<const char *>(values.data());
+        out.insert(data, data + values.size() * sizeof(T));
+    }
+    values.clear();
 }
+
+template class ALPEncoder<float>;
+template class ALPEncoder<double>;
 
 }

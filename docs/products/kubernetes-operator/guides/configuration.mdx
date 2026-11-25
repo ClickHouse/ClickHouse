@@ -818,21 +818,20 @@ Set `--disable-version-update-checks=true` in air-gapped environments or when eg
 ### Default user password {#default-user-password}
 
 `spec.settings.defaultUserPassword` sets the password for the built-in `default`
-user. Provide the value from a key in a Secret (recommended) or a ConfigMap that
-you create, rather than inline in the CR:
+user. Provide the value from a key in a Secret that you create, rather than
+inline in the CR:
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret or configMap
-        name: clickhouse-password   # name of the Secret/ConfigMap
+      secret:
+        name: clickhouse-password   # name of the Secret
         key: password               # the key inside it, not the password value
 ```
 
-Provide exactly one of `secret` or `configMap`, each with both `name` (the object)
-and `key` (the entry that holds the password).
+Set both `name` (the Secret) and `key` (the entry that holds the password).
 
 #### Password types {#password-types}
 
@@ -889,11 +888,15 @@ spec:
         key: password
 ```
 
-#### Using a ConfigMap {#using-configmap-for-user-passwords}
+#### Using a ConfigMap (deprecated) {#using-configmap-for-user-passwords}
 
-A ConfigMap works the same way, but its contents are not protected like a Secret.
-Use it only for non-sensitive or already-hashed values, such as a
-`password_sha256_hex` digest:
+<Warning>
+The `configMap` source is deprecated and is removed in `v1alpha2`. ConfigMaps
+are not protected like Secrets, and unsalted password hashes can be brute-forced.
+Store the password, plaintext or hashed, in a Secret instead.
+</Warning>
+
+A ConfigMap works the same way as a Secret, but its contents are not protected:
 
 ```yaml
 spec:
@@ -1204,7 +1207,7 @@ spec:
 
 Besides reacting to Kubernetes events, the operator re-reconciles every cluster on a fixed interval. This keeps status conditions fresh for state that no watch can observe — ClickHouse replica health, Keeper quorum — and retries remediation such as stuck-pod cleanup.
 
-The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`). It applies to `KeeperCluster` resources, where `0` disables the periodic resync. `ClickHouseCluster` resources poll ClickHouse `system.warnings` every 30 seconds, which already re-triggers reconciliation, so `RESYNC_PERIOD` currently has no effect on them.
+The interval is controlled by the operator's `RESYNC_PERIOD` environment variable (default `30s`); `0` disables the periodic resync for both `KeeperCluster` and `ClickHouseCluster` resources.
 
 ```yaml
 # in the operator Deployment spec
@@ -1214,6 +1217,12 @@ env:
 ```
 
 The operator reconciles clusters concurrently; the number of parallel reconciles per controller is set by `MAX_CONCURRENT_RECONCILES` (default `4`).
+
+## Cluster observation {#cluster-observation}
+
+Outside the reconciliation loop, the operator periodically observes the externally visible state of every cluster: Keeper quorum via the `mntr` command, and ClickHouse replica reachability, applied configuration-reload revisions, and `system.warnings`. When the observed state changes, the affected cluster is reconciled immediately, so health transitions and completed configuration reloads reach the status conditions within the observation interval instead of waiting for a Kubernetes event or the next resync.
+
+The interval is controlled by the operator's `OBSERVE_INTERVAL` environment variable (default `15s`). Setting it to `0` disables observation: observed state transitions then surface only on the `RESYNC_PERIOD` cadence.
 
 ## Pausing reconciliation {#pausing-reconciliation}
 

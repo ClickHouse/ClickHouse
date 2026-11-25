@@ -9,7 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -21,7 +20,7 @@ ACME をサポートすることで、ClickHouse は [Let&#39;s Encrypt](https:/
 TLS 暗号化は、クライアントと ClickHouse サーバー間で送受信されるデータを保護し、機密性の高いクエリや結果の盗聴を防ぎます。
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 ACME プロトコルは、[Let&#39;s Encrypt](https://letsencrypt.org/) や [ZeroSSL](https://zerossl.com/) などのサービスによる証明書の自動更新プロセスを定義しています。簡単に言うと、証明書をリクエストする ClickHouse は、証明書を取得するために、あらかじめ定義されたチャレンジタイプを使ってドメインの所有権を確認する必要があります。
@@ -49,7 +48,7 @@ HTTP ポートは、サーバー自体で 80 である必要はありません�
 その後に必要なのは、ドメインのリストだけです。
 
 <div id="current-limitations">
-  ### 現在の制限事項
+  ### 現在の制限事項 {#current-limitations}
 </div>
 
 * サポートされているチャレンジタイプは `HTTP-01` のみです。
@@ -57,7 +56,7 @@ HTTP ポートは、サーバー自体で 80 である必要はありません�
 * レート制限には対応していません。
 
 <div id="configuration-parameters">
-  ## 設定パラメータ
+  ## 設定パラメータ {#configuration-parameters}
 </div>
 
 `acme` セクションで使用できる設定オプション:
@@ -75,11 +74,11 @@ HTTP ポートは、サーバー自体で 80 である必要はありません�
 設定では、デフォルトで Let&#39;s Encrypt の本番ディレクトリが使用されます。設定ミスによってリクエストのクォータに達するのを避けるため、まずは [staging directory](https://letsencrypt.org/docs/staging-environment/) で証明書の発行プロセスをテストすることを推奨します。
 
 <div id="administration">
-  # 管理
+  # 管理 {#administration}
 </div>
 
 <div id="initial-deployment">
-  ## 初期デプロイ
+  ## 初期デプロイ {#initial-deployment}
 </div>
 
 複数のレプリカを持つクラスターで ACME クライアントを有効にする場合、証明書の初回発行時には特に注意が必要です。
@@ -93,7 +92,7 @@ ACME を有効にして起動した最初のレプリカは、ただちに ACME 
 初回の証明書が発行またはインポートされたあとは、すべてのレプリカですでに ACME クライアントが動作しており、Keeper を介して状態を共有するため、証明書の更新に特別な対応は必要ありません。
 
 <div id="keeper-data-structure">
-  ## Keeper のデータ構造
+  ## Keeper のデータ構造 {#keeper-data-structure}
 </div>
 
 ```text
@@ -108,7 +107,7 @@ ACME を有効にして起動した最初のレプリカは、ただちに ACME 
 ```
 
 <div id="migrating-from-other-acme-clients">
-  ## 他の ACME クライアントからの移行
+  ## 他の ACME クライアントからの移行 {#migrating-from-other-acme-clients}
 </div>
 
 移行を容易にするため、現在使用中の TLS 証明書と秘密鍵を Keeper に移行できます。
