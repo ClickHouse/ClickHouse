@@ -1,3 +1,5 @@
 x	UInt8					
 x_old	UInt8					
 x	UInt8					
+id	UInt8					
+y	UInt8					

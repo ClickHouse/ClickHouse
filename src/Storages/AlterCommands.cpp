@@ -2074,6 +2074,14 @@ void AlterCommands::apply(
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
+
+    /// Columns that remain after earlier DROP and RENAME commands. Only ADD COLUMN IF NOT EXISTS reads it.
+    auto remaining_columns = metadata.columns;
+    auto name_is_taken = [&](const String & name)
+    {
+        return remaining_columns.has(name) || (share_nested_offsets && remaining_columns.hasNested(name));
+    };
+
     std::unordered_set<String> columns_with_full_type_modify;
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
@@ -2215,7 +2223,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (has_column && command.if_not_exists)
+            if (name_is_taken(command.column_name) && command.if_not_exists)
                 command.ignore = true;
         }
         else if (command.type == AlterCommand::DROP_COLUMN
@@ -2231,17 +2239,17 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                 command.ignore = true;
         }
 
-        /// Later IF NOT EXISTS checks must see names freed by earlier commands.
+        /// Later ADD COLUMN IF NOT EXISTS must see names freed by earlier commands.
         if (command.ignore)
             continue;
 
         if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (has_column && !command.clear && !command.partition)
-                columns.remove(command.column_name);
+            if (name_is_taken(command.column_name) && !command.clear && !command.partition)
+                remaining_columns.remove(command.column_name);
         }
-        else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(command.column_name))
-            columns.rename(command.column_name, command.rename_to);
+        else if (command.type == AlterCommand::RENAME_COLUMN && remaining_columns.has(command.column_name))
+            remaining_columns.rename(command.column_name, command.rename_to);
     }
 
     prepared = true;
