@@ -393,7 +393,9 @@ protected:
                 const Int64 last_block_number = resume_cursor->getValue("block_number");
                 if (last_block_number < -1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid block number {} in the cursor", last_block_number);
-                next_block_number = static_cast<UInt64>(last_block_number + 1);
+                /// The increment is done in unsigned arithmetic: the cursor is an input of the query (or comes from the
+                /// stored metadata of a refresh), so the block number can be as large as the maximum of `Int64`.
+                next_block_number = static_cast<UInt64>(last_block_number) + 1;
                 if (next_block_number > end_block_number)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The block number {} in the cursor is beyond the blocks of the Memory table", last_block_number);

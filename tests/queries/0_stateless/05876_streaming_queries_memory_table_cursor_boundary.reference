@@ -1,0 +1,8 @@
+block_number in the cursor: 1
+--- after the first block
+2
+--- after the last block
+--- beyond the blocks
+BAD_ARGUMENTS
+--- the maximum
+BAD_ARGUMENTS
