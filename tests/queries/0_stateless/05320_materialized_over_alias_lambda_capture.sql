@@ -1,4 +1,4 @@
--- Tags: no-shared-catalog
+-- Tags: long, no-shared-catalog
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will
 -- continue to merge and can materialize the mutation the on-fly case needs to stay pending
 
