@@ -101,6 +101,19 @@ private:
 
 bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns, size_t & block_number)
 {
+    if (read_keys_func)
+    {
+        while (true)
+        {
+            block_number = parallel_read_block_index++;
+            if (block_number >= num_key_blocks)
+                return false;
+            key_columns = read_keys_func(block_number);
+            if (!key_columns.front().column->empty())
+                return true;
+        }
+    }
+
     size_t read_block_index = parallel_read_block_index++;
     block_number = read_block_index;
 
@@ -134,6 +147,13 @@ void DictionarySourceCoordinator::setSerializedKeys(PaddedPODArray<std::string_v
 {
     serialized_keys = std::move(serialized_keys_);
     has_serialized_keys = true;
+}
+
+void DictionarySourceCoordinator::setKeysPerBlock(size_t num_blocks_, ReadKeysFunc read_keys_func_)
+{
+    chassert(key_columns_with_type.empty() && data_columns_with_type.empty() && !has_serialized_keys);
+    num_key_blocks = num_blocks_;
+    read_keys_func = std::move(read_keys_func_);
 }
 
 size_t DictionarySourceCoordinator::getKeysSize() const
@@ -229,7 +249,9 @@ Pipe DictionarySourceCoordinator::read(size_t num_streams)
 {
     /// Limit the number of streams to the number of data blocks,
     /// because creating more streams is useless and may cause excessive memory usage.
-    if ((has_serialized_keys || !key_columns_with_type.empty()) && max_block_size > 0)
+    if (read_keys_func)
+        num_streams = std::min(num_streams, std::max<size_t>(1, num_key_blocks));
+    else if ((has_serialized_keys || !key_columns_with_type.empty()) && max_block_size > 0)
     {
         size_t keys_size = getKeysSize();
         size_t num_blocks = (keys_size + max_block_size - 1) / max_block_size;

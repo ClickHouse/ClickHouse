@@ -16,8 +16,7 @@ class DictionarySource;
 
 /// Attached to every chunk produced by `DictionarySource` so that consumers can recover the
 /// original sequential read order of the dictionary even when it is read with several streams.
-/// Block `n` always covers the key range `[n * max_block_size, (n + 1) * max_block_size)`,
-/// so ordering chunks by `number` reproduces the single-stream scan order.
+/// Blocks are numbered in the order of a single-stream scan, so ordering chunks by `number` reproduces it.
 struct DictionaryBlockNumber : public ChunkInfoCloneable<DictionaryBlockNumber>
 {
     explicit DictionaryBlockNumber(size_t number_) : number(number_) {}
@@ -37,6 +36,11 @@ public:
     /// Complex keys in the dictionary's arenas, kept alive by `dictionary`. Each block deserializes its own
     /// range of them and puts the result before its `key_columns_with_type`. Call before `read`.
     void setSerializedKeys(PaddedPODArray<std::string_view> && serialized_keys_);
+
+    using ReadKeysFunc = std::function<ColumnsWithTypeAndName(size_t)>;
+
+    /// Block `n < num_blocks_` reads the key columns `read_keys_func_(n)`; several streams call it at once. Call before `read`.
+    void setKeysPerBlock(size_t num_blocks_, ReadKeysFunc read_keys_func_);
 
     explicit DictionarySourceCoordinator(
         std::shared_ptr<const IDictionary> dictionary_,
@@ -129,6 +133,9 @@ private:
 
     PaddedPODArray<std::string_view> serialized_keys;
     bool has_serialized_keys = false;
+
+    size_t num_key_blocks = 0;
+    ReadKeysFunc read_keys_func;
 
     SharedHeader header;
 

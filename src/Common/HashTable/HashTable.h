@@ -1895,6 +1895,24 @@ public:
         return ptr - buf + 1;
     }
 
+    /// Calls `func(cell)` for each occupied cell whose `offsetInternal` is in `[begin, end)`, in iteration order.
+    template <typename Func>
+    void forEachCellInOffsetRange(size_t begin, size_t end, Func && func) const
+    {
+        if (!buf)
+            return;
+        if (begin == 0)
+        {
+            if (this->hasZero())
+                func(*this->zeroValue());
+            begin = 1;
+        }
+        end = std::min(end, grower.bufSize() + 1);
+        for (size_t offset = begin; offset < end; ++offset)
+            if (!buf[offset - 1].isZero(*this))
+                func(buf[offset - 1]);
+    }
+
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const
     {
