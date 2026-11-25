@@ -7,10 +7,8 @@ doc_type: 'guide'
 keywords: ['almacenamiento', 'cómputo', 'arquitectura', 'escalabilidad', 'nube']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="overview">
-  ## Descripción general
+  ## Descripción general {#overview}
 </div>
 
 Esta guía explica cómo puede usar ClickHouse y S3 para implementar una arquitectura con almacenamiento y cómputo separados.
@@ -29,7 +27,7 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
 
 <Steps>
   <Step title="Usar S3 como disco de ClickHouse" id="1-use-s3-as-a-clickhouse-disk">
-    ### Crear un disco
+### Crear un disco {#creating-a-disk}
 
     Cree un nuevo archivo en el directorio `config.d` de ClickHouse para guardar la configuración de almacenamiento:
 
@@ -70,7 +68,7 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
     </clickhouse>
     ```
 
-    Si necesita especificar aún más la configuración del disco S3, por ejemplo, para indicar una `región` o enviar una `cabecera` HTTP personalizada, puede consultar la lista de opciones de configuración pertinentes [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+    Si necesita especificar aún más la configuración del disco S3, por ejemplo, para indicar una `region` o enviar un `header` HTTP personalizado, puede consultar la lista de opciones de configuración pertinentes [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 
     También puede reemplazar `access_key_id` y `secret_access_key` por lo siguiente, que intentará obtener credenciales de las variables de entorno y de los metadatos de Amazon EC2:
 
@@ -156,7 +154,11 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
 
     Si todo funcionó correctamente, ahora está usando ClickHouse con almacenamiento y cómputo separados.
 
-    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Ejemplo de bucket de S3 con separación de almacenamiento y cómputo" border />
+    <div className="ch-image-md">
+      <Frame>
+        ![Ejemplo de bucket de S3 con separación de almacenamiento y cómputo](/images/guides/s3_bucket_example.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Implementación de la replicación para tolerancia a fallos (opcional)" id="3-implementing-replication-for-fault-tolerance-optional">
@@ -173,7 +175,7 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
 </Steps>
 
 <div id="further-reading">
-  ## Lecturas adicionales
+  ## Lecturas adicionales {#further-reading}
 </div>
 
 * [Motor de tabla SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree)

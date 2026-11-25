@@ -1,3 +1,5 @@
+import re
+
 from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
@@ -36,6 +38,7 @@ class RunnerLabels:
     MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
     AMD_TINY = ["self-hosted", "amd-tiny"]
     ARM_TINY = ["self-hosted", "arm-tiny"]
+    ARM_SMALL_REVIEW = ["self-hosted", "arm-small-review"]
     RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
@@ -45,6 +48,41 @@ class CIFiles:
 
 
 BASE_BRANCH = "master"
+
+NIGHTLY_PERF_BATCH_JOBS = [f"{b}/4" for b in range(1, 5)]
+# {"<test>.xml": "N/4" | "<extra_job>" | "skip"}, see tests/performance/README.md. Balanced by the ARM wall times of 2026-10-22.
+NIGHTLY_PERF_PLACEMENT = {
+    "arrow_flight_loopback.xml": "1/4",
+    "encodings_hits.xml": "1/4",
+    "formats_hits_read.xml": "1/4",
+    "join_algorithms_sf10.xml": "1/4",
+    "json_bluesky.xml": "1/4",
+    "projections_hits.xml": "1/4",
+    "skip_index_minmax_set_hits.xml": "1/4",
+    "analyzer_large_queries.xml": "2/4",
+    "external_sort_hits.xml": "2/4",
+    "iceberg_suite_local_tpcds_sf100.xml": "2/4",
+    "parquet_pushdown_long.xml": "2/4",
+    "tpch_sf100.xml": "2/4",
+    "tpcds_sf100.xml": "3/4",
+    "external_aggregation_hits.xml": "4/4",
+    "formats_hits_write.xml": "4/4",
+    "iceberg_compaction.xml": "4/4",
+    "iceberg_deletes_scale.xml": "4/4",
+    "iceberg_rest_catalog.xml": "4/4",
+    "iceberg_scale_manifests.xml": "4/4",
+    "iceberg_time_travel_evolution.xml": "4/4",
+    "iceberg_write_scale.xml": "4/4",
+    "insert_async_dedup.xml": "4/4",
+    "lakes_cross_format.xml": "4/4",
+    "merges_optimize_final.xml": "4/4",
+    "mutations_big_table.xml": "4/4",
+    "parquet_s3_read.xml": "4/4",
+    "partitions_many.xml": "4/4",
+    "query_shapes_hits.xml": "4/4",
+    "vector_index_laion.xml": "4/4",
+}
+assert all(j in NIGHTLY_PERF_BATCH_JOBS or re.fullmatch("[a-z0-9_]+", j) for j in NIGHTLY_PERF_PLACEMENT.values()), NIGHTLY_PERF_PLACEMENT
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
@@ -141,14 +179,14 @@ DOCKERS = [
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/wasm-builder",
@@ -160,13 +198,14 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/utils",
@@ -178,7 +217,7 @@ DOCKERS = [
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
         build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
@@ -197,7 +236,7 @@ DOCKERS = [
         name="clickhouse/performance-comparison",
         path="./ci/docker/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
@@ -215,13 +254,13 @@ DOCKERS = [
         name="clickhouse/integration-test",
         path="./ci/docker/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -380,6 +419,12 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
+    # The limited clang-tidy check. Configured exactly like `arm_tidy`, but
+    # instead of running clang-tidy over the whole tree it analyzes only the
+    # translation units the change touches, which is what makes it fast enough
+    # to be part of the merge queue.
+    # See ci/jobs/scripts/clang_tidy_changed_files.py.
+    ARM_TIDY_CHANGED_FILES = "arm_tidy_changed_files"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
@@ -387,7 +432,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
-    AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
@@ -409,6 +453,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -431,12 +476,13 @@ class JobNames:
     # No "++": the job name becomes the GitHub Actions job id via
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
+    DATALAKE_FUZZER = "Data lake fuzzer"
     LLVM_COVERAGE = "LLVM Coverage"
     PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
-    BUZZHOUSE = "BuzzHouse"
+    LACASADELDOLOR = "La Casa Del Dolor"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
     # Per-arch bugfix validation jobs. Each runs the new/modified test on
@@ -461,8 +507,8 @@ class JobNames:
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
     # Unit-test (gtest) bugfix validation. Unlike the functional/integration
-    # validators above, this is a single AMD-only job: it builds a merge-base
-    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # validators above, this is a single ARM-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (ARM ASan+UBSan) in-job and reports
     # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
     # aggregation in `new_tests_check.py`.
     BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
@@ -478,8 +524,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-22"
-    COMPILER_CPP = "clang++-22"
+    COMPILER_C = "clang-23"
+    COMPILER_CPP = "clang++-23"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -522,7 +568,6 @@ class ArtifactNames:
     CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
-    CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
@@ -531,8 +576,9 @@ class ArtifactNames:
 
     FAST_TEST = "FAST_TEST"
 
-    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
+    UNITTEST_ARM_DEBUG = "UNITTEST_ARM_DEBUG"
+    UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
+    UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
@@ -698,7 +744,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_FREEBSD,
             ArtifactNames.CH_PPC64LE,
             ArtifactNames.CH_AMD_COMPAT,
-            ArtifactNames.CH_AMD_MUSL,
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
@@ -709,7 +754,7 @@ class ArtifactConfigs:
         Artifact.Config(
             name=ArtifactNames.CH_AMD_ILLUMOS,
             type=Artifact.Type.S3,
-            path=f"{TEMP_DIR}/build/programs/clickhouse",
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
             compress_zst=True,
         )
     )
@@ -810,8 +855,9 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_ARM_DEBUG,
+            ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ArtifactNames.UNITTEST_ARM_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
@@ -844,7 +890,7 @@ class ArtifactConfigs:
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",
             f"{TEMP_DIR}/build/programs/*_fuzzer.options",
-            f"{TEMP_DIR}/build/programs/all.dict",
+            f"{TEMP_DIR}/build/programs/*.dict",
         ],
     )
     fuzzers_corpus = Artifact.Config(

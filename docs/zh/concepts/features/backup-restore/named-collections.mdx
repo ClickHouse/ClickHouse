@@ -1,0 +1,108 @@
+---
+description: 'BACKUP 和 RESTORE 如何处理通过 SQL 创建的命名集合，以及控制这些操作的设置和特权。'
+sidebarTitle: '命名集合'
+slug: /operations/backup/named-collections
+title: '备份和恢复命名集合'
+keywords: ['backup', 'restore', 'named collections', 'backup_named_collections', 'restore_named_collections', 'create_named_collection']
+doc_type: 'reference'
+---
+
+通过 SQL 创建的[命名集合](/zh/concepts/features/configuration/server-config/named-collections)
+可以通过 `system.named_collections` 表导出到备份，并从备份中恢复。
+导出的集合会包含其全部值 (包括机密值) ，因此集合的备份与恢复
+受专门的特权和设置控制，具体说明见本页。
+
+在服务器配置文件中定义的集合由配置渲染生成，
+不会被纳入备份；恢复已备份的集合时，也不会覆盖
+由配置定义的同名集合。
+
+## 选择要备份的命名集合 {#selecting-the-collections}
+
+当 `BACKUP` 查询选中 `system.named_collections`
+表时，会导出命名集合：
+
+* 显式选中：`BACKUP TABLE system.named_collections`。此时必须具备所需特权 (见下文) 。
+* 隐式选中：通过 `DATABASE system` 或 `ALL` 元素。默认情况下，仅当用户有权读取命名集合的值时，此类备份才会导出这些集合；否则会跳过它们并发出警告。这样一来，即使用户有权备份所有内容但无权读取这些值，
+  `BACKUP ALL` 也能正常执行。
+
+如果选择时排除了该表的数据 (例如 `BACKUP TABLE system.named_collections EXCEPT DATA FROM
+TABLE system.named_collections`，或带有 `EXCEPT DATA FROM TABLES
+system.named_collections` 的通配符元素) ，备份中只会保留该表的定义。此时不会导出任何
+命名集合，也无需具备下述任何特权。
+
+## 所需特权 {#required-privileges}
+
+导出这些集合会将其值写入备份，因此所需特权与从 `system.named_collections` 读取这些值时相同：
+[`SHOW NAMED COLLECTIONS`](/zh/reference/statements/grant#named-collection-admin)、
+`SHOW NAMED COLLECTIONS SECRETS` 和
+[`displaySecretsInShowAndSelect`](/zh/reference/statements/grant#displaysecretsinshowandselect)。
+对于加密的命名集合存储同样如此：条目虽以密文形式复制，
+但任何持有相同键的服务器都能将其恢复为集合，随后即可读取其中的值。
+
+恢复这些集合需要
+[`CREATE NAMED COLLECTION`](/zh/reference/statements/grant#named-collection-admin) 特权，
+但不需要上面列出的特权：操作人员可以在无法读取备份的情况下恢复该备份，且此类恢复操作的错误和日志中绝不会出现任何集合的名称。
+
+对于 `BACKUP ON CLUSTER` 和 `RESTORE ON CLUSTER`，在查询分派到其他主机之前，会先在发起主机上针对发起用户检查特权。在滚动升级期间，如果查询由运行旧版本 (不具备此功能) 的发起服务器分派，那么运行新版本 (具备此功能) 的主机绝不会为该查询导出或恢复这些集合，因为此类发起服务器无法检查特权：导出会被跳过 (若显式选择了集合，则会被拒绝) ，集合条目的恢复也会被拒绝。
+
+## `backup_named_collections` {#backup-named-collections}
+
+类型：`Bool`。可选；默认未设置。
+
+控制 `BACKUP` 查询是否导出命名集合：
+
+* 未设置 (默认) ：显式的 `TABLE system.named_collections` 元素会导出命名集合，并且
+  要求具备相应特权；`DATABASE system` 或 `ALL` 元素仅在用户拥有相应特权时才导出命名集合，
+  否则会跳过命名集合并发出警告。
+* `true`：只要查询选中了该表，备份就会导出命名集合；即使是隐式选中，缺少相应特权也会
+  报错。
+* `false`：备份始终不导出命名集合，即使显式指定了
+  `system.named_collections` 表也是如此，且无需任何相应特权。
+
+```sql
+-- Fails instead of skipping the collections when the privileges are missing:
+BACKUP ALL TO Disk('backups', 'everything') SETTINGS backup_named_collections = 1
+
+-- Never exports the collections:
+BACKUP ALL TO Disk('backups', 'no_collections') SETTINGS backup_named_collections = 0
+```
+
+## `restore_named_collections` {#restore-named-collections}
+
+类型：`Bool`。默认值：`true`。
+
+控制 `RESTORE` 查询是否恢复备份中包含的命名集合。与
+[`restore_table_data`](/zh/concepts/features/backup-restore/restore-settings) 及其同类设置不同，在 `structure_only` 模式下，该设置的默认值仍为
+`true`：命名集合属于定义，如果某个表的引擎引用了某个命名集合 (例如 `ENGINE = URL(collection)`) ，缺少该集合就无法创建此表。
+
+```sql
+-- Restores everything except the named collections:
+RESTORE ALL FROM Disk('backups', 'everything') SETTINGS restore_named_collections = 0
+```
+
+## `create_named_collection` {#create-named-collection}
+
+类型：`String`。默认值：`'if-not-exists'`。
+
+`RESTORE` 遇到已存在的命名集合时的处理方式：
+
+* `'if-not-exists'` (默认值) ：保留现有集合，跳过备份中的集合。
+* `'create'`：若集合已存在，则恢复失败。
+* `'replace'`：用备份中的集合替换现有集合。在服务器配置中定义的集合无法被替换，
+  此时恢复失败。
+
+```sql
+RESTORE TABLE system.named_collections FROM Disk('backups', 'everything')
+SETTINGS create_named_collection = 'replace'
+```
+
+## 加密的命名集合存储 {#encrypted-storage}
+
+使用[加密的命名集合存储](/zh/concepts/features/configuration/server-config/named-collections)
+(`local_encrypted` 或 `zookeeper_encrypted`)时,条目会以存储中所保存的密文形式复制到备份中,
+并在其后附加一个认证码:备份中任何位置都不会出现明文值,而且被篡改的条目会在解密任何内容之前就导致恢复失败。
+
+要恢复此类备份,目标服务器的命名集合存储也必须启用加密,并持有加密这些集合时所用的键。恢复后的条目会使用
+执行恢复的服务器的键重新加密。包含加密条目的备份无法恢复到未加密的
+存储中;请配置一个持有该键的加密存储,或通过
+`restore_named_collections = 0` 跳过这些集合。

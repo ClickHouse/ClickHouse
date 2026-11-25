@@ -56,7 +56,7 @@ def test_single_file(started_cluster, cluster):
     path = get_dist_path(cluster, node, "distr_1")
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
     )
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"
@@ -66,7 +66,7 @@ def test_single_file(started_cluster, cluster):
     select * from t;
     """
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
     )
 
     assert out == "1\ta\n2\tbb\n3\tccc\n"
@@ -88,7 +88,7 @@ def test_two_files(started_cluster, cluster):
     path = get_dist_path(cluster, node, "distr_2")
     query = f"select * from file('{path}/{{1,2,3,4}}.bin', 'Distributed') order by x"
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
     )
 
     assert out == "0\t_\n1\ta\n2\tbb\n3\tccc\n"
@@ -98,7 +98,7 @@ def test_two_files(started_cluster, cluster):
     select * from t order by x;
     """
     out = node.exec_in_container(
-        ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
     )
 
     assert out == "0\t_\n1\ta\n2\tbb\n3\tccc\n"

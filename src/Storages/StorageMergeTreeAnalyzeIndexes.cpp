@@ -139,7 +139,6 @@ protected:
         {
             auto execution_context = Context::createCopy(context);
             execution_context->setSetting("enable_parallel_blocks_marshalling", false);
-            execution_context->setPositionalArgumentsAlreadyResolved(false);
 
             auto expression = buildQueryTree(predicate, execution_context);
 
@@ -174,9 +173,12 @@ protected:
             {
                 auto query_tree = subquery->detachQueryTree();
                 createUniqueAliasesIfNecessary(query_tree, execution_context);
+                /// The `Planner` mutates the options it is given (see `Planner::markDistributedPlanContext`),
+                /// so each subquery gets its own copy and cannot affect the planning of its siblings.
+                SelectQueryOptions current_subquery_options = subquery_options;
                 Planner subquery_planner(
                     query_tree,
-                    subquery_options,
+                    current_subquery_options,
                     std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
                 subquery_planner.buildQueryPlanIfNeeded();
 
@@ -249,7 +251,7 @@ private:
 class ReadFromMergeTreeAnalyzeIndexes : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeAnalyzeIndexes(

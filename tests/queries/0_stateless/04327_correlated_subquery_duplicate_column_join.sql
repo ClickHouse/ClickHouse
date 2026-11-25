@@ -5,7 +5,6 @@
 -- join child, the join's ActionsDAG had a single input for the duplicated name while the child step
 -- still produced two. See STID 2409-5283 (AST fuzzer).
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 -- Minimal case that previously threw: the duplicated column is NOT projected to the

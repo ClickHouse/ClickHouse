@@ -7,17 +7,12 @@ keywords: ['actualizaciones de ClickHouse Managed Postgres', 'versión de Postgr
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
-
 ClickHouse Managed Postgres se encarga de las actualizaciones de versión de PostgreSQL para mantener sus instancias seguras y al día. Admite tanto actualizaciones de versiones menores como mayores, con una interrupción mínima.
 
-<div id="maintenance-updates">
-  ## Actualizaciones de mantenimiento
-</div>
+## Actualizaciones de mantenimiento {#maintenance-updates}
 
 El mantenimiento periódico de las instancias de PostgreSQL incluye lo siguiente:
 
@@ -29,9 +24,7 @@ Estas tareas se realizan mediante failover y, por lo general, solo provocan una 
 
 En las instancias con [instancias en espera](/es/products/managed-postgres/high-availability) habilitadas, la actualización se aplica primero a la instancia en espera, seguida de un failover para minimizar el tiempo de inactividad.
 
-<div id="scheduled-upgrades">
-  ## Actualizaciones programadas
-</div>
+## Actualizaciones programadas {#scheduled-upgrades}
 
 <ScalePlanFeatureBadge feature="Actualizaciones programadas" linking_verb_are="true" />
 
@@ -44,9 +37,7 @@ En el plan Enterprise, también puede restringir las actualizaciones a
 [días específicos de la semana](#days-of-the-week). En el plan Scale, solo puede elegir el período de tiempo,
 y las actualizaciones pueden aplicarse cualquier día dentro de él.
 
-<div id="configure-a-schedule">
-  ### Configurar una programación
-</div>
+### Configurar una programación {#configure-a-schedule}
 
 <Steps>
   <Step title="Abrir la configuración de la instancia" id="open-settings">
@@ -80,9 +71,7 @@ Necesita el permiso `control-plane:postgres-service:manage` en la instancia para
 su programación. Los controles también se deshabilitan mientras una instancia está detenida o todavía
 se está aprovisionando.
 
-<div id="time-periods">
-  ### Períodos de tiempo
-</div>
+### Períodos de tiempo {#time-periods}
 
 Las ventanas duran dos horas y siempre se expresan en UTC; no es posible seleccionar una zona horaria
 local. Las ventanas disponibles son:
@@ -98,9 +87,7 @@ local. Las ventanas disponibles son:
 
 No se admiten horas de inicio ni duraciones de ventana personalizadas, ni más de una ventana por instancia.
 
-<div id="days-of-the-week">
-  ### Días de la semana
-</div>
+### Días de la semana {#days-of-the-week}
 
 <EnterprisePlanFeatureBadge feature="Restringir las actualizaciones a días específicos de la semana" />
 
@@ -110,35 +97,29 @@ La restricción de días es opcional:
 * **Se seleccionaron uno o más días** — las actualizaciones solo se aplican en esos días dentro del
   período elegido. Seleccionar los siete días equivale a no seleccionar ninguno.
 
-<div id="schedule-scope">
-  ### A qué se aplica una programación
-</div>
+### A qué se aplica una programación {#schedule-scope}
 
 Una programación rige únicamente el **mantenimiento de la plataforma**: las actualizaciones de versiones
-menores, las actualizaciones de funcionalidades del servicio gestionado y los parches del sistema operativo descritos en
+menores, las actualizaciones de funcionalidades del servicio administrado y los parches del sistema operativo descritos en
 [Actualizaciones de mantenimiento](#maintenance-updates).
 
-Los cambios que inicie usted mismo no se aplazan hasta el periodo programado y se aplican en cuanto
+Los cambios que inicie usted mismo no se aplazan hasta la ventana programada y se aplican en cuanto
 los realiza. Esto incluye el [escalado](/es/products/managed-postgres/scaling) de una instancia,
 el redimensionamiento del almacenamiento y la modificación de los [parámetros de configuración](/es/products/managed-postgres/settings).
 
 <Note>
-  Las actualizaciones programadas se realizan según disponibilidad. El mantenimiento puede aplicarse fuera de su periodo si es
-  necesario para el correcto funcionamiento de su instancia —por ejemplo, cuando el uso del disco alcanza el 95 %— o para
+  Las actualizaciones programadas se realizan según disponibilidad. El mantenimiento puede aplicarse fuera de su ventana si es
+  necesario para el correcto funcionamiento de su instancia, como cuando el uso del disco alcanza el 95 %, o para
   aplicar parches de seguridad críticos y corregir vulnerabilidades. Se le notificará de dichas excepciones cuando sea
   necesario.
 </Note>
 
-<div id="read-replicas">
-  ### Réplicas de lectura
-</div>
+### Réplicas de lectura {#read-replicas}
 
 Las [réplicas de lectura](/es/products/managed-postgres/read-replicas) siguen la programación de su
 instancia primaria y no tienen una programación propia, por lo que no se muestra la sección **Actualizaciones programadas**.
 
-<div id="major-version-upgrades">
-  ## Actualizaciones de versión mayor
-</div>
+## Actualizaciones de versión mayor {#major-version-upgrades}
 
 Las actualizaciones de versión mayor (p. ej., de 17.x a 18.x) mediante la UI y la API estarán disponibles próximamente.
 Mientras tanto, ponte en contacto con [soporte](https://clickhouse.com/support/program) para actualizar tu instancia de ClickHouse Managed Postgres.

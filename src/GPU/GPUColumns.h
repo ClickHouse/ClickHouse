@@ -19,9 +19,12 @@ std::optional<GPUElementType> columnTypeOf(const IDataType & type);
 
 GPUElementType columnTypeOrThrow(const IDataType & type);
 
+/// Also a `FixedString` key and a `Date`, `Date32` or `DateTime`, as the integers they are stored as.
+GPUElementType uploadTypeOrThrow(const IDataType & type);
+
 const DeviceFixedColumn & fixedOrThrow(const DeviceColumnView & view);
 
-void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, rmm::cuda_stream_view stream);
+void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, cuda::stream_ref stream);
 
 }
 

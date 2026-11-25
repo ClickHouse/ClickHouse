@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/Operators.h>
@@ -19,6 +20,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
@@ -59,6 +61,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_IS_PROHIBITED;
     extern const int DNS_ERROR;
     extern const int UNKNOWN_USER;
     extern const int UNKNOWN_ROLE;
@@ -105,54 +108,51 @@ bool HostID::isLoopbackHost() const
 
 void DDLLogEntry::assertVersion() const
 {
-    if (version == 0
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
-    || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
-    || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}. "
-                                                            "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+    /// Older servers write version-1 empty entries to a `Replicated` database log; drop this when no supported release does.
+    bool is_old_empty_entry = version > 0 && version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && query.empty();
+    if ((version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && !is_old_empty_entry) || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported DDLLogEntry format version: {}. "
+                                                            "Supported versions are from {} to {}",
+                        version, NORMALIZE_CREATE_ON_INITIATOR_VERSION, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
-    if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}. "
-                                                            "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+    if (version < NORMALIZE_CREATE_ON_INITIATOR_VERSION || version > DDL_ENTRY_FORMAT_MAX_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported distributed_ddl_entry_format_version: {}. "
+                                                            "Supported versions are from {} to {}",
+                        version, NORMALIZE_CREATE_ON_INITIATOR_VERSION, DDL_ENTRY_FORMAT_MAX_VERSION);
+
+    /// Older servers reject entry version 3, because they wrote the setting value 3 as version 2.
+    version = std::max(version, OPENTELEMETRY_ENABLED_VERSION);
 
     parent_table_uuid = context->getParentTable();
     if (parent_table_uuid.has_value())
         version = std::max(version, PARENT_TABLE_UUID_VERSION);
 
-    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
-    if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
-        version = SETTINGS_IN_ZK_VERSION;
+    settings.emplace(context->getSettingsRef().changes());
 
-    if (version >= SETTINGS_IN_ZK_VERSION)
-    {
-        settings.emplace(context->getSettingsRef().changes());
-
-        /// These settings are interpreted only at the initiator: they shape the final query
-        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
-        /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
-        /// `output_format`, `default_format`, `compression`), select the initiator's default database
-        /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
-        /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
-        /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
-        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
-        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
-        /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
-        /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
-        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
-        static constexpr std::array initiator_only_settings = {
-            "database", "select", "order", "sort", "filter", "additional_result_filter",
-            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
-            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
-        for (const auto * name : initiator_only_settings)
-            settings->removeSetting(name);
-    }
+    /// These settings are interpreted only at the initiator: they shape the final query
+    /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
+    /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
+    /// `output_format`, `default_format`, `compression`), select the initiator's default database
+    /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
+    /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
+    /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
+    /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
+    /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
+    /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
+    /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
+    /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
+    /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
+    static constexpr std::array initiator_only_settings = {
+        "database", "select", "order", "sort", "filter", "additional_result_filter",
+        "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
+        "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
+        "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+    for (const auto * name : initiator_only_settings)
+        settings->removeSetting(name);
 }
 
 String DDLLogEntry::toString() const
@@ -162,8 +162,7 @@ String DDLLogEntry::toString() const
     wb << "version: " << version << "\n";
     wb << "query: " << escape << query << "\n";
 
-    bool write_hosts = version == OLDEST_VERSION || !hosts.empty();
-    if (write_hosts)
+    if (!hosts.empty())
     {
         Strings host_id_strings(hosts.size());
         std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
@@ -172,8 +171,7 @@ String DDLLogEntry::toString() const
 
     wb << "initiator: " << initiator << "\n";
 
-    bool write_settings = SETTINGS_IN_ZK_VERSION <= version && settings && !settings->empty();
-    if (write_settings)
+    if (settings && !settings->empty())
     {
         ASTSetQuery ast;
         ast.is_standalone = false;
@@ -219,36 +217,35 @@ void DDLLogEntry::parse(const String & data)
     ReadBufferFromString rb(data);
 
     rb >> "version: " >> version >> "\n";
+    rb >> "query: " >> escape >> query >> "\n";
+
+    if (version > 0 && version < NORMALIZE_CREATE_ON_INITIATOR_VERSION && !query.empty())
+    {
+        /// Only to report the rejection under the host ID the initiator waits for; the entry is still rejected below.
+        Strings legacy_host_id_strings;
+        if (!rb.eof() && *rb.position() == 'h')
+            rb >> "hosts: " >> legacy_host_id_strings >> "\n";
+        hosts.resize(legacy_host_id_strings.size());
+        std::transform(legacy_host_id_strings.begin(), legacy_host_id_strings.end(), hosts.begin(), HostID::fromString);
+    }
+
     assertVersion();
 
     Strings host_id_strings;
-    rb >> "query: " >> escape >> query >> "\n";
-    if (version == OLDEST_VERSION)
-    {
+    if (!rb.eof() && *rb.position() == 'h')
         rb >> "hosts: " >> host_id_strings >> "\n";
-
-        if (!rb.eof())
-            rb >> "initiator: " >> initiator >> "\n";
-        else
-            initiator.clear();
-    }
-    else if (version >= SETTINGS_IN_ZK_VERSION)
+    if (!rb.eof() && *rb.position() == 'i')
+        rb >> "initiator: " >> initiator >> "\n";
+    if (!rb.eof() && *rb.position() == 's')
     {
-        if (!rb.eof() && *rb.position() == 'h')
-            rb >> "hosts: " >> host_id_strings >> "\n";
-        if (!rb.eof() && *rb.position() == 'i')
-            rb >> "initiator: " >> initiator >> "\n";
-        if (!rb.eof() && *rb.position() == 's')
-        {
-            String settings_str;
-            rb >> "settings: " >> settings_str >> "\n";
-            ParserSetQuery parser{true};
-            constexpr UInt64 max_depth = 16;
-            constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(
-                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
-            settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
-        }
+        String settings_str;
+        rb >> "settings: " >> settings_str >> "\n";
+        ParserSetQuery parser{true};
+        constexpr UInt64 max_depth = 16;
+        constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+        ASTPtr settings_ast = parseQuery(
+            parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
+        settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
@@ -415,6 +412,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+
+    query_context->setQueryExecutionStartedCallback(query_execution_started_callback);
 
     if (submitting_user_context)
     {
@@ -806,6 +805,12 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
+    else if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        /// The entry may still name the initiator's local database.
+        rename->resetDatabases();
+        rename->setDatabaseIfNotExists(database->getDatabaseName());
+    }
     formatRewrittenQuery(context);
 }
 
@@ -815,6 +820,8 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
+    if (entry.parent_table_uuid)
+        query_context->setParentTable(*entry.parent_table_uuid);
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
@@ -825,19 +832,15 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
-        /// Make sure that we did not disable replicated DDL queries
-        const auto & macros = from_context->getMacros();
-        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
-        if (should_check_stop_flag)
-        {
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = macros->expand(stop_flag_path);
+        /// Make sure that we did not disable replicated DDL queries. The in-memory flag rejects the entries
+        /// that are processed after `SYSTEM STOP REPLICATED DDL QUERIES`, and the flag in Keeper makes the commit
+        /// fail for the entries that passed this check before the stop.
+        if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
-            zookeeper->createAncestors(stop_flag_path);
-
-            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
-            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
-        }
+        String stop_flag_path = getStopReplicatedDDLQueriesFlagPath(*database);
+        txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+        txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -847,6 +850,14 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     ops.clear();
 
     return query_context;
+}
+
+String DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database)
+{
+    /// The ephemeral flag of a killed server stays in Keeper until its session expires, so the path identifies
+    /// the current process to not mistake that flag for the flag of this process after a restart.
+    static const String process_id = toString(UUIDHelpers::generateV4());
+    return fmt::format("{}/stop_replicated_ddl_queries_{}", database.replica_path, process_id);
 }
 
 Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
@@ -926,7 +937,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     if (name.empty())
         return {};
 
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    /// Hold the database during the call. Otherwise a concurrent `DROP DATABASE` could destroy it.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name);
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(database.get()))
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();

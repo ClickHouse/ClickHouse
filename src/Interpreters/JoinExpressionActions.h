@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <ranges>
 #include <boost/dynamic_bitset.hpp>
@@ -197,10 +198,10 @@ public:
 
     JoinExpressionActions clone(ActionsDAG::NodeMapping & node_map) const;
 
-    JoinActionRef findNode(const String & column_name, bool is_input = false, bool throw_if_not_found = true) const;
+    [[nodiscard]] JoinActionRef findNode(const String & column_name, bool is_input = false, bool throw_if_not_found = true) const;
     JoinActionRef addInput(const String & column_name, const DataTypePtr & type, size_t source_relation);
 
-    std::shared_ptr<ActionsDAG> getActionsDAG() const;
+    [[nodiscard]] std::shared_ptr<ActionsDAG> getActionsDAG() const;
 
     void resetNodeSources(NodeToSourceMapping expression_sources);
     void setNodeSources(const NodeToSourceMapping & expression_sources);
@@ -256,44 +257,44 @@ public:
     };
 
     template <typename F>
-    static JoinActionRef transform(const std::vector<JoinActionRef> & actions, F && func)
+    static JoinActionRef transform(const VectorWithMemoryTracking<JoinActionRef> & actions, F && func)
     {
         auto data_ptr = getData(actions);
         auto nodes = std::ranges::to<std::vector>(actions | std::views::transform([](const auto & action) { return action.getNode(); }));
         return JoinActionRef(func(getActionsDAG(*data_ptr), std::move(nodes)), data_ptr);
     }
 
-    NodeRawPtr getNode() const;
+    [[nodiscard]] NodeRawPtr getNode() const;
 
-    ColumnWithTypeAndName getColumn() const;
-    const String & getColumnName() const;
-    DataTypePtr getType() const;
+    [[nodiscard]] ColumnWithTypeAndName getColumn() const;
+    [[nodiscard]] const String & getColumnName() const;
+    [[nodiscard]] DataTypePtr getType() const;
 
     operator bool() const { return node_ptr != nullptr; } /// NOLINT
 
-    std::vector<JoinActionRef> getArguments(bool recursive = false) const;
+    [[nodiscard]] VectorWithMemoryTracking<JoinActionRef> getArguments(bool recursive = false) const;
 
     void setSourceRelations(const BitSet & source_relations) const;
-    const BitSet & getSourceRelations() const;
-    bool fromLeft() const;
-    bool fromRight() const;
-    bool fromNone() const;
-    bool isFromSameActions(const JoinActionRef & other) const;
+    [[nodiscard]] const BitSet & getSourceRelations() const;
+    [[nodiscard]] bool fromLeft() const;
+    [[nodiscard]] bool fromRight() const;
+    [[nodiscard]] bool fromNone() const;
+    [[nodiscard]] bool isFromSameActions(const JoinActionRef & other) const;
 
-    bool isFunction(JoinConditionOperator op) const;
-    std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
+    [[nodiscard]] bool isFunction(JoinConditionOperator op) const;
+    [[nodiscard]] std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
 
     /// Follow alias chain to the underlying non-alias node.
-    JoinActionRef resolveAliases() const;
+    [[nodiscard]] JoinActionRef resolveAliases() const;
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
     friend bool operator==(const JoinActionRef & left, const JoinActionRef & right) { return left.node_ptr == right.node_ptr; }
     friend struct std::hash<JoinActionRef>;
 
 private:
-    std::shared_ptr<JoinExpressionActions::Data> getData() const;
-    static std::shared_ptr<JoinExpressionActions::Data> getData(const std::vector<JoinActionRef> & actions);
+    [[nodiscard]] std::shared_ptr<JoinExpressionActions::Data> getData() const;
+    static std::shared_ptr<JoinExpressionActions::Data> getData(const VectorWithMemoryTracking<JoinActionRef> & actions);
     static ActionsDAG & getActionsDAG(JoinExpressionActions::Data & data_);
 
     NodeRawPtr node_ptr = nullptr;
