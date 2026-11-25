@@ -61,7 +61,10 @@ DROP TABLE t_shadow_keys_vertical;
 SELECT '-- skip index recalculated by a mutation';
 DROP TABLE IF EXISTS t_shadow_index_mutation;
 CREATE TABLE t_shadow_index_mutation (id UInt64, a JSON, `a.x` Tuple(y Dynamic), INDEX i toUInt64(`a.x.y`) TYPE minmax GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, packed_skip_index_max_bytes = 1048576;
+-- The index is kept in the packed archive, so that the mutation recalculates it. An index in a file of its own is
+-- not recalculated when the mutation updates the column of the subcolumn it is built on, with or without another
+-- column of that name: https://github.com/ClickHouse/ClickHouse/issues/128280
 INSERT INTO t_shadow_index_mutation VALUES (1, '{"x" : {"y" : 11}}', tuple(55::UInt64)), (2, '{"x" : {"y" : 22}}', tuple(44::UInt64));
 ALTER TABLE t_shadow_index_mutation UPDATE `a.x` = tuple(77::UInt64) WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT id, `a.x.y` FROM t_shadow_index_mutation ORDER BY id;
