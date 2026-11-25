@@ -8,6 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# `clickhouse-local` caches the schemas given with `format_schema_source` under its working directory.
+WORKDIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR" || exit 1
+
 PROTO_SCHEMA='syntax = "proto3"; message KVP { uint64 key = 1; string value = 2; }'
 
 # Should fail because the schema query returns multiple rows
@@ -39,3 +44,5 @@ SETTINGS
     format_schema = 'SELECT ''${PROTO_SCHEMA}''',
     format_schema_message_name = 'KVP';
 "
+
+rm -rf "$WORKDIR"

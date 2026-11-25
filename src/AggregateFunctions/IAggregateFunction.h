@@ -389,8 +389,9 @@ public:
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
-    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
-    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg`,
+    /// `sumCount` and `count`; `sum` is a `Field` of the result type of `sum` over the argument, and ignored by `count`.
+    /// Over a `Nullable` argument, `count` is the number of non-NULL rows. Other functions throw.
     virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
@@ -444,7 +445,7 @@ public:
     virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
-      * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
+      * The reason is that in the case of virtual functions the compiler can generate code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
       * This gives a performance drop on simple queries around 12%.
       * After the appearance of better compilers, the code can be removed.
@@ -529,7 +530,7 @@ public:
         ssize_t if_argument_pos = -1) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
-      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  as long as they are between offsets[static_cast<ssize_t>(i) - 1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
       *  "places" contains a large number of same values consecutively.
       */
@@ -652,23 +653,6 @@ public:
         if (auto nested = getNestedFunction())
             return nested->getStateParameters();
         return parameters;
-    }
-
-    // Any aggregate function can be calculated over a window, but there are some
-    // window functions such as rank() that require a different interface, e.g.
-    // because they don't respect the window frame, or need to be notified when
-    // a new peer group starts. They pretend to be normal aggregate functions,
-    // but will fail if you actually try to use them in Aggregator. The
-    // WindowTransform recognizes these functions and handles them differently.
-    // We could have a separate factory for window functions, and make all
-    // aggregate functions implement IWindowFunction interface and so on. This
-    // would be more logically correct, but more complex. We only have a handful
-    // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isOnlyWindowFunction();
-        return false;
     }
 
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
