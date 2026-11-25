@@ -99,7 +99,7 @@ namespace
                 "{} of data file '{}'; ignoring the declared bounds for this column",
                 path_to_manifest_file,
                 field_id,
-                parsed_entry.file_path_key.serialize());
+                parsed_entry.file_path_key);
             return std::nullopt;
         }
 

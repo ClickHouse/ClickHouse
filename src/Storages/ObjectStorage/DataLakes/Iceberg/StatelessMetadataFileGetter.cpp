@@ -45,6 +45,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 
 #include <IO/SharedThreadPools.h>
@@ -142,14 +143,30 @@ bool useMetadataCacheForManifestFiles(const PersistentTableComponents & persiste
         && local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value < DB::IcebergMetadataLogLevel::ManifestFileMetadata;
 }
 
+/// A file of an external storage is cached per client of that storage, whose name reflects the credentials policy of the
+/// session that resolved it, so a session with another policy does not get a file it could not read itself.
+String getMetadataFilesCacheKey(
+    const PersistentTableComponents & persistent_table_components,
+    const IcebergPathFromMetadata & filename,
+    const ObjectStoragePtr & storage_to_use,
+    const ObjectStoragePtr & base_storage)
+{
+    auto key = IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, filename.serialize());
+    if (storage_to_use != base_storage)
+        key += "#" + storage_to_use->getDiskName();
+    return key;
 }
 
-Iceberg::ManifestFileCacheableInfo getManifestFile(
-    ObjectStoragePtr object_storage,
+/// Reads the manifest file from the storage and key that `resolveObjectStorageForPath` resolved its path to.
+/// The resolution checks the querying user's grant, so it must precede the lookup in the cache, which is shared between users.
+Iceberg::ManifestFileCacheableInfo getResolvedManifestFile(
+    const ObjectStoragePtr & object_storage,
     const PersistentTableComponents & persistent_table_components,
-    ContextPtr local_context,
-    LoggerPtr log,
-    const IcebergPathFromMetadata & filename)
+    const ContextPtr & local_context,
+    const LoggerPtr & log,
+    const IcebergPathFromMetadata & filename,
+    const ObjectStoragePtr & storage_to_use,
+    const String & resolved_key_in_storage)
 {
     const bool use_iceberg_metadata_cache = useMetadataCacheForManifestFiles(persistent_table_components, local_context);
 
@@ -158,7 +175,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         ProfileEvents::increment(ProfileEvents::IcebergManifestFilesRead);
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestFilesReadMicroseconds);
 
-        RelativePathWithMetadata manifest_object_info(persistent_table_components.path_resolver.resolve(filename));
+        RelativePathWithMetadata manifest_object_info(resolved_key_in_storage);
         /// `manifest_length` is not always exact, so the manifest is read to the end without a size.
         manifest_object_info.metadata = ObjectMetadata::fromTableRecords(std::nullopt);
 
@@ -173,7 +190,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
             std::this_thread::sleep_for(std::chrono::milliseconds(400));
         });
 
-        auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
+        auto buffer = createReadBuffer(manifest_object_info, storage_to_use, local_context, log, read_settings);
         String manifest_file_bytes;
         readStringUntilEOF(manifest_file_bytes, *buffer);
 
@@ -184,10 +201,28 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            getMetadataFilesCacheKey(persistent_table_components, filename, storage_to_use, object_storage), create_fn);
         return manifest_file;
     }
     return create_fn();
+}
+
+}
+
+Iceberg::ManifestFileCacheableInfo getManifestFile(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr local_context,
+    LoggerPtr log,
+    const IcebergPathFromMetadata & filename,
+    ExternalStorageCache & external_storages,
+    VerifiedLocalDirectories * verified_directories)
+{
+    auto [storage_to_use, resolved_key_in_storage] = resolveObjectStorageForPath(
+        persistent_table_components.table_location, filename.serialize(), object_storage, external_storages, local_context,
+        persistent_table_components.path_resolver, /*in_table_directory*/ nullptr, verified_directories);
+    return getResolvedManifestFile(
+        object_storage, persistent_table_components, local_context, log, filename, storage_to_use, resolved_key_in_storage);
 }
 
 Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesHandle(
@@ -196,14 +231,16 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id)
+    Int32 table_snapshot_schema_id,
+    ExternalStorageCache & external_storages)
 {
     auto cacheable_info = getManifestFile(
         object_storage,
         persistent_table_components,
         local_context,
         log,
-        cache_key.manifest_file_path);
+        cache_key.manifest_file_path,
+        external_storages);
 
     return getManifestFileEntriesHandle(cacheable_info, persistent_table_components, local_context, cache_key, table_snapshot_schema_id);
 }
@@ -239,26 +276,32 @@ ManifestFileCacheKeys getManifestList(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr local_context,
     const IcebergPathFromMetadata & filename,
-    LoggerPtr log)
+    LoggerPtr log,
+    ExternalStorageCache & external_storages)
 {
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
         = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
 
+    /// Resolved before the cache lookup: it checks the querying user's grant, and the cache is shared between users.
+    auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+        persistent_table_components.table_location, filename.serialize(), object_storage, external_storages, local_context,
+        persistent_table_components.path_resolver);
+
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
         ProfileEvents::increment(ProfileEvents::IcebergManifestListsRead);
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergManifestListsReadMicroseconds);
 
-        RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
+        RelativePathWithMetadata object_info(key_in_storage);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
-        auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto manifest_list_buf = createReadBuffer(object_info, storage_to_use, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(local_context));
 
         /// The manifest list's own Avro metadata governs how it is parsed. A table whose
@@ -273,7 +316,7 @@ ManifestFileCacheKeys getManifestList(
             local_context,
             [&] { return manifest_list_deserializer.getMetadataContent(); },
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
-            persistent_table_components.path_resolver.getTableRoot(),
+            persistent_table_components.table_path,
             filename,
             std::nullopt,
             std::nullopt);
@@ -364,7 +407,7 @@ ManifestFileCacheKeys getManifestList(
                 local_context,
                 [&] { return manifest_list_deserializer.getContent(i); },
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
-                persistent_table_components.path_resolver.getTableRoot(),
+                persistent_table_components.table_path,
                 filename,
                 i,
                 std::nullopt);
@@ -378,7 +421,7 @@ ManifestFileCacheKeys getManifestList(
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            getMetadataFilesCacheKey(persistent_table_components, filename, storage_to_use, object_storage), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
@@ -413,12 +456,14 @@ ManifestFilesPrefetcher::ManifestFilesPrefetcher(
     const PersistentTableComponents & persistent_table_components_,
     ContextPtr local_context_,
     LoggerPtr log_,
-    ManifestFileCacheKeys manifests_)
+    ManifestFileCacheKeys manifests_,
+    std::shared_ptr<ExternalStorageCache> external_storages_)
     : object_storage(std::move(object_storage_))
     , persistent_table_components(persistent_table_components_)
     , local_context(std::move(local_context_))
     , log(std::move(log_))
     , manifests(std::move(manifests_))
+    , external_storages(std::move(external_storages_))
     , use_metadata_cache(
           useMetadataCacheForManifestFiles(persistent_table_components, local_context) && persistent_table_components.table_uuid.has_value())
 {
@@ -450,9 +495,17 @@ void ManifestFilesPrefetcher::fill()
         const auto & manifest = manifests[next_to_fetch];
 
         std::optional<ManifestFileCacheableInfo> cached;
+        /// The storage and key of the manifest file, if resolved here; a read that misses the cache reuses them.
+        std::optional<std::pair<ObjectStoragePtr, String>> resolved;
         if (use_metadata_cache)
+        {
+            /// Resolved before the cache lookup: it checks the querying user's grant, and the cache is shared between users.
+            resolved = resolveObjectStorageForPath(
+                persistent_table_components.table_location, manifest.manifest_file_path.serialize(), object_storage, *external_storages,
+                local_context, persistent_table_components.path_resolver, /*in_table_directory*/ nullptr, verified_directories.get());
             cached = persistent_table_components.metadata_cache->tryGetManifestFile(
-                IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, manifest.manifest_file_path.serialize()));
+                getMetadataFilesCacheKey(persistent_table_components, manifest.manifest_file_path, resolved->first, object_storage));
+        }
 
         const size_t bytes = cached ? 0 : manifest.manifest_file_byte_size;
         if (bytes != 0 && leased_bytes != 0 && leased_bytes + bytes > max_manifest_bytes_in_flight)
@@ -463,11 +516,14 @@ void ManifestFilesPrefetcher::fill()
             fetch->cached = std::move(cached);
         else
             fetch->pending = runner(
-                [stopped_ = stopped, object_storage_ = object_storage, components = persistent_table_components, context = local_context, log_ = log, path = manifest.manifest_file_path]
+                [stopped_ = stopped, object_storage_ = object_storage, components = persistent_table_components, context = local_context, log_ = log, path = manifest.manifest_file_path, external_storages_ = external_storages, verified_directories_ = verified_directories, resolved_ = resolved]
                 {
                     if (*stopped_)
                         return ManifestFileCacheableInfo{};
-                    return getManifestFile(object_storage_, components, context, log_, path);
+                    if (resolved_)
+                        return getResolvedManifestFile(object_storage_, components, context, log_, path, resolved_->first, resolved_->second);
+                    return getManifestFile(
+                        object_storage_, components, context, log_, path, *external_storages_, verified_directories_.get());
                 },
                 Priority{});
 

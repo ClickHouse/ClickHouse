@@ -35,11 +35,13 @@ public:
     LazyRowsObjectIterator(
         VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files_,
         ObjectStoragePtr object_storage_,
-        bool etag_validated_on_read_,
+        bool s3_validate_etag_on_read_,
+        bool azure_validate_etag_on_read_,
         bool data_files_are_immutable_)
         : files(std::move(files_))
         , object_storage(std::move(object_storage_))
-        , etag_validated_on_read(etag_validated_on_read_)
+        , s3_validate_etag_on_read(s3_validate_etag_on_read_)
+        , azure_validate_etag_on_read(azure_validate_etag_on_read_)
         , data_files_are_immutable(data_files_are_immutable_)
     {
     }
@@ -72,6 +74,12 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Lazy materialization: no object metadata was captured for {} in the main reading pass",
                 object.getPath());
+
+        /// A data lake object may live in a storage other than the table's one.
+        const auto storage = object.getResolvedStorage(object_storage);
+        const bool etag_validated_on_read
+            = (storage->getType() == ObjectStorageType::S3 && s3_validate_etag_on_read)
+            || (storage->getType() == ObjectStorageType::Azure && azure_validate_etag_on_read);
 
         /// For S3 with `s3_validate_etag_on_read` (and Azure with `azure_validate_etag_on_read`), the GET
         /// itself is pinned to the captured ETag (see `ReadBufferFromS3`, `ReadBufferFromAzureBlobStorage`),
@@ -107,7 +115,7 @@ private:
         const auto & path = object.isArchive() ? object.getPathToArchive() : object.getPath();
         auto metadata_object = object.relative_path_with_metadata;
         metadata_object.relative_path = path;
-        const auto current = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
+        const auto current = storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
 
         bool changed = false;
         bool comparable = false;
@@ -144,7 +152,8 @@ private:
 
     const VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files;
     const ObjectStoragePtr object_storage;
-    const bool etag_validated_on_read;
+    const bool s3_validate_etag_on_read;
+    const bool azure_validate_etag_on_read;
     const bool data_files_are_immutable;
     std::atomic<size_t> index = 0;
 };
@@ -253,9 +262,6 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         return {};
 
     const auto & settings = context->getSettingsRef();
-    const bool etag_validated_on_read
-        = (object_storage->getType() == ObjectStorageType::S3 && settings[Setting::s3_validate_etag_on_read])
-        || (object_storage->getType() == ObjectStorageType::Azure && settings[Setting::azure_validate_etag_on_read]);
 
     /// The rows of a file must be returned in ascending order, otherwise LazyMaterializingTransform
     /// would restore the original row order incorrectly.
@@ -316,7 +322,11 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     for (auto & group_files : groups)
     {
         auto iterator = std::make_shared<LazyRowsObjectIterator>(
-            std::move(group_files), object_storage, etag_validated_on_read, configuration->dataFilesAreImmutable());
+            std::move(group_files),
+            object_storage,
+            settings[Setting::s3_validate_etag_on_read],
+            settings[Setting::azure_validate_etag_on_read],
+            configuration->dataFilesAreImmutable());
 
         auto source = std::make_shared<StorageObjectStorageSource>(
             storage_id,

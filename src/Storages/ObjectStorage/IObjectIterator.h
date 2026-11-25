@@ -61,6 +61,14 @@ struct ObjectInfo
 
     [[nodiscard]] virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
 
+    [[nodiscard]] virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
+
+    /// Manifest spelling used by `_path` and cross-storage cache keys; storage keys alone are not unique.
+    [[nodiscard]] virtual std::optional<String> getPathInDataLakeMetadata() const { return std::nullopt; }
+
+    /// Returns a local dependency that cannot be handed to another replica, including attached delete files.
+    [[nodiscard]] virtual std::optional<String> getExternalLocalPath() const { return std::nullopt; }
+
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
     [[nodiscard]] virtual std::optional<size_t> getNumRowsHint() const
@@ -88,6 +96,10 @@ struct ObjectInfo
 
     [[nodiscard]] String getIdentifier(bool include_file_bucket_info = true) const;
     [[nodiscard]] String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+
+    /// The identifier of the object in the query condition cache. A data lake file is identified by its metadata path
+    /// with the userinfo and query replaced by a hash of the complete identifier, plus its storage if outside `base_storage`.
+    [[nodiscard]] String getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -125,6 +137,11 @@ struct IObjectIterator
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
 
+    bool tasks_go_to_other_replicas = false;
+
+    /// Call before the first `next`; propagates to nested iterators.
+    virtual void setTasksGoToOtherReplicas(bool value) { tasks_go_to_other_replicas = value; }
+
     /// The predicate of the JOIN runtime filters every row of the read passes, set before the first `next`.
     /// An iterator may skip the objects that cannot contain any of their keys once it is built.
     virtual void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> /*predicate*/) {}
@@ -152,6 +169,12 @@ public:
     {
         emit_profile_events = value;
         iterator->setEmitProfileEvents(value);
+    }
+
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
     }
 
     void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override
@@ -256,6 +279,12 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     [[nodiscard]] std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
 
 private:
     [[nodiscard]] ObjectInfos splitToBuckets(const ObjectInfoPtr & object_info) const;

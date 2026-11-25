@@ -38,7 +38,7 @@ public:
     std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override;
 
 private:
-    [[nodiscard]] SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
+    [[nodiscard]] SchemaCache::Key getKeyForSchemaCache(const ObjectInfoPtr & object_info, const String & format_name) const;
     [[nodiscard]] SchemaCache::Keys getKeysForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);

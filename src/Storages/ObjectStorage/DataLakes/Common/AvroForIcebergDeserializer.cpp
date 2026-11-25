@@ -434,10 +434,10 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                             getLogger("AvroForIcebergDeserializer"),
                             "Manifest file '{}' declares a reference data file lower bound above its upper bound for "
                             "position delete file '{}' ('{}' > '{}'); ignoring both bounds",
-                            manifest_file_path.serialize(),
-                            file_path_key.serialize(),
-                            lower_reference_data_file_path->serialize(),
-                            upper_reference_data_file_path->serialize());
+                            manifest_file_path,
+                            file_path_key,
+                            *lower_reference_data_file_path,
+                            *upper_reference_data_file_path);
                         lower_reference_data_file_path.reset();
                         upper_reference_data_file_path.reset();
                     }
@@ -651,7 +651,7 @@ String AvroForIcebergDeserializer::formatRowAsJSON(const ColumnsWithTypeAndName 
     output_format.finalize();
     auto result_json = buf.str();
     /// result_json looks like '{"":<some_json>}\n'. We need to extract just <some_json>
-    return result_json.substr(4, result_json.size() - 6);
+    return maskCredentialsInJSONStrings(std::string_view(result_json).substr(4, result_json.size() - 6));
 }
 
 String AvroForIcebergDeserializer::getContent(size_t row_number) const

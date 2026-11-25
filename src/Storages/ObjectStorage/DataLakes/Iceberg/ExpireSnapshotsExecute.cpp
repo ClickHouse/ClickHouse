@@ -27,10 +27,14 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+
+#include <fmt/ranges.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -41,8 +45,10 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int FILE_DOESNT_EXIST;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLakeStorageSetting
@@ -351,6 +357,63 @@ std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 // File collection helpers
 // ---------------------------------------------------------------------------
 
+Iceberg::IcebergPathFromMetadata resolveFileIdentity(
+    const Iceberg::IcebergPathFromMetadata & path,
+    const ObjectStoragePtr & object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const ContextPtr & context,
+    ExternalStorageCache & external_storages)
+{
+    auto [storage, key] = resolveObjectStorageForPath(
+        persistent_table_components.path_resolver.getTableLocation(),
+        path.serialize(), object_storage, external_storages, context,
+        persistent_table_components.path_resolver);
+    return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
+}
+
+Iceberg::IcebergPathFromMetadata resolveExistingFileIdentity(
+    const Iceberg::IcebergPathFromMetadata & path,
+    const ObjectStoragePtr & object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const ContextPtr & context,
+    ExternalStorageCache & external_storages)
+{
+    auto [storage, key] = resolveObjectStorageForPath(
+        persistent_table_components.path_resolver.getTableLocation(),
+        path.serialize(), object_storage, external_storages, context,
+        persistent_table_components.path_resolver);
+    if (!storage->exists(StoredObject(key)))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Iceberg metadata file {} does not exist", path);
+    return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
+}
+
+/// Maps the files referenced by `retained_snapshots` to their storage identities.
+SnapshotReferencedFiles collectRetainedFiles(
+    const Poco::JSON::Array::Ptr & retained_snapshots,
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages)
+{
+    auto referenced = collectSnapshotReferencedFiles(
+        retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id, external_storages,
+        /* include_deleted_entries */ false);
+
+    SnapshotReferencedFiles retained;
+    for (const auto & path : referenced.manifest_list_paths)
+        retained.manifest_list_paths.insert(resolveExistingFileIdentity(
+            path, object_storage, persistent_table_components, context, external_storages));
+    for (const auto & path : referenced.manifest_paths)
+        retained.manifest_paths.insert(resolveExistingFileIdentity(
+            path, object_storage, persistent_table_components, context, external_storages));
+    for (const auto & path : referenced.data_file_paths)
+        retained.data_file_paths.insert(resolveFileIdentity(
+            path, object_storage, persistent_table_components, context, external_storages));
+    return retained;
+}
+
 struct ExpiredFile
 {
     Iceberg::IcebergPathFromMetadata path;
@@ -381,105 +444,132 @@ ExpiredFiles collectExpiredFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages)
 {
-    const auto & path_resolver = persistent_table_components.path_resolver;
-
-    /// Metadata may spell one storage object in several ways, so files are matched by the object they name.
-    std::unordered_set<String> retained_objects;
-    for (const auto * paths : {&retained.manifest_list_paths, &retained.manifest_paths, &retained.data_file_paths})
-        for (const auto & path : *paths)
-            retained_objects.insert(path_resolver.storageIdentity(path));
-
-    std::unordered_set<String> collected_objects;
-    std::unordered_set<String> unresolved_paths;
-    auto is_kept_or_collected = [&](const String & object)
-    { return retained_objects.contains(object) || collected_objects.contains(object); };
-    auto collect = [&](const Iceberg::IcebergPathFromMetadata & path)
-    {
-        String object;
-        try
-        {
-            object = path_resolver.storageIdentity(path);
-        }
-        catch (const Exception & e)
-        {
-            /// The path names no storage object, so its delete fails the same way, removes nothing and is counted as failed.
-            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                throw;
-            return unresolved_paths.insert(path.serialize()).second;
-        }
-        return !retained_objects.contains(object) && collected_objects.insert(std::move(object)).second;
-    };
+    /// Metadata may spell one storage object in several ways, so files are matched by the storage object they name
+    /// (see `resolveFileIdentity`); `retained` already holds such identities.
+    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
+    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_paths;
+    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_file_paths;
 
     ExpiredFiles result;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
-        String list_object;
-        ManifestFileCacheKeys manifest_keys;
+        Iceberg::IcebergPathFromMetadata manifest_list_id;
         try
         {
-            list_object = path_resolver.storageIdentity(manifest_list_path);
-            if (is_kept_or_collected(list_object))
-                continue;
-            manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
+            manifest_list_id = resolveExistingFileIdentity(
+                manifest_list_path, object_storage, persistent_table_components, context, external_storages);
         }
         catch (...)
         {
-            LOG_WARNING(log, "Failed to read manifest list {}, skipping", manifest_list_path);
+            tryLogCurrentException(log, fmt::format("Failed to resolve manifest list {}", manifest_list_path));
+            throw;
+        }
+        if (retained.manifest_list_paths.contains(manifest_list_id))
             continue;
+
+        if (seen_expired_manifest_list_paths.contains(manifest_list_id))
+            continue;
+
+        ManifestFileCacheKeys manifest_keys;
+        try
+        {
+            manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to read manifest list {}", manifest_list_path));
+            throw;
         }
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            String manifest_object;
+            Iceberg::IcebergPathFromMetadata manifest_id;
             try
             {
-                manifest_object = path_resolver.storageIdentity(manifest_entry.manifest_file_path);
-                if (is_kept_or_collected(manifest_object))
-                    continue;
+                manifest_id = resolveExistingFileIdentity(
+                    manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to resolve manifest file {}", manifest_entry.manifest_file_path));
+                throw;
+            }
+            if (retained.manifest_paths.contains(manifest_id))
+                continue;
 
+            if (seen_expired_manifest_paths.contains(manifest_id))
+                continue;
+
+            try
+            {
                 auto entries_handle = getManifestFileEntriesHandle(
                     object_storage, persistent_table_components, context, log,
-                    manifest_entry, current_schema_id);
+                    manifest_entry, current_schema_id, external_storages);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 {
-                    const auto & key = entry->parsed_entry->file_path_key;
-                    if (collect(key))
-                        result.push_back({key, FileCategory::DATA_FILE});
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained.data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::DATA_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 {
-                    const auto & key = entry->parsed_entry->file_path_key;
-                    if (collect(key))
-                        result.push_back({key, FileCategory::POSITION_DELETE_FILE});
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained.data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::POSITION_DELETE_FILE});
                 }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
                 {
-                    const auto & key = entry->parsed_entry->file_path_key;
-                    if (collect(key))
-                        result.push_back({key, FileCategory::EQUALITY_DELETE_FILE});
+                    auto id = resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, external_storages);
+                    if (!retained.data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
+                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::EQUALITY_DELETE_FILE});
                 }
             }
             catch (...)
             {
-                LOG_WARNING(log, "Failed to read manifest file {}, skipping", manifest_entry.manifest_file_path);
-                continue;
+                tryLogCurrentException(log, fmt::format("Failed to read manifest file {}", manifest_entry.manifest_file_path));
+                throw;
             }
 
-            collected_objects.insert(std::move(manifest_object));
+            seen_expired_manifest_paths.insert(manifest_id);
             result.push_back({manifest_entry.manifest_file_path, FileCategory::MANIFEST_FILE});
         }
 
-        collected_objects.insert(std::move(list_object));
+        seen_expired_manifest_list_paths.insert(manifest_list_id);
         result.push_back({manifest_list_path, FileCategory::MANIFEST_LIST});
     }
 
     for (const auto & path : expired_statistics_paths)
-        if (collect(path))
+    {
+        auto id = resolveFileIdentity(path, object_storage, persistent_table_components, context, external_storages);
+        if (!retained.data_file_paths.contains(id) && seen_expired_file_paths.insert(id).second)
             result.push_back({path, FileCategory::STATISTICS_FILE});
+    }
     return result;
+}
+
+std::vector<Iceberg::IcebergPathFromMetadata> collectExternalExpiredFiles(
+    const ExpiredFiles & files,
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    ExternalStorageCache & external_storages)
+{
+    std::vector<Iceberg::IcebergPathFromMetadata> external;
+    for (const auto & [file_path, _] : files)
+    {
+        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+            persistent_table_components.path_resolver.getTableLocation(), file_path.serialize(), object_storage,
+            external_storages, context, persistent_table_components.path_resolver);
+
+        if (!isObjectInTableDirectory(
+                storage_to_use, key_in_storage, object_storage, persistent_table_components.table_path))
+            external.push_back(file_path);
+    }
+    return external;
 }
 
 /// The paths of the `statistics` and `partition-statistics` entries whose snapshot is in `snapshot_ids`, or with
@@ -667,28 +757,57 @@ void updateMetadataForExpiration(
     metadata->set(Iceberg::f_last_updated_ms, ms.count());
 }
 
-/// Counts only the files it deleted; a removal that throws is counted in `failed_deletions_count` instead.
+/// Counts only the files it deleted; a removal that throws or a kept anchor is counted in `failed_deletions_count` instead.
+/// Keep a manifest or manifest list if any dependency survived deletion, so surviving files remain discoverable.
 ExpireSnapshotsResult deleteExpiredFiles(
     const ExpiredFiles & files,
     const Iceberg::IcebergPathResolver & path_resolver,
     ObjectStoragePtr object_storage,
-    LoggerPtr log)
+    ContextPtr context,
+    LoggerPtr log,
+    ExternalStorageCache & external_storages)
 {
     ExpireSnapshotsResult result;
+    bool manifest_incomplete = false;
+    bool manifest_list_incomplete = false;
+
     for (const auto & [path, category] : files)
     {
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(path)));
-            LOG_DEBUG(log, "Deleted expired file {}", path);
-        }
-        catch (...)
+        const bool keep_anchor
+            = (category == FileCategory::MANIFEST_FILE && manifest_incomplete)
+            || (category == FileCategory::MANIFEST_LIST && manifest_list_incomplete);
+
+        if (keep_anchor)
         {
             ++result.failed_deletions_count;
-            LOG_WARNING(log, "Failed to delete file {}: {}", path, getCurrentExceptionMessage(false));
-            continue;
+            LOG_WARNING(log, "Keeping {}: a file it references could not be deleted", path);
         }
-        countFile(result, category);
+        else
+        {
+            try
+            {
+                auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+                    path_resolver.getTableLocation(), path.serialize(), object_storage, external_storages, context,
+                    path_resolver);
+                storage_to_use->removeObjectIfExists(StoredObject(key_in_storage));
+                countFile(result, category);
+                LOG_DEBUG(log, "Deleted expired file {}", path);
+            }
+            catch (...)
+            {
+                ++result.failed_deletions_count;
+                LOG_WARNING(log, "Failed to delete file {}: {}", path, getCurrentExceptionMessage(false));
+
+                if (category != FileCategory::MANIFEST_FILE && category != FileCategory::MANIFEST_LIST)
+                    manifest_incomplete = true;
+                manifest_list_incomplete = true;
+            }
+        }
+
+        if (category == FileCategory::MANIFEST_FILE)
+            manifest_incomplete = false;
+        else if (category == FileCategory::MANIFEST_LIST)
+            manifest_list_incomplete = false;
     }
     return result;
 }
@@ -708,7 +827,8 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    ExternalStorageCache & external_storages)
 {
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
@@ -800,21 +920,43 @@ ExpireSnapshotsResult expireSnapshots(
         auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots,
                                          const std::vector<Iceberg::IcebergPathFromMetadata> & retained_statistics_paths)
         {
-            auto retained = collectSnapshotReferencedFiles(
-                retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
+            auto retained = collectRetainedFiles(
+                retained_snapshots, object_storage, persistent_table_components, context, log, current_schema_id,
+                external_storages);
             /// A Puffin file can hold both deletion vectors and statistics.
-            retained.data_file_paths.insert(retained_statistics_paths.begin(), retained_statistics_paths.end());
-            return collectExpiredFiles(
+            for (const auto & path : retained_statistics_paths)
+                retained.data_file_paths.insert(
+                    resolveFileIdentity(path, object_storage, persistent_table_components, context, external_storages));
+            auto expired = collectExpiredFiles(
                 partition.expired_manifest_list_paths, expired_statistics_paths, retained, object_storage, persistent_table_components,
-                context, log, current_schema_id);
+                context, log, current_schema_id, external_storages);
+
+            auto external_expired_files = collectExternalExpiredFiles(
+                expired, object_storage, persistent_table_components, context, external_storages);
+            if (!external_expired_files.empty())
+            {
+                constexpr size_t max_files_to_name = 10;
+                auto named = external_expired_files;
+                if (named.size() > max_files_to_name)
+                    named.resize(max_files_to_name);
+
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "expire_snapshots is not supported for Iceberg tables that reference files outside the table's "
+                    "base directory (found {} such expired file(s), including: {}): expiration deletes the files it "
+                    "drops from the metadata, and a file outside the table location may be owned or shared by "
+                    "something else. Aborting to avoid deleting it",
+                    external_expired_files.size(),
+                    fmt::join(named, ", "));
+            }
+            return expired;
         };
 
-        /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.
-        /// A transactional catalog returns the snapshots it retains only with the commit.
-        ExpiredFiles expired_files;
-        if (!catalog_commits_metadata || options.dry_run)
-            expired_files = collect_expired_files(
-                partition.retained_snapshots, collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false));
+        /// Collected before the commit, so that a failure to read the retained snapshots or an external expired file
+        /// fails the whole request. A transactional catalog returns the snapshots it retains only with the commit, so
+        /// the files are collected again after it.
+        auto expired_files = collect_expired_files(
+            partition.retained_snapshots, collectStatisticsPaths(metadata, partition.expired_snapshot_ids, /*expired=*/ false));
 
         if (options.dry_run)
         {
@@ -889,7 +1031,8 @@ ExpireSnapshotsResult expireSnapshots(
         persistent_table_components.invalidateMetadataCache();
 
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.size(), partition.expired_snapshot_ids.size());
-        auto result = deleteExpiredFiles(expired_files, persistent_table_components.path_resolver, object_storage, log);
+        auto result = deleteExpiredFiles(
+            expired_files, persistent_table_components.path_resolver, object_storage, context, log, external_storages);
         LOG_INFO(log, "Expired {} snapshots, deleted {} of {} files ({} failed)", partition.expired_snapshot_ids.size(),
             expired_files.size() - result.failed_deletions_count, expired_files.size(), result.failed_deletions_count);
 
@@ -915,7 +1058,8 @@ Pipe executeExpireSnapshots(
     const PersistentTableComponents & persistent_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    ExternalStorageCache & external_storages)
 {
     auto parsed = makeSchema().parse(args);
     auto options = buildOptions(parsed);
@@ -928,7 +1072,8 @@ Pipe executeExpireSnapshots(
         persistent_components,
         write_format,
         catalog,
-        table_name);
+        table_name,
+        external_storages);
 
     return resultToPipe(result);
 }

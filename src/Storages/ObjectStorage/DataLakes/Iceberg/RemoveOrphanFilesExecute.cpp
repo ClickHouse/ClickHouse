@@ -1,8 +1,8 @@
 #include "config.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #if USE_AVRO
 
 #include <chrono>
-#include <filesystem>
 #include <unordered_set>
 
 #include <Common/Exception.h>
@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -122,35 +121,17 @@ OrphanScanResult findOrphanFiles(
 {
     OrphanScanResult scan;
 
-    /// A filesystem names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
-    const auto storage_type = object_storage->getType();
-    const bool is_filesystem = storage_type == ObjectStorageType::Local || storage_type == ObjectStorageType::HDFS;
-    const String key_prefix = object_storage->getCommonKeyPrefix();
-    /// The local storage opens a relative key as `resolvePathRelativelyToBase` maps it, from the current directory.
-    auto normalize = [&](const String & path)
-    {
-        std::filesystem::path file(path);
-        if (storage_type == ObjectStorageType::Local && file.is_relative())
-            file = std::filesystem::absolute(resolvePathRelativelyToBase(path, key_prefix));
-        return file.lexically_normal().string();
-    };
-    std::unordered_set<String> normalized_reachable;
-    if (is_filesystem)
-        for (const auto & reachable_path : reachable)
-            normalized_reachable.insert(normalize(reachable_path));
-
-    auto is_reachable = [&](const String & path)
-    {
-        if (is_filesystem)
-            return normalized_reachable.contains(normalize(path));
-        return reachable.contains(path);
-    };
+    /// The listing and the metadata may name one file by different paths.
+    auto identity = [&](const String & path) { return IcebergPathFromMetadata::makeStorageIdentity(object_storage, path).serialize(); };
+    std::unordered_set<String> reachable_identities;
+    for (const auto & reachable_path : reachable)
+        reachable_identities.insert(identity(reachable_path));
 
     for (const auto & file_ptr : actual_files)
     {
         const String & path = file_ptr->relative_path;
 
-        if (is_reachable(path))
+        if (reachable_identities.contains(identity(path)))
             continue;
 
         std::optional<ObjectMetadata> fetched_metadata;
@@ -285,12 +266,26 @@ RemoveOrphanFilesResult removeOrphanFiles(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const String & table_name)
+    const String & table_name,
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+    auto [reachable, metadata_version, metadata_path, external_files] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
+        catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true,
+        /* include_deleted_entries */ false);
+
+    if (!external_files.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "remove_orphan_files is not supported for Iceberg tables that reference files outside the "
+            "table's base directory (found {} such file(s) in the metadata graph, including historical "
+            "versions from metadata-log): orphan detection scans "
+            "and deletes only within the base directory on the base storage, so it cannot see files on "
+            "other storages or elsewhere in the bucket. Aborting to avoid reporting an incomplete cleanup "
+            "as successful.",
+            external_files.size());
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -306,8 +301,10 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+    auto [_recheck_files, recheck_version, recheck_path, _recheck_external_files] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
+        catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true,
+        /* include_deleted_entries */ false);
     if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
@@ -337,7 +334,8 @@ Pipe executeRemoveOrphanFiles(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_components,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    ExternalStorageCache & external_storages)
 {
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
@@ -413,7 +411,9 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, catalog, table_name);
+    auto result = removeOrphanFiles(
+        params, context, object_storage, data_lake_settings, persistent_components,
+        catalog, table_name, external_storages);
 
     return resultToPipe(result);
 }

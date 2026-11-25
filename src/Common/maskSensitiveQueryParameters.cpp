@@ -3,6 +3,13 @@
 #include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
 #include <Common/Hex.h>
+#include <Common/maskURIPassword.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <base/find_symbols.h>
 
 #include <algorithm>
 #include <array>
@@ -139,6 +146,38 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri, const std
     }
 
     return result;
+}
+
+std::string maskCredentialsInURI(const std::string & uri)
+{
+    std::string result = maskSensitiveQueryParametersInURI(uri);
+    maskURIPassword(&result);
+    return result;
+}
+
+std::string maskCredentialsInJSONStrings(std::string_view json)
+{
+    const FormatSettings settings;
+    ReadBufferFromMemory in(json.data(), json.size());
+    WriteBufferFromOwnString out;
+    std::string value;
+    while (!in.eof())
+    {
+        char * quote = find_first_symbols<'"'>(in.position(), in.buffer().end());
+        out.write(in.position(), quote - in.position());
+        in.position() = quote;
+        if (in.eof())
+            break;
+
+        const char * token_begin = in.position();
+        readJSONString(value, in, settings.json);
+        std::string masked = maskCredentialsInURI(value);
+        if (masked == value)
+            out.write(token_begin, in.position() - token_begin);
+        else
+            writeJSONString(masked, out, settings);
+    }
+    return out.str();
 }
 
 /// The query parameters of an S3 or GCS presigned URL. The prefixes are header names, so any case: SigV2 sends

@@ -1,0 +1,8 @@
+--- expire_snapshots: an expired snapshot names the retained manifest list through the symlink
+deleted_manifest_lists_count	0
+manifest list present
+[1,2]
+--- remove_orphan_files: the current snapshot names its manifest list through the symlink
+deleted_manifest_lists_count	0
+manifest list present
+[1,2]

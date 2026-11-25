@@ -26,6 +26,12 @@ namespace DB
 std::string maskSensitiveQueryParametersInURI(
     const std::string & uri, const std::function<bool(const std::string &)> & is_hidden_parameter = {});
 
+/// Also accepts strings containing a URI; the first '?' starts the query string and any suffix belongs to it.
+std::string maskCredentialsInURI(const std::string & uri);
+
+/// Applies `maskCredentialsInURI` to every string of a JSON text; the bytes of the unchanged strings and of the rest are kept as is.
+std::string maskCredentialsInJSONStrings(std::string_view json);
+
 /// Decode a query-string component (a parameter name or value) the same way the server interprets it:
 /// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
 /// this decoded form, otherwise an encoded name like "pass%77ord" (which the server accepts as

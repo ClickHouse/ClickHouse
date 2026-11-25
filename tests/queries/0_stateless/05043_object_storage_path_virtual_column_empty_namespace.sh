@@ -35,9 +35,7 @@ FROM ice;
 # arm reaches a second formatter and returns 0 unless both agree with each other.
 $CLIENT -q "SELECT count() FROM ice WHERE _path IN (SELECT DISTINCT _path FROM ice);"
 
-# A relative engine argument stays relative: the leading separator is what distinguishes an
-# absolute path from a relative one, so it must not be invented for a path that lacks it.
-# This arm passes before and after the fix; it fails if the empty-prefix case prepends '/'.
+# `IcebergLocal` normalizes metadata paths to absolute paths even for relative engine arguments.
 # It runs under clickhouse-local, whose path prefix is the root, because a server resolves a
 # relative argument against user_files_path and rejects it before the read.
 # The same join is also performed by the non-glob listing prefilter, which reaches it with a
