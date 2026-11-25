@@ -1038,7 +1038,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 continue;
 
             auto part_statistics = part->loadStatistics();
-            /// A pending DROP or RENAME COLUMN can give a name of the part to another column: build its statistics from the data read.
+            /// A pending DROP or RENAME COLUMN can give a name of the part to another column.
             const auto columns_with_replaced_data = global_ctx->alter_conversions[part_num]->getColumnsInvalidatingIndexes();
 
             for (const auto & [column_name, column_stats] : result_statistics)
