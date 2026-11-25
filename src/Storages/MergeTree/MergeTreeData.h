@@ -64,6 +64,7 @@ const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
 struct AlterCommand;
 class AlterCommands;
 class ASTFunction;
+class ASTPartition;
 class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -1389,6 +1390,9 @@ public:
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+    /// For `DROP PARTITION WHERE` and `DETACH PARTITION WHERE`: the IDs of the partitions with visible parts for
+    /// which the predicate of `partition_ast` over the `_partition_id` and `_partition_value` virtual columns is true.
+    Strings getPartitionIDsByPredicate(const ASTPartition & partition_ast, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
     /// Returns the set of partition IDs affected by mutation commands.
     /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
     /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation

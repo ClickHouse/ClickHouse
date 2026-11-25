@@ -81,3 +81,21 @@ ALTER TABLE posts
 ```response
 0 rows in set. Elapsed: 0.103 sec.
 ```
+
+## Drop partitions matching a condition {#drop-partitions-matching-a-condition}
+
+`ALTER TABLE ... DROP PARTITION WHERE` drops all partitions for which a predicate over the `_partition_id` and `_partition_value` virtual columns is true, without listing them one by one:
+
+```sql
+ALTER TABLE posts DROP PARTITION WHERE _partition_value.1 < 2015
+```
+
+Since the same predicate can be used in a `SELECT` query, you can check which partitions are going to be dropped beforehand:
+
+```sql
+SELECT DISTINCT _partition_id, _partition_value
+FROM posts
+WHERE _partition_value.1 < 2015
+```
+
+Read more in [DROP PARTITION WHERE](/reference/statements/alter/partition#drop-partition-where).

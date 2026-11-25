@@ -36,6 +36,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
@@ -116,6 +117,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -176,6 +178,8 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadStatus.h>
@@ -10280,8 +10284,69 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 }
 
+namespace
+{
+
+/// The columns a `PARTITION WHERE` predicate may refer to. A physical column shadowing one of the virtual
+/// columns is left out, so that the predicate cannot refer to a value of a row.
+Block getHeaderForPartitionPredicate(const StorageMetadataPtr & metadata_snapshot)
+{
+    const auto columns = metadata_snapshot->getColumns().getAllPhysical();
+    Block header;
+    for (const auto & name : {PartitionIdColumn::name, PartitionValueColumn::name})
+    {
+        if (columns.contains(name))
+            continue;
+        if (auto column = metadata_snapshot->virtuals.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            header.insert({column->type->createColumn(), column->type, name});
+    }
+    return header;
+}
+
+bool hasSubquery(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>())
+        return true;
+    for (const auto & child : ast.children)
+        if (hasSubquery(*child))
+            return true;
+    return false;
+}
+
+/// Builds the actions that compute the `PARTITION WHERE` predicate from the columns of `header`,
+/// and returns the name of the column with its result in `predicate_column_name`.
+ExpressionActionsPtr buildPartitionPredicateActions(
+    const ASTPartition & partition_ast, const Block & header, ContextPtr local_context, String & predicate_column_name)
+{
+    chassert(partition_ast.predicate);
+
+    if (hasSubquery(*partition_ast.predicate))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not supported in the predicate of PARTITION WHERE");
+
+    ASTPtr predicate = partition_ast.predicate->clone();
+    auto syntax_result = TreeRewriter(local_context).analyze(predicate, header.getNamesAndTypesList());
+    auto dag = ExpressionAnalyzer(predicate, syntax_result, local_context).getActionsDAG(/* add_aliases = */ false);
+
+    predicate_column_name = predicate->getColumnName();
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(&dag.findInOutputs(predicate_column_name)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The predicate of PARTITION WHERE must be deterministic, got {}", partition_ast.predicate->formatForErrorMessage());
+
+    auto actions = VirtualColumnUtils::buildFilterExpression(std::move(dag), local_context);
+
+    /// Check the type of the predicate also when there are no partitions to evaluate it for.
+    Block sample = header;
+    size_t num_rows = 0;
+    actions->execute(sample, num_rows, /* dry_run = */ true, /* allow_duplicates_in_input = */ true);
+    FilterDescription{*sample.getByName(predicate_column_name).column->convertToFullColumnIfConst()};
+
+    return actions;
+}
+
+}
+
 void MergeTreeData::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr local_context) const
 {
     const auto disks = getDisks();
     for (const auto & command : commands)
@@ -10352,6 +10417,16 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 {
                     if (command.type != PartitionCommand::DROP_PARTITION && command.type != PartitionCommand::ATTACH_PARTITION && !(command.type == PartitionCommand::REPLACE_PARTITION && !command.replace))
                         throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
+                }
+                else if (partition_ast && partition_ast->predicate)
+                {
+                    if (command.type != PartitionCommand::DROP_PARTITION)
+                        throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PARTITION WHERE is supported only by DROP/DETACH PARTITION");
+
+                    /// The predicate is analyzed now, so that a wrong one is rejected before any command is executed.
+                    String predicate_column_name;
+                    buildPartitionPredicateActions(
+                        *partition_ast, getHeaderForPartitionPredicate(metadata_snapshot), local_context, predicate_column_name);
                 }
                 else
                 {
@@ -10669,8 +10744,33 @@ Pipe MergeTreeData::alterPartition(
     /// must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
 
-    PartitionCommandsResultInfo result;
+    /// `DROP PARTITION WHERE` is a shorthand for a `DROP PARTITION ID` command for each partition the predicate
+    /// is true for. All the predicates are evaluated, and all the matched partitions are checked, before the
+    /// first command is executed.
+    PartitionCommands expanded_commands;
     for (const PartitionCommand & command : commands)
+    {
+        const auto * partition_ast = command.partition ? command.partition->as<ASTPartition>() : nullptr;
+        if (command.type != PartitionCommand::DROP_PARTITION || command.part || !partition_ast || !partition_ast->predicate)
+        {
+            expanded_commands.push_back(command);
+            continue;
+        }
+
+        for (const auto & partition_id : getPartitionIDsByPredicate(*partition_ast, metadata_snapshot, query_context))
+        {
+            auto partition_id_ast = make_intrusive<ASTPartition>();
+            partition_id_ast->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+
+            PartitionCommand expanded_command = command;
+            expanded_command.partition = std::move(partition_id_ast);
+            checkPartitionCanBeDropped(expanded_command.partition, query_context);
+            expanded_commands.push_back(std::move(expanded_command));
+        }
+    }
+
+    PartitionCommandsResultInfo result;
+    for (const PartitionCommand & command : expanded_commands)
     {
         PartitionCommandsResultInfo current_command_results;
         switch (command.type)
@@ -11481,12 +11581,51 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     return converted;
 }
 
+Strings MergeTreeData::getPartitionIDsByPredicate(
+    const ASTPartition & partition_ast, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) const
+{
+    auto header = getHeaderForPartitionPredicate(metadata_snapshot);
+    String predicate_column_name;
+    auto actions = buildPartitionPredicateActions(partition_ast, header, local_context, predicate_column_name);
+
+    /// A row for each partition. Patch parts are dropped together with the partition they belong to.
+    VectorWithMemoryTracking<String> partition_ids;
+    UnorderedSetWithMemoryTracking<String> seen_partition_ids;
+    MutableColumns columns = header.cloneEmptyColumns();
+    for (const auto & part : getVisibleDataPartsVector(local_context))
+    {
+        const auto & partition_id = part->info.getPartitionId();
+        if (isPatchPartitionId(partition_id) || !seen_partition_ids.insert(partition_id).second)
+            continue;
+
+        partition_ids.push_back(partition_id);
+        for (size_t i = 0; i < columns.size(); ++i)
+            columns[i]->insert(getFieldForConstVirtualColumn(header.getByPosition(i).name, *part));
+    }
+
+    Block block = header.cloneWithColumns(std::move(columns));
+    size_t num_rows = partition_ids.size();
+    actions->execute(block, num_rows, /* dry_run = */ false, /* allow_duplicates_in_input = */ true);
+
+    FilterDescription filter(*block.getByName(predicate_column_name).column->convertToFullColumnIfConst());
+    Strings result;
+    for (size_t i = 0; i < partition_ids.size(); ++i)
+        if ((*filter.data)[i])
+            result.push_back(partition_ids[i]);
+
+    std::ranges::sort(result);
+    return result;
+}
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (partition_ast.all)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only Support DROP/DETACH/ATTACH PARTITION ALL currently");
+
+    if (partition_ast.predicate)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PARTITION WHERE is supported only by DROP/DETACH PARTITION");
 
     if (!partition_ast.value)
     {

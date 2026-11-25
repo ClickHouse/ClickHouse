@@ -339,11 +339,19 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "'partition' must be a string literal or query parameter for the PART form "
                     "of an ALTER command during AST JSON deserialization");
         }
-        else if (!partition_child->as<ASTPartition>())
+        else if (const auto * partition_ast = partition_child->as<ASTPartition>(); !partition_ast)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'partition' must be a `Partition` node for the PARTITION form of an ALTER command "
                 "during AST JSON deserialization");
+        }
+        else if (partition_ast->predicate && type != ASTAlterCommand::DROP_PARTITION)
+        {
+            /// The parser produces `PARTITION WHERE <predicate>` only for `DROP PARTITION` and `DETACH PARTITION`.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' with a predicate is only valid for the DROP/DETACH PARTITION commands, "
+                "not '{}', during AST JSON deserialization",
+                magic_enum::enum_name(type));
         }
         partition = partition_child.get();
         children.push_back(std::move(partition_child));

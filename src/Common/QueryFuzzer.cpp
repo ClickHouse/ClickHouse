@@ -10252,7 +10252,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * partition = typeid_cast<ASTPartition *>(ast.get()))
     {
-        if (fuzz_rand() % 10 == 0)
+        /// `PARTITION WHERE <predicate>` has no `ALL` form to toggle to and back.
+        if (!partition->predicate && fuzz_rand() % 10 == 0)
         {
             if (partition->all)
             {

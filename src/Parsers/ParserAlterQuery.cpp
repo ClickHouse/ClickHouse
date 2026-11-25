@@ -3,6 +3,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -187,6 +188,28 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_snapshot_desc;
     ASTPtr command_refresh;
 
+    /// `DROP PARTITION` and `DETACH PARTITION` accept, besides a single partition, `WHERE <predicate>`
+    /// selecting every partition for which the predicate over the `_partition_id` and `_partition_value`
+    /// virtual columns is true.
+    auto parse_partition_or_predicate = [&](ASTPtr & result)
+    {
+        if (!s_where.ignore(pos, expected))
+            return parser_partition.parse(pos, result, expected);
+
+        ASTPtr predicate;
+        if (!parser_exp_elem.parse(pos, predicate, expected))
+            return false;
+
+        /// Reject an alias, also the one in parentheses, such as `(1 AS x)`, the same as for `DELETE WHERE`.
+        if (!predicate->tryGetAlias().empty())
+            return false;
+
+        auto partition = make_intrusive<ASTPartition>();
+        partition->setPartitionPredicate(predicate);
+        result = std::move(partition);
+        return true;
+    };
+
     if (with_round_bracket)
     {
         if (!parser_opening_round_bracket.ignore(pos, expected))
@@ -266,7 +289,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_drop_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command_partition, expected))
+                if (!parse_partition_or_predicate(command_partition))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
@@ -622,7 +645,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_detach_partition.ignore(pos, expected))
             {
-                if (!parser_partition.parse(pos, command_partition, expected))
+                if (!parse_partition_or_predicate(command_partition))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_PARTITION;
@@ -1857,6 +1880,7 @@ The following operations with [partitions](/reference/engines/table-engines/merg
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
+- [DROP\|DETACH PARTITION WHERE](#drop-partition-where) — Deletes or detaches all partitions matching a condition.
 - [DROP DETACHED PARTITION\|PART](#drop-detached-partitionpart) - Delete a part or all parts of a partition from `detached`.
 - [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
@@ -1879,6 +1903,7 @@ The following operations with [partitions](/reference/engines/table-engines/merg
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION WHERE partition_predicate
 ```
 
 Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#attach-partitionpart) query.
@@ -1890,7 +1915,7 @@ ALTER TABLE mt DETACH PARTITION '2020-11-21';
 ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
-Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression). To detach all partitions matching a condition, see [DROP\|DETACH PARTITION WHERE](#drop-partition-where).
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
@@ -1900,11 +1925,12 @@ This query is replicated – it moves the data to the `detached` directory on al
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION WHERE partition_predicate
 ```
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
 
-Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression). To delete all partitions matching a condition, see [DROP\|DETACH PARTITION WHERE](#drop-partition-where).
 
 The query is replicated – it deletes data on all replicas.
 
@@ -1914,6 +1940,46 @@ Example:
 ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
+
+## DROP\|DETACH PARTITION WHERE {#drop-partition-where}
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION WHERE partition_predicate
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION WHERE partition_predicate
+```
+
+Deletes or detaches all partitions for which `partition_predicate` is true. It is a shorthand for a [DROP PARTITION](#drop-partitionpart) or [DETACH PARTITION](#detach-partitionpart) command for each of these partitions.
+
+The predicate is evaluated once for each partition, and it can refer only to the partition-level virtual columns:
+
+- `_partition_id` — the partition ID, as in the `partition_id` column of the [system.parts](/reference/system-tables/parts) table.
+- `_partition_value` — the value of the partitioning key, a tuple even for a single-element key. It exists only in a table with a partitioning key. Use `_partition_value.1` for the first element of the key, `_partition_value.2` for the second one, and so on.
+
+A reference to any other column is an error, because a partition is not described by the values of a row. The predicate must be deterministic in the scope of the query (functions such as `now` and `today` are allowed, `rand` is not), and it cannot contain subqueries.
+
+Examples:
+
+```sql
+-- PARTITION BY toDate(event_time)
+ALTER TABLE mt DROP PARTITION WHERE _partition_value.1 <= '2026-11-25';
+
+-- PARTITION BY toYYYYMM(event_date)
+ALTER TABLE mt DROP PARTITION WHERE _partition_id LIKE '2025%';
+ALTER TABLE mt DROP PARTITION WHERE _partition_value.1 < toYYYYMM(today() - INTERVAL 1 YEAR);
+
+-- PARTITION BY (region, toYYYYMM(event_date))
+ALTER TABLE mt DETACH PARTITION WHERE _partition_value.1 = 'eu' AND _partition_value.2 < 202601;
+```
+
+The same predicate can be used in a `SELECT` query to check which partitions are going to be affected beforehand:
+
+```sql
+SELECT DISTINCT _partition_id, _partition_value FROM mt WHERE _partition_value.1 <= '2026-11-25';
+```
+
+The partitions are determined by the parts that are visible on the server executing the query. In a replicated table, these are the parts of the local replica. With `ON CLUSTER`, the predicate is evaluated on each server for its local partitions. If no partition matches, the query does nothing.
+
+All the matched partitions are checked against [max_partition_size_to_drop](/reference/settings/session-settings/max#max_partition_size_to_drop) before any of them is dropped. As with several `DROP PARTITION` commands in a single `ALTER` query, the partitions are dropped one by one, not atomically.
 
 ## DROP DETACHED PARTITION\|PART {#drop-detached-partitionpart}
 
@@ -2217,6 +2283,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 
 - As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
 - Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH/ATTACH FROM. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
+- Using `WHERE` with a predicate over the `_partition_id` and `_partition_value` virtual columns, to select all partitions it is true for. It can be used only with DROP/DETACH. For example, `ALTER TABLE visits DETACH PARTITION WHERE _partition_value.1 < 201901`. See [DROP\|DETACH PARTITION WHERE](#drop-partition-where).
 - As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/reference/system-tables/detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
@@ -2235,7 +2302,9 @@ The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00
 )DOCS_MD",
         .syntax = R"(
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION WHERE partition_predicate
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION WHERE partition_predicate
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] FORGET PARTITION partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr

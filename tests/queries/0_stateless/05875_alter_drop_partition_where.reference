@@ -1,0 +1,29 @@
+date	['2026-11-26','2026-11-27','2026-11-28','2026-11-29']
+date	4	2026-11-26
+date	4
+month	['202601','202602','202603']
+month	['202602']
+month	[]
+str	['1-1','1-2','50%off','50xoff']
+str	['1-1','1-2','50xoff']
+str	['1-1','1-2','50xoff']
+str	['1-2']
+str	0
+tuple	1	eu	1
+tuple	1	us	2
+tuple	2	us	4
+unpartitioned	2
+unpartitioned	0
+detach	['0','2','4']
+detach	['1','3']
+detach	8
+limit	['1','2']
+patches	1
+patches	0	0	100
+patches	2	2	102
+patches	0	3	103
+patches	2	5	105
+ALTER TABLE t\n    (DROP PARTITION WHERE (_partition_id LIKE \'2026%\') AND ((_partition_value.1) > 3)),\n    (DETACH PARTITION WHERE (_partition_id = \'a\') OR 1)
+ALTER TABLE t (DETACH PARTITION WHERE _partition_value = (1, \'a\'))
+errors	2
+shadow	2
