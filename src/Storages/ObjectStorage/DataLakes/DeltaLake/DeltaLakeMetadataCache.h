@@ -5,6 +5,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Common/CacheBase.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataFileStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -24,6 +25,7 @@ struct ScannedDataFile
     std::optional<UInt64> num_records;
     KernelDvInfo dv_info;
     std::optional<KernelExpression> transform;
+    std::optional<DataFileStatistics> statistics;
 };
 
 using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;
@@ -31,26 +33,9 @@ using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;
 struct SnapshotDataFiles
 {
     std::vector<ScannedDataFilePtr> files;
+    bool has_deletion_vectors = false;
 
     [[nodiscard]] static size_t getFileWeight(const ScannedDataFile & file);
-};
-
-class SnapshotDataFilesCollector
-{
-public:
-    explicit SnapshotDataFilesCollector(size_t max_weight_);
-
-    void add(const ScannedDataFilePtr & file);
-
-    [[nodiscard]] bool isActive() const { return active; }
-
-    [[nodiscard]] std::shared_ptr<SnapshotDataFiles> release();
-
-private:
-    const size_t max_weight;
-    size_t weight = sizeof(SnapshotDataFiles);
-    bool active = true;
-    SnapshotDataFiles data_files;
 };
 
 }

@@ -27,6 +27,7 @@ struct TableSchemaResult
     /// Dotted paths of the `timestamp_ntz` leaves, spelled as the Parquet writer spells a column path:
     /// a struct field's own name, `element` for an array child, `key`/`value` for a map's.
     std::unordered_set<String> timestamp_ntz_paths;
+    std::unordered_set<String> binary_columns;
 };
 
 /// Get table schema and physical column map (logical name to physical name mapping).

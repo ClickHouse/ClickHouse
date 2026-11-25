@@ -251,7 +251,6 @@ static struct InitFiu
     ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
     ONCE(delta_kernel_force_stale_token_error) \
-    ONCE(delta_lake_stats_scan_callback_throw) \
     ONCE(delta_lake_metadata_callback_throw) \
     REGULAR(object_storage_force_refresh_callback_success) \
     REGULAR(refresh_mv_skip_attach_feature_flag_check) \

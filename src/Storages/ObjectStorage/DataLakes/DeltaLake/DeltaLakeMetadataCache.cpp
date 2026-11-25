@@ -25,31 +25,8 @@ namespace DeltaLake
 
 size_t SnapshotDataFiles::getFileWeight(const ScannedDataFile & file)
 {
-    return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
-}
-
-SnapshotDataFilesCollector::SnapshotDataFilesCollector(size_t max_weight_)
-    : max_weight(max_weight_)
-{
-}
-
-void SnapshotDataFilesCollector::add(const ScannedDataFilePtr & file)
-{
-    if (!active)
-        return;
-    weight += SnapshotDataFiles::getFileWeight(*file);
-    if (weight > max_weight)
-    {
-        active = false;
-        data_files.files = {};
-        return;
-    }
-    data_files.files.push_back(file);
-}
-
-std::shared_ptr<SnapshotDataFiles> SnapshotDataFilesCollector::release()
-{
-    return std::make_shared<SnapshotDataFiles>(std::move(data_files));
+    return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity()
+        + (file.statistics ? file.statistics->allocatedBytes() : 0);
 }
 
 }
