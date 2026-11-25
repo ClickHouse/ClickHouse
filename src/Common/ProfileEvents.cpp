@@ -118,6 +118,7 @@
     M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
+    M(UniqueKeyDeleteRows, "Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.", ValueType::Number) \
     M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
     M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
@@ -215,6 +216,7 @@
     M(TextIndexFilledFromFoldedPostings, "Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.", ValueType::Number) \
     M(TextIndexDictionaryDFABuilds, "Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read, or of tokens matched by `hasAnyTokenLike`, `hasAllTokenLike` or `hasAnyTokenRegexp`, exceeded its threshold.", ValueType::Number) \
+    M(TextIndexPatternScanSkippedByCost, "Number of times a text index pattern dictionary scan of a part was skipped because the dictionary blocks to scan take more bytes than the rows still readable after the primary key and prior skip indexes take in the indexed columns.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.", ValueType::Number) \
