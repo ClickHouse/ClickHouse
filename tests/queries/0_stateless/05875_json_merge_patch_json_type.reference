@@ -98,6 +98,7 @@ objects on Map and Tuple typed paths
 {"m":{"x":3}}	{"m":{"x":3,"x":{"a":2},"y":0}}	1
 {"m":{"x":{"b":4}}}	{"m":{"x":{"b":4},"x":{"a":2},"y":0}}	1
 {"m":{"x":3,"x":{"a":2},"y":0}}	1
+{"u":{"a":0,"b":"z"},"v":{"a":null,"b":"z"}}	1
 round-trip settings
 Int64
 Int64

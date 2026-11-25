@@ -88,6 +88,8 @@ FROM (SELECT CAST('{"m":{"x":1,"x":{"a":2},"y":0}}', 'JSON(m Map(String, Dynamic
     (SELECT arrayJoin(['{"m":{"x":3}}', '{"m":{"x":{"b":4}}}']) AS p) AS patches ORDER BY p;
 SELECT JSONMergePatch(c, '{"m":{"x":3}}') AS r, toString(r) = toString(CAST(JSONMergePatch(c::String, '{"m":{"x":3}}'), toTypeName(c)))
 FROM (SELECT CAST('{"m":{"x":1,"x":{"a":2},"y":0}}', 'JSON(m Map(String, Variant(UInt8, Map(String, UInt8))))') AS c);
+SELECT JSONMergePatch(c, '{"u":{"a":null},"v":{"a":null}}') AS r, toString(r) = toString(CAST(JSONMergePatch(c::String, '{"u":{"a":null},"v":{"a":null}}'), toTypeName(c)))
+FROM (SELECT CAST('{"u":{"a":1,"b":"z"},"v":{"a":1,"b":"z"}}', 'JSON(u Tuple(a UInt8, b String), v Tuple(a Nullable(UInt8), b String))') AS c);
 
 SELECT 'round-trip settings';
 SELECT JSONAllPathsWithTypes(JSONMergePatch(c, '{"m":{"y":2}}'))['n'] FROM (SELECT CAST('{"m":{"x":1},"n":42}', 'JSON(m Map(String, UInt8))') AS c) SETTINGS output_format_json_quote_64bit_integers = 1;

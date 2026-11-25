@@ -1007,7 +1007,7 @@ Returns the merged JSON object string which is formed by merging multiple JSON o
 
 If the first argument has the `JSON` type, the result has the same type.
 Most patches update the stored paths directly, without converting the value to text.
-For a `JSON` first argument, `null` in a patch removes the path; a typed path, or a key in a `Map` typed path, gets the default value instead.
+For a `JSON` first argument, `null` in a patch removes the path; a typed path, a key in a `Map` typed path, or an element of a `Tuple` typed path gets the default value instead.
 A patch of the `JSON` type is applied as its text.
     )";
     FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
