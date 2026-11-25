@@ -286,11 +286,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge. A merge also reads a bigger part in a whole
-if the part is not bigger than the worst-case memory of a read buffer for each
-column (the configured buffer size, twice with prefetch). For a part with small
-stripes this can take more memory than reading each column separately, but it
-sends one request instead of one per column per stripe. 0 disables it.
+in a whole to memory during merge or mutation. A bigger part is also read in a
+whole if the part is not bigger than the worst-case memory of a read buffer for
+each column (the configured buffer size, twice with prefetch). For a part with
+small stripes this can take more memory than reading each column separately, but
+it sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -827,6 +827,13 @@ OPTIMIZE FINAL query.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
+    DECLARE(Bool, serialize_statistics_bounds_with_column_type, false, R"(
+When enabled, the minimum and maximum of `minmax` and `basic` statistics are written with the serialization
+of the column type, in statistics file format `V5`, instead of the generic `Field` encoding of `V4`.
+Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
+the statistics of the parts written with it have to be rematerialized after a downgrade.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
@@ -937,6 +944,20 @@ requests to zookeeper in large-scale clusters
 The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
+    DECLARE(UInt64, delay_merges_after_startup_seconds, 60, R"(
+Background merges of a table that the server loads at startup do not start
+until this many seconds after the table starts up, so that the first queries
+after a restart do not compete with them. The first `INSERT`, `OPTIMIZE`,
+mutation or lightweight update of the table on this server ends the delay. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so
+`SYSTEM SYNC REPLICA` and mutations started on another replica can wait on it
+until the delay ends. Tables created by `CREATE TABLE`, attached by
+`ATTACH TABLE` or restored by `UNDROP TABLE` are not delayed. Merges are not
+delayed while a partition has at least `parts_to_delay_insert` active parts.
+0 disables the delay.
+)", 0, \
+        {"26.12", 0, 60, "New setting to delay background merges after the server startup"}) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
 Sets the interval in seconds for ClickHouse to execute the cleanup of old
 temporary directories.
@@ -1093,12 +1114,13 @@ one step takes longer time
     DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows: the merges of plain `MergeTree` parts
-(`Ordinary` merge mode) and of normal projection parts. The merges of parts of engines with
-merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`, `SummingMergeTree`,
-`AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
-`VersionedCollapsingMergeTree`, and of aggregate projection parts keep using the default queue
-regardless of this setting.
+Applies only to the merges in `Ordinary` merge mode: the merges of plain `MergeTree` parts, including
+the merges that drop or rewrite rows (lightweight deletes, TTL deletes, patch parts of lightweight
+updates and `OPTIMIZE ... DEDUPLICATE`), and the merges of normal projection parts. The merge
+algorithms of engines with merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts choose their own sorting queue, so
+this setting has no effect on them.
 )", 0, \
         {"26.8", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
@@ -1214,6 +1236,16 @@ improving compression ratio but requiring more data to be decompressed during re
 This is beneficial for workloads that always read all columns (e.g. projections).
 )", 0, \
         {"26.4", true, true, "New setting"}) \
+    DECLARE(Bool, compress_per_substream_in_compact_parts, true, R"(
+Controls the physical layout of Compact parts. If true (default), a column substream in a granule starts
+a new compressed block once the current block reached `min_compress_block_size`, so reading a single
+subcolumn (e.g. an `Array` size, a `Tuple` element, or a JSON path) decompresses only that substream,
+while small substreams still share a block. If false, all substreams of a column in a granule are packed
+into the same compressed block, improving compression ratio but requiring more data to be decompressed
+when reading a subcolumn. Has an effect only when `write_marks_for_substreams_in_compact_parts` and
+`compress_per_column_in_compact_parts` are enabled.
+)", 0, \
+        {"26.12", false, true, "New setting: start a new compressed block at column substream boundaries in Compact parts for faster subcolumn reads"}) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
 If the number of active parts in a single partition exceeds the
@@ -2203,8 +2235,8 @@ If true, lightweight delete is optimized on vertical merge.
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
 If true, a rows-TTL merge can use the vertical merge algorithm instead of falling back to a
 horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `VersionedCollapsing`
-merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and only while no part
-in the merge has a lightweight delete. Any other TTL merge stays horizontal.
+merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL. Any other TTL merge stays
+horizontal.
 )", 0, \
         {"26.3", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"}) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
@@ -2225,7 +2257,7 @@ The maximum postpone time for failed replicated task. The value is used if the t
         {"25.4", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."}) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
     )", 0) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -2257,6 +2289,19 @@ the total storage volume of all the data to be merged. If the volume exceeds
 data to the storage disk using the direct I/O interface (`O_DIRECT` option).
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 )", 0) \
+    DECLARE(Bool, check_part_use_direct_io, true, R"(
+When checking a data part on a local disk (`CHECK TABLE`, the check of a part that failed to be read,
+recalculation of missing checksums), read its files with direct I/O (`O_DIRECT` option),
+bypassing the OS page cache, so that wrong data in the page cache does not make a healthy part look broken.
+Parts in packed storage (see `min_bytes_for_full_part_storage`) and the part written by `OPTIMIZE ... DRY RUN`
+are still read through the page cache.
+If the filesystem does not support direct I/O, the files are read through the page cache.
+
+Disable this setting where direct reads are slower than reads through the page cache.
+Direct reads always go to the storage device, even if the data is already cached.
+For example, on an Amazon EBS volume, checking a table that fits in the page cache can be several times slower.
+)", 0, \
+        {"26.12", false, true, "New setting. Check data parts on local disks with direct I/O, bypassing the OS page cache."}) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
 Maximum size of data granules in bytes.
 
