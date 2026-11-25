@@ -1,0 +1,38 @@
+--- fileCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster with headers ---
+1	7	10
+2	5	6
+3	7	30
+--- url converted to urlCluster ---
+1	7	10
+2	5	6
+3	7	30
+--- url converted to urlCluster reads from the cluster ---
+1
+--- fileCluster, non-replicated destination ---
+1	7	10
+2	5	6
+3	7	30
+--- urlCluster, structure not overridable ---
+1
+2
+3
+--- urlCluster, format not overridable ---
+1
+2
+3
+--- urlCluster, structure not overridable, INSERT ---
+NUMBER_OF_COLUMNS_DOESNT_MATCH
+--- url converted to urlCluster, structure not overridable, INSERT ---
+NUMBER_OF_COLUMNS_DOESNT_MATCH
+--- forwarded SELECT from fileCluster ---
+1	0
+--- forwarded SELECT from urlCluster ---
+1	0

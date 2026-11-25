@@ -44,7 +44,8 @@ namespace ErrorCodes
   *
   * The threshold is applied to the size `choose` is called with, which is the size known when the codec
   * has to be picked - before the data is written - exactly like the `min_part_size` conditions above.
-  * A freshly inserted part has no size yet and is passed `0`, so it starts as `LZ4`; a merge or a
+  * A freshly inserted part has no size yet and is passed the uncompressed size of the inserted block,
+  * so small inserts start as `LZ4`, and large inserts get `ZSTD(3)` right away; a merge or a
   * mutation passes the size of its source parts, so the bigger parts produced by background merges
   * cross the threshold and switch to `ZSTD(3)`. It is therefore an estimate, not the size of the
   * resulting part: a rewrite that shrinks its input - a `TTL DELETE`, deduplicating or collapsing
@@ -77,7 +78,7 @@ private:
                 level = config.getInt64(config_prefix + ".level");
         }
 
-        bool check(size_t part_size, double part_size_ratio) const
+        [[nodiscard]] bool check(size_t part_size, double part_size_ratio) const
         {
             return part_size >= min_part_size
                 && part_size_ratio >= min_part_size_ratio;
@@ -103,7 +104,7 @@ public:
         }
     }
 
-    CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
+    [[nodiscard]] CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
     {
         const auto & factory = CompressionCodecFactory::instance();
 

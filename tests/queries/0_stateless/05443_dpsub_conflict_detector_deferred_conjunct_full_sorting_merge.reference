@@ -1,0 +1,9 @@
+-- full_sorting_merge
+1	10	10
+3	0	0
+-- parallel_full_sorting_merge
+1	10	10
+3	0	0
+-- hash
+1	10	10
+3	0	0

@@ -20,7 +20,6 @@ struct ConverterContext
 
     /// Data type of the column `timestamp` returned by the query built by the converter.
     /// All timestamps and durations in the converter (see TimestampType and DurationType) use `result_timestamp_scale`.
-    /// The samples read from the TimeSeries table keep the types of the table, see the comment for StoreMethod::RAW_DATA.
     DataTypePtr result_timestamp_type;
     UInt32 result_timestamp_scale;
 

@@ -1,5 +1,10 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
+#include <ranges>
 #include <stack>
 #include <unordered_map>
 
@@ -12,6 +17,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
@@ -34,6 +42,7 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -42,6 +51,7 @@
 #include <Planner/Utils.h>
 
 #include <fmt/ranges.h>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -61,7 +71,7 @@ namespace ErrorCodes
 const QueryPlan::Node * findNonSerializableStep(
     const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
 {
-    std::vector<const QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
     if (root)
         stack.push_back(root);
     while (!stack.empty())
@@ -140,7 +150,7 @@ const SharedHeader & QueryPlan::getCurrentHeader() const
     return root->step->getOutputHeader();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
@@ -240,7 +250,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings,
-    bool do_optimize)
+    bool do_optimize,
+    QueryPlanLogCapture * log_capture)
 {
     checkInitialized();
 
@@ -254,6 +265,14 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (effective_settings.make_distributed_plan)
         convertToDistributed(effective_settings);
 
+    /// Read while the `ActionsDAG`s are still in the steps: building the pipeline below moves them
+    /// into the `ExpressionActions`, and the names are derived from them. Only over the child plans
+    /// the steps already hold, unlike `explainPlan`: asking a step to build one would make
+    /// capturing the plan change the work the query does.
+    PrettyNamesPerPlan pretty_names;
+    if (log_capture)
+        pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ true);
+
     struct Frame
     {
         Node * node = {};
@@ -262,7 +281,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     while (!stack.empty())
@@ -299,6 +318,31 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
+    /// The last moment the plan is worth reading: the index analysis and the child plans built
+    /// along the way exist now, and nothing after this needs the plan at all.
+    ///
+    /// The two readings are owned differently. The captured plan goes to the log capture, which the
+    /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
+    /// and analyzers go to the pipeline, which is their only owner, so that they are freed with it.
+    if (log_capture)
+    {
+        /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
+
+            log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            log_capture->dropCapturedPlan();
+        }
+    }
+
     return last_pipeline;
 }
 
@@ -311,6 +355,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
     {
         if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
             map.add("Node Hash", fmt::format("{}", it->second));
+    }
+
+    if (options.exchange_ids)
+    {
+        if (auto it = options.exchange_ids->find(&step); it != options.exchange_ids->end())
+            map.add("Exchange Id", it->second);
     }
 
     if (options.description)
@@ -366,6 +416,44 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
         step.describeProjections(map);
 }
 
+JSONBuilder::ItemPtr QueryPlan::explainPlanSteps(const ExplainPlanOptions & options) const
+{
+    checkInitialized();
+
+    auto steps = std::make_unique<JSONBuilder::JSONArray>();
+
+    /// Pre-order: the inputs of a node and then its nested plans are pushed in reverse, so they are popped in order.
+    VectorWithMemoryTracking<const Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        auto child_plans = node->step->getChildPlans(/*for_explain=*/ true);
+
+        auto children = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto * child : node->children)
+            children->add(child->step->getUniqID());
+        for (const auto * child_plan : child_plans)
+        {
+            child_plan->checkInitialized();
+            children->add(child_plan->getRootNode()->step->getUniqID());
+        }
+
+        auto step_map = std::make_unique<JSONBuilder::JSONMap>();
+        explainStep(*node->step, *step_map, options);
+        step_map->add("Children", std::move(children));
+        steps->add(std::move(step_map));
+
+        for (const auto * child_plan : child_plans | std::views::reverse)
+            stack.push_back(child_plan->getRootNode());
+        for (const auto * child : node->children | std::views::reverse)
+            stack.push_back(child);
+    }
+
+    return steps;
+}
+
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
 {
     checkInitialized();
@@ -378,7 +466,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
         std::unique_ptr<JSONBuilder::JSONArray> children_array = {};
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     std::unique_ptr<JSONBuilder::JSONMap> tree;
@@ -435,7 +523,6 @@ static void explainStep(
 {
 
     settings.out << settings.header_prefix << step.getName();
-    const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
 
@@ -466,6 +553,17 @@ static void explainStep(
     }
 
     settings.out.write('\n');
+
+    explainStepDetails(step, settings, options, steps_to_stats);
+}
+
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats)
+{
+    const auto & prefix = settings.detail_prefix;
 
     const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
     {
@@ -595,7 +693,7 @@ namespace ExplainPlan
 };
 
 static void buildTreeOffset(
-    const std::deque<ExplainPlan::Frame> & frames,
+    const DequeWithMemoryTracking<ExplainPlan::Frame> & frames,
     const ExplainPlan::Frame & current,
     IQueryPlanStep::FormatSettings & settings_format,
     const std::string & parent_tree_prefix = "",
@@ -638,7 +736,7 @@ static void buildTreeOffset(
     settings_format.detail_prefix += has_children ? "│  " : "   ";
 }
 
-static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
+static void buildIndentOffset(const DequeWithMemoryTracking<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
 {
     settings_format.offset = (frames.size() - 1 + indent_offset) * settings_format.base_indent;
     settings_format.header_prefix = std::string(settings_format.offset, settings_format.indent_char);
@@ -666,7 +764,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, /*only_built_child_plans=*/ false);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -699,7 +797,7 @@ void QueryPlan::explainPlan(
         return node;
     };
 
-    std::deque<ExplainPlan::Frame> stack;
+    DequeWithMemoryTracking<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
     {
@@ -808,7 +906,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     while (!stack.empty())
@@ -862,6 +960,33 @@ static void disableProjectionsForDistributedPlan(QueryPlanOptimizationSettings &
 }
 
 
+/// Drop every `StreamInQueryResultCacheStep` from the plan. The step buffers the rows passing through
+/// it into a `QueryResultCacheWriter`, which is node-local state without a serialized representation,
+/// so a fragment carrying it cannot be shipped to a worker. It is a pass-through, so removing it only
+/// means the subquery result is not written to the cache - which is what a distributed query did
+/// before the step was allowed into the plan at all. The step is kept when the plan takes the local
+/// fallback in `applyDistributedPlanFallbackToLocal`: nothing is serialized there, and the cache works as usual.
+/// It is removed as soon as the plan is accepted for distributed execution, before `QueryPlan::optimize`:
+/// the Cascades optimizer clones every step of the plan, and this step cannot be cloned.
+static void removeQueryResultCacheWriteSteps(QueryPlan::Node *& root)
+{
+    while (typeid_cast<const StreamInQueryResultCacheStep *>(root->step.get()))
+        root = root->children.front();
+
+    VectorWithMemoryTracking<QueryPlan::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto *& child : node->children)
+        {
+            while (typeid_cast<const StreamInQueryResultCacheStep *>(child->step.get()))
+                child = child->children.front();
+            stack.push_back(child);
+        }
+    }
+}
+
 bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings)
 {
     if (!settings.make_distributed_plan)
@@ -889,6 +1014,8 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
     if (!reason.has_value())
     {
         distributed_plan_decision = DistributedPlanDecision::Distributed;
+        /// The plan will be split into fragments, so no cache write step may stay in it.
+        removeQueryResultCacheWriteSteps(root);
         return false;
     }
 
@@ -899,6 +1026,7 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    distributed_plan_fallback_reason = reason->text;
     for (const auto & context : resources.distributed_plan_decision_contexts)
         context->setSetting("make_distributed_plan", false);
     return true;
@@ -928,7 +1056,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes, *this);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships
@@ -953,7 +1081,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
-void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
@@ -968,50 +1096,79 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
-    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
-    /// fragments never carry their placeholder steps; the sets are added back below.
-    auto delayed_sets = extractSetsForDistributedPlan(root);
+    /// The plan is really split into fragments, so no cache write step may survive into one. The steps
+    /// are normally removed already when the plan is accepted in `applyDistributedPlanFallbackToLocal`.
+    removeQueryResultCacheWriteSteps(root);
 
-    SharedHeader result_header = root->step->getOutputHeader();
+    DistributedPlanCut cut;
+
+    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
+    /// fragments never carry their placeholder steps; `convertToDistributed` adds the sets back.
+    cut.delayed_sets = extractSetsForDistributedPlan(root);
+
+    cut.result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
     QueryPlan::Node * old_root = root;
     root = nullptr;
-    auto distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    cut.distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    auto & distributed_plan = cut.distributed_plan;
 
     for (const auto & stage : distributed_plan.stages)
     {
-        auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        auto format_dependencies = [&]
+        {
+            Strings dependencies;
+            if (auto it = distributed_plan.stage_depends_on.find(stage.first); it != distributed_plan.stage_depends_on.end())
+                for (const auto & [dependency, exchange] : it->second)
+                    dependencies.push_back(fmt::format("{} ({})", dependency, exchange));
+            return fmt::format("{}", fmt::join(dependencies, ", "));
+        };
         LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
-            stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
+            stage.first, format_dependencies(), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
+    auto & main_stage = distributed_plan.stages["main"];
+
+    /// The main stage produces the final result, so the exchange takes its id. It is not cut from
+    /// a logical exchange step, so `exchange_step_name` stays empty.
+    cut.final_result_exchange = ExchangeDescription
     {
-        ExchangeDescription final_result_exchange
-        {
-            .name = "final_result",
-            .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
-            .source_bucket_count = 1,
-            .destination_bucket_count = 1
-        };
-        auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+        .name = "final_result",
+        .id = main_stage.id,
+        .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
+        .source_bucket_count = 1,
+        .destination_bucket_count = 1,
+        .exchange_step_name = {},
+        .keys = {},
+        .sort_description = {},
+    };
+    const auto & final_result_exchange = cut.final_result_exchange;
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 
-        /// Add a step that writes the result of the main stage to the file
-        auto & main_stage = distributed_plan.stages["main"];
-        if (!main_stage.query_plan_fragment.isCompleted())
-        {
-            main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
-            main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
-            distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
-            distributed_plan.final_result_stream_name = result_stream_id.toString();
-        }
+    /// Add a step that writes the result of the main stage to the file
+    if (!main_stage.query_plan_fragment.isCompleted())
+    {
+        main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(cut.result_header, final_result_exchange.name));
+        main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
+        distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
+        distributed_plan.final_result_stream_name = result_stream_id.toString();
+    }
 
-        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
-        /// for remote execution, instead of throwing late from serializeQueryPlan.
-        for (const auto & [stage_name, stage] : distributed_plan.stages)
-            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
+    /// Fail early (before execution) if any fragment contains a step that cannot be serialized
+    /// for remote execution, instead of throwing late from serializeQueryPlan.
+    for (const auto & [stage_name, stage] : distributed_plan.stages)
+        assertFragmentSerializable(stage.query_plan_fragment, stage_name);
 
+    return cut;
+}
+
+void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    auto [distributed_plan, final_result_exchange, result_header, delayed_sets] = cutIntoDistributedPlan(optimization_settings);
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+
+    {
         /// Collect the list of all temporary files
         Strings all_temporary_files_for_cleanup;
         for (const auto & stage : distributed_plan.stages)
@@ -1163,7 +1320,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
-    std::unordered_map<std::string, CountersPtr> counters;
+    UnorderedMapWithMemoryTracking<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
     processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
     {
@@ -1230,10 +1387,25 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 //             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
 // }
 
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan)
+{
+    auto new_plan = extractSubplan(root, nodes);
+
+    /// The subplan may be executed after `source_plan` has been consumed into a pipeline (e.g. the
+    /// right side of a `JOIN` converted to `IN` is built later as a set), so it must keep the same
+    /// execution limits and hold the same table locks, storage holders and interpreter contexts.
+    /// append copies the shared handles, so ownership is only shared, never moved out of the source.
+    new_plan.max_threads = source_plan.max_threads;
+    new_plan.concurrency_control = source_plan.concurrency_control;
+    new_plan.resources.append(source_plan.resources);
+
+    return new_plan;
+}
+
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 {
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
+    UnorderedSetWithMemoryTracking<Node *> used;
+    StackWithMemoryTracking<Node *> stack;
 
     stack.push(root);
     used.insert(root);
@@ -1280,8 +1452,8 @@ std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndRe
 
 QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 {
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
+    UnorderedSetWithMemoryTracking<Node *> used;
+    StackWithMemoryTracking<Node *> stack;
 
     stack.push(subplan_root);
     used.insert(subplan_root);
@@ -1380,13 +1552,13 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
     {
         Node * node;
         Node * clone;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::unordered_map<const Node *, Node *> original_to_clone;
-    std::vector<CommonSubplanReferenceStep *> cloned_references;
+    UnorderedMapWithMemoryTracking<const Node *, Node *> original_to_clone;
+    VectorWithMemoryTracking<CommonSubplanReferenceStep *> cloned_references;
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    VectorWithMemoryTracking<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {
