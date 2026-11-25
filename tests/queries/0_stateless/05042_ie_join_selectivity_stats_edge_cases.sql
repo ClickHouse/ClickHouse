@@ -78,9 +78,9 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
--- Any predicate-filtered input fails closed even when the predicate happens to retain every row:
--- whole-part ranges do not describe the produced relation.
-SELECT '-- WHERE on a join input drops value ranges: syntax order';
+-- A predicate on an operand fails closed even when it happens to retain every row: the whole-part range of the operand
+-- does not describe the produced relation.
+SELECT '-- WHERE on an operand drops its value range: syntax order';
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_sel_edge_l AS l JOIN (SELECT * FROM t_sel_edge_r WHERE b2 < 5000) AS r

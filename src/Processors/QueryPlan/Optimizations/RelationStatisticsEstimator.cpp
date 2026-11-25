@@ -394,15 +394,16 @@ bool mayStopReadingEarly(const SelectQueryInfo & query_info)
         });
 }
 
-/// What a read does to the rows and values that the statistics of its source describe. A filter step above the read
-/// records its own row subset; it counts here only where the estimate of the read accounts for it.
+/// What a read does to the rows and values that the statistics of its source describe. A `FilterStep` above the read
+/// records its own row subset unless the estimate of the read records it (`StatsUnderFilter::records_parent_filter`); its
+/// predicate counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
 {
     /// The read may return only some of the rows for a reason other than `has_predicates`: it limits or samples them,
     /// skips deleted rows, may stop early, or filters them by a predicate that is not attributed to the columns it
     /// reads, such as the one of a `FilterStep` further up.
     bool may_drop_rows = false;
-    /// The read has predicates that may drop rows and that can be attributed to the columns they read (see
+    /// The read has predicates that may drop rows and that may be attributed to the columns they read (see
     /// `getColumnsReadByPredicates`): the predicate of the parent `FilterStep`, the row-level filter, the PREWHERE or the
     /// filter pushed into the read. This includes a runtime filter, which prunes nothing at plan time but drops rows by
     /// its key column.
@@ -569,10 +570,9 @@ void addColumnsRelatedByDefaultExpressions(const ColumnsDescription & columns, N
 /// `FilterStep` right above the read, the row-level filter, the PREWHERE and the filter pushed into the read (which
 /// is resolved to the columns of the read through the steps above it, see `optimizePrimaryKeyConditionAndLimit`),
 /// with the columns related to them through default expressions (see `addColumnsRelatedByDefaultExpressions`).
-/// Unset if a predicate cannot be attributed to the stored columns it reads: it reads a column that is not a stored
-/// column of the table (a column computed by the read, a virtual column, a subcolumn, a correlated column), contains
-/// `arrayJoin`, or a function whose result is not determined by its arguments (e.g. `rowNumberInAllBlocks`, whose
-/// predicate selects rows by their position, or `rand`).
+/// `std::nullopt` if a predicate reads a column that is not a stored column of the table (e.g. a virtual column, a
+/// subcolumn or a column computed by the read), contains `arrayJoin`, or calls a function that is stateful or not
+/// deterministic within the query (e.g. `rowNumberInAllBlocks` or `rand`).
 std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & reading, const ActionsDAG::Node * parent_predicate)
 {
     ActionsDAG::NodeRawConstPtrs predicates;
