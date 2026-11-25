@@ -278,7 +278,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Expression:
         {
             const auto & expression_step = static_cast<const ExpressionStep &>(step);
-            remapColumnStats(input_stats.column_stats, expression_step.getExpression());
+            remapColumnStatsOfStep(input_stats.column_stats, expression_step.getExpression(), *step.getOutputHeader());
             return input_stats;
         }
         case UnaryStepStatsKind::ArrayJoin: {
@@ -296,7 +296,8 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
                 for (const auto & column : array_join_step->getColumns())
                     input_stats.column_stats.erase(column);
             else
-                remapColumnStats(input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression());
+                remapColumnStatsOfStep(
+                    input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression(), *step.getOutputHeader());
 
             /// The other columns keep their values, but each row repeats once per array element, and unless the join is
             /// LEFT, rows with empty arrays are dropped: the distinct set and range can only shrink, and the distribution
@@ -307,7 +308,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Filter:
         {
             const auto & filter_step = static_cast<const FilterStep &>(step);
-            remapColumnStats(input_stats.column_stats, filter_step.getExpression());
+            remapColumnStatsOfStep(input_stats.column_stats, filter_step.getExpression(), *step.getOutputHeader());
             input_stats.addTransformation(RowSubset);
             input_stats.rows_exact = false;
             return input_stats;

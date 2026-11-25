@@ -76,6 +76,9 @@ EXPLAIN estimates = 1 SELECT s, t, count() OVER (PARTITION BY k) AS c FROM (SELE
 SETTINGS query_plan_execute_functions_after_sorting = 1;
 SELECT '-- a filter over the read drops its column and passes the size of the other column: 1 + 32 + 8';
 EXPLAIN estimates = 1 SELECT s, count() OVER () AS c FROM t_stats_columns_row_hint WHERE k % 3 = 1 SETTINGS optimize_move_to_prewhere = 0;
+SELECT '-- a filter over the read reads only x; k passes it and keeps its distinct count: 10 groups';
+EXPLAIN estimates = 1 SELECT k, max(z), count() FROM (SELECT k, x * 2 AS z, x FROM t_stats_columns_small) WHERE x > 5 GROUP BY k
+SETTINGS optimize_move_to_prewhere = 0;
 SELECT '-- ARRAY JOIN makes a column of the elements, which does not keep the size of the array: 1 + 2 + 8 + 8';
 EXPLAIN estimates = 1 SELECT k, a, count() OVER () AS c FROM t_stats_columns_small ARRAY JOIN a;
 
