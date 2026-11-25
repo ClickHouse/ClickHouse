@@ -14,3 +14,11 @@ SELECT id FROM tab_buckets WHERE m['ab'] = 1 ORDER BY id SETTINGS force_data_ski
 1
 SELECT id FROM tab_buckets WHERE m['ab'] = 1 ORDER BY id SETTINGS use_skip_indexes = 0;
 1
+SELECT id FROM tab_preprocessor WHERE m.key_ab = 1 ORDER BY id;
+1
+SELECT id FROM tab_preprocessor WHERE l.key_ab = 3 ORDER BY id;
+3
+SELECT id FROM tab_preprocessor WHERE m['ab'] = 1 ORDER BY id;
+1
+SELECT id FROM tab_preprocessor WHERE m['ab'] = 1 ORDER BY id SETTINGS use_skip_indexes = 0;
+1

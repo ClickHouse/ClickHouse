@@ -5,6 +5,7 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab_basic;
 DROP TABLE IF EXISTS tab_buckets;
+DROP TABLE IF EXISTS tab_preprocessor;
 
 CREATE TABLE tab_basic
 (
@@ -28,8 +29,21 @@ CREATE TABLE tab_buckets
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
+-- `toString` strips the padding of a stored key but not of a `String` lookup.
+CREATE TABLE tab_preprocessor
+(
+    id UInt32,
+    m Map(FixedString(4), UInt8),
+    l Map(LowCardinality(FixedString(4)), UInt8),
+    INDEX idx_m mapKeys(m) TYPE text(tokenizer = 'array', preprocessor = toString(mapKeys(m))),
+    INDEX idx_l mapKeys(l) TYPE text(tokenizer = 'array', preprocessor = toString(mapKeys(l)))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+
 INSERT INTO tab_basic VALUES (1, {'ab': 1}, {'ab': 1}), (2, {'x': 2}, {'x': 2}), (3, {'ab': 3}, {'ab': 3});
 INSERT INTO tab_buckets SELECT * FROM tab_basic;
+INSERT INTO tab_preprocessor SELECT * FROM tab_basic;
 
 -- { echoOn }
 
@@ -43,7 +57,13 @@ SELECT id FROM tab_buckets WHERE l.key_ab = 3 ORDER BY id SETTINGS force_data_sk
 SELECT id FROM tab_buckets WHERE m['ab'] = 1 ORDER BY id SETTINGS force_data_skipping_indices = 'idx_m';
 SELECT id FROM tab_buckets WHERE m['ab'] = 1 ORDER BY id SETTINGS use_skip_indexes = 0;
 
+SELECT id FROM tab_preprocessor WHERE m.key_ab = 1 ORDER BY id;
+SELECT id FROM tab_preprocessor WHERE l.key_ab = 3 ORDER BY id;
+SELECT id FROM tab_preprocessor WHERE m['ab'] = 1 ORDER BY id;
+SELECT id FROM tab_preprocessor WHERE m['ab'] = 1 ORDER BY id SETTINGS use_skip_indexes = 0;
+
 -- { echoOff }
 
 DROP TABLE tab_basic;
 DROP TABLE tab_buckets;
+DROP TABLE tab_preprocessor;

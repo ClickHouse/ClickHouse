@@ -2112,6 +2112,10 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
+    /// A preprocessor sees the lookup as a `String`, which can map it to a token the `FixedString` key never stored.
+    if (indexed_fixed_string_size && has_preprocessor)
+        return false;
+
     /// The key compares as a value of the key type, so a `FixedString(N)` key is looked up padded to N bytes.
     const FixedStringNeedleContext key_padding_context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
