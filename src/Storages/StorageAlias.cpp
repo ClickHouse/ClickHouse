@@ -783,7 +783,7 @@ void registerStorageAlias(StorageFactory & factory)
 
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
-        // Only check a fresh definition, not a replay or RESTORE
+        // Only check a fresh definition, not a replay. A backup of an older server is stripped of them on restore.
         if (!args.columns.empty() && isFreshDefinition(args.mode))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

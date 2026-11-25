@@ -7,6 +7,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/insertAtEnd.h>
@@ -296,6 +297,12 @@ void BackupMetadataFinder::findTableInBackupImpl(
             "The definition of {} in the backup uses AS {}, which BACKUP never writes",
             tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
             backQuoteIfNeed(create.as_table));
+
+    /// Servers before 26.10 wrote the resolved columns of an `Alias` table into its definition. `BACKUP` drops them now
+    /// (see `DDLAdjustingForBackupVisitor`), and so does a restore of an older backup.
+    if (auto & create = create_table_query->as<ASTCreateQuery &>();
+        create.storage && create.storage->engine && create.storage->engine->name == "Alias")
+        create.reset(create.columns_list);
 
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
