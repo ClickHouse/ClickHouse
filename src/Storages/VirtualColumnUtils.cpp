@@ -709,6 +709,10 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
     return allReachableNodes({node}, [](const ActionsDAG::Node * cur)
     {
+        /// `ARRAY JOIN` is the `arrayJoin` function in another node type, and that function is not deterministic.
+        if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
         return allNodeFunctions(*cur, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
     });
 }

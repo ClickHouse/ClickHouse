@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_name_minmax;
 DROP TABLE IF EXISTS t_name_key;
 DROP TABLE IF EXISTS t_name_wrapped;
 DROP TABLE IF EXISTS t_name_wrapped_set;
+DROP TABLE IF EXISTS t_name_array_join;
 
 -- One value of `id` per granule: a granule skipped by mistake loses all of its rows.
 CREATE TABLE t_set (id UInt64, INDEX s_idx id TYPE set(0) GRANULARITY 1)
@@ -82,6 +83,24 @@ INSERT INTO t_name_wrapped_set SELECT 0, number FROM numbers(8000);
 SELECT 'set, blockSize() + 1 > 1, bulk', count() FROM t_name_wrapped_set WHERE blockSize() + 1 > 1 SETTINGS secondary_indices_enable_bulk_filtering = 1;
 SELECT 'set, blockSize() + 1 > 1, per granule', count() FROM t_name_wrapped_set WHERE blockSize() + 1 > 1 SETTINGS secondary_indices_enable_bulk_filtering = 0;
 
+-- The key and both indexes use a column named like the `ARRAY JOIN` result, and store 0 in every row.
+CREATE TABLE t_name_array_join
+(
+    `arrayJoin(arr)` UInt8,
+    arr Array(UInt8),
+    INDEX m_idx `arrayJoin(arr)` TYPE minmax GRANULARITY 1,
+    INDEX s_idx `arrayJoin(arr)` TYPE set(0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY `arrayJoin(arr)`
+SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_name_array_join SELECT 0, [toUInt8(1)] FROM numbers(8000);
+
+SELECT 'ARRAY JOIN, primary key', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS ignore_data_skipping_indices = 'm_idx,s_idx';
+SELECT 'ARRAY JOIN, minmax', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 's_idx';
+SELECT 'ARRAY JOIN, set, bulk', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 'm_idx', secondary_indices_enable_bulk_filtering = 1;
+SELECT 'ARRAY JOIN, set, per granule', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, ignore_data_skipping_indices = 'm_idx', secondary_indices_enable_bulk_filtering = 0;
+SELECT 'ARRAY JOIN, no pruning', count() FROM t_name_array_join ARRAY JOIN arr AS x WHERE x = 1 SETTINGS use_primary_key = 0, use_skip_indexes = 0;
+
 -- Every second granule has the key 'k', the others only the key 'z'.
 CREATE TABLE t_map (id UInt64, m Map(String, String), INDEX ki mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple()
@@ -115,3 +134,4 @@ DROP TABLE t_name_minmax;
 DROP TABLE t_name_key;
 DROP TABLE t_name_wrapped;
 DROP TABLE t_name_wrapped_set;
+DROP TABLE t_name_array_join;
