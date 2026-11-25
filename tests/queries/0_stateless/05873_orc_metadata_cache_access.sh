@@ -22,7 +22,7 @@ check_denied() {
         echo "unexpectedly allowed"
         exit 1
     fi
-    if ! grep -qF 'SYSTEM DROP ORC_METADATA_CACHE' <<< "$output"; then
+    if ! grep -qF 'SYSTEM DROP ORC METADATA CACHE ON *.*' <<< "$output"; then
         echo "$output"
         exit 1
     fi

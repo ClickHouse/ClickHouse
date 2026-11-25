@@ -44,8 +44,21 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
-        self.send_response(200)
+        range_header = self.headers.get('Range')
+        content_range = None
+        status = 200
+        if range_header and etag:
+            begin, end = range_header.split('=')[1].split('-')
+            begin = int(begin)
+            end = min(int(end), len(data) - 1) if end else len(data) - 1
+            content_range = f'bytes {begin}-{end}/{len(data)}'
+            data = data[begin:end + 1]
+            status = 206
+        self.send_response(status)
         self.send_header('Content-Length', str(len(data)))
+        self.send_header('Accept-Ranges', 'bytes')
+        if content_range:
+            self.send_header('Content-Range', content_range)
         if etag:
             self.send_header('ETag', etag)
         self.end_headers()
@@ -67,7 +80,7 @@ for origin in range(2):
     server.origin = origin
     servers.append(server)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-(work_dir / 'ports').write_text(' '.join(str(server.server_port) for server in servers))
+(work_dir / 'ports').write_text(' '.join(str(server.server_port) for server in servers) + '\n')
 threading.Event().wait()
 PY
 http_pid=$!
@@ -76,6 +89,7 @@ for _ in $(seq 1 100); do
     if [[ -s "${work_dir}/ports" ]]; then break; fi
     sleep 0.1
 done
+[[ -s "${work_dir}/ports" ]]
 read -r first_port second_port < "${work_dir}/ports"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ORC METADATA CACHE"
