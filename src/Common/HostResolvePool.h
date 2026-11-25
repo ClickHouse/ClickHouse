@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Silk/FiberMutex.h>
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
@@ -162,7 +163,7 @@ protected:
             return address == r.address;
         }
 
-        size_t getWeight() const
+        [[nodiscard]] size_t getWeight() const
         {
             if (failed)
                 return 0;
@@ -261,8 +262,10 @@ public:
     /// deterministically.
     void injectResolverForTest(const String & host, HostResolver::Ptr resolver);
 private:
-    std::mutex mutex;
+    Silk::FiberMutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
+    /// Incremented by `dropCache`, so that the resolutions which started before the drop are not cached.
+    UInt64 generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

@@ -206,6 +206,8 @@ Si la cadena no es una codificación Base32 válida, se lanza una excepción.
 base32Decode(encoded)
 ```
 
+**Alias**: `from_base32`
+
 **Argumentos**
 
 * `encoded` — columna de tipo String o constante. [`String`](/es/reference/data-types/string)
@@ -239,6 +241,8 @@ Codifica una cadena en [Base32](https://datatracker.ietf.org/doc/html/rfc4648#se
 ```sql
 base32Encode(plaintext)
 ```
+
+**Alias**: `to_base32`
 
 **Argumentos**
 
@@ -416,7 +420,7 @@ Introducido en: v24.6.0
 
 Decodifica una cadena desde su representación en [Base64](https://en.wikipedia.org/wiki/Base64) usando un alfabeto seguro para URL, de acuerdo con la RFC 4648.
 El alfabeto estándar (`+` y `/`) también se acepta al decodificar.
-Desde la versión 26.7, se ignoran en la entrada los caracteres de espacio en blanco: espacio, tabulación (`\t`), salto de línea (`\n`), retorno de carro (`\r`) y salto de página (`\f`) (las versiones anteriores rechazaban las entradas que los contenían). La tabulación vertical (`\v`) y cualquier otro carácter que no pertenezca al alfabeto Base64 se rechazan.
+Desde la versión 26.7, se ignoran en la entrada los caracteres de espacio en blanco: espacio, tabulación (`\t`), salto de línea (`\n`), retorno de carro (`\r`) y avance de página (`\f`) (las versiones anteriores rechazaban las entradas que los contenían). La tabulación vertical (`\v`) y cualquier otro carácter que no pertenezca al alfabeto Base64 se rechazan.
 Lanza una excepción en caso de error.
 
 **Sintaxis**
@@ -424,6 +428,8 @@ Lanza una excepción en caso de error.
 ```sql
 base64URLDecode(encoded)
 ```
+
+**Alias**: `from_base64url`
 
 **Argumentos**
 
@@ -451,13 +457,15 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 Introducido en: v18.16.0
 
-Codifica una cadena utilizando la representación [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) con un alfabeto apto para URL.
+Codifica una cadena utilizando la representación [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4) (RFC 4648) con un alfabeto seguro para URL.
 
 **Sintaxis**
 
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**Alias**: `to_base64url`
 
 **Argumentos**
 
@@ -1098,7 +1106,7 @@ Calcula la [distancia de edición](https://en.wikipedia.org/wiki/Edit_distance) 
 editDistanceUTF8(s1, s2)
 ```
 
-**Alias**: `levenshteinDistanceUTF8`
+**Alias**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Argumentos**
 
@@ -1170,6 +1178,8 @@ Comprueba si una cadena termina con el sufijo indicado.
 ```sql
 endsWith(s, suffix)
 ```
+
+**Alias**: `ends_with`
 
 **Argumentos**
 
@@ -2883,6 +2893,8 @@ Comprueba si una cadena empieza por la cadena proporcionada.
 ```sql
 startsWith(s, prefix)
 ```
+
+**Alias**: `starts_with`
 
 **Argumentos**
 

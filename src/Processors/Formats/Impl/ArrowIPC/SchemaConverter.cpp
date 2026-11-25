@@ -586,7 +586,15 @@ buildMapEntriesField(
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
-    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, childPlan(kv_plans, 0)));
+    const DataTypePtr key_type = removeNullable(map_type.getKeyType());
+    if (isVariant(key_type) && settings.arrow.output_variant_as_json_string)
+    {
+        /// The key must not be nullable: `RecordBatchEncoder` writes a NULL `Variant` key as the JSON text `null`.
+        kv.push_back(flatbuf::CreateField(
+            b, b.CreateString("key"), /*nullable=*/ false, flatbuf::Type_Utf8, flatbuf::CreateUtf8(b).Union(), 0, 0));
+    }
+    else
+        kv.push_back(buildField(b, "key", key_type, settings, childPlan(kv_plans, 0)));
     kv.push_back(buildField(b, "value", map_type.getValueType(), settings, childPlan(kv_plans, 1)));
     auto kv_vec = b.CreateVector(kv);
     auto entries_name = b.CreateString("entries");
@@ -609,7 +617,7 @@ buildField(
     }
 
     DataTypePtr t = removeLowCardinality(type);
-    const bool nullable = t->isNullable();
+    bool nullable = t->isNullable();
     t = removeNullable(t);
 
     flatbuf::Type type_type = flatbuf::Type_NONE;
@@ -624,17 +632,17 @@ buildField(
         type_offset = flatbuf::CreateInt(b, bits, is_signed).Union();
     };
 
-    auto make_timestamp = [&](flatbuf::TimeUnit unit, const std::string & time_zone)
-    {
-        auto tz_off = b.CreateString(time_zone);
-        type_type = flatbuf::Type_Timestamp;
-        type_offset = flatbuf::CreateTimestamp(b, unit, tz_off).Union();
-    };
-
     if (isBool(t))
     {
         type_type = flatbuf::Type_Bool;
         type_offset = flatbuf::CreateBool(b).Union();
+    }
+    else if (isNothing(t) && settings.arrow.output_nothing_as_null)
+    {
+        /// Every value of `Nothing` is null, so the field is nullable even when the type is not, as in `Array(Nothing)`.
+        type_type = flatbuf::Type_Null;
+        type_offset = flatbuf::CreateNull(b).Union();
+        nullable = true;
     }
     else
     {
@@ -651,9 +659,15 @@ buildField(
             case TypeIndex::Int64: make_int(64, true); break;
             case TypeIndex::DateTime:
                 if (settings.arrow.output_datetime_as_timestamp)
-                    make_timestamp(flatbuf::TimeUnit_SECOND, assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                {
+                    auto tz_off = b.CreateString(assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                    type_type = flatbuf::Type_Timestamp;
+                    type_offset = flatbuf::CreateTimestamp(b, flatbuf::TimeUnit_SECOND, tz_off).Union();
+                }
                 else
+                {
                     make_int(32, false);
+                }
                 break;
             case TypeIndex::Float32:
                 type_type = flatbuf::Type_FloatingPoint;
@@ -681,11 +695,14 @@ buildField(
             case TypeIndex::DateTime64:
             {
                 const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*t);
+                const int unit = arrowTimeUnitForScale(dt64.getScale());
                 /// Always serialize the timezone, matching the Apache Arrow library writer
                 /// (`arrow::timestamp(unit, datetime64_type->getTimeZone().getTimeZone())`): a
                 /// `DateTime64` without an explicit timezone still carries the server/default one, and
                 /// dropping it would emit a timezone-less Arrow `Timestamp` and break writer parity.
-                make_timestamp(static_cast<flatbuf::TimeUnit>(arrowTimeUnitForScale(dt64.getScale())), dt64.getTimeZone().getTimeZone());
+                auto tz_off = b.CreateString(dt64.getTimeZone().getTimeZone());
+                type_type = flatbuf::Type_Timestamp;
+                type_offset = flatbuf::CreateTimestamp(b, static_cast<flatbuf::TimeUnit>(unit), tz_off).Union();
                 break;
             }
             case TypeIndex::Time:
@@ -733,7 +750,7 @@ buildField(
                     type_offset = flatbuf::CreateFixedSizeBinary(
                         b, static_cast<Int32>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
                 }
-                else if (settings.arrow.output_string_as_string)
+                else if (settings.arrow.output_string_as_string && settings.arrow.output_fixed_string_as_string)
                 {
                     type_type = flatbuf::Type_Utf8;
                     type_offset = flatbuf::CreateUtf8(b).Union();
@@ -803,6 +820,15 @@ buildField(
             }
             case TypeIndex::Variant:
             {
+                /// `RecordBatchEncoder::encodeVariantAsJSONText` writes the JSON text of each value, and NULL as an Arrow null.
+                if (settings.arrow.output_variant_as_json_string)
+                {
+                    nullable = true;
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                    break;
+                }
+
                 /// Mirror the library writer: a dense union with one child per variant (in global order)
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
@@ -867,9 +893,10 @@ buildField(
         }
     }
 
-    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata,
+    /// unless `output_format_arrow_uuid_as_fixed_byte_array` asks for the plain storage type.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if (isUUID(t))
+    if (isUUID(t) && !settings.arrow.output_uuid_as_fixed_byte_array)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));

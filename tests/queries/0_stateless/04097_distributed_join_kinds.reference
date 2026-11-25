@@ -118,17 +118,17 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (default.dist_items)
 50
 50
--- ANY INNER JOIN (broadcast)
+-- ANY INNER JOIN (shuffle)
 Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
         Expression (Before GROUP BY)
           JoinLogical
-            ScatterExchange (any scatter)
+            ScatterExchange (by hash([__table1.order_id]))
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.dist_orders)
-            BroadcastExchange
+            ScatterExchange (by hash([__table2.order_id]))
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.dist_items)
 350
