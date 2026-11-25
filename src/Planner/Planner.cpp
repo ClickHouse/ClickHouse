@@ -385,6 +385,20 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 }
 
+/// Plan-based parallel replicas (`parallel_replicas_plan_based`) build the whole plan locally, and
+/// `QueryPlanOptimizations::applyParallelReplicas` may later split it and ship a fragment to the replicas.
+/// The setting is checked on both the local and the query-level context, so a subquery cannot escape
+/// with its own SETTINGS clause.
+static bool mayUsePlanBasedParallelReplicas(const ContextPtr & query_context)
+{
+    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
+    {
+        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
+    };
+    return uses_plan_based_parallel_replicas(query_context)
+        || (query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext()));
+}
+
 /// Never use the cache in plans that are serialized for remote execution: logical plans are
 /// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
 /// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
@@ -402,12 +416,7 @@ static bool isPlanEligibleForSubqueryCache(const SelectQueryOptions & select_que
     if (select_query_options.build_logical_plan)
         return false;
 
-    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
-    {
-        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
-    };
-    return !uses_plan_based_parallel_replicas(query_context)
-        && !(query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext()));
+    return !mayUsePlanBasedParallelReplicas(query_context);
 }
 
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
@@ -1180,6 +1189,9 @@ void Planner::buildPlanForQueryNode()
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
+            /// Plan-based parallel replicas plan both stages on the initiator, but `applyParallelReplicas` may split the
+            /// aggregation afterwards and run its partial half on the local replica and on the remote ones, so the cutoff
+            /// stays off there as well.
             ///
             /// `make_distributed_plan` cannot split an aggregation with a cap, so the cap is not used in a plan
             /// that it may split. That is the case also when only an enclosing query enables the setting, and this
@@ -1194,7 +1206,7 @@ void Planner::buildPlanForQueryNode()
             const bool has_aggregates = !aggregation_analysis_result.aggregate_descriptions.empty();
             const bool can_cap_aggregation
                 = !mayBeInDistributedPlan(query_settings, select_query_options, query_context)
-                && (!has_aggregates || query_processing_info.isSecondStage());
+                && (!has_aggregates || (query_processing_info.isSecondStage() && !mayUsePlanBasedParallelReplicas(query_context)));
 
             std::optional<UInt64> trivial_group_by_limit;
             if (can_cap_aggregation)
