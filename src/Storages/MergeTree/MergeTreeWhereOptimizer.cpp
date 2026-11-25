@@ -535,7 +535,7 @@ static void collectConjuncts(
     auto fn = node.toFunctionNodeOrNull();
     if (fn.has_value() && fn->getFunctionName() == "and")
     {
-        if (const auto * dag_node = node.getDAGNode(); dag_node && !expanded.insert(dag_node).second)
+        if (!expanded.insert(fn->getDAGNode()).second)
             return;
         for (size_t i = 0; i < fn->getArgumentsSize(); ++i)
             collectConjuncts(fn->getArgumentAt(i), conjuncts, expanded);
