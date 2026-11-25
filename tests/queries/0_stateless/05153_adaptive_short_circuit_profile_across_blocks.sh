@@ -16,9 +16,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # be non-zero if the profile of the earlier blocks was preserved. Parallel replicas are disabled: they split
 # the rows between the replicas, so every adaptive instance would see only a few rounds of rows. The index
 # granularity is pinned: a tiny randomized granularity (e.g. 111 rows) splits the tables into thousands of
-# granules, which makes every insert and scan take tens of seconds in sanitizer builds.
+# granules, which makes every insert and scan take tens of seconds in sanitizer builds. The sizes of the
+# `Parquet` row groups and of the blocks read from them are pinned for a similar reason: the randomized
+# 1000-row row groups and blocks make the fixed cost of a function call dominate the per-row measurements,
+# so on a loaded machine the heuristic can keep every action lazy in all the attempts.
 
-SETTINGS="SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 1, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0"
+SETTINGS="SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 1, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0, input_format_parquet_max_block_size = 8192"
 
 function check_profile_is_preserved()
 {
@@ -27,7 +30,7 @@ function check_profile_is_preserved()
 
     # The result must not depend on the adaptive decisions.
     local static_result
-    static_result=$(${CLICKHOUSE_CLIENT} --query "$query SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 0, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0")
+    static_result=$(${CLICKHOUSE_CLIENT} --query "$query SETTINGS short_circuit_function_evaluation = 'force_enable', enable_adaptive_short_circuit_lazy_execution = 0, max_block_size = 8192, max_threads = 1, enable_parallel_replicas = 0, input_format_parquet_max_block_size = 8192")
 
     # The decision is based on wall-clock measurements, so on a heavily loaded machine (e.g. in the flaky
     # check) an unlucky run can keep every action lazy. Retry a few times: if the profile of the earlier
@@ -74,7 +77,7 @@ check_profile_is_preserved "hash_join_residual" "
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet', Parquet)
     SELECT number % 2 AS b0, toUInt8(number % 3 != 0) AS b1, toUInt8(number % 5 != 0) AS b2
-    FROM numbers(1000000) SETTINGS engine_file_truncate_on_insert = 1"
+    FROM numbers(1000000) SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 100000, output_format_parquet_row_group_size_bytes = '512Mi'"
 
 check_profile_is_preserved "parquet_prewhere" "
     SELECT count() FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet', Parquet) WHERE if(b0, and(b1, b2), 0)"
