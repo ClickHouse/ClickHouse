@@ -447,7 +447,6 @@ GroupExpressions TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr
     /// distribution requirements (Local or Shuffle), causing the `DistributionEnforcer` to insert
     /// the appropriate exchange before the partial step.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
-    partial_expr->is_partial_of_two_stage_aggregation = true;
     auto merge_expr = addTwoStageSplit(
         memo, expression, std::move(partial_expr), std::move(merge_step_ptr), std::move(merge_input_required));
 
@@ -459,7 +458,8 @@ GroupExpressions TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr
 OptimizationRulePtr createTwoStageAggregationTransformation() { return std::make_shared<TwoStageAggregationTransformation>(); }
 
 
-/// Implementations of the merge half of a two-stage aggregation split:
+/// Implementations of a merge of aggregation states: the merge half of a two-stage aggregation split,
+/// or a merge that the query plan already has.
 ///   - Local: gather the partial states to one node and merge them there (always applicable)
 ///   - Shuffle: the partial states arrive shuffled by the group keys, so each node merges the
 ///     states of its own keys, and only the final groups leave the nodes
@@ -479,7 +479,7 @@ protected:
 private:
     /// Whether the merge may also run per bucket over states shuffled by the keys.
     /// When it may not, it runs on one node.
-    static bool isShuffleApplicable(const GroupExpression & expression, const MergingAggregatedStep & merge_step, const Memo & memo)
+    static bool isShuffleApplicable(const MergingAggregatedStep & merge_step, const Memo & memo)
     {
         const auto & context = memo.getContext();
         if (!context.distributed_plan_partial_aggregation_before_shuffle)
@@ -487,12 +487,6 @@ private:
 
         /// This setting asks for a shuffle of the input rows, not of partial states.
         if (context.distributed_plan_force_shuffle_aggregation)
-            return false;
-
-        /// Only the merge created by the two-stage split: its group has the statistics of the
-        /// original aggregation, which the cost model needs to compare the two plans.
-        const auto & partial_expressions = memo.getGroup(expression.inputs.front().group_id)->logical_expressions;
-        if (partial_expressions.empty() || !partial_expressions.front()->is_partial_of_two_stage_aggregation)
             return false;
 
         /// A non-final merge, or one that must output buckets in order, feeds a consumer that reads
@@ -537,7 +531,7 @@ GroupExpressions MergingAggregationImplementation::applyImpl(GroupExpressionPtr 
     local->strategy = strategySingleton<LocalMergeStrategy>();
     addPhysicalToMemo(local, required_properties, memo, result);
 
-    if (!isShuffleApplicable(*expression, *merge_step, memo))
+    if (!isShuffleApplicable(*merge_step, memo))
         return result;
 
     for (size_t candidate_node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))

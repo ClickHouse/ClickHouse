@@ -36,7 +36,6 @@ public:
         , strategy(other_.strategy)
         , description_suffix(other_.description_suffix)
         , inputs(other_.inputs)
-        , is_partial_of_two_stage_aggregation(other_.is_partial_of_two_stage_aggregation)
     {}
 
     [[nodiscard]] String getName() const;
@@ -81,10 +80,6 @@ public:
     /// some properties, so it also satisfies weaker required properties, among them the ones of
     /// its own input in the same group. It is not an answer to those: the plan below it is.
     [[nodiscard]] bool answers(const ExpressionProperties & required_properties) const;
-
-    /// Set on the partial half of a two-stage aggregation split. The merge per bucket is offered only
-    /// for the merge half of such a split (see `MergingAggregationImplementation`).
-    bool is_partial_of_two_stage_aggregation = false;
 
     UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 

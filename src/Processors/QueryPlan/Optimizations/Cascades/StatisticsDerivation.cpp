@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -91,7 +92,13 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
     {
-        group->statistics = deriveAggregatingStatistics(*aggregating_step, input_statistics(0));
+        group->statistics = deriveAggregatingStatistics(
+            aggregating_step->getParams().keys, *aggregating_step->getOutputHeader(), input_statistics(0));
+    }
+    else if (const auto * merging_step = typeid_cast<const MergingAggregatedStep *>(plan_step))
+    {
+        group->statistics = deriveAggregatingStatistics(
+            merging_step->getParams().keys, *merging_step->getOutputHeader(), input_statistics(0));
     }
     else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
     {
@@ -709,17 +716,17 @@ DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & ag
     return result;
 }
 
-ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(
+    const Names & keys, const Block & output_header, const ExpressionStatistics & input_statistics)
 {
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     ExpressionStatistics aggregation_statistics;
-    for (const auto & key : aggregator_params.keys)
+    for (const auto & key : keys)
         aggregation_statistics.column_statistics[key].num_distinct_values
             = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(key, input_statistics));
 
     aggregation_statistics.min_row_count = 0;
     std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
-        = estimateGroupCount(aggregator_params.keys, input_statistics);
+        = estimateGroupCount(keys, input_statistics);
     /// Group-by keys pass through with their input value sizes.
     for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
     {
@@ -729,7 +736,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     }
     /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
     /// header with the keys' known value sizes.
-    aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
+    aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(output_header, aggregation_statistics.column_statistics);
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys.

@@ -1,0 +1,31 @@
+-- the merge per bucket over the states of the two shards
+GatherExchange
+  Expression ((Project names + Projection))
+    MergingAggregated
+      ScatterExchange
+        Union
+          Aggregating
+            GatherExchange
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_plan_merge)
+          Aggregating
+            GatherExchange
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_plan_merge)
+-- the result, and the result without the distributed plan
+1000	399980000	1000
+1000	399980000	1000
+-- the same result with two-level states from the shards
+1000	399980000	1000
+-- distributed_plan_force_shuffle_aggregation asks for no shuffle of states: the merge is on one node
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        GatherExchange
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (ParallelRead default.t_plan_merge)
+      Aggregating
+        GatherExchange
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (ParallelRead default.t_plan_merge)
