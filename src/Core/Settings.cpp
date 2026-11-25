@@ -2420,10 +2420,11 @@ Possible values:
 )", 0, \
         {"26.9", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."}) \
     DECLARE(Bool, use_statistics_for_sum_avg_aggregation, true, R"(
-Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `Nullable` or
-`LowCardinality`, without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
+Answer `sum`, `avg` and `sumCount` aggregations over integer and `Decimal` columns that are not `LowCardinality`,
+without `GROUP BY` and filters, from per-part column statistics (the `basic` statistics type, see the
 `auto_statistics_types` `MergeTree` setting) for the data parts that have them materialized, and read only the remaining
-parts. `count(column)` of a column that is not `Nullable` or `LowCardinality` is answered there from the number of rows.
+parts. `count(column)` of a column that is not `LowCardinality` is answered there from the number of rows. Over a
+`Nullable` column, the statistics hold the sum of the non-NULL values and the NULL count, which the aggregates skip.
 The result is exactly the same as when reading the data.
 
 Possible values:
