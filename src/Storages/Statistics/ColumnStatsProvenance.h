@@ -71,8 +71,9 @@ enum ColumnStatsTransformation : UInt16
     /// A step whose effect on the column is not modeled, such as `FINAL` or a join.
     Unmodeled = 1 << 4,
     /// Rows were dropped by predicates that do not read the column; its values are unchanged. Recorded instead of
-    /// `RowSubset` only where the columns the predicates read are known, in the estimate of a MergeTree read. Only reading
-    /// the stored column counts: a `MATERIALIZED` column computed from another one is a column of its own.
+    /// `RowSubset` only where the columns the predicates read are known, in the estimate of a MergeTree read. A predicate
+    /// on a column computed by a `DEFAULT` or `MATERIALIZED` expression reads the columns the expression reads, and a
+    /// predicate on those reads the computed column too.
     FilterOnOtherColumns = 1 << 5,
 };
 

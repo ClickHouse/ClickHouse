@@ -7,6 +7,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -31,6 +32,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -516,9 +518,56 @@ struct StatsUnderFilter
     bool records_parent_filter = false;
 };
 
+/// Adds to `columns_read` the columns related to them through the expressions of `DEFAULT`, `MATERIALIZED` and `ALIAS`
+/// columns: first the columns that the expression of a column in `columns_read` reads, recursively, as a predicate on the
+/// column reads them too; then the columns whose expression reads one of those, recursively, as the predicate cuts their
+/// values too.
+void addColumnsRelatedByDefaultExpressions(const ColumnsDescription & columns, NameSet & columns_read)
+{
+    /// An identifier that is neither a column nor a subcolumn of the table, such as a lambda parameter, reads no column.
+    UnorderedMapWithMemoryTracking<String, NameSet> columns_read_by_expression;
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+        IdentifierNameSet identifiers;
+        column.default_desc.expression->collectIdentifierNames(identifiers);
+        auto & sources = columns_read_by_expression[column.name];
+        for (const auto & identifier : identifiers)
+            if (const auto source = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+                sources.insert(source->getNameInStorage());
+    }
+
+    VectorWithMemoryTracking<String> to_expand(columns_read.begin(), columns_read.end());
+    while (!to_expand.empty())
+    {
+        const String column = std::move(to_expand.back());
+        to_expand.pop_back();
+        if (const auto it = columns_read_by_expression.find(column); it != columns_read_by_expression.end())
+            for (const auto & source : it->second)
+                if (columns_read.insert(source).second)
+                    to_expand.push_back(source);
+    }
+
+    for (bool added = true; added;)
+    {
+        added = false;
+        for (const auto & [column, sources] : columns_read_by_expression)
+        {
+            if (!columns_read.contains(column)
+                && std::ranges::any_of(sources, [&](const String & source) { return columns_read.contains(source); }))
+            {
+                columns_read.insert(column);
+                added = true;
+            }
+        }
+    }
+}
+
 /// The stored columns read by the predicates that may drop rows of a MergeTree read: `parent_predicate` of the
 /// `FilterStep` right above the read, the row-level filter, the PREWHERE and the filter pushed into the read (which
-/// is resolved to the columns of the read through the steps above it, see `optimizePrimaryKeyConditionAndLimit`).
+/// is resolved to the columns of the read through the steps above it, see `optimizePrimaryKeyConditionAndLimit`),
+/// with the columns related to them through default expressions (see `addColumnsRelatedByDefaultExpressions`).
 /// Unset if a predicate cannot be attributed to the stored columns it reads: it reads a column that is not a stored
 /// column of the table (a column computed by the read, a virtual column, a subcolumn, a correlated column), contains
 /// `arrayJoin`, or a function whose result is not determined by its arguments (e.g. `rowNumberInAllBlocks`, whose
@@ -577,6 +626,7 @@ std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & read
         });
     if (!is_attributed)
         return {};
+    addColumnsRelatedByDefaultExpressions(columns, columns_read);
     return columns_read;
 }
 

@@ -19,7 +19,7 @@ function print_provenance() {
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
-        CREATE TABLE t_r (f UInt32, b1 UInt32, b2 UInt32, b3 UInt32)
+        CREATE TABLE t_r (f UInt32, b1 UInt32, b2 UInt32, b3 UInt32, m UInt32 MATERIALIZED b3)
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
@@ -41,7 +41,7 @@ function print_provenance() {
         FORMAT Null;
     " 2>&1 |
         grep -F 'estimate statistics t_r:' |
-        grep -oE '(f|b[0-9]): [0-9]+ \(ndv: [^ ]+ range: [^)]+\)' |
+        grep -oE '(f|m|b[0-9]): [0-9]+ \(ndv: [^ ]+ range: [^)]+\)' |
         sed -E 's/: [0-9]+ \(ndv: [^ ]+ range: / range: /; s/\)$//' |
         sort
 }
@@ -54,6 +54,9 @@ print_provenance "SELECT * FROM t_r WHERE f < 5" "optimize_move_to_prewhere = 1"
 
 echo '-- WHERE on an operand'
 print_provenance "SELECT * FROM t_r WHERE b3 < 500"
+
+echo '-- WHERE on a MATERIALIZED column computed from an operand: attributed to the operand as well'
+print_provenance "SELECT * FROM t_r WHERE m < 500"
 
 echo '-- a filter on a column computed from an operand, not pushed down: no attribution'
 print_provenance "SELECT * FROM (SELECT f, b1, b2, b3, b3 + 1 AS x FROM t_r) WHERE x < 500" \

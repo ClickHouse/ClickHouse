@@ -16,6 +16,7 @@ SET query_plan_optimize_join_order_limit = 0;
 
 DROP TABLE IF EXISTS t_foc_l;
 DROP TABLE IF EXISTS t_foc_r;
+DROP TABLE IF EXISTS t_foc_d;
 
 CREATE TABLE t_foc_l (c UInt32, a1 UInt32, a2 UInt32, a3 UInt32)
 ENGINE = MergeTree ORDER BY tuple()
@@ -26,8 +27,16 @@ CREATE TABLE t_foc_r (f UInt32, b1 UInt32, b2 UInt32, b3 UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
+-- `t_foc_r` with columns computed from `b3` and `f`.
+CREATE TABLE t_foc_d (
+    f UInt32, b1 UInt32, b2 UInt32, b3 UInt32,
+    m UInt32 MATERIALIZED b3, d UInt32 DEFAULT b3, mf UInt32 MATERIALIZED f)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq_v2';
+
 INSERT INTO t_foc_l SELECT 0, number % 1000, number % 1000, (number * 97) % 100000 FROM numbers(1000);
 INSERT INTO t_foc_r SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+INSERT INTO t_foc_d (f, b1, b2, b3) SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
 
 SELECT '-- unfiltered input: by selectivity';
 SELECT extract(explain, 'Conditions: .*') FROM (
@@ -138,6 +147,36 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     SETTINGS query_plan_filter_push_down = 0, query_plan_merge_expressions = 0, optimize_move_to_prewhere = 0
 ) WHERE explain LIKE '%Conditions:%';
 
+-- A predicate on a column computed by a `DEFAULT` or `MATERIALIZED` expression reads the columns the expression reads,
+-- and a predicate on those reads the computed column too.
+SELECT '-- WHERE on a MATERIALIZED column computed from an operand: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT b1, b2, b3 FROM t_foc_d WHERE m < 500) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- WHERE on a DEFAULT column computed from an operand: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT b1, b2, b3 FROM t_foc_d WHERE d < 500) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- WHERE on the column that a MATERIALIZED operand is computed from: syntax order';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT b1, b2, m FROM t_foc_d WHERE b3 < 500) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.m
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT '-- WHERE on a MATERIALIZED column computed from a column that is not an operand: by selectivity';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_foc_l AS l JOIN (SELECT b1, b2, b3 FROM t_foc_d WHERE mf < 5) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
 SELECT '-- a predicate that selects rows by their position: syntax order';
 SELECT extract(explain, 'Conditions: .*') FROM (
     EXPLAIN actions = 1
@@ -163,3 +202,4 @@ SELECT extract(explain, 'Conditions: .*') FROM (
 
 DROP TABLE t_foc_l;
 DROP TABLE t_foc_r;
+DROP TABLE t_foc_d;
