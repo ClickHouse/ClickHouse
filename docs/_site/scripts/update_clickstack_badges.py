@@ -60,7 +60,7 @@ for variants in groups.values():
             badges.append(['ClickHouse Observability', observability])
         mapping[slug] = badges
 
-# Read feature anchors from both product editions, following shared Demo Day snippets.
+# Read feature anchors from both product editions, including shared newer pages.
 exceptions = json.loads((Path(__file__).with_name('demo-days-availability.json')).read_text())
 # Each list maps a page date to the feature anchors available in one product only.
 only_keys = ('observabilityOnly', 'openSourceOnly')
@@ -75,11 +75,7 @@ for source in sorted((root / 'clickstack').glob('**/demo-days/2026/*.mdx')):
     observability = f'/clickstack/observability/demo-days/2026/{date}'
     if not (root / (observability.lstrip('/') + '.mdx')).exists():
         observability = oss
-    content = source.read_text()
-    snippet = re.search(r"^import DemoDay from ['\"](/snippets/clickstack/demo-days/[^'\"]+\.mdx)['\"];?$", content, re.M)
-    if snippet:
-        content = (root / snippet.group(1).lstrip('/')).read_text()
-    anchors = re.findall(r'^## .*?\{#([^}]+)\}$', content, re.M)
+    anchors = re.findall(r'^## .*?\{#([^}]+)\}$', source.read_text(), re.M)
     only = {key: exceptions.get(key, {}).get(date, []) for key in only_keys}
     missing = set(only['observabilityOnly'] + only['openSourceOnly']) - set(anchors)
     if missing:

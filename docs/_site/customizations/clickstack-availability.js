@@ -645,12 +645,6 @@
       "/clickstack/observability/integration-examples/kubernetes"
     ]
   ],
-  "/clickstack/integration-examples/loom": [
-    [
-      "Open Source",
-      "/clickstack/integration-examples/loom"
-    ]
-  ],
   "/clickstack/integration-examples/mongodb-logs": [
     [
       "Open Source",
