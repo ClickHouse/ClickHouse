@@ -68,13 +68,14 @@ namespace
 /// The elements copied into the generated query by the compilation that runs in this thread, see `cloneForQuery`.
 /// The copies are made by helpers that build pieces of a query (`withAlias`, `QSelectBuilder::build`) all over
 /// the compiler, so the budget is found through the thread instead of being passed to every one of them.
+/// It is held by value (`compileProgram` sets it and puts the previous one back), and no limit means no compilation.
 struct CopyBudget
 {
     size_t max_elements = 0;
     size_t copied_elements = 0;
 };
 
-thread_local CopyBudget * copy_budget = nullptr;
+thread_local CopyBudget copy_budget;
 
 [[noreturn]] void throwTooBigExpansion(size_t max_elements)
 {
@@ -86,7 +87,7 @@ thread_local CopyBudget * copy_budget = nullptr;
 
 ASTPtr cloneForQuery(const ASTPtr & ast)
 {
-    if (copy_budget && copy_budget->max_elements)
+    if (copy_budget.max_elements)
     {
         /// Counting before copying keeps the work within the limit: nothing is copied once the budget is spent.
         std::vector<const IAST *> pending{ast.get()};
@@ -94,8 +95,8 @@ ASTPtr cloneForQuery(const ASTPtr & ast)
         {
             const IAST * node = pending.back();
             pending.pop_back();
-            if (++copy_budget->copied_elements > copy_budget->max_elements)
-                throwTooBigExpansion(copy_budget->max_elements);
+            if (++copy_budget.copied_elements > copy_budget.max_elements)
+                throwTooBigExpansion(copy_budget.max_elements);
             for (const auto & child : node->children)
                 pending.push_back(child.get());
         }
@@ -2301,9 +2302,8 @@ ASTPtr QCompiler::finalQuery(const QValue & value, const QNodePtr & statement)
 
 ASTPtr QCompiler::compileProgram(const QProgram & program)
 {
-    CopyBudget budget{max_expanded_elements, 0};
-    CopyBudget * previous_budget = copy_budget;
-    copy_budget = &budget;
+    CopyBudget previous_budget = copy_budget;
+    copy_budget = CopyBudget{max_expanded_elements, 0};
     SCOPE_EXIT({ copy_budget = previous_budget; });
 
     QEnvironment globals;
