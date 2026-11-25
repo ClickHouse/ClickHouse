@@ -221,6 +221,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsUInt64 max_memory_usage;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -2850,10 +2851,34 @@ static BlockIO executeQueryImpl(
             }
             else
             {
-                /// Only the syntax is checked here. The q program is compiled into a ClickHouse query below,
-                /// after the query is put to the process list.
                 out_ast = parseQQuery(
                     q_pos, end, /*allow_multi_statements=*/false, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+
+                /// The q program is compiled into a ClickHouse query here, because the compilation depends on the structure of
+                /// the tables. From here on it is a query like any other: the parameters, the settings that construct
+                /// the result, the logging without secrets, and the limits apply to it in the usual way.
+                if (ASTPtr q_ast = out_ast; const auto * q_query = q_ast->as<ASTQQuery>())
+                {
+                    /// The compilation analyzes the queries that it generates for their structure, and the analysis folds
+                    /// the constants: a list of ten million numbers takes its memory already here. The memory limit of
+                    /// the query is set when the query is put to the process list, which is later, so it is set for
+                    /// this work in advance. `ProcessList::insert` sets the same value.
+                    if (auto thread_group = CurrentThread::getGroup(); thread_group && settings[Setting::max_memory_usage])
+                        thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
+
+                    try
+                    {
+                        out_ast = compileQProgram(*q_query, context);
+                    }
+                    catch (...)
+                    {
+                        /// The text of the program is logged with the exception. An embedded query (`.ch.sql "..."`)
+                        /// can hold credentials: they are hidden in the compiled query, but there is none.
+                        if (q_ast->hasSecretParts())
+                            query = q_ast->formatForLogging();
+                        throw;
+                    }
+                }
             }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && use_request_dialect)
@@ -3380,35 +3405,6 @@ static BlockIO executeQueryImpl(
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
-        }
-
-        /// A program of the q dialect is compiled into a ClickHouse query. The compilation depends on the structure of the tables,
-        /// so it analyzes the queries that it generates, and the analysis folds the constants: a list of ten million numbers
-        /// takes its memory already there. It is done here, when the query is in the process list, so that this work is
-        /// under the limits of the query (`max_memory_usage`) and can be seen and cancelled.
-        if (const auto * q_query = out_ast ? out_ast->as<ASTQQuery>() : nullptr)
-        {
-            out_ast = compileQProgram(*q_query, context);
-
-            /// The same as for a query in SQL above.
-            if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
-                && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-                normalizeDivision(*out_ast, context);
-
-            if (settings[Setting::enable_global_with_statement])
-                ApplyWithGlobalVisitor::visit(out_ast, settings[Setting::max_expanded_ast_elements]);
-
-            {
-                SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
-            }
-
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
-            }
-
-            checkASTSizeLimits(*out_ast, settings);
         }
 
         /// Load external tables if they were provided

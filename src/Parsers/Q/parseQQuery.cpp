@@ -4,11 +4,16 @@
 #include <Parsers/Q/QLexer.h>
 #include <Parsers/Q/QParser.h>
 
+#include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/TokenIterator.h>
+#include <Parsers/parseQuery.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -122,6 +127,111 @@ void checkNoMoreStatements(const char * begin, const char * next, const char * e
 
 }
 
+namespace
+{
+
+/// The string literals that are passed to `.ch.sql`: the queries in SQL embedded into the program.
+void collectEmbeddedQueries(const QNodePtr & node, std::vector<const QNode *> & out)
+{
+    checkStackSize();
+    if (!node)
+        return;
+
+    if (node->kind == QNodeKind::Apply && node->children.size() == 2 && node->children[0] && node->children[1]
+        && node->children[0]->kind == QNodeKind::Name && node->children[0]->name == ".ch.sql"
+        && node->children[1]->kind == QNodeKind::Literal && node->children[1]->type == QType::Char && !node->children[1]->atoms.empty())
+        out.push_back(node->children[1].get());
+
+    for (const auto & child : node->children)
+        collectEmbeddedQueries(child, out);
+    for (const auto * columns : {&node->columns, &node->key_columns})
+        for (const auto & column : *columns)
+            collectEmbeddedQueries(column.expression, out);
+    if (node->sql)
+    {
+        for (const auto * columns : {&node->sql->columns, &node->sql->by})
+            for (const auto & column : *columns)
+                collectEmbeddedQueries(column.expression, out);
+        collectEmbeddedQueries(node->sql->from, out);
+        collectEmbeddedQueries(node->sql->limit, out);
+        for (const auto & constraint : node->sql->where)
+            collectEmbeddedQueries(constraint, out);
+    }
+}
+
+String quoteQString(std::string_view value)
+{
+    String result = "\"";
+    for (char c : value)
+    {
+        if (c == '\\' || c == '"')
+            result += '\\';
+        if (c == '\n')
+            result += "\\n";
+        else
+            result += c;
+    }
+    result += '"';
+    return result;
+}
+
+/// The text of the program with the secrets of the embedded queries hidden, or empty if there is nothing to hide.
+///
+/// A query in SQL can hold credentials, like the keys in `.ch.sql "SELECT * FROM s3('...', 'key', 'secret')"`.
+/// When the program is compiled, they are parts of the generated query, which is logged without them as every query is.
+/// But the text of the program itself is logged if the compilation fails, so it needs a form without the secrets as well:
+/// every embedded query that has secrets is replaced with its form for logging, and one that does not parse is hidden
+/// as a whole, because it is not known what is secret in it.
+String hideSecretsOfEmbeddedQueries(
+    const String & text, const QProgram & program, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    std::vector<const QNode *> literals;
+    for (const auto & statement : program.statements)
+        collectEmbeddedQueries(statement, literals);
+    if (literals.empty())
+        return {};
+
+    /// From the last one to the first one, so that the offsets of the remaining ones stay valid.
+    std::sort(literals.begin(), literals.end(), [](const QNode * left, const QNode * right) { return left->offset > right->offset; });
+
+    String result = text;
+    bool changed = false;
+    for (const QNode * literal : literals)
+    {
+        /// The literal in the text: from its opening quote to the closing one.
+        size_t begin = literal->offset;
+        if (begin >= result.size() || result[begin] != '"')
+            continue;
+        size_t end = begin + 1;
+        while (end < result.size() && result[end] != '"')
+            end += result[end] == '\\' ? 2 : 1;
+        if (end >= result.size())
+            continue;
+        ++end;
+
+        const String & embedded_text = literal->atoms.front().value.safeGet<String>();
+        String shown;
+        try
+        {
+            ParserQuery parser(embedded_text.data() + embedded_text.size());
+            ASTPtr embedded = parseQuery(parser, embedded_text.data(), embedded_text.data() + embedded_text.size(), "",
+                max_query_size, max_parser_depth, max_parser_backtracks);
+            if (!embedded->hasSecretParts())
+                continue;
+            shown = embedded->formatForLogging();
+        }
+        catch (const Exception &)
+        {
+            shown = "[HIDDEN]";
+        }
+        result.replace(begin, end - begin, quoteQString(shown));
+        changed = true;
+    }
+    return changed ? result : String();
+}
+
+}
+
 ASTPtr parseQQuery(
     const char *& pos,
     const char * end,
@@ -153,6 +263,7 @@ ASTPtr parseQQuery(
     while (!ast->text.empty() && isWhitespaceASCII(ast->text.back()))
         ast->text.pop_back();
     ast->program = std::make_shared<QProgram>(parseQProgram(ast->text, max_parser_depth));
+    ast->text_without_secrets = hideSecretsOfEmbeddedQueries(ast->text, *ast->program, max_query_size, max_parser_depth, max_parser_backtracks);
 
     bool has_statements = false;
     for (const auto & statement : ast->program->statements)
