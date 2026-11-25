@@ -2911,16 +2911,31 @@ Number of file segments evicted from a filesystem cache, labelled by cache name 
 Total bytes of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
 
 ### `object_storage_queue_failures_total` {#object-storage-queue-failures-total}
-Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`) and error code.
+Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) failures, labelled by database, table, processing stage (`read`, `set_processing`, `insert`, `commit`, `after_processing`) and error code. For the `after_processing` stage the value is the number of objects for which the `after_processing` action (delete, tag or move) did not complete.
 
 ### `object_storage_queue_permanently_failed_files_total` {#object-storage-queue-permanently-failed-files-total}
 Number of `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.
 
 ### `object_storage_queue_newest_seen_object_timestamp_seconds` {#object-storage-queue-newest-seen-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object seen so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
-Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table.
+Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `object_storage_queue_processed_files_total` {#object-storage-queue-processed-files-total}
+Number of files committed as processed by this `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server, labelled by database and table.
+
+### `object_storage_queue_last_poll_timestamp_seconds` {#object-storage-queue-last-poll-timestamp-seconds}
+Unix timestamp of the last time a background streaming thread of an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table on this server started a cycle that looks for files to process or started a batch of that cycle, labelled by database and table. It is set when a cycle starts, after the table registered itself as active in Keeper, and again before each batch of the cycle, so it advances also when the cycle finds no files or fails, and during a long backlog. It does not advance when the registration fails. The value 0 means that the table has not polled since it was started. It does not advance while the table has no ready attached materialized views, while streaming is stopped or paused, or while streaming is disabled on the server, because the table does not consume then. All streaming threads of a table write the same series, so it shows the newest cycle of any of them. The series is removed when the table is dropped or detached. After a rename the series of the old name stays until the server restarts.
+
+### `system_log_flushes_total` {#system-log-flushes-total}
+Number of attempts to flush the in-memory buffer of a system log to its table, labelled by the database and the table of the system log and by result (`success`, `failure`).
+
+### `system_log_flushed_rows_total` {#system-log-flushed-rows-total}
+Number of rows written by successful flushes of a system log, labelled by the database and the table of the system log.
+
+### `system_log_dropped_rows_total` {#system-log-dropped-rows-total}
+Number of rows of a system log that were lost, labelled by the database and the table of the system log and by reason: `queue_full` for rows that were not accepted because the in-memory buffer reached `max_size_rows` (it is updated when the buffer is taken for the next flush), `flush_failed` for rows of a flush that failed.
 
 .examples
 You can use a query like this to export all the dimensional metrics in the Prometheus format.

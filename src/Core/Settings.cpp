@@ -644,11 +644,15 @@ Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_coun
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 )", 0) \
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number for s3 upload part.
+The maximum number of parts in a multipart upload or multipart copy to S3. The default matches the limit of AWS S3.
+
+When copying, the part size is increased so that the number of parts does not exceed this value. When writing, an exception is thrown if the data needs more parts; in that case increase `s3_max_upload_part_size` or `s3_upload_part_size_multiply_factor`. Lower this value for S3-compatible storages that support fewer parts.
 )", 0, \
         {"24.6", 10000, 10000, "Maximum part number for s3 upload part"}) \
     DECLARE(Bool, s3_allow_multipart_copy, true, R"(
-Allow multipart copy in S3.
+Allows copying objects within S3 (for example, when making a backup to S3 or moving data between S3 disks) with a multipart copy (`UploadPartCopy`) when the object is larger than `s3_max_single_operation_copy_size`.
+
+If disabled, objects are copied with a single `CopyObject` request regardless of their size, and if that is not possible, the data is read and uploaded again. Disable it for S3-compatible storages that do not support `UploadPartCopy`.
 )", 0, \
         {"25.2", true, true, "New setting."}) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
@@ -1606,7 +1610,9 @@ Is the memory-saving mode of distributed aggregation enabled.
 Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
 )", 0) \
     DECLARE(Bool, enable_memory_bound_merging_of_aggregation_results, true, R"(
-Enable memory bound merging strategy for aggregation.
+Enables the memory-bound strategy of merging partial aggregation results in distributed queries and queries with parallel replicas.
+
+If the aggregation on the remote servers is done in the order of the `GROUP BY` keys (see `optimize_aggregation_in_order`), the remote servers send the partial results sorted by these keys, and the initiator merges them in order, so it holds only a small part of the aggregation state in memory at a time.
 )", 0) \
     DECLARE(Bool, enable_positional_arguments, true, R"(
 Enables or disables supporting positional arguments for [GROUP BY](/reference/statements/select/group-by), [LIMIT BY](/reference/statements/select/limit-by), [ORDER BY](/reference/statements/select/order-by) statements.
@@ -3151,7 +3157,9 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, add_http_cors_header, false, R"(
-Write add http CORS header.
+Adds the `Access-Control-Allow-Origin: *` header to responses of the HTTP interface, so that web applications served from another origin can read the query results in a browser.
+
+The header is added only if the request contains the `Origin` header and the `http_options_response` server configuration is not set. Because the setting is read from the settings of the authenticated user, the header is not added to responses for requests that fail authentication.
 )", 0) \
     \
     DECLARE(UInt64, max_http_get_redirects, 0, R"(
@@ -3573,7 +3581,9 @@ Send unknown packet instead of data Nth data packet
 )", 0) \
     \
     DECLARE(Bool, insert_allow_materialized_columns, false, R"(
-If setting is enabled, Allow materialized columns in INSERT.
+If enabled, `MATERIALIZED` columns can be listed in the column list of an `INSERT` query, and the inserted values are stored instead of being calculated from the column expressions. For `Distributed` tables, the values of `MATERIALIZED` columns are then also sent to the shards.
+
+If disabled, listing a `MATERIALIZED` column in an `INSERT` query throws an exception, and the values of such columns are always calculated from their expressions.
 )", 0) \
     DECLARE(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, R"(
 HTTP connection timeout (in seconds).
@@ -4749,7 +4759,9 @@ Possible values:
 - Any positive integer, starting from 2.
 )", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
+The number of buckets the `grace_hash` join algorithm starts with. The rows of both tables are distributed between the buckets by the hash of the join keys; only one bucket is kept in memory, and the others are written to disk and joined later. When the bucket in memory exceeds the memory limits, the number of buckets is doubled, up to `grace_hash_join_max_buckets`.
+
+The value is rounded up to a power of two. A larger value avoids redistributing rows when the right table is known to be large, at the cost of more temporary files.
 )", 0, \
         {"26.11", 1, 1, "The setting is no longer experimental. The default is unchanged."}) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
@@ -4767,7 +4779,9 @@ Possible values:
         {"24.1", 100000, 0, "Disable join optimization as it prevents from read in order optimization"}) \
     \
     DECLARE(Bool, compatibility_ignore_collation_in_create_table, true, R"(
-Compatibility ignore collation in create table
+If enabled, a `COLLATE` clause in a column declaration of a `CREATE TABLE` query is accepted and ignored. This helps to run table definitions written for other database systems, such as MySQL, without editing them.
+
+If disabled, a `CREATE TABLE` query with a column collation throws an exception.
 )", 0) \
     \
     DECLARE(String, temporary_files_codec, "LZ4", R"(
@@ -5255,7 +5269,9 @@ Send server text logs with specified minimum level to client. Valid values: 'tes
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 )", 0) \
     DECLARE(Bool, enable_optimize_predicate_expression_to_final_subquery, true, R"(
-Allow push predicate to final subquery.
+Allows a filter from the query to be added to the query sent to remote servers (for example, when reading from a `Distributed` table) if the query sent to remote servers uses `FINAL`. This reduces the amount of data the remote servers return.
+
+If disabled, the filter is not added to such queries and is applied only after receiving data from the remote servers.
 )", 0) \
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
@@ -5587,7 +5603,9 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
-Allow execute multiIf function columnar
+Allows the `multiIf` function to compute its result for a whole column at once instead of row by row, which is faster.
+
+The columnar execution is used only if the result type is a number, `Decimal`, a date or date-time type, `Enum`, `IPv4` or `IPv6`, and the function has at most 255 branches. In other cases the row-by-row execution is used regardless of this setting.
 )", 0) \
     DECLARE(Bool, allow_executable_tables, true, R"(
 Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
@@ -7199,7 +7217,9 @@ If true, include only column names and types into result of DESCRIBE query
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
-Allow to use lightweight updates.
+Allows lightweight updates, which write only the updated values to patch parts instead of rewriting whole data parts as a mutation does.
+
+If disabled, the `UPDATE` statement throws an exception, and `ALTER TABLE ... UPDATE` and lightweight `DELETE` do not use lightweight updates even if `alter_update_mode` or `lightweight_delete_mode` request them (with `lightweight_force` or `lightweight_update_force` they throw an exception).
 )", 0, allow_experimental_lightweight_update, \
         {"25.8", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}, \
         {"25.5", false, false, "A new setting. At the time the setting was named `allow_experimental_lightweight_update`, which is now an alias of it."}) \
@@ -7746,7 +7766,7 @@ Allow storing Kafka related offsets in ClickHouse Keeper. When enabled, a ClickH
         {"26.9", false, false, "Added an alias for setting `allow_experimental_kafka_offsets_storage_in_keeper`."}, \
         {"24.8", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper. At the time the setting was named `allow_experimental_kafka_offsets_storage_in_keeper`, which is now an alias of it."}) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
-Enable use of software prefetch in aggregation
+Enables software prefetching of hash table cells during `GROUP BY`. Prefetching hides memory latency when the aggregation hash table does not fit into the CPU cache, so it is used only once the hash table grows beyond the size of the L2 cache.
 )", 0) \
     DECLARE(Bool, allow_aggregate_partitions_independently, true, R"(
 Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size. Heuristics in `ReadFromMergeTree` automatically disable the optimization for unfavorable layouts (too few partitions, too many partitions, or significantly skewed partition sizes); see `force_aggregate_partitions_independently` to bypass those checks.
@@ -8235,7 +8255,9 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_merge_filters, true, R"(
-Allow to merge filters in the query plan.
+Allows merging consecutive filter steps of the query plan into one. To keep the short-circuit evaluation of the merged condition, a filter on an `AND` chain is then executed as several consecutive filters, one per condition.
+
+This is required for the filter push-down to work properly with the analyzer. Merging takes effect only if `query_plan_enable_optimizations` is enabled.
 )", 0, \
         {"24.11", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."}, \
         {"24.7", false, false, "Allow to merge filters in the query plan"}) \
@@ -8344,6 +8366,10 @@ Extend `query_plan_convert_outer_join_to_inner_join` to consider a filter furthe
 Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
+    DECLARE(Bool, query_plan_remove_unused_joins, true, R"(
+Remove a `LEFT` or `RIGHT` `JOIN` if no column of its other side is read and it outputs every row of the preserved side exactly once: an `ANY` join, or a join whose other side is unique by the join keys, such as a subquery with `GROUP BY` or `DISTINCT` on them. The other side is then not read at all.
+)", 0, \
+        {"26.12", false, true, "New setting to remove a `LEFT` or `RIGHT` `JOIN` whose other side is not read and which outputs every row of the preserved side exactly once."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 )", 0, \
@@ -8483,7 +8509,9 @@ Possible values:
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
-Use query plan for lazy materialization optimization.
+Enables the lazy materialization optimization for `ORDER BY ... LIMIT n` queries: the columns that are not needed for sorting and filtering are read only for the `n` rows that remain after `LIMIT`, instead of for all the rows read. This reduces the amount of data read for top-N queries over wide tables.
+
+The optimization is not used if `n` is greater than `query_plan_max_limit_for_lazy_materialization`, or with `LIMIT ... WITH TIES`.
 )", 0, \
         {"25.4", false, true, "Added new setting to use query plan for lazy materialization optimisation"}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
@@ -8858,7 +8886,9 @@ Possible values:
 Min bytes required for remote read (url, s3) to do seek, instead of read with ignore.
 )", 0) \
     DECLARE_WITH_ALIAS(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, R"(
-Min bytes to read per task.
+The minimum amount of compressed data, in bytes, that a single reading task reads from a part of a `MergeTree` table stored on a remote disk (for example, S3). Larger tasks mean fewer requests to the storage, while smaller tasks allow distributing the work between threads more evenly.
+
+The task size is not increased beyond the size at which every reading thread gets at least two tasks. The setting is also used to estimate the number of reading threads when deciding whether to use parallel replicas automatically.
 )", 0, filesystem_prefetch_min_bytes_for_single_read_task, \
         {"24.8", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"}) \
     DECLARE(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, R"(
@@ -9580,7 +9610,9 @@ Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return er
 Do not add aliases to top level expression list on multiple joins rewrite
 )", 0) \
     DECLARE(Bool, optimize_sorting_by_input_stream_properties, true, R"(
-Optimize sorting by sorting properties of input stream
+If the data coming into an `ORDER BY` is already sorted by a prefix of the sorting key (for example, after a subquery with `ORDER BY` or a sort-merge join), only the rows with equal values of that prefix are sorted instead of sorting the whole data. The order of the result of a sort-merge join is also reused by the sorting for a later join.
+
+Takes effect only if `query_plan_enable_optimizations` is enabled.
 )", 0) \
     DECLARE(UInt64, keeper_max_retries, 10, R"(
 Max retries for general keeper operations
@@ -10241,7 +10273,9 @@ Parts virtually divided into segments to be distributed between replicas for par
         {"24.9", 128, 0, "Value for this setting now determined automatically"}, \
         {"24.1", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"}) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
-Build local plan for local replica
+In a query with parallel replicas, the initiator executes its own part of the reading through a locally built query plan instead of sending a query to itself over the network, which avoids the overhead of the network round trip. Used only if `parallel_replicas_prefer_local_replica` is enabled.
+
+The automatic decision on whether to use parallel replicas (see `automatic_parallel_replicas_mode`) is made only if this setting is enabled.
 )", 0, \
         {"24.11", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
         {"24.10", false, true, "Use local plan for local replica in a query with parallel replicas"}, \
@@ -10294,7 +10328,9 @@ A replica takes part in the read only if it has the table, and the table must ha
 )", 0, \
         {"26.11", false, true, "New setting to read tables with an object storage engine with parallel replicas."}) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
-Allow usage of materialized views with parallel replicas
+Allows queries that read from a materialized view to use parallel replicas. The query is then executed over the target table of the materialized view.
+
+Refreshable materialized views do not use parallel replicas regardless of this setting.
 )", 0, \
         {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
@@ -10942,7 +10978,9 @@ Internal processes include dictionary reloads, refreshable materialized view rel
 )", 0, \
         {"25.11", false, true, "New setting."}) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
-Use roaring bitmap for iceberg positional deletes.
+Selects how position delete files of Iceberg tables are applied. If enabled, the positions of the deleted rows of a data file are loaded into a roaring bitmap, which is then used to filter the rows. If disabled, the delete files are read in a streaming way alongside the data file, without loading all the deleted positions into memory first.
+
+Deletion vectors are always applied as bitmaps, regardless of this setting.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
@@ -11183,14 +11221,14 @@ Allows to use the `MaterializedPostgreSQL` table engine.
 )", EXPERIMENTAL, allow_experimental_materialized_postgresql_table, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_materialized_postgresql_table`."}) \
     DECLARE_WITH_ALIAS(Bool, enable_funnel_functions, false, R"(
-Enable functions for funnel analysis.
+Enables the experimental aggregate function `sequenceNextNode`, which is used for funnel analysis. If disabled, using `sequenceNextNode` throws an exception.
 )", EXPERIMENTAL, allow_experimental_funnel_functions, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_funnel_functions`."}) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
-Enable experimental hash functions
+Has no effect. No hash function currently requires this setting. It is kept so that queries and settings profiles that set it continue to work.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_ipcrypt, false, R"(
 Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
@@ -11809,7 +11847,9 @@ Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prun
 
 The granule pruning does not happen with a distributed query plan (`make_distributed_plan = 1`). There the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
 
-The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
+With `FINAL` on the probe side, granules are pruned only by a join key that is a sorting key column of the table; a skip index is used for that only if `use_skip_indexes_if_final = 1`.
+
+The granule pruning is also skipped for a table with pending data or `ALTER` mutations or patch parts. This case is a no-op in the same sense.
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \
