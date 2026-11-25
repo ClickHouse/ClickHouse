@@ -584,6 +584,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     }
 
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
+    const auto mutations_snapshot = getMutationsSnapshotForProjections(*reading);
 
     auto ratio = static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
     if (ratio < 0 || ratio > 1)
@@ -649,7 +650,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
-            reading->getMutationsSnapshot(),
+            mutations_snapshot,
             empty_mutations_snapshot,
             required_columns,
             metadata,

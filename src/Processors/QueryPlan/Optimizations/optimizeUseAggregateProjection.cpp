@@ -1510,6 +1510,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         }
 
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
+        const auto mutations_snapshot = getMutationsSnapshotForProjections(*reading);
 
         /// If there are remaining parts to read, attempt to select the best candidate.
         if (!parent_reading_select_result->parts_with_ranges.empty() || relax_projection_checks)
@@ -1538,7 +1539,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
-                    reading->getMutationsSnapshot(),
+                    mutations_snapshot,
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,

@@ -1,0 +1,19 @@
+-- an aggregate projection
+[9,10,11,12,13]
+[9,10,11,12,13]
+[9,10,11,12,13,14,15,16,17,18]
+[9,10,11,12,13,14,15,16,17,18]
+-- a projection ordered by an expression of the column
+[0]
+[0]
+-- a projection that selects its rows by an expression of the column
+[0]
+[0]
+-- a projection of a column that the part does not store, computed from its default
+[9,10,11,12,13]
+[9,10,11,12,13]
+-- a projection of the column that the part does not store, as it predates `ADD COLUMN ... DEFAULT`
+[9,10,11,12,13]
+[9,10,11,12,13]
+-- a projection that stores the column as is is still used
+[5,6,7,8]
