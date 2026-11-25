@@ -46,6 +46,7 @@ public:
     bool sendNack(bool requeue = false);
 
     bool wasConsumptionAborted() const { return consumption_aborted; }
+    bool endedOnViewsChange() const { return ended_on_views_change; }
 
 private:
     StorageRabbitMQ & storage;
@@ -59,6 +60,7 @@ private:
 
     bool is_finished = false;
     bool consumption_aborted = false;
+    bool ended_on_views_change = false;
     /// Set only for a REFRESH-while-stopped background cycle; see driveLoopUntilMessage.
     bool drive_loop_on_worker = false;
     /// How long an empty first poll waits for a message, like Kafka's poll timeout (0: return at once).

@@ -330,6 +330,7 @@ Chunk RabbitMQSource::generateImpl()
             if (total_rows == 0 && viewsChanged())
             {
                 LOG_TRACE(log, "Dependent views changed since the streaming cycle started, ending the cycle");
+                ended_on_views_change = true;
                 break;
             }
 

@@ -1353,6 +1353,7 @@ void StorageRabbitMQ::threadFunc()
             /// is decided from, so neither a `STOP` racing in right after an ordinary cycle was admitted nor
             /// a `START` racing in right after the permit was consumed can misreport it.
             bool claimed_blocked_refresh = false;
+            const UInt64 refresh_epoch_before_claim = last_seen_refresh_epoch;
             const bool run_cycle
                 = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
 
@@ -1373,7 +1374,11 @@ void StorageRabbitMQ::threadFunc()
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
                     /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
-                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views);
+                    bool views_changed = false;
+                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views, views_changed);
+                    /// A REFRESH cycle that ended unconsumed on a view change gives its permit back, so the refresh runs for the new views.
+                    if (drive_loop_on_worker && views_changed)
+                        last_seen_refresh_epoch = refresh_epoch_before_claim;
                     /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
                     milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     if (!continue_reading)
@@ -1434,7 +1439,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, const std::vector<StorageID> & views)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, const std::vector<StorageID> & views, bool & views_changed)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1524,6 +1529,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         LOG_ERROR(log, "Failed to push to views. Error: {}", getCurrentExceptionMessage(true));
         write_failed = true;
     }
+
+    views_changed = std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 

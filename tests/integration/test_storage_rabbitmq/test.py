@@ -2328,7 +2328,8 @@ def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, 
     connection.close()
 
 
-def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique):
+@pytest.mark.parametrize("refresh_while_stopped", [False, True])
+def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique, refresh_while_stopped):
     # A view created while a streaming cycle waits for its first message must get the messages that arrive
     # meanwhile, although the insert pipeline of that cycle was built without it.
     instance.query(
@@ -2368,9 +2369,22 @@ def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster,
     publish(0)
     check_expected_result_polling(1, f"SELECT count() FROM {db}.t1")
 
+    if refresh_while_stopped:
+        # Once two passes have ended after the STOP, no ordinary cycle can reach the failpoint any more.
+        rescheduled = f"StorageRabbitMQ ({db}.rabbit): Rescheduling background streaming process"
+        instance.query(f"SYSTEM STOP {db}.rabbit")
+        before = int(instance.count_in_log(rescheduled))
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        while int(instance.count_in_log(rescheduled)) < before + 2:
+            assert time.monotonic() < deadline, "the streaming task of the stopped table did not run"
+            time.sleep(0.5)
+
     failpoint = "rabbitmq_pause_after_building_insert_pipeline"
     instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     try:
+        if refresh_while_stopped:
+            # The held cycle is the one a REFRESH grants to the stopped table.
+            instance.query(f"SYSTEM REFRESH {db}.rabbit")
         # The held cycle has its insert pipeline built for mv1 only.
         instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=DEFAULT_TIMEOUT_SEC)
         instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {db}.rabbit")
