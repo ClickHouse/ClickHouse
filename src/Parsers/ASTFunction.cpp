@@ -230,6 +230,10 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     query_parameter_name = r.readChildOfType<ASTIdentifier>("query_parameter_name");
     if (query_parameter_name)
     {
+        /// The SQL parser builds a parameterized name only for the table function of a table expression.
+        if (!AllowParameterizedFunctionName::isAllowedFor(json))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'query_parameter_name' is allowed only for the table function of a table expression during AST JSON deserialization");
         if (!name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTFunction cannot have both a concrete 'name' and 'query_parameter_name' during AST JSON deserialization");

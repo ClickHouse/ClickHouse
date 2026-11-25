@@ -110,6 +110,7 @@ static thread_local size_t json_deser_max_depth = 0;
 static thread_local size_t json_deser_max_elements = 0;
 static thread_local size_t json_deser_current_depth = 0;
 static thread_local size_t json_deser_current_elements = 0;
+static thread_local const Poco::JSON::Object * json_deser_parameterized_name_object = nullptr;
 
 namespace
 {
@@ -368,24 +369,20 @@ void dismantleJSON(const Poco::Dynamic::Var & root)
 
 }
 
-namespace
+AllowParameterizedFunctionName::AllowParameterizedFunctionName(const Poco::JSON::Object * json)
+    : previous(json_deser_parameterized_name_object)
 {
-
-/// The SQL parser builds a parameterized function name only for the table function of a table
-/// expression, see `ASTFunction::query_parameter_name`. Reject it anywhere else, so a JSON AST
-/// cannot hold a shape the parser never produces, such as `{f:Identifier}(x)` in an expression.
-void rejectMisplacedParameterizedFunctionName(const IAST & ast, bool is_table_function)
-{
-    checkStackSize();
-    if (const auto * function = ast.as<ASTFunction>(); function && function->query_parameter_name && !is_table_function)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'query_parameter_name' is allowed only for the table function of a table expression during AST JSON deserialization");
-
-    const auto * table_expression = ast.as<ASTTableExpression>();
-    for (const auto & child : ast.children)
-        rejectMisplacedParameterizedFunctionName(*child, table_expression && child == table_expression->table_function);
+    json_deser_parameterized_name_object = json;
 }
 
+AllowParameterizedFunctionName::~AllowParameterizedFunctionName()
+{
+    json_deser_parameterized_name_object = previous;
+}
+
+bool AllowParameterizedFunctionName::isAllowedFor(const Poco::JSON::Object & json)
+{
+    return json_deser_parameterized_name_object == &json;
 }
 
 ASTPtr IAST::createFromJSON(const String & json)
@@ -440,7 +437,6 @@ ASTPtr IAST::createFromJSON(const String & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
 
         ast = createFromJSON(*obj);
-        rejectMisplacedParameterizedFunctionName(*ast, /*is_table_function=*/ false);
     }
     catch (...)
     {

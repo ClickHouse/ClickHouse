@@ -1,0 +1,4 @@
+rejected
+rejected
+rejected
+SELECT * FROM {f:Identifier}(1)
