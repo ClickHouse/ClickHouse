@@ -14,25 +14,21 @@ import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBa
 O modo managed é executado em um EKS cluster da Amazon de sua propriedade. Cada lançamento inclui quatro módulos raiz do Terraform (chamados de raízes a seguir) que criam um cluster que atende aos requisitos do modo ou adicionam o que for necessário a uma VPC ou a um cluster que você já tenha. As raízes criam o cluster com seu node group de sistema e os addons gerenciados (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), além de IAM roles, chaves KMS e tags; o `existing-eks` instala apenas os addons que você especificar em `install_addons`. No target Helm, o `clicklink clctl init` instala em seguida a camada de plataforma a partir dos outputs e de um pacote de plataforma: Karpenter, o controller AWS Load Balancer, a StorageClass e os componentes com versões fixadas (consulte [inicializar o connector a partir dos outputs do Terraform](#hand-off)). As raízes exigem Terraform 1.10+ ou OpenTofu 1.12+ e o provider AWS `~> 6.0`. É possível usar `tofu` no lugar de `terraform` em todos os comandos desta página.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Fluxo de provisionamento do Terraform para o ClickHouse Connector na AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
-
-</Frame>
-
+  <Frame>
+    ![Fluxo de provisionamento com Terraform para o Conector do ClickHouse na AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+  </Frame>
 </div>
 
 ## Antes de começar {#before-you-begin}
 
 Você precisará de:
 
-* Terraform 1.10+ ou OpenTofu 1.12+, além do provider AWS `~> 6.0`.
+* Terraform 1.10+ ou OpenTofu 1.12+, além do Provedor AWS `~> 6.0`.
 * Uma identidade AWS com permissão para criar e modificar os recursos exigidos pela raiz selecionada.
-* `curl`, uma ferramenta de SHA-256 (`sha256sum` ou `shasum`) e `cosign` para baixar e verificar o arquivo do lançamento.
-* Do [registro](/pt-BR/products/bring-your-own-cloud/connector/onboarding#registration): o `chart_repository_arn` exigido por todas as raízes, além do seu connector endpoint, do token de inscrição e do pacote da plataforma para a etapa final de `init`.
+* `curl`, uma ferramenta de SHA-256 (`sha256sum` ou `shasum`) e `cosign` para baixar e verificar o arquivo compactado do lançamento.
+* Da etapa de [registro](/pt-BR/products/bring-your-own-cloud/connector/onboarding#registration): o `chart_repository_arn` exigido por todas as raízes, além do seu connector endpoint, do token de inscrição e do pacote da plataforma, usados na passagem para o `init` ao final.
 
-Para `production` e `existing-vpc`, planeje como a máquina que executa `clicklink clctl init` e `kubectl` acessará a API privada do EKS, por exemplo, por meio de uma VPN, um bastion, uma rede pareada ou um encaminhamento de porta via SSM.
+Para `production` e `existing-vpc`, planeje como a máquina que executa `clicklink clctl init` e `kubectl` acessará a API privada do EKS, por exemplo, por meio de uma VPN, de um bastião, de uma rede pareada ou de um redirecionamento de porta via SSM.
 
 <Steps titleSize="h2">
   <Step title="Escolha o diretório raiz do Terraform para o seu ambiente" id="choose-a-root">

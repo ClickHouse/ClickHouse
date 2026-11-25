@@ -909,7 +909,7 @@
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
 
-        <!-- Whether SET ROLE is refused when the session or the query is readonly.
+        <!-- Whether `SET ROLE` and `SET DEFAULT ROLE` are refused when the session or the query is readonly.
              By default this setting is false. -->
         <readonly_restricts_set_role>false</readonly_restricts_set_role>
 
@@ -1003,9 +1003,10 @@
     <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
          namespace where only the paths it needs according to this configuration are visible - its data, logs,
          configuration, certificates, the credentials of the clouds (as the tokens of the service accounts of Kubernetes),
-         a few system files - and nothing else, in particular no shell.
+         a few system files - and nothing else, in particular no shell. With CAP_SYS_ADMIN it runs in a new PID namespace
+         too, and the original process stays outside as a supervisor, with the PID of the pid file.
          With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
-         runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+         runs without any isolation; with "enforce", it does not start then. "disabled" (the default without this
          line) turns it off.
          Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
          list them in "filesystem_isolation_paths", or disable the isolation.

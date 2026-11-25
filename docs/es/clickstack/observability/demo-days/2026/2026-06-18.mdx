@@ -1,0 +1,80 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-06-18
+title: 'Demo days - 2026-06-18'
+sidebarTitle: '2026-06-18'
+sidebar_label: '2026-06-18'
+sidebar_position: 618
+description: 'ClickStack demo days del 2026-06-18'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Filtros de origen, ahora en todas partes {#source-filters-now-everywhere}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zl5ymdzoM6U" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los filtros de origen ya están disponibles en todo el dashboard de Services. Si selecciona una fuente de trazas o registros con un filtro de nombre del servicio, el dashboard esperará a que elija un valor antes de ejecutar las consultas. A continuación, ese filtro se aplica de forma coherente en todos los gráficos, consultas y paneles laterales. El waterfall de la traza se comporta del mismo modo: al abrir un span, hereda los filtros de origen de la página de Búsqueda y, aun así, permite añadir filtros adicionales. La página de Sessions también se ha actualizado para que los filtros de origen se propaguen a la barra lateral, al panel de trazas y a las vistas anidadas.
+
+También se ha ampliado el autocompletado de los filtros de origen. Antes solo estaba disponible en la página de Búsqueda, pero ahora funciona en cualquier lugar donde se admitan filtros de origen, incluidos los dashboards. Internamente, el autocompletado resuelve ahora claves y valores de varias fuentes, incluso cuando cada una tiene su propio conjunto de filtros. Estas mejoras están disponibles tanto en el editor de SQL directo como en todos los campos de filtro de origen del generador de consultas.
+
+**PR relacionados:** [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) Añadir alcance por fuente a los filtros del dashboard, [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) Mostrar un icono en los bloques con filtros con alcance por fuente excluidos
+
+## Dashboards generados por IA mejorados para esquemas personalizados {#better-ai-generated-dashboards-for-custom-schemas}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/LUi5047F3fs" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un usuario que creaba dashboards con IA sobre un esquema personalizado se encontró con graves problemas de rendimiento. La causa raíz era que los bloques de SQL directo generados tenían un intervalo de tiempo fijado en el código en lugar de usar las macros de filtro de tiempo del dashboard, de modo que cambiar el intervalo de tiempo del dashboard no tenía ningún efecto. Además, uno de los bloques filtraba por una columna de marca de tiempo de tipo integer de una forma que no aprovechaba la clave primaria, lo que obligaba a realizar un escaneo completo de la tabla.
+
+Para solucionarlo, el esquema MCP de los bloques de SQL directo de los dashboards ahora indica explícitamente que los agentes deben usar las macros de filtro de tiempo del dashboard. Además, la UI de ClickStack muestra una advertencia cuando a un bloque de SQL generado le faltan esas macros, lo que facilita detectar el problema antes de guardar el dashboard. Tras desplegar los cambios, al volver a ejecutar el prompt original del cliente se obtuvo SQL que usaba las macros correctas, con un dashboard mucho más rápido como resultado.
+
+**PR relacionados:** [#2473](https://github.com/hyperdxio/hyperdx/pull/2473) Orientar a los agentes hacia el uso de macros en los bloques de SQL directo
+
+## Hashing simplificado para métricas de OTel y una idea para la clave primaria {#simpler-hashing-for-otel-metrics-and-a-primary-key-idea}
+
+*Demostración a cargo de [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MjAUdJJbC8M" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Una contribución de la comunidad corrigió el hashing de atributos para métricas con columnas de atributos JSON, pero introdujo dos rutas de código distintas. Los esquemas JSON usaban la forma variádica de `cityHash64`, mientras que los esquemas basados en Map concatenaban primero tres mapas antes de calcular el hash. Resultó que ese trabajo adicional era innecesario. Ahora ambos tipos de esquema utilizan la misma implementación de `cityHash64`, lo que simplifica el código y evita asignaciones de mapas innecesarias durante el cálculo del hash.
+
+Este trabajo también reveló una posible optimización para el esquema de métricas de OpenTelemetry. Actualmente, la clave primaria almacena el mapa completo de atributos, lo que aumenta el uso de memoria, ya que ClickHouse mantiene el mapa en memoria como parte del índice. Una opción sería materializar un hash de los atributos en el momento de inserción y usarlo en la clave primaria. Por ahora no se ha cambiado nada, pero ahora que las actualizaciones del esquema de OpenTelemetry vuelven a estar sobre la mesa, es una optimización que merece la pena retomar.
+
+**PR relacionados:** [#2475](https://github.com/hyperdxio/hyperdx/pull/2475) Unify AttributesHash to variadic cityHash64
+
+## Mejoras en las píldoras de filtro y en las fuentes de datos {#filter-pill-and-data-source-polish}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zi6HPj5_JQg" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Esta semana llegan dos mejoras pequeñas pero útiles para el día a día. Las píldoras de filtro excluidas son ahora mucho más legibles, después de que los comentarios de los clientes señalaran que, con el estilo anterior, costaba ver el botón de eliminar. Ahora usan un tono rojo más suave que mejora el contraste tanto en el modo claro como en el oscuro.
+
+Gestionar un gran número de fuentes de datos también resulta más sencillo. Ahora se puede asignar a las fuentes una sección opcional, lo que permite agruparlas en el selector de fuentes. Las fuentes sin sección siguen apareciendo en «Otros», por lo que las configuraciones existentes no se ven afectadas. Además, la búsqueda ahora también tiene en cuenta los nombres de sección, lo que facilita encontrar fuentes relacionadas aunque solo recuerde el grupo al que pertenecen. Por ahora, la funcionalidad se usa de forma interna mientras el equipo evalúa cómo organizan los usuarios sus fuentes de forma natural, antes de ponerla a disposición de más usuarios.
+
+**PRs relacionados:** [#2478](https://github.com/hyperdxio/hyperdx/pull/2478) Hacer legibles las píldoras de filtro excluidas en el tema claro, [#2432](https://github.com/hyperdxio/hyperdx/pull/2432) Añadir un campo Sección opcional a las fuentes de datos, [#2476](https://github.com/hyperdxio/hyperdx/pull/2476) Agrupar el selector de fuentes de datos por sección con búsqueda de tipo etiqueta, [#2477](https://github.com/hyperdxio/hyperdx/pull/2477) Sugerir nombres de sección existentes en el formulario de fuentes
+
+## Límites de series por gráfico para gráficos high-cardinality {#per-chart-series-limits-for-high-cardinality-charts}
+
+*Demostración a cargo de [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/xKpHvhbo-PI" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Ahora los gráficos pueden limitar el número de series que devuelven, lo que ayuda a evitar problemas de rendimiento al agrupar por campos high-cardinality, como la ruta HTTP o el ID de span. Hasta ahora, estas consultas podían generar cientos de miles de series, lo que hacía que los dashboards se volvieran lentos o dejaran de responder. Ahora puede limitar un gráfico a las primeras N series, lo que reduce tanto el tiempo de generación como la cantidad de datos transferidos.
+
+Seleccionar las series principales de forma eficiente resulta más complejo en las consultas divididas en bloques. La implementación actual determina las primeras N a partir del bloque más reciente y luego aplica ese mismo conjunto de series a toda la consulta; todo este trabajo se realiza en ClickHouse y no en el navegador. Este enfoque aún está en evaluación y podría cambiar a medida que se incorporen nuevas optimizaciones de consultas.
+
+**PRs relacionados:** [#2449](https://github.com/hyperdxio/hyperdx/pull/2449) Hacer que el límite de series sea opcional y coherente entre bloques, [#2429](https://github.com/hyperdxio/hyperdx/pull/2429) Limitar las time-series con group-by a las primeras N series para evitar OOM

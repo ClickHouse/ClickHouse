@@ -111,10 +111,20 @@ void deleteKeptRanges(const ParquetKeptStatistics::Ranges * ranges)
     delete ranges;
 }
 
-void deleteKeptOffsetIndex(const parquet::format::OffsetIndex * offset_index)
+template <typename Index>
+void deleteKeptIndex(const Index * index)
 {
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-    delete offset_index;
+    delete index;
+}
+
+/// A copy owned by the cache, or nullptr if `index` is null or already kept.
+template <typename Index>
+std::shared_ptr<const Index> copyIndexToKeep(const std::shared_ptr<const Index> & index, bool kept)
+{
+    if (!index || kept)
+        return nullptr;
+    return std::shared_ptr<const Index>(new Index(*index), deleteKeptIndex<Index>, ServerOwnedCacheEntryAllocator<Index>());
 }
 
 }
@@ -236,17 +246,17 @@ void ParquetMetadataCache::keepOffsetIndexes(
     /// The kept offset indexes belong to the shared cache, not to the query that reads the file.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
     VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> copies;
+    const auto & kept = *cell->kept_offset_indexes;
     for (const auto & entry : entries)
     {
-        if (cell->kept_offset_indexes->get(entry.row_group_idx, entry.column_idx))
-            continue;
-        copies.push_back(
-            {.row_group_idx = entry.row_group_idx,
-             .column_idx = entry.column_idx,
-             .offset_index = Parquet::KeptOffsetIndexes::OffsetIndexPtr(
-                 new parquet::format::OffsetIndex(*entry.offset_index),
-                 deleteKeptOffsetIndex,
-                 ServerOwnedCacheEntryAllocator<parquet::format::OffsetIndex>())});
+        auto offset_index = copyIndexToKeep(entry.offset_index, kept.get(entry.row_group_idx, entry.column_idx) != nullptr);
+        auto column_index = copyIndexToKeep(entry.column_index, kept.getColumnIndex(entry.row_group_idx, entry.column_idx) != nullptr);
+        if (offset_index || column_index)
+            copies.push_back(
+                {.row_group_idx = entry.row_group_idx,
+                 .column_idx = entry.column_idx,
+                 .offset_index = std::move(offset_index),
+                 .column_index = std::move(column_index)});
     }
     if (copies.empty())
         return;
