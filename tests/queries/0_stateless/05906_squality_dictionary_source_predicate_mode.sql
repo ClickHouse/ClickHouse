@@ -34,6 +34,7 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default'
     TABLE 'squality_dict_source_rows' PASSWORD '' DB currentDatabase()
     WHERE 'key_column NOT IN (99, NULL)'))
 LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 1000 MAX 1000)
 SETTINGS(in_null_as_unknown = 1);
 
 SELECT dictGet('squality_dict_source_direct', 'v', (toUInt64(1), toUInt64(2)));
