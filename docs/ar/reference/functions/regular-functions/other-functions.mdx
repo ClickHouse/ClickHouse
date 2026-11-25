@@ -24,15 +24,17 @@ import { DeprecatedBadge } from "/snippets/ar/components/DeprecatedBadge/Depreca
 
 ## FQDN {#FQDN}
 
-قُدِّم في: v20.1.0
+أُضيف في: v20.1.0
 
 تعيد اسم النطاق المؤهل بالكامل لخادم ClickHouse.
+إذا نُفِّذت الدالة في سياق جدول موزّع، فإنها تُنشئ عمودًا عاديًا يحتوي على قيم خاصة بكل مقطع.
+وإلا فإنها تُعيد قيمة ثابتة.
 
 <Note>
   هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسائط نفسها.
 </Note>
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 FQDN()
@@ -6344,9 +6346,9 @@ LIMIT 10
 
 ## uniqThetaIntersect {#uniqThetaIntersect}
 
-طُرح في: v22.9.0
+أُضيف في: v22.9.0
 
-يُستخدم كائنان من نوع uniqThetaSketch لإجراء عملية التقاطع (عملية المجموعات ∩)، وتكون النتيجة كائن uniqThetaSketch جديدًا.
+يُستخدم كائنان من نوع uniqThetaSketch لإجراء عملية التقاطع (عملية على المجموعات ∩)، وتكون النتيجة كائن uniqThetaSketch جديدًا.
 
 **الصيغة**
 
@@ -6356,11 +6358,11 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **الوسيطات**
 
-* `uniqThetaSketch` — كائن uniqThetaSketch. [`Tuple`](/ar/reference/data-types/tuple) أو [`Array`](/ar/reference/data-types/array) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`String`](/ar/reference/data-types/string) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `uniqThetaSketch` — كائن uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **القيمة المُعادة**
 
-كائن uniqThetaSketch جديد يحتوي على ناتج التقاطع. [`UInt64`](/ar/reference/data-types/int-uint)
+كائن uniqThetaSketch جديد يحتوي على ناتج التقاطع. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 
@@ -6380,7 +6382,7 @@ FROM
 
 ## uniqThetaNot {#uniqThetaNot}
 
-قُدِّم في: v22.9.0
+أُضيف في: v22.9.0
 
 كائنان من نوع uniqThetaSketch لإجراء العملية الحسابية a&#95;not&#95;b (عملية على المجموعات ×)، وتكون النتيجة كائن uniqThetaSketch جديدًا.
 
@@ -6392,15 +6394,15 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **الوسيطات**
 
-* `uniqThetaSketch` — كائن uniqThetaSketch. [`Tuple`](/ar/reference/data-types/tuple) أو [`Array`](/ar/reference/data-types/array) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`String`](/ar/reference/data-types/string) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `uniqThetaSketch` — كائن uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **القيمة المُعادة**
 
-يعيد كائن uniqThetaSketch جديدًا يحتوي على نتيجة a&#95;not&#95;b. [`UInt64`](/ar/reference/data-types/int-uint)
+يعيد كائن uniqThetaSketch جديدًا يحتوي على نتيجة a&#95;not&#95;b. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 
-**مثال للاستخدام**
+**مثال على الاستخدام**
 
 ```sql title=Query
 SELECT finalizeAggregation(uniqThetaNot(a, b)) AS a_not_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
@@ -6418,7 +6420,7 @@ FROM
 
 أُضيف في: v22.9.0
 
-كائنان من نوع `uniqThetaSketch` لإجراء عملية الاتحاد (عملية مجموعات ∪)، وتكون النتيجة `uniqThetaSketch` جديدًا.
+كائنان من نوع `uniqThetaSketch` لإجراء عملية الاتحاد (عملية على المجموعات ∪)، وتكون النتيجة `uniqThetaSketch` جديدًا.
 
 **الصيغة**
 
@@ -6428,11 +6430,11 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **الوسيطات**
 
-* `uniqThetaSketch` — كائن uniqThetaSketch. [`Tuple`](/ar/reference/data-types/tuple) أو [`Array`](/ar/reference/data-types/array) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`String`](/ar/reference/data-types/string) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `uniqThetaSketch` — كائن uniqThetaSketch. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction). [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **القيمة المعادة**
 
-يُرجع كائن uniqThetaSketch جديدًا يحتوي على نتيجة الاتحاد. [`UInt64`](/ar/reference/data-types/int-uint)
+يُرجع كائن uniqThetaSketch جديدًا يحتوي على نتيجة الاتحاد. [`AggregateFunction(uniqTheta, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 

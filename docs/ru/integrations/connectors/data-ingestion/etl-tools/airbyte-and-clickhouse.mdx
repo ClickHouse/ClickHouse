@@ -23,9 +23,9 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 <Steps>
   <Step title="Скачайте и запустите Airbyte" id="1-download-and-run-airbyte">
-    1. Airbyte запускается в Docker и использует `docker-compose`. Обязательно скачайте и установите последнюю версию Docker.
+    1. Airbyte работает в Docker и использует `docker-compose`. Обязательно скачайте и установите последние версии Docker.
 
-    2. Разверните Airbyte, клонировав официальный репозиторий GitHub и выполнив `docker-compose up` в удобном для вас терминале:
+    2. Разверните Airbyte: клонируйте официальный репозиторий Github и выполните `docker-compose up` в своём терминале:
 
        ```bash
        git clone https://github.com/airbytehq/airbyte.git --depth=1
@@ -33,60 +33,48 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
        ./run-ab-platform.sh
        ```
 
-    3. Как только в терминале появится баннер Airbyte, вы сможете перейти по адресу <a href="http://localhost:8000" target="_blank">localhost:8000</a>
+    3. Когда в терминале появится баннер Airbyte, можно подключиться к <a href="http://localhost:8000" target="_blank">localhost:8000</a>
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Баннер Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Баннер Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+         </Frame>
        </div>
 
     <Note>
-      Также вы можете зарегистрироваться и использовать <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
+      Также можно зарегистрироваться и использовать <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
     </Note>
   </Step>
 
-  <Step title="Добавление ClickHouse в качестве пункта назначения" id="2-add-clickhouse-as-a-destination">
-    В этом разделе мы покажем, как добавить экземпляр ClickHouse в качестве пункта назначения.
+  <Step title="Добавьте ClickHouse в качестве пункта назначения" id="2-add-clickhouse-as-a-destination">
+    В этом разделе показано, как добавить экземпляр ClickHouse в качестве пункта назначения.
 
-    1. Запустите сервер ClickHouse (Airbyte совместим с ClickHouse версии `21.8.10.19` и выше) или войдите в свою учетную запись ClickHouse Cloud:
+    1. Запустите сервер ClickHouse (Airbyte совместим с ClickHouse версии `21.8.10.19` и выше) или войдите в свою учётную запись ClickHouse Cloud:
 
        ```bash
        clickhouse-server start
        ```
 
-    2. В Airbyte откройте страницу &quot;Destinations&quot; и добавьте новый пункт назначения:
+    2. В Airbyte откройте страницу «Destinations» и добавьте новый пункт назначения:
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Добавление пункта назначения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Добавление пункта назначения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+         </Frame>
        </div>
 
-    3. Выберите ClickHouse в раскрывающемся списке &quot;Destination type&quot; и заполните форму &quot;Set up the destination&quot;: укажите hostname и порты ClickHouse, имя базы данных, имя пользователя и пароль, а также выберите, будет ли использоваться SSL-соединение (эквивалент флага `--secure` в `clickhouse-client`):
+    3. Выберите ClickHouse в раскрывающемся списке «Destination type» и заполните форму «Set up the destination», указав имя хоста и порты ClickHouse, имя базы данных, имя пользователя и пароль, а также укажите, используется ли SSL-соединение (эквивалент флага `--secure` в `clickhouse-client`):
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Создание пункта назначения ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Создание пункта назначения ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+         </Frame>
        </div>
 
-    4. Поздравляем! Теперь ClickHouse добавлен в Airbyte в качестве пункта назначения.
+    4. Поздравляем! Вы добавили ClickHouse в качестве пункта назначения в Airbyte.
 
     <Note>
-      Чтобы использовать ClickHouse в качестве пункта назначения, пользователь, которого вы будете для этого использовать, должен иметь разрешения на создание баз данных и таблиц, а также на вставку строк. Мы рекомендуем создать отдельного пользователя для Airbyte (например, `my_airbyte_user`) со следующими разрешениями:
+      Чтобы использовать ClickHouse в качестве пункта назначения, пользователь, от имени которого выполняется подключение, должен иметь разрешения на создание баз данных и таблиц, а также на вставку строк. Рекомендуем создать для Airbyte отдельного пользователя (например, `my_airbyte_user`) со следующими разрешениями:
 
       ```sql
       CREATE USER 'my_airbyte_user'@'%' IDENTIFIED BY 'your_password_here';
@@ -96,92 +84,68 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
     </Note>
   </Step>
 
-  <Step title="Добавьте набор данных как источник" id="3-add-a-dataset-as-a-source">
-    В качестве примера мы будем использовать <a href="/ru/get-started/sample-datasets/nyc-taxi" target="_blank">данные о такси Нью-Йорка</a> (на <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>). В этом руководстве мы будем использовать подмножество этого набора данных за январь 2022 года.
+  <Step title="Добавление набора данных в качестве источника" id="3-add-a-dataset-as-a-source">
+    В качестве демонстрационного набора данных мы будем использовать <a href="/ru/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a> (на <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">Github</a>). В этом пошаговом руководстве мы возьмём подмножество этого набора данных за январь 2022 года.
 
-    1. В Airbyte откройте страницу &quot;Sources&quot; и добавьте новый источник типа файла.
+    1. В Airbyte откройте страницу «Sources» и добавьте новый источник типа file.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Добавление источника в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Добавление источника в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+         </Frame>
        </div>
 
-    2. Заполните форму &quot;Set up the source&quot;: укажите имя источника и URL файла NYC Taxi за январь 2022 года (см. ниже). Убедитесь, что в качестве формата файла выбран `parquet`, в качестве Storage Provider — `HTTPS Public Web`, а в качестве Dataset Name — `nyc_taxi_2022`.
+    2. Заполните форму «Set up the source»: задайте имя источника и укажите URL файла NYC Taxi за январь 2022 года (см. ниже). Обязательно выберите `parquet` в качестве формата файла, `HTTPS Public Web` в качестве Storage Provider и `nyc_taxi_2022` в качестве Dataset Name.
 
        ```text
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Создание источника ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Создание источника ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+         </Frame>
        </div>
 
-    3. Готово! Теперь вы добавили в Airbyte файловый источник.
+    3. Поздравляем! Вы добавили файловый источник в Airbyte.
   </Step>
 
-  <Step title="Создание подключения и загрузка набора данных в ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
-    1. В Airbyte перейдите на страницу &quot;Connections&quot; и добавьте новое подключение
+  <Step title="Установите соединение и загрузите набор данных в ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
+    1. В Airbyte откройте страницу &quot;Connections&quot; и добавьте новое соединение
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Добавить подключение в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Добавление соединения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+      </Frame>
     </div>
 
-    2. Выберите &quot;Использовать существующий источник&quot; и New York City Taxi Data, затем — &quot;Использовать существующий пункт назначения&quot; и свой экземпляр ClickHouse.
+    2. Выберите &quot;Use existing source&quot; и укажите New York City Taxi Data, затем выберите &quot;Use existing destination&quot; и укажите свой экземпляр ClickHouse.
 
-    3. Заполните форму &quot;Настройка соединения&quot;: выберите частоту репликации (в этом руководстве мы будем использовать `manual`) и выберите `nyc_taxi_2022` в качестве потока для синхронизации. Убедитесь, что в качестве нормализации выбрано `Normalized Tabular Data`.
+    3. Заполните форму &quot;Set up the connection&quot;: задайте периодичность репликации (Replication Frequency; в этом руководстве используется `manual`) и выберите `nyc_taxi_2022` в качестве потока для синхронизации. Убедитесь, что в поле Normalization выбрано значение `Normalized Tabular Data`.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Создание подключения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Создание соединения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+      </Frame>
     </div>
 
-    4. Теперь, когда подключение создано, нажмите &quot;Синхронизировать сейчас&quot;, чтобы запустить загрузку данных (так как в качестве частоты репликации мы выбрали `Manual`)
+    4. Теперь, когда соединение создано, нажмите &quot;Sync now&quot;, чтобы запустить загрузку данных (поскольку для параметра Replication Frequency мы выбрали значение `Manual`)
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Запустите синхронизацию в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Кнопка «Sync now» в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+      </Frame>
     </div>
 
-    5. Начнется загрузка данных; вы можете развернуть это представление, чтобы увидеть журналы Airbyte и прогресс. Когда операция завершится, в журналах появится сообщение `Completed successfully`:
+    5. Начнётся загрузка данных. Разверните панель, чтобы просмотреть журналы Airbyte и ход выполнения. После завершения операции в журналах появится сообщение `Completed successfully`:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Успешно завершено](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Успешно завершено](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+      </Frame>
     </div>
 
-    6. Подключитесь к своему экземпляру ClickHouse с помощью любого удобного SQL-клиента и проверьте полученную таблицу:
+    6. Подключитесь к своему экземпляру ClickHouse с помощью любого удобного SQL-клиента и проверьте получившуюся таблицу:
 
        ```sql
        SELECT *
@@ -189,7 +153,7 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
        LIMIT 10
        ```
 
-       Ответ должен выглядеть так:
+       Ответ должен выглядеть примерно так:
 
        ```response
        Query id: 4f79c106-fe49-4145-8eba-15e1cb36d325
@@ -213,7 +177,7 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
        FROM nyc_taxi_2022
        ```
 
-       Результат:
+       Ответ:
 
        ```response
        Query id: a9172d39-50f7-421e-8330-296de0baa67e
@@ -223,7 +187,7 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
        └─────────┘
        ```
 
-    7. Обратите внимание, что Airbyte автоматически определил типы данных и добавил 4 столбца в целевую таблицу. Эти столбцы Airbyte использует для управления логикой репликации и ведения журнала операций. Подробнее см. в <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">официальной документации Airbyte</a>.
+    7. Обратите внимание, что Airbyte автоматически определил типы данных и добавил в целевую таблицу 4 столбца. Airbyte использует их для управления логикой репликации и журналирования операций. Подробнее см. в  <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">официальной документации Airbyte</a>.
 
        ```sql
            `_airbyte_ab_id` String,
@@ -232,8 +196,8 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
            `_airbyte_nyc_taxi_072021_hashid` String
        ```
 
-       Теперь, когда набор данных загружен в экземпляр ClickHouse, вы можете создать новую таблицу и использовать более подходящие типы данных ClickHouse (<a href="/ru/get-started/sample-datasets/nyc-taxi" target="_blank">подробнее</a>).
+       Теперь, когда набор данных загружен в ваш экземпляр ClickHouse, можно создать новую таблицу с более подходящими типами данных ClickHouse (<a href="/ru/get-started/sample-datasets/nyc-taxi" target="_blank">подробнее</a>).
 
-    8. Поздравляем — вы успешно загрузили данные о нью-йоркских такси в ClickHouse с помощью Airbyte!
+    8. Поздравляем! Вы успешно загрузили данные о поездках нью-йоркского такси в ClickHouse с помощью Airbyte!
   </Step>
 </Steps>

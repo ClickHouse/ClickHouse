@@ -24,10 +24,10 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 复制基于 PostgreSQL Logical Replication Protocol 实现。该协议不支持复制 DDL，但能够识别是否发生了会破坏复制的变更 (如列类型变更、添加/删除列) 。检测到此类变更后，对应表将停止接收更新。此时，应使用 `ATTACH`/ `DETACH PERMANENTLY` 查询重新完整加载该表。如果 DDL 不会破坏复制 (例如重命名列) ，表仍会继续接收更新 (insert 按位置执行) 。
 
 <Note>
-  该数据库引擎属于 Experimental。要使用它，请在配置文件中将 `allow_experimental_database_materialized_postgresql` 设为 1，或使用 `SET` 命令：
+  该数据库引擎属于 Experimental。要使用它，请在配置文件中将 `enable_database_materialized_postgresql` 设为 1，或使用 `SET` 命令：
 
   ```sql
-  SET allow_experimental_database_materialized_postgresql=1
+  SET enable_database_materialized_postgresql=1
   ```
 </Note>
 

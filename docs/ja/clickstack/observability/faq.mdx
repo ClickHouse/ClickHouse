@@ -1,0 +1,103 @@
+---
+slug: /clickstack/observability/faq
+title: 'ClickHouse オブザーバビリティに関するよくある質問'
+sidebarTitle: 'よくある質問'
+description: '完全マネージド型およびセルフマネージドの ClickHouse オブザーバビリティ、データ収集、アラート、ダッシュボード、メトリクス検出に関するよくある質問です。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'FAQ', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+このページでは、ClickHouse オブザーバビリティの完全マネージド型モードとセルフマネージドモードについて説明するとともに、データ収集、アラート、ダッシュボード、メトリクス検出に関するよくある質問にお答えします。
+
+## デプロイメントとデータ収集 {#data-collection}
+
+<Accordion title="完全マネージド型とセルフマネージドの ClickHouse オブザーバビリティの違いは何ですか？">
+  **完全マネージド型**
+
+  <BetaBadge label="ベータ版サービス" />
+
+  まずは [完全マネージド型 ClickHouse オブザーバビリティ](/ja/clickstack/observability/overview) から始めることをお勧めします。テレメトリーをマネージド OpenTelemetry エンドポイントに送信するだけで、インジェスト collector、スキーマ、インフラストラクチャ、スケーリングは ClickHouse が管理します。
+
+  **セルフマネージド**
+
+  [Self-managed ClickHouse Observability](/ja/clickstack/self-configured/overview) では、インジェスト、スキーマ、保持期間、データベース設定を自身で制御できます。ClickHouse Cloud が ClickHouse と ClickStack UI をホストし、インジェスト collector の運用やデータベースのチューニング、キャパシティ管理はユーザー側で行います。セルフマネージドはベータ版サービスではありません。
+</Accordion>
+
+<Accordion title="OpenTelemetry collector を実行する必要はありますか？">
+  **完全マネージド型:** インジェスト collector をデプロイする必要はありません。アプリケーションやテレメトリージェネレーターから、マネージド OpenTelemetry エンドポイントにデータを直接送信できます。
+
+  ただし、ログファイルの読み取りやホストおよび Kubernetes のメトリクスの収集を行い、そのデータをマネージド collector に転送するために、自身の環境に collector が必要になる場合があります。例については、[ローカルのログとメトリクス](/ja/clickstack/observability/example-datasets/local-data) および [Kubernetesの監視](/ja/clickstack/observability/example-datasets/kubernetes) を参照してください。
+
+  **セルフマネージド:** ClickHouse Cloud サービスに接続された、稼働中のインジェスト collector が必要です。アプリケーションやエージェントはこの collector にテレメトリーを送信し、collector がそれを ClickHouse に書き込みます。ClickStack ディストリビューションの使用を推奨します。接続手順については [OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) を、collector の起動については [デプロイメントガイド](/ja/clickstack/self-configured/deployment/managed#start-a-collector-existing) を参照してください。
+</Accordion>
+
+<Accordion title="テレメトリーエンドポイントと API キーはどこで確認できますか？">
+  **完全マネージド型:** ClickHouse オブザーバビリティサービスで **チーム設定 → Data → マネージドテレメトリー** を開き、OTLP エンドポイントとインジェスト API key をコピーします。これらの情報は、SDK、転送用 collector、またはテレメトリージェネレーターの設定時に使用します。
+
+  **セルフマネージド:** 自身で運用している collector の OTLP エンドポイントと、そのレシーバーに設定された認証トークン (設定している場合) を使用します。ClickStack コレクターで `OTLP_AUTH_TOKEN` を有効にしている場合は、そのトークンを `authorization` ヘッダーで送信します。これらは、collector がデータの書き込みに使用する ClickHouse Cloud のデータベースエンドポイントおよび認証情報とは別のものです。例については [OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) を参照してください。
+
+  エンドポイントは、使用するツールが要求する形式で指定してください。[サンプルデータとデモ](/ja/clickstack/observability/example-datasets) に、各ツールの設定例が掲載されています。
+</Accordion>
+
+## アラート {#alerting}
+
+<Accordion title="ClickHouse オブザーバビリティではどのような種類のアラートがサポートされていますか？">
+  ClickHouse オブザーバビリティでは、次の 2 種類のアラートがサポートされています。
+
+  * [検索アラート](/ja/clickstack/observability/features/alerts#search-alerts): 時間ウィンドウ内で一致したログまたはトレースの結果件数がしきい値を上回った場合、または下回った場合に通知を送信します。
+  * [ダッシュボードチャートアラート](/ja/clickstack/observability/features/alerts#dashboard-alerts): ダッシュボードタイルにプロットされたメトリクスが、定義したしきい値を超えた場合に通知を送信します。
+
+  どちらの種類のアラートも、設定済みのしきい値と照らし合わせて結果を評価します。詳細については、[アラート](/ja/clickstack/observability/features/alerts)を参照してください。
+</Accordion>
+
+<Accordion title="比率、p95/p99、複数メトリクスを組み合わせた数式など、複雑なメトリクス条件でアラートを設定できますか？">
+  計算をダッシュボードのチャートとして作成し、そのチャートにしきい値アラートを設定してください。[チャートビルダー](/ja/clickstack/observability/features/dashboards/overview#navigate-chart-explorer)では、比率やパーセンタイルなどの計算がサポートされています。
+
+  SQL が必要な計算には、[SQL ベースのチャートアラート](/ja/clickstack/observability/features/alerts#sql-based-alerts)を使用してください。SQL アラートは、折れ線グラフ、積み上げ棒グラフ、Number チャートに対応しています。アラートを有効にするには、ダッシュボードを保存してください。
+</Accordion>
+
+## ダッシュボードとドリルダウン {#dashboards-and-drill-downs}
+
+<Accordion title="組み込みのダッシュボードは用意されていますか？">
+  はい。**ダッシュボード** を開くと、**Services**、**Kubernetes**、**LLM** のプリセットダッシュボードが用意されています。これらのダッシュボードには、関連するテレメトリーが取り込まれていて、かつ選択した時間範囲にそのデータが含まれている場合にデータが表示されます。
+
+  取り込み済みのログ、トレース、メトリクスを使用して、カスタムダッシュボードを作成することもできます。チャートを作成してダッシュボードにまとめる方法については、[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)を参照してください。
+</Accordion>
+
+<Accordion title="ClickHouse オブザーバビリティはパラメーター化されたダッシュボードやダッシュボード変数をサポートしていますか？">
+  はい。ClickHouse オブザーバビリティは、カスタムフィルターと変数によってパラメーター化されたダッシュボードをサポートしており、これらの値には ClickHouse からクエリしたデータが投入されます。これらのフィルタを使用すると、ダッシュボード上の一部またはすべてのタイルの対象を、特定の値 (サービス名、環境、ホストなど) に動的に絞り込むことができます。
+
+  ダッシュボードの作成とフィルタの適用の詳細については、[ダッシュボード](/ja/clickstack/observability/features/dashboards/overview)を参照してください。
+</Accordion>
+
+<Accordion title="どのようなドリルダウン機能がありますか？">
+  ClickHouse オブザーバビリティは、以下のドリルダウンワークフローをサポートしています。
+
+  * [ダッシュボードレベルのフィルタリング](/ja/clickstack/observability/features/dashboards/overview#filter-dashboards)：ダッシュボードレベルの Lucene または SQL フィルタは、**Apply filters** が有効になっているタイルに適用されます。ダッシュボードの時間範囲を調整することもできます。
+  * カスタムダッシュボードフィルタ：カスタムダッシュボードでは、データから取得した値が選択肢として表示される明示的なフィルタコントロールを利用できます。これにより、ユーザーはクエリを手動で記述しなくても、対象となるタイルを絞り込めます。
+  * クリックによるイベント表示：ダッシュボードタイル内のデータをクリックして **View Events** を選択すると、ログおよびトレースデータ向けの関連フィルタが適用された状態で[検索](/ja/clickstack/observability/features/search)ページに移動します。
+  * [テーブルの行クリックによるドリルダウン](/ja/clickstack/observability/features/dashboards/row-click-drilldowns)：テーブルタイルを設定すると、行をクリックしたときに検索ページまたは別のダッシュボードを開き、その行の値をフィルタとして引き継ぐことができます。これにより、サービス一覧からサービスごとの詳細ダッシュボードへドリルダウンするといった、複数階層のワークフローを実現できます。
+
+  <Note>
+    個々のログやトレースを調査するには、[検索](/ja/clickstack/observability/features/search)を使用してください。メトリクスの探索には Chart Explorer を使用してください。
+  </Note>
+</Accordion>
+
+## メトリクス検出 {#metrics-discovery}
+
+<Accordion title="メトリクスを閲覧・検索するためのUIはありますか？">
+  ![メトリクス属性エクスプローラー](/images/clickstack/faq/metrics-explorer-fully-managed.png)
+
+  メトリクス名は、[チャートビルダー](/ja/clickstack/observability/features/dashboards/overview#navigate-chart-explorer)のメトリクス名ドロップダウンから確認できます。メトリクスを選択すると、メトリクス属性エクスプローラーパネルに、そのメトリクスの説明、単位、利用可能な属性とその値が表示されます。パネル上で属性を閲覧し、そのままフィルタや group-by フィールドとして追加できます。
+
+  現時点では、ログ検索のようなメトリクス専用の検索ページは提供されていません。
+</Accordion>
+
+## 関連情報 {#further-reading}
+
+* [アラート](/ja/clickstack/observability/features/alerts): 検索アラート、ダッシュボードチャートアラート、Webhook インテグレーション。
+* [ダッシュボード](/ja/clickstack/observability/features/dashboards/overview): 可視化の作成、ダッシュボードの構築、フィルタの適用。
+* [検索](/ja/clickstack/observability/features/search): Lucene 構文および SQL 構文によるログとトレースのクエリ。
+* [アーキテクチャ](/ja/clickstack/observability/architecture): ClickHouse オブザーバビリティの構成要素と、それらがどのように連携するか。
