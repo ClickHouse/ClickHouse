@@ -1518,9 +1518,29 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
         if (function.kind != QValueKind::Function)
             throwQError(ErrorCodes::SYNTAX_ERROR, node->offset, "Elided arguments are allowed only for functions");
         auto projection = std::make_shared<QFunction>(*function.function);
-        projection->bound.clear();
-        for (size_t i = 0; i < args.size(); ++i)
-            projection->bound.push_back(elided[i] ? std::nullopt : std::optional<QValue>(args[i]));
+        if (projection->bound.empty())
+        {
+            for (size_t i = 0; i < args.size(); ++i)
+                projection->bound.push_back(elided[i] ? std::nullopt : std::optional<QValue>(args[i]));
+        }
+        else
+        {
+            /// The function is a projection already, like `g` in `g:f[1]; h:g[;3]`. Its arguments stay fixed,
+            /// and the new ones go to its empty slots in their order: an elided one leaves its slot empty.
+            size_t next = 0;
+            for (auto & slot : projection->bound)
+            {
+                if (slot)
+                    continue;
+                if (next == args.size())
+                    break;
+                if (!elided[next])
+                    slot = args[next];
+                ++next;
+            }
+            for (; next < args.size(); ++next)
+                projection->bound.push_back(elided[next] ? std::nullopt : std::optional<QValue>(args[next]));
+        }
         QValue value;
         value.kind = QValueKind::Function;
         value.function = std::move(projection);
