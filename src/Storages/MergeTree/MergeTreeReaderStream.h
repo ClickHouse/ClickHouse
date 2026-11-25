@@ -40,15 +40,18 @@ public:
     /// 16 bytes a range.
     class ReadRanges
     {
-        friend class ReadRangesRegistry;
-
+    public:
         /// The bytes of the ranges not counted yet that become counted: those merged, and those extending the last
-        /// merged range. Clears the ranges.
-        size_t add(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
+        /// merged range. Clears the ranges. `capacity_grown` is how many ranges the memory kept for them grew by.
+        size_t add(CompressedBlockRanges & ranges, size_t & capacity_grown);
         /// Merges the appended ranges into the merged ones and returns the bytes they add. Never throws.
-        size_t merge() TSA_REQUIRES(mutex);
+        size_t merge();
+        /// Frees the ranges, once the counting stopped.
+        void release();
 
     private:
+        size_t mergeLocked() TSA_REQUIRES(mutex);
+
         std::mutex mutex;
         /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
         CompressedBlockRanges united_ranges TSA_GUARDED_BY(mutex);
@@ -81,7 +84,6 @@ private:
     /// Reserves `units` of the limit; past it, stops the counting instead.
     bool reserve(size_t units);
 
-    static void release(ReadRanges & read_ranges);
     /// Frees the ranges of all the files, once the counting stopped. The files stay, as the readers refer to them.
     void releaseAll();
 
