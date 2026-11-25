@@ -16,6 +16,11 @@ Without the grant, ON CLUSTER: denied, not created
 Without the grant, the name is an expression: denied, not created
 1
 0
+--- The name of the collection cannot refer to other values of the definition
+1
+0
+1
+0
 With the grant: created
 0
 1

@@ -239,11 +239,20 @@ std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery 
         const auto * pair = child->as<ASTPair>();
         if (!pair || Poco::toLower(pair->first) != "name")
             continue;
+
+        String name;
         if (const auto * identifier = pair->second->as<ASTIdentifier>())
-            return identifier->name();
-        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            return literal->value.safeGet<String>();
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+            name = identifier->name();
+        else if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            name = literal->value.safeGet<String>();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+
+        /// The source reads the name from the dictionary configuration, which expands `${...}` with other values of the
+        /// definition (`${dictionary.comment}`), so the authorized name would not be the one used.
+        if (name.contains("${"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source cannot contain `${{`: {}", name);
+        return name;
     }
     return {};
 }

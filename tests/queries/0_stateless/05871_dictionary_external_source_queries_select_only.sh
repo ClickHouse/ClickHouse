@@ -110,6 +110,21 @@ create_as_user "ON CLUSTER test_shard_localhost" "$nc"
 echo 'Without the grant, the name is an expression: denied, not created'
 create_as_user "" "concat('$nc', '')"
 $CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON $nc TO $user"
+echo '--- The name of the collection cannot refer to other values of the definition'
+# The source reads the name from the dictionary configuration, which expands `${...}`: `${dictionary.comment}` would be
+# the collection named by the comment, while the grant is checked on the literal name.
+$CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON \`\${dictionary.comment}\` TO $user"
+for on_cluster in "" "ON CLUSTER test_shard_localhost"; do
+    # shellcheck disable=SC2016  # The pattern is the literal `${`.
+    $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
+            SOURCE(MYSQL(NAME '\${dictionary.comment}')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)
+            COMMENT '$nc'" 2>&1 \
+        | grep -qF 'cannot contain `${`' && echo 1 || echo 0
+    $CLICKHOUSE_CLIENT --multiquery --query "
+        SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_nc';
+        DROP DICTIONARY IF EXISTS dict_nc;"
+done
 echo 'With the grant: created'
 create_as_user "" "$nc"
 echo 'With the grant, ON CLUSTER: created'
