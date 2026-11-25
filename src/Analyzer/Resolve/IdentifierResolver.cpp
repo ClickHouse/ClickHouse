@@ -1469,7 +1469,9 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
         if (it == scope.table_expression_node_to_data.end())
             return false;
 
-        if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
+        /// A table name that consumes the whole identifier leaves no part for a column.
+        const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths);
+        if (consumed > 0 && consumed < identifier.getPartsSize())
             return true;
 
         if (const auto * table_node = source->as<TableNode>())
@@ -1876,13 +1878,14 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
 /// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
     const TableExpressionNodePtr & join_tree_node,
-    const Identifier & identifier,
+    const IdentifierLookup & identifier_lookup,
     const IdentifierResolveScope & scope,
     bool database_qualified)
 {
     if (!join_tree_node)
         return false;
 
+    const auto & identifier = identifier_lookup.identifier;
     const auto & qualifier = identifier.front();
 
     if (qualifier.empty())
@@ -1896,8 +1899,8 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier, scope, database_qualified)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
@@ -1906,7 +1909,7 @@ static bool qualifierBindsToJoinSubtree(
             for (size_t i = 0; i < num_tables; ++i)
             {
                 auto expr = cross.getTableExpressionTypedAt(i);
-                if (qualifierBindsToJoinSubtree(expr, identifier, scope, database_qualified))
+                if (qualifierBindsToJoinSubtree(expr, identifier_lookup, scope, database_qualified))
                     return true;
             }
             return false;
@@ -1914,7 +1917,7 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
+            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier_lookup, scope, database_qualified);
         }
         default:
             break;
@@ -1928,7 +1931,9 @@ static bool qualifierBindsToJoinSubtree(
         return !it->second.database_name.empty() && it->second.database_name == qualifier
             && numberOfPartsMatchingTableName(identifier, 1, it->second.table_name, allow_table_paths) > 0;
 
-    if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
+    /// An expression needs a part left for the column; a table lookup is the whole qualifier.
+    const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths);
+    if (consumed > 0 && (identifier_lookup.isTableExpressionLookup() || consumed < identifier.getPartsSize()))
         return true;
 
     /// A materialized CTE is registered under its internal temporary table name;
@@ -1982,9 +1987,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             /// expression lookup (`db.table.*` is looked up by its qualifier `db.table`), while an
             /// expression lookup needs a third part for the column name (`db.table.column`).
             const size_t min_database_qualified_parts = is_table_lookup ? 2 : 3;
-            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
+            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup, scope, /*database_qualified=*/false)
                 || (identifier_lookup.identifier.getPartsSize() >= min_database_qualified_parts
-                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
+                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup, scope, /*database_qualified=*/true));
             if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
                 denied_qualified_access = side;
             return QueryTreeNodePtr{};
@@ -2026,8 +2031,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ false);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ false);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
@@ -2049,9 +2054,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
       */
     if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
     {
-        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ true))
             right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
-        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup, scope, /*database_qualified=*/ true))
             left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
 
         if (ambiguous_in_join_tree)

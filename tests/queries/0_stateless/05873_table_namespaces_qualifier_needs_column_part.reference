@@ -1,0 +1,15 @@
+-- 1. a subcolumn named like the table and an alias: both are columns
+8
+-- 2. the same with a comma join
+8
+-- 3. the alias on the left
+5
+-- 4. the alias is preferred with the compatibility setting
+5
+-- 5. a table named like a subcolumn of the other side does not hide it
+7
+7
+-- 6. a table path followed by a column still qualifies
+1
+1
+1
