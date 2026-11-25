@@ -822,11 +822,74 @@ std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast
     return result;
 }
 
-bool readsImplicitOneTableForAIAgent(const IAST & ast)
+namespace
 {
-    if (const auto * select = ast.as<ASTSelectQuery>(); select && !select->tables())
-        return true;
-    return std::ranges::any_of(ast.children, [](const auto & child) { return readsImplicitOneTableForAIAgent(*child); });
+
+/// Gathers the tables that one node reads without naming them into `result`.
+void collectImplicitSources(const IAST & ast, std::vector<AIQueryTableReference> & result)
+{
+    auto add = [&](String table)
+    {
+        AIQueryTableReference reference{"system", std::move(table)};
+        if (std::ranges::find(result, reference) == result.end())
+            result.push_back(std::move(reference));
+    };
+
+    if (const auto * select = ast.as<ASTSelectQuery>())
+    {
+        /// A `SELECT` without a `FROM` is read from `system.one`.
+        if (!select->tables())
+            add("one");
+    }
+    else if (const auto * show_tables = ast.as<ASTShowTablesQuery>())
+    {
+        /// `InterpreterShowTablesQuery` rewrites the statement into a `SELECT` from one of these
+        /// tables. `SHOW CACHES` reads no table; `SHOW CLUSTERS` and `SHOW CLUSTER` read
+        /// `system.clusters`, which `collectNamedTables` returns as a table the statement names,
+        /// because reading it is to be judged as a whole.
+        const bool reads_no_table_or_a_named_one = show_tables->caches || show_tables->clusters || show_tables->cluster;
+        if (show_tables->databases)
+            add("databases");
+        else if (show_tables->m_settings)
+            add("settings");
+        else if (show_tables->merges)
+            add("merges");
+        else if (!reads_no_table_or_a_named_one)
+            add(show_tables->dictionaries ? "dictionaries" : "tables");
+    }
+    else if (ast.as<ASTShowColumnsQuery>())
+    {
+        add("columns");
+    }
+    else if (ast.as<ASTShowIndexesQuery>())
+    {
+        add("tables");
+        add("data_skipping_indices");
+    }
+    else if (ast.as<ASTShowEnginesQuery>())
+    {
+        add("table_engines");
+    }
+    else if (ast.as<ASTShowSettingQuery>())
+    {
+        add("settings");
+    }
+    else if (ast.as<ASTShowPrivilegesQuery>())
+    {
+        add("privileges");
+    }
+
+    for (const auto & child : ast.children)
+        collectImplicitSources(*child, result);
+}
+
+}
+
+std::vector<AIQueryTableReference> collectImplicitSourcesForAIAgent(const IAST & ast)
+{
+    std::vector<AIQueryTableReference> result;
+    collectImplicitSources(ast, result);
+    return result;
 }
 
 Strings collectFunctionNamesForAIAgent(const IAST & ast)
@@ -1132,7 +1195,7 @@ Strings validateStoredExpressionForAIAgent(const String & expression, std::strin
     /// would take another round of the same check, for an expression that rarely needs one. A
     /// subquery without a `FROM` is one of them: it reads `system.one`, whose row policies were
     /// not looked up for this expression.
-    if (!collectNamedTablesForAIAgent(*ast).empty() || readsImplicitOneTableForAIAgent(*ast))
+    if (!collectNamedTablesForAIAgent(*ast).empty() || !collectImplicitSourcesForAIAgent(*ast).empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The {} reads other tables, which the server does when the table is read (a subquery without `FROM` "

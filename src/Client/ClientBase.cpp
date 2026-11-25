@@ -5080,10 +5080,11 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// The static validation judges what is written in the query; the tables it only collects,
         /// because a name says nothing about what reading it does. Resolve them and check their
         /// engines - this is a round trip, so it is skipped when the query reads no tables. A
-        /// `SELECT` without a `FROM` does read one, although it names none: `system.one`, whose
-        /// row policies the server applies like those of any other table.
+        /// `SELECT` without a `FROM` and a `SHOW` statement do read one, although they name none:
+        /// `system.one` and the table of `system` behind the statement, whose row policies the
+        /// server applies like those of any other table.
         checkNamedTablesForAIReadOnlyTool(
-            collectNamedTablesForAIAgent(*ast), allow_schema_access, readsImplicitOneTableForAIAgent(*ast));
+            collectNamedTablesForAIAgent(*ast), allow_schema_access, collectImplicitSourcesForAIAgent(*ast));
 
         /// The static validation accepts a function that the client knows as a builtin, but the
         /// server resolves the name itself, and expands a user-defined function of that name first.
@@ -5704,9 +5705,11 @@ void ClientBase::checkFunctionsForAIReadOnlyTool(const Strings & functions)
 }
 
 void ClientBase::checkNamedTablesForAIReadOnlyTool(
-    const std::vector<AIQueryTableReference> & tables, bool allow_schema_access, bool reads_implicit_one_table)
+    const std::vector<AIQueryTableReference> & tables,
+    bool allow_schema_access,
+    const std::vector<AIQueryTableReference> & implicit_sources)
 {
-    if (tables.empty() && !reads_implicit_one_table)
+    if (tables.empty() && implicit_sources.empty())
         return;
 
     /// What this check is, and is not. It keeps the model from choosing, on its own, a query that
@@ -5721,6 +5724,17 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
     /// because it shows the text of the query and not what its names resolve to. Both need a
     /// party that can already alter the objects of the user or manage access, and both are
     /// stated in the documentation of the client as the residual risk.
+    ///
+    /// One more thing is not in the hands of this check: an `Alias` table. The server resolves
+    /// the target of an alias whenever a catalog table describes it - `system.tables` does it for
+    /// every row of an alias, to tell whether its target is granted, and `system.columns` to list
+    /// its columns - so this lookup cannot learn that a table is an alias without the server
+    /// opening its target. For an alias that points into a database of an external system
+    /// (`PostgreSQL`, ...) that is a request for the definition of a table there. The settings
+    /// that keep `system.tables` from enumerating a remote database do not cover an alias in a
+    /// local one; that is for the catalog tables of the server to do, and until they do it is
+    /// stated in the documentation next to the exception of the schema tools: a definition is
+    /// fetched, no data is read.
 
     /// Ask the server what these names are. `system.tables` only narrows its enumeration by
     /// `database = ...` and `name = ...`, so each table is looked up by a branch of its own
@@ -5796,11 +5810,12 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
     }
 
     /// A `SELECT` without a `FROM` (`SELECT 1`, a scalar subquery `(SELECT 1)`) is read from
-    /// `system.one`, which the query does not name. Nothing about the table itself is in question,
-    /// but the server applies its row policies to that read, so they are looked up like those of
-    /// a table that was named.
-    if (reads_implicit_one_table)
-        add_row_policy_lookup("'system'", "'one'");
+    /// `system.one`, and a `SHOW` statement from a table of `system` (`SHOW ENGINES` from
+    /// `system.table_engines`), which the query does not name. Nothing about these tables is in
+    /// question, but the server applies their row policies to the read, so the policies are
+    /// looked up like those of a table that was named.
+    for (const auto & source : implicit_sources)
+        add_row_policy_lookup(quoteString(source.database), quoteString(source.table));
 
     if (!database_expressions.empty())
         branches.push_back(fmt::format(
@@ -5871,8 +5886,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
                     stored_expression_functions.insert(std::move(function));
     };
 
-    if (reads_implicit_one_table)
-        check_stored_expressions("system", "one", " (which a `SELECT` without `FROM` reads)");
+    for (const auto & source : implicit_sources)
+        check_stored_expressions(source.database, source.table, " (which the query reads without naming it)");
 
     for (const auto & reference : tables)
     {

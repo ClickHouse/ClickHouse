@@ -337,11 +337,13 @@ protected:
     /// static validation cannot make. Throws Exception(BAD_ARGUMENTS) with a message for the
     /// model when a table does not qualify. Without `allow_schema_access`, a name resolving to a
     /// database the server owns is refused as well, including through the current database.
-    /// `reads_implicit_one_table` says that the query has a `SELECT` without a `FROM`, which the
-    /// server reads from `system.one`: the row policies of that table are checked as well then,
-    /// and it is not a use of the schema, so `allow_schema_access` does not apply to it.
+    /// `implicit_sources` are the tables the query reads without naming them (see
+    /// `collectImplicitSourcesForAIAgent`): only their row policies are checked, and
+    /// `allow_schema_access` does not apply to them.
     void checkNamedTablesForAIReadOnlyTool(
-        const std::vector<AIQueryTableReference> & tables, bool allow_schema_access, bool reads_implicit_one_table);
+        const std::vector<AIQueryTableReference> & tables,
+        bool allow_schema_access,
+        const std::vector<AIQueryTableReference> & implicit_sources);
     /// Refuses the query when a function it calls is a user-defined function on the server.
     void checkFunctionsForAIReadOnlyTool(const Strings & functions);
 

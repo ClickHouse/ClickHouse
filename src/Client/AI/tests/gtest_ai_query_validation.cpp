@@ -740,29 +740,60 @@ TEST(AIQueryValidation, RejectsApplyTransformers)
     EXPECT_FALSE(isAllowed("SELECT * REPLACE (file('fixture.txt') AS number) FROM numbers(3)"));
 }
 
-TEST(AIQueryValidation, DetectsSelectWithoutFrom)
+TEST(AIQueryValidation, CollectsImplicitSources)
 {
-    /// A `SELECT` without a `FROM` is read from `system.one`, whose row policies the server applies,
-    /// although the query names no table.
-    const auto reads_one = [](const String & query) { return readsImplicitOneTableForAIAgent(*parse(query)); };
+    /// The tables a statement reads without naming them. The server applies their row policies,
+    /// so the caller has to look those up, although the statement names no table.
+    const auto sources = [](const String & query)
+    {
+        std::vector<String> result;
+        for (const auto & source : collectImplicitSourcesForAIAgent(*parse(query)))
+            result.push_back(source.database + "." + source.table);
+        return result;
+    };
+    const std::vector<String> none;
+    const std::vector<String> one{"system.one"};
 
-    EXPECT_TRUE(reads_one("SELECT 1"));
-    EXPECT_TRUE(reads_one("SELECT version(), now()"));
-    EXPECT_TRUE(reads_one("EXPLAIN SELECT 1"));
-    EXPECT_TRUE(reads_one("DESCRIBE (SELECT 1)"));
+    /// A `SELECT` without a `FROM` is read from `system.one`.
+    EXPECT_EQ(sources("SELECT 1"), one);
+    EXPECT_EQ(sources("SELECT version(), now()"), one);
+    EXPECT_EQ(sources("EXPLAIN SELECT 1"), one);
+    EXPECT_EQ(sources("DESCRIBE (SELECT 1)"), one);
     /// At any depth: a scalar subquery, the set of an `IN`, a derived table, a branch of a `UNION`.
-    EXPECT_TRUE(reads_one("SELECT number, (SELECT 1) FROM numbers(3)"));
-    EXPECT_TRUE(reads_one("SELECT number FROM numbers(3) WHERE number IN (SELECT 1)"));
-    EXPECT_TRUE(reads_one("SELECT x FROM (SELECT 1 AS x)"));
-    EXPECT_TRUE(reads_one("SELECT x FROM db.t UNION ALL SELECT 1"));
-    EXPECT_TRUE(reads_one("WITH (SELECT 1) AS one SELECT number + one FROM numbers(3)"));
+    EXPECT_EQ(sources("SELECT number, (SELECT 1) FROM numbers(3)"), one);
+    EXPECT_EQ(sources("SELECT number FROM numbers(3) WHERE number IN (SELECT 1)"), one);
+    EXPECT_EQ(sources("SELECT x FROM (SELECT 1 AS x)"), one);
+    EXPECT_EQ(sources("SELECT x FROM db.t UNION ALL SELECT 1"), one);
+    EXPECT_EQ(sources("WITH (SELECT 1) AS one SELECT number + one FROM numbers(3)"), one);
+    EXPECT_EQ(sources("SELECT 1 UNION ALL SELECT 2"), one);
 
-    EXPECT_FALSE(reads_one("SELECT number FROM numbers(3)"));
-    EXPECT_FALSE(reads_one("SELECT x FROM db.t WHERE x IN (SELECT y FROM db.u)"));
-    EXPECT_FALSE(reads_one("SELECT dummy FROM system.one"));
-    EXPECT_FALSE(reads_one("SHOW TABLES"));
-    EXPECT_FALSE(reads_one("SHOW CREATE TABLE db.t"));
-    EXPECT_FALSE(reads_one("EXISTS TABLE db.t"));
+    EXPECT_EQ(sources("SELECT number FROM numbers(3)"), none);
+    EXPECT_EQ(sources("SELECT x FROM db.t WHERE x IN (SELECT y FROM db.u)"), none);
+    /// A table that is named is not an implicit one: `collectNamedTablesForAIAgent` returns it.
+    EXPECT_EQ(sources("SELECT dummy FROM system.one"), none);
+
+    /// A `SHOW` statement is rewritten into a `SELECT` from a table of `system`.
+    EXPECT_EQ(sources("SHOW DATABASES"), std::vector<String>{"system.databases"});
+    EXPECT_EQ(sources("SHOW TABLES"), std::vector<String>{"system.tables"});
+    EXPECT_EQ(sources("SHOW TABLES FROM db LIKE 'a%'"), std::vector<String>{"system.tables"});
+    EXPECT_EQ(sources("SHOW TEMPORARY TABLES"), std::vector<String>{"system.tables"});
+    EXPECT_EQ(sources("SHOW DICTIONARIES"), std::vector<String>{"system.dictionaries"});
+    EXPECT_EQ(sources("SHOW SETTINGS LIKE 'max_%'"), std::vector<String>{"system.settings"});
+    EXPECT_EQ(sources("SHOW CHANGED SETTINGS LIKE 'max_%'"), std::vector<String>{"system.settings"});
+    EXPECT_EQ(sources("SHOW SETTING max_threads"), std::vector<String>{"system.settings"});
+    EXPECT_EQ(sources("SHOW MERGES"), std::vector<String>{"system.merges"});
+    EXPECT_EQ(sources("SHOW COLUMNS FROM db.t"), std::vector<String>{"system.columns"});
+    EXPECT_EQ(sources("SHOW INDEXES FROM db.t"), (std::vector<String>{"system.tables", "system.data_skipping_indices"}));
+    EXPECT_EQ(sources("SHOW ENGINES"), std::vector<String>{"system.table_engines"});
+    EXPECT_EQ(sources("SHOW PRIVILEGES"), std::vector<String>{"system.privileges"});
+
+    /// `SHOW CLUSTERS` reads `system.clusters`, which is returned as a table the statement names;
+    /// the statements below read no table through a `SELECT`.
+    EXPECT_EQ(sources("SHOW CLUSTERS"), none);
+    EXPECT_EQ(sources("SHOW CLUSTER 'default'"), none);
+    EXPECT_EQ(sources("SHOW CREATE TABLE db.t"), none);
+    EXPECT_EQ(sources("DESCRIBE TABLE db.t"), none);
+    EXPECT_EQ(sources("EXISTS TABLE db.t"), none);
 }
 
 TEST(AIQueryValidation, RejectsUnknownFunctions)

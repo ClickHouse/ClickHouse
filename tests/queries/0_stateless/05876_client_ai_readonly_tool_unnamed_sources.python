@@ -5,6 +5,8 @@
 # - A `SELECT` without a `FROM` is read from `system.one`, a real table whose row policies the
 #   server applies. The policy below reads a file, so the query must be refused before it is sent,
 #   also when the `SELECT` without a `FROM` is a scalar subquery of a query that has one.
+# - A `SHOW` statement is rewritten by the server into a `SELECT` from a table of `system`, with
+#   the row policies of that table: `SHOW ENGINES` reads `system.table_engines`.
 # - A table function is matched by the spelling the server registers it under. `NUMBERS` is not
 #   `numbers`: the server finds no such table function and reads the parameterized view of that
 #   name instead.
@@ -75,6 +77,19 @@ TURNS = [
                 lambda r: succeeded(r),
             ),
             (
+                "show_statement",
+                "run_readonly_query",
+                {"query": "SHOW ENGINES"},
+                lambda r: refused(r, "row policy", "system.table_engines"),
+            ),
+            # The control: the table behind this statement has no row policy.
+            (
+                "show_statement_without_a_policy",
+                "run_readonly_query",
+                {"query": "SHOW DATABASES"},
+                lambda r: succeeded(r),
+            ),
+            (
                 "parameterized_view_in_another_case",
                 "run_readonly_query",
                 {"query": "SELECT x FROM NUMBERS(p = 'fixture.txt')"},
@@ -101,6 +116,7 @@ CALLS = [call for _, calls in TURNS for call in calls]
 SETUP = [
     "CREATE VIEW default.NUMBERS AS SELECT file({p:String}) AS x",
     "CREATE ROW POLICY policy_on_system_one ON system.one USING length(file('fixture.txt')) >= dummy TO ALL",
+    "CREATE ROW POLICY policy_on_table_engines ON system.table_engines USING length(file('fixture.txt')) >= 0 TO ALL",
 ]
 
 # The results of the tool calls in the requests the mock provider received, by the id of the call.
