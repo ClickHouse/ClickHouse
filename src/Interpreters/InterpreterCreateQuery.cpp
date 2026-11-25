@@ -1106,9 +1106,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    /// Only a fresh definition, so that a stored table with a text index keeps loading.
     auto check_text_index_allowed = [&](const IndexDescription & index_desc)
     {
-        if (index_desc.type == TEXT_INDEX_NAME && !getContext()->getSettingsRef()[Setting::enable_full_text_index])
+        if (isFreshDefinition(mode) && index_desc.type == TEXT_INDEX_NAME && !getContext()->getSettingsRef()[Setting::enable_full_text_index])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
     };
 
@@ -1205,8 +1206,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             {
                 if (index.isImplicitlyCreated())
                     continue;
-                if (isFreshDefinition(mode))
-                    check_text_index_allowed(index);
+                check_text_index_allowed(index);
                 properties.indices.push_back(index);
             }
 
