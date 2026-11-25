@@ -2128,10 +2128,19 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
-            size_t total_bytes = 0;
+            /// `n` is not bounded by a page. When a PLAIN page follows dictionary pages, `Reader::readRowsInPage`
+            /// gathers all indexes of the row subgroup at once, so the total size can wrap, and `appendStrings`
+            /// would then write past the allocated chars.
+            const size_t old_bytes = c.getChars().size();
+            size_t new_bytes = old_bytes;
             for (size_t i = 0; i < n; ++i)
-                total_bytes += offsets[indexes[i]] - offsets[ssize_t(indexes[i]) - 1] - 4;
-            appendStrings(c, n, total_bytes, data.data() + data.size(), [&](size_t i)
+            {
+                UInt32 idx = indexes[i];
+                size_t len = offsets[idx] - offsets[ssize_t(idx) - 1] - 4;
+                if (common::addOverflow(new_bytes, len, new_bytes))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Overflow in total size of dictionary-encoded strings");
+            }
+            appendStrings(c, n, new_bytes - old_bytes, data.data() + data.size(), [&](size_t i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
