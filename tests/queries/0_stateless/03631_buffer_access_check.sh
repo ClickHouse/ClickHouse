@@ -112,4 +112,15 @@ EOF
 # The sizes of `n.b` come from `n.c`, the member the user may read, though the destination stores it as `String`.
 ${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT n.b FROM $db.test_buffer_8"
 
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.test_table_9 (k UInt32, arr String, secret Array(UInt8)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.test_table_9 VALUES (1, '[1,2,3]', [4, 5]);
+CREATE TABLE $db.test_buffer_9 (k UInt32, arr Array(UInt8) DEFAULT secret, secret Array(UInt8))
+    ENGINE = Buffer($db, test_table_9, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
+GRANT SELECT ON $db.test_buffer_9 TO $user;
+GRANT SELECT(k, \`arr.size0\`) ON $db.test_table_9 TO $user;
+EOF
+# The destination has `arr` but not `arr.size0`, which takes the default of its type, so the default of `arr` is not read.
+${CLICKHOUSE_CLIENT} --user $user --send_logs_level=error --query "SELECT k, ignore(arr.size0) FROM $db.test_buffer_9"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"

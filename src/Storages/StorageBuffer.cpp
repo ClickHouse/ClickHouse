@@ -338,9 +338,7 @@ void collectDefaultInputs(
     const auto all_columns = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
     const auto physical_columns = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
-    /// A subcolumn is taken from the default of its column.
-    auto column = our_snapshot->tryGetColumn(all_columns, column_name);
-    auto column_default = our_snapshot->getDefault(column ? column->getNameInStorage() : column_name);
+    auto column_default = our_snapshot->getDefault(column_name);
     if (!column_default)
         return;
 
@@ -536,8 +534,9 @@ void StorageBuffer::read(
                 {
                     if (get_destination_column(column_name))
                         continue;
-                    collectDefaultInputs(column_name, storage_snapshot, destination_snapshot, columns_intersection, fill_inputs, fill_closure, visited);
-                    columns_to_fill.push_back(get_column_to_fill(column_name).name);
+                    auto column_to_fill = get_column_to_fill(column_name).name;
+                    collectDefaultInputs(column_to_fill, storage_snapshot, destination_snapshot, columns_intersection, fill_inputs, fill_closure, visited);
+                    columns_to_fill.push_back(std::move(column_to_fill));
                 }
                 columns_to_fill.insert(columns_to_fill.end(), fill_closure.begin(), fill_closure.end());
                 fill_support = fill_inputs;
