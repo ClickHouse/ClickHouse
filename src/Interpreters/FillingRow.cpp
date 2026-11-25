@@ -266,6 +266,20 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
             descr.fill_column_type->getName());
 }
 
+void FillingRow::fillGroupsPastTo()
+{
+    fills_groups_past_to = true;
+    steps_reach_every_value.resize(size());
+    for (size_t i = 0; i < size(); ++i)
+    {
+        const auto & descr = getFillDescription(i);
+        const WhichDataType which(descr.fill_column_type);
+        steps_reach_every_value[i] = !descr.step_kind
+            && (equals(descr.fill_step, Field(Int64(1))) || equals(descr.fill_step, Field(Int64(-1))))
+            && (isInteger(descr.fill_column_type) || which.isDate() || which.isDate32() || which.isDateTime());
+    }
+}
+
 void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
 {
     for (size_t i = 0; i < size(); ++i)
@@ -346,7 +360,8 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
-        const Field & border = findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
+        const Field & border = fills_groups_past_to && !next_original_row[pos].isNull() ? next_original_row[pos]
+            : findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
         logDebug("border: {}", border);
 
         if (!border.isNull() && !equals(row[pos], border))
@@ -367,7 +382,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
         return false;
 
-    if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
+    /// TO limits only the values generated for its own column: towards a next row, the later columns are walked first.
+    const bool fills_group_past_to = fills_groups_past_to && !next_original_row[pos].isNull();
+    if (!fills_group_past_to && !constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
     /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
@@ -432,6 +449,16 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
+
+    /// The steps reach the next row's value at or past TO, where no value is generated.
+    if (fills_group_past_to && steps_reach_every_value[pos] && !constraints[pos].isNull()
+        && !less(next_original_row[pos], constraints[pos], getDirection(pos))
+        && !(less(row[pos], next_value, getDirection(pos)) && less(next_value, constraints[pos], getDirection(pos))))
+    {
+        row[pos] = next_original_row[pos];
+        value_changed = true;
+        return resetKeysAfter(pos, next_original_row);
+    }
 
     /// A step below the precision of the cursor leaves it unchanged (`1e17 + 0.25 == 1e17` for
     /// `Float64`), so the fill cannot make progress and must stop here. Without this the same row

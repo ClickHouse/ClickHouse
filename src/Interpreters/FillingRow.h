@@ -61,6 +61,9 @@ public:
     /// up front once the anchor of the filling is known.
     void checkFillingTowardsConstraintsFitsColumnTypes();
 
+    /// Makes `next` fill the later keys in the groups at or past a key's TO as without TO. Called after the steps are converted.
+    void fillGroupsPastTo();
+
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
     [[nodiscard]] size_t size() const { return row.size(); }
@@ -83,6 +86,9 @@ private:
     Row checked_walk_cursor;
     Row checked_walk_constraint;
     SortDescription sort_description;
+    bool fills_groups_past_to = false;
+    /// Per key: a step of one unit over an integer-valued type, whose steps reach every later value.
+    std::vector<bool> steps_reach_every_value;
 };
 
 WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row);

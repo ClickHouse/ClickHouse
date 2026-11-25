@@ -802,6 +802,27 @@ FillingTransform::FillingTransform(
         last_range_sort_prefix.reserve(sort_prefix.size());
     }
 
+    /// The layouts in which the filling without TO can leave the filling row behind an input row keep the filling at TO.
+    bool fills_groups_past_to = !running_with_staleness;
+    bool after_key_with_from = false;
+    for (size_t i = 0, size = fill_description.size(); i < size; ++i)
+    {
+        const auto & descr = filling_row.getFillDescription(i);
+        const DataTypePtr & type = getOutputPort().getHeader().getByPosition(fill_column_positions[i]).type;
+        fills_groups_past_to &= !isNullableOrLowCardinalityNullable(type) && !isFloat(removeNullable(type))
+            && (descr.fill_from.isNull() || descr.fill_to.isNull() || !equals(descr.fill_from, descr.fill_to))
+            && (!after_key_with_from || !descr.fill_from.isNull());
+        after_key_with_from |= !descr.fill_from.isNull();
+    }
+    bool after_unfilled_key = false;
+    for (size_t i = sort_prefix.size(); i < sort_description.size(); ++i)
+    {
+        fills_groups_past_to &= !(sort_description[i].with_fill && after_unfilled_key);
+        after_unfilled_key |= !sort_description[i].with_fill;
+    }
+    if (fills_groups_past_to)
+        filling_row.fillGroupsPastTo();
+
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_->getColumnsWithTypeAndName())
     {
