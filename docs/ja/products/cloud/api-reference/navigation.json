@@ -1,9 +1,9 @@
 [
   {
-    "group": "組織",
+    "group": "Organization",
     "pages": [
       {
-        "group": "組織",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -29,7 +29,7 @@
         ]
       },
       {
-        "group": "通知",
+        "group": "Notifications",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
           "products/cloud/api-reference/notifications/notification-types-get-list",
@@ -38,7 +38,7 @@
         ]
       },
       {
-        "group": "請求",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/inference-usage-cost-get",
@@ -47,7 +47,7 @@
         ]
       },
       {
-        "group": "ユーザー管理",
+        "group": "User management",
         "pages": [
           "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
@@ -61,7 +61,7 @@
         ]
       },
       {
-        "group": "ロール管理",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -90,10 +90,10 @@
     ]
   },
   {
-    "group": "サービス",
+    "group": "Service",
     "pages": [
       {
-        "group": "サービス",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -131,7 +131,7 @@
         ]
       },
       {
-        "group": "バックアップ",
+        "group": "Backup",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
           "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
@@ -144,7 +144,7 @@
         ]
       },
       {
-        "group": "スナップショット",
+        "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -153,7 +153,7 @@
         ]
       },
       {
-        "group": "クエリ API エンドポイント",
+        "group": "Query API endpoints",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -163,7 +163,7 @@
         ]
       },
       {
-        "group": "保存クエリ",
+        "group": "Saved queries",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
@@ -175,7 +175,7 @@
     ]
   },
   {
-    "group": "API キー",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

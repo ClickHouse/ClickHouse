@@ -1,8 +1,8 @@
 {
-  "item": "에이전트",
+  "item": "Agents",
   "pages": [
     {
-      "group": "시작하기",
+      "group": "Get started",
       "pages": [
         "ko/agents/index",
         "ko/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "에이전트 빌더",
+      "group": "Agent Builder",
       "pages": [
         "ko/agents/builder/index",
         "ko/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "에이전트 관리",
+      "group": "Manage agents",
       "pages": [
         "ko/agents/prompts",
         "ko/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "어시스턴트",
+      "group": "Assistant",
       "pages": [
         "ko/agents/assistant/using-ai-chat",
         "ko/agents/assistant/customizing-semantic-layer"

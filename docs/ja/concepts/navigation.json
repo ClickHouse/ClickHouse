@@ -1,10 +1,10 @@
 {
-  "item": "概念",
+  "item": "Concepts",
   "pages": [
     "ja/concepts/index",
     {
       "expanded": true,
-      "group": "基礎",
+      "group": "Fundamentals",
       "pages": [
         "ja/concepts/core-concepts/index",
         "ja/concepts/core-concepts/glossary",
@@ -18,11 +18,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouseの基本概念",
+      "group": "ClickHouse concepts",
       "pages": [
         "ja/concepts/features/index",
         {
-          "group": "Materialized view",
+          "group": "Materialized views",
           "pages": [
             "ja/concepts/features/materialized-views/index",
             "ja/concepts/features/materialized-views/incremental-materialized-view",
@@ -31,28 +31,28 @@
           ]
         },
         {
-          "group": "辞書",
+          "group": "Dictionaries",
           "pages": [
             "ja/concepts/features/dictionaries/index",
             "ja/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "プロジェクション",
+          "group": "Projections",
           "pages": [
             "ja/concepts/features/projections/projections",
             "ja/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "パフォーマンス",
+          "group": "Performance",
           "pages": [
             "ja/concepts/features/performance/index",
             "ja/concepts/features/performance/prewhere",
             "ja/concepts/features/performance/allocation-profiling",
             "ja/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "キャッシュ",
+              "group": "Caches",
               "pages": [
                 "ja/concepts/features/performance/caches/caches",
                 "ja/concepts/features/performance/caches/query-cache",
@@ -61,7 +61,7 @@
               ]
             },
             {
-              "group": "スキッピングインデックス",
+              "group": "Skipping-indexes",
               "pages": [
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -69,7 +69,7 @@
             },
             "ja/concepts/features/performance/lazy-materialization",
             {
-              "group": "トラブルシューティング",
+              "group": "Troubleshooting",
               "pages": [
                 "ja/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ja/concepts/features/performance/troubleshoot/oom-canary",
@@ -80,11 +80,11 @@
           ]
         },
         {
-          "group": "操作",
+          "group": "Operations",
           "pages": [
             "ja/concepts/features/operations/background-queries",
             {
-              "group": "挿入",
+              "group": "Insert",
               "pages": [
                 "ja/concepts/features/operations/insert/inserting-data",
                 "ja/concepts/features/operations/insert/schema-inference",
@@ -97,10 +97,10 @@
               ]
             },
             {
-              "group": "選択する",
+              "group": "Select",
               "pages": [
                 {
-                  "group": "JOIN",
+                  "group": "JOINs",
                   "pages": [
                     "ja/concepts/features/operations/select/joining-tables",
                     "ja/concepts/features/operations/select/join-execution",
@@ -112,7 +112,7 @@
               ]
             },
             {
-              "group": "更新",
+              "group": "Update",
               "pages": [
                 "ja/concepts/features/operations/update/index",
                 "ja/concepts/features/operations/update/overview",
@@ -120,7 +120,7 @@
               ]
             },
             {
-              "group": "削除",
+              "group": "Delete",
               "pages": [
                 "ja/concepts/features/operations/delete/index",
                 "ja/concepts/features/operations/delete/overview",
@@ -133,10 +133,10 @@
           ]
         },
         {
-          "group": "構成",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "設定",
+              "group": "Settings",
               "pages": [
                 "ja/concepts/features/configuration/settings/overview",
                 "ja/concepts/features/configuration/settings/settings-query-level",
@@ -152,7 +152,7 @@
               ]
             },
             {
-              "group": "サーバー設定",
+              "group": "Server config",
               "pages": [
                 "ja/concepts/features/configuration/server-config/configuration-files",
                 "ja/concepts/features/configuration/server-config/storing-data",
@@ -167,7 +167,7 @@
           ]
         },
         {
-          "group": "セキュリティと認証",
+          "group": "Security and auth",
           "pages": [
             "ja/concepts/features/security/index",
             "ja/concepts/features/security/access-rights",
@@ -181,7 +181,7 @@
               ]
             },
             {
-              "group": "外部認証機構",
+              "group": "External authenticators",
               "pages": [
                 "ja/concepts/features/security/external-authenticators/index",
                 {
@@ -206,7 +206,7 @@
           ]
         },
         {
-          "group": "バックアップと復元",
+          "group": "Backup and restore",
           "pages": [
             "ja/concepts/features/backup-restore/overview",
             "ja/concepts/features/backup-restore/restore-settings",
@@ -219,11 +219,11 @@
           ]
         },
         {
-          "group": "ClickHouseへの接続",
+          "group": "Connect to ClickHouse",
           "pages": [
             "ja/concepts/features/connect-to-clickhouse/index",
             {
-              "group": "ネイティブツール",
+              "group": "Native tools",
               "pages": [
                 "ja/concepts/features/connect-to-clickhouse/native-tools/clickhousectl",
                 "ja/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client",
@@ -232,7 +232,7 @@
               ]
             },
             {
-              "group": "ドライバーと言語別クライアント",
+              "group": "Drivers and language clients",
               "pages": [
                 "ja/concepts/features/connect-to-clickhouse/drivers/adbc",
                 {
@@ -241,7 +241,7 @@
               ]
             },
             {
-              "group": "プロトコル",
+              "group": "Protocols",
               "pages": [
                 "ja/concepts/features/connect-to-clickhouse/protocols/http/index",
                 "ja/concepts/features/connect-to-clickhouse/protocols/http/framing-formats",
@@ -249,7 +249,7 @@
                 "ja/concepts/features/connect-to-clickhouse/protocols/grpc",
                 "ja/concepts/features/connect-to-clickhouse/protocols/arrow-flight",
                 {
-                  "group": "互換プロトコル",
+                  "group": "Compatibility protocols",
                   "pages": [
                     "ja/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
                     "ja/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
@@ -266,11 +266,11 @@
               ]
             },
             {
-              "group": "組み込みWebインターフェース",
+              "group": "Built-in web interfaces",
               "pages": [
                 "ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search",
                 {
-                  "group": "Web SQL UI（Play）",
+                  "group": "Web SQL UI (Play)",
                   "pages": [
                     "ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/index",
                     "ja/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
@@ -285,7 +285,7 @@
           ]
         },
         {
-          "group": "ツールとユーティリティ",
+          "group": "Tools and utilities",
           "pages": [
             "ja/concepts/features/tools-and-utilities/index",
             "ja/concepts/features/tools-and-utilities/backupview",
@@ -305,7 +305,7 @@
     },
     {
       "expanded": true,
-      "group": "ベストプラクティス",
+      "group": "Best practices",
       "pages": [
         "ja/concepts/best-practices/index",
         "ja/concepts/best-practices/choosing-a-primary-key",
