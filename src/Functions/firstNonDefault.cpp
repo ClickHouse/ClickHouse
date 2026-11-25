@@ -53,7 +53,7 @@ void markNonDefaultEnumRows(const IColumn & column, const EnumType & type, Padde
         non_default[row] |= data[row] != first_value;
 }
 
-/// The default of an `Enum` is its first value, not 0; elsewhere `isDefaultAt` decides, as for a whole column.
+/// The default of an `Enum` is its first value, not 0; for another non-trivial type it is what `insertDefaultInto` inserts.
 void markNonDefaultRows(const IColumn & column, const IDataType & type, PaddedPODArray<UInt8> & non_default)
 {
     if (type.isDefaultInsertTrivial())
@@ -78,7 +78,12 @@ void markNonDefaultRows(const IColumn & column, const IDataType & type, PaddedPO
     else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&type))
         markNonDefaultEnumRows(column, *enum16, non_default);
     else
-        markNonDefaultRows(column, non_default);
+    {
+        auto default_row = column.cloneEmpty();
+        type.insertDefaultInto(*default_row);
+        for (size_t row = 0; row < column.size(); ++row)
+            non_default[row] |= column.compareAt(row, 0, *default_row, 1) != 0;
+    }
 }
 
 /// A column whose default rows are the rows of `argument` holding the default of its type.
