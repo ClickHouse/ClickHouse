@@ -1352,14 +1352,14 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 
     static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
 
-    /// Must be idempotent: shards and parallel replicas resolve the already rewritten names (sumOrNullIf) again.
+    /// Must be idempotent: shards and parallel replicas resolve the rewritten names (`sumOrNullIf`) again.
     auto is_already_rewritten = [&](std::string_view suffix)
     {
         if (!result_aggregate_function_name.ends_with("OrNull" + String(suffix)))
             return false;
         if (suffix != "MergeState" && suffix != "Merge")
             return true;
-        /// Merging states of another function (stored sumOrNullOrNull states) keeps the usual rewrite.
+        /// `-Merge` over states of another function (e.g. stored `sumOrNullOrNull` states) is still rewritten.
         auto nested_name = result_aggregate_function_name.substr(0, result_aggregate_function_name.size() - suffix.size());
         return isStateOf(argument_types, nested_name, action, parameters);
     };
