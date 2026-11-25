@@ -17,4 +17,5 @@ NOT_IMPLEMENTED
 ['append', 'append', 'append'] [('max-snapshot-age-ms', 86400000), ('min-snapshots-to-keep', 10), ('type', 'branch')]
 ['append']
 [2,3]
+['append', 'append', 'append'] 2 2
 1

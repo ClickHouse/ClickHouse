@@ -229,6 +229,22 @@ DROP TABLE ${TABLE}_mv;
 DROP TABLE ${TABLE}_src;
 "
 
+# --- OPTIMIZE keeps the writer's own summary properties (Spark streaming finds its last epoch
+# through them) and recomputes the file metrics -----------------------------------------------
+reset
+three_inserts_edit_then_delete 1 <<'PY'
+for epoch, snapshot_id in enumerate(chain):
+    next(s for s in m['snapshots'] if s['snapshot-id'] == snapshot_id)['summary'].update(
+        {'spark.sql.streaming.queryId': 'q', 'spark.sql.streaming.epochId': str(epoch)})
+PY
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+python3 -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+current = next(s for s in m['snapshots'] if s['snapshot-id'] == m['current-snapshot-id'])['summary']
+print([s['summary']['operation'] for s in m['snapshots']], current.get('spark.sql.streaming.epochId'), current['total-records'])
+" "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
+
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
