@@ -57,6 +57,8 @@ private:
         ~TargetPipeline();
     };
 
+    /// Creates the target pipelines on the first non-empty chunk, so an `INSERT` whose sink never receives data does not build them.
+    void initPipelines();
     void initTagsAndSamplesPipelines();
     void initMetricFamiliesPipeline();
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
@@ -84,6 +86,7 @@ private:
     bool insert_tags_and_samples = false;
     bool insert_metric_families = false;
     bool async_insert = false;
+    bool pipelines_initialized = false;
 
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;

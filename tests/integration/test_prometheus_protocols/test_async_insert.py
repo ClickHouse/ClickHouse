@@ -1,3 +1,6 @@
+import time
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -209,3 +212,80 @@ def test_async_insert_flush_timeout_is_clamped():
     assert_eq_with_retry(
         node, "SELECT count() FROM timeSeriesSamples(prometheus)", "2", retry_count=60
     )
+
+
+def test_async_insert_matches_sync_and_skips_handler_target_pipelines():
+    ts1 = (int(time.time()) // 3600) * 3600 - 120
+    ts2 = ts1 + 15
+    time_series = [
+        ({"__name__": "parity_metric", "job": "api"}, {ts1: 1.5, ts2: 2.5}),
+        ({"__name__": "parity_up", "job": "api"}, {ts1: 1.0}),
+    ]
+    metrics_metadata = [
+        ("parity_metric", "COUNTER", "Parity test metric", "requests"),
+        ("parity_up", "GAUGE", "Target up", ""),
+    ]
+    ts_pb = convert_time_series_to_protobuf(time_series)
+    meta_pb = convert_metrics_metadata_to_protobuf(metrics_metadata)
+
+    def snapshot_inner_tables():
+        tables = sorted(
+            node.query(
+                "SELECT name FROM system.tables "
+                "WHERE database = 'default' AND name LIKE '.inner_id.%'"
+            ).splitlines()
+        )
+        assert len(tables) == 5, tables
+        result = {}
+        for table in tables:
+            kind = table.split(".")[2]
+            result[kind] = node.query(
+                f"SELECT count(), groupBitXor(cityHash64(*)) FROM default.`{table}` FINAL"
+            ).strip()
+        return result
+
+    def handler_inner_table_count(query_id):
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(
+            node.query(
+                "SELECT arrayCount(t -> t LIKE '%.inner_id.%', tables) "
+                f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'"
+            ).strip()
+        )
+
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+    qid_async_ts = f"rw-async-ts-{uuid.uuid4()}"
+    qid_async_meta = f"rw-async-meta-{uuid.uuid4()}"
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write?async_insert=1&log_queries=1", ts_pb,
+        headers={"X-ClickHouse-Query-Id": qid_async_ts},
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write?async_insert=1&log_queries=1", meta_pb,
+        headers={"X-ClickHouse-Query-Id": qid_async_meta},
+    )
+    async_snapshot = snapshot_inner_tables()
+    assert handler_inner_table_count(qid_async_ts) == 0
+    assert handler_inner_table_count(qid_async_meta) == 0
+
+    node.query("DROP TABLE prometheus SYNC")
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+    qid_sync_ts = f"rw-sync-ts-{uuid.uuid4()}"
+    qid_sync_meta = f"rw-sync-meta-{uuid.uuid4()}"
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write?async_insert=0&log_queries=1", ts_pb,
+        headers={"X-ClickHouse-Query-Id": qid_sync_ts},
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write?async_insert=0&log_queries=1", meta_pb,
+        headers={"X-ClickHouse-Query-Id": qid_sync_meta},
+    )
+    sync_snapshot = snapshot_inner_tables()
+    assert handler_inner_table_count(qid_sync_ts) == 4
+    assert handler_inner_table_count(qid_sync_meta) == 1
+
+    assert async_snapshot == sync_snapshot
+    for kind, value in async_snapshot.items():
+        count = int(value.split("\t")[0])
+        assert count > 0, (kind, value)
+
