@@ -46,7 +46,7 @@ public:
     {
     }
 
-    const OracleTraits & traits() const override { return oracle_traits; }
+    [[nodiscard]] const OracleTraits & traits() const override { return oracle_traits; }
 
     bool run(QueryOracleChecker & checker, const ASTSelectQuery & select, const ContextMutablePtr & context) const override
     {

@@ -32,7 +32,7 @@ class IOracle
 public:
     virtual ~IOracle() = default;
 
-    virtual const OracleTraits & traits() const = 0;
+    [[nodiscard]] virtual const OracleTraits & traits() const = 0;
 
     /// Run the oracle on a fuzzed simple SELECT. Returns true iff a comparison was actually
     /// performed (drives the `any_check_performed` result of `check` and the per-oracle

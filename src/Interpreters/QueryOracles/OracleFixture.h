@@ -28,10 +28,10 @@ public:
     OracleFixture(std::string_view feature, const ContextMutablePtr & base_context);
     ~OracleFixture();
 
-    bool valid() const { return valid_; }
+    [[nodiscard]] bool valid() const { return valid_; }
 
     /// The base (fuzz) context; oracles run their comparison SELECTs through OracleExec with it.
-    const ContextMutablePtr & context() const { return base_context; }
+    [[nodiscard]] const ContextMutablePtr & context() const { return base_context; }
 
     /// Allocate a unique table name. Its DROP is armed only when a CREATE naming it succeeds via
     /// `execute`, so this instance never drops a table it did not create. `suffix` is cosmetic.

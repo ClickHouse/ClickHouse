@@ -17,7 +17,7 @@ class OracleRegistry
 public:
     static const OracleRegistry & instance();
 
-    const std::vector<std::unique_ptr<IOracle>> & oracles() const { return oracle_list; }
+    [[nodiscard]] const std::vector<std::unique_ptr<IOracle>> & oracles() const { return oracle_list; }
 
 private:
     OracleRegistry();
