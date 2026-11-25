@@ -443,10 +443,12 @@ bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePt
         return to_variant->tryGetVariantDiscriminator(source->getName()).has_value();
     }
 
+    /// `CAST` refuses arrays of different depth, as an `Array` placed into an alternative makes them.
     if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
     {
         const auto * from_array = typeid_cast<const DataTypeArray *>(source.get());
-        return from_array && variantAlternativeIsChosenByType(from_array->getNestedType(), to_array->getNestedType());
+        return from_array && from_array->getNumberOfDimensions() == to_array->getNumberOfDimensions()
+            && variantAlternativeIsChosenByType(from_array->getNestedType(), to_array->getNestedType());
     }
 
     if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))

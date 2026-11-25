@@ -55,5 +55,8 @@ bool-variant-constant-other-alternative	1
 bool-raw-byte-under-low-cardinality	1
 bool-low-cardinality-keys-coincide	1
 bool-low-cardinality-alternative-kept	1
+array-into-alternative-under-array	[[1]]	Array(UInt64)
+array-into-alternative-under-tuple	([[1]])
+array-into-alternative-under-map	{'k':[[1]]}
 bool-raw-byte-still-clamped	1	1
 plain-type-still-rewritten	1

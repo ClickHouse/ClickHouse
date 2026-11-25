@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 23 of the 59 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 23 of the 62 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -156,6 +156,12 @@ SELECT 'bool-low-cardinality-keys-coincide', count() FROM (SELECT materialize(CA
 WHERE x IN ([tuple(1::UInt64::Variant(String, UInt64), toLowCardinality(reinterpret(toUInt8(2), 'Bool'))), tuple(2::UInt64::Variant(String, UInt64), toLowCardinality(true))]) SETTINGS allow_suspicious_low_cardinality_types = 1;
 SELECT 'bool-low-cardinality-alternative-kept', count() FROM (SELECT materialize(CAST([tuple(1::UInt64, true)], 'Array(Tuple(Variant(Date, UInt64), LowCardinality(Bool)))')) AS x)
 WHERE x IN ([tuple(1::UInt64, toLowCardinality(true))]) SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+-- An `Array` placed into an alternative under another `Array` makes a depth `CAST` refuses, so such a
+-- constant stays on the `Field` path, under any wrapper, instead of becoming a conversion error.
+SELECT 'array-into-alternative-under-array', x, variantType(x[1]) FROM values('x Array(Variant(Array(UInt64), String))', [[1::UInt64]]);
+SELECT 'array-into-alternative-under-tuple', x FROM values('x Tuple(Array(Variant(Array(UInt64), String)))', tuple([[1::UInt64]]));
+SELECT 'array-into-alternative-under-map', x FROM values('x Map(String, Array(Variant(Array(UInt64), String)))', map('k', [[1::UInt64]]));
 
 -- Nothing outside a `Variant` changes: an identity conversion still goes through the `Field` path, which
 -- clamps a raw byte a column can hold outside its type's domain.
