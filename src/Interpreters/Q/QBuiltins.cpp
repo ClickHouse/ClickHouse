@@ -320,6 +320,23 @@ ASTPtr withoutNulls(QCompiler & compiler, ASTPtr list)
         fn("arrayFilter", makeLambda({item}, fn("isNotNull", ident(item))), std::move(list)));
 }
 
+/// The items of a list with zeros in place of the nulls.
+ASTPtr nullsAsZeros(QCompiler & compiler, ASTPtr list)
+{
+    String item = compiler.newLambdaParameter();
+    return fn("arrayMap", makeLambda({item}, fn("ifNull", ident(item), lit(Field(static_cast<UInt64>(0))))), std::move(list));
+}
+
+/// An aggregate function over ranges of a list, one range `(index, length)` for every item: the running and the moving
+/// aggregates. `arrayReduceInRanges` evaluates them on a structure like a segment tree, in `n log n`. An aggregate of
+/// a slice of the list for every item would make all the slices at once: `n^2` items for the prefixes.
+ASTPtr reduceInRanges(QCompiler & compiler, const String & function, const ASTPtr & list, const std::function<ASTPtr(ASTPtr)> & range)
+{
+    String index = compiler.newLambdaParameter();
+    return fn("arrayReduceInRanges", ASTs{lit(Field(function)),
+        fn("arrayMap", makeLambda({index}, range(ident(index))), fn("arrayEnumerate", list)), list});
+}
+
 /// A uniform function: a column becomes a window function, a list an array function.
 QValue uniform(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column, const std::function<ASTPtr(ASTPtr)> & over_list)
 {
@@ -1294,12 +1311,15 @@ QValue movingWindow(Call & call, const String & function)
         },
         [&](ASTPtr list)
         {
-            return mapWithIndex(call.compiler, list,
-                [&](ASTPtr, ASTPtr index)
+            /// The moving sum takes a null for zero, like the running one.
+            if (function == "sum")
+                list = nullsAsZeros(call.compiler, std::move(list));
+            return reduceInRanges(call.compiler, function, list,
+                [&](ASTPtr index)
                 {
+                    /// The window ends at the item: `(start, index - start + 1)`. The length must be unsigned.
                     ASTPtr start = fn("greatest", one(), fn("minus", index, lit(Field(size - 1))));
-                    ASTPtr window = fn("arraySlice", list, start, fn("plus", fn("minus", index, start), one()));
-                    return fn("arrayReduce", lit(Field(function)), window);
+                    return fn("tuple", start, fn("toUInt64", fn("plus", fn("minus", index, start), one())));
                 });
         });
 }
@@ -2072,7 +2092,17 @@ const std::unordered_map<String, Handler> & handlers()
         };
 
         /// Uniform functions.
-        /// The running aggregates skip the nulls like the aggregates do, which for the sums is the same as taking a null for zero.
+        /// The running sums take a null for zero. The running maximum and minimum skip the nulls like the aggregates do.
+        h["sums"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c,
+                [&](ASTPtr column)
+                {
+                    return c.compiler.makeWindowFunction("sum", {fn("ifNull", std::move(column), lit(Field(static_cast<UInt64>(0))))}, c.scope, std::nullopt, 0);
+                },
+                [&](ASTPtr list) { return fn("arrayCumSum", nullsAsZeros(c.compiler, std::move(list))); });
+        };
         auto running = [](const String & function)
         {
             return [function](Call & c)
@@ -2082,12 +2112,10 @@ const std::unordered_map<String, Handler> & handlers()
                     [&](ASTPtr column) { return c.compiler.makeWindowFunction(function, {column}, c.scope, std::nullopt, 0); },
                     [&](ASTPtr list)
                     {
-                        return mapWithIndex(c.compiler, list,
-                            [&](ASTPtr, ASTPtr index) { return fn("arrayReduce", lit(Field(function)), fn("arraySlice", list, one(), index)); });
+                        return reduceInRanges(c.compiler, function, list, [](ASTPtr index) { return fn("tuple", one(), std::move(index)); });
                     });
             };
         };
-        h["sums"] = running("sum");
         h["maxs"] = running("max");
         h["mins"] = running("min");
         h["prds"] = [](Call & c)
