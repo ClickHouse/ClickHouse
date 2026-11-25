@@ -524,12 +524,74 @@ def test_a_local_shard_grant_revoked_after_the_check_is_a_retryable_refusal():
         assert response.status_code == 403, response.text
         assert mixed_counts("late_revoke_metric")[0] == 0
 
-        # A denial the check does not cover, on an inner table, is not a race: it stays a 403.
-        node.query(f"REVOKE INSERT ON metrics.* FROM {user}")
-        node.query(f"GRANT INSERT ON metrics.prom_mixed, {local_grant} TO {user}")
-        response = mixed_write("inner_denied_metric", [LOCAL_HOST, REMOTE_HOST], user)
+        # The check asks for the grants of the shard-local table's inner tables too: the same race there.
+        node.query(f"GRANT {local_grant} TO {user}")
+        inner_tags = node.query(
+            "SELECT name FROM system.tables WHERE database = 'metrics' AND name = concat('.inner_id.tags.', "
+            "toString((SELECT uuid FROM system.tables WHERE database = 'metrics' AND name = 'ts_mixed')))"
+        ).strip()
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(
+            mixed_write, "late_inner_revoke_metric", [LOCAL_HOST, REMOTE_HOST], user
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query(f"REVOKE INSERT ON metrics.`{inner_tags}` FROM {user}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code == 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text, response.text
+        assert ".inner_id.tags." in response.text, response.text
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+
+        response = mixed_write(
+            "late_inner_revoke_metric", [LOCAL_HOST, REMOTE_HOST], user
+        )
+        assert response.status_code == 403, response.text
+        assert ".inner_id.tags." in response.text, response.text
+        assert mixed_counts("late_inner_revoke_metric")[0] == 0
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        node.query(f"DROP USER {user}")
+
+
+def test_the_inner_tables_of_the_local_shard_are_checked_before_any_shard_is_written():
+    """The shard-local TimeSeries table writes its inner tables on the caller's context, so the check asks for
+    their grants with its own: a caller holding only the table's is refused before the insert, which the
+    failpoint would hold, so no shard is sent the batch and no remote partition keeps its samples.
+    """
+    user = "prom_inner_denied"
+    month = 31 * 24 * 3600
+    samples = {START_TIME: 1.0, START_TIME + month: 2.0, START_TIME + 2 * month: 3.0}
+    node.query(
+        f"CREATE USER {user} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
+    )
+    node.query(
+        f"GRANT INSERT ON metrics.prom_mixed, INSERT ON metrics.ts_mixed TO {user}"
+    )
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(
+            mixed_write,
+            "inner_denied_metric",
+            [LOCAL_HOST, REMOTE_HOST],
+            user,
+            samples=samples,
+        )
+        response = pending.result(timeout=60)
         assert response.status_code == 403, response.text
         assert ".inner_id." in response.text, response.text
+        assert mixed_counts("inner_denied_metric") == [0, 0]
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+
+        # With the inner tables granted as well, the same batch reaches both shards.
+        node.query(f"GRANT INSERT ON metrics.* TO {user}")
+        response = mixed_write(
+            "inner_granted_metric", [LOCAL_HOST, REMOTE_HOST], user, samples=samples
+        )
+        assert response.status_code == 204, response.text
+        assert mixed_counts("inner_granted_metric") == [1, 1]
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
         pool.shutdown(wait=True)

@@ -51,12 +51,12 @@ void pinDistributedReadSettings(const ContextMutablePtr & context);
 
 /// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
 /// samples unchecked) and insert_shard_id / insert_distributed_one_random_shard: the sharding key alone routes a batch.
-/// Also asks for the caller's INSERT grant on the target of each shard this server writes in-process that `block`
-/// routes a row to, so that a denial there cannot follow a remote shard that already committed its part.
+/// Also asks for the caller's INSERT grants of each shard this server writes in-process that `block` routes a row to,
+/// on its target and that target's own targets, so that a denial there cannot follow a remote shard that committed its part.
 void checkPrometheusQueryDistributedWrite(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, const Block & block);
 
-/// Whether the caller still holds the INSERT grant that check asks for on a shard this server writes in-process.
+/// Whether the caller still holds the INSERT grants that check asks for on a shard this server writes in-process.
 [[nodiscard]] bool isLocalShardInsertGranted(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context);
 

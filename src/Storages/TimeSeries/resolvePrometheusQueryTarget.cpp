@@ -33,6 +33,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 
 #include <fmt/ranges.h>
@@ -611,6 +612,19 @@ void pinDistributedReadSettings(const ContextMutablePtr & context)
     context->setSetting("serialize_query_plan", false);
 }
 
+namespace
+{
+    /// The inserts into the target tables that the insert into the shard-local table makes in-process, on the same context.
+    std::vector<std::pair<StorageID, Names>> getLocalShardTargetInserts(
+        const StorageID & local_id, const Names & columns_to_send, const ContextPtr & context)
+    {
+        const auto table = DatabaseCatalog::instance().tryGetTable(local_id, context);
+        if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(table.get()))
+            return TimeSeriesSink::getTargetInserts(*time_series, columns_to_send, context);
+        return {};
+    }
+}
+
 void checkPrometheusQueryDistributedWrite(
     const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, const Block & block)
 {
@@ -668,7 +682,11 @@ void checkPrometheusQueryDistributedWrite(
             || !std::ranges::any_of(all_addresses[shard_index], [](const auto & address) { return address.is_local; }))
             continue;
         if (const auto local_id = context->tryResolveStorageID(remote_id))
+        {
             context->checkAccess(AccessType::INSERT, local_id, columns_to_send);
+            for (const auto & [target_id, target_columns] : getLocalShardTargetInserts(local_id, columns_to_send, context))
+                context->checkAccess(AccessType::INSERT, target_id, target_columns);
+        }
     }
 
     checkShardTargets(storage, target, context, cluster, /* for_write = */ true);
@@ -690,7 +708,13 @@ bool isLocalShardInsertGranted(
     const auto columns_to_send = context->getSettingsRef()[Setting::insert_allow_materialized_columns]
         ? metadata->getSampleBlock().getNames()
         : metadata->getSampleBlockNonMaterialized().getNames();
-    return context->getAccess()->isGranted(AccessType::INSERT, local_id.database_name, local_id.table_name, columns_to_send);
+    const auto access = context->getAccess();
+    const auto is_granted = [&](const StorageID & table_id, const Names & columns)
+    { return access->isGranted(AccessType::INSERT, table_id.database_name, table_id.table_name, columns); };
+    return is_granted(local_id, columns_to_send)
+        && std::ranges::all_of(
+               getLocalShardTargetInserts(local_id, columns_to_send, context),
+               [&](const auto & target_insert) { return is_granted(target_insert.first, target_insert.second); });
 }
 
 }

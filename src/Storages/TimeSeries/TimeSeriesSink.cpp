@@ -783,12 +783,66 @@ TimeSeriesSink::TargetPipeline::~TargetPipeline()
 }
 
 
+std::vector<std::pair<StorageID, Names>> TimeSeriesSink::getTargetInserts(
+    const StorageTimeSeries & time_series_storage, const Names & insert_columns, const ContextPtr & local_context)
+{
+    /// The same choice of targets as the constructor and the headers of initTagsAndSamplesPipelines and initMetricFamiliesPipeline.
+    auto is_insert_column = [&](const String & name) { return insert_columns.empty() || std::ranges::contains(insert_columns, name); };
+    const auto & settings = *time_series_storage.getStorageSettings();
+    const auto version = time_series_storage.getVersion();
+
+    std::vector<std::pair<ViewTarget::Kind, Names>> inserts;
+    if (is_insert_column(TimeSeriesColumnNames::MetricName) || is_insert_column(TimeSeriesColumnNames::Tags)
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(version)))
+    {
+        Names tags_columns{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::MetricName};
+        const Map & tags_to_columns = settings[TimeSeriesSetting::tags_to_columns];
+        for (const auto & tag_name_and_column_name : tags_to_columns)
+            tags_columns.push_back(tag_name_and_column_name.safeGet<Tuple>().at(1).safeGet<String>());
+        tags_columns.push_back(TimeSeriesColumnNames::Tags);
+        if (settings.hasMinTimeAndMaxTimeInTagsTable())
+            tags_columns.insert(tags_columns.end(), {TimeSeriesColumnNames::MinTime, TimeSeriesColumnNames::MaxTime});
+        inserts.emplace_back(ViewTarget::Tags, std::move(tags_columns));
+
+        if (time_series_storage.hasTarget(ViewTarget::TimeRanges))
+            inserts.emplace_back(
+                ViewTarget::TimeRanges, Names{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::MinTime, TimeSeriesColumnNames::MaxTime});
+
+        Names samples_columns = settings.hasBucketedSamples()
+            ? Names{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Samples, TimeSeriesColumnNames::Bucket,
+                    TimeSeriesColumnNames::MinTime, TimeSeriesColumnNames::MaxTime}
+            : Names{TimeSeriesColumnNames::ID, TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value};
+        inserts.emplace_back(ViewTarget::Samples, samples_columns);
+        if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+            inserts.emplace_back(ViewTarget::RecentSamples, std::move(samples_columns));
+    }
+
+    if (is_insert_column(TimeSeriesColumnNames::MetricFamily) || is_insert_column(TimeSeriesColumnNames::Type)
+        || is_insert_column(TimeSeriesColumnNames::Unit) || is_insert_column(TimeSeriesColumnNames::Help))
+        inserts.emplace_back(
+            ViewTarget::MetricFamilies,
+            Names{TimeSeriesColumnNames::getInnerMetricFamily(version), TimeSeriesColumnNames::Type, TimeSeriesColumnNames::Unit,
+                  TimeSeriesColumnNames::Help});
+
+    std::vector<std::pair<StorageID, Names>> res;
+    for (auto & [kind, columns] : inserts)
+    {
+        if (auto target_table_id = time_series_storage.tryGetTargetTableID(kind, local_context); !target_table_id.empty())
+            res.emplace_back(std::move(target_table_id), std::move(columns));
+    }
+    return res;
+}
+
+
 std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipeline(
     ViewTarget::Kind kind, const Block & header)
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
     const auto & target_table_id = time_series_storage.getTargetTableID(kind, getContext());
+    /// A remote write over a Distributed table checks the grants of this INSERT before writing any shard.
+    chassert(std::ranges::contains(
+        getTargetInserts(time_series_storage, insert_columns, getContext()), std::pair{target_table_id, header.getNames()}));
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = target_table_id;
@@ -838,6 +892,7 @@ TimeSeriesSink::TimeSeriesSink(
     , time_series_storage(time_series_storage_)
     , time_series_settings(time_series_storage_.getStorageSettings())
     , log(getLogger("TimeSeriesSink"))
+    , insert_columns(insert_columns_)
     , async_insert(async_insert_)
 {
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
