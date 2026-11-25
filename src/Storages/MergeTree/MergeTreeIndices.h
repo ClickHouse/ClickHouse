@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -147,14 +148,25 @@ struct IMergeTreeIndexBulkGranules
     /// Number of index values read so far.
     [[nodiscard]] virtual size_t numValues() const = 0;
 
-    /// Read `count` consecutive granules starting from `first_granule_num` from `istr` in one call.
-    /// Default implementation just loops over the per-granule API; implementations for indexes with
-    /// trivially-bulk-readable on-disk formats (e.g. fixed-width numeric minmax) can override to
-    /// amortize per-granule dispatch over the chunk. Used by `MergeTreeIndexReader::readRange`.
-    virtual void deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+    /// Read up to `count` consecutive granules starting from `first_granule_num` from `istr` in one call.
+    /// Returns the number of granules read, which is at least one when `count` is not zero.
+    ///
+    /// A granule of an index like `set` stores a variable number of values, so the default implementation
+    /// loops over the per-granule API and stops once at least `DEFAULT_BLOCK_SIZE` values are read: the
+    /// batch stays bounded by the number of values rather than by the number of granules. Implementations
+    /// for indexes with one fixed-width value per granule (e.g. minmax) can override it to read all `count`
+    /// granules and amortize per-granule dispatch over the chunk. Used by `MergeTreeIndexReader::readRange`.
+    [[nodiscard]] virtual size_t deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
     {
-        for (size_t i = 0; i < count; ++i)
-            deserializeBinary(first_granule_num + i, istr, version);
+        size_t granules_read = 0;
+        while (granules_read < count)
+        {
+            deserializeBinary(first_granule_num + granules_read, istr, version);
+            ++granules_read;
+            if (numValues() >= DEFAULT_BLOCK_SIZE)
+                break;
+        }
+        return granules_read;
     }
 };
 

@@ -3624,7 +3624,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
-        /// Process granules in chunks of `max_block_size` to avoid part-sized intermediate storage.
+        /// Process granules in chunks of at most `max_block_size` granules to avoid part-sized intermediate
+        /// storage. A chunk is also cut once it holds at least `DEFAULT_BLOCK_SIZE` index values, which matters
+        /// for indexes like `set`, where a single granule stores many values.
         const size_t chunk_size_index_granules = reader_settings.bulk_filtering_chunk_size;
 
         /// Bulk evaluation does not write the per-atom bits for partial-disjunction merging. Report a rejected
@@ -3642,12 +3644,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 if (query_status)
                     query_status->throwIfKilled();
 
-                const size_t chunk_end = std::min(chunk_begin + chunk_size_index_granules, index_range.end);
-
                 /// Fresh container per chunk so its columns' growth stays bounded by the
                 /// chunk size and the memory is released before the next chunk starts.
                 MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
-                reader.readRange(chunk_begin, chunk_end, *chunk_granules);
+                const size_t chunk_end = chunk_begin + reader.readRange(
+                    chunk_begin, std::min(chunk_begin + chunk_size_index_granules, index_range.end), *chunk_granules);
 
                 /// Observable signal that the vectorized bulk path was actually taken for this
                 /// part (as opposed to silently falling back to the per-granule scalar path).

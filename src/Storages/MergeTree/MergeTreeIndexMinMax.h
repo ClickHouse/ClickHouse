@@ -133,8 +133,9 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
     /// Optimized bulk read for fast-kind columns: one virtual call per chunk (instead of per
     /// granule) and a tight inner `readBinaryLittleEndian` loop. For columns whose `fast_kind` is
     /// `None` (Nullable, Decimal, DateTime64, UUID, String, ...) this falls back to
-    /// looping over the per-granule `deserializeBinary`.
-    void deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    /// looping over the per-granule `deserializeBinary`. Always reads all `count` granules: a granule
+    /// holds exactly one min and one max value per column.
+    [[nodiscard]] size_t deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
     [[nodiscard]] size_t numValues() const override { return size(); }
 
     /// Native type used by the raw-byte read path; `None` uses normal deserialization.

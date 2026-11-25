@@ -1024,7 +1024,7 @@ ReadPairFn readPairFunction(MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind k
 
 }
 
-void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(
+size_t MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(
     size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     startGranules(first_granule_num);
@@ -1047,7 +1047,7 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(
         {
             for (size_t g = 0; g < count; ++g)
                 deserializeBinary(first_granule_num + g, istr, version);
-            return;
+            return count;
         }
     }
 
@@ -1057,6 +1057,7 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(
         for (size_t i = 0; i < num_columns; ++i)
             fns[i](*cols[i].min_col, *cols[i].max_col, istr);
     }
+    return count;
 }
 
 MergeTreeIndexBulkGranulesPtr MergeTreeIndexMinMax::createIndexBulkGranules() const

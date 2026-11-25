@@ -39,8 +39,10 @@ public:
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
-    /// Read `[mark_begin, mark_end)` using bulk deserialization.
-    void readRange(size_t mark_begin, size_t mark_end, IMergeTreeIndexBulkGranules & granules);
+    /// Read granules from `[mark_begin, mark_end)` using bulk deserialization. Returns the number of granules
+    /// read. It is less than `mark_end - mark_begin` when the granules hold enough values for one batch,
+    /// see `IMergeTreeIndexBulkGranules::deserializeBinaryBulk`.
+    [[nodiscard]] size_t readRange(size_t mark_begin, size_t mark_end, IMergeTreeIndexBulkGranules & granules);
 
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
