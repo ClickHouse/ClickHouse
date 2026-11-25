@@ -23,7 +23,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The 1M-element array is not sent to the replicas.
 SELECT ProfileEvents['NetworkSendBytes'] < 1000000 FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND type = 'QueryFinish'
     AND is_initial_query AND log_comment = '05871_big_scalar';
 
 DROP TABLE t_pr_scalars_d;
