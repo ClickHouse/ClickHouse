@@ -30,11 +30,20 @@ $CLICKHOUSE_CLIENT --enable_q_dialect 1 --dialect q -q ".ch.sql \"SELECT dummy F
 echo "--- the program runs, and the embedded query is the value of a variable that is not used"
 $CLICKHOUSE_CLIENT --enable_q_dialect 1 --dialect q -q "t:.ch.sql \"SELECT dummy FROM remote('127.0.0.1', system.one, '${user}', '${password}')\"; 1+1"
 
+echo "--- the embedded query is passed in a variable, and its table is not used"
+$CLICKHOUSE_CLIENT --enable_q_dialect 1 --dialect q -q "s:\"SELECT dummy FROM remote('127.0.0.1', system.one, '${user}', '${password}')\"; t:.ch.sql s; 1+1"
+
+echo "--- the embedded query is passed to another name of the function"
+$CLICKHOUSE_CLIENT --enable_q_dialect 1 --dialect q -q "f:.ch.sql; t:f \"SELECT dummy FROM remote('127.0.0.1', system.one, '${user}', '${password}')\"; 1+1"
+
 echo "--- the compilation fails: the remote server does not answer"
 q ".ch.sql \"SELECT dummy FROM remote('127.0.0.1:1', system.one, '${user}', '${password}')\"" 'ALL_CONNECTION_TRIES_FAILED|NETWORK_ERROR'
 
 echo "--- the compilation fails: the embedded query does not parse"
 q ".ch.sql \"SELECT dummy FROM FROM remote('127.0.0.1:1', system.one, '${user}', '${password}')\"" 'SYNTAX_ERROR'
+
+echo "--- the compilation fails: the embedded query in a variable does not parse"
+q "s:\"SELECT dummy FROM FROM remote('127.0.0.1:1', system.one, '${user}', '${password}')\"; .ch.sql s" 'SYNTAX_ERROR'
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 

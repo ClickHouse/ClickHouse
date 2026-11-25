@@ -53,6 +53,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
 - The q-sql templates `select`, `exec`, `update`, and `delete`, with the `by` and `where` phrases,
   `select[n]`, `select[>col]`, and `select distinct`. `exec` with one phrase without a name returns its value: the list
   of a column, an atom for an aggregate, and a dictionary from the keys to the values with the `by` phrase.
+  The order and the limit of `select[n;>col]` apply to the rows that the `where` phrase leaves, before the `by` and
+  select phrases: `select[2] sum x from t` is the sum of the first two rows.
 - Aggregates (`sum`, `avg`, `count`, `first`, `last`, `med`, `dev`, `var`, `wavg`, `wsum`, `cor`, ...),
   uniform functions (`sums`, `deltas`, `prev`, `next`, `fills`, `mavg`, `msum`, `xprev`, ...),
   `fby`, `xbar`, `within`, `in`, `like`, casts with `$`.
@@ -107,6 +109,10 @@ digits it is a timestamp.
   single thread to make it deterministic for `MergeTree` tables.
 - Strings are atoms of type `String`, not lists of chars. `count`, `reverse`, `first`, `#`, `_`, and `,` work on them as on
   strings, but atomic functions (`=`, `<`) compare whole strings.
+- `n#x` repeats the items of a list or a string when it takes more of them than there are, as in q (`-5#1 2` is
+  `2 1 2 1 2`). For a table it takes at most the rows that the table has.
+- `xasc`, `xdesc`, and the order of `select[>col]` keep the order of the rows that are equal in the columns, as in q.
+  For that, the rows are numbered in the order in which they are read, and the number is the last key of the sorting.
 - The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
   system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
 - General lists must consist of items of the same shape; dictionaries are supported in simple forms.
@@ -121,11 +127,15 @@ digits it is a timestamp.
 - The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
   function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
   the setting `max_expanded_ast_elements`.
-- The compilation of a program is under the memory limit of the query (`max_memory_usage`): a table literal of
-  ten million items takes its memory even if the program does not use the table.
+- The compilation of a program is under the memory limits of the query and of the user (`max_memory_usage`,
+  `max_memory_usage_for_user`): a table literal of ten million items takes its memory even if the program does not
+  use the table.
 - The compiled query is logged like any other query, without its secrets. When it has none, or when the program
   cannot be compiled, the text of the program is logged, with the queries embedded by `.ch.sql` written without
-  their secrets, such as the password of `remote` or the keys of `s3`.
+  their secrets, such as the password of `remote` or the keys of `s3`. `.ch.sql` takes a string literal, also through
+  a variable or another name of the function (`s:"SELECT ..."; .ch.sql s`), so in a program that mentions `.ch.sql`
+  every string literal that is a query with secrets is written without them, and one that can be an embedded query
+  and does not parse is written as `"[HIDDEN]"`. A program that does not parse is logged as it is, like a query in SQL.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant

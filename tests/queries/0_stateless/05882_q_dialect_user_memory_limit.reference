@@ -1,0 +1,6 @@
+--- a table that is not used, over the limit of the user
+MEMORY_LIMIT_EXCEEDED
+--- a small table, under the limit of the user
+1
+--- no limit of the user
+1
