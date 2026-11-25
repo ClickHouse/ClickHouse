@@ -381,6 +381,11 @@ public:
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
+    /// Shared data serialization version of `JSON` columns for a part of the given expected size,
+    /// `is_insert` tells whether the part is created by an insert.
+    MergeTreeObjectSharedDataSerializationVersion chooseObjectSharedDataSerializationVersion(
+        size_t bytes_uncompressed, bool is_insert, ProjectionDescriptionRawPtr projection) const;
+
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,
         const VolumePtr & volume,
@@ -1197,7 +1202,7 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
-    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` does not remove
     /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
     /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
     /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.

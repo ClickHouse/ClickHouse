@@ -93,12 +93,20 @@ if (USE_MUSL)
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_C_FLAGS_STRIPPED "${CMAKE_C_FLAGS}")
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_CXX_FLAGS_STRIPPED "${CMAKE_CXX_FLAGS}")
 
-    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
-    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_STUB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include")
     set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
     set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
+    set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
+    set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
+    set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
 
-    set(MUSL_C_INCLUDES "-isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_INCLUDE_DIR}")
+    # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
+    # musl header surface that cmake/linux/toolchain-{x86_64,aarch64}.cmake put into CMAKE_*_FLAGS
+    # via MUSL_INCLUDE_FLAGS. Keep this in sync with those toolchain files: the stub headers (e.g.
+    # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
+    # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
+    # the tree. The order matches the toolchain's -isystem order.
+    set(MUSL_C_INCLUDES "-isystem ${MUSL_STUB_INCLUDE_DIR} -isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_INCLUDE_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_KERNEL_HEADERS_DIR}")
 
     set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
 
@@ -451,7 +459,12 @@ function(clickhouse_postprocess_rust_lib target_name)
     add_custom_target(${ARG_STEP}_${target_name} DEPENDS "${_output}")
     # Each step runs after the previous one: other generators attach the previous step's rule to this target too.
     add_dependencies(${ARG_STEP}_${target_name} ${_previous_step})
-    add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    # A dependency of `<target>` is an order-only dependency of every object of every target that links it, so the
+    # C++ compilation would wait for the step, although only the link needs its result. Ninja finds the rule by the
+    # path of the library in the link command; other generators need the dependency between the targets.
+    if (NOT CMAKE_GENERATOR MATCHES "Ninja")
+        add_dependencies(${target_name} ${ARG_STEP}_${target_name})
+    endif()
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB "${_output}")
     set_property(TARGET ${target_name} PROPERTY CLICKHOUSE_RUST_LIB_STEP ${ARG_STEP}_${target_name})
 

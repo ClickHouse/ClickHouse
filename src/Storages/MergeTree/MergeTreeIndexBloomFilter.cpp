@@ -939,16 +939,37 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col.
+/// The index may be on the array itself or on its lossless conversion.
 static std::optional<size_t> findArrayJoinIndexPosition(
-    const RPNBuilderTreeNode & node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
+    const RPNBuilderTreeNode & wrapped_node, const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, bool & padded)
 {
-    if (auto position = findIndexPosition(header, index_nodes, node))
+    auto find = [&](const RPNBuilderTreeNode & array)
+    {
+        if (auto position = findIndexPosition(header, index_nodes, array))
+            return position;
+        return findIndexPosition(header, index_nodes, unwrapLosslessConversion(array));
+    };
+
+    if (auto position = find(wrapped_node))
         return position;
+
+    const auto node = unwrapLosslessConversion(wrapped_node);
     if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
         return std::nullopt;
     padded = true;
-    return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
+    auto position = find(node.toFunctionNode().getArgumentAt(0));
+    if (!position)
+        return std::nullopt;
+
+    /// The padded element must be the default of the index element type, which a conversion
+    /// that adds or drops `Nullable` changes.
+    const auto * padded_array_type = typeid_cast<const DataTypeArray *>(node.getDAGNode()->result_type.get());
+    const auto * index_array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(*position).type.get());
+    if (!padded_array_type || !index_array_type
+        || padded_array_type->getNestedType()->getDefault() != index_array_type->getNestedType()->getDefault())
+        return std::nullopt;
+    return position;
 }
 
 /// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
@@ -1141,7 +1162,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    if (function_name != "in" && function_name != "globalIn")
+    /// `nullIn` over a NULL-free set selects the same rows as `in`.
+    const bool is_in = function_name == "in" || function_name == "globalIn";
+    const bool is_null_in = (function_name == "nullIn" || function_name == "globalNullIn")
+        && prepared_set && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull();
+    if (!is_in && !is_null_in)
         return false;
     if (!column)
         return false;
@@ -1162,6 +1187,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     const auto & array_nested_type = array_type->getNestedType();
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    /// A NULL of a set, e.g. inside a tuple element, does not cast to a non-`Nullable` element type and matches no element.
+    const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+    if (nullable_column && !canContainNull(*array_nested_type)
+        && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);

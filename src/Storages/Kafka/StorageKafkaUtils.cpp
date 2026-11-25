@@ -20,6 +20,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -127,6 +128,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -491,17 +496,27 @@ For `ENGINE = Kafka(named_collection)`:
 
 When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
 
-A common layout for `SASL_SSL` with client certificates: store TLS paths and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, ClickHouse returns `BAD_ARGUMENTS`. To use other supported properties, such as `sasl.kerberos.keytab` or `sasl.oauthbearer.token.endpoint.url`, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
 
-Example (certificate paths must exist on every ClickHouse server that runs consumers for the table):
+In a named collection created with SQL, pass the contents of the file instead of its path: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, and `sasl.oauthbearer.assertion.private.key.pem`. The value `probe` of `ssl.ca.location` and `https.ca.location` is also accepted, because it is not a path.
+
+A common layout for `SASL_SSL` with client certificates: store the certificates, the private key, and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+
+Example with a named collection created with SQL, which contains the certificates and the private key in the PEM format:
 
 ```sql
 CREATE NAMED COLLECTION kafka_mtls AS
     kafka.security_protocol = 'SASL_SSL',
     kafka.sasl_mechanism = 'PLAIN',
-    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
-    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
-    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
     kafka.ssl_key_password = 'secret';
 
 CREATE TABLE queue (
@@ -517,7 +532,7 @@ SETTINGS
     kafka_sasl_password = 'password';
 ```
 
-The same extended settings in an XML-defined collection:
+The same extended settings in an XML-defined collection, which can refer to the files instead (the files must exist on every ClickHouse server that runs consumers for the table):
 
 ```xml
 <clickhouse>
