@@ -89,7 +89,7 @@ ContextMutablePtr OracleExec::makeOracleContext(const ContextMutablePtr & base_c
     /// read/result caps throw rather than truncate; `readonly`/`implicit_transaction` off keep
     /// fixture DDL executable).
     for (const auto & pin : oraclePinnedSettings())
-        oracle_context->setSetting(String(pin.name), pin.value);
+        oracle_context->setSetting(pin.name, pin.value);
 
     oracle_context->setCurrentQueryId("");
     return oracle_context;
