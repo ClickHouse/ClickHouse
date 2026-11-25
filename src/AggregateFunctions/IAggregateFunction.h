@@ -1249,9 +1249,11 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
-    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
-      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
-      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+    /** The result is correct only if each state receives its rows in order. In another order the result is wrong,
+      * not just different as for `is_order_dependent` (examples: `deltaSum` and `deltaSumTimestamp`, which compare
+      * each row with the previous one). `deltaSumTimestamp` orders the states it merges by their timestamps, so it
+      * is correct on any number of streams, while `deltaSum` is correct only on one. An aggregation that adds the
+      * rows of several streams to one state cannot honor it.
       */
     bool requires_ordered_rows_per_state = false;
 
