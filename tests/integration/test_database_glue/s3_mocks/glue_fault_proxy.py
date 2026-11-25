@@ -23,6 +23,7 @@ DROPPED_HEADERS = {"connection", "keep-alive", "transfer-encoding", "content-len
 
 injected = {}
 rejected_get_tables = set()
+rejected_update_tables = set()
 lock = threading.Lock()
 update_lock = threading.Lock()
 
@@ -66,20 +67,34 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
-        if self.path.startswith("/reject_get_table/"):
+        if self.path.startswith(("/reject_get_table/", "/reject_update_table/")):
+            _, action, database = self.path.split("/", 2)
             with lock:
-                rejected_get_tables.add(self.path[len("/reject_get_table/") :])
+                rejected = (
+                    rejected_get_tables
+                    if action == "reject_get_table"
+                    else rejected_update_tables
+                )
+                rejected.add(database)
             self.reply(200, b"{}", [("Content-Type", "application/json")])
             return
         target = self.headers.get("X-Amz-Target")
-        if target == "AWSGlue.GetTable":
+        if target in ("AWSGlue.GetTable", "AWSGlue.UpdateTable"):
             database = json.loads(body).get("DatabaseName", "")
             with lock:
-                reject = database in rejected_get_tables
-                rejected_get_tables.discard(database)
+                rejected = (
+                    rejected_get_tables
+                    if target == "AWSGlue.GetTable"
+                    else rejected_update_tables
+                )
+                reject = database in rejected
+                rejected.discard(database)
             if reject:
                 count_fault(database)
-                payload = json.dumps({"__type": "AccessDeniedException", "message": "Injected GetTable rejection"}).encode()
+                operation = target.split(".")[1]
+                payload = json.dumps(
+                    {"__type": "AccessDeniedException", "message": f"Injected {operation} rejection"}
+                ).encode()
                 self.reply(400, payload, [("Content-Type", "application/x-amz-json-1.1")])
                 return
         if target == "AWSGlue.GetTables":

@@ -955,10 +955,16 @@ bool GlueCatalog::commitTableUpdate(
 
         if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
         {
-            /// The SDK may have retried an applied request before returning this error.
+            const auto error = response.GetError().GetErrorType();
+            const bool rejected = !update_may_have_landed && !request_retried
+                && (error == Aws::Glue::GlueErrors::ACCESS_DENIED
+                    || error == Aws::Glue::GlueErrors::INVALID_INPUT
+                    || error == Aws::Glue::GlueErrors::VALIDATION
+                    || error == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND);
+            /// Explicit rejections are safe to clean up only when no earlier request may have landed.
             throw DB::Exception(
-                DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
-                "Iceberg Glue commit outcome is unknown for table {}.{}; written files must be preserved: {}",
+                rejected ? DB::ErrorCodes::ICEBERG_COMMIT_REJECTED : DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+                "Iceberg Glue commit failed for table {}.{}: {}",
                 namespace_name, table_name, response.GetError().GetMessage());
         }
 
@@ -968,7 +974,7 @@ bool GlueCatalog::commitTableUpdate(
     }
 
     throw DB::Exception(
-        update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        update_may_have_landed ? DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN : DB::ErrorCodes::ICEBERG_COMMIT_REJECTED,
         "Can not update metadata of table {}.{} in Glue catalog: it was modified concurrently {} times",
         namespace_name, table_name, MAX_UPDATE_TABLE_ATTEMPTS);
 }

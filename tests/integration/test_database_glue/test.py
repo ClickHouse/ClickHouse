@@ -1539,7 +1539,10 @@ def test_writes_rebuild_after_glue_version_id_conflict(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
-def test_insert_cleans_files_after_glue_get_table_failure(started_cluster):
+@pytest.mark.parametrize(
+    "operation,action", [("GetTable", "get_table"), ("UpdateTable", "update_table")]
+)
+def test_insert_cleans_files_after_glue_rejection(started_cluster, operation, action):
     node = started_cluster.instances["node1"]
     proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
     suffix = uuid.uuid4().hex
@@ -1581,13 +1584,17 @@ def test_insert_cleans_files_after_glue_get_table_failure(started_cluster):
         assert any(path.endswith(".stats") for path in files() - baseline)
         started_cluster.exec_in_container(
             proxy,
-            ["curl", "--fail", "-s", "-X", "POST", f"http://localhost:8081/reject_get_table/{namespace}"],
+            ["curl", "--fail", "-s", "-X", "POST", f"http://localhost:8081/reject_{action}/{namespace}"],
         )
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         _, error = insert.get_answer_and_error()
         insert = None
         assert "ICEBERG_COMMIT_REJECTED" in error, error
-        assert "Injected GetTable rejection" in error, error
+        assert f"Injected {operation} rejection" in error, error
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "--fail", "-s", f"http://localhost:8081/injected/{namespace}"]
+        )
+        assert int(injected) == 1
         assert files() == baseline
         assert node.query(f"SELECT x FROM {table_ref}") == "1\n"
     finally:
