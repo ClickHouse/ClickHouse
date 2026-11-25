@@ -553,8 +553,17 @@ public:
     {
         /// A storage that uses the server's identity follows the restriction of the accessing session
         /// (see `AzureObjectStorage::applyNewSettings`), so a cached engine is rebuilt when it changes.
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
         SipHash hash;
-        hash.update(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+        hash.update(connection_params->forbid_implicit_credentials);
+        /// A config reload of the table's disk replaces the account key or SAS token passed to the engine.
+        for (const auto & [name, value] : getAzureBuilderOptions(*connection_params))
+        {
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(value.size());
+            hash.update(value);
+        }
         return hash.get128();
     }
 

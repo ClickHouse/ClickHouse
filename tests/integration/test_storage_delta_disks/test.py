@@ -530,3 +530,34 @@ def test_kernel_engine_follows_disk_sse_c_reload(started_cluster):
 
     assert instance.query(f"SELECT count() FROM {table_name}").strip() == "1"
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_kernel_engine_follows_disk_azure_key_reload(started_cluster):
+    """A new account key of the disk, applied by a config reload, must reach the delta-kernel
+    engine of a table on that disk, not only the Azure client of ClickHouse."""
+    instance = started_cluster.instances["node1"]
+    table_name = f"test_azure_key_reload_{get_uuid_str()}"
+    settings = {"allow_delta_lake_create_table": 1, "allow_delta_lake_writes": 1}
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int64) ENGINE = DeltaLake(path = '{table_name}/') "
+        "SETTINGS disk = 'disk_azure_common'",
+        settings=settings,
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1)", settings=settings)
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "1"
+
+    valid_key = "<account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>"
+    wrong_key = "<account_key>" + "A" * 86 + "==</account_key>"
+    try:
+        instance.replace_in_config(started_cluster.disks_config_path, valid_key, wrong_key)
+        instance.query("SYSTEM RELOAD CONFIG")
+        # Azurite refuses the new key, so the kernel's own read fails once its engine has it.
+        error = instance.query_and_get_error(f"SELECT count() FROM {table_name}")
+        assert "DeltaLake kernel error" in error, error
+    finally:
+        instance.replace_in_config(started_cluster.disks_config_path, wrong_key, valid_key)
+        instance.query("SYSTEM RELOAD CONFIG")
+
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "1"
+    instance.query(f"DROP TABLE {table_name}")
