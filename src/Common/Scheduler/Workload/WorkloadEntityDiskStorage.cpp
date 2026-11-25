@@ -263,7 +263,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
     const ContextPtr & current_context,
     WorkloadEntityType entity_type,
     const String & entity_name,
-    bool throw_if_not_exists)
+    bool /*throw_if_not_exists*/)
 {
     String file_path = getFilePath(entity_type, entity_name);
     LOG_DEBUG(log, "Removing workload entity {} stored in file {}", backQuote(entity_name), file_path);
@@ -275,15 +275,9 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
     if (current_context->getSettingsRef()[Setting::fsync_metadata])
         dir_sync.emplace(fs::path(file_path).parent_path().string());
 
-    bool existed = fs::remove(file_path);
-
-    if (!existed)
-    {
-        if (throw_if_not_exists)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);
-        else
-            return OperationResult::Failed;
-    }
+    /// Only an entity the base holds is removed, so a missing file is the unlink of an earlier
+    /// drop whose directory sync failed: the sync is retried and the drop completes.
+    fs::remove(file_path);
 
     if (dir_sync)
         dir_sync->sync();

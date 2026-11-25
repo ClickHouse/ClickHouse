@@ -56,6 +56,14 @@ def _run(query, fsync_metadata):
     return _profile_events(query_id)
 
 
+def _secret_in_error_statistics():
+    return int(
+        node.query(
+            f"SELECT count() FROM system.errors WHERE last_error_message LIKE '%{CORRUPT_FILE_SECRET}%'"
+        )
+    )
+
+
 def test_sql_object_writes_are_fsynced():
     """
     Regression test for https://github.com/ClickHouse/ClickHouse/issues/111381
@@ -137,14 +145,11 @@ def test_corrupt_named_collection_does_not_brick_startup():
 
     node.stop_clickhouse()
 
-    # A torn (zero-byte) file and a syntactically invalid file.
-    node.exec_in_container(
-        ["bash", "-c", f"truncate -s 0 {NAMED_COLLECTIONS_DIR}/nc_torn.sql"]
-    )
     # A write torn inside a credential, which is what a power loss produces here. The parse
     # error quotes the text at the position it failed on, so that position has to be inside
-    # the secret for the log assertion below to mean anything: an unterminated string literal
-    # puts it there.
+    # the secret for the assertions below to mean anything: an unterminated string literal
+    # puts it there. It is the only corrupt file of this start, so the error it raises is the
+    # newest SYNTAX_ERROR in `system.errors`, which keeps the message of the last error only.
     node.exec_in_container(
         [
             "bash",
@@ -154,21 +159,19 @@ def test_corrupt_named_collection_does_not_brick_startup():
         ]
     )
 
-    # Must start despite the corrupt files.
+    # Must start despite the corrupt file.
     node.start_clickhouse()
 
-    # The good collection survives; the corrupt ones are skipped, not loaded.
+    # The good collection survives; the corrupt one is skipped, not loaded.
     collections = node.query(
         "SELECT name FROM system.named_collections ORDER BY name"
     ).split()
     assert "nc_good" in collections
-    assert "nc_torn" not in collections
     assert "nc_garbage" not in collections
 
     # Skipping silently would leave no way to find out a collection is gone, so the skip is
     # logged and that is part of the contract.
     assert node.contains_in_log("Skipping named collection 'nc_garbage'")
-    assert node.contains_in_log("Skipping named collection 'nc_torn'")
 
     # The log goes to a file read by anyone who can read logs, so the skip reports the error
     # code and never the text that failed to parse.
@@ -176,33 +179,92 @@ def test_corrupt_named_collection_does_not_brick_startup():
         "the credential in the unparseable metadata file must not reach the log"
     )
 
-    # Cleanup so the module teardown / reruns start clean.
-    node.exec_in_container(
-        ["bash", "-c", f"rm -f {NAMED_COLLECTIONS_DIR}/nc_torn.sql {NAMED_COLLECTIONS_DIR}/nc_garbage.sql"]
+    # Error statistics are readable without the right to see a collection or its secrets, so the
+    # parse error is recorded there without the text or the name.
+    assert node.query("SELECT count() FROM system.errors WHERE name = 'SYNTAX_ERROR'").strip() == "1", (
+        "the parse error of the corrupt file was not recorded, so the checks below prove nothing"
     )
+    assert _secret_in_error_statistics() == 0, (
+        "the credential in the unparseable metadata file must not reach system.errors"
+    )
+    assert int(node.query("SELECT count() FROM system.errors WHERE last_error_message LIKE '%nc_garbage%'")) == 0, (
+        "the name of the collection must not reach system.errors"
+    )
+
+    # A skipped collection is still in the storage, so it is not created again, but it can be
+    # dropped and then created again with SQL, without access to the files.
+    with pytest.raises(QueryRuntimeException, match="NAMED_COLLECTION_ALREADY_EXISTS"):
+        node.query("CREATE NAMED COLLECTION nc_garbage AS a = 1")
+    node.query("DROP NAMED COLLECTION nc_garbage")
+    assert not _exists(f"{NAMED_COLLECTIONS_DIR}/nc_garbage.sql")
+    node.query("CREATE NAMED COLLECTION nc_garbage AS a = 1")
+    assert node.query("SELECT count() FROM system.named_collections WHERE name = 'nc_garbage'").strip() == "1"
+    # Both statements above read the corrupt file again.
+    assert _secret_in_error_statistics() == 0, (
+        "the credential in the unparseable metadata file must not reach system.errors"
+    )
+
+    # A torn write can also leave a zero-byte file.
+    node.stop_clickhouse()
+    node.exec_in_container(
+        ["bash", "-c", f"truncate -s 0 {NAMED_COLLECTIONS_DIR}/nc_torn.sql"]
+    )
+    node.start_clickhouse()
+
+    collections = node.query(
+        "SELECT name FROM system.named_collections ORDER BY name"
+    ).split()
+    assert "nc_good" in collections
+    assert "nc_torn" not in collections
+    assert node.contains_in_log("Skipping named collection 'nc_torn'")
+
+    # A drop of the skipped entry whose sync fails has already unlinked its file, and the entry is
+    # not loaded, so nothing tells a retry that it completes that drop: it persists the directory
+    # anyway.
+    node.query("SYSTEM ENABLE FAILPOINT directory_sync_fail")
+    try:
+        with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
+            node.query("DROP NAMED COLLECTION nc_torn")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+    assert not _exists(f"{NAMED_COLLECTIONS_DIR}/nc_torn.sql")
+    _, dir_sync = _run("DROP NAMED COLLECTION IF EXISTS nc_torn", 1)
+    assert dir_sync >= 1, "the retried drop of the skipped entry did not persist its unlink"
+
+    node.query("DROP NAMED COLLECTION nc_garbage")
     node.query("DROP NAMED COLLECTION nc_good")
 
+    # Without a collection directory there is nothing to persist, and such a drop still succeeds.
+    node.exec_in_container(["bash", "-c", f"rm -rf {NAMED_COLLECTIONS_DIR}"])
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_absent")
 
-# (create, drop, committed file) per on-disk SQL-object store. A shared directory-sync
-# helper can stop syncing one store without the others noticing, so each is checked
-# separately. A resource stands in for the workload store: it is kept there too, and unlike
-# a workload it needs no parent, so this does not depend on what other tests leave behind.
-# The file is the exact committed path, not a prefix: matching loosely would also accept the
-# `.sql.tmp` file that a create leaves behind when it fails before its rename.
+
+# (create, drop, retried drop, count of loaded objects, committed file) per on-disk SQL-object
+# store. A shared directory-sync helper can stop syncing one store without the others noticing,
+# so each is checked separately. A resource stands in for the workload store: it is kept there
+# too, and unlike a workload it needs no parent, so this does not depend on what other tests
+# leave behind. The file is the exact committed path, not a prefix: matching loosely would also
+# accept the `.sql.tmp` file that a create leaves behind when it fails before its rename.
 FAILING_SYNC_CASES = [
     (
         "CREATE FUNCTION {n} AS (x) -> x + 1",
         "DROP FUNCTION {n}",
+        "DROP FUNCTION IF EXISTS {n}",
+        "SELECT count() FROM system.functions WHERE name = '{n}'",
         f"{USER_DEFINED_DIR}/function_{{n}}.sql",
     ),
     (
         "CREATE RESOURCE {n} (WRITE DISK {n}_disk)",
         "DROP RESOURCE {n}",
+        "DROP RESOURCE IF EXISTS {n}",
+        "SELECT count() FROM system.resources WHERE name = '{n}'",
         f"{WORKLOAD_DIR}/resource_{{n}}.sql",
     ),
     (
         "CREATE NAMED COLLECTION {n} AS a = 1",
         "DROP NAMED COLLECTION {n}",
+        "DROP NAMED COLLECTION IF EXISTS {n}",
+        "SELECT count() FROM system.named_collections WHERE name = '{n}'",
         f"{NAMED_COLLECTIONS_DIR}/{{n}}.sql",
     ),
 ]
@@ -231,9 +293,13 @@ def test_failed_directory_sync_fails_the_ddl():
     the one that makes its unlink durable, so it comes after it and the `.sql` file is already
     gone when the drop raises. A sync moved before the unlink would raise just the same, so the
     exception alone does not show this.
+
+    The failed drop leaves the object loaded while its file is gone, so a retried drop has to
+    complete it: persist the unlink and unload the object, rather than find no file and report
+    success for an object that is still there.
     """
     try:
-        for i, (create, drop, committed_file) in enumerate(FAILING_SYNC_CASES):
+        for i, (create, drop, retried_drop, count_loaded, committed_file) in enumerate(FAILING_SYNC_CASES):
             control = f"ds_control_{i}"
             node.query(create.format(n=control), settings={"fsync_metadata": 1})
 
@@ -256,10 +322,15 @@ def test_failed_directory_sync_fails_the_ddl():
             )
 
             node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
+
+            _, dir_sync = _run(retried_drop.format(n=control), 1)
+            assert dir_sync >= 1, f"{control}: the retried drop did not persist the unlink"
+            assert node.query(count_loaded.format(n=control)).strip() == "0", (
+                f"{control}: the retried drop reported success, but the object is still loaded"
+            )
     finally:
-        # A DDL that failed after its rename or unlink leaves the store and the server's
-        # in-memory view disagreeing, which is the honest outcome of refusing to
-        # acknowledge it. Drop the files and restart so the module ends consistent.
+        # Restart so the module ends consistent even if an assertion above failed between a
+        # failed DDL and its retry.
         node.query("SYSTEM DISABLE FAILPOINT directory_sync_fail")
         for directory in SQL_OBJECT_DIRS:
             node.exec_in_container(["bash", "-c", f"rm -f {directory}/*ds_control_* {directory}/*ds_failing_*"])

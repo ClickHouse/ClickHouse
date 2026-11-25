@@ -45,7 +45,6 @@ namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -260,7 +259,7 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     const ContextPtr & current_context,
     UserDefinedSQLObjectType object_type,
     const String & object_name,
-    bool throw_if_not_exists)
+    bool /*throw_if_not_exists*/)
 {
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Removing user defined object {} stored in file {}", backQuote(object_name), file_path);
@@ -272,14 +271,9 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     if (current_context->getSettingsRef()[Setting::fsync_metadata])
         dir_sync.emplace(fs::path(file_path).parent_path().string());
 
-    bool existed = fs::remove(file_path);
-
-    if (!existed)
-    {
-        if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", object_name);
-        return false;
-    }
+    /// Only an object the base holds is removed, so a missing file is the unlink of an earlier
+    /// drop whose directory sync failed: the sync is retried and the drop completes.
+    fs::remove(file_path);
 
     if (dir_sync)
         dir_sync->sync();

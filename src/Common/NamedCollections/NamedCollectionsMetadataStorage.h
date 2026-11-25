@@ -76,6 +76,9 @@ public:
     /// Whether the entries are encrypted at rest.
     [[nodiscard]] bool isEncrypted() const;
 
+    /// Whether an error reading an entry means a torn write: a plain local file that does not parse.
+    [[nodiscard]] bool isUnparseableLocalEntry(int error_code) const;
+
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// Describes the key an encrypted storage encrypts with, as captured when the key was loaded:
     /// the storage keeps that key, so a later configuration reload does not change what this

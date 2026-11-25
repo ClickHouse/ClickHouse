@@ -149,7 +149,7 @@ protected:
 
     /// A collection missing from `loaded_named_collections` may still be in the metadata storage:
     /// created through another server sharing the storage and not picked up by the background
-    /// update yet, or an entry which cannot be decrypted (see `NamedCollectionsMetadataStorage::getAll`).
+    /// update yet, or an entry which cannot be decrypted or parsed (see `NamedCollectionsMetadataStorage::getAll`).
     enum class StoredEntry
     {
         none,
