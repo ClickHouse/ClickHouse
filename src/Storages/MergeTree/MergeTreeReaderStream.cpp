@@ -96,6 +96,12 @@ void MergeTreeReaderStream::init()
     const String data_file_name = path_prefix + data_file_extension;
     const String view_file_name = file_view ? data_file_name + "#" + std::to_string(file_view->begin) : data_file_name;
 
+    /// The reader bounds its reads at the right offset of its last mark, see `adjustRightMark`. Knowing it up front
+    /// lets a pipeline stage that reads before the bound is set, such as the encryption header, already use it.
+    /// The marks of a view count from its begin, the pipeline reads the whole shared file.
+    const size_t right_offset = getRightOffset(getLastMark(all_mark_ranges));
+    const size_t initial_read_until = right_offset && file_view ? file_view->begin + right_offset : right_offset;
+
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
@@ -104,6 +110,8 @@ void MergeTreeReaderStream::init()
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
+        if (initial_read_until)
+            pipeline.setInitialReadUntilPosition(initial_read_until);
 
         auto buffer = pipeline.build();
         if (file_view)
@@ -133,7 +141,7 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / view_file_name),
-            [this, estimated_sum_mark_range_bytes, read_settings, data_file_name, view_file_name]()
+            [this, estimated_sum_mark_range_bytes, read_settings, data_file_name, view_file_name, initial_read_until]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
@@ -143,6 +151,8 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
+                if (initial_read_until)
+                    pipeline.setInitialReadUntilPosition(initial_read_until);
 
                 auto inner = pipeline.build();
                 if (file_view)
