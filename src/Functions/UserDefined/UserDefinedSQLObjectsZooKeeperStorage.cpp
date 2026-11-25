@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -77,15 +78,9 @@ UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromZooKeeper")}
 {
+    zookeeper_path = zkutil::normalizeZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ false);
     if (zookeeper_path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
-
-    if (zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (zookeeper_path.front() != '/')
-        zookeeper_path = "/" + zookeeper_path;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must not be empty or '/', got '{}'", zookeeper_path_);
 }
 
 UserDefinedSQLObjectsZooKeeperStorage::~UserDefinedSQLObjectsZooKeeperStorage()

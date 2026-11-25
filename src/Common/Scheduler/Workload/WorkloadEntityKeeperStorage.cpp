@@ -9,6 +9,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -54,15 +55,9 @@ WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
       }))
 {
     log = getLogger("WorkloadEntityKeeperStorage");
+    zookeeper_path = zkutil::normalizeZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ false);
     if (zookeeper_path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
-
-    if (zookeeper_path.back() == '/')
-        zookeeper_path.pop_back();
-
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (zookeeper_path.front() != '/')
-        zookeeper_path = "/" + zookeeper_path;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must not be empty or '/', got '{}'", zookeeper_path_);
 }
 
 WorkloadEntityKeeperStorage::~WorkloadEntityKeeperStorage()
