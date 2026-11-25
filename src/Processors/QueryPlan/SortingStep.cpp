@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsQuirks.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/TypeTree.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -824,7 +825,12 @@ void SortingStep::serialize(Serialization & ctx) const
 
     serializeSortDescription(result_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
-    serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    /// An older peer would scatter a float partition key by its bits, so it gets the window sorting without partition keys.
+    if (is_window_sorting && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FLOAT_KEY_SCATTER
+        && partitionKeysNeedOwnScatter())
+        serializeSortDescription(SortDescription{}, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    else
+        serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
     /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
