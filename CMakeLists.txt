@@ -637,10 +637,12 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
-        # lld caches the native object of each ThinLTO backend job here, so a later link optimizes only the modules whose inputs changed.
-        set (THINLTO_CACHE_DIR "" CACHE PATH "Directory where lld caches ThinLTO backend results between links (empty: no cache)")
-        if (THINLTO_CACHE_DIR)
-            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-cache-dir=${THINLTO_CACHE_DIR}")
+        # lld caches the native object of each ThinLTO backend job, so a later link optimizes only the modules whose inputs changed.
+        option (ENABLE_THINLTO_CACHE "Cache the ThinLTO backend results of lld between links" ON)
+        set (THINLTO_CACHE_DIR "${CMAKE_BINARY_DIR}/thinlto-cache" CACHE PATH "Directory of the ThinLTO cache")
+        if (ENABLE_THINLTO_CACHE)
+            # lld removes the least recently used entries above this size after each link.
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-cache-dir=${THINLTO_CACHE_DIR} -Wl,--thinlto-cache-policy=cache_size_bytes=40g")
         endif ()
     endif()
 

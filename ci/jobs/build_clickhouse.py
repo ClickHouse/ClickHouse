@@ -61,8 +61,8 @@ BUILD_TYPE_TO_CMAKE = {
 # The performance reference builds (MasterCI only) build master exactly like a
 # PR build of their release build type: the same cmake configuration, the PR
 # options of `flavor_cmake_options` and the same PGO/BOLT. They compile every
-# object, link what a PR build of their release type links, publish their
-# ThinLTO cache for those PR builds and are not packaged.
+# object, link only the server binary, publish their ThinLTO cache for the PR
+# builds and are not packaged.
 PERFORMANCE_REFERENCE_TO_RELEASE = {
     BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.AMD_RELEASE,
     BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.ARM_RELEASE,
@@ -479,6 +479,9 @@ def main():
     if thinlto_cache:
         restore_thinlto_cache(info, release_type)
         cmake_cmd += f" -DTHINLTO_CACHE_DIR={THINLTO_CACHE_DIR}"
+    elif official and "-DENABLE_THINLTO=1" in cmake_cmd:
+        # An official build links once in a fresh build directory, so it would never reuse a cache.
+        cmake_cmd += " -DENABLE_THINLTO_CACHE=0"
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -680,9 +683,6 @@ def main():
             targets = "clickhouse"
         elif reference_build:
             targets = "clickhouse-self-extracting"
-            if thinlto_cache and args.build_examples:
-                # The published ThinLTO cache serves every link of the PR build.
-                targets += " clickhouse-examples"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -708,9 +708,8 @@ def main():
             # Warm sccache by compiling every object-file target ninja knows
             # about; ninja pulls in the generated headers each object depends
             # on. xargs batches the list to stay within the command-line length
-            # limit. Then link the server binary, the reference of the PR
-            # performance comparison (ci/jobs/performance_tests.py), and, with
-            # the ThinLTO cache, the other binaries a PR build links.
+            # limit. Then link only the server binary, the reference of the PR
+            # performance comparison (ci/jobs/performance_tests.py).
             build_command = (
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
