@@ -121,7 +121,8 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE USER OR REPLACE ${reader} IDENTIFIED WITH no_password;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${no_source}, ${reader};
     GRANT READ ON URL TO ${reader};
-    GRANT READ ON URL('http://127.0.0.1:${PORT}/redirect/allowed.zip') TO ${role}"
+    GRANT READ ON URL('http://127.0.0.1:${PORT}/redirect/allowed.zip') TO ${role};
+    GRANT ${role} TO ${no_source}"
 
 source="http://127.0.0.1:${PORT}/redirect/allowed.zip :: eod.csv"
 
@@ -167,3 +168,17 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT ${role} TO ${reader}"
 ${CLICKHOUSE_CLIENT} --user="${reader}" --query \
     "SELECT sum(c1) FROM urlCluster('test_shard_localhost', '${source}', 'CSV') SETTINGS max_http_get_redirects = 1"
+
+echo "--- a table of a dynamic URL database is not a stored definition for the whole-source grant"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_url_database ENGINE = URL('http://127.0.0.1:${PORT}/redirect')"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}_url_database.* TO ${no_source}, ${reader}"
+url_database_table="${CLICKHOUSE_DATABASE}_url_database.\`http://127.0.0.1:${PORT}/redirect/allowed.zip::eod.csv\`"
+${CLICKHOUSE_CLIENT} --user="${no_source}" --query \
+    "DESCRIBE ${url_database_table} SETTINGS max_http_get_redirects = 1" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
+${CLICKHOUSE_CLIENT} --user="${no_source}" --query \
+    "SELECT sum(c1) FROM ${url_database_table} SETTINGS max_http_get_redirects = 1" 2>&1 \
+    | grep -o 'necessary to have the grant READ ON URL' | head -1
+${CLICKHOUSE_CLIENT} --user="${reader}" --query \
+    "SELECT sum(c1) FROM ${url_database_table} SETTINGS max_http_get_redirects = 1"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_url_database"

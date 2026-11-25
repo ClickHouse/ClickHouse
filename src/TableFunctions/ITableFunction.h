@@ -121,6 +121,16 @@ public:
         skip_experimental_gate = value;
     }
 
+    /// Marks the function as resolving a table of a dynamic database (see `is_dynamic_database_table`):
+    /// the archive-parsing exemptions of a replayed definition apply, the grant checks do not, and the
+    /// experimental gate still runs - the table is resolved for this query, not loaded from a stored
+    /// definition, so the gate is a property of the reading session exactly as for an ad-hoc call.
+    void setDynamicDatabaseTable() const
+    {
+        is_replayed_table_definition = true;
+        is_dynamic_database_table = true;
+    }
+
     /// Whether the experimental gate that guards HTTP index-page listing is skipped for this instance. It is
     /// skipped where a definition is read back from the metadata, because the gate is a session setting that
     /// would otherwise be the server default and drop the table from the catalog. A carrier that rebuilds the
@@ -212,6 +222,12 @@ protected:
 
     /// See `setIsReplayedDefinition`.
     mutable bool is_replayed_table_definition = false;
+    /// A dynamic table that a database resolves from its name on every query (a `URL` database). The name
+    /// is not a stored definition, so the *grant* checks of a fresh definition apply to it: the whole-source
+    /// grant of a Web read, above all. The archive-parsing exemptions of a replayed definition still apply,
+    /// because the combination parsed there was written when the database was created and the tables of the
+    /// database cannot be recreated from inside the read path.
+    mutable bool is_dynamic_database_table = false;
     /// See `setSkipExperimentalGate`.
     mutable bool skip_experimental_gate = false;
 

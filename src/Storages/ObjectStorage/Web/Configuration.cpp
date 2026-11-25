@@ -130,9 +130,6 @@ std::string StorageWebConfiguration::getHeadersHash() const
         header_hash.update(value.size());
         header_hash.update(value);
     }
-    /// The URL encoding mode changes which resource the path names (see `initializeFromParsedArguments`),
-    /// so it belongs to the same identity as the headers.
-    header_hash.update(enable_url_encoding);
     return getHexUIntLowercase(header_hash.get128());
 }
 
@@ -260,12 +257,6 @@ void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArgu
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     raw_url = parsed_arguments.url;
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
-    /// The readers parse the URL of the object with this setting of the request context (with it, an
-    /// encoded slash `%2F` in the path is decoded into a path separator), so the same path can name
-    /// different resources: the cache identities have to tell the modes apart, and they read the
-    /// decision from here, where the arguments are parsed, rather than from whichever context happens
-    /// to build the reader later.
-    enable_url_encoding = context->getSettingsRef()[Setting::enable_url_encoding];
 
     setNamespaceFromURL(context);
     setPaths({path});

@@ -115,7 +115,8 @@ ${CLICKHOUSE_CLIENT} --query \
 
 echo "--- and the URL encoding mode is part of the same identity"
 # `%2F` stays a literal of the object name with the encoding off and names another object with it on,
-# so warming one mode must not answer the other.
+# so warming one mode must not answer the other. The identity has to read the mode of the current query
+# even for a stored table definition, whose configuration was parsed under the session that created it.
 encoded_source="http://127.0.0.1:${PORT}/dir%2Fa.zip::m.tsv"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 0"
@@ -123,3 +124,14 @@ ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 1"
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 0"
+
+${CLICKHOUSE_CLIENT} --query \
+    "CREATE TABLE stored_encoding_identity (x UInt64)
+     AS url('${encoded_source}', 'TSV', 'x UInt64') SETTINGS enable_url_encoding = 0"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM stored_encoding_identity SETTINGS enable_url_encoding = 0"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM stored_encoding_identity SETTINGS enable_url_encoding = 1"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM stored_encoding_identity SETTINGS enable_url_encoding = 0"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE stored_encoding_identity"

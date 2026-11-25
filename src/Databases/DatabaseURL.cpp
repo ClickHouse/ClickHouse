@@ -88,12 +88,13 @@ URLTableDelegate makeURLTableDelegate(const String & url, const String & name, C
     if (!table_function)
         return {};
 
-    /// The function is rebuilt from a stored definition, so a combination it refuses while a definition is
-    /// written must still load. The table itself is resolved for this query, though, so the experimental gate
-    /// that guards HTTP index-page listing still applies: it is a session setting, not a property of the
-    /// stored definition.
-    table_function->setIsReplayedDefinition(true);
-    table_function->setSkipExperimentalGate(false);
+    /// The database stores no table definitions: this name is resolved from the URL on every query, so it
+    /// is not a stored definition for the *grant* checks - the whole-source grant of a Web read applies, as
+    /// for any ad-hoc call, because the database cannot be rewritten from the read path to follow a stricter
+    /// reader. The archive-parsing exemptions of a replayed definition still apply: the combinations named
+    /// here were written when the database was created, and the gate is a property of the reading session,
+    /// so it runs as well.
+    table_function->setDynamicDatabaseTable();
 
     /// The `url` table function throws if a table cannot be created from the URL (for example, the
     /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from

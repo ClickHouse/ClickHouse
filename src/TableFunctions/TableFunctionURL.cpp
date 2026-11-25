@@ -488,8 +488,10 @@ StoragePtr TableFunctionURL::getStorage(
         /// `READ ON URL` cannot bound any read through it - a wildcard listing or an archive fetch alike, the
         /// redirect of an archive URL included: this path needs the grant on the whole source, as in master.
         /// A stored definition is exempt the same way as the gate above: it was written under the grants of
-        /// the table, and a replay cannot demand a fresh source grant without dropping the table.
-        if (!is_replayed_table_definition)
+        /// the table, and a replay cannot demand a fresh source grant without dropping the table. A table of
+        /// a dynamic `URL` database is resolved from its name on every query, so it is not a stored
+        /// definition for this check: the grant of the reading session applies.
+        if (!is_replayed_table_definition || is_dynamic_database_table)
             checkWholeSourceAccessForURLWildcard(context);
         auto object_storage_configuration
             = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);

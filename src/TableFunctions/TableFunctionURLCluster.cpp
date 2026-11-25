@@ -90,8 +90,9 @@ StoragePtr TableFunctionURLCluster::getStorage(
         /// The web object storage behind both the initiator and the workers follows redirects without the
         /// per-hop grant check of `StorageURL`, so a filtered `READ ON URL` cannot bound this read, exactly as
         /// for `url`: the whole-source grant is needed. A stored definition is exempt, as for `url`: it is read
-        /// under the grants on the table.
-        if (!is_replayed_table_definition)
+        /// under the grants on the table. A table of a dynamic database is resolved per query and is not a
+        /// stored definition for this check, same as in `url`.
+        if (!is_replayed_table_definition || is_dynamic_database_table)
             checkWholeSourceAccessForURLWildcard(context);
 
         /// `structure` has no corresponding `getStorage` argument. It is the value parsed by

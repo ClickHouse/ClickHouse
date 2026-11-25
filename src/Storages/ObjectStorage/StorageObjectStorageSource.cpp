@@ -867,6 +867,21 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
             const auto headers_hash = web_configuration->getHeadersHash();
             if (!headers_hash.empty())
                 result += "#headers=" + headers_hash;
+
+            /// The web object storage parses the URL of each request with `enable_url_encoding` of the
+            /// current query context (`WebObjectStorage::getRequestContext`), so the same path can name
+            /// different resources in one query and the next, for a persistent table as well. The identity
+            /// therefore reads the effective mode the same way, rather than a mode recorded when the
+            /// arguments were parsed: a stored definition would pin the mode of its creating session
+            /// while its requests still follow the mode of the reading query.
+            if (CurrentThread::isInitialized())
+            {
+                if (auto query_context = CurrentThread::tryGetQueryContext())
+                {
+                    const bool enable_url_encoding = query_context->getSettingsRef()[Setting::enable_url_encoding];
+                    result += fmt::format("#url_encoding={}", enable_url_encoding);
+                }
+            }
         }
     }
 

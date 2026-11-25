@@ -10,3 +10,7 @@ necessary to have the grant READ ON URL
 --- a grant on the literal member string never covered the archive
 --- and the clustered read names the archive as well
 4851
+--- a table of a dynamic URL database is not a stored definition for the whole-source grant
+necessary to have the grant READ ON URL
+necessary to have the grant READ ON URL
+4851
