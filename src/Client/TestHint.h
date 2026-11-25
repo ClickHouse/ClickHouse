@@ -56,9 +56,9 @@ public:
     using ErrorVector = std::vector<int>;
     explicit TestHint(const std::string_view & query);
 
-    const auto & serverErrors() const { return server_errors; }
-    const auto & clientErrors() const { return client_errors; }
-    std::optional<bool> echoQueries() const { return echo; }
+    [[nodiscard]] const auto & serverErrors() const { return server_errors; }
+    [[nodiscard]] const auto & clientErrors() const { return client_errors; }
+    [[nodiscard]] std::optional<bool> echoQueries() const { return echo; }
 
     bool hasClientErrors() { return !client_errors.empty(); }
     bool hasServerErrors() { return !server_errors.empty(); }
@@ -78,7 +78,7 @@ private:
 
     void parse(Lexer & comment_lexer, bool is_leading_hint);
 
-    bool allErrorsExpected(int actual_server_error, int actual_client_error) const
+    [[nodiscard]] bool allErrorsExpected(int actual_server_error, int actual_client_error) const
     {
         if (actual_server_error && std::find(server_errors.begin(), server_errors.end(), actual_server_error) == server_errors.end())
             return false;
@@ -93,7 +93,7 @@ private:
         return true;
     }
 
-    bool lostExpectedError(int actual_server_error, int actual_client_error) const
+    [[nodiscard]] bool lostExpectedError(int actual_server_error, int actual_client_error) const
     {
         return (!server_errors.empty() && !actual_server_error) || (!client_errors.empty() && !actual_client_error);
     }

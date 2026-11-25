@@ -31,9 +31,9 @@ struct TracingContext
 
     // Parse/compose OpenTelemetry traceparent header.
     bool parseTraceparentHeader(std::string_view traceparent, String & error);
-    String composeTraceparentHeader() const;
+    [[nodiscard]] String composeTraceparentHeader() const;
 
-    bool isTraceEnabled() const
+    [[nodiscard]] bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }

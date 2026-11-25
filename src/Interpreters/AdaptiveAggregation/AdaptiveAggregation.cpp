@@ -222,14 +222,15 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
 
 bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
 {
-    /// The byte twin of the key-count bound is the table's own tracked memory: its hash-table buffer, its arenas and
-    /// the heap memory that its states own, such as the sets of `uniqExact`, which a few groups can grow while the key
-    /// count stays low. It is checked between blocks, so a byte-triggered freeze lands on a block boundary; the
-    /// mid-block freeze crossing checks only the key count. The memory of the whole aggregation is no bound: it sums
-    /// the allocations of every thread, including the blocks they are processing, so the growth of some tables would
-    /// freeze the others.
+    /// The byte twin of the key-count bound is the table's hash-table buffer: the cells that every probe walks, hits and
+    /// misses alike, so it keeps a table with wide cells cache-resident. The memory of the states is no bound: it grows
+    /// through the keys that the table already holds, which a freeze does not stop, and freezing a few groups with
+    /// growing states would only stage the rest of the stream. It is checked between blocks, so a byte-triggered freeze
+    /// lands on a block boundary; the mid-block freeze crossing checks only the key count. The memory of the whole
+    /// aggregation is no bound either: it sums the allocations of every thread, including the blocks they are
+    /// processing, so the growth of some tables would freeze the others.
     const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.memoryUsage() >= params.adaptive_aggregator_freeze_threshold_bytes;
+        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
     return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
         && result.isConvertibleToTwoLevel();
 }
@@ -311,31 +312,75 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     const bool froze = adaptive.partitions != nullptr;
 
     /// The bins of a producer that froze take the rows of its own table as well, whatever its phase now. A producer
-    /// that never froze has no bins and hands its table over instead: the adaptive merge counts it, and the ordinary
-    /// merge of an aggregation in which no producer froze does not prune.
+    /// that never froze has no bins and hands its table over instead, which the adaptive merge counts. An aggregation in
+    /// which no producer froze takes the adaptive merge only where the pruning pays for it (see
+    /// `mergePrunesByTopK`); the ordinary merge does not prune.
     AdaptiveTopKCountBins * count_bins = adaptive.count_bins.isAllocated() ? &adaptive.count_bins : nullptr;
 
+    /// A producer that never froze measures the largest count of each bucket of its table, by which the pruning merges
+    /// the buckets with the largest bounds first. Only the pruning of an aggregation in which no producer froze lacks the
+    /// bins that order the buckets otherwise, so the producer measures them only where that pruning can run (see
+    /// `adaptiveTopKPrunesWithoutFreeze`).
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> max_count_per_bucket_storage{};
+    auto * const max_count_per_bucket = !count_bins && adaptiveTopKPrunesWithoutFreeze() ? &max_count_per_bucket_storage : nullptr;
+
+    /// A descending top-K takes a floor from the producer's own table: the threshold of the table's own ranks, the
+    /// worst of its `bucket_top_k` best. The rank of a group in the table counts only what this producer aggregated
+    /// into it, so the group's final rank is at least that, and `bucket_top_k` groups reach the table's threshold.
+    /// For example, with a top 10 by `count`, a table whose tenth largest count is 500 proves that ten groups have
+    /// 500 rows or more. The merge's threshold starts from the largest floor of the producers instead of zero, so the
+    /// units that every merge task merges first, before any unit is converted, already skip the count bins bounded
+    /// below it. A table with fewer than `bucket_top_k` groups leaves its threshold at zero, which is no floor.
+    std::optional<AdaptiveTopKThreshold> table_threshold;
+    if (params.adaptiveTopKPrunes())
+        table_threshold.emplace(params.bucket_top_k, /*ascending_=*/false, /*best_possible_rank_=*/std::nullopt);
+
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
-    if (count_bins || !adaptive_parallel_merge_indices.empty())
-        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins);
+    if (count_bins || max_count_per_bucket || table_threshold || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(
+            local_variants, count_bins, max_count_per_bucket, table_threshold ? &*table_threshold : nullptr);
+
+    /// The NULL key of a method that keeps it in a slot of its own is a group outside the cells, which the
+    /// count bins and the table's floor do not rank (see `keeps_null_key_slot`). The statistics above rank
+    /// the groups only for a descending top-K with the pruning, while the session needs the NULL key's rank
+    /// for every top-K (see `AdaptiveTopKNullKey`), so the producer reads it here. The rank joins the table's
+    /// floor like the rank of a cell, and goes to the session.
+    std::optional<UInt64> null_key_rank;
+    if (params.bucket_top_k)
+        null_key_rank = adaptiveNullKeyRank(local_variants);
+    if (null_key_rank && table_threshold)
+        table_threshold->offer({&*null_key_rank, 1});
+
+    const UInt64 top_k_floor = table_threshold ? table_threshold->current() : 0;
 
     std::optional<AdaptiveTopKPruning::ProducerBins> bins;
     if (count_bins)
         bins = AdaptiveTopKPruning::finalizeProducerCounts(std::move(*count_bins));
 
     if (froze)
-    {
         adaptive.partitions->finishAppending();
-        /// The adaptive merge pairs a bucket's partitions with the bucket tables of its sources, so the table converts
-        /// to two-level here, in the producer's own thread. The merge preparation converts the tables of the producers
-        /// that never froze.
-        if (local_variants.isConvertibleToTwoLevel())
-            local_variants.convertToTwoLevel();
-    }
+
+    /// The merges read the cells of a table through its cell index (see
+    /// `AggregatedDataVariants::indexCells`), whose partitions are those of the layout. A unit of the
+    /// adaptive merge is a run of the partitions of a bucket, and the merge of tables that never froze merges
+    /// partition by partition, so either reads its cells in place. The producer indexes its table here, in
+    /// its own thread, while the table is in its cache. Every admitted method has a two-level form, so every
+    /// single-level table is indexed, and a table that went two-level on the baseline path is read by
+    /// buckets.
+    if (local_variants.isConvertibleToTwoLevel())
+        local_variants.indexCells(shared.layout.numPartitions(), [&](UInt64 hash) { return shared.layout.partitionOf(hash); });
+
+    /// The producer stages nothing more, so it frees the arrays of its misses here, in its own thread. The transform
+    /// that owns the producer lives until the pipeline is destroyed, which one thread does for every transform.
+    adaptive.misses = {};
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
+    shared.table_cells += local_variants.sizeWithoutOverflowRow();
+    shared.top_k_floor = std::max(shared.top_k_floor, top_k_floor);
+    if (null_key_rank)
+        shared.top_k_null_key.addProducerRank(*null_key_rank);
     if (froze)
     {
         ++shared.frozen_producers;
@@ -347,17 +392,30 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (bins)
         shared.top_k_pruning->addProducerBins(std::move(*bins));
     else if (params.adaptiveTopKPrunes())
-        shared.top_k_pruning->addMergeCountedTable(local_variants);
+        shared.top_k_pruning->addMergeCountedTable(local_variants, max_count_per_bucket);
 }
 
 void Aggregator::prepareAdaptiveTopK(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
+    shared.top_k_pruning_prepared = true;
     auto & pruning = shared.top_k_pruning;
-    if (pruning && (external_merge || collects_statistics || !pruning->prepare(producers)))
-        pruning.reset();
+    if (pruning)
+    {
+        if (mergePrunesByTopK(shared, *pruning, producers, external_merge, collects_statistics))
+        {
+            /// Bucket 0 holds the NULL key outside the bins. Every producer counted, so its upper bound
+            /// holds.
+            pruning->raiseBucketBound(0, shared.top_k_null_key.upperBound());
+            pruning->orderBuckets();
+        }
+        else
+            pruning.reset();
+    }
 
-    if (!params.bucket_top_k || external_merge)
+    /// Only the bucket merge reads the threshold. A top-K without the pruning, such as an ascending one, needs
+    /// it all the same.
+    if (!params.bucket_top_k || external_merge || !shared.mergesByBuckets())
         return;
 
     /// Settling skips units unread, whose groups the statistics need. A throw-mode group limit allows it,
@@ -369,8 +427,44 @@ void Aggregator::prepareAdaptiveTopK(
     std::optional<UInt64> best_possible_rank;
     if (params.bucket_top_k_ascending && !collects_statistics)
         best_possible_rank = bucket_top_k_min_rank;
-    shared.top_k_threshold
-        = std::make_unique<AdaptiveTopKThreshold>(params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank);
+    shared.top_k_threshold = std::make_unique<AdaptiveTopKThreshold>(
+        params.bucket_top_k, params.bucket_top_k_ascending, best_possible_rank, shared.top_k_floor);
+
+    /// The producers' tables bound the NULL key's rank, so the threshold takes it before the merge.
+    shared.top_k_null_key.offerBeforeMerge(
+        *shared.top_k_threshold,
+        params.bucket_top_k_ascending,
+        /*exact_ranks=*/bucket_top_k_rank != BucketTopKRank::FinalizedResult,
+        /*every_producer_finished=*/shared.finished_producers == producers);
+}
+
+bool Aggregator::mergePrunesByTopK(
+    const AdaptiveAggregationSession & shared,
+    const AdaptiveTopKPruning & pruning,
+    size_t producers,
+    bool external_merge,
+    bool collects_statistics) const
+{
+    /// An external merge reads back rows that nothing counted, and a merge that collects the runtime dataflow
+    /// statistics needs every group converted.
+    if (external_merge || collects_statistics)
+        return false;
+
+    /// The bounds need the rows of every producer, in its count bins or in its table. A producer without the
+    /// adaptive context, another aggregator of a mixed projection pipeline, handed over neither.
+    if (!pruning.countsEveryProducer(producers))
+        return false;
+
+    /// Only the bucket merge prunes, and it runs anyway once some producer froze.
+    if (shared.engaged())
+        return true;
+
+    /// Without a freeze, the bucket merge has to pay for itself. It does where it skips the merge of heavy
+    /// states (see `adaptiveTopKPrunesWithoutFreeze`), and where the top keeps a small part of the groups:
+    /// the tables hold at least as many cells per bucket as the top keeps groups, and a merge unit's worth in
+    /// all.
+    const size_t min_table_cells = std::max(adaptive_merge_unit_records, params.bucket_top_k * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    return adaptiveTopKPrunesWithoutFreeze() && shared.table_cells >= min_table_cells;
 }
 
 UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
@@ -420,7 +514,7 @@ size_t Aggregator::spillAdaptiveProducer(
         return released;
 
     const size_t before = result.memoryUsage();
-    spillAdaptiveTable(result, adaptive, before + params.min_free_disk_space);
+    spillAdaptiveTable(result, adaptive, getTemporaryFileReserveSize(before, params.min_free_disk_space));
     const size_t after = result.memoryUsage();
     return released + (before > after ? before - after : 0);
 }
@@ -488,7 +582,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
             continue;
 
         const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
-            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space, space_check);
+            shared.spill_scope, partitions, partition, getTemporaryFileReserveSize(unwritten_bytes, params.min_free_disk_space), space_check);
         unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);

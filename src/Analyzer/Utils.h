@@ -13,6 +13,8 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -118,6 +120,24 @@ const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
+/** The tables of a query tree, identified by where each was written: a hash of the `SELECT` it is in, together with
+  * the path to it under that `SELECT`'s `FROM`, both taken from the AST the tree was built from. Two builds of one
+  * query agree on it although the analyzer's `__tableN` names and the join order may differ between them, so it can
+  * pair their reads of one table. The `SELECT`'s own `SETTINGS` are left out: a build may drop some of them.
+  *
+  * A table is found by the AST it was built from, which every clone of the tree keeps. One that is not in the tree's
+  * join trees, such as a table read inside a view that is not inlined or inside a table function, is not found, and
+  * neither is one that has no AST. Occurrences can share an identity - a CTE or a view expanded twice - and then
+  * none of them is kept: only an identity that exactly one table of the tree has can tell that table apart.
+  */
+struct TableOccurrences
+{
+    /// Keyed by the AST pointer itself, which also keeps it from being freed and its address reused.
+    std::unordered_map<ASTPtr, UInt128> identity_by_ast;
+};
+
+TableOccurrences collectTableOccurrences(const QueryTreeNodePtr & tree);
+
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
@@ -216,11 +236,8 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
-/// A node that carries a window definition stays a window function.
+/// A node that carries a window definition takes the window variant of the aggregate function.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
-
-/// Returns the types the arguments of a window function must be cast to before it is resolved.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types);
 
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
@@ -288,6 +305,22 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
+
+/// Recursively clears aliases from `node` and all of its descendants, stopping at
+/// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
+///
+/// Background: during identifier resolution, when an identifier resolves to an alias
+/// (e.g. `cond` in `PREWHERE cond` resolves to the projection alias `cond`), the alias
+/// body is deep-cloned and the clone replaces the identifier. Only the clone's root is
+/// registered for later alias removal; the clone's descendants — which carry the
+/// original inner aliases (clone preserves aliases) — are not. A plain non-recursive
+/// `removeAlias` on each registered node therefore leaks inner aliases when the alias
+/// body itself contains alias-bearing nodes.
+///
+/// This walk catches those inner aliases. Nested subqueries / lambdas live in separate
+/// scopes that are responsible for their own alias cleanup, so the walk stops at their
+/// boundary.
+void removeAliasesRecursive(QueryTreeNodePtr & node);
 
 /// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
 /// text; valid only where the literal's declared type is re-applied to it.
