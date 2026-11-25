@@ -118,6 +118,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -333,6 +334,8 @@ static struct InitFiu
     ONCE(iceberg_metadata_commit_response_lost) \
     REGULAR(iceberg_metadata_commit_reconcile_fail) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    ONCE(iceberg_writes_lose_metadata_commit_response) \
+    ONCE(iceberg_writes_lose_metadata_commit_request) \
     PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
