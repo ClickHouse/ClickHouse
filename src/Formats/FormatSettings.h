@@ -113,6 +113,7 @@ struct JSONFormatSettings
   */
 struct FormatSettings : FormatSettingsEnums
 {
+    bool skip_duplicated_fields = false;
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
@@ -184,7 +185,7 @@ struct FormatSettings : FormatSettingsEnums
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
-    bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
+    [[nodiscard]] bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
@@ -247,11 +248,19 @@ struct FormatSettings : FormatSettingsEnums
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_variant_as_json_string = false;
+        bool output_uuid_as_fixed_byte_array = false;
         ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
         /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
         UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
+        /// Not settings, but choices of the formats that hand their data over as Arrow arrays (`Vortex`):
+        /// a `FixedString` is written as `Utf8` when `output_string_as_string` is set, unless this is unset;
+        /// a `DateTime` as a timestamp in seconds instead of `UInt32`; `Nothing` as the Arrow `Null` type.
+        bool output_fixed_string_as_string = true;
+        bool output_datetime_as_timestamp = false;
+        bool output_nothing_as_null = false;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -283,6 +292,14 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 output_rows_in_file = 1;
         String output_confluent_subject;
     } avro{};
+
+    struct
+    {
+        String output_blob_type = "deletion-vector-v1";
+        String output_field_ids;
+        Int64 output_snapshot_id = -1;
+        Int64 output_sequence_number = -1;
+    } puffin{};
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
@@ -369,9 +386,11 @@ struct FormatSettings : FormatSettingsEnums
         bool write_bloom_filter = false;
         bool write_checksums = true;
         bool use_alp_encoding = false;
+        bool use_data_page_v2 = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
+        size_t data_page_row_limit = 20000;
         size_t write_batch_size = 1024;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
