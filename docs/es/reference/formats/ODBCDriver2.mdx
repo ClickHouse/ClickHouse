@@ -12,12 +12,10 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✗       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 El formato `ODBCDriver2` es un formato binario de solo salida que se utiliza para transferir resultados de consultas a través de HTTP al
-[controlador ODBC de ClickHouse](/es/concepts/features/interfaces/odbc). El controlador lo solicita estableciendo `default_format` en
+[controlador ODBC de ClickHouse](/es/concepts/features/interfaces/odbc/index). El controlador lo solicita estableciendo `default_format` en
 `ODBCDriver2`; los usuarios normalmente no lo seleccionan directamente.
 
 Todos los enteros del flujo son valores con signo de 32 bits codificados en orden de bytes little-endian. Una cadena se codifica como su
@@ -33,9 +31,7 @@ longitud en bytes, seguida de sus bytes. La salida tiene la siguiente estructura
 Un valor `NULL` se codifica con la longitud `-1`; una cadena vacía no nula tiene una longitud de `0`. Los totales, cuando están presentes, usan la
 misma codificación de filas y siguen a las filas ordinarias.
 
-<div id="example-usage">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#example-usage}
 
 La siguiente consulta representa los valores que abarcan las pruebas del formato:
 
@@ -58,9 +54,7 @@ clickhouse-client --query \
 
 En condiciones normales, el controlador añade `default_format=ODBCDriver2` a sus solicitudes HTTP y decodifica la respuesta.
 
-<div id="format-settings">
-  ## Configuración de formato
-</div>
+## Configuración de formato {#format-settings}
 
 `ODBCDriver2` utiliza la configuración estándar de serialización de texto para valores individuales. No tiene ninguna configuración específica del formato en sí.
 

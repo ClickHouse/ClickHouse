@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive',
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
-
 [Cloudflare Workers](https://developers.cloudflare.com/workers/) ejecuta su código en la red de Cloudflare, e [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) mantiene un grupo de conexiones desde esa red hasta su base de datos, de modo que no sea necesario pagar el coste de un nuevo handshake TCP y TLS en cada solicitud. En esta guía, creará una configuración de Hyperdrive que verifica el certificado de su instancia, desarrollará un Worker en TypeScript que crea y lee filas con [`node-postgres`](https://node-postgres.com/) (`pg`), lo ejecutará localmente con `wrangler dev` y lo desplegará en `workers.dev`.
 
 ## Requisitos previos {#prerequisites}

@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/redis-logs
+title: 'Monitoramento de logs do Redis com o ClickHouse Observability'
+sidebarTitle: 'Logs do Redis'
+description: 'Colete, pesquise e visualize logs do servidor Redis no ClickHouse Observability usando um coletor OpenTelemetry.'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Colete os logs do servidor Redis com um coletor OpenTelemetry e envie-os para o ClickHouse Observability. Use o [conjunto de dados de demonstração](#demo-dataset) para testar a integração sem precisar instalar o Redis.
+
+## Pré-requisitos {#prerequisites}
+
+* Um serviço do ClickHouse Observability
+* Docker para executar os exemplos do coletor ou uma implantação existente do OpenTelemetry Collector Contrib
+* Para usar seus próprios logs, uma instalação existente do Redis e acesso aos respectivos arquivos de log
+
+### Detalhes de conexão {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta em versão beta" />
+
+    Abra o ClickHouse Observability e acesse **Team Settings → Data → Telemetria Gerenciada**. Copie o endpoint OTLP HTTP e a chave de API. Você pode usar **Copy detalhes de conexão** para copiar a configuração ou **Reveal key** para exibir a chave mascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Detalhes de conexão da Telemetria Gerenciada](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Para os exemplos de exportador OTLP abaixo, defina estas variáveis no terminal em que você executará o coletor:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Substitua os marcadores de posição pelo endpoint exato do seu serviço, incluindo a porta, e pela respectiva chave de API. Use o endpoint HTTP base, sem o sufixo `/v1/logs`; o exportador acrescenta o caminho do sinal.
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    Use um endpoint OTLP HTTP do seu coletor que esteja acessível (por exemplo, `http://YOUR_COLLECTOR_HOST:4318`) e as respectivas configurações de autenticação. Se o seu coletor não exigir autenticação, remova o bloco `headers` do exportador nas configurações abaixo. Consulte o [guia de primeiros passos da versão autogerenciada](/pt-BR/clickstack/self-configured/getting-started/managed) para obter orientações de configuração.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+O endpoint deve estar acessível a partir do contêiner do coletor. Para um coletor de destino em execução neste computador, use `http://host.docker.internal:4318`. Os comandos Docker abaixo já incluem o mapeamento do host.
+
+## Integração com um Redis existente {#existing-redis}
+
+<Steps>
+  <Step title="Verifique a configuração de logging do Redis" id="verify-redis">
+    Verifique onde o Redis grava os logs:
+
+    ```bash
+    redis-cli CONFIG GET logfile
+    ```
+
+    Locais comuns dos logs do Redis:
+
+    * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/redis.log` ou `/opt/homebrew/var/log/redis.log`
+    * **Docker**: Geralmente os logs são enviados para stdout, mas é possível configurá-lo para gravar em `/data/redis.log`
+
+    Se o Redis estiver enviando logs para stdout, configure-o para gravar em um arquivo atualizando o `redis.conf`:
+
+    ```bash
+    # Log to file instead of stdout
+    logfile /var/log/redis/redis-server.log
+
+    # Set log level (options: debug, verbose, notice, warning)
+    loglevel notice
+    ```
+
+    Certifique-se de que o diretório de log exista e de que o Redis tenha permissão de gravação nele. Após alterar a configuração, reinicie o Redis usando o nome do serviço da sua instalação:
+
+    ```bash
+    # For systemd
+    sudo systemctl restart redis
+
+    # For Docker
+    docker restart <redis-container>
+    ```
+  </Step>
+
+  <Step title="Configure o coletor" id="configure-collector">
+    Salve o conteúdo a seguir como `redis-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis/redis-server.log
+        start_at: end
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis
+          - type: add
+            field: resource["service.name"]
+            value: redis-service
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    Esta configuração analisa sintaticamente o ID do processo, a função, o timestamp, o nível de log e a mensagem. Ela define `service.name` como `redis-service` e mapeia os níveis de log do Redis para `SeverityText`, usado no dashboard. As mensagens de notificação do Redis (`*`) são mapeadas para `info`, os avisos (`#`) para `warn` e as mensagens de depuração/detalhadas (`.` e `-`) para `debug`.
+
+    Os timestamps dos logs do Redis não incluem fuso horário. Defina `location` como o fuso horário do seu servidor Redis, por exemplo, `America/Chicago`; o exemplo usa `UTC`. Os timestamps originais e o corpo do log são preservados. Com `start_at: end`, apenas as novas entradas são lidas quando o coletor abre o arquivo pela primeira vez.
+  </Step>
+
+  <Step title="Execute o coletor" id="run-collector">
+    Defina as [variáveis de conexão](#connection-details) e execute o comando a partir do diretório que contém `redis-monitoring.yaml`. Ajuste o caminho do diretório de logs no host e o nome do arquivo em `include` do receptor de acordo com a sua instalação:
+
+    ```bash
+    docker run --rm --name redis-monitoring-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/redis:/var/log/redis:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Mantenha este terminal aberto e gere atividade no Redis que grave novas entradas de log. O coletor precisa ter permissão de leitura nos arquivos montados.
+  </Step>
+
+  <Step title="Verifique os logs" id="verify-logs">
+    Abra a **Busca**, selecione **Logs** e filtre por `ServiceName:redis-service`. Selecione um intervalo de tempo que abranja os novos logs. Expanda uma entrada para inspecionar o `SeverityText` e os campos interpretados em `LogAttributes`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Logs do Redis na visualização de pesquisa](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Conjunto de dados de demonstração {#demo-dataset}
+
+A amostra contém 10,000 entradas de log do servidor Redis. Defina as [variáveis de conexão](#connection-details) antes de começar.
+
+<Steps>
+  <Step title="Baixe o conjunto de dados de exemplo" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
+    ```
+  </Step>
+
+  <Step title="Configure o coletor de demonstração" id="configure-demo">
+    Salve este conteúdo como `redis-demo.yaml` no diretório de download:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis-demo/redis-server.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '02 Jan 2006 15:04:05.000'
+            location: UTC
+          - type: add
+            field: attributes.source
+            value: redis-demo
+          - type: add
+            field: resource["service.name"]
+            value: redis-demo
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/redis:
+        error_mode: propagate
+        log_statements:
+          - set(log.severity_text, "debug") where log.attributes["log_level"] == "." or log.attributes["log_level"] == "-"
+          - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where log.severity_text == "debug"
+          - set(log.severity_text, "info") where log.attributes["log_level"] == "*"
+          - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_text == "info"
+          - set(log.severity_text, "warn") where log.attributes["log_level"] == "#"
+          - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - >-
+            set(log.time,
+              Now() - Duration("2m") -
+              (Time("2025-10-28T14:59:22Z", "%Y-%m-%dT%H:%M:%SZ") - log.time)
+            )
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors: [memory_limiter, transform/redis, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      O processador `transform/demo_timestamps`, exclusivo da demonstração, desloca a amostra para aproximadamente as últimas 24 horas, terminando dois minutos antes da ingestão, mas preserva seu padrão de tráfego. O atributo de timestamp original e o corpo do log permanecem inalterados. Não use este processador com os seus próprios logs do Redis.
+    </Note>
+  </Step>
+
+  <Step title="Execute o coletor de demonstração" id="run-demo">
+    No diretório que contém `redis-server.log` e `redis-demo.yaml`, execute:
+
+    ```bash
+    docker run --rm --name redis-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/redis-server.log:/var/log/redis-demo/redis-server.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Mantenha o terminal aberto enquanto verifica a ingestão. Ao terminar, interrompa o coletor com **Ctrl+C**. Se você executar a demonstração novamente, a amostra será reingerida com timestamps atualizados, pois este exemplo não persiste os offsets do arquivo.
+  </Step>
+
+  <Step title="Verifique os logs de demonstração" id="verify-demo-logs">
+    Abra **Busca**, selecione **Logs**, filtre por `ServiceName:redis-demo` e selecione **Last 2 days**. Expanda uma entrada de log para inspecionar os atributos interpretados e a severidade.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Exemplo de logs do Redis na visualização de pesquisa](/images/clickstack/observability-redis-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Dashboards e visualização {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json" download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Baixe a configuração do dashboard</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importe o dashboard" id="import-dashboard">
+    1. Abra **Dashboards** e clique em **Import** no canto superior direito.
+    2. Envie o arquivo `redis-logs-dashboard.json`.
+    3. Mapeie os gráficos para a sua fonte de dados **Logs** e clique em **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página Dashboards com o botão Import destacado](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Visualize o dashboard" id="view-dashboard">
+    Filtre por `ServiceName:redis-demo` para os dados de amostra ou por `ServiceName:redis-service` para os seus próprios logs. Na demonstração, selecione **Last 2 days**.
+
+    O dashboard mostra o volume de logs e a severidade. O gráfico **Request rate** contabiliza entradas de log, e não comandos do Redis.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Exemplo de dashboard de logs do Redis](/images/clickstack/observability-redis-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Solução de problemas {#troubleshooting}
+
+### O coletor não inicia {#collector-fails-to-start}
+
+Verifique se há erros de configuração no terminal do coletor. Confirme se o arquivo YAML está montado no caminho documentado e se o endpoint e as variáveis de autenticação necessárias estão definidos no terminal em que você executa o Docker.
+
+### Nenhum log aparece {#no-logs}
+
+* Verifique a saída do coletor em busca de erros de autenticação ou de exportação e confira seus detalhes de conexão.
+* Execute `redis-cli CONFIG GET logfile` para verificar se o Redis grava em um arquivo. Certifique-se de que o coletor consegue lê-lo e de que o caminho montado corresponde ao caminho `include` do receptor.
+* Com `start_at: end`, gere novas entradas de log depois de iniciar o coletor.
+* Verifique a fonte de dados **Logs**, o filtro por nome do serviço e o intervalo de tempo. Para a demonstração, inclua `transform/demo_timestamps` no pipeline e selecione **Last 2 days**.
+
+### Logs não são interpretados corretamente {#logs-not-parsing}
+
+O receptor espera o formato padrão do Redis `pid:role timestamp level message`. Verifique seu arquivo de log e ajuste a expressão regular se o seu formato for diferente. Defina o `location` do analisador sintático de tempo como o fuso horário do servidor Redis.
+
+## Próximos passos {#next-steps}
+
+* Configure [alertas](/pt-BR/clickstack/observability/features/alerts) para avisos ou volume de logs fora do normal.
+* Crie outros [dashboards](/pt-BR/clickstack/observability/features/dashboards/overview).
+* Consulte [Envio de dados do OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry) para obter orientações sobre a configuração do coletor.

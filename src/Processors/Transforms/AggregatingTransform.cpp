@@ -188,15 +188,15 @@ namespace
             ManyAggregatedDataVariantsPtr destination_,
             std::shared_ptr<std::atomic<size_t>> merged_groups_,
             size_t first_bucket,
-            size_t step_)
+            size_t num_sources)
             : ISource(std::move(header), false)
             , params(std::move(params_))
             , session(std::move(session_))
             , destination(std::move(destination_))
             , merged_groups(std::move(merged_groups_))
-            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get()))
+            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get(), num_sources))
             , next_bucket(first_bucket)
-            , step(step_)
+            , step(num_sources)
         {
         }
 
@@ -256,6 +256,7 @@ namespace
         AdaptiveMergeTask task;
         Aggregator::AggregatedChunks chunks;
         size_t next_bucket;
+        /// The stride of the source's buckets, which is the number of the sources.
         const size_t step;
         Int32 last_handed_out_bucket = -1;
         bool handed_out_first_chunk = false;
@@ -341,9 +342,10 @@ public:
 
         /// How many of the claimed partitions of the single-level merge, or buckets of the adaptive merge (see
         /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
-        /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
-        /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
-        /// thread would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
+        /// tables that belong to it (a unit that the adaptive merge skips leaves those that need no destructor), so
+        /// once all of them merged, the source tables hold no states to destroy, and the last one stops the tables
+        /// owning states. Their destruction then frees their buffers without walking their cells, which one thread
+        /// would otherwise do for every table at the end of the query. The adaptive merge frees the tables right
         /// then, in parallel (see `Aggregator::releaseAdaptiveMergeSources`). A cancelled merge leaves the tables to
         /// destroy the states they keep.
         std::atomic<size_t> merged_claims = 0;
@@ -971,9 +973,6 @@ private:
         if (!params->params.enable_parallel_single_level_merge)
             return {};
 
-        if (num_threads <= 1 || data->size() <= 1)
-            return {};
-
         /// The overflow row lives outside the partitioned cells, and under the `any` overflow mode
         /// the tables hold diverged key sets that the merge must reconcile key by key — both need
         /// the serial merge. Under `throw` and `break` the tables are ordinary, and the partition
@@ -1005,27 +1004,6 @@ private:
         if (scanning_partitions <= 1)
             return {};
 
-        /// The producers of an adaptive aggregation index the cells of their tables (see
-        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
-        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
-        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
-        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
-        /// partitions than producers when an external-aggregation threshold reduces it. A single worker would
-        /// only rebuild the result into a fresh table, like a single partition.
-        PartitionMergePlan plan;
-        if (params->aggregator.mergesByCellIndex(*data))
-        {
-            plan.partitions = data->at(0)->cellIndex().numPartitions();
-            plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
-            if (plan.workers <= 1)
-                return {};
-        }
-        else
-        {
-            plan.partitions = scanning_partitions;
-            plan.workers = std::min(num_threads, scanning_partitions);
-        }
-
         /// A worker finalizes the states of the partitions it claimed when it emits them as a chunk. Where finalizing
         /// outweighs merging, as for tables of disjoint keys with large states, the first workers would claim most
         /// partitions and finalize them alone, so a worker emits a chunk once it holds about 4 MiB of states, estimated
@@ -1034,7 +1012,35 @@ private:
         /// partitions, so a chunk exceeds it by up to one partition.
         static constexpr size_t MEMORY_PER_CHUNK = 4 << 20;
         const size_t bytes_per_cell = std::max<size_t>(source_memory / std::max<size_t>(source_cells, 1), 1);
+        PartitionMergePlan plan;
         plan.rows_per_chunk = std::clamp<size_t>(MEMORY_PER_CHUNK / bytes_per_cell, 1, params->params.max_block_size);
+
+        /// The producers of an adaptive aggregation index the cells of their tables (see
+        /// `AggregatedDataVariants::indexCells`), so that a partition reads only its own cells instead of
+        /// scanning every cell of every table, unless `enable_parallel_single_level_merge_by_index` is off.
+        /// The partitions are those of the indexes then, and the workers claim them one by one, so a worker
+        /// beyond the partitions would claim none. The layout of more than 256 producers can have fewer
+        /// partitions than producers when an external-aggregation threshold reduces it. A single worker only
+        /// rebuilds the result into fresh tables, which pays only when the result spans more than one chunk: the
+        /// serial path converts the result whole into one chunk, which holds all the results while all the states
+        /// are still alive. A lone table needs no merge, so splitting it into chunks is all that the merge does.
+        if (params->aggregator.mergesByCellIndex(*data))
+        {
+            plan.partitions = data->at(0)->cellIndex().numPartitions();
+            plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
+            if (plan.workers <= 1 && source_cells <= plan.rows_per_chunk)
+                return {};
+        }
+        else
+        {
+            /// A scanning merge reads every table for each of its partitions, so it pays only when several workers
+            /// share it over several tables: a single worker would only rebuild the result, and a lone table would
+            /// be read whole for every partition.
+            if (num_threads <= 1 || data->size() <= 1)
+                return {};
+            plan.partitions = scanning_partitions;
+            plan.workers = std::min(num_threads, scanning_partitions);
+        }
 
         /// A worker's table takes the keys of one chunk: the worker's share of the partitions, or the smaller
         /// share at which the fan-out of the output ends the chunk, which is at least one partition (see
@@ -1268,9 +1274,9 @@ private:
 
     size_t num_threads;
 
-    /// How many streams the output is spread over downstream. It is not `num_threads`. That is capped by the
-    /// number of aggregating streams (1 for a single input stream), while the `Resize` after the aggregation
-    /// fans out to `max_threads`. 1 when the results must go out in bucket order.
+    /// How many streams the output is spread over downstream. It is not `num_threads`: a merge of the tables
+    /// takes at most one thread per aggregating stream (1 for a single input stream), while the `Resize`
+    /// after the aggregation fans out to `max_threads`. 1 when the results must go out in bucket order.
     size_t output_streams;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
@@ -1310,8 +1316,9 @@ private:
 
         AggregatedDataVariantsPtr & first = data->at(0);
 
-        /// At least we need one arena in first data item per thread
-        if (num_threads > first->aggregates_pools.size())
+        /// At least we need one arena in first data item per thread. The sources of the adaptive bucket merge
+        /// take their arenas per bucket instead (see `createSources`), and they can outnumber the tables.
+        if (!adaptive_session && num_threads > first->aggregates_pools.size())
         {
             Arenas & first_pool = first->aggregates_pools;
             for (size_t j = first_pool.size(); j < num_threads; ++j)
@@ -1423,8 +1430,8 @@ private:
 
     void createSourcesForPartitionMerge(const PartitionMergePlan & plan)
     {
-        /// `planPartitionMerge` plans the merge only for more than one worker.
-        chassert(plan.workers > 1 && plan.workers <= plan.partitions);
+        /// `planPartitionMerge` plans the merge for more than one worker, or for one that splits the result into chunks.
+        chassert(plan.workers >= 1 && plan.workers <= plan.partitions);
         for (size_t worker = 0; worker < plan.workers; ++worker)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
@@ -1611,7 +1618,7 @@ AggregatingTransform::AggregatingTransform(
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
     , variant_index(current_variant)
-    , max_threads(std::min(many_data->variants.size(), max_threads_))
+    , max_threads(max_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
@@ -2031,16 +2038,30 @@ void AggregatingTransform::initGenerate()
             AdaptiveAggregationSession * session = adaptive_context ? adaptive_context->session.get() : nullptr;
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+            /// A merge of the tables takes at most one thread per table, and each producer filled one. The
+            /// adaptive bucket merge is not bound by the tables: its sources claim the buckets one by one,
+            /// and each takes its table and its arena per bucket. Its work is the staged records, and a
+            /// single aggregating stream can stage nearly every row it reads, so it takes the merge threads
+            /// of the step, up to one per bucket. The merge by cell index is not bound by the tables either: its
+            /// workers claim the partitions of the indexes one by one (see
+            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the
+            /// step, up to one per partition.
+            size_t merge_threads = many_data->num_producers;
+            if (bucket_merge)
+                merge_threads = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+            else if (!prepared_data_ptr->empty() && params->aggregator.mergesByCellIndex(*prepared_data_ptr))
+                merge_threads = prepared_data_ptr->front()->cellIndex().numPartitions();
+            merge_threads = std::min(max_threads, merge_threads);
             /// The producers of the session estimated the merge work, also when none of them froze and the tables merge
             /// partition by partition.
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params,
                 std::move(prepared_data_ptr),
-                max_threads,
+                merge_threads,
                 output_streams,
                 updater,
                 bucket_merge ? adaptive_context->session : nullptr,
-                params->aggregator.parallelMergeThreshold(session)));
+                params->aggregator.parallelMergeThreshold(session, merge_threads)));
         }
         else
         {
