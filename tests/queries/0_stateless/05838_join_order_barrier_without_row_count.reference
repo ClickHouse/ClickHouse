@@ -3,6 +3,12 @@ Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[guess~1])
 Join: customer[no_stats~10000] ⋈ nation[guess~1]
 two relations: an assumed row count does not swap the written sides
 Join: n[no_stats~?] ⋈ orders[no_stats~100000]
+the assumed share is a setting
+Join: orders[guess~50000] ⋈ (customer[guess~5000] ⋈ nation[no_stats~4])
+Join: customer[guess~5000] ⋈ nation[no_stats~4]
+with 0 nothing is assumed: the filtered tables have no row count and the joins are as written
+Join: orders[no_stats~?] ⋈ customer[no_stats~?] ⋈ nation[no_stats~4]
+Join: orders[no_stats~?] ⋈ customer[no_stats~?]
 a relation without a row count: the joins below it are reordered, the joins above it are as written
 Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[no_stats~4]) ⋈ u[no_stats~?] ⋈ n2[no_stats~4]
 Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[no_stats~4]) ⋈ u[no_stats~?]

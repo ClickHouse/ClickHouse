@@ -25,6 +25,21 @@ SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT count() FROM (SELECT * FROM nation WHERE n_name = 'GERMANY') AS n JOIN orders ON n_nationkey = o_custkey)
 WHERE explain LIKE '%Join: %';
 
+SELECT 'the assumed share is a setting';
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE o_custkey < 15000
+    SETTINGS query_plan_join_order_default_filter_selectivity = 0.5)
+WHERE explain LIKE '%Join: %';
+
+SELECT 'with 0 nothing is assumed: the filtered tables have no row count and the joins are as written';
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE o_custkey < 15000
+    SETTINGS query_plan_join_order_default_filter_selectivity = 0)
+WHERE explain LIKE '%Join: %';
+
+EXPLAIN SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey WHERE o_custkey < 15000
+    SETTINGS query_plan_join_order_default_filter_selectivity = 1.5; -- { serverError INVALID_SETTING_VALUE }
+
 -- A filtered `arrayJoin` has no row count.
 SELECT 'a relation without a row count: the joins below it are reordered, the joins above it are as written';
 SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1

@@ -3287,6 +3287,12 @@ When set to 1, a random seed is generated, when set to a value > 1, that value i
 This is intended for testing to find errors caused by different join orderings.
 )", EXPERIMENTAL, \
         {"26.4", 0, 0, "New setting to randomize join order statistics for testing."}) \
+DECLARE(Double, query_plan_join_order_default_filter_selectivity, 0.2, R"(
+The share of rows assumed to pass a filter on a `MergeTree` table when no index prunes data by the filter and there are no [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) to estimate it. The join order optimizer uses the resulting number of rows, and `EXPLAIN` shows it as `guess`.
+
+Possible values: from 0 to 1. With 0 nothing is assumed: such a table has no estimated number of rows, and the joins above it keep the order and the sides written in the query.
+)", 0, \
+        {"26.12", 0., 0.2, "New setting. A table with a filter that neither an index nor column statistics estimate had no estimated number of rows."}) \
     \
     DECLARE(Bool, enable_join_transitive_predicates, true, R"(
 Infer transitive equi-join predicates from existing join conditions.
@@ -9962,7 +9968,7 @@ Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filte
 )", 0, \
         {"26.11", false, true, "New setting to prune Iceberg data files, Parquet row groups and pages by JOIN runtime filters."}) \
     DECLARE(Bool, use_datalake_metadata_statistics, false, R"(
-With [`use_statistics`](#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+With [`use_statistics`](#use_statistics) enabled, estimate a data lake read for join reordering from the table metadata, without reading data. Only Iceberg is supported: the estimate comes from the manifest files of its data files left after partition and min-max pruning by the query filter, the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate: [`query_plan_join_order_default_filter_selectivity`](#query_plan_join_order_default_filter_selectivity) applies only to MergeTree tables. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
         {"26.11", false, false, "New setting to estimate the rows and column statistics of data lake reads (Iceberg for now) for join reordering from the table metadata."}) \
     DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
