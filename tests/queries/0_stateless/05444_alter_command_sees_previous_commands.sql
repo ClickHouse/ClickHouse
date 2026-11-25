@@ -315,3 +315,11 @@ INSERT INTO t_alter_previous_commands_alias_group (id, `n.b`) VALUES (1, [42]);
 ALTER TABLE t_alter_previous_commands_alias_group DROP COLUMN n, ADD COLUMN IF NOT EXISTS n Nested(b UInt32) SETTINGS alter_sync = 2;
 SELECT id, `n.b` FROM t_alter_previous_commands_alias_group;
 DROP TABLE t_alter_previous_commands_alias_group;
+
+-- A Nested group is dropped in the column order the previous commands leave, so this drop removes every column of the part.
+CREATE TABLE t_alter_previous_commands_group_order (n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_group_order VALUES ([11], [42]);
+ALTER TABLE t_alter_previous_commands_group_order ADD COLUMN gap UInt32 AFTER `n.a`;
+ALTER TABLE t_alter_previous_commands_group_order MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_alter_previous_commands_group_order;
+DROP TABLE t_alter_previous_commands_group_order;

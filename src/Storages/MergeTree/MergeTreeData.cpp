@@ -6307,11 +6307,20 @@ void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & comm
     }
 }
 
-/// The columns of `old_columns` whose data the commands drop or clear.
-NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDescription & old_columns, bool flatten_nested)
+/// The columns of `metadata` whose data the commands drop or clear.
+NameSet getColumnsDroppedByAlter(
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults,
+    bool flatten_nested)
 {
+    const auto & old_columns = metadata.columns;
     NameSet dropped_columns;
     auto old_names = getColumnOldNames(old_columns);
+    /// A Nested group is dropped in the column order the previous commands leave.
+    auto current_metadata = metadata;
     for (const auto & command : commands)
     {
         if (command.type == AlterCommand::DROP_COLUMN && !command.ignore)
@@ -6321,6 +6330,15 @@ NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDe
             {
                 if (it->second)
                     dropped_columns.emplace(*it->second);
+            }
+            else if (!command.clear && !command.partition && !current_metadata.columns.has(command.column_name))
+            {
+                for (const auto & nested_column : current_metadata.columns.getNested(command.column_name))
+                {
+                    auto member = old_names.find(nested_column.name);
+                    if (member != old_names.end() && member->second)
+                        dropped_columns.emplace(*member->second);
+                }
             }
             else if (old_columns.has(command.column_name))
             {
@@ -6333,6 +6351,8 @@ NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDe
             }
         }
         advanceColumnOldNames(old_names, command, flatten_nested);
+        if (!command.ignore)
+            command.apply(current_metadata, context, share_nested_offsets, &old_columns, settings_defaults);
     }
     return dropped_columns;
 }
@@ -6707,6 +6727,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     auto apply_context = Context::createCopy(local_context);
     if (auto txn = local_context->getZooKeeperMetadataTransaction(); !txn || txn->isInitialQuery())
         apply_context->setAnalyzingBackgroundExpressions(true);
+    const NameSet dropped_columns
+        = getColumnsDroppedByAlter(commands, new_metadata, apply_context, share_nested_offsets, settings_defaults.get(), flatten_nested);
     commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
@@ -7050,8 +7072,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         for (const String & col : projection.getRequiredColumns())
             columns_in_projections.emplace(col, projection.name);
     }
-
-    const NameSet dropped_columns = getColumnsDroppedByAlter(commands, old_metadata.columns, flatten_nested);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
