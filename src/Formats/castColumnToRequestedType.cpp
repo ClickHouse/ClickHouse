@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -232,6 +233,8 @@ void castImpl(
     size_t column_i,
     BlockMissingValues * block_missing_values)
 {
+    /// `prepareForCast` expects the concrete column of each type, but `NativeReader` can give `Sparse` and `Replicated` ones.
+    column.column = removeSpecialRepresentations(column.column);
     column = prepareForCast(column, requested_type, settings, column_i, block_missing_values);
     if (!settings.allow_types_conversion)
     {
