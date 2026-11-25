@@ -6,9 +6,7 @@ tags: ['Gerenciando Cloud', 'Modelagem de Dados']
 keywords: ['Dicionários']
 ---
 
-<div id="dictionaries-in-clickhouse">
-  ## Dicionários no ClickHouse
-</div>
+## Dicionários no ClickHouse {#dictionaries-in-clickhouse}
 
 Os dicionários criados no ClickHouse Cloud podem apresentar inconsistências durante a fase inicial de criação. Isso significa que talvez você não veja nenhum dado no dicionário logo após criá-lo. No entanto, após várias tentativas, a consulta de criação pode acabar sendo direcionada a réplicas diferentes, e os dados passarão a ficar visíveis.
 
@@ -24,12 +22,16 @@ Como você pode ver, a parte só chegou depois que o dicionário foi criado. Iss
 
 A solução para esse problema é usar uma consulta `SELECT` em vez de informar uma tabela de origem ao criar o dicionário e habilitar a configuração `select_sequential_consistency=1`.
 
+<Note title="ClickHouse Cloud">
+  Ao criar um dicionário que lê dados de uma tabela do ClickHouse, inclua o nome de usuário e a senha de um usuário dedicado na cláusula `SOURCE`. Esse usuário precisa ter permissão `SELECT` na tabela de origem. Consulte o [exemplo de fonte de dicionário do ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
 Em vez de informar uma tabela de origem:
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
 Use uma consulta `SELECT` com `select_sequential_consistency=1`:
@@ -38,12 +40,10 @@ Use uma consulta `SELECT` com `select_sequential_consistency=1`:
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
-<div id="why-does-this-issue-occur">
-  ## Por que esse problema ocorre?
-</div>
+## Por que esse problema ocorre? {#why-does-this-issue-occur}
 
 Quando você insere dados e depois cria ou recarrega um Dicionário, o DDL pode chegar a uma réplica antes de os dados (ou os novos dados) chegarem. Isso faz com que os dicionários fiquem inconsistentes entre as réplicas. Assim, dependendo de qual réplica recebe a consulta, você pode obter resultados diferentes.
 
