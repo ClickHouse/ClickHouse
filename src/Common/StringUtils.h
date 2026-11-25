@@ -5,7 +5,6 @@
 #include <string_view>
 #include <span>
 #include <cstring>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -216,7 +215,7 @@ inline char toUpperIfAlphaASCII(char c)
     return c & (~0x20);
 }
 
-inline char alternateCaseIfAlphaASCII(char c)
+constexpr char alternateCaseIfAlphaASCII(char c)
 {
     return c ^ 0x20;
 }
@@ -284,12 +283,12 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
     return pos;
 }
 
-inline bool equalsCaseInsensitive(char a, char b)
+constexpr bool equalsCaseInsensitive(const char a, const char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
-inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+constexpr bool equalsCaseInsensitive(std::string_view a, std::string_view b)
 {
     return a.size() == b.size()
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
