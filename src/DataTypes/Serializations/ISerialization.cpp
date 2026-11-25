@@ -129,7 +129,7 @@ String ISerialization::kindStackToString(const KindStack & kind_stack)
     if (kind_stack.size() == 1)
         return kindToString(kind_stack.front());
 
-    for (ssize_t i = kind_stack.size() - 1; i >= 1; i--)
+    for (ssize_t i = static_cast<ssize_t>(kind_stack.size()) - 1; i >= 1; i--)
     {
         if (!result.empty())
             result += "Over";
@@ -173,7 +173,7 @@ bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
     return std::find(kind_stack.begin(), kind_stack.end(), kind) != kind_stack.end();
 }
 
-const std::set<SubstreamType> ISerialization::Substream::named_types
+[[clang::no_destroy]] const std::set<SubstreamType> ISerialization::Substream::named_types
 {
     StringSizes,
     InlinedStringSizes,
@@ -872,7 +872,7 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
     if (prefix_len == 0)
         return {};
 
-    ssize_t last_elem = prefix_len - 1;
+    ssize_t last_elem = static_cast<ssize_t>(prefix_len) - 1;
     auto res = path[last_elem].data;
 
     /// Materialize the column on demand via a lazy creator if one is attached.

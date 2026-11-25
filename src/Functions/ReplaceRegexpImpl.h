@@ -622,7 +622,7 @@ struct ReplaceRegexpImpl
             {
                 budget.charge();
 
-                size_t from = haystack_offsets[i - 1];
+                size_t from = haystack_offsets[static_cast<ssize_t>(i) - 1];
 
                 const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
                 const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
@@ -636,7 +636,7 @@ struct ReplaceRegexpImpl
         processStringsDeduplicated(
             [&](size_t i)
             {
-                const size_t from = haystack_offsets[i - 1];
+                const size_t from = haystack_offsets[static_cast<ssize_t>(i) - 1];
                 return std::string_view(
                     reinterpret_cast<const char *>(haystack_data.data() + from),
                     static_cast<size_t>(haystack_offsets[i] - from));
@@ -669,11 +669,11 @@ struct ReplaceRegexpImpl
         {
             budget.charge();
 
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = haystack_offsets[static_cast<ssize_t>(i) - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - hs_from);
 
-            size_t ndl_from = needle_offsets[i - 1];
+            size_t ndl_from = needle_offsets[static_cast<ssize_t>(i) - 1];
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
             const size_t ndl_length = static_cast<size_t>(needle_offsets[i] - ndl_from);
             std::string_view needle(ndl_data, ndl_length);
@@ -741,11 +741,11 @@ struct ReplaceRegexpImpl
         {
             budget.charge();
 
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = haystack_offsets[static_cast<ssize_t>(i) - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - hs_from);
 
-            size_t repl_from = replacement_offsets[i - 1];
+            size_t repl_from = replacement_offsets[static_cast<ssize_t>(i) - 1];
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<size_t>(replacement_offsets[i] - repl_from);
             std::string_view replacement(repl_data, repl_length);
@@ -785,11 +785,11 @@ struct ReplaceRegexpImpl
         {
             budget.charge();
 
-            size_t hs_from = haystack_offsets[i - 1];
+            size_t hs_from = haystack_offsets[static_cast<ssize_t>(i) - 1];
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + hs_from);
             const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - hs_from);
 
-            size_t ndl_from = needle_offsets[i - 1];
+            size_t ndl_from = needle_offsets[static_cast<ssize_t>(i) - 1];
             const char * ndl_data = reinterpret_cast<const char *>(needle_data.data() + ndl_from);
             const size_t ndl_length = static_cast<size_t>(needle_offsets[i] - ndl_from);
             std::string_view needle(ndl_data, ndl_length);
@@ -797,14 +797,14 @@ struct ReplaceRegexpImpl
             if (needle.empty())
             {
                 res_data.insert(res_data.end(), hs_data, hs_data + hs_length);
-                res_offsets[i] = res_offsets[i - 1] + hs_length;
+                res_offsets[i] = res_offsets[static_cast<ssize_t>(i) - 1] + hs_length;
                 res_offset = res_offsets[i];
                 /// This branch skips every other checkpoint, so the copied row must be charged here.
                 budget.charge(hs_length);
                 continue;
             }
 
-            size_t repl_from = replacement_offsets[i - 1];
+            size_t repl_from = replacement_offsets[static_cast<ssize_t>(i) - 1];
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<size_t>(replacement_offsets[i] - repl_from);
             std::string_view replacement(repl_data, repl_length);

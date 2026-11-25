@@ -2,12 +2,15 @@
 
 #include <Formats/ColumnNameMaps.h>
 #include <exception>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -53,6 +56,7 @@ struct FormatTopKFilterInfo
     bool track_row_group_best_values = false;
     /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
     bool filter_rows = true;
+    Names columns_deciding_threshold;
 };
 
 /// Throws INCORRECT_DATA if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
@@ -234,6 +238,8 @@ struct FormatFilterInfo
     /// Once all its filters are built, the format may skip the row groups whose statistics cannot contain
     /// a key of them. Only the Parquet format uses it.
     std::shared_ptr<const RuntimeFilterPruningPredicate> join_runtime_filter_predicate;
+    /// Whether checking it on pages may read a column index that the Parquet metadata cache cannot keep.
+    bool join_runtime_filter_reads_uncached_column_index = false;
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
@@ -248,6 +254,24 @@ private:
     std::mutex join_runtime_filter_mutex;
     bool join_runtime_filter_key_condition_built TSA_GUARDED_BY(join_runtime_filter_mutex) = false;
     std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition TSA_GUARDED_BY(join_runtime_filter_mutex);
+
+public:
+    using SetHashes = std::shared_ptr<const VectorWithMemoryTracking<UInt64>>;
+
+    /// Hashes of an `IN` set column, computed by `compute` once per query. `hash_kind` must identify all their other inputs.
+    SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
+
+private:
+    struct SetHashesEntry
+    {
+        /// Keeps the column alive, so that its address is not reused by another column.
+        ColumnPtr set_column;
+        std::once_flag computed;
+        SetHashes hashes;
+    };
+
+    std::mutex set_hashes_mutex;
+    std::map<std::pair<const IColumn *, String>, std::shared_ptr<SetHashesEntry>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.

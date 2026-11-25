@@ -345,9 +345,9 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         /// separately before calling this function; reaching it here (e.g. nested in a `Multi`) fails closed.
         case OpNum::Close:
             return false;
-        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
-        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
-        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` returns
+        /// only the first data watch, or an empty string if there are no data watches).
+        /// `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
         /// against the tree -- whether the node exists, its `mzxid` for a data watch and its `pzxid` for a
         /// child watch decide between an immediate `DELETED`/`CHANGED`/`CREATED` watch event and
         /// re-registering the watch -- so a watch on a pruned path would replay differently after orphan
