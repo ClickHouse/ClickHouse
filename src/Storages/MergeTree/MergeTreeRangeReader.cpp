@@ -679,6 +679,15 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     LOG_TEST(log, "ReadResult::applyFilter() num_rows after: {}", num_rows);
 }
 
+/// The columns cache holds only granules read to their end. A granule that a read cuts after the last row the
+/// filter kept is never written to it, so every later read of the range reads that granule from the part again.
+/// When the reader uses the cache, cut only whole granules: the rows after the last kept one are read and
+/// filtered out like the others.
+static bool canCutIncompleteGranules(bool can_read_incomplete_granules, const IMergeTreeReader & reader)
+{
+    return can_read_incomplete_granules && reader.getColumnsCacheStripeMarks() == 0;
+}
+
 void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules_, bool must_apply_filter)
 {
     checkInternalConsistency();
@@ -1367,7 +1376,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
         {
             auto current_filter = FilterWithCachedCount(result.columns.front());
             result.columns.clear();
-            result.optimize(current_filter, can_read_incomplete_granules, merge_tree_reader->mustApplyFilter());
+            result.optimize(current_filter, canCutIncompleteGranules(can_read_incomplete_granules, *merge_tree_reader), merge_tree_reader->mustApplyFilter());
         }
         else
         {
@@ -1862,7 +1871,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         }
 
         /// No later step re-evaluates the candidates, so the filter must not be left in final_filter.
-        result.optimize(current_filter, can_read_incomplete_granules, /*must_apply_filter=*/ true);
+        result.optimize(current_filter, canCutIncompleteGranules(can_read_incomplete_granules, *merge_tree_reader), /*must_apply_filter=*/ true);
     }
 
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
@@ -1971,7 +1980,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         const size_t rows_before_prewhere_filter
             = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 
-        result.optimize(current_filter, can_read_incomplete_granules, false);
+        result.optimize(current_filter, canCutIncompleteGranules(can_read_incomplete_granules, *merge_tree_reader), false);
         /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
         if (performance_counters)
             performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
