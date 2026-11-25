@@ -122,6 +122,7 @@ private:
     std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;

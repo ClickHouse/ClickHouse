@@ -74,6 +74,10 @@ DataTypes tryInferDataTypesByEscapingRule(std::span<const String> fields, const 
 /// See transformInferred(JSON)TypesIfNeeded in SchemaInferenceUtils.h
 void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info = nullptr);
 
+/// Apply final transformation to the type inferred from data by escaping rule.
+/// See transformFinalInferredJSONTypeIfNeeded in SchemaInferenceUtils.h
+void transformFinalInferredTypeByEscapingRuleIfNeeded(DataTypePtr & type, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info = nullptr);
+
 DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escaping_rule);
 DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::EscapingRule> & escaping_rules);
 

@@ -542,6 +542,11 @@ void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePt
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
+void TemplateSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
+{
+    transformFinalInferredTypeByEscapingRuleIfNeeded(type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
+}
+
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
 {
     ParsedTemplateFormatString resultset_format;

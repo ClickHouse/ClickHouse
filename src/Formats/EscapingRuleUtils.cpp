@@ -457,6 +457,12 @@ void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypeP
     }
 }
 
+void transformFinalInferredTypeByEscapingRuleIfNeeded(DataTypePtr & type, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+{
+    if (escaping_rule == FormatSettings::EscapingRule::JSON)
+        transformFinalInferredJSONTypeIfNeeded(type, settings, json_info);
+}
+
 
 DataTypePtr getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule escaping_rule)
 {

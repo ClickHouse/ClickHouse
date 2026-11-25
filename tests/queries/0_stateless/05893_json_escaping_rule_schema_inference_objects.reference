@@ -1,0 +1,22 @@
+CustomSeparated
+(1)	Nullable(Tuple(k Nullable(Int64)))
+(NULL,1)	Nullable(Tuple(j Nullable(String), k Nullable(Int64)))
+('a',NULL)	Nullable(Tuple(j Nullable(String), k Nullable(Int64)))
+[([],1),([1],2)]	Array(Nullable(Tuple(j Array(Nullable(Int64)), k Nullable(Int64))))
+[1,'x']	Array(Dynamic)
+\N	Nullable(String)
+{}	Nullable(String)
+{"k":1}	Nullable(String)
+(1,'x')	Nullable(Tuple(Nullable(Int64), Nullable(String)))
+Regexp
+(1)	Nullable(Tuple(k Nullable(Int64)))
+(NULL,1)	Nullable(Tuple(j Nullable(String), k Nullable(Int64)))
+('a',NULL)	Nullable(Tuple(j Nullable(String), k Nullable(Int64)))
+[1,'x']	Array(Dynamic)
+\N	Nullable(String)
+(1,'x')	Nullable(Tuple(Nullable(Int64), Nullable(String)))
+Template
+(1)	(1,'x')	Nullable(Tuple(k Nullable(Int64)))	Nullable(Tuple(Nullable(Int64), Nullable(String)))
+[1,'x']	(1,'x')	Array(Dynamic)	Nullable(Tuple(Nullable(Int64), Nullable(String)))
+(1,'x')	(1)	Nullable(Tuple(Nullable(Int64), Nullable(String)))	Nullable(Tuple(k Nullable(Int64)))
+(1,'x')	[1,'x']	Nullable(Tuple(Nullable(Int64), Nullable(String)))	Array(Dynamic)
