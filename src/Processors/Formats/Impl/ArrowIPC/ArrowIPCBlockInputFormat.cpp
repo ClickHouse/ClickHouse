@@ -1046,7 +1046,7 @@ const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
     const NullMap * ancestor_nulls, bool case_insensitive, const ArrowIPC::ArrowField * field,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings, bool type_only = false)
 {
     field = skipRunEndEncoded(field);
     const DataTypePtr from_no_null = removeNullable(from_type);
@@ -1068,7 +1068,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(
-                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings);
+                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings, type_only);
             /// A leaf the decoder already converted comes back with the same column but a new type, so
             /// change detection must look at both.
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
@@ -1088,7 +1088,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         const auto & col_arr = assert_cast<const ColumnArray &>(*col);
         auto [new_data, new_data_type] = reinterpretRawBytes(
             col_arr.getDataPtr(), from_arr->getNestedType(), elem_target, /*ancestor_nulls=*/nullptr, case_insensitive,
-            childField(field, 0), format_settings);
+            childField(field, 0), format_settings, type_only);
         if (new_data.get() == col_arr.getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
         /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
@@ -1118,7 +1118,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             {
                 auto [c, t] = reinterpretRawBytes(
                     col_tup.getColumnPtr(i), from_elems[i], elem_target, ancestor_nulls, case_insensitive,
-                    childField(field, i), format_settings);
+                    childField(field, i), format_settings, type_only);
                 changed |= c.get() != col_tup.getColumnPtr(i).get() || t.get() != from_elems[i].get();
                 new_cols[i] = std::move(c);
                 new_types[i] = std::move(t);
@@ -1149,7 +1149,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
         auto to_nested = std::make_shared<DataTypeArray>(entries_target);
         auto [new_nested, new_nested_type] = reinterpretRawBytes(
-            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings);
+            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings, type_only);
         if (new_nested.get() == col_map.getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
@@ -1245,8 +1245,13 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             return {col, from_type};
         return reinterpretRawBytes(
             low_cardinality->convertToFullColumn(), low_cardinality_type->getDictionaryType(), to_type, ancestor_nulls,
-            case_insensitive, field, format_settings);
+            case_insensitive, field, format_settings, type_only);
     }
+
+    /// Only the type is asked for: a `fixed_size_binary` leaf gets the requested type, whatever its width is.
+    /// The width is checked when the values are converted.
+    if (type_only && typeid_cast<const ColumnFixedString *>(&nested))
+        return {col, with_source_nullability(to_leaf)};
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
@@ -1500,11 +1505,15 @@ bool isDeclaredSubcolumn(const DataTypePtr & type, std::string_view subcolumn, b
 }
 
 /// The type a column of the decoded type `type` gets when its raw bytes are reinterpreted for `hint` (see
-/// `reinterpretRawBytes`).
+/// `reinterpretRawBytes`). No value is converted, so a `fixed_size_binary` leaf of a width the requested type
+/// cannot be read from does not throw here: the caller only asks whether a candidate resolves a name, and a
+/// candidate that does not must not fail the query (`u` with `m Map(UInt8, FixedString(1))` for the lookup
+/// `u.m.key_foo`, which the field `u.m` resolves). The width is checked when the chosen source is converted.
 DataTypePtr typeConvertedByHint(const DataTypePtr & type, const DataTypePtr & hint, bool case_insensitive, const FormatSettings & format_settings)
 {
     return reinterpretRawBytes(
-        type->createColumn(), type, hint, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr, format_settings).second;
+        type->createColumn(), type, hint, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr, format_settings,
+        /*type_only=*/true).second;
 }
 
 /// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
@@ -1926,6 +1935,19 @@ Chunk ArrowIPC::buildChunk(
         }
         else
             reinterpretRawByteColumnsImpl(column, header_column.type, src_field, format_settings);
+
+        /// A column taken whole can contain structs whose null maps the decoder keeps only for the conversion
+        /// above and for the conversions of the other columns taken from the same field (see
+        /// `RecordBatchDecoder::collectVisibilityOnlyStructs`). No requested column asks for these nulls, and
+        /// the cast below does not look into a struct it does not convert element-wise (`t String` with
+        /// `t.u.s IPv6`), so they are removed from this column once its own leaves are converted. The decoded
+        /// column keeps them for the other columns.
+        if (src_field)
+        {
+            if (auto visibility_only_it = visibility_only_structs.find(src_field); visibility_only_it != visibility_only_structs.end())
+                std::tie(column.column, column.type) = dropVisibilityOnlyNulls(
+                    column.column, column.type, /*position=*/{}, visibility_only_it->second);
+        }
 
         /// Match differently-cased struct field names against the requested type when case-insensitive
         /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.

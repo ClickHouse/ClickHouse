@@ -329,6 +329,39 @@ SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(s Tuple(v String)), `t
 SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(s Nullable(Tuple(v String)))) AS t, CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(v String))) AS `t.s` FROM numbers(2) INTO OUTFILE 'data.arrow' TRUNCATE FORMAT Arrow SETTINGS enable_nullable_tuple_type = 1;
 SELECT * FROM file('data.arrow', 'Arrow', 't Tuple(s Tuple(v String)), `t.s` String, `t.s.v` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0;
 SELECT * FROM file('data.arrow', 'Arrow', '`t.s.v` Nullable(IPv6), `t.s` String, t Tuple(s Tuple(v String))') SETTINGS enable_nullable_tuple_type = 0;
+
+SELECT 'map lookup of an empty key next to the map or its values';
+-- The serialized key is empty, and the lookup still shares the values with the other column.
+SELECT map('', 'abcdefghijklmnop') AS t INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.key_` String');
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Map(String, IPv6), `t.key_` String');
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.key_` String, t Map(String, IPv6)');
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.values` Array(IPv6), `t.key_` String');
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.key_` String, `t.values` Array(IPv6)');
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Map(String, String), `t.key_` IPv6');
+SELECT map('', 'abcdefghijklmnop') AS t INTO OUTFILE 'data.arrow' TRUNCATE FORMAT Arrow;
+SELECT * FROM file('data.arrow', 'Arrow', 't Map(String, IPv6), `t.key_` String');
+SELECT * FROM file('data.arrow', 'Arrow', '`t.key_` String, t Map(String, IPv6)');
+
+SELECT 'map lookup below struct fields with overlapping names and different key types';
+-- The field `u` cannot resolve the key `foo` with its `UInt8` keys, so its values, which are too short for the
+-- requested type, are not converted, and the lookup is taken from the field `u.m`.
+SELECT CAST(tuple(map('foo', 'abcdefghijklmnop'), tuple(map(toUInt8(1), toFixedString('x', 1)))) AS Tuple(`u.m` Map(String, String), u Tuple(m Map(UInt8, FixedString(1))))) AS t INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS output_format_arrow_fixed_string_as_fixed_byte_array = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_foo` IPv6');
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_foo` String');
+-- The field that resolves the lookup is converted, and its width is checked then.
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6'); -- { serverError INCORRECT_DATA }
+
+SELECT 'null struct row below a struct requested whole as a string';
+-- The null map the struct `u` keeps for the conversion of `t.u.s` does not reach the whole column either.
+SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(u Nullable(Tuple(s String)))) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.u.s` IPv6') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.s` IPv6, t String') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.u` String, `t.u.s` IPv6') SETTINGS enable_nullable_tuple_type = 0;
+SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(u Nullable(Tuple(s String)))) AS t FROM numbers(2) INTO OUTFILE 'data.arrow' TRUNCATE FORMAT Arrow SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrow', 'Arrow', 't String, `t.u.s` IPv6') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrow', 'Arrow', '`t.u.s` IPv6, t String') SETTINGS enable_nullable_tuple_type = 0;
 EOF
 
 cd "$CLICKHOUSE_TMP" || exit 1

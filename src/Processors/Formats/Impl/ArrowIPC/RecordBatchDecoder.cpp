@@ -265,10 +265,11 @@ bool isRequestedBelow(std::string_view path, std::string_view name)
 
 /// Whether the requested column `name` is a dynamic subcolumn `key_<serialized key>` of the map at the dotted
 /// `map_path` (or a subcolumn of one, e.g. `t.key_1.s`): it is extracted from the keys and the values of the map.
+/// The serialized key can be empty: `t.key_` looks up the empty string in a map with `String` keys.
 bool isMapKeyLookup(std::string_view map_path, std::string_view name)
 {
     constexpr std::string_view key_lookup = ".key_";
-    return name.size() > map_path.size() + key_lookup.size() && name.starts_with(map_path)
+    return name.size() >= map_path.size() + key_lookup.size() && name.starts_with(map_path)
         && name.substr(map_path.size()).starts_with(key_lookup);
 }
 

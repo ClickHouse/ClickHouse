@@ -219,3 +219,28 @@ null struct row below a struct next to a top-level field with the same dotted pa
 ((''))	(\'\')	\N
 6162:6364:6566:6768:696a:6b6c:6d6e:6f70	(\'abcdefghijklmnop\')	(('abcdefghijklmnop'))
 \N	(\'\')	((''))
+map lookup of an empty key next to the map or its values
+abcdefghijklmnop
+{'':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	abcdefghijklmnop
+abcdefghijklmnop	{'':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	abcdefghijklmnop
+abcdefghijklmnop	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{'':'abcdefghijklmnop'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+{'':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	abcdefghijklmnop
+abcdefghijklmnop	{'':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+map lookup below struct fields with overlapping names and different key types
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+abcdefghijklmnop
+null struct row below a struct requested whole as a string
+((\'abcdefghijklmnop\'))
+((\'\'))
+((\'abcdefghijklmnop\'))	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+((\'\'))	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	((\'abcdefghijklmnop\'))
+::	((\'\'))
+((\'abcdefghijklmnop\'))	(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+((\'\'))	(\'\')	::
+((\'abcdefghijklmnop\'))	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+((\'\'))	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	((\'abcdefghijklmnop\'))
+::	((\'\'))
