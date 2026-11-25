@@ -38,6 +38,7 @@ POCO_IMPLEMENT_EXCEPTION(NoMessageException, NetException, "No message received"
 POCO_IMPLEMENT_EXCEPTION(MessageException, NetException, "Malformed message")
 POCO_IMPLEMENT_EXCEPTION(HTTPHeaderLimitException, MessageException, "HTTP header limit exceeded")
 POCO_IMPLEMENT_EXCEPTION(MultipartException, MessageException, "Malformed multipart message")
+POCO_IMPLEMENT_EXCEPTION(MalformedMessageException, MessageException, "Malformed message")
 POCO_IMPLEMENT_EXCEPTION(HTTPException, NetException, "HTTP Exception")
 POCO_IMPLEMENT_EXCEPTION(NotAuthenticatedException, HTTPException, "No authentication information found")
 POCO_IMPLEMENT_EXCEPTION(UnsupportedRedirectException, HTTPException, "Unsupported HTTP redirect (protocol change)")

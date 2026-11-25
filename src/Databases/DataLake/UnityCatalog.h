@@ -21,7 +21,7 @@ public:
     UnityCatalog(
         const std::string & catalog_,
         const std::string & base_url_,
-        const std::string & catalog_credential_,
+        std::string_view catalog_credential_,
         DB::ContextPtr context_);
 
     ~UnityCatalog() override = default;
@@ -73,7 +73,7 @@ private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    const std::string bearer_token;
+    const DB::SecretString bearer_token;
 
     [[nodiscard]] std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const;
