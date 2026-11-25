@@ -462,6 +462,16 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                     addFixedColumn(maybe_fixed_column, fixed_columns);
             }
+            /// `empty(x)` on String or FixedString is true for exactly one value, the same one as `x = ''`.
+            /// The comparison rewrite leaves this form in place for a sorting-key column, because that
+            /// column is not rewritten to its size subcolumn.
+            else if (name == "empty")
+            {
+                const auto * arg = node->children.size() == 1 ? node->children[0] : nullptr;
+                if (arg && !arg->column && arg->result_type
+                    && isStringOrFixedString(removeLowCardinalityAndNullable(arg->result_type)))
+                    addFixedColumn(arg, fixed_columns);
+            }
             else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
             {
                 if (node->children.size() == 2 && !node->children[0]->column
