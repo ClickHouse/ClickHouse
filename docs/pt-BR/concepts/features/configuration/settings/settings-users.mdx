@@ -121,13 +121,17 @@ A senha pode ser especificada em texto simples ou em SHA256 (formato hexadecimal
 A senha de uso único baseada em tempo (TOTP) pode ser usada para autenticar usuários do ClickHouse, gerando códigos de acesso temporários válidos por um período limitado.
 Esse método de autenticação TOTP está em conformidade com os padrões da [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), o que o torna compatível com aplicativos TOTP populares, como Google Authenticator, 1Password e ferramentas semelhantes.
 Ele pode ser configurado por meio do arquivo de configuração `users.xml`, além da autenticação baseada em senha.
-Esse recurso ainda não tem suporte no controle de acesso orientado por SQL.
+Esse recurso ainda não tem suporte no controle de acesso orientado a SQL.
 
 Para autenticar usando TOTP, os usuários devem fornecer uma senha primária junto com uma senha de uso único gerada pelo aplicativo TOTP, por meio da opção de linha de comando `--one-time-password` ou concatenada à senha principal com o caractere &#39;+&#39;.
 Por exemplo, se a senha primária for `some_password` e o código TOTP gerado for `345123`, o usuário pode especificar `--password some_password+345123` ou `--password some_password --one-time-password 345123` ao se conectar ao ClickHouse. Se nenhuma senha for especificada, o `clickhouse-client` solicitará a senha interativamente.
+Quando nenhum código é fornecido para uma conta com TOTP, o servidor responde com o erro `REQUIRED_SECOND_FACTOR`, independentemente de a senha estar correta ou não, e o `clickhouse-client` solicita o código; a senha só é verificada junto com o código.
 
 Cada código é aceito no máximo uma vez, conforme exigido pela [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), portanto um usuário pode se autenticar com sucesso no máximo uma vez por `period`.
 Tenha isso em mente no caso de clientes que se autenticam a cada request ou connection (por exemplo, scripts que usam a interface HTTP): cada autenticação exige um código novo.
+
+Por padrão, cada servidor rastreia os códigos aceitos de forma independente; portanto, em um cluster, um código aceito por um servidor ainda pode ser aceito uma vez por cada um dos demais servidores.
+Habilite a configuração do servidor `totp_track_used_codes_in_keeper` para rastrear os códigos aceitos no ZooKeeper ou no ClickHouse Keeper: assim, os códigos passam a ser aceitos no máximo uma vez em todos os servidores que compartilham o mesmo Keeper, e os registros persistem após restarts do servidor.
 
 Para habilitar a autenticação TOTP para um usuário, configure a seção `time_based_one_time_password` em `users.xml`. Essa seção define as configurações de TOTP, como Secret, período de validade, número de dígitos e algoritmo de hash.
 
@@ -169,11 +173,11 @@ To generate a TOTP-compatible secret for use with ClickHouse, run the following 
 $ base32 -w32 < /dev/urandom | head -1
 ````
 
-Este comando produzirá um segredo codificado em base32 que pode ser adicionado ao campo `secret` em users.xml.
+Este comando produzirá um Secret codificado em base32 que pode ser adicionado ao campo `secret` em users.xml.
 
 Para habilitar o TOTP para um usuário específico, adicione a qualquer campo existente baseado em senha (como `password` ou `password_sha256_hex`) outra seção `time_based_one_time_password`.
 
-A ferramenta [qrencode](https://linux.die.net/man/1/qrencode) pode ser usada para gerar um código QR para o segredo do TOTP.
+A ferramenta [qrencode](https://linux.die.net/man/1/qrencode) pode ser usada para gerar um código QR para o Secret do TOTP.
 
 ```bash
 $ qrencode -t ansiutf8 'otpauth://totp/ClickHouse?issuer=ClickHouse&secret=JBSWY3DPEHPK3PXP'

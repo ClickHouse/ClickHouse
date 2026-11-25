@@ -629,7 +629,7 @@ Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference
 The default values of the following advanced parameters will work well in virtually all situations.
 We do not recommend changing them.
 
-Optional parameter `dictionary_block_size` (default: 512) specifies the size of dictionary blocks in rows.
+Optional parameter `dictionary_block_size` (default: 8192) specifies the size of dictionary blocks in rows.
 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
@@ -910,6 +910,16 @@ Example:
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+A condition on one element of the indexed array uses the index in the same way as `has` and `hasAny`: `arrayJoin(tags) = 'clickhouse'` uses it like `has(tags, 'clickhouse')`, and `arrayJoin(tags) IN (set)` uses it like `hasAny(tags, set)`. This is also true for `GLOBAL IN`, for `IN` with `transform_null_in = 1` when the set has no `NULL`, and for the `ARRAY JOIN` clause. The index only skips granules, and ClickHouse still checks the condition on each element. `LEFT ARRAY JOIN` also uses the index, unless the condition accepts the element that it adds for an empty array (an empty string).
+
+Example:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1628,7 +1638,7 @@ Since 26.11, `pfor` is the default for the [`text_index_posting_list_codec`](/re
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 
-String predicates can be sped up using text indexes and bloom-filter-based based indexes (index type `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), yet both are fundamentally different in their design and intended use cases:
+String predicates can be sped up using text indexes and bloom-filter-based indexes (index type `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), yet both are fundamentally different in their design and intended use cases:
 
 **Bloom filter indexes**
 
@@ -1670,7 +1680,7 @@ During index creation, three files are created (per part):
 
 **Dictionary blocks file (.dct)**
 
-The tokens in the text index are sorted and stored in dictionary blocks of 512 tokens each (the block size is configurable by parameter `dictionary_block_size`).
+The tokens in the text index are sorted and stored in dictionary blocks of 8192 tokens each (the block size is configurable by parameter `dictionary_block_size`).
 A dictionary blocks file (.dct) consists all the dictionary blocks of all index granules in a part.
 
 **Index header file (.idx)**

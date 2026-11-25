@@ -8,13 +8,13 @@ keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Clou
 ---
 
 <div id="december-20-2022">
-  ## 2022年12月20日
+  ## 2022年12月20日 {#december-20-2022}
 </div>
 
 このリリースでは、管理者が SQL コンソール にシームレスにログインできる機能、コールドリード時の読み取り性能の向上、ならびに ClickHouse Cloud 向け Metabase コネクタの改善が導入されています。
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-27}
 </div>
 
 * AdminユーザーがSQL コンソールにシームレスにアクセスできるようにしました
@@ -22,26 +22,26 @@ keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Clou
 * オンボーディングアンケートを追加
 
 <div id="reliability-and-performance-3">
-  ### 信頼性とパフォーマンス
+  ### 信頼性とパフォーマンス {#reliability-and-performance-3}
 </div>
 
 * ネットワーク障害発生時に復旧できるよう、長時間実行されるINSERTクエリ向けの再試行ロジックを追加
 * コールドリードのパフォーマンスを改善
 
 <div id="integrations-changes-26">
-  ### インテグレーションの変更点
+  ### インテグレーションの変更点 {#integrations-changes-26}
 </div>
 
 * [Metabase プラグイン](/ja/integrations/connectors/data-visualization/metabase-and-clickhouse) に、待望の v0.9.1 メジャーアップデートが入りました。これにより、最新バージョンの Metabase と互換性を持ち、ClickHouse Cloud で十分に検証されています。
 
 <div id="december-6-2022---general-availability">
-  ## 2022年12月6日 - 一般提供
+  ## 2022年12月6日 - 一般提供 {#december-6-2022---general-availability}
 </div>
 
 ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向けのアップタイム SLA、公開ステータスページを備え、本番利用に対応しました。このリリースには、AWS Marketplace とのインテグレーション、ClickHouse ユーザー向けのデータ探索ワークベンチである SQL コンソール、そして ClickHouse Cloud で自分のペースで学べる ClickHouse Academy など、主要な新機能が含まれています。詳しくはこの[ブログ](https://clickhouse.com/blog/clickhouse-cloud-generally-available)をご覧ください。
 
 <div id="production-ready">
-  ### 本番運用対応
+  ### 本番運用対応 {#production-ready}
 </div>
 
 * SOC2 Type II コンプライアンス (詳細は[ブログ](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant)と[Trust Center](https://trust.clickhouse.com/)を参照)
@@ -49,15 +49,13 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * 本番用途向けのアップタイム SLA を提供
 * [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jettukeanwrfc) で提供
 
-<div id="major-new-capabilities">
-  ### 主な新機能
-</div>
+### 主な新機能 {#major-new-capabilities}
 
 * ClickHouse ユーザー向けのデータ探索ワークベンチである SQL コンソールをリリース
-* ClickHouse Cloud で自分のペースで学べる [ClickHouse Academy](https://learn.clickhouse.com/visitor_class_catalog) を公開
+* ClickHouse Cloud で自分のペースで学べる [ClickHouse Academy](https://learn.clickhouse.com/) を公開
 
 <div id="pricing-and-metering-changes">
-  ### 料金およびメータリングの変更
+  ### 料金およびメータリングの変更 {#pricing-and-metering-changes}
 </div>
 
 * トライアル期間を30日間に延長
@@ -66,7 +64,7 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * コンピュートのメータリングにおける粒度と精度を向上
 
 <div id="integrations-changes-26">
-  ### インテグレーションの変更点
+  ### インテグレーションの変更点 {#integrations-changes-27}
 </div>
 
 * ClickHouse Postgres / MySQL インテグレーションエンジンのサポートを追加
@@ -75,44 +73,44 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * バージョンや更新ステータスなどに関する豊富なメタデータを追加し、Integrations UI を改善
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-28}
 </div>
 
 * クラウドコンソールで多要素認証に対応
 * モバイルデバイスでのクラウドコンソールのナビゲーションを改善
 
 <div id="documentation-changes">
-  ### ドキュメントの変更
+  ### ドキュメントの変更 {#documentation-changes}
 </div>
 
 * ClickHouse Cloud 向けの専用の[ドキュメント](/ja/products/cloud/getting-started/intro)セクションを追加しました
 
 <div id="bug-fixes-5">
-  ### バグ修正
+  ### バグ修正 {#bug-fixes-5}
 </div>
 
 * 依存関係の解決が原因で、バックアップからの復元が常に正常に動作しない既知の問題を修正しました
 
 <div id="november-29-2022">
-  ## 2022年11月29日
+  ## 2022年11月29日 {#november-29-2022}
 </div>
 
 このリリースでは、SOC 2 Type II コンプライアンスに対応し、ClickHouse のバージョンを 22.11 に更新するとともに、複数の ClickHouse クライアントとインテグレーションを改善しました。
 
 <div id="general-changes-4">
-  ### 全般的な変更
+  ### 全般的な変更 {#general-changes-4}
 </div>
 
 * SOC 2 Type II に準拠しました (詳細は[ブログ](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant)および [Trust Center](https://trust.clickhouse.com) をご覧ください)
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-29}
 </div>
 
 * サービスが自動的に一時停止されたことを示す「Idle」ステータスインジケーターを追加
 
 <div id="clickhouse-2211-version-upgrade">
-  ### ClickHouse 22.11 へのバージョンアップグレード
+  ### ClickHouse 22.11 へのバージョンアップグレード {#clickhouse-2211-version-upgrade}
 </div>
 
 * Hudi および Delta Lake のテーブルエンジンとテーブル関数のサポートを追加
@@ -122,7 +120,7 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * 変更の全一覧については、[22.11 の詳細な変更履歴](#clickhouse-2211-version-upgrade)を参照してください
 
 <div id="integrations-1">
-  ### インテグレーション
+  ### インテグレーション {#integrations-1}
 </div>
 
 * Python クライアント: v3.11 に対応、insert のパフォーマンスを改善
@@ -131,7 +129,7 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * dbt-clickhouse: DBT v1.3 に対応
 
 <div id="bug-fixes-5">
-  ### バグ修正
+  ### バグ修正 {#bug-fixes-6}
 </div>
 
 * アップグレード後に古い ClickHouse バージョンが表示される不具合を修正しました
@@ -139,26 +137,26 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * 新しく作成された非管理者アカウントは、デフォルトでは system table へアクセスできなくなりました
 
 <div id="known-issues-in-this-release">
-  ### このリリースにおける既知の問題
+  ### このリリースにおける既知の問題 {#known-issues-in-this-release}
 </div>
 
 * 依存関係の解決の問題により、バックアップからの復元が機能しない場合があります
 
 <div id="november-17-2022">
-  ## 2022年11月17日
+  ## 2022年11月17日 {#november-17-2022}
 </div>
 
 このリリースでは、ローカルのClickHouseテーブルおよびHTTPソースのディクショナリが利用可能になり、ムンバイリージョンがサポートされ、クラウドコンソールのユーザーエクスペリエンスが改善されました。
 
 <div id="general-changes-5">
-  ### 一般的な変更点
+  ### 一般的な変更点 {#general-changes-5}
 </div>
 
 * ローカルのClickHouseテーブルおよびHTTPソースからの [Dictionaries](/ja/reference/statements/create/dictionary) のサポートを追加
 * ムンバイ[リージョン](/ja/products/cloud/reference/supported-regions)への対応を追加
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-30}
 </div>
 
 * 請求書のフォーマットを改善
@@ -167,38 +165,38 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * ファイルアップロード時のエラー処理を改善
 
 <div id="bug-fixes-5">
-  ### バグ修正
+  ### バグ修正 {#bug-fixes-7}
 </div>
 
 * 一部のパーツに大きな単一ファイルが含まれていると、バックアップが失敗する可能性がある不具合を修正しました
 * アクセスリストの変更が同時に適用された場合、バックアップからの復元に失敗する不具合を修正しました
 
 <div id="known-issues">
-  ### 既知の問題
+  ### 既知の問題 {#known-issues}
 </div>
 
 * 依存関係の解決の影響で、バックアップからの復元が正常に動作しない場合があります
 
 <div id="november-3-2022">
-  ## 2022年11月3日
+  ## 2022年11月3日 {#november-3-2022}
 </div>
 
 このリリースでは、料金体系から読み取り/書き込みユニットを廃止し (詳細は[料金ページ](https://clickhouse.com/pricing)を参照) 、ClickHouseのバージョンを22.10に更新するとともに、セルフサービスのお客様向けにより高い垂直スケーリングをサポートし、デフォルト設定の改善によって信頼性も向上させています。
 
 <div id="general-changes-4">
-  ### 全般的な変更
+  ### 全般的な変更 {#general-changes-6}
 </div>
 
 * 料金体系から読み取り/書き込みユニットを削除しました
 
 <div id="configuration-changes-2">
-  ### 設定の変更
+  ### 設定の変更 {#configuration-changes-2}
 </div>
 
 * 安定性の理由により、設定 `allow_suspicious_low_cardinality_types`、`allow_suspicious_fixed_string_types`、`allow_suspicious_codecs` (デフォルトは false) は、ユーザーが変更できなくなりました。
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-31}
 </div>
 
 * 有料顧客向けに、垂直スケーリングのセルフサービス上限をメモリ 720GB まで引き上げました
@@ -208,7 +206,7 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * 課金管理のワークフローを改善しました
 
 <div id="clickhouse-2210-version-upgrade">
-  ### ClickHouse 22.10 バージョンアップグレード
+  ### ClickHouse 22.10 バージョンアップグレード {#clickhouse-2210-version-upgrade}
 </div>
 
 * 大きなパーツ (10 GiB 以上) が多数存在する場合に「パーツが多すぎる」しきい値を緩和し、オブジェクトストレージ上でのマージを改善しました。これにより、単一テーブルの単一パーティションに最大 PB 級のデータを格納できるようになりました。
@@ -218,26 +216,26 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * 変更点の完全な一覧については、[22.10 の詳細な変更履歴](#clickhouse-2210-version-upgrade)を参照してください。
 
 <div id="october-25-2022">
-  ## 2022年10月25日
+  ## 2022年10月25日 {#october-25-2022}
 </div>
 
 このリリースでは、小規模なワークロードにおけるコンピュート消費量が大幅に削減され、コンピュートの価格も引き下げられました (詳細は [pricing](https://clickhouse.com/pricing) ページをご覧ください) 。また、デフォルト設定の改善により安定性が向上し、ClickHouse Cloud コンソールの Billing と Usage のビューも強化されています。
 
 <div id="general-changes-7">
-  ### 一般的な変更
+  ### 一般的な変更 {#general-changes-7}
 </div>
 
 * サービスの最小メモリ割り当てを24Gに引き下げ
 * サービスのアイドルタイムアウトを30分から5分に短縮
 
 <div id="configuration-changes-3">
-  ### 設定変更
+  ### 設定変更 {#configuration-changes-3}
 </div>
 
 * max&#95;parts&#95;in&#95;total を 100k から 10k に引き下げました。MergeTree テーブルの `max_parts_in_total` 設定のデフォルト値を、100,000 から 10,000 に引き下げました。この変更は、データパーツ数が多いと Cloud 上のサービスの起動時間が長くなる傾向があることが確認されたためです。パーツ数が多い場合は、通常、パーティションキーの粒度が細かすぎることを示しており、これは多くの場合、意図せず設定されてしまうものであるため、避けるべきです。デフォルト値を変更することで、こうしたケースをより早い段階で検出できるようになります。
 
 <div id="console-changes-27">
-  ### コンソールの変更点
+  ### コンソールの変更点 {#console-changes-32}
 </div>
 
 * トライアルユーザー向けに、Billingビューでのクレジット使用状況の詳細を拡充
@@ -245,10 +243,8 @@ ClickHouse Cloud は、SOC2 Type II への準拠、本番ワークロード向�
 * IPフィルタリングのオプション切り替え時のワークフローを改善
 * クラウドコンソール にメール確認を再送信するボタンを追加
 
-<div id="october-4-2022---beta">
-  ## 2022年10月4日 - ベータ
-</div>
+## 2022年10月4日 - ベータ {#october-4-2022---beta}
 
-ClickHouse Cloud は、2022年10月4日にパブリックベータを開始しました。詳細は、こちらの[ブログ](https://clickhouse.com/blog/clickhouse-cloud-public-beta)をご覧ください。
+ClickHouse Cloud は 2022年10月4日にパブリックベータを開始しました。詳細については[ブログ](https://clickhouse.com/blog/clickhouse-cloud-public-beta)をご覧ください。
 
-ClickHouse Cloud のバージョンは ClickHouse core v22.10 に基づいています。互換性のある機能の一覧については、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility)ガイドを参照してください。
+ClickHouse Cloud のバージョンは ClickHouse core v22.10 をベースとしています。互換性のある機能の一覧については、[Cloud の互換性](/ja/products/cloud/guides/cloud-compatibility)ガイドを参照してください。

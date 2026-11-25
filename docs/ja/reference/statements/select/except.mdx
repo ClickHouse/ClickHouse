@@ -16,9 +16,7 @@ doc_type: 'reference'
 * 括弧が指定されていない場合、複数の `EXCEPT` ステートメントは左から右に実行されます。
 * `EXCEPT` 演算子の優先順位は `UNION` 句と同じで、`INTERSECT` 句より低くなります。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 SELECT column1 [, column2 ]
@@ -42,15 +40,11 @@ FROM table1
 [WHERE condition]
 ```
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 このセクションの例では、`EXCEPT` 句の使い方を示します。
 
-<div id="filtering-numbers-using-the-except-clause">
-  ### `EXCEPT` 句を使用した数値の絞り込み
-</div>
+### `EXCEPT` 句を使用した数値の絞り込み {#filtering-numbers-using-the-except-clause}
 
 以下は、1 から 10 までの数値のうち、3 から 8 までに含まれ*ない*ものを返す簡単な例です。
 
@@ -71,18 +65,16 @@ FROM numbers(3, 6)
 └────────┘
 ```
 
-<div id="excluding-specific-columns-using-except">
-  ### `EXCEPT()` を使用して特定のカラムを除外する
-</div>
+### `EXCEPT()` を使用して特定のカラムを除外する {#excluding-specific-columns-using-except}
 
 `EXCEPT()` を使うと、結果からカラムをすばやく除外できます。たとえば、以下の例のように、テーブル内のすべてのカラムを選択しつつ、特定のいくつかのカラムだけを除外したい場合に便利です。
 
 ```sql title="Query"
-SHOW COLUMNS IN system.settings
+SHOW COLUMNS IN system.settings;
 
 SELECT * EXCEPT (default, alias_for, readonly, description)
 FROM system.settings
-LIMIT 5
+LIMIT 5;
 ```
 
 ```response title="Response"
@@ -110,9 +102,7 @@ LIMIT 5
    └─────────────────────────┴────────────┴─────────┴──────┴──────┴─────────┴─────────────┴────────────┘
 ```
 
-<div id="using-except-and-intersect-with-cryptocurrency-data">
-  ### 仮想通貨データで `EXCEPT` と `INTERSECT` を使う
-</div>
+### 仮想通貨データで `EXCEPT` と `INTERSECT` を使う {#using-except-and-intersect-with-cryptocurrency-data}
 
 `EXCEPT` と `INTERSECT` は、Boolean 論理は異なるものの、しばしば同じような場面で使えます。どちらも、共通のカラムを 1 つ以上持つ 2 つのテーブルがある場合に有用です。
 たとえば、売買価格と出来高を含む、数百万行規模の過去の仮想通貨データがあるとします。
@@ -134,6 +124,7 @@ INSERT INTO crypto_prices
    SELECT *
    FROM s3(
     'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    NOSIGN,
     'CSVWithNames'
 );
 
@@ -158,7 +149,7 @@ LIMIT 10;
 └────────────┴─────────────┴─────────────┴──────────┴──────────────┴───────────────┘
 ```
 
-ここで、保有している暗号通貨の一覧と各コインの数量を含む `holdings` というテーブルがあるとします。
+ここで、保有している仮想通貨の一覧と各コインの数量を含む `holdings` というテーブルがあるとします。
 
 ```sql title="Query"
 CREATE TABLE holdings
@@ -178,7 +169,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin Diamond', 5000);
 ```
 
-**「保有しているコインのうち、これまで一度も $10 未満で取引されたことがないものはどれか？」**のような問いには、`EXCEPT` を使用して答えられます。
+**「保有しているコインのうち、これまで一度も $10 未満で取引されたことがないものはどれか？」**&#x306E;ような問いには、`EXCEPT` を使用して答えられます。
 
 ```sql title="Query"
 SELECT crypto_name FROM holdings
@@ -194,11 +185,9 @@ WHERE price < 10;
 └─────────────┘
 ```
 
-つまり、この例の限られたデータを見るかぎり、保有している4種類の暗号通貨のうち、Bitcoin だけは一度も10ドルを下回っていません。
+つまり、この例の限られたデータを見るかぎり、保有している4種類の仮想通貨のうち、Bitcoin だけは一度も10ドルを下回っていません。
 
-<div id="using-except-distinct">
-  ### `EXCEPT DISTINCT` の使用
-</div>
+### `EXCEPT DISTINCT` の使用 {#using-except-distinct}
 
 前のクエリでは、結果に Bitcoin の保有データが複数含まれていました。`EXCEPT` に `DISTINCT` を追加すると、結果から重複した行を除去できます。
 
