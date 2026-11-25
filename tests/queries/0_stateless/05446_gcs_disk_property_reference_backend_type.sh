@@ -28,3 +28,15 @@ $CLICKHOUSE_CLIENT --use_native_gcs=1 --s3_allow_server_credentials_in_user_quer
 "
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
+
+# An indirect backend type that resolves to S3 with an explicit literal key pair relies on no server credentials,
+# so neither the S3 nor the native GCS restriction refuses it.
+$CLICKHOUSE_CLIENT --s3_allow_server_credentials_in_user_queries=0 -m -q "
+    CREATE TABLE ${TABLE}_s3 (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(type = 's3', object_storage_type = '\${type}',
+        endpoint = 'http://localhost:11111/test/${DB}_s3_explicit/',
+        access_key_id = 'clickhouse', secret_access_key = 'clickhouse', skip_access_check = 1);
+    INSERT INTO ${TABLE}_s3 VALUES (1);
+    SELECT x FROM ${TABLE}_s3;
+    DROP TABLE ${TABLE}_s3 SYNC;
+"

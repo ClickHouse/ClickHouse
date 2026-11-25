@@ -1092,6 +1092,18 @@ class PocoRestClient : public RestClient {
   }
 
  private:
+  static bool HasLineBreak(std::string const& s) {
+    return s.find_first_of("\r\n") != std::string::npos;
+  }
+
+  static Status HeaderLineBreakStatus(std::string const& name) {
+    // The value is not quoted: it may be a credential.
+    return Status(StatusCode::kPermissionDenied,
+                  "The GCS request header `" + name.substr(0, name.find_first_of("\r\n")) +
+                      "` contains a line break (CR or LF), refusing to send the "
+                      "request");
+  }
+
   StatusOr<std::unique_ptr<RestResponse>> MakeRequest(
       RestContext& context, RestRequest const& request,
       std::string const& method,
@@ -1117,14 +1129,30 @@ class PocoRestClient : public RestClient {
       // that never passed `http_forbid_headers`, or split the request. Refuse
       // to send anything with such a header, as `checkGCPOAuthAccessToken`
       // does on the S3-compatible path.
-      auto const has_line_break = [](std::string const& s) {
-        return s.find_first_of("\r\n") != std::string::npos;
-      };
-      if (has_line_break(auth_header.first) ||
-          has_line_break(auth_header.second)) {
+      if (HasLineBreak(auth_header.first) || HasLineBreak(auth_header.second)) {
         return Status(StatusCode::kPermissionDenied,
                       "The GCS authentication header contains a line break "
                       "(CR or LF), refusing to send the request");
+      }
+    }
+    // The other headers `MakeSingleRequest` sends are checked the same way. The
+    // SDK puts its own `Authorization` header into `request.headers()` (the
+    // legacy `Oauth2CredentialsOption` carrier, whose token is fetched
+    // separately from the one above), and a custom or per-call header can carry
+    // a line break just as well.
+    if (options.has<CustomHeadersOption>()) {
+      for (auto const& header : options.get<CustomHeadersOption>()) {
+        if (HasLineBreak(header.first) || HasLineBreak(header.second)) {
+          return HeaderLineBreakStatus(header.first);
+        }
+      }
+    }
+    for (auto const* headers : {&context.headers(), &request.headers()}) {
+      for (auto const& header : *headers) {
+        if (HasLineBreak(header.first)) return HeaderLineBreakStatus(header.first);
+        for (auto const& value : header.second) {
+          if (HasLineBreak(value)) return HeaderLineBreakStatus(header.first);
+        }
       }
     }
 
@@ -1270,7 +1298,6 @@ class PocoRestClient : public RestClient {
         if (!value.empty()) http_request.add(header.first, value);
       }
     }
-
     auto const payload_size = std::accumulate(
         payload.begin(), payload.end(), std::size_t{0},
         [](std::size_t n, auto const& s) { return n + s.size(); });

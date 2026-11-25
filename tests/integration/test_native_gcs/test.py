@@ -36,6 +36,9 @@ LONG_LIVED_TOKEN_PORT = 8964
 # stub `authorized_user` file whose `token_uri` is this port: without it the ADC chain ends at the
 # GCE metadata server, which is unreachable in the test network and hangs the first write.
 ADC_TOKEN_PORT = 8965
+
+# A stub whose first exchange returns an access token with a line break in it, and ordinary ones after.
+LINE_BREAK_TOKEN_PORT = 8966
 ADC_CREDENTIALS_PATH = "/var/lib/clickhouse/google_application_credentials.json"
 
 cluster = ClickHouseCluster(__file__)
@@ -87,6 +90,12 @@ def started_cluster():
                 ("oauth_token_mock.py", "node", SHORT_LIVED_TOKEN_PORT, ["30"]),
                 ("oauth_token_mock.py", "node", LONG_LIVED_TOKEN_PORT, ["7200"]),
                 ("oauth_token_mock.py", "node", ADC_TOKEN_PORT, ["7200"]),
+                (
+                    "oauth_token_mock.py",
+                    "node",
+                    LINE_BREAK_TOKEN_PORT,
+                    ["30", "line-break-first"],
+                ),
             ],
         )
 
@@ -563,6 +572,56 @@ def test_dynamic_gcs_disk_caches_a_long_lived_access_token(started_cluster):
     node.query("DROP TABLE gcs_adc_cached SYNC")
 
 
+def test_dynamic_gcs_disk_rejects_a_line_break_in_a_service_account_token(started_cluster):
+    """A request must not carry a header with a line break, whichever carrier the SDK uses for it.
+
+    A service-account key whose `private_key_id` is the P12 marker makes the SDK exchange a signed
+    assertion at the key's `token_uri` instead of signing a JWT locally, and the SDK then sends the token
+    of its legacy `Oauth2CredentialsOption` in the request headers, next to the one the transport
+    resolves itself. The stub's first token contains CR LF: Poco would write it verbatim, adding a header
+    that never passed `http_forbid_headers`, so the request must be refused before it is sent.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    node = started_cluster.instances["node"]
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key = json.dumps(
+        {
+            "type": "service_account",
+            "project_id": "test-project",
+            "private_key_id": "--unknown--",
+            "private_key": private_key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            ).decode(),
+            "client_email": "line-break@test-project.iam.gserviceaccount.com",
+            "client_id": "1",
+            "token_uri": f"http://localhost:{LINE_BREAK_TOKEN_PORT}/token",
+        }
+    )
+    # A ClickHouse string literal: the JSON escapes (`\n` in the PEM) must reach the server as they are.
+    key_literal = key.replace("\\", "\\\\").replace("'", "\\'")
+
+    node.query("DROP TABLE IF EXISTS gcs_line_break_token SYNC")
+    error = node.query_and_get_error(
+        "CREATE TABLE gcs_line_break_token (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_line_break_token_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('line_break_token/')}',"
+        f"  service_account_key = '{key_literal}'"
+        ")",
+        settings={"use_native_gcs": 1},
+    )
+    assert "line break" in error, error
+    exchanges, _ = token_exchanges(LINE_BREAK_TOKEN_PORT)
+    assert exchanges > 0, "the key did not reach the stub token endpoint"
+
+
 def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
     started_cluster,
 ):
@@ -1019,6 +1078,22 @@ def test_upload_switches_to_resumable_above_single_part_size(started_cluster):
     assert event(single_id, "GCSWriteObject") == 0
     assert event(resumable_id, "GCSInsertObject") == 0
     assert event(resumable_id, "GCSWriteObject") == 1
+
+
+def test_single_request_upload_buffer_respects_the_memory_limit(started_cluster):
+    """An object below `s3_max_single_part_upload_size` is buffered whole for one `InsertObject`
+    request, so the buffer must stop at the memory limit instead of only being counted."""
+    node = started_cluster.instances["node"]
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION gcs('{gcs_url(f'upload/{uuid.uuid4()}.tsv')}', NOSIGN, 'TSV', 's String') "
+        "SELECT 'x' FROM numbers(50000000)",
+        settings={
+            "use_native_gcs": 1,
+            "s3_max_single_part_upload_size": 1024 * 1024 * 1024,
+            "max_memory_usage": 32 * 1024 * 1024,
+        },
+    )
+    assert "MEMORY_LIMIT_EXCEEDED" in error, error
 
 
 def test_profile_events_list_objects_is_counted_by_the_transport(started_cluster):

@@ -182,7 +182,7 @@ void WriteBufferFromGCS::nextImpl()
         if (!pending_data.empty())
         {
             writeToStream(pending_data.data(), pending_data.size());
-            String().swap(pending_data);
+            StringWithMemoryTracking().swap(pending_data);
         }
     }
 
@@ -242,11 +242,11 @@ void WriteBufferFromGCS::insertObject()
         gcs::ObjectMetadata object_metadata;
         for (const auto & [name, value] : *attributes)
             object_metadata.upsert_metadata(name, value);
-        result = client->InsertObject(bucket, key, pending_data, gcs::WithObjectMetadata(std::move(object_metadata)), precondition);
+        result = client->InsertObject(bucket, key, absl::string_view(pending_data.data(), pending_data.size()), gcs::WithObjectMetadata(std::move(object_metadata)), precondition);
     }
     else
     {
-        result = client->InsertObject(bucket, key, pending_data, precondition);
+        result = client->InsertObject(bucket, key, absl::string_view(pending_data.data(), pending_data.size()), precondition);
     }
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     total_time_microseconds += elapsed_microseconds;
@@ -264,7 +264,7 @@ void WriteBufferFromGCS::insertObject()
             fmt::format("while uploading '{}' in bucket '{}'", key, bucket));
     }
 
-    String().swap(pending_data);
+    StringWithMemoryTracking().swap(pending_data);
 }
 
 void WriteBufferFromGCS::finalizeImpl()
@@ -284,7 +284,7 @@ void WriteBufferFromGCS::cancelImpl() noexcept
     /// Abandon the (possibly resumable) upload without finalizing it. Dropping the stream leaves any
     /// resumable session unfinished; GCS garbage-collects incomplete uploads automatically.
     write_stream.reset();
-    String().swap(pending_data);
+    StringWithMemoryTracking().swap(pending_data);
 }
 
 }

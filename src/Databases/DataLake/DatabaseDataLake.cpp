@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskFromAST.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -1487,6 +1488,21 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         }
         evictStatefulTable(name);
     }
+    /// A table on a `disk` is authorized for it by `DataLakeConfiguration::fromDisk`, but the configuration selection
+    /// and the conversion of the location below already read the disk, and the latter reports its bucket and key
+    /// prefix in an error. So do the same checks first, so that a caller who may not use the disk learns nothing of it.
+    if (const auto & disk_setting = (*storage_settings)[DataLakeStorageSetting::disk]; disk_setting.changed)
+    {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_setting.value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting "
+                "`allowed_disks_for_table_engines`", disk_setting.value);
+        /// The context `fromDisk` gets: see `context_copy` below.
+        const ContextPtr disk_check_context = want_stateful ? Context::getGlobalContextInstance() : context_;
+        DiskFromAST::ensureDiskIsAllowed(
+            disk_check_context->getDisk(disk_setting.value), disk_check_context, /* check_remote_hosts */ true);
+    }
+
     const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
 #if USE_AWS_S3 && USE_GOOGLE_CLOUD

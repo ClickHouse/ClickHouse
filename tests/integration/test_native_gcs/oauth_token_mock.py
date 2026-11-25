@@ -5,6 +5,9 @@ test can tell whether the transport minted one token for good or renewed it. `GE
 number of exchanges so far together with the last request body, which is how a test checks that the
 credentials the SQL definition supplied are the ones actually presented to the token endpoint.
 
+With a third argument `line-break-first`, the first exchange returns an access token containing CR LF,
+for the test that a request never carries a header with a line break.
+
 The reported lifetime comes from the command line. Anything at or below
 `GoogleOAuthAccessTokenExpirationSlack()` (4 minutes) makes google-cloud-cpp's caching decorator treat
 the token as expiring soon and refresh it on every use; a long lifetime exercises the cache instead.
@@ -19,6 +22,7 @@ class TokenHandler(http.server.BaseHTTPRequestHandler):
     exchanges = 0
     last_body = ""
     expires_in = 30
+    line_break_first = False
 
     def _respond(self, payload, content_type="application/json"):
         body = payload.encode()
@@ -53,10 +57,13 @@ class TokenHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         TokenHandler.last_body = self.rfile.read(length).decode()
         TokenHandler.exchanges += 1
+        access_token = f"stub-access-token-{TokenHandler.exchanges}"
+        if TokenHandler.line_break_first and TokenHandler.exchanges == 1:
+            access_token = "x\r\nX-Forbidden: injected"
         self._respond(
             json.dumps(
                 {
-                    "access_token": f"stub-access-token-{TokenHandler.exchanges}",
+                    "access_token": access_token,
                     "token_type": "Bearer",
                     "expires_in": TokenHandler.expires_in,
                 }
@@ -71,4 +78,6 @@ if __name__ == "__main__":
     port = int(sys.argv[1])
     if len(sys.argv) > 2:
         TokenHandler.expires_in = int(sys.argv[2])
+    if len(sys.argv) > 3:
+        TokenHandler.line_break_first = sys.argv[3] == "line-break-first"
     http.server.ThreadingHTTPServer(("0.0.0.0", port), TokenHandler).serve_forever()

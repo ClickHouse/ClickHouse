@@ -11,6 +11,7 @@
 #include <IO/WriteSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/client.h>
@@ -79,7 +80,9 @@ private:
     const bool for_disk;
 
     /// The data written so far, as long as it fits into a single `InsertObject` request.
-    String pending_data;
+    /// Its allocations enforce the memory limit: it grows up to `max_single_part_upload_size` (32 MiB by default, can be
+    /// much more) without any other allocation that would stop at the limit.
+    StringWithMemoryTracking pending_data;
     /// The resumable upload, opened once the data no longer fits into `pending_data`.
     std::unique_ptr<google::cloud::storage::ObjectWriteStream> write_stream;
 
