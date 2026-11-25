@@ -846,9 +846,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     /// past the header before its first read. Only for a single layer, whose header is at the front of the first blob, and
     /// for a blob known to hold a header.
     const String * header_cache_key = nullptr;
-    if (encryption_header_cache && layers == 1 && source && !source->objects.empty() && !source->objects.front().remote_path.empty()
-        && source->objects.front().bytes_size != StoredObject::UnknownSize && source->objects.front().bytes_size >= FileEncryption::Header::kSize)
-        header_cache_key = &source->objects.front().remote_path;
+    if (encryption_header_cache && layers == 1 && source && !source->objects.empty())
+    {
+        const auto & blob = source->objects.front();
+        if (!blob.remote_path.empty() && blob.bytes_size != StoredObject::UnknownSize && blob.bytes_size >= FileEncryption::Header::kSize)
+            header_cache_key = &blob.remote_path;
+    }
 
     for (const auto & dec : decryption_stages)
     {
