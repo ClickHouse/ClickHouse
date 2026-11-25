@@ -443,6 +443,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
     /// credential. This can resolve the server identity just like the S3 credential-provider chain does.
     const bool gcs_relies_on_server_credentials
         = maybe_gcs_disk && (has_indirect_gcs_header || !has_explicit_gcs_credentials);
+    /// With an `include` or an indirect backend type, `maybe_gcs_disk` is only a guess: the backend may resolve to
+    /// S3, HDFS or a local disk. Such a disk is re-checked against its resolved configuration by
+    /// `validateResolvedGCSDiskCredentials` (and `diskUsesServerCredentials` asks the resolved configuration too), so
+    /// the guess decides only a disk whose literal definition is the whole story. Acting on it would refuse an S3 disk
+    /// with its own literal key pair, and make a non-GCS disk created with the credential opt-in unloadable on restart:
+    /// the opt-in marker is persisted only when the resolved configuration needs it.
+    const bool gcs_literal_disk_relies_on_server_credentials
+        = gcs_relies_on_server_credentials && !has_include && !type_is_indirect;
 
     /// A disk of a table in the `system` database is server-internal infrastructure (attached by the operator
     /// to ship system tables to S3 with the server's identity), exempt from the user-query restriction when the
@@ -484,16 +492,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
         info->may_persist_server_credentials_allowance = !is_loading_from_existing_metadata
             && (relies_on_server_credentials || gcs_relies_on_server_credentials || has_include || type_is_indirect)
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
-        info->uses_server_credentials = relies_on_server_credentials || gcs_relies_on_server_credentials;
+        info->uses_server_credentials = relies_on_server_credentials || gcs_literal_disk_relies_on_server_credentials;
     }
 
-    /// With an `include` or an indirect backend type, `maybe_gcs_disk` is only a guess: the backend may resolve to
-    /// HDFS or a local disk. Such a disk is re-checked against its resolved configuration by
-    /// `validateResolvedGCSDiskCredentials`, so refuse here only a disk whose literal definition is the whole story.
-    /// Refusing a guess would also make a non-GCS disk created with the credential opt-in unloadable on restart:
-    /// the opt-in marker is persisted only when the resolved configuration needs it.
-    if (gcs_relies_on_server_credentials && !has_include && !type_is_indirect && context->shouldRestrictUserQueryS3Credentials()
-        && !restriction_exempt)
+    if (gcs_literal_disk_relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
