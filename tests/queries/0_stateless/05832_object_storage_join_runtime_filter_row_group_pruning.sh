@@ -97,6 +97,27 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_w3_on'
     SETTINGS enable_parallel_replicas = 0"
 
+# The second scan keeps the offset index of `k` (100 pages) in the 4 KiB the cell of a small footer gives the offset
+# indexes, which leaves no room for its column index there. The column indexes have as much room of their own.
+echo '--- X a read after a scan that filled the room of the offset indexes ---'
+${CLICKHOUSE_CLIENT} --query "
+INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/fact_x.parquet', format = Parquet, structure = 'k Int64')
+SELECT number FROM numbers(10000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 10000,
+    output_format_parquet_batch_size = 100, output_format_parquet_data_page_size = 1;
+" < /dev/null
+X_FILE="s3(s3_conn, filename = '${DIR}/fact_x.parquet', format = Parquet, structure = 'k Int64')"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT sum(k) FROM ${X_FILE} SETTINGS ${SETTINGS}, ${W_SETTINGS} FORMAT Null;
+    SELECT sum(k) FROM ${X_FILE} SETTINGS ${SETTINGS}, ${W_SETTINGS} FORMAT Null;"
+probe x1 "SELECT count() FROM ${X_FILE} AS f INNER JOIN dim AS d ON f.k = d.k" "$W_SETTINGS"
+probe x2 "SELECT count() FROM ${X_FILE} AS f INNER JOIN dim AS d ON f.k = d.k" "$W_SETTINGS"
+report x2
+${CLICKHOUSE_CLIENT} --query "
+    SELECT ProfileEvents['ParquetMetadataCacheOffsetIndexHits'] > 0, ProfileEvents['ParquetMetadataCacheColumnIndexHits'] > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_x2_on'
+    SETTINGS enable_parallel_replicas = 0"
+
 # With a structure of only Hive partition columns the format reads `key` from the file (1000 .. 2599), while the
 # query takes it from the path (9). Without `optimize_count_from_files = 0` the read only counts the rows of the file.
 echo '--- H a Hive partition column read from the file ---'

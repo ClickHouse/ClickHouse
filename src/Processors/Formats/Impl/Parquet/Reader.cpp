@@ -3228,17 +3228,17 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
 
-        if (max_read_offset_indexes_bytes && !column.kept_column_index)
+        if (max_read_column_indexes_bytes && !column.kept_column_index)
         {
             size_t bytes = KeptOffsetIndexes::entryBytes(data);
             std::lock_guard lock(read_offset_indexes_mutex);
-            if (read_offset_indexes_bytes + bytes <= max_read_offset_indexes_bytes)
+            if (read_column_indexes_bytes + bytes <= max_read_column_indexes_bytes)
             {
                 read_offset_indexes.push_back(
                     {.row_group_idx = row_group.row_group_idx,
                      .column_idx = column_info.column_idx,
                      .column_index = std::make_shared<const StringWithMemoryTracking>(data.data(), data.size())});
-                read_offset_indexes_bytes += bytes;
+                read_column_indexes_bytes += bytes;
             }
         }
 

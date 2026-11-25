@@ -95,11 +95,12 @@ public:
     /// nullptr if not kept.
     OffsetIndexPtr get(size_t row_group_idx, size_t column_idx) const;
     ColumnIndexPtr getColumnIndex(size_t row_group_idx, size_t column_idx) const;
-    /// Keeps the indexes not kept yet, while all kept indexes take at most `max_bytes`. Returns whether any was added.
+    /// Keeps the indexes not kept yet, up to `max_bytes` of offset and of column indexes. Returns whether any was added.
     /// Keeps none if it throws.
     bool add(const VectorWithMemoryTracking<Entry> & entries);
     size_t bytes() const;
     size_t remainingBytes() const;
+    size_t remainingColumnIndexBytes() const;
     static size_t entryBytes(const parq::OffsetIndex & offset_index);
     static size_t entryBytes(std::span<const char> column_index);
 
@@ -110,7 +111,8 @@ private:
     mutable std::mutex mutex;
     UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> offset_indexes TSA_GUARDED_BY(mutex);
     UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr> column_indexes TSA_GUARDED_BY(mutex);
-    size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t offset_index_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t column_index_bytes TSA_GUARDED_BY(mutex) = 0;
 };
 using KeptOffsetIndexesPtr = std::shared_ptr<KeptOffsetIndexes>;
 

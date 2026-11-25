@@ -743,8 +743,10 @@ struct Reader
     VectorWithMemoryTracking<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
 
-    /// If non-zero before `init`, the offset and column indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
+    /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
     size_t max_read_offset_indexes_bytes = 0;
+    /// The same for the column indexes read.
+    size_t max_read_column_indexes_bytes = 0;
     /// The offset and column indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
     VectorWithMemoryTracking<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
@@ -926,6 +928,7 @@ private:
     std::mutex read_offset_indexes_mutex;
     VectorWithMemoryTracking<KeptOffsetIndexes::Entry> read_offset_indexes TSA_GUARDED_BY(read_offset_indexes_mutex);
     size_t read_offset_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
+    size_t read_column_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
 };
 
 }

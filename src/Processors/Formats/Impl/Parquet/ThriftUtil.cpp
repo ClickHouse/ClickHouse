@@ -599,9 +599,9 @@ bool KeptOffsetIndexes::add(const VectorWithMemoryTracking<Entry> & entries)
     std::lock_guard lock(mutex);
     UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> added_offset_indexes;
     UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr> added_column_indexes;
-    const size_t kept_bytes = total_bytes;
-    size_t added_bytes = 0;
-    auto add_index = [&](UInt64 key, const auto & index, const auto & kept, auto & added)
+    size_t added_offset_index_bytes = 0;
+    size_t added_column_index_bytes = 0;
+    auto add_index = [&](UInt64 key, const auto & index, const auto & kept, auto & added, size_t kept_bytes, size_t & added_bytes)
     {
         if (!index)
             return;
@@ -612,8 +612,8 @@ bool KeptOffsetIndexes::add(const VectorWithMemoryTracking<Entry> & entries)
     for (const auto & entry : entries)
     {
         UInt64 key = makeKey(entry.row_group_idx, entry.column_idx);
-        add_index(key, entry.offset_index, offset_indexes, added_offset_indexes);
-        add_index(key, entry.column_index, column_indexes, added_column_indexes);
+        add_index(key, entry.offset_index, offset_indexes, added_offset_indexes, offset_index_bytes, added_offset_index_bytes);
+        add_index(key, entry.column_index, column_indexes, added_column_indexes, column_index_bytes, added_column_index_bytes);
     }
     if (added_offset_indexes.empty() && added_column_indexes.empty())
         return false;
@@ -622,20 +622,27 @@ bool KeptOffsetIndexes::add(const VectorWithMemoryTracking<Entry> & entries)
     column_indexes.reserve(column_indexes.size() + added_column_indexes.size());
     offset_indexes.merge(added_offset_indexes);
     column_indexes.merge(added_column_indexes);
-    total_bytes += added_bytes;
+    offset_index_bytes += added_offset_index_bytes;
+    column_index_bytes += added_column_index_bytes;
     return true;
 }
 
 size_t KeptOffsetIndexes::bytes() const
 {
     std::lock_guard lock(mutex);
-    return total_bytes;
+    return offset_index_bytes + column_index_bytes;
 }
 
 size_t KeptOffsetIndexes::remainingBytes() const
 {
     std::lock_guard lock(mutex);
-    return max_bytes - total_bytes;
+    return max_bytes - offset_index_bytes;
+}
+
+size_t KeptOffsetIndexes::remainingColumnIndexBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_bytes - column_index_bytes;
 }
 
 /// With an estimate for the node of the map and the control block of the pointer.
