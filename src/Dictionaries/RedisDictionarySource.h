@@ -33,19 +33,19 @@ namespace DB
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }
 
-        bool supportsSelectiveLoad() const override { return true; }
+        [[nodiscard]] bool supportsSelectiveLoad() const override { return true; }
 
         BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
         BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-        bool isModified() const override { return true; }
+        [[nodiscard]] bool isModified() const override { return true; }
 
-        bool hasUpdateField() const override { return false; }
+        [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-        DictionarySourcePtr clone() const override { return std::make_shared<RedisDictionarySource>(*this); }
+        [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<RedisDictionarySource>(*this); }
 
-        std::string toString() const override;
+        [[nodiscard]] std::string toString() const override;
 
     private:
         const DictionaryStructure dict_struct;
