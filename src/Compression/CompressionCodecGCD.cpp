@@ -12,6 +12,7 @@
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
 #include <libdivide.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -26,8 +27,8 @@ class CompressionCodecGCD : public ICompressionCodec
 public:
     explicit CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_type_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -35,11 +36,11 @@ protected:
     /// 1 byte (`gcd_bytes_size` value) + 1 byte (`bytes_to_skip` value) + `bytes_to_skip` bytes (trash) + `gcd_bytes_size` bytes (gcd value) + (`source_size` - `bytes_to_skip`) bytes (data)
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    String getDescription() const override
+    [[nodiscard]] bool isCompression() const override { return false; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] String getDescription() const override
     {
         return "Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.";
     }
@@ -93,7 +94,8 @@ namespace
 {
 
 template <typename T>
-void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
+/// Negating the quotient of the most negative value only exists modulo 2^N, as with the magnitude.
+void NO_SANITIZE_UNSIGNED_OVERFLOW compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
     /// T must be unsigned even when `is_signed` is true, because the codec's arithmetic needs
     /// well-defined modulo-2^N semantics, which only unsigned types provide: the magnitude of the
@@ -107,7 +109,8 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
 
     /// Return the unsigned magnitude of a raw value, handling signed wrap-around.
     using S = make_signed_t<T>;
-    auto toMagnitude = [is_signed](T val) -> T
+    /// The magnitude of the most negative value only exists modulo 2^N, which is what GCD stores.
+    auto toMagnitude = [is_signed](T val) NO_SANITIZE_UNSIGNED_OVERFLOW -> T
     {
         return (is_signed && static_cast<S>(val) < S(0)) ? T(0) - val : val;
     };
@@ -166,8 +169,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
     }
 }
 
+/// Multiplying the quotients back by the GCD wraps modulo 2^N, which is how the codec round-trips.
 template <typename T>
-UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     const char * original_dest = dest;
     if (source_size % sizeof(T) != 0)
@@ -197,7 +201,9 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     {
         if (dest + sizeof(T) > dest_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
-        unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
+        /// A type narrower than `int` is promoted to the signed `int`, where the product of two large values overflows.
+        using Product = std::conditional_t<(sizeof(T) < sizeof(unsigned)), unsigned, T>;
+        unalignedStore<T>(dest, static_cast<T>(static_cast<Product>(unalignedLoad<T>(source)) * static_cast<Product>(gcd_multiplier)));
 
         source += sizeof(T);
         dest += sizeof(T);

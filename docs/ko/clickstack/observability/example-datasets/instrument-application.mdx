@@ -1,0 +1,276 @@
+---
+slug: /clickstack/observability/example-datasets/instrument-application
+title: 'HackerNews Analyzer 데모'
+sidebarTitle: 'HackerNews Analyzer 데모'
+description: '에이전트로 Node.js 앱을 계측하고 로그, 트레이스, 메트릭, 세션 리플레이를 완전 관리형 ClickHouse Observability로 전송하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'instrumentation', '세션 리플레이', 'Node.js', 'OTLP']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { AgentPrompt as ManagedAgentPrompt } from '/snippets/ko/components/AgentPrompt/AgentPrompt.jsx';
+import InstrumentApplication from '/snippets/ko/clickstack/_instrument_application.mdx';
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 서비스" />
+
+    <Note>
+      **요약**
+
+      [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)를 클론하고 `.env`에 관리형 OTLP HTTP 엔드포인트와 API Key를 입력한 다음, 에이전트 프롬프트를 붙여 넣으십시오. 백엔드 코드에서 OpenTelemetry를 가져올(import) 필요는 없습니다. 에이전트가 프로세스 시작 시점에 `@hyperdx/node-opentelemetry`를 연결합니다.
+
+      소요 시간: 약 10분
+    </Note>
+
+    HackerNews Analyzer는 퍼블릭 ClickHouse 데모에 호스팅된 HackerNews 데이터셋을 쿼리하는 Node.js 앱입니다. 대시보드를 조작하면 백엔드로 요청이 전송됩니다. 앱 캐시에 적중하지 않은 요청은 ClickHouse에도 쿼리를 보내며, 이에 따라 트레이스에 아웃바운드 HTTPS 스팬이 추가됩니다.
+
+    이 데모는 백엔드 auto-instrumentation, ClickHouse 쿼리(Query) 스팬, 브라우저 세션 리플레이를 하나의 앱에서 모두 제공합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+    * [HackerNews Analyzer 및 관련 의존성](https://github.com/ClickHouse/hn-news-analyzer#readme)과 호환되는 버전의 Node.js 및 npm
+    * 이미 생성된 완전 관리형 ClickHouse Observability 서비스. 자세한 내용은 [완전 관리형 시작 가이드](/ko/clickstack/observability/getting-started)를 참조하십시오.
+    * 앱 서버와 브라우저 모두에서 관리형 텔레메트리 엔드포인트에 접근할 수 있는 네트워크 환경
+
+## 리포지토리 클론 {#clone-the-repository}
+
+    [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) 저장소를 클론하고 의존성을 설치한 다음, env 템플릿 파일을 복사하십시오:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    다음 단계에서 `.env`를 작성한 후, 이 디렉터리에서 계측을 진행합니다.
+
+## 애플리케이션 계측하기 {#instrument-the-application}
+
+    <Steps>
+      <Step title="애플리케이션을 실행하십시오" id="run-the-application">
+        클론한 `hn-news-analyzer` 디렉터리에서 앱을 실행하십시오. ClickHouse 데이터 소스(data source)는 기본적으로 퍼블릭 읽기 전용 데모 클러스터에 연결되므로, 별도의 구성 없이 바로 실행됩니다:
+
+        ```bash
+        ./run.sh
+        ```
+
+        [http://localhost:5001](http://localhost:5001)을 여십시오. 연도 선택기, 요약 통계, 활동 차트, 상위 사용자 및 도메인 테이블, 검색 상자가 표시됩니다. 연도를 바꾸거나 스토리를 자세히 살펴보는 등 자유롭게 둘러보십시오.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 애플리케이션" />
+        </Frame>
+
+        현재 애플리케이션은 실행 중이지만 아직 계측되지 않은 상태입니다. 아래의 계측(instrumentation) 단계를 완료하면 애플리케이션이 텔레메트리를 전송합니다.
+      </Step>
+
+      <Step title="환경 구성" id="configure-environment">
+        ClickHouse Observability 서비스를 열고 **팀 설정 → Managed Telemetry**로 이동하십시오. **OTLP HTTP 엔드포인트**와 **API Key**를 복사하십시오.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![마스킹된 OTLP HTTP 엔드포인트와 API Key가 표시된 팀 설정의 Managed Telemetry 화면](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        앱의 `.env` 파일에 다음 설정값을 지정하고, 엔드포인트와 API Key 자리표시자를 실제 값으로 바꾸십시오:
+
+        ```bash
+        OTEL_SERVICE_NAME=hn-analyzer-api
+        OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+        OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_METRICS_EXPORTER=otlp
+        OTEL_LOGS_EXPORTER=otlp
+        ```
+
+        `OTEL_EXPORTER_OTLP_ENDPOINT`에는 `https://` 접두사를 그대로 두고 `/v1/logs`, `/v1/traces`, `/v1/metrics`를 덧붙이지 마십시오. 신호별 경로는 SDK가 자동으로 추가합니다. `OTEL_EXPORTER_OTLP_HEADERS`는 `Bearer` 접두사 없이 `authorization=<your-api-key>`로 설정하십시오. 애플리케이션은 이 키를 브라우저 SDK에도 그대로 전달합니다.
+
+        브라우저 SDK도 동일한 엔드포인트와 API Key를 사용합니다. `vite.config.ts`가 이 값들을 브라우저 bundle에 포함하므로 방문자가 이를 확인할 수 있습니다. 따라서 이 데모 테스트 전용 서비스를 사용하고, `.env`는 버전 관리 대상에서 제외하십시오.
+      </Step>
+
+      <Step title="애플리케이션 계측" id="instrument">
+        다음 방법 중 하나를 선택하십시오. 어느 방법을 선택하든 동일하게 계측된 애플리케이션을 얻게 됩니다.
+
+        <Tabs>
+          <Tab title="에이전트를 사용한 계측" id="instrument-with-an-agent">
+            리포지토리를 클론하고 `.env`를 채운 후, **해당 디렉터리에서** 코딩 에이전트에 다음 프롬프트를 붙여 넣어 애플리케이션을 계측하십시오.
+
+            <ManagedAgentPrompt
+              prompt="Use curl to download, read and follow: https://raw.githubusercontent.com/ClickHouse/hn-news-analyzer/main/agent.md"
+              description="hn-news-analyzer를 클론하고 .env를 채운 후, 해당 디렉터리에서 이 프롬프트를 실행하십시오. Claude Code, Cursor, Codex 및 기타 코딩 에이전트에서 사용할 수 있습니다."
+              outline={[
+  "현재 위치가 클론한 hn-news-analyzer 디렉터리인지, .env에 OTEL_EXPORTER_OTLP_* 값이 이미 설정되어 있는지 확인합니다. 둘 중 하나라도 충족되지 않으면 중단합니다.",
+  "@hyperdx/node-opentelemetry를 설치하고 run.sh가 opentelemetry-instrument로 실행되도록 전환합니다.",
+  "@hyperdx/browser를 설치하고 HyperDX.init 및 HyperDX.addAction을 활성화합니다.",
+  "앱을 시작하고 OTLP 상태 검사를 통과하는지 확인한 후, http://localhost:5001 에서 앱을 이것저것 클릭해 보도록 안내합니다.",
+  ]}
+            />
+          </Tab>
+
+          <Tab title="수동 계측" id="instrument-manually">
+            계측은 SDK 설치, 실행 명령 전환, 브라우저 SDK 활성화의 세 단계로 이루어집니다. 이 과정에서 애플리케이션의 비즈니스 로직은 전혀 변경되지 않습니다.
+
+### Node SDK 설치 {#install-node-sdk}
+
+            ```bash
+            npm install @hyperdx/node-opentelemetry
+            ```
+
+### run.sh에서 래퍼 활성화 {#enable-run-sh-wrapper}
+
+            `run.sh` 하단에는 `exec` 줄이 두 개 있습니다. 일반 `node` 줄을 주석 처리하고 계측된 줄의 주석을 해제하십시오.
+
+            ```diff
+             # 변경 전: 계측 없는 일반 node:
+            -exec node scripts/entrypoint.js
+            +# exec node scripts/entrypoint.js
+
+             # 변경 후: 동일한 소스를 opentelemetry-instrument로 래핑:
+            -# exec npx opentelemetry-instrument scripts/entrypoint.js
+            +exec npx opentelemetry-instrument scripts/entrypoint.js
+            ```
+
+            실행은 계속 `scripts/entrypoint.js`를 통해 하십시오. 이 shim이 `require('console')`을 호출하므로 콘솔 캡처가 `console.log`를 래핑할 수 있습니다. `opentelemetry-instrument`가 `dist/server/index.js`를 직접 실행하도록 지정하면 트레이스는 전송되지만 로그는 아무런 경고 없이 누락됩니다.
+
+### 브라우저 SDK 활성화 {#enable-browser-sdk}
+
+            ```bash
+            npm install @hyperdx/browser
+            ```
+
+            `src/web/telemetry.ts`에서 import 문, `HyperDX.init` 블록, `recordAction` 내의 `HyperDX.addAction`의 주석을 해제하십시오.
+
+            ```diff
+            -// import HyperDX from '@hyperdx/browser';
+            +import HyperDX from '@hyperdx/browser';
+
+             export function initTelemetry(): void {
+            -  // HyperDX.init({
+            -  //   url: __OTLP_ENDPOINT__,
+            -  //   apiKey: __OTLP_AUTH_TOKEN__,
+            -  //   service: 'hn-analyzer-web',
+            -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+            -  //   consoleCapture: true,
+            -  //   advancedNetworkCapture: true,
+            -  // });
+            +  HyperDX.init({
+            +    url: __OTLP_ENDPOINT__,
+            +    apiKey: __OTLP_AUTH_TOKEN__,
+            +    service: 'hn-analyzer-web',
+            +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+            +    consoleCapture: true,
+            +    advancedNetworkCapture: true,
+            +  });
+             }
+            ```
+
+            `__OTLP_ENDPOINT__`와 `__OTLP_AUTH_TOKEN__`은 `vite.config.ts`가 백엔드와 동일한 `OTEL_EXPORTER_OTLP_*` 값을 바탕으로 주입하는 컴파일 타임 상수입니다.
+          </Tab>
+
+          <Tab title="사전 계측된 브랜치 사용" id="use-the-instrumented-branch">
+            계측 과정을 건너뛰고 이미 계측된 애플리케이션으로 시작하려면 [`instrumented` 브랜치](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented)를 체크아웃하십시오.
+
+            ```bash
+            git checkout instrumented
+            npm install
+            ```
+
+            SDK를 제거하려는 경우가 아니라면 이 브랜치에서 `./reset.sh`를 실행하지 마십시오.
+          </Tab>
+        </Tabs>
+      </Step>
+
+      <Step title="트래픽 생성 및 텔레메트리 확인" id="generate-traffic-and-view-telemetry">
+        새 실행 명령과 새로 빌드한 브라우저 번들이 적용되도록 애플리케이션을 재시작하세요:
+
+        ```bash
+        # Ctrl-C the previous run, then:
+        ./run.sh
+        ```
+
+        시작 배너에 `/v1/traces`, `/v1/metrics`, `/v1/logs`에 대한 `Health check passed` 줄이 3개 출력되는지 확인하십시오. Vite가 업데이트된 bundle을 제공하도록 브라우저 탭을 다시 로드한 다음, 연도를 바꿔 가며 스토리를 클릭하여 트래픽을 생성하십시오.
+
+        ClickHouse Observability 서비스를 엽니다.
+
+        1. **검색**으로 이동하여 **Logs** 소스를 선택하고 시간 범위를 **Last 15 minutes**로 설정하십시오. 백엔드 로그를 확인하려면 `ServiceName`을 `hn-analyzer-api`로 필터링하십시오.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="hn-analyzer-api로 필터링된 백엔드 로그를 보여 주는 ClickHouse Observability 검색 화면" />
+        </Frame>
+
+        2. **Traces** 소스를 선택하고 `hn-analyzer-api`의 요청을 여십시오. Express 핸들러 스팬, 실제 네트워크 소요 시간이 기록된 `sql-clickhouse.clickhouse.com` 대상 자식 HTTP 스팬, 그리고 동일한 트레이스에 상호 연관된 `console.log` 레코드를 확인할 수 있습니다.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="브라우저 요청, 백엔드 스팬, 상호 연관된 로그, ClickHouse에 대한 HTTP 요청을 보여 주는 ClickHouse Observability 트레이스" />
+        </Frame>
+
+        3. **클라이언트 세션**을 열고 `hn-analyzer-web`의 세션을 선택한 다음 **세션 리플레이**를 열어 브라우저 상호작용을 검토하십시오.
+
+        <Frame>
+          <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="대시보드 갱신 및 검색 이벤트가 포함된 HackerNews Analyzer를 보여 주는 ClickHouse Observability 세션 리플레이" />
+        </Frame>
+
+        4. **차트 탐색기**를 열고 **Time Series**와 **Metrics** 소스를 선택한 후, 앱에서 내보내는 메트릭을 선택하십시오. `ResourceAttributes.service.name:"hn-analyzer-api"`로 필터링하고 테스트 기간이 포함되도록 시간 범위를 선택한 다음, **실행**을 클릭하여 메트릭 데이터가 수집되었는지 확인하십시오.
+      </Step>
+    </Steps>
+
+## 자세히 알아보기 {#learn-more}
+
+    * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): 이 가이드에서 계측하는 데모 리포지토리입니다.
+    * [세션 리플레이](/ko/clickstack/observability/features/session-replay): 기능 개요, SDK 옵션 및 개인정보 보호 설정을 다룹니다.
+    * [완전 관리형 시작하기](/ko/clickstack/observability/getting-started): 첫 번째 데이터 소스를 연결하는 방법을 안내합니다.
+    * [전체 샘플 데이터 세트](/ko/clickstack/observability/example-datasets): 다른 예제 데이터 세트와 가이드를 확인할 수 있습니다.
+  </Tab>
+
+  <Tab title="자가 관리형">
+    <Note>
+      이 데모를 진행하려면 자체 관리형 ClickHouse Observability 서비스로 데이터를 전송하도록 구성된 OpenTelemetry collector가 실행 중이어야 합니다. 아직 배포하지 않았다면 계속 진행하기 전에 [collector 설정 가이드](/ko/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)를 참고하여 배포하십시오. 아래 단계에서는 해당 collector의 OTLP HTTP 엔드포인트와, 구성되어 있는 경우 [수집 인증 토큰](/ko/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)을 사용합니다.
+    </Note>
+
+    <Note>
+      **요약**
+
+      [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)를 클론하고 `.env`에 OTLP 엔드포인트와 토큰을 입력한 다음, 에이전트 프롬프트를 붙여넣으십시오. 백엔드 코드에 OpenTelemetry import를 추가할 필요가 없으며, 에이전트가 프로세스 시작 시점에 `@hyperdx/node-opentelemetry`를 연결합니다.
+
+      소요 시간: 약 10분
+    </Note>
+
+    HackerNews Analyzer는 퍼블릭 ClickHouse 데모에 호스팅된 HackerNews 데이터셋을 쿼리하는 Node.js 앱입니다. 모든 차트, 테이블, 검색 상자가 실제 ClickHouse 쿼리(Query)로 동작하므로, 각 상호작용마다 백엔드에서 ClickHouse로 보내는 HTTPS 호출을 주 스팬으로 하는 트레이스가 생성됩니다.
+
+    이 데모는 브라우저 전용 앱을 계측하여 텔레메트리를 ClickHouse Observability로 전송하는 [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay)와는 목적이 다릅니다. 이 데모에서는 하나의 앱에서 백엔드 auto-instrumentation, ClickHouse 쿼리 스팬, 세션 리플레이를 모두 확인할 수 있습니다.
+
+## 사전 요구 사항 {#prerequisites-self-configured}
+
+    * Node 18 이상 및 npm
+    * 기존 자체 관리형 ClickHouse Observability 서비스와 실행 중인 수집용 collector
+    * 앱 서버와 브라우저 모두에서 연결할 수 있는 collector의 OTLP HTTP 엔드포인트. `http://localhost:4318`은 collector가 같은 머신에서 실행되는 경우에만 사용하십시오.
+    * collector의 `OTLP_AUTH_TOKEN`(구성되어 있는 경우). header는 `Bearer` 접두사 없이 `authorization=<token>` 형식으로 설정하십시오. collector에 인증이 필요하지 않으면 `authorization=` 값을 비워 두십시오. 이 값은 collector 수집용 자격 증명이며, ClickHouse 데이터베이스(Database) 자격 증명이 아닙니다.
+
+## 리포지토리 클론 {#clone-the-repository-self-configured}
+
+    [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)를 클론하고 의존성을 설치한 다음 env 템플릿을 복사하십시오:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    다음 단계에서 `.env` 파일을 채운 후, 이 디렉터리에서 애플리케이션을 계측합니다.
+
+    <InstrumentApplication />
+
+## 더 알아보기 {#learn-more-self-configured}
+
+    * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): 이 가이드에서 계측하는 데모 리포지토리입니다.
+    * [세션 리플레이](/ko/clickstack/observability/features/session-replay): 기능 개요, SDK 옵션, 개인정보 보호 제어 기능을 설명합니다.
+    * [세션 리플레이 데모](/ko/clickstack/observability/example-datasets/session-replay): ClickHouse Observability로 텔레메트리를 전송하는 브라우저 전용 데모입니다.
+    * [자가 관리형 시작하기](/ko/clickstack/self-configured/getting-started/managed): 서비스를 설정하고 첫 데이터를 수집하는 방법을 안내합니다.
+    * [전체 샘플 데이터 세트](/ko/clickstack/observability/example-datasets): 다른 예제 데이터 세트와 가이드를 확인할 수 있습니다.
+  </Tab>
+</Tabs>

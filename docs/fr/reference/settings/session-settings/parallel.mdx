@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [fichier source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="parallel_distributed_insert_select">
-  ## parallel_distributed_insert_select
-</div>
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -26,43 +24,48 @@ Active l&#39;exécution parallèle des requêtes distribuées `INSERT ... SELECT
 
 Si nous exécutons des requêtes `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b`, que les deux tables utilisent le même cluster et qu&#39;elles sont toutes deux soit [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication), soit non répliquées, alors la requête est traitée localement sur chaque shard.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `0` — Désactivé.
 * `1` — `SELECT` sera exécuté sur chaque shard à partir de la table sous-jacente du moteur Distributed.
 * `2` — `SELECT` et `INSERT` seront exécutés sur chaque shard, respectivement depuis/vers la table sous-jacente du moteur Distributed.
 
-Depuis la v25.4, `INSERT ... SELECT` à partir d&#39;une source `ReplicatedMergeTree` ou `SharedMergeTree` peut également être parallélisé entre les répliques. Pour l&#39;activer :
+Depuis la v25.4, `INSERT ... SELECT` à partir d&#39;une source `ReplicatedMergeTree` ou `SharedMergeTree` peut également être parallélisé entre les répliques. Pour l&#39;activer :
 
 * `parallel_distributed_insert_select = 2`
 * `enable_parallel_replicas = 1`
 
-<div id="parallel_hash_join_threshold">
-  ## parallel_hash_join_threshold
-</div>
+<Note>
+  La requête réécrite, y compris chacune des expressions du `SELECT` (sous-requêtes, UDFs, etc.), est exécutée sur les shards avec les identifiants définis dans la configuration du cluster, selon le même modèle de confiance que les autres traitements effectués côté shard, comme les sous-requêtes d&#39;un `IN` non `GLOBAL`. Configurez un secret interserveur (l&#39;élément `secret` de la configuration du cluster) si les lectures côté shard doivent être autorisées au nom de l&#39;utilisateur appelant.
+</Note>
+
+## parallel_hash_join_threshold {#parallel_hash_join_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "Nouveau paramètre"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Lorsque l&#39;algorithme de jointure basé sur le hachage est utilisé, ce seuil permet de choisir entre `hash` et `parallel_hash` (uniquement si une estimation de la taille de la table de droite est disponible).
-Le premier est utilisé lorsque l&#39;on sait que la taille de la table de droite est inférieure au seuil.
+Pour une jointure de hachage `INNER`, `LEFT`, `RIGHT` ou `FULL`, ce seuil détermine la manière dont la table de hachage est construite.
+Si le nombre estimé de lignes de la table de droite est inférieur au seuil, la jointure construit la table de hachage en une seule part, sur un seul fil d’exécution.
+Si ce nombre est supérieur ou égal au seuil, ou en l’absence d’estimation, la jointure découpe la table de hachage en parts remplies simultanément par `max_threads` fils d’exécution au maximum (un seul fil d’exécution avec `max_threads = 1`).
+Avec `0`, la table de hachage est toujours découpée.
+Lorsque `hash_join_layout` est défini sur `serial` ou `parallel`, ce seuil n’est pas utilisé : la jointure construit une seule part ou découpe la table de hachage, quelle que soit l’estimation.
+L’estimation provient du plan de requête ou des statistiques des exécutions précédentes de la même jointure (voir `collect_hash_table_stats_during_joins`).
+Le plan de requête estime 0 ligne pour une table de droite dont on sait qu’elle est vide, par exemple une table `MergeTree` sans part.
+Les jointures `ASOF` ne disposent jamais d’estimation et, avec `query_plan_optimize_join_order_limit = 0`, aucune jointure n’en dispose.
 
-<div id="parallel_non_joined_rows_processing">
-  ## parallel_non_joined_rows_processing
-</div>
+## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le traitement en parallèle des lignes sans correspondance dans les JOIN RIGHT/FULL `parallel_hash`."}]}]} />
 
-Permet à plusieurs threads de traiter en parallèle les lignes sans correspondance de la table de droite lors des JOIN RIGHT et FULL.
-Cela peut accélérer cette phase lors de l&#39;utilisation de l&#39;algorithme de jointure `parallel_hash` avec de grandes tables.
-Lorsqu&#39;il est désactivé, les lignes sans correspondance sont traitées par un seul thread.
+Permet à plusieurs fils d’exécution de traiter en parallèle les lignes sans correspondance de la table de droite lors des JOIN RIGHT et FULL.
+Cela peut accélérer la phase de traitement des lignes sans correspondance des jointures par hachage impliquant de grandes tables de droite dont la table de hachage est construite sur plusieurs fils d’exécution (voir `parallel_hash_join_threshold`).
+Lorsqu&#39;il est désactivé, ou lorsque la table de hachage est construite sur un seul fil d’exécution, les lignes sans correspondance sont traitées par un seul fil d’exécution.
+Dans tous les cas, les lignes sans correspondance sont renvoyées dans un ordre indéterminé. Utilisez `ORDER BY` si la requête nécessite un ordre stable.
 
-<div id="parallel_replica_offset">
-  ## parallel_replica_offset
-</div>
+## parallel_replica_offset {#parallel_replica_offset}
 
 <BetaBadge />
 
@@ -70,9 +73,7 @@ Lorsqu&#39;il est désactivé, les lignes sans correspondance sont traitées par
 
 Il s&#39;agit d&#39;un paramètre interne qui ne doit pas être utilisé directement et qui correspond à un détail d&#39;implémentation du mode « répliques parallèles ». Ce paramètre sera automatiquement défini par le serveur initiateur, pour les requêtes distribuées, sur l&#39;index de la réplique participant au traitement de la requête parmi les répliques parallèles.
 
-<div id="parallel_view_processing">
-  ## parallel_view_processing
-</div>
+## parallel_view_processing {#parallel_view_processing}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

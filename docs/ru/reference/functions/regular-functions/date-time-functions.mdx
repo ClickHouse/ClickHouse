@@ -1411,7 +1411,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
 
 **Поля замены:**
 
-| Placeholder | Description                                                     | Example    |
+| Заполнитель | Описание                                                     | Пример    |
 | ----------- | --------------------------------------------------------------- | ---------- |
 | %a          | сокращённое название дня недели (Mon-Sun)                       | Mon        |
 | %b          | сокращённое название месяца (Jan-Dec)                           | Jan        |
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-Добавленный в: v20.1.0
+Добавленный в: v23.1.0
 
 Похожа на `formatDateTime`, но форматирует дату и время в стиле Joda, а не MySQL. См. [документацию Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
@@ -1584,7 +1584,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 
 **Примеры**
 
-**Форматирование datetime с помощью синтаксиса Joda**
+**Форматирование даты и времени с помощью синтаксиса Joda**
 
 ```sql title=Query
 SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
@@ -4723,10 +4723,12 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 Например,
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` возвращает тот же результат, что и `toStartOfYear(t)`,
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` возвращает тот же результат, что и `toStartOfMonth(t)`,
-* `toStartOfInterval(t, INTERVAL 1 DAY)` возвращает тот же результат, что и `toStartOfDay(t)`,
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` возвращает тот же результат, что и `toStartOfFifteenMinutes(t)`.
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` округляет до той же границы, что и `toStartOfYear(t)`,
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` округляет до той же границы, что и `toStartOfMonth(t)`,
+* `toStartOfInterval(t, INTERVAL 1 DAY)` округляет до той же границы, что и `toStartOfDay(t)`,
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` округляет до той же границы, что и `toStartOfFifteenMinutes(t)`.
+
+Тип результата может отличаться от типа результата этих функций (см. ниже).
 
 Вычисление выполняется относительно определённых моментов времени:
 
@@ -4750,6 +4752,13 @@ SELECT toStartOfISOYear(toDateTime('2023-04-21 10:20:30'))
 
 Вторая перегрузка имитирует функцию `time_bucket()` из TimescaleDB и, соответственно, функцию `date_bin()` из PostgreSQL.
 
+Результат имеет тот же тип, что и аргумент `value`: `Date` для `Date`, `Date32` для `Date32`, `DateTime` для `DateTime` и `DateTime64` с тем же масштабом для `DateTime64`.
+Единственное исключение — субсекундная единица, более мелкая, чем масштаб аргумента `DateTime64` (например, `INTERVAL 1500 MILLISECOND` для `DateTime64(0)`): в этом случае результат получает масштаб единицы, который позволяет представить границы бакетов.
+Результат, выходящий за нижнюю границу диапазона `Date` или `DateTime` (например, при округлении `1970-01-01` вниз до недели), ограничивается минимальным значением этого типа.
+Если настройка [`to_start_of_interval_preserves_argument_type`](/ru/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) отключена, тип результата вместо этого зависит от единицы интервала,
+как в версиях до 26.11: `Date` для `WEEK` и более крупных единиц, `DateTime` для единиц от `DAY` до `SECOND` и `DateTime64` с масштабом единицы для субсекундных единиц.
+Это относится к перегрузке без `origin`: перегрузка с `origin` и в этом случае сохраняет тип аргумента, за исключением того, что для аргумента `DateTime64` и субсекундной единицы результат получает масштаб единицы.
+
 **Синтаксис**
 
 ```sql
@@ -4761,12 +4770,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **Аргументы**
 
-* `value` — Значение типа дата или дата и время, которое нужно округлить вниз. [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+* `value` — Значение типа дата или дата и время, которое нужно округлить вниз. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 * `x` — Число, задающее длину интервала. - `unit` — Единица интервала: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — Необязательно. Имя часового пояса в виде строки. - `origin` — Необязательно. Точка отсчёта для вычисления (только для второй перегрузки).
 
 **Возвращаемое значение**
 
-Возвращает начало интервала, в который попадает входное значение. [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает начало интервала, в который попадает входное значение, того же типа, что и входное значение. [`Date`](/ru/reference/data-types/date) или [`Date32`](/ru/reference/data-types/date32) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
@@ -4778,11 +4787,11 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Использование начальной точки**
+**Использование точки отсчёта**
 
 ```sql title=Query
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
@@ -5372,6 +5381,7 @@ int32samoa: 1546300800
 Добавленный в: v23.8.0
 
 Преобразует значение типа дата или дата и время из одного часового пояса во временную метку UTC. Эта функция в первую очередь предназначена для совместимости с Apache Spark и аналогичными фреймворками.
+Локальное время, которое повторяется дважды или не существует из-за перехода на летнее или зимнее время, преобразуется так же, как в функции `toDateTime`.
 
 **Синтаксис**
 

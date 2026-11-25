@@ -31,7 +31,7 @@ public:
     TimerDescriptor(TimerDescriptor && other) noexcept;
     TimerDescriptor & operator=(TimerDescriptor &&) noexcept;
 
-    int getDescriptor() const { return timer_fd; }
+    [[nodiscard]] int getDescriptor() const { return timer_fd; }
 
     void reset() const;
     void drain() const;

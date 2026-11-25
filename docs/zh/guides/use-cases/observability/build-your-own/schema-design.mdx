@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 我们建议用户始终为日志和链路追踪创建自己的 schema，原因如下：
 
 * **选择主键** - 默认 schema 使用的 `ORDER BY` 是针对特定访问模式优化的。你的访问模式很可能与其并不匹配。
@@ -32,7 +30,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## 使用 SQL 提取结构
+  ## 使用 SQL 提取结构 {#extracting-structure-with-sql}
 </div>
 
 无论是摄取结构化日志还是非结构化日志，用户通常都需要以下能力：
@@ -175,9 +173,7 @@ LIMIT 5
   你也可以按[此处](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching)所述，使用 OTel collector 的处理器和操作器进行处理。在大多数情况下，你会发现 ClickHouse 在资源效率和速度方面都明显优于 collector 的处理器。使用 SQL 执行所有事件处理的主要缺点在于，解决方案会与 ClickHouse 绑定。例如，你可能希望从 OTel collector 将处理后的日志发送到其他目标端，例如 S3。
 </Info>
 
-<div id="materialized-columns">
-  ### 物化列
-</div>
+### 物化列 {#materialized-columns}
 
 物化列提供了从其他列中提取结构化信息的最简单方式。这类列的值始终在写入时计算，且不能在 `INSERT` 查询中指定。
 
@@ -194,21 +190,21 @@ LIMIT 5
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -241,22 +237,24 @@ LIMIT 5
 └──────────────────────────┴───────┘
 
 5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
-峰值内存占用: 3.16 MiB.
+Peak memory usage: 3.16 MiB.
 ```
 
 <Note>
   默认情况下，物化列不会出现在 `SELECT *` 的返回结果中。这是为了保持这样一个不变性：`SELECT *` 的结果始终可以使用 INSERT 再次插入回该表。可通过设置 `asterisk_include_materialized_columns=1` 关闭此行为，也可以在 Grafana 中启用 (参见数据源配置中的 `Additional Settings -> Custom Settings`) 。
 </Note>
 
-<div id="materialized-views">
-  ## Materialized views
-</div>
+## Materialized views {#materialized-views}
 
 [Materialized views](/zh/concepts/features/materialized-views/index) 提供了对日志和链路追踪应用 SQL 过滤与转换的更强大方式。
 
 Materialized Views 允许你将计算成本从查询时转移到写入时。ClickHouse materialized view 本质上只是一个 trigger：当数据块插入表中时，它会对这些块执行查询。该查询的结果会被插入到第二个“目标”表中。
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Materialized view](/images/use-cases/observability/observability-10.webp)
+  </Frame>
+</div>
 
 <Info>
   **实时更新**
@@ -264,7 +262,7 @@ Materialized Views 允许你将计算成本从查询时转移到写入时。Clic
   ClickHouse 中的 materialized views 会在数据流入其所基于的表时实时更新，作用更像持续更新的索引。相比之下，在其他数据库中，materialized views 通常是某个查询的静态快照，必须刷新 (类似于 ClickHouse Refreshable Materialized Views) 。
 </Info>
 
-与 materialized view 关联的查询理论上可以是任何查询，包括 aggregation，尽管 [Joins 存在一些限制](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins)。对于日志和链路追踪所需的转换和过滤类 workload，你可以认为任何 `SELECT` statement 都是可行的。
+与 materialized view 关联的查询理论上可以是任何查询，包括 aggregation，尽管 [Joins 存在一些限制](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins)。对于日志和链路追踪所需的转换和过滤类工作负载，你可以认为任何 `SELECT` 语句都是可行的。
 
 你需要记住，这个查询只是一个 trigger，它会针对正在插入源表的行执行，并将结果发送到一个新表 (目标表) 。
 
@@ -273,27 +271,27 @@ Materialized Views 允许你将计算成本从查询时转移到写入时。Clic
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
 The Null table engine 是一种非常有效的优化方式——可以将其理解为 `/dev/null`。这个表不会存储任何数据，但任何附加的 materialized view 仍会在插入的行被丢弃前基于这些行执行。
 
-请看下面的查询。它会把行转换为我们希望保留的格式：从 `LogAttributes` 中提取所有列 (这里假设这些列已由 collector 通过 `json_parser` operator 设置) ，并设置 `SeverityText` 和 `SeverityNumber` (依据一些简单条件以及[这些列](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)的定义) 。在这个示例中，我们也只选择明确会被填充的列——忽略 `TraceId`、`SpanId` 和 `TraceFlags` 等列。
+请看下面的查询。它会把行转换为我们希望保留的格式：从 `LogAttributes` 中提取所有列 (这里假设这些列已由 collector 通过 `json_parser` 操作员设置) ，并设置 `SeverityText` 和 `SeverityNumber` (依据一些简单条件以及[这些列](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)的定义) 。在这个示例中，我们也只选择明确会被填充的列——忽略 `TraceId`、`SpanId` 和 `TraceFlags` 等列。
 
 ```sql
 SELECT
@@ -384,7 +382,7 @@ ORDER BY (ServiceName, Timestamp)
   请注意，我们已经对 schema 做了大幅调整。实际上，你很可能还有一些也需要保留的 trace 列，以及 `ResourceAttributes` 列 (其中通常包含 Kubernetes 元数据) 。Grafana 可以利用 trace 列提供日志与链路追踪之间的关联功能——参见[&quot;使用 Grafana&quot;](/zh/guides/use-cases/observability/build-your-own/grafana)。
 </Note>
 
-下面，我们创建一个 materialized view `otel_logs_mv`，用于对 `otel_logs` 表执行上述查询，并将结果发送到 `otel_logs_v2`。
+下面我们创建一个 materialized view `otel_logs_mv`，它会针对 `otel_logs` 表执行上述 select 查询，并将结果写入 `otel_logs_v2`。
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -411,7 +409,11 @@ FROM otel_logs
 
 如下图所示：
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Otel MV](/images/use-cases/observability/observability-11.webp)
+  </Frame>
+</div>
 
 如果现在重启在[&quot;导出到 ClickHouse&quot;](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)中使用的 collector 配置，数据就会以所需格式出现在 `otel_logs_v2` 中。请注意，这里使用了带类型的 JSON 提取函数。
 
@@ -471,7 +473,7 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### 注意类型
+  ### 注意类型 {#beware-types}
 </div>
 
 上述 materialized view 依赖隐式类型转换，尤其是在使用 `LogAttributes` Map 的情况下。ClickHouse 通常会自动将提取出的值转换为目标表的类型，从而减少所需的语法。不过，我们建议用户始终通过以下方式测试视图：使用该视图的 `SELECT` 语句，并配合一个面向相同 schema 目标表的 [`INSERT INTO`](/zh/reference/statements/insert-into) 语句。这样应能确认类型是否得到了正确处理。尤其要注意以下情况：
@@ -487,7 +489,7 @@ FROM otel_logs
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## 选择主键 (排序键)
+  ## 选择主键 (排序键) {#choosing-a-primary-ordering-key}
 </div>
 
 提取出所需的列后，就可以开始优化排序键/主键了。
@@ -510,7 +512,7 @@ FROM otel_logs
 </Info>
 
 <div id="using-maps">
-  ## 使用 Map
+  ## 使用 Map {#using-maps}
 </div>
 
 前面的示例展示了如何使用 `map['key']` 这种 map 语法来访问 `Map(String, String)` 列中的值。除了使用 map 表示法访问嵌套键之外，还可以使用专门的 ClickHouse [map functions](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 来过滤或选取这些列。
@@ -538,9 +540,7 @@ Peak memory usage: 71.90 MiB.
   不建议在 Map 列名中使用点号，此类用法后续可能会被弃用。请改用 `_`。
 </Info>
 
-<div id="using-aliases">
-  ## 使用别名
-</div>
+## 使用别名 {#using-aliases}
 
 查询 Map 类型比查询普通列更慢——请参见[&quot;加速查询&quot;](#accelerating-queries)。此外，它的语法也更复杂，编写起来可能比较繁琐。为了解决后一个问题，我们建议使用 Alias 列。
 
@@ -549,21 +549,21 @@ ALIAS 列是在查询时计算的，不会存储在表中。因此，无法向�
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -624,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## 优化数据类型
+  ## 优化数据类型 {#optimizing-types}
 </div>
 
 [ClickHouse 关于优化数据类型的通用最佳实践](/zh/guides/clickhouse/data-modelling/schema-design#optimizing-types)同样适用于此类 ClickHouse 使用场景。
 
 <div id="using-codecs">
-  ## 使用编解码器
+  ## 使用编解码器 {#using-codecs}
 </div>
 
 除了类型优化之外，在尝试优化 ClickHouse 可观测性 schema 的压缩时，你还可以遵循[编解码器的一般最佳实践](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)。
@@ -639,16 +639,18 @@ LIMIT 5
 
 此外，时间戳虽然能通过 delta 编码获得更好的压缩效果，但实践表明，如果该列被用作主键/排序键，可能会导致慢查询性能下降。我们建议用户评估压缩率与查询性能之间的权衡。
 
-<div id="using-dictionaries">
-  ## 使用字典
-</div>
+## 使用字典 {#using-dictionaries}
 
 [字典](/zh/reference/statements/create/dictionary)是 ClickHouse 的一项[核心特性](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)，为来自各种内部和外部[数据源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)的数据提供内存中的[键值](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)表示，并针对超低延迟查找查询进行了优化。
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="可观测性与字典" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![可观测性与字典](/images/use-cases/observability/observability-12.webp)
+  </Frame>
+</div>
 
-这在多种场景下都很实用，例如在不拖慢摄取过程的情况下实时富集已摄取的数据，以及整体提升查询性能，其中对 JOIN 的加速尤为明显。
-虽然在可观测性场景中很少需要使用 JOIN，但字典在富集方面仍然很有用——无论是在写入时还是查询时。下面我们会分别给出这两种示例。
+这在多种场景下都很实用，例如在不拖慢摄取过程的情况下实时富化已摄取的数据，以及整体提升查询性能，其中对 JOIN 的加速尤为明显。
+虽然在可观测性场景中很少需要使用 JOIN，但字典在富化方面仍然很有用——无论是在写入时还是查询时。下面我们会分别给出这两种示例。
 
 <Info>
   **加速 JOIN**
@@ -657,7 +659,7 @@ LIMIT 5
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### 写入时 vs 查询时
+  ### 写入时 vs 查询时 {#insert-time-vs-query-time}
 </div>
 
 字典可用于在查询时或写入时对数据集进行富集。这两种方式各有优缺点。总结如下：
@@ -670,7 +672,7 @@ LIMIT 5
 如需查看简单的富集示例，请参阅[此处](/zh/concepts/features/dictionaries/index)的字典指南。下面我们将重点介绍常见的可观测性富集任务。
 
 <div id="using-ip-dictionaries">
-  ### 使用 IP 字典
+  ### 使用 IP 字典 {#using-ip-dictionaries}
 </div>
 
 使用 IP 地址为日志和链路追踪添加经纬度信息进行地理富化，是一种常见的可观测性需求。我们可以使用 `ip_trie` 结构化字典来实现这一点。
@@ -763,10 +765,10 @@ LIMIT 4;
 ```
 
 <Note>
-  上面的查询内容很多。感兴趣的话，可以阅读这篇很棒的[解释](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation)。否则，只需知道上面的计算结果是为一个 IP 范围得出 CIDR。
+  上面的查询内容很多。感兴趣的话，可以阅读这篇很棒的[解释](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation)。否则，只需知道上面的计算结果是为一个 IP 地址范围得出 CIDR。
 </Note>
 
-对我们来说，只需要 IP 范围、国家代码和坐标，因此创建一个新表并插入 Geo IP 数据即可：
+对我们来说，只需要 IP 地址范围、国家/地区代码和坐标，因此创建一个新表并插入 Geo IP 数据即可：
 
 ```sql
 CREATE TABLE geoip
@@ -777,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -841,7 +843,7 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 │ ('PT',38.7944,-9.34284) │
 └─────────────────────────┘
 
-1 行，集合中。Elapsed: 0.003 sec.
+1 row in set. Elapsed: 0.003 sec.
 ```
 
 请注意这里的检索速度。这让我们能够对日志进行富集。在这种情况下，我们选择**在查询时进行富集**。
@@ -909,9 +911,7 @@ ORDER BY (ServiceName, Timestamp)
 
 上述国家和坐标不仅可用于按国家分组和过滤，还支持更多可视化方式。可参考[&quot;可视化地理数据&quot;](/zh/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data)。
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### 使用正则表达式字典 (User-Agent 解析)
-</div>
+### 使用正则表达式字典 (User-Agent 解析) {#using-regex-dictionaries-user-agent-parsing}
 
 解析 [user agent strings](https://en.wikipedia.org/wiki/User_agent) 是一个经典的正则表达式问题，也是基于日志和 trace 的数据集中常见的需求。ClickHouse 通过正则表达式树字典 (Regular Expression Tree Dictionaries) 提供了高效的 User-Agent 解析能力。
 
@@ -963,6 +963,10 @@ INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.e
 ```
 
 在内存表填充好数据后，我们就可以加载正则表达式字典了。请注意，我们需要将键值指定为列，这些列就是我们可以从 User-Agent 中提取的属性。
+
+<Note title="ClickHouse Cloud">
+  创建从 ClickHouse 表读取数据的字典时，请在 `SOURCE` 子句中提供专用用户的用户名和密码。该用户需要拥有源表的 `SELECT` 权限。请参阅 [ClickHouse 字典源示例](/zh/reference/statements/create/dictionary/sources/clickhouse)。
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1106,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### 延伸阅读
+  ### 延伸阅读 {#further-reading}
 </div>
 
 如需查看更多有关字典的示例和详细说明，推荐阅读以下文章：
@@ -1116,13 +1120,13 @@ Os:     ('Other','0','0','0')
 * [字典](/zh/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## 加速查询
+  ## 加速查询 {#accelerating-queries}
 </div>
 
 ClickHouse 支持多种提升查询性能的技术。只有在选定合适的主键/排序键，以针对最常见的访问模式进行优化并尽可能提高压缩率之后，才应考虑以下技术。通常，这样往往能以最小的投入带来最大的性能提升。
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### 使用 Materialized views (增量) 进行聚合
+  ### 使用 Materialized views (增量) 进行聚合 {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 在前面的章节中，我们已经介绍了如何将 Materialized views 用于数据转换和过滤。不过，Materialized views 还可以在写入时预先计算聚合结果并将其存储下来。后续写入的数据还能继续更新这些结果，从而实现于写入时预计算聚合。
@@ -1261,7 +1265,7 @@ LIMIT 5
 </Note>
 
 <div id="a-more-complex-example">
-  #### 一个更复杂的示例
+  #### 一个更复杂的示例 {#a-more-complex-example}
 </div>
 
 上述示例使用 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 按小时对简单计数进行聚合。若要统计的不只是简单求和，则需要使用不同的目标表引擎：[AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)。
@@ -1348,7 +1352,7 @@ ORDER BY Hour DESC
 请注意，这里使用的是 `GROUP BY`，而不是 `FINAL`。
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### 使用 materialized view (增量式) 实现快速查找
+  ### 使用 materialized view (增量式) 实现快速查找 {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 选择 ClickHouse 排序键时，应结合查询访问模式，优先考虑经常出现在过滤和聚合子句中的列。在可观测性场景中，这种做法可能会受到限制，因为用户的访问模式更加多样，难以用单一的一组列来概括。默认 OTel schema 中内置的一个示例很好地说明了这一点。下面以链路追踪的默认 schema 为例：
@@ -1453,27 +1457,29 @@ LIMIT 1000
 
 同样的方法也适用于类似的访问模式。我们在数据建模的[这里](/zh/concepts/features/materialized-views/incremental-materialized-view#lookup-table)探讨了一个类似的示例。
 
-<div id="using-projections">
-  ### 使用投影
-</div>
+### 使用投影 {#using-projections}
 
 ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
 
-在前面的章节中，我们探讨了如何在 ClickHouse 中使用 materialized view 预计算聚合、转换行，并针对不同访问模式优化可观测性查询。
+在前面的章节中，我们探讨了如何在 ClickHouse 中使用物化视图预计算聚合、转换行，并针对不同访问模式优化可观测性查询。
 
-我们给出了一个示例：materialized view 会将行写入目标表，而该目标表使用的排序键与接收 insert 的原始表不同，从而优化按 trace id 进行的查找。
+我们给出了一个示例：物化视图会将行写入目标表，而该目标表使用的排序键与接收插入操作的原始表不同，从而优化按 trace id 进行的查找。
 
 投影也可以用来解决同样的问题，让用户能够针对不属于主键的列优化查询。
 
-理论上，这种能力可以让一张表拥有多个排序键，但有一个明显的缺点：数据重复。具体来说，除了需要按主键的主要排序顺序写入数据外，还必须额外按照每个投影指定的顺序再写入一次。这会降低 insert 速度，并占用更多磁盘空间。
+理论上，这种能力可以让一张表拥有多个排序键，但有一个明显的缺点：数据重复。具体来说，除了需要按主键的主要排序顺序写入数据外，还必须额外按照每个投影指定的顺序再写入一次。这会降低插入操作速度，并占用更多磁盘空间。
 
 <Info>
-  **投影 与 Materialized Views**
+  **投影 与 物化视图**
 
-  投影具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 投影 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
+  投影具备许多与物化视图相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 投影 可用于预计算聚合，但我们更建议用户为此使用物化视图。
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="可观测性与投影" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![可观测性与投影](/images/use-cases/observability/observability-13.webp)
+  </Frame>
+</div>
 
 考虑下面这个查询，它会按 500 错误码过滤 `otel_logs_v2` 表中的数据。这很可能是日志场景中的一种常见访问模式，因为用户往往希望按错误码进行过滤：
 
@@ -1497,7 +1503,7 @@ Peak memory usage: 56.54 MiB.
   这里我们使用 `FORMAT Null`，不输出结果。这会强制读取所有结果但不返回，从而避免查询因 LIMIT 而提前终止。这样做只是为了展示扫描全部 1000 万行所花费的时间。
 </Info>
 
-在所选排序键 `(ServiceName, Timestamp)`` 下，上述查询需要进行线性扫描。虽然我们可以将 `Status&#96; 添加到排序键末尾，以提升上述查询的性能，但也可以添加投影。
+在所选排序键 `(ServiceName, Timestamp)` 下，上述查询需要进行线性扫描。虽然我们可以将 `Status` 添加到排序键末尾，以提升上述查询的性能，但也可以添加投影。
 
 ```sql
 ALTER TABLE otel_logs_v2 (
@@ -1575,7 +1581,7 @@ Peak memory usage: 27.85 MiB.
 在上面的示例中，我们在 PROJECTION 中指定了前一个查询所使用的列。这意味着磁盘上作为 PROJECTION 一部分存储的只会是这些指定列，并且会按 Status 排序。或者，如果这里使用的是 `SELECT *`，则会存储所有列。虽然这样可以让更多查询 (使用任意列子集) 从 PROJECTION 中受益，但也会带来额外的存储开销。有关如何测量磁盘空间和压缩率，请参阅[“测量表大小和压缩”](#measuring-table-size--compression)。
 
 <div id="secondarydata-skipping-indices">
-  ### 二级索引/数据跳过索引
+  ### 二级索引/数据跳过索引 {#secondarydata-skipping-indices}
 </div>
 
 无论在 ClickHouse 中如何精心调整主键，某些查询终究还是不可避免地需要全表扫描。虽然可以通过 materialized views (以及针对某些查询的 projections) 在一定程度上缓解这一问题，但这些方法都需要额外维护，而且用户还必须知道它们可用，才能确保真正利用起来。传统关系型数据库通常通过二级索引解决这个问题，但这类索引在 ClickHouse 这样的列式数据库中并不有效。为此，ClickHouse 使用“跳过”索引，使数据库能够跳过不包含匹配值的大块数据，从而显著提升查询性能。
@@ -1587,7 +1593,7 @@ Peak memory usage: 27.85 MiB.
 **一般来说，只有当主键与目标非主键列/表达式之间存在很强的相关性，且用户查找的是稀有值——也就是不会出现在很多粒度中的值——时，它们才会有效。**
 
 <div id="text-index-for-full-text-search">
-  ### 用于全文检索的文本索引
+  ### 用于全文检索的文本索引 {#text-index-for-full-text-search}
 </div>
 
 ClickHouse 提供了一种专用于全文检索的[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
@@ -1650,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### 添加文本索引
+  #### 添加文本索引 {#adding-a-text-index}
 </div>
 
 可在创建表时为 Body 列添加文本索引：
@@ -1710,7 +1716,7 @@ Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
 ```
 
 <div id="using-a-preprocessor">
-  #### 使用预处理器
+  #### 使用预处理器 {#using-a-preprocessor}
 </div>
 
 在这个数据集中，Body 列包含一个 JSON 格式的字符串，其中包含多个键值对 (例如 `msg`、`id`、`ctx`、`attr` 等) 。
@@ -1981,16 +1987,14 @@ Query id: 730e4b77-e697-40b3-a24d-67219ec42075
 </details>
 
 <div id="extracting-from-maps">
-  ### 从 Map 中提取
+  ### 从 Map 中提取 {#extracting-from-maps}
 </div>
 
 Map 类型在 OTel schema 中很常见。该类型要求键和值具有相同的类型——这对于 Kubernetes 标记等元数据来说已经足够。请注意，查询 Map 类型中的某个子键时，整个父列都会被加载。如果该 Map 包含很多键，与将该键单独作为一列存储相比，这会带来明显的查询性能损耗，因为需要从磁盘读取更多数据。
 
 如果你经常查询某个特定键，建议考虑将其移到根级别的独立专用列中。这通常是在部署后根据常见访问模式进行的调整，在生产环境上线前往往很难预判。有关如何在部署后修改 schema，请参阅[“管理 schema 变更”](/zh/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes)。
 
-<div id="measuring-table-size--compression">
-  ## 衡量表大小与压缩
-</div>
+## 衡量表大小与压缩 {#measuring-table-size--compression}
 
 压缩是使用 ClickHouse 实现可观测性的主要原因之一。
 

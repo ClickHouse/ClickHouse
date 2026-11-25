@@ -2,38 +2,40 @@
 title: Guide de migration
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
+## Introduction {#introduction}
 
-<div id="introduction">
-  ## Introduction
+[Amazon Redshift](https://aws.amazon.com/redshift/) est une solution populaire de data warehousing dans le cloud faisant partie des offres Amazon Web Services. Ce guide présente différentes approches pour migrer des données d’une instance Redshift vers ClickHouse. Nous examinerons trois options :
+
+<div className="ch-image-md">
+  <Frame>
+    ![Options de migration de Redshift vers ClickHouse](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+  </Frame>
 </div>
 
-[Amazon Redshift](https://aws.amazon.com/redshift/) est une solution populaire de data warehousing dans le cloud faisant partie des offres Amazon Web Services. Ce guide présente différentes approches pour migrer des données d’une instance Redshift vers ClickHouse. Nous examinerons trois options :
-
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Options de migration de Redshift vers ClickHouse" />
-
-Du point de vue de l’instance ClickHouse, vous pouvez soit :
+Du point de vue de l’instance ClickHouse, vous pouvez soit :
 
 1. **[PUSH](#push-data-from-redshift-to-clickhouse)** envoyer les données vers ClickHouse à l’aide d’un outil ou service ETL/ELT tiers
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** extraire les données de Redshift à l’aide de ClickHouse JDBC Bridge
 
-3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** utiliser le stockage objet S3 selon une logique « décharger puis charger »
+3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** utiliser le stockage objet S3 selon une logique « décharger puis charger »
 
 <Note>
   Nous avons utilisé Redshift comme source de données dans ce tutoriel. Cependant, les approches de migration présentées ici ne sont pas propres à Redshift, et des étapes similaires peuvent être appliquées à toute source de données compatible.
 </Note>
 
-<div id="push-data-from-redshift-to-clickhouse">
-  ## Envoyer des données de Redshift vers ClickHouse
-</div>
+## Push de données de Redshift vers ClickHouse {#push-data-from-redshift-to-clickhouse}
 
 Dans le scénario Push, l&#39;idée est de s&#39;appuyer sur un outil ou un service tiers (qu&#39;il s&#39;agisse de code personnalisé ou d&#39;un [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) pour envoyer vos données vers votre instance ClickHouse. Par exemple, vous pouvez utiliser un logiciel comme [Airbyte](https://www.airbyte.com/) pour transférer des données entre votre instance Redshift (en tant que source) et ClickHouse (en tant que destination) ([consultez notre guide d&#39;intégration Airbyte](/fr/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="PUSH Redshift vers ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Push de Redshift vers ClickHouse](/images/integrations/data-ingestion/redshift/push.webp)
+  </Frame>
+</div>
 
 <div id="pros">
-  ### Avantages
+  ### Avantages {#pros}
 </div>
 
 * Il peut s’appuyer sur le catalogue existant de connecteurs du logiciel ETL/ELT.
@@ -41,29 +43,31 @@ Dans le scénario Push, l&#39;idée est de s&#39;appuyer sur un outil ou un serv
 * Permet des scénarios de transformation des données (par exemple, consultez notre [guide d’intégration pour dbt](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index)).
 
 <div id="cons">
-  ### Inconvénients
+  ### Inconvénients {#cons}
 </div>
 
 * Vous devez mettre en place et maintenir une infrastructure ETL/ELT.
 * Cela introduit un composant tiers dans l’architecture, qui peut devenir un goulot d’étranglement potentiel pour la montée en charge.
 
-<div id="pull-data-from-redshift-to-clickhouse">
-  ## Pull des données de Redshift vers ClickHouse
+## Pull des données de Redshift vers ClickHouse {#pull-data-from-redshift-to-clickhouse}
+
+Dans ce scénario Pull, l’idée est d’utiliser le ClickHouse JDBC Bridge pour se connecter directement à un cluster Redshift depuis une instance ClickHouse et exécuter des requêtes `INSERT INTO ... SELECT` :
+
+<div className="ch-image-md">
+  <Frame>
+    ![PULL de Redshift vers ClickHouse](/images/integrations/data-ingestion/redshift/pull.webp)
+  </Frame>
 </div>
 
-Dans ce scénario Pull, l’idée est d’utiliser le ClickHouse JDBC Bridge pour se connecter directement à un cluster Redshift depuis une instance ClickHouse et exécuter des requêtes `INSERT INTO ... SELECT` :
-
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="PULL de Redshift vers ClickHouse" />
-
 <div id="pros">
-  ### Avantages
+  ### Avantages {#pros-1}
 </div>
 
 * Compatible avec tous les outils prenant en charge JDBC
 * Solution élégante pour interroger plusieurs sources de données externes depuis ClickHouse
 
 <div id="cons">
-  ### Inconvénients
+  ### Inconvénients {#cons-1}
 </div>
 
 * Nécessite une instance ClickHouse JDBC Bridge, qui peut devenir un goulot d’étranglement potentiel en termes de scalabilité
@@ -73,7 +77,7 @@ Dans ce scénario Pull, l’idée est d’utiliser le ClickHouse JDBC Bridge pou
 </Note>
 
 <div id="tutorial">
-  ### Tutoriel
+  ### Tutoriel {#tutorial}
 </div>
 
 Pour utiliser cette option, vous devez configurer ClickHouse JDBC Bridge. ClickHouse JDBC Bridge est une application Java autonome qui gère la connectivité JDBC et sert de proxy entre l&#39;instance ClickHouse et les sources de données. Pour ce tutoriel, nous avons utilisé une instance Redshift préchargée avec une [base de données d&#39;exemple](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
@@ -185,16 +189,18 @@ Pour utiliser cette option, vous devez configurer ClickHouse JDBC Bridge. ClickH
   </Step>
 </Steps>
 
-<div id="pivot-data-from-redshift-to-clickhouse-using-s3">
-  ## Faire transiter des données de Redshift vers ClickHouse à l’aide de S3
+## PIVOT de données de Redshift vers ClickHouse à l’aide de S3 {#pivot-data-from-redshift-to-clickhouse-using-s3}
+
+Dans ce scénario, nous exportons les données vers S3 dans un format PIVOT intermédiaire puis, dans un second temps, nous chargeons les données depuis S3 dans ClickHouse.
+
+<div className="ch-image-md">
+  <Frame>
+    ![PIVOT depuis Redshift à l’aide de S3](/images/integrations/data-ingestion/redshift/pivot.webp)
+  </Frame>
 </div>
 
-Dans ce scénario, nous exportons les données vers S3 dans un format pivot intermédiaire puis, dans un second temps, nous chargeons les données depuis S3 dans ClickHouse.
-
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="PIVOT depuis Redshift à l’aide de S3" />
-
 <div id="pros">
-  ### Avantages
+  ### Avantages {#pros-2}
 </div>
 
 * Redshift et ClickHouse disposent tous deux de puissantes fonctionnalités d’intégration avec S3.
@@ -203,28 +209,34 @@ Dans ce scénario, nous exportons les données vers S3 dans un format pivot inte
 * Permet d’utiliser des formats évolués et compressés comme Apache Parquet.
 
 <div id="cons">
-  ### Inconvénients
+  ### Inconvénients {#cons-2}
 </div>
 
 * Le processus comporte deux étapes (déchargement depuis Redshift, puis chargement dans ClickHouse).
 
-<div id="tutorial">
-  ### Tutoriel
-</div>
+### Tutoriel {#tutorial-1}
 
 <Steps>
   <Step title="Exporter les données dans un bucket S3 à l'aide d'UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
-    À l&#39;aide de la fonctionnalité [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) de Redshift, exportez les données dans un bucket S3 privé existant :
+    À l&#39;aide de la fonctionnalité [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) de Redshift, exportez les données dans un bucket S3 privé existant :
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="UNLOAD de Redshift vers S3" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+      <Frame>
+        ![UNLOAD de Redshift vers S3](/images/integrations/data-ingestion/redshift/s3-1.webp)
+      </Frame>
+    </div>
 
     Cela génère des fichiers part contenant les données brutes dans S3
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="Données dans S3" background="white" />
+    <div className="ch-image-md ch-image-background-white">
+      <Frame>
+        ![Données dans S3](/images/integrations/data-ingestion/redshift/s3-2.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Créer la table dans ClickHouse" id="create-the-table-in-clickhouse">
-    Créez la table dans ClickHouse :
+    Créez la table dans ClickHouse :
 
     ```sql
     CREATE TABLE users
@@ -237,7 +249,7 @@ Dans ce scénario, nous exportons les données vers S3 dans un format pivot inte
     ORDER BY username
     ```
 
-    Sinon, ClickHouse peut tenter d&#39;inférer la structure de la table à l&#39;aide de `CREATE TABLE ... EMPTY AS SELECT` :
+    Sinon, ClickHouse peut tenter d&#39;inférer la structure de la table à l&#39;aide de `CREATE TABLE ... EMPTY AS SELECT` :
 
     ```sql
     CREATE TABLE users
@@ -250,7 +262,7 @@ Dans ce scénario, nous exportons les données vers S3 dans un format pivot inte
   </Step>
 
   <Step title="Charger les fichiers S3 dans ClickHouse" id="load-s3-files-into-clickhouse">
-    Chargez les fichiers S3 dans ClickHouse à l&#39;aide d&#39;une instruction `INSERT INTO ... SELECT` :
+    Chargez les fichiers S3 dans ClickHouse à l&#39;aide d&#39;une instruction `INSERT INTO ... SELECT` :
 
     ```sql
     INSERT INTO users SELECT *

@@ -1,6 +1,7 @@
 -- Tests for enable_join_runtime_filters_index_analysis on the global row index `_part_starting_offset + _part_offset`:
 -- a self-join on it prunes the probe side to the granules that contain the rows found by the build side.
 
+SET allow_reserved_column_names = 1;
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
