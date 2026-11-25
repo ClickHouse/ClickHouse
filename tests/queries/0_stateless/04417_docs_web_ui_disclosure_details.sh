@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The built-in `/docs` page renders Markdown from `system.documentation` through a sanitizer that
 # drops elements not on its allowlist together with their whole subtree. Some embedded docs wrap a
 # note in an ordinary `<details><summary>...</summary>...</details>` disclosure block (for example
-# the "Implementation details" of the `uniq` and `uniqCombined` aggregate functions). When `details`
+# the deprecated table creation syntax of the `MergeTree` family engines). When `details`
 # and `summary` were not on the allowlist, those sections were removed from the rendered page. The
 # sanitizer must keep these safe disclosure tags (and the `open` attribute).
 
@@ -24,12 +24,12 @@ echo "$PAGE" | grep -oF "'details', 'summary'," | head -n1
 echo "$PAGE" | grep -oF "'href', 'src', 'alt', 'target', 'rel', 'open'," | head -n1
 
 # The regression target exists in the corpus: an entity whose embedded documentation uses a
-# `<details><summary>Implementation details</summary>` disclosure block (so the drop-with-subtree bug
-# could occur). The `uniq` aggregate function is a core function, so it is present even in the minimal
-# `Fast test` build (`ENABLE_LIBRARIES=0`).
+# `<details><summary>...</summary>` disclosure block (so the drop-with-subtree bug could occur). The
+# `MergeTree` table engine is a core engine, so it is present even in the minimal `Fast test` build
+# (`ENABLE_LIBRARIES=0`).
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0
     FROM system.documentation
-    WHERE type = 'Aggregate Function' AND name = 'uniq'
-      AND position(description, '<details>') > 0
-      AND position(description, '<summary>Implementation details</summary>') > 0"
+    WHERE type = 'Table Engine' AND name = 'MergeTree'
+      AND position(description, '<details') > 0
+      AND position(description, '<summary>') > 0"

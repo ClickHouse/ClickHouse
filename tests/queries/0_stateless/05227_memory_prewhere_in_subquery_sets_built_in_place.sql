@@ -4,7 +4,6 @@
 -- taken the subquery plans. A set built in place does not need the `CreatingSet` branch and the
 -- `DelayedPorts` gate in the pipeline, which is what this test asserts on.
 
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;

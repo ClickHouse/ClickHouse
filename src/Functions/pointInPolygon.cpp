@@ -220,25 +220,66 @@ public:
             context->getSettingsRef()[Setting::validate_polygons]);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isSpatialPredicate() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSpatialPredicate() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// `pointInPolygon((x, y), ring | rings | nested_rings...)` accepts a single
+    /// point tuple followed by one or more polygon/hole arrays. The polygon
+    /// arrays can be shaped as:
+    ///   Array(Tuple(N, N))                          — simple ring
+    ///   Array(Array(Tuple(N, N)))                   — polygon with holes
+    ///   Array(Array(Array(Tuple(N, N))))            — multi-polygon
+    /// or multiple ring/array arguments. The DSL's `Array` matcher with a bare
+    /// `Any` inner type accepts all of these; the runtime then validates the
+    /// nested shape, the tuple arity (must be 2), and the element types
+    /// (must be `NativeNumber`).
+    [[nodiscard]] String getSignatureString() const override
+    {
+        /// This signature is documentation-only: the polygon arguments' full contract — the
+        /// array nesting depth (1 to 3), the innermost tuple arity (exactly 2) and its element
+        /// types (`NativeNumber`), and the cross-argument consistency between the first polygon
+        /// and the subsequent hole/polygon arguments — is not expressible with the current DSL
+        /// vocabulary, so a bare `Array` matcher is used for them. The authoritative validation
+        /// runs in `getReturnTypeImpl`, which the `getReturnTypeImpl(ColumnsWithTypeAndName)`
+        /// override below routes to on the column path (the base column-path implementation
+        /// would otherwise short-circuit to this loose signature, letting a malformed polygon
+        /// argument such as an array of one-element tuples reach `executeImpl` and abort while
+        /// reading the missing coordinate). The point tuple is documented as
+        /// `Tuple(NativeNumber, NativeNumber)` here to match the `isNativeNumber` check the
+        /// legacy `getReturnTypeImpl` performs.
+        return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
+    }
+
+    /// Route the column path through the hand-written `getReturnTypeImpl(DataTypes)` above so its
+    /// authoritative validation runs. Without this override the base
+    /// `IFunction::getReturnTypeImpl(ColumnsWithTypeAndName)` short-circuits to the (deliberately
+    /// loose) declarative signature and skips the per-shape checks, allowing malformed polygon
+    /// arguments to slip through to `executeImpl`. The return type is fully determined by the
+    /// argument types, so no column-level information is required here.
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes argument_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            argument_types[i] = arguments[i].type;
+        return getReturnTypeImpl(argument_types);
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
         {
@@ -348,12 +389,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * point_col = arguments[0].column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
@@ -535,18 +576,18 @@ public:
 private:
     bool validate;
 
-    std::string getMessagePrefix(size_t i) const
+    [[nodiscard]] std::string getMessagePrefix(size_t i) const
     {
         return "Argument " + toString(i + 1) + " for function " + getName();
     }
 
-    bool isTwoDimensionalArray(const IDataType & type) const
+    [[nodiscard]] bool isTwoDimensionalArray(const IDataType & type) const
     {
         return WhichDataType(type).isArray()
             && WhichDataType(static_cast<const DataTypeArray &>(type).getNestedType()).isArray();
     }
 
-    bool isThreeDimensionalArray(const IDataType & type) const
+    [[nodiscard]] bool isThreeDimensionalArray(const IDataType & type) const
     {
         const auto * level1 = checkAndGetDataType<DataTypeArray>(&type);
         if (!level1)
@@ -634,7 +675,7 @@ private:
         return res;
     }
 
-    bool isInsidePolygonWithoutHoles(
+    [[nodiscard]] bool isInsidePolygonWithoutHoles(
         Float64 point_x,
         Float64 point_y,
         const IColumn & polygon_column,
@@ -642,7 +683,7 @@ private:
     {
         const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
 
-        size_t begin = array_col.getOffsets()[i - 1];
+        size_t begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t end = array_col.getOffsets()[i];
         size_t size = end - begin;
 
@@ -656,14 +697,14 @@ private:
         return isInsideRing(point_x, point_y, x_data, y_data, begin, end);
     }
 
-    bool isInsidePolygonWithHoles(
+    [[nodiscard]] bool isInsidePolygonWithHoles(
         Float64 point_x,
         Float64 point_y,
         const IColumn & polygon_column,
         size_t i) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
-        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t rings_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -673,7 +714,7 @@ private:
 
         for (size_t j = rings_begin; j < rings_end; ++j)
         {
-            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t begin = nested_array_col.getOffsets()[static_cast<ssize_t>(j) - 1];
             size_t end = nested_array_col.getOffsets()[j];
 
             if (j == rings_begin)
@@ -691,10 +732,10 @@ private:
         return true;
     }
 
-    bool isInsideMultiPolygon(Float64 point_x, Float64 point_y, const IColumn & multi_polygon_column, size_t i) const
+    [[nodiscard]] bool isInsideMultiPolygon(Float64 point_x, Float64 point_y, const IColumn & multi_polygon_column, size_t i) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(multi_polygon_column);
-        size_t polys_begin = array_col.getOffsets()[i - 1];
+        size_t polys_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t polys_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -736,7 +777,7 @@ private:
     void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t begin = array_col.getOffsets()[i - 1];
+        size_t begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t end = array_col.getOffsets()[i];
 
         const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
@@ -749,7 +790,7 @@ private:
     void parseConstPolygonWithHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_begin = array_col.getOffsets()[static_cast<ssize_t>(i) - 1];
         size_t rings_end = array_col.getOffsets()[i];
 
         const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
@@ -759,7 +800,7 @@ private:
 
         for (size_t j = rings_begin; j < rings_end; ++j)
         {
-            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t begin = nested_array_col.getOffsets()[static_cast<ssize_t>(j) - 1];
             size_t end = nested_array_col.getOffsets()[j];
 
             if (out_polygon.outer().empty())

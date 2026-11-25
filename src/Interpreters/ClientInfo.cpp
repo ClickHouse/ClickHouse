@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
+#include <base/sanitizer_defs.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -165,6 +166,7 @@ ClientInfo::ClientInfo()
     initial_address = Poco::Net::SocketAddress();
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
 {
     if (forwarded_for.empty())
@@ -460,9 +462,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
-        UInt64 value = 0;
-        readVarUInt(value, in);
-        collaborate_with_initiator = static_cast<bool>(value);
+        readVarUInt(collaborate_with_initiator, in);
         readVarUInt(obsolete_count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
     }

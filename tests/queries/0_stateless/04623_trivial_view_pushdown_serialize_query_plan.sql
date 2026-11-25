@@ -7,7 +7,6 @@
 -- Results must be identical to the non-serialized path.
 -- Tags: distributed
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 SET prefer_localhost_replica = 0;
