@@ -10,22 +10,20 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 由于 ClickHouse 的数据存储结构和复制机制，从 Postgres 复制到 ClickHouse 的更新和删除操作会在 ClickHouse 中产生重复行。本文将介绍其原因，以及在 ClickHouse 中处理重复数据的策略。
 
 <div id="how-does-data-get-replicated">
-  ## 数据如何复制？
+  ## 数据如何复制？ {#how-does-data-get-replicated}
 </div>
 
 <div id="PostgreSQL-logical-decoding">
-  ### PostgreSQL 逻辑解码
+  ### PostgreSQL 逻辑解码 {#PostgreSQL-logical-decoding}
 </div>
 
 ClickPipes 使用 [Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) 来实时捕获 Postgres 中发生的变更。Postgres 中的 Logical Decoding 过程使 ClickPipes 这类客户端能够以便于人类阅读的格式接收这些变更，也就是一系列 INSERT、UPDATE 和 DELETE。
 
 <div id="replacingmergetree">
-  ### ReplacingMergeTree
+  ### ReplacingMergeTree {#replacingmergetree}
 </div>
 
 ClickPipes 使用 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 引擎将 Postgres 表映射到 ClickHouse。ClickHouse 在仅追加型工作负载下表现最佳，因此不建议频繁执行 UPDATE。这正是 ReplacingMergeTree 特别适用的场景。
@@ -58,13 +56,15 @@ PRIMARY KEY id
 ORDER BY id;
 ```
 
-<div id="illustrative-example">
-  ### 示例说明
-</div>
+### 示例说明 {#illustrative-example}
 
 下图通过一个基础示例说明了如何使用 ClickPipes 在 PostgreSQL 和 ClickHouse 之间同步 `users` 表。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 初始加载" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickPipes 初始加载](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+  </Frame>
+</div>
 
 **步骤 1** 展示了 PostgreSQL 中 2 行数据的初始快照，以及 ClickPipes 将这 2 行数据初始加载到 ClickHouse 的过程。可以看到，这两行数据都会原样复制到 ClickHouse。
 
@@ -72,12 +72,12 @@ ORDER BY id;
 
 **步骤 3** 展示了 ClickPipes 如何将 INSERT、UPDATE 和 DELETE 操作以版本化插入方式复制到 ClickHouse。UPDATE 会表现为 ID 2 对应行的一个新版本，而 DELETE 会表现为 ID 1 的一个新版本，并通过 `_is_deleted` 标记为 true。因此，与 PostgreSQL 相比，ClickHouse 中会多出三行数据。
 
-因此，运行类似 `SELECT count(*) FROM users;` 这样的简单查询时，ClickHouse 和 PostgreSQL 中的结果可能会不同。根据 [ClickHouse merge 文档](/zh/concepts/core-concepts/merges#replacing-merges)，过期的行版本最终会在合并过程中被丢弃。但是，合并发生的时机无法预测，这意味着在合并完成之前，ClickHouse 中的查询可能会返回不一致的结果。
+因此，运行类似 `SELECT count(*) FROM users;` 这样的简单查询时，ClickHouse 和 PostgreSQL 中的结果可能会不同。根据 [ClickHouse 合并 文档](/zh/concepts/core-concepts/merges#replacing-merges)，过期的行版本最终会在合并过程中被丢弃。但是，合并发生的时机无法预测，这意味着在合并完成之前，ClickHouse 中的查询可能会返回不一致的结果。
 
 如何确保 ClickHouse 和 PostgreSQL 中的查询结果完全一致？
 
 <div id="deduplicate-using-final-keyword">
-  ### 使用 FINAL 关键字去重
+  ### 使用 FINAL 关键字去重 {#deduplicate-using-final-keyword}
 </div>
 
 在 ClickHouse 查询中，推荐的数据去重方式是使用 [FINAL 修饰符。](/zh/reference/statements/select/from#final-modifier) 这样可确保只返回去重后的行。
@@ -133,7 +133,7 @@ LIMIT 10
 ```
 
 <div id="final-setting">
-  #### FINAL 设置
+  #### FINAL 设置 {#final-setting}
 </div>
 
 你无需在查询中为每个表名都添加 FINAL 修饰符，而是可以使用 [FINAL 设置](/zh/reference/settings/session-settings/other#final)，将其自动应用到查询中的所有表。
@@ -150,7 +150,7 @@ SELECT count(*) FROM posts;
 ```
 
 <div id="row-policy">
-  #### ROW policy
+  #### ROW policy {#row-policy}
 </div>
 
 隐藏冗余的 `_peerdb_is_deleted = 0` 过滤器，一个简单的方法是使用 [ROW policy。](/zh/concepts/features/security/access-rights#row-policy-management) 下面是一个示例：创建行策略，从而在对表 votes 的所有查询中排除已删除的行。
@@ -163,7 +163,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 > 行策略会应用于一组用户和角色。在此示例中，它会应用于所有用户和角色。也可以将其调整为仅应用于特定用户或角色。
 
 <div id="query-like-with-postgres">
-  ### 像在 Postgres 中那样查询
+  ### 像在 Postgres 中那样查询 {#query-like-with-postgres}
 </div>
 
 将分析型数据集从 PostgreSQL 迁移到 ClickHouse 时，通常需要修改应用程序中的查询，以适应数据处理和查询执行上的差异。
@@ -171,7 +171,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 本节将介绍如何在保持原有查询不变的情况下对数据进行去重。
 
 <div id="views">
-  #### 视图
+  #### 视图 {#views}
 </div>
 
 [视图](/zh/reference/statements/create/view#normal-view) 是隐藏查询中 FINAL 关键字的一个好方法，因为它们不存储任何数据，只是在每次访问时从另一张表读取。
@@ -200,7 +200,7 @@ LIMIT 10
 ```
 
 <div id="refreshable-material-view">
-  #### 可刷新materialized view
+  #### 可刷新materialized view {#refreshable-material-view}
 </div>
 
 另一种方法是使用[可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)，它支持按计划执行查询，对行去重，并将结果存储到目标表中。每次按计划刷新时，目标表都会被最新的查询结果替换。

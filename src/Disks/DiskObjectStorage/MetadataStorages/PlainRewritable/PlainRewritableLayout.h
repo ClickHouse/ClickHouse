@@ -14,6 +14,8 @@ public:
     constexpr static std::string PREFIX_PATH_FILE_NAME = "prefix.path";
     constexpr static std::string METADATA_DIRECTORY_TOKEN = "__meta";
     constexpr static std::string ROOT_DIRECTORY_TOKEN = "__root";
+    /// A compact serialized copy of the whole in-memory state, see `PlainRewritableSnapshotFile.h`.
+    constexpr static std::string SNAPSHOT_FILE_NAME = "snapshot.bin";
     /// Holds the markers of the removals that have been committed but not finished, see `REMOVED_NAME_PREFIX`.
     /// It lives under `__meta`, where a name of this shape can never be the remote path of a directory,
     /// and the objects in it are ignored by `parseDirectoryObjectKey`.
@@ -102,19 +104,20 @@ public:
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
-    std::string constructMetadataDirectoryKey() const;
-    std::string constructRootFilesDirectoryKey() const;
-    std::string constructFilesDirectoryKey(const std::string & directory_remote_path) const;
-    std::string constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;
+    [[nodiscard]] std::string constructMetadataDirectoryKey() const;
+    [[nodiscard]] std::string constructSnapshotObjectKey() const;
+    [[nodiscard]] std::string constructRootFilesDirectoryKey() const;
+    [[nodiscard]] std::string constructFilesDirectoryKey(const std::string & directory_remote_path) const;
+    [[nodiscard]] std::string constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;
     /// Object key of a blob given its key relative to the common key prefix (see `FileRemoteInfo::blob_key`).
-    std::string constructBlobObjectKey(const std::string & blob_key) const;
-    std::string constructDirectoryObjectKey(const std::string & directory_remote_path) const;
-    std::string constructTombstoneDirectoryKey() const;
-    std::string constructTombstoneMarkerKey(const std::string & removed_name) const;
+    [[nodiscard]] std::string constructBlobObjectKey(const std::string & blob_key) const;
+    [[nodiscard]] std::string constructDirectoryObjectKey(const std::string & directory_remote_path) const;
+    [[nodiscard]] std::string constructTombstoneDirectoryKey() const;
+    [[nodiscard]] std::string constructTombstoneMarkerKey(const std::string & removed_name) const;
 
-    std::optional<std::pair<std::string, std::string>> parseFileObjectKey(const std::string & key) const;
-    std::optional<std::string> parseDirectoryObjectKey(const std::string & key) const;
-    std::optional<std::string> parseTombstoneMarkerKey(const std::string & key) const;
+    [[nodiscard]] std::optional<std::pair<std::string, std::string>> parseFileObjectKey(const std::string & key) const;
+    [[nodiscard]] std::optional<std::string> parseDirectoryObjectKey(const std::string & key) const;
+    [[nodiscard]] std::optional<std::string> parseTombstoneMarkerKey(const std::string & key) const;
 
 private:
     const std::filesystem::path object_storage_common_key_prefix;

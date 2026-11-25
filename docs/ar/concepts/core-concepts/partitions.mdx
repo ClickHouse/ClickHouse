@@ -6,11 +6,10 @@ keywords: ['أقسام الجدول', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
-  ## ما هي أقسام الجدول في ClickHouse؟
+  ## ما هي أقسام الجدول في ClickHouse؟ {#what-are-table-partitions-in-clickhouse}
 </div>
 
 <br />
@@ -18,7 +17,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 تُجمِّع أقسام الجدول [أجزاء البيانات](/ar/concepts/core-concepts/parts) الخاصة بجدول ضمن [عائلة محركات MergeTree](/ar/reference/engines/table-engines/mergetree-family/index) في وحدات منطقية منظَّمة، وهي طريقة لتنظيم البيانات بما يجعلها ذات دلالة مفاهيمية ومتوافقة مع معايير محددة، مثل النطاقات الزمنية أو الفئات أو السمات الرئيسية الأخرى. وتُسهِّل هذه الوحدات المنطقية إدارة البيانات والاستعلام عنها وتحسينها.
 
 <div id="partition-by">
-  ### PARTITION BY
+  ### PARTITION BY {#partition-by}
 </div>
 
 يمكن تفعيل التقسيم عند تعريف الجدول مبدئيًا عبر [عبارة PARTITION BY](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ويمكن أن تتضمن هذه العبارة تعبير SQL على أيٍّ من الأعمدة، بحيث تحدد نتائج هذا التعبير القسم الذي ينتمي إليه الصف.
@@ -40,13 +39,15 @@ PARTITION BY toStartOfMonth(date);
 
 يمكنك [الاستعلام عن هذا الجدول](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results) في ClickHouse SQL Playground التابع لنا.
 
-<div id="structure-on-disk">
-  ### البنية على القرص
-</div>
+### البنية على القرص {#structure-on-disk}
 
 عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="معالجة INSERT" />
+<div className="ch-image-lg">
+  <Frame>
+    ![معالجة INSERT](/images/managing-data/core-concepts/partitions.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -55,20 +56,22 @@ PARTITION BY toStartOfMonth(date);
 
 لاحظ أنه عند تمكين التقسيم، ينشئ ClickHouse تلقائيًا [فهارس MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) لكل جزء بيانات. وهي ببساطة ملفات لكل عمود في الجدول مستخدم في تعبير مفتاح التقسيم، وتحتوي على القيمتين الصغرى والكبرى لذلك العمود داخل جزء البيانات.
 
-<div id="per-partition-merges">
-  ### عمليات الدمج داخل كل قسم
-</div>
+### عمليات الدمج داخل كل قسم {#per-partition-merges}
 
 عند تمكين التقسيم، لا يَدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل القسم نفسه، وليس عبر الأقسام. نوضّح ذلك في مثال الجدول أعلاه:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="PART MERGES" />
+<div className="ch-image-lg">
+  <Frame>
+    ![PART MERGES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+  </Frame>
+</div>
 
 <br />
 
 كما يوضّح المخطط أعلاه، لا تُدمَج الأجزاء التابعة لأقسام مختلفة مطلقًا. وإذا اخترت مفتاح تقسيم ذي عددية مرتفعة، فستتوزع الأجزاء على آلاف الأقسام، ولن تصبح مرشحة للدمج أبدًا، ما يؤدي إلى تجاوز الحدود المضبوطة مسبقًا والتسبب في ظهور الخطأ المزعج `Too many parts`. وحل هذه المشكلة بسيط: اختر مفتاح تقسيم مناسبًا ذي [عددية أقل من 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
 
 <div id="monitoring-partitions">
-  ## مراقبة الأقسام
+  ## مراقبة الأقسام {#monitoring-partitions}
 </div>
 
 يمكنك [الاستعلام عن](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results) قائمة جميع الأقسام الفريدة الموجودة في جدول المثال باستخدام [العمود الافتراضي](/ar/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value`:
@@ -97,11 +100,11 @@ PARTITION BY toStartOfMonth(date);
 </RunnableCode>
 
 <div id="what-are-table-partitions-used-for">
-  ## فيما تُستخدم أقسام الجدول؟
+  ## فيما تُستخدم أقسام الجدول؟ {#what-are-table-partitions-used-for}
 </div>
 
 <div id="data-management">
-  ### إدارة البيانات
+  ### إدارة البيانات {#data-management}
 </div>
 
 في ClickHouse، يُعد التقسيم بالأساس ميزة لإدارة البيانات. فمن خلال تنظيم البيانات منطقيًا استنادًا إلى تعبير التقسيم، يمكن إدارة كل قسم على حدة. على سبيل المثال، يتيح مخطط التقسيم في جدول Example أعلاه حالات استخدام لا يُحتفَظ فيها إلا ببيانات آخر 12 شهرًا في الجدول الرئيسي، مع إزالة البيانات الأقدم تلقائيًا باستخدام [قاعدة TTL](/ar/concepts/features/operations/delete/ttl) (راجع الصف الأخير المُضاف في عبارة DDL):
@@ -138,9 +141,7 @@ ORDER BY (town, street)
 TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 ```
 
-<div id="query-optimization">
-  ### تحسين الاستعلام
-</div>
+### تحسين الاستعلام {#query-optimization}
 
 يمكن أن تساعد الأقسام في تحسين أداء الاستعلام، لكن ذلك يعتمد بدرجة كبيرة على أنماط الوصول. فإذا كانت الاستعلامات تستهدف عددًا قليلًا فقط من الأقسام (ومن الأفضل أن يكون قسمًا واحدًا)، فقد يتحسن الأداء. ويكون هذا مفيدًا عادةً فقط إذا لم يكن مفتاح التقسيم جزءًا من المفتاح الأساسي وكنت تُجري تصفية بناءً عليه، كما هو موضح في الاستعلام المثال أدناه.
 
@@ -154,11 +155,15 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
   ```
 </RunnableCode>
 
-يُنفَّذ هذا الاستعلام على جدول المثال المذكور أعلاه، ويقوم [بحساب](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) أعلى سعر لجميع العقارات المبيعة في لندن خلال ديسمبر 2020، وذلك عبر التصفية على كلٍّ من عمود (`date`) المُستخدَم في مفتاح تقسيم الجدول وعمود (`town`) المُستخدَم في المفتاح الأساسي للجدول (مع العلم أن `date` ليس جزءًا من المفتاح الأساسي).
+يُنفَّذ هذا الاستعلام على جدول المثال المذكور أعلاه، ويقوم [بحساب](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) أعلى سعر لجميع العقارات المبيعة في لندن خلال ديسمبر 2020، وذلك عبر التصفية على كلٍّ من عمود (`date`) المُستخدَم في مفتاح تقسيم الجدول وعمود (`town`) المُستخدَم في المفتاح الأساسي للجدول (مع العلم أن `date` ليس جزءًا من المفتاح الأساسي).
 
 يعالج ClickHouse هذا الاستعلام من خلال تطبيق سلسلة من تقنيات تقليم البيانات لتجنّب فحص البيانات غير ذات الصلة:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+<div className="ch-image-lg">
+  <Frame>
+    ![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -172,7 +177,7 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
   </Step>
 </Steps>
 
-يمكننا ملاحظة خطوات تقليم البيانات هذه من خلال [فحص](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) خطة تنفيذ الاستعلام الفعلية لاستعلام المثال المذكور أعلاه باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain):
+يمكننا ملاحظة خطوات تقليم البيانات هذه من خلال [فحص](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) خطة التنفيذ الفعلية للاستعلام لاستعلام المثال المذكور أعلاه باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain):
 
 ```sql style="fontSize:13px"
 EXPLAIN indexes = 1
@@ -232,7 +237,7 @@ WHERE date >= '2020-12-01'
 ما يعني أن ClickHouse فحص وعالج granule واحدة (كتلة من [8192](/ar/reference/settings/merge-tree-settings/index-granularity#index_granularity) صفًا) في غضون 6 مللي ثانية لحساب نتيجة الاستعلام.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
-  ### يُعد التقسيم في المقام الأول ميزة لإدارة البيانات
+  ### يُعد التقسيم في المقام الأول ميزة لإدارة البيانات {#partitioning-is-primarily-a-data-management-feature}
 </div>
 
 انتبه إلى أن تنفيذ الاستعلام عبر جميع الأقسام يكون عادةً أبطأ من تنفيذ الاستعلام نفسه على جدول غير مُقسَّم.

@@ -50,9 +50,9 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
     Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
     field_filename->set(Iceberg::f_id, IcebergPositionDeleteTransform::data_file_path_column_field_id);
-    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
-    field_pos->set(Iceberg::f_required, true);
-    field_pos->set(Iceberg::f_type, "string");
+    field_filename->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
+    field_filename->set(Iceberg::f_required, true);
+    field_filename->set(Iceberg::f_type, "string");
 
     pos_delete_schema->add(field_filename);
     pos_delete_schema->add(field_pos);
@@ -83,10 +83,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         String format = position_deletes_object.file_format;
-        if (boost::to_lower_copy(format) != "parquet")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
+        const String format_lower = boost::to_lower_copy(format);
+        if (format_lower != "parquet" && format_lower != "orc" && format_lower != "avro")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Position delete files are only supported in Parquet, ORC and Avro formats, but got {}", format);
 
-        /// Parquet reads the footer at the tail first, so hint the object-storage read buffer to
+        /// Parquet and ORC read the footer at the tail first, so hint the object-storage read buffer to
         /// skip the generic from-start prefetch that it would drop, unless seeks are disabled.
         auto read_settings = context->getReadSettings();
         read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format, context);
@@ -126,6 +128,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             return std::shared_ptr<const ActionsDAG>();
         }();
 
+        auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr);
+        delete_format_filter_info->need_row_numbers = true;
         auto delete_format = FormatFactory::instance().getInput(
             format,
             *delete_read_buffers.back(),
@@ -134,8 +138,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr),
-            true /* is_remote_fs */,
+            delete_format_filter_info,
+            object_storage->isRemote(),
             compression_method);
 
         position_delete_files.push_back(std::move(delete_format));
@@ -299,8 +303,9 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     ///  * this transform should be immediately after the IInputFormat
     ///    (typically ParquetV3BlockInputFormat) in the pipeline,
     ///  * IInputFormat outputs chunks in order of row number even if it uses multiple threads
-    ///    internally; for parquet IcebergMetadata::modifyFormatSettings sets
-    ///    `format_settings.parquet.preserve_order = true` to ensure this, other formats return
+    ///    internally; for parquet StorageObjectStorageSource::createReader sets
+    ///    `format_settings.parquet.preserve_order = true` for the files this transform is applied to
+    ///    (see IcebergDataObjectInfo::usesStreamingPositionDeletes), other formats return
     ///    chunks in order by default.
     if (previous_chunk_end_offset && previous_chunk_end_offset.value() > chunk_info->row_num_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");

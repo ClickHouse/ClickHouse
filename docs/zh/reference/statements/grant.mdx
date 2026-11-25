@@ -167,6 +167,15 @@ ClickHouse 的特权层级如下所示：
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
+  * [`AI FUNCTIONS`](#ai-functions)
+    * `aiClassify`
+    * `aiEmbed`
+    * `aiExtract`
+    * `aiFilter`
+    * `aiGenerate`
+    * `aiRedact`
+    * `aiSimilarity`
+    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -218,20 +227,25 @@ ClickHouse 的特权层级如下所示：
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
-    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-    * `CREATE WORKLOAD`
+  * `CREATE RESOURCE`
+  * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
-    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-    * `DROP WORKLOAD`
+  * `DROP RESOURCE`
+  * `DROP WORKLOAD`
+  * `HANDLER ADMIN`
+    * `ALTER HANDLER`
+    * `CREATE HANDLER`
+    * `DROP HANDLER`
+    * `SHOW HANDLERS`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -634,6 +648,25 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`。级别：`GLOBAL`
   * `demangle`。级别：`GLOBAL`
 
+### AI FUNCTIONS {#ai-functions}
+
+允许使用 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)。调用 AI 函数时，还需要具有所选凭证的 `NAMED COLLECTION` 特权。
+
+* `AI FUNCTIONS`。级别：`GROUP`
+  * `aiClassify`。级别：`GLOBAL`
+  * `aiEmbed`。级别：`GLOBAL`
+  * `aiExtract`。级别：`GLOBAL`
+  * `aiFilter`。级别：`GLOBAL`
+  * `aiGenerate`。级别：`GLOBAL`
+  * `aiRedact`。级别：`GLOBAL`
+  * `aiSimilarity`。级别：`GLOBAL`
+  * `aiTranslate`。级别：`GLOBAL`
+
+示例：
+
+* `GRANT AI FUNCTIONS ON *.* TO john`
+* `GRANT aiGenerate, aiClassify ON *.* TO john`
+
 ### SOURCES {#sources}
 
 允许使用外部数据源。适用于基于数据源的[数据库引擎](/zh/reference/engines/database-engines/index)、[表引擎](/zh/reference/engines/table-engines/index)和[表函数](/zh/reference/functions/table-functions/index)。
@@ -647,6 +680,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
+* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -712,7 +746,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  source 过滤器将 **regexp** 用作参数，因此以下授权
+  源过滤器将 **正则表达式** 用作参数，因此以下授权
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   会允许执行下面这些查询：
@@ -742,8 +776,19 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**撤销：**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **重要限制：**
 
+* **过滤器按字符串进行比较：** `REVOKE` 仅会移除与已授予的过滤器完全相同的过滤器。撤销 `S3('s3://foo/bar/.*')` 会抛出异常，而不会缩小 `S3('s3://foo/.*')` 这一授权的范围。
 * **不允许部分撤销：** 你不能只撤销已授权过滤模式中的一部分。如有需要，必须先撤销整个授权，再使用新的模式重新授权。
 * **不允许通配符授权：** 你不能使用 `GRANT READ ON *('regexp')` 或类似仅使用通配符的模式。必须指定具体的 source。
 

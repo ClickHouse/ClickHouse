@@ -7,8 +7,6 @@
 -- strided and non-strided QBit, constant and non-constant reference vectors, the 3- and 4-argument forms, all three functions, and both
 -- states of the partial-reads optimization. Companion to 04491_qbit_stride_distance and 04494_qbit_stride_dot_product_transposed.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_strided;
 DROP TABLE IF EXISTS qbit_plain;
 DROP TABLE IF EXISTS qbit_i8;

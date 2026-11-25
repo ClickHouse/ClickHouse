@@ -49,6 +49,14 @@ SELECT 절에서 GROUP BY 키의 min/max/any/anyLast 집계 함수를 제거합�
 * 0 — 항상,
 * 음의 정수 - 절대 사용 안 함.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "동등 프레디케이트를 통해 필터를 통과한 모든 값이 상수와 같다는 것이 보장되면, 필터링된 컬럼을 `ColumnConst`로 대체하는 새로운 설정입니다."}]}]} />
+
+동등 프레디케이트를 통해 필터를 통과한 모든 값이 상수와 같다는 것이 보장되면, 필터링된 컬럼을 `ColumnConst`로 대체합니다.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -266,6 +274,18 @@ SELECT * FROM test2;
 
 후속 쿼리 계획 최적화로 `MergeTree` 읽기 단계 위에 추가 필터가 배치될 수 있는 경우(예: `JOIN`을 통한 프레디케이트 pushdown, projection 재작성), 그 이후 두 번째 `PREWHERE` 승격 패스를 실행합니다. 기존 `PREWHERE`가 이미 있으면 새 필터는 별도의 필터 단계로 남지 않고 여기에 `AND`로 병합됩니다.
 
+## optimize_projection_skip_index_ratio {#optimize_projection_skip_index_ratio}
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "프로젝션(projection) 선택 시 비용을 비교하기 전에 기반 테이블의 지연 적용 스킵 인덱스를 언제 적용할지 제어하는 새로운 설정입니다. 가장 적합한 프로젝션(projection) 후보가 상위 테이블의 프라이머리 키 기준 마크 추정치에서 이 비율을 초과하여 읽는 경우에만 추가 패스가 실행됩니다. 이전 값인 1.0으로 설정하면 기존 동작으로 돌아갑니다. ratio = 1이면 이 보정 과정은 실행되지 않습니다. 이 과정은 어차피 프라이머리 키 기준 비교에서 제외되는 후보에만 영향을 줄 수 있기 때문입니다."}]}]} />
+
+`use_skip_indexes_on_data_read`가 활성화되어 있으면 기반 테이블의 스킵 인덱스가 데이터 읽기 시점에 적용되므로, 일반 프로젝션(projection)(Normal Projection) 후보와 비교하는 마크 수는 프라이머리 키만으로 추정됩니다. 가장 적합한 일반 프로젝션(projection) 후보가 이 추정치에서 이 비율을 초과하여 읽고, 기반 테이블에 해당 쿼리에 사용할 수 있는 스킵 인덱스가 있으면, 계획 단계에서 기반 테이블에 스킵 인덱스를 적용하고 보정된 마크 수를 비교에 사용합니다. `0`이면 항상 스킵 인덱스를 적용하고, `1`이면 프라이머리 키 기준 비교를 그대로 유지합니다. 집계 프로젝션(projection)에는 영향을 주지 않습니다.
+
+가능한 값:
+
+* `[0, 1]` 범위의 부동소수점 값
+
 ## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -386,6 +406,14 @@ FROM default.fuse_tbl AS __table1
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "모든 GROUP BY 키가 ORDER BY 접두사에 포함되면 끝부분의 ORDER BY 원소를 제거합니다."}]}]} />
 
 모든 GROUP BY 키가 ORDER BY 접두사에 포함되면 끝부분의 ORDER BY 원소를 제거합니다.
+
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "스레드별 해시 집합을 머지하는 대신 값을 해시 기준으로 파티셔닝하여 `GROUP BY` 없이 단일 `uniqExact` 또는 `count(DISTINCT)`를 계산하는 새로운 설정입니다."}]}]} />
+
+`GROUP BY`가 없는 쿼리에서 단일 `uniqExact`(및 기본적으로 이를 사용하는 `count(DISTINCT)`)를 계산할 때, 스레드별 해시 집합을 머지하는 대신 값을 해시 기준으로 파티셔닝합니다. 각 스레드가 자신의 값을 파티션으로 라우팅하면, 각 파티션은 CPU 캐시에 들어갈 만큼 작은 해시 집합에서 병렬로 중복 제거되며, 최종 결과는 각 파티션 크기의 합이 됩니다. 이 설정은 결과가 동일한 서버에서 완료되는 경우에만 적용되며, 대상은 64비트 이하의 숫자 유형, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, 128비트 정수, `String`, `FixedString` 또는 이들의 `Nullable` 유형으로 된 단일 인수입니다. 각 스레드는 일반 집계와 마찬가지로 집합이 CPU 캐시 크기를 넘어설 때까지 자신의 작은 집합에 계속 삽입하므로, 라우팅은 high-cardinality 입력에서만 동작합니다. 또한 값 대부분이 중복된 것으로 확인되면 해당 스레드는 다시 자신의 집합을 사용합니다.
 
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 

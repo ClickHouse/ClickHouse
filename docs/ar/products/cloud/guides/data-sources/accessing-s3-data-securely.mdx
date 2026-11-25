@@ -7,12 +7,14 @@ keywords: ['RBAC', 'Amazon S3', 'المصادقة']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوضح هذا الدليل كيف يمكن لعملاء ClickHouse Cloud الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة مع Amazon Simple Storage Service ‏(S3) والوصول إلى بياناتهم بأمان.
 قبل التعمق في إعداد الوصول الآمن إلى S3، من المهم فهم آلية عمل ذلك. في ما يلي نظرة عامة على كيفية تمكّن خدمات ClickHouse من الوصول إلى حاويات S3 الخاصة من خلال افتراض دور داخل حساب AWS الخاص بالعملاء.
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="نظرة عامة على الوصول الآمن إلى S3 باستخدام ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![نظرة عامة على الوصول الآمن إلى S3 باستخدام ClickHouse](/images/cloud/security/secures3.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -31,10 +33,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM الخاص بخدمة ClickHouse" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![الحصول على ARN لدور IAM الخاص بخدمة ClickHouse](/images/cloud/security/secures3_arn.webp)
+  </Frame>
+</div>
 
 <div id="setting-up-iam-assume-role">
-  ## إعداد IAM Assume Role
+  ## إعداد IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 يمكن إعداد IAM Assume Role بإحدى الطريقتين التاليتين:
@@ -42,11 +48,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [باستخدام CloudFormation stack](#option-1-deploying-with-cloudformation-stack)
 * [إنشاء دور IAM يدويًا](#option-2-manually-create-iam-role)
 
-<div id="option-1-deploying-with-cloudformation-stack">
-  ### النشر باستخدام CloudFormation stack
-</div>
+### النشر باستخدام CloudFormation stack {#option-1-deploying-with-cloudformation-stack}
 
-1. سجّل الدخول إلى AWS account الخاص بك من خلال متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
+1. سجّل الدخول إلى حساب AWS الخاص بك من خلال متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
 
 2. انتقل إلى [CloudFormation URL](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3) التالي لملء CloudFormation stack.
 
@@ -77,12 +81,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 9. حدّد الـ Stack الذي أُنشئ حديثًا، ثم حدّد علامة التبويب **Outputs** في CloudFormation stack
 
-10. انسخ قيمة **RoleArn** لهذا integration، فهي ما تحتاجه للوصول إلى حاوية S3 الخاصة بك.
+10. انسخ قيمة **RoleArn** لهذا التكامل، فهي ما تحتاجه للوصول إلى حاوية S3 الخاصة بك.
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="مخرجات CloudFormation stack التي تعرض IAM Role ARN" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![مخرجات CloudFormation stack تعرض ARN لدور IAM](/images/cloud/security/secures3_output.webp)
+  </Frame>
+</div>
 
 <div id="option-2-manually-create-iam-role">
-  ### أنشئ دور IAM يدويًا
+  ### أنشئ دور IAM يدويًا {#option-2-manually-create-iam-role}
 </div>
 
 1. سجّل الدخول إلى حساب AWS الخاص بك عبر متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
