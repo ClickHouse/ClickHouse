@@ -84,6 +84,8 @@
     <query>SELECT count() FROM fsm_str_sparse_left AS a JOIN fsm_str_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
     <query>SELECT count() FROM fsm_nullable_left AS a JOIN fsm_nullable_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', join_use_nulls = 1</query>
     <query>SELECT count() FROM fsm_u64_two_keys AS a JOIN fsm_u64_two_keys AS b ON a.k1 = b.k1 AND a.k2 = b.k2 FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <!-- A chain keyed on the right table of the inner join below it, sharded by primary-key ranges. -->
+    <query>SELECT count() FROM test_u64_left_10000000 AS a JOIN test_u64_right_10000000 AS b ON a.k = b.k JOIN fsm_u64_dup_left AS c ON b.k = c.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', query_plan_optimize_join_order_limit = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>

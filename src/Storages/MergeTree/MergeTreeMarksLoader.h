@@ -72,6 +72,7 @@ private:
     std::mutex load_mutex;
     MarkCache::MappedPtr marks;
 
+    MarkCache::Key getCacheKey() const;
     MarkCache::MappedPtr loadMarksSync();
     std::future<MarkCache::MappedPtr> loadMarksAsync();
     MarkCache::MappedPtr loadMarksImpl();
