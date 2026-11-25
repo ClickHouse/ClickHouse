@@ -90,6 +90,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
@@ -2081,8 +2082,17 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
 
     ColumnsDescription fake_column_descriptions;
     NameSet fake_name_set;
-    for (const auto & column : query_node.getProjectionColumns())
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    const auto & projection_columns = query_node.getProjectionColumns();
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> first_position_of_name;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
     {
+        const auto & column = projection_columns[i];
+        /// A repeated column (`SELECT x, x`) is one input of the filter; a name shared by different expressions stays ambiguous.
+        auto [it, inserted] = first_position_of_name.emplace(column.name, i);
+        if (!inserted && projection_nodes[it->second]->isEqual(*projection_nodes[i]))
+            continue;
+
         fake_column_descriptions.add(ColumnDescription(column.name, column.type));
         fake_name_set.emplace(column.name);
     }

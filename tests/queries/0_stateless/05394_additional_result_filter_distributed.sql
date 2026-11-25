@@ -34,6 +34,12 @@ SELECT number FROM t_d2 ORDER BY number SETTINGS additional_result_filter = 'num
 -- Two shards with aggregation: worked before, must keep working.
 SELECT count() AS c FROM remote('127.0.0.{1,2}', numbers(10)) SETTINGS additional_result_filter = 'c > 100';
 
+-- A result may repeat a column; a name shared by different expressions stays rejected.
+SELECT number, number FROM numbers(10) ORDER BY number SETTINGS additional_result_filter = 'number < 2';
+SELECT number, number FROM remote('127.0.0.1', numbers(10)) ORDER BY number SETTINGS additional_result_filter = 'number < 2';
+SELECT number, number FROM remote('127.0.0.{1,2}', numbers(10)) ORDER BY number SETTINGS additional_result_filter = 'number < 2';
+SELECT *, number + 10 AS number FROM numbers(3) SETTINGS additional_result_filter = 'number < 2'; -- { serverError ILLEGAL_COLUMN }
+
 -- A `Merge` child plan united into the outer plan must not apply the filter a second time.
 CREATE TABLE t_m1 AS t_local ENGINE = Merge(currentDatabase(), '^t_d1$');
 CREATE TABLE t_mm1 AS t_local ENGINE = Merge(currentDatabase(), '^t_m1$');
