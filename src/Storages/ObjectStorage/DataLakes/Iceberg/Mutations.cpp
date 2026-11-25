@@ -1115,6 +1115,10 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
+    /// Skipped by IF [NOT] EXISTS, see AlterCommands::prepare.
+    if (params[0].ignore)
+        return;
+
     size_t i = 0;
     bool succeeded = false;
     while (i < MAX_TRANSACTION_RETRIES)
