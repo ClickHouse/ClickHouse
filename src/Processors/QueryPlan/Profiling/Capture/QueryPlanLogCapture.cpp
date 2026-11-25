@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -192,8 +191,10 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
     /// Runs on the query-finish path after the client has already received the result. An exception
     /// here would fail a query that had already succeeded, so diagnostics must not propagate.
-    MemoryTrackerBlockerInThread block_memory_tracker;
-
+    ///
+    /// The memory is tracked: with work intervals collected, the analysis allocates in proportion to
+    /// the number of tasks the query ran, so it must stay within the query and user limits. Running
+    /// out of them fails only the statistics, never the query.
     try
     {
         /// Both come from the profiler: the executor stamped the end when it finished, so the
