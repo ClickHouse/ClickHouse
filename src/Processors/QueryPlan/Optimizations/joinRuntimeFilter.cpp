@@ -335,10 +335,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
+    /// When InequalityJoin takes this join (`inequality` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
-    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+    if (isInequalityJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
@@ -351,7 +351,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             join_algorithms,
             [](JoinAlgorithm algorithm)
             {
-                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::INEQUALITY
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
@@ -693,6 +693,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     join_step->setHasRuntimeFilters();
 
+    /// A packed long key is hashed for every row that reaches the join, so only a filter that passes mostly the rows
+    /// which match saves that. A `LEFT ANTI` filter passes the misses.
+    if (!check_left_does_not_contain)
+        join_step->setRuntimeFilterKeepsMatchingRows();
     return true;
 }
 
@@ -723,11 +727,9 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
             {
                 if (read_step)
-                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
                 else if (object_storage_read_step && !descr.is_global_row_index)
-                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
             }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))

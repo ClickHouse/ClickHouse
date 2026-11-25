@@ -144,6 +144,8 @@ struct IMergeTreeIndexBulkGranules
     /// `granule_num` is the number of the index granule (mark) in the part. The granule numbers
     /// returned by `IMergeTreeIndexCondition::getPossibleGranules` are the same numbers.
     virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+    /// Number of index values read so far.
+    [[nodiscard]] virtual size_t numValues() const = 0;
 
     /// Read `count` consecutive granules starting from `first_granule_num` from `istr` in one call.
     /// Default implementation just loops over the per-granule API; implementations for indexes with

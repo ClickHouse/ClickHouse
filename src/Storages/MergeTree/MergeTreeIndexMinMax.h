@@ -135,6 +135,7 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
     /// `None` (Nullable, Decimal, DateTime64, UUID, String, ...) this falls back to
     /// looping over the per-granule `deserializeBinary`.
     void deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    [[nodiscard]] size_t numValues() const override { return size(); }
 
     /// Native type used by the raw-byte read path; `None` uses normal deserialization.
     enum class FastKind : UInt8
@@ -189,6 +190,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
                                               size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    [[nodiscard]] size_t numValues() const override { return granules.size(); }
 
     void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,
