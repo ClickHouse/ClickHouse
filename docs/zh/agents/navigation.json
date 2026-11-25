@@ -1,8 +1,8 @@
 {
-  "item": "智能体",
+  "item": "Agents",
   "pages": [
     {
-      "group": "入门",
+      "group": "Get started",
       "pages": [
         "zh/agents/index",
         "zh/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "智能体构建器",
+      "group": "Agent Builder",
       "pages": [
         "zh/agents/builder/index",
         "zh/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "管理智能体",
+      "group": "Manage agents",
       "pages": [
         "zh/agents/prompts",
         "zh/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "助手",
+      "group": "Assistant",
       "pages": [
         "zh/agents/assistant/using-ai-chat",
         "zh/agents/assistant/customizing-semantic-layer"

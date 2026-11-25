@@ -3,7 +3,7 @@
   "pages": [
     "ja/products/kubernetes-operator/overview",
     {
-      "group": "インストール",
+      "group": "Install",
       "expanded": true,
       "pages": [
         "ja/products/kubernetes-operator/install/kubectl",
@@ -12,7 +12,7 @@
       ]
     },
     {
-      "group": "ガイド",
+      "group": "Guides",
       "expanded": true,
       "pages": [
         "ja/products/kubernetes-operator/guides/introduction",
@@ -26,7 +26,7 @@
       ]
     },
     {
-      "group": "リファレンス",
+      "group": "Reference",
       "expanded": true,
       "pages": [
         "ja/products/kubernetes-operator/reference/api-reference"

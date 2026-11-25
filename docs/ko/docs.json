@@ -4,7 +4,7 @@
       "pages": [
         "ko/index"
       ],
-      "tab": "홈"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -29,14 +29,14 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "데이터베이스(Database)"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "배포"
+          "item": "Deployments"
         },
         {
           "$ref": "./products/cloud/navigation.json"
@@ -48,7 +48,7 @@
           ]
         },
         {
-          "item": "프라이빗",
+          "item": "Private",
           "pages": [
             "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
@@ -56,7 +56,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "애플리케이션"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -67,17 +67,17 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI 엔지니어링"
+          "item": "AI Engineering"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "보안"
+          "item": "Security"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "오픈 소스"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
@@ -96,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "제품"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "생태계",
+          "item": "Ecosystem",
           "pages": [
             "ko/integrations/home",
             "ko/integrations/data-catalogs"
@@ -117,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "통합"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -134,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "자료"
+      "tab": "Resources"
     }
   ]
 }
