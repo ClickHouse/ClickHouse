@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from minio.credentials import StaticProvider
 from minio.minioadmin import MinioAdmin
 
-from helpers.config_cluster import minio_access_key, minio_secret_key
+from .config_cluster import minio_access_key, minio_secret_key
 
 
 
