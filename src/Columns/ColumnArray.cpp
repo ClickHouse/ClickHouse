@@ -870,7 +870,15 @@ void ColumnArray::insertFromEither(
     if (elements == 0)
         return;
 
-    if (elements > rows * max_average_size_to_gather)
+    /// The gather below copies all elements of both sources, a constant source contributes the elements of its row.
+    const size_t true_begin = src_true_is_const ? true_offsets[-1] : 0;
+    const size_t true_end = src_true_is_const ? true_offsets[0] : true_offsets.back();
+    const size_t false_begin = src_false_is_const ? false_offsets[-1] : 0;
+    const size_t false_end = src_false_is_const ? false_offsets[0] : false_offsets.back();
+    const size_t source_elements = true_end - true_begin + false_end - false_begin;
+
+    /// Discarded rows count too: in a `LEFT JOIN` with few matches, the unmatched arrays would be copied only to be dropped.
+    if (std::max(elements, source_elements) > rows * max_average_size_to_gather)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -883,14 +891,9 @@ void ColumnArray::insertFromEither(
 
     /// The elements of the two sources do not line up with the rows, so the nested column cannot use `insertFromEither`.
     /// Instead, the elements of both sources are concatenated and the result is gathered from them with `index`: a
-    /// constant number of virtual calls instead of one per row. A constant source contributes the elements of its row.
-    const size_t true_begin = src_true_is_const ? true_offsets[-1] : 0;
-    const size_t true_end = src_true_is_const ? true_offsets[0] : true_offsets.back();
-    const size_t false_begin = src_false_is_const ? false_offsets[-1] : 0;
-    const size_t false_end = src_false_is_const ? false_offsets[0] : false_offsets.back();
-
+    /// constant number of virtual calls instead of one per row.
     MutableColumnPtr concatenated = getData().cloneEmpty();
-    concatenated->reserve(true_end - true_begin + false_end - false_begin);
+    concatenated->reserve(source_elements);
     concatenated->insertRangeFrom(src_true.getData(), true_begin, true_end - true_begin);
     concatenated->insertRangeFrom(src_false.getData(), false_begin, false_end - false_begin);
 
