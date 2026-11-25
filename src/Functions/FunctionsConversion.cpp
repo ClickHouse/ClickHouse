@@ -5060,9 +5060,10 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
-    /// The element conversions of a Tuple do not all read its null map, so they would convert the placeholders of its NULL rows.
+    /// The element conversions of a Tuple and the typed path conversions of a JSON do not all read its null map,
+    /// so they would convert the placeholders of its NULL rows.
     const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
-        && (cast_type == CastType::accurate || isTuple(from_nested_type));
+        && (cast_type == CastType::accurate || isTuple(from_nested_type) || isObject(from_nested_type));
 
     /// A conversion asked to report its failures as NULL needs a nullable result even when `to_type` cannot
     /// hold NULL (see `prepareUnpackDictionaries`).
