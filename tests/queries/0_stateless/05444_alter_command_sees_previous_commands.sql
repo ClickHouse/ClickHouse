@@ -308,3 +308,10 @@ INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
 ALTER TABLE t_alter_previous_commands_marker RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN r UInt32 DEFAULT 7, RENAME COLUMN x TO q SETTINGS alter_sync = 2;
 SELECT id, q, r FROM t_alter_previous_commands_marker;
 DROP TABLE t_alter_previous_commands_marker;
+
+-- The stored members of a Nested group are dropped also when its first member is an ALIAS.
+CREATE TABLE t_alter_previous_commands_alias_group (id UInt64, `n.a` Array(UInt32) ALIAS [toUInt32(id)], `n.b` Array(UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_alias_group (id, `n.b`) VALUES (1, [42]);
+ALTER TABLE t_alter_previous_commands_alias_group DROP COLUMN n, ADD COLUMN IF NOT EXISTS n Nested(b UInt32) SETTINGS alter_sync = 2;
+SELECT id, `n.b` FROM t_alter_previous_commands_alias_group;
+DROP TABLE t_alter_previous_commands_alias_group;
