@@ -125,7 +125,8 @@ digits it is a timestamp.
   the ranges of `Date32`, `DateTime64`, `Time`, and `Time64`.
 - The depth of an expression is limited by the setting `max_parser_depth`. A long expression without parentheses counts
   too, because it nests to the right: `1+1+1+...` with a thousand operators is rejected by default. The same setting
-  limits the depth of the lists nested in a value, which can grow across the statements (`a:,a`).
+  limits the depth of the lists nested in a value, which can grow across the statements (`a:,a`), and the number of
+  the functions made one of another (`f:f'`).
 - The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
   function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
   the setting `max_expanded_ast_elements`.
@@ -146,5 +147,10 @@ digits it is a timestamp.
   the grants on its target too.
 - The names of the tables are resolved when the program is compiled: in the database of the request (the setting
   `database` included), with the external tables of the request first.
+- Match (`~`) is strict about the types of the literals and of the arithmetic on them: `1~1h` is false. A column of
+  a table has the type of ClickHouse, which does not keep the width of the integers of a q literal, so a column, or
+  a value taken from a table, matches by its values.
+- The division `%` and the other ratios of q (`wavg`, `ratios`) are floating point ones with any value of the setting
+  `sql_compatible_division_for_integers`; a query embedded with `.ch.sql` follows the setting.
 - `prds` of a column collects the rows before every row, so its memory grows with the square of the number of the rows
   of a group: ClickHouse has no running product. `prds` of a list does not have this cost.
