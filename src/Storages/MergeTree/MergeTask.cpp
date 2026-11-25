@@ -332,6 +332,29 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
 }
 
+/// The storage columns read by the rows, rows WHERE, move and recompression TTL expressions.
+static NameSet getTTLInputColumnsInStorage(const StorageInMemoryMetadata & metadata, const NameSet & storage_columns, const NameSet & virtual_columns)
+{
+    NameSet result;
+    auto add_ttl_columns = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            result.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
+        for (const auto & column : ttl.where_expression_columns)
+            result.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
+    };
+
+    if (metadata.hasRowsTTL())
+        add_ttl_columns(metadata.getRowsTTL());
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        add_ttl_columns(ttl);
+    for (const auto & ttl : metadata.getMoveTTLs())
+        add_ttl_columns(ttl);
+    for (const auto & ttl : metadata.getRecompressionTTLs())
+        add_ttl_columns(ttl);
+    return result;
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -449,27 +472,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// from a merged column - a gathered one is missing from the block and the expression throws.
     /// Place the inputs of every TTL the step builds an algorithm for, not just the deleting ones.
     if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
-    {
-        auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
-        {
-            for (const auto & col : ttl_descr.expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
-            for (const auto & col : ttl_descr.where_expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
-        };
-
-        if (global_ctx->metadata_snapshot->hasRowsTTL())
-            add_ttl_expression_columns(global_ctx->metadata_snapshot->getRowsTTL());
-
-        for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
-            add_ttl_expression_columns(where_ttl);
-
-        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
-            add_ttl_expression_columns(move_ttl);
-
-        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
-            add_ttl_expression_columns(recompression_ttl);
-    }
+        key_columns.insert_range(getTTLInputColumnsInStorage(*global_ctx->metadata_snapshot, storage_columns, virtual_columns));
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
     {
@@ -2286,33 +2289,14 @@ NamesAndTypesList MergeTask::ExecuteAndFinalizeHorizontalPart::getColumnsOfDefau
     if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
         return {};
 
-    /// The TTL step and the text index builds evaluate these columns over the read data.
-    NameSet columns_to_read;
-    {
-        /// Unlike `global_ctx->storage_columns`, this includes the expired columns that a TTL expression may read.
-        const auto storage_columns = metadata.getColumns().getAllPhysical().getNameSet();
-        const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
-        auto add_ttl_columns = [&](const TTLDescription & ttl)
-        {
-            for (const auto & column : ttl.expression_columns)
-                columns_to_read.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
-            for (const auto & column : ttl.where_expression_columns)
-                columns_to_read.insert(getColumnNameInStorage(column.name, storage_columns, virtual_columns));
-        };
-
-        if (metadata.hasRowsTTL())
-            add_ttl_columns(metadata.getRowsTTL());
-        for (const auto & ttl : metadata.getRowsWhereTTLs())
-            add_ttl_columns(ttl);
-        for (const auto & ttl : metadata.getMoveTTLs())
-            add_ttl_columns(ttl);
-        for (const auto & ttl : metadata.getRecompressionTTLs())
-            add_ttl_columns(ttl);
-
-        for (const auto & index : global_ctx->text_indexes_to_merge)
-            for (const auto & column : index.expression->getRequiredColumns())
-                columns_to_read.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
-    }
+    /// The TTL step and the text index builds evaluate these columns over the read data. Unlike
+    /// `global_ctx->storage_columns`, the name set includes the expired columns that a TTL expression may read.
+    const auto storage_columns = metadata.getColumns().getAllPhysical().getNameSet();
+    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+    NameSet columns_to_read = getTTLInputColumnsInStorage(metadata, storage_columns, virtual_columns);
+    for (const auto & index : global_ctx->text_indexes_to_merge)
+        for (const auto & column : index.expression->getRequiredColumns())
+            columns_to_read.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
 
     const auto & parts = global_ctx->future_part->parts;
     NamesAndTypesList result;
@@ -2336,10 +2320,11 @@ NamesAndTypesList MergeTask::ExecuteAndFinalizeHorizontalPart::getColumnsOfDefau
             if (parts[part_num]->rows_count == 0)
                 continue;
 
-            /// Mutations and patches applied on reading may change the values of the column.
+            /// Mutations, patches, renames and drops applied on reading may change the values of the column.
             const auto & alter_conversions = global_ctx->alter_conversions[part_num];
             only_defaults = !alter_conversions->hasMutations() && !alter_conversions->hasPatches()
                 && !alter_conversions->columnHasNewName(column.name) && !alter_conversions->isColumnRenamed(column.name)
+                && !alter_conversions->isColumnDropped(column.name)
                 && partHasOnlyDefaultsInColumn(parts[part_num], column);
         }
 

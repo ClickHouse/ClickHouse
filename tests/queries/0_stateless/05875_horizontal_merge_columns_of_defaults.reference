@@ -22,3 +22,9 @@ Nullable with allow_sparse
 ['Compact','Compact','Compact']
 ['Wide']
 1	3000	0
+Skipped columns
+t_merge	[4]
+t_nullable	[2]
+t_replacing	[4]
+t_text	[1]
+t_ttl	[2]

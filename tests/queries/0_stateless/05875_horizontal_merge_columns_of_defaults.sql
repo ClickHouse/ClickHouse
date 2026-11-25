@@ -33,7 +33,7 @@ SYSTEM START MERGES t_merge;
 OPTIMIZE TABLE t_merge FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_merge' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'merge') = sum(cityHash64(toString(tuple(*)))), count(), countIf(x_one != 0) FROM t_merge;
-SELECT count() FROM t_merge WHERE e_i = 0;
+SELECT count() FROM t_merge WHERE e_i = 0 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i';
 
 SELECT 'ReplacingMergeTree';
 
@@ -59,7 +59,7 @@ SYSTEM START MERGES t_replacing;
 OPTIMIZE TABLE t_replacing FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_replacing' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'replacing') = sum(cityHash64(toString(tuple(*)))), count(), countIf(x_one != 0) FROM t_replacing;
-SELECT count() FROM t_replacing WHERE e_i = 0;
+SELECT count() FROM t_replacing WHERE e_i = 0 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i';
 
 SELECT 'TTL';
 
@@ -113,7 +113,7 @@ DROP TABLE IF EXISTS t_nullable;
 CREATE TABLE t_nullable (k UInt64, v UInt64, e_n Nullable(UInt32), e_u UInt64)
 ENGINE = MergeTree ORDER BY k
 SETTINGS enable_vertical_merge_algorithm = 0, ratio_of_defaults_for_sparse_serialization = 0.9,
-    compute_exact_num_defaults_for_sparse_columns = 1, nullable_serialization_version = 'allow_sparse',
+    compute_exact_num_defaults_for_sparse_columns = 1, serialization_info_version = 'with_types', nullable_serialization_version = 'allow_sparse',
     min_bytes_for_wide_part = 0, min_rows_for_wide_part = 1500;
 
 SYSTEM STOP MERGES t_nullable;
@@ -127,6 +127,22 @@ SYSTEM START MERGES t_nullable;
 OPTIMIZE TABLE t_nullable FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_nullable' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'nullable') = sum(cityHash64(toString(tuple(*)))), count(), count(e_n) FROM t_nullable;
+
+SELECT 'Skipped columns';
+SET max_rows_to_read = 0; -- system.text_log can be big
+SYSTEM FLUSH LOGS text_log;
+SELECT t.name, arraySort(groupUniqArray(toUInt32(extract(l.message, 'Writing (\\d+) columns'))))
+FROM system.tables AS t
+INNER JOIN
+(
+    SELECT splitByString('::', query_id)[1] AS table_uuid, message
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+        AND message_format_string = 'Writing {} columns that have only default values in all parts without merging them'
+) AS l ON toString(t.uuid) = l.table_uuid
+WHERE t.database = currentDatabase()
+GROUP BY t.name
+ORDER BY t.name;
 
 DROP TABLE t_merge;
 DROP TABLE t_replacing;
