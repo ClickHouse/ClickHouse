@@ -218,14 +218,16 @@ SELECT count(), countIf(JSONExtractInt(j, materialize(['a', 'd', 'zz'][number % 
 FROM numbers(256) SETTINGS max_execution_time = 10, max_memory_usage = '100M';
 "
 
-# A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written. The
-# whole-row route (a CaseInsensitive call) writes them and goes over the same memory limit.
+# A path of plain constant keys reads the subcolumn of the path, so the other paths of the row are not written, and
+# JSONHas does not write the value. The whole-row route (a CaseInsensitive call) writes them and goes over the same
+# memory limit.
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- a constant path does not write the row';
 CREATE TABLE tm (j JSON) ENGINE = Memory;
 INSERT INTO tm SELECT concat('{\"a\":7,\"pad\":\"', repeat(repeat('x', 1000000), 5), '\"}');
 SELECT JSONExtractInt(j, 'a'), JSONHas(j, 'a'), JSONExtractRaw(j, 'a'), JSONExtract(j, 'a', 'Nullable(Int64)')
 FROM tm SETTINGS max_memory_usage = '20M';
+SELECT JSONHas(j, 'pad') FROM tm SETTINGS max_memory_usage = '20M';
 "
 $CLICKHOUSE_CLIENT -q "SELECT JSONExtractIntCaseInsensitive(j, 'a') FROM tm SETTINGS max_memory_usage = '20M'" 2>&1 \
     | grep -c -m1 'MEMORY_LIMIT_EXCEEDED'

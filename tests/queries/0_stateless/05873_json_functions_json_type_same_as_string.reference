@@ -13,6 +13,7 @@ tp	131	131	48	0
 -- a constant path does not write the row
 7	1	7	7
 1
+1
 -- examples: the call, on JSON, on String
 JSONLength(j)	3	3
 JSONLength(j, 'a')	2	2

@@ -278,15 +278,29 @@ public:
                 for (size_t k = 0; k + 1 < prefixes.size(); ++k)
                     prefix_literals.push_back(data_type_object.getSubcolumn(prefixes[k], object_column));
 
+                auto present = ColumnUInt8::create(num_rows);
+                auto & present_data = present->getData();
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    present_data[i] = always_present || !value->isNullAt(i);
+                    for (const auto & literal : prefix_literals)
+                        present_data[i] = present_data[i] && literal->isNullAt(i);
+                }
+
+                /// `JSONHas` of the text of a present value is 1, so the value is not written.
+                if constexpr (std::string_view(TName::name) == "JSONHas")
+                {
+                    if (col_const)
+                        return ColumnConst::create(std::move(present), input_rows_count);
+                    return present;
+                }
+
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*text_column, num_rows);
                 auto & text_buffer = write_helper.getWriteBuffer();
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    bool present = always_present || !value->isNullAt(i);
-                    for (const auto & literal : prefix_literals)
-                        present = present && literal->isNullAt(i);
                     /// An absent value is an empty string, which is not a JSON document, so the result is the default.
-                    if (present)
+                    if (present_data[i])
                         value_serialization->serializeTextJSON(*value, i, text_buffer, text_settings);
                     write_helper.finishRow();
                 }
