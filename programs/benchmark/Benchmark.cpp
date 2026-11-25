@@ -1205,7 +1205,9 @@ private:
         try
         {
             executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
-            for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
+            /// A block with no columns is the end of the data only when it has no rows either:
+            /// with `--stage` a result can consist of rows that carry no values.
+            for (Block block = executor.readBlock(); !block.hasNoColumnsAndNoRows(); block = executor.readBlock())
                 info.update(block);
             executor.finish();
         }
