@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Columns/ColumnsCommon.h>
@@ -103,7 +104,7 @@ private:
 /// The cursors are applied window by window to a reusable byte filter, the same way the lazy reader fills its columns.
 template <typename CheckCancelledCallback>
 UInt64 countWithCursors(
-    const std::vector<PostingListCursorPtr> & cursors,
+    const VectorWithMemoryTracking<PostingListCursorPtr> & cursors,
     TextSearchMode search_mode,
     TextIndexPostingsIntersectionAlgorithm intersection_algorithm,
     const RowsRange & range,
@@ -111,7 +112,7 @@ UInt64 countWithCursors(
 {
     static constexpr size_t window_size = 65536;
 
-    std::vector<PostingListCursor *> sorted_cursors;
+    std::vector<PostingListCursor *> sorted_cursors; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the `PostingListCursor` functions take std::vector
     sorted_cursors.reserve(cursors.size());
 
     for (const auto & cursor : cursors)
@@ -226,7 +227,7 @@ UInt64 computeCountForPart(
         return 0;
 
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
-    std::vector<const TokenPostingsInfo *> tokens_to_read;
+    VectorWithMemoryTracking<const TokenPostingsInfo *> tokens_to_read;
     tokens_to_read.reserve(query_builder.tokens.size());
 
     for (const auto & [token, token_info] : query_builder.tokens)
@@ -249,8 +250,8 @@ UInt64 computeCountForPart(
     if (use_lazy_mode)
     {
         /// Each cursor seeks its own stream, so the cursors do not invalidate each other's buffered reads.
-        std::vector<std::unique_ptr<MergeTreeReaderStream>> cursor_streams;
-        std::vector<PostingListCursorPtr> cursors;
+        VectorWithMemoryTracking<std::unique_ptr<MergeTreeReaderStream>> cursor_streams;
+        VectorWithMemoryTracking<PostingListCursorPtr> cursors;
         cursor_streams.reserve(tokens_to_read.size());
         cursors.reserve(tokens_to_read.size() + 1);
 
@@ -259,12 +260,14 @@ UInt64 computeCountForPart(
             if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
 
+            /// use_page_cache_lookahead: the cursor can skip segments forward.
             cursor_streams.push_back(makeTextIndexInputStream(
                 part_info,
                 index.index->getFileName(),
                 substreams[2],
                 reader_settings,
-                estimatePostingListBufferSize(*token_info)));
+                estimatePostingListBufferSize(*token_info),
+                /*use_page_cache_lookahead=*/ false));
 
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
@@ -292,12 +295,14 @@ UInt64 computeCountForPart(
     for (const auto * token_info : tokens_to_read)
         largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
+    /// use_page_cache_lookahead: `tokens_to_read` is not in file order.
     auto postings_stream = makeTextIndexInputStream(
         part_info,
         index.index->getFileName(),
         substreams[2],
         reader_settings,
-        largest_segment_bytes);
+        largest_segment_bytes,
+        /*use_page_cache_lookahead=*/ false);
 
     const PostingBlockReader<CheckCancelledCallback> posting_reader(
         *postings_stream,

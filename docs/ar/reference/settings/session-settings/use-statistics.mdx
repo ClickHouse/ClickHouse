@@ -13,49 +13,59 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد وُلِّدت تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_statistics
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "تفعيل هذا التحسين افتراضيًا."}]}]} />
 
-/// يُفضَّل على &#39;allow&#95;statistics&#95;optimize&#39; اتساقًا مع &#39;use&#95;primary&#95;key&#39; و&#39;use&#95;skip&#95;indexes&#39;
+/// يُفضَّل على &#39;allow&#95;statistics&#95;optimize&#39; اتساقًا مع &#39;use&#95;primary&#95;key&#39; و&#39;use&#95;skip&#95;indexes&#39;
 يسمح باستخدام الإحصاءات لتحسين الاستعلامات
 
-## use_statistics_cache
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "تمكين ذاكرة التخزين المؤقت للإحصاءات"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد يتيح الإجابة عن عمليات التجميع `min` و`max` و`count` التي لا تتضمن `GROUP BY` ولا عوامل تصفية، وذلك انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء بيانات لأجزاء البيانات التي جُسِّدت فيها هذه الإحصاءات، مع قراءة أجزاء البيانات المتبقية فقط. previous_value=false بحيث يُبقي `compatibility` مع الإصدارات الأقدم من 26.9 هذا التحسين معطلاً ويستعيد الخطة السابقة."}]}]} />
 
-استخدم ذاكرة التخزين المؤقت للإحصاءات في الاستعلام لتجنّب العبء الإضافي الناتج عن تحميل إحصاءات جميع الأجزاء
+الإجابة عن عمليات التجميع `min` و`max` و`count` انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء بيانات بدلاً من قراءة البيانات.
 
-## use_statistics_for_min_max_aggregation
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد يتيح الإجابة عن تجميعات `min` و`max` و`count` التي لا تتضمن `GROUP BY` ولا عوامل تصفية، وذلك انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء للأجزاء التي جُسِّدت فيها هذه الإحصاءات، مع قراءة الأجزاء المتبقية فقط. previous_value=false بحيث يُبقي `compatibility` مع الإصدارات الأقدم من 26.9 هذا التحسين معطلاً ويستعيد الخطة السابقة."}]}]} />
-
-الإجابة عن تجميعات `min` و`max` و`count` انطلاقاً من إحصاءات الأعمدة الخاصة بكل جزء بدلاً من قراءة البيانات.
-
-عند التمكين، يُجاب عن استعلام بالشكل `SELECT min(column), max(column), count() FROM table` لا يتضمن `GROUP BY` ولا عوامل تصفية
+عند التفعيل، يُجاب عن استعلام بالشكل `SELECT min(column), max(column), count() FROM table` لا يتضمن `GROUP BY` ولا عوامل تصفية
 انطلاقاً من إحصاءات الأعمدة (مثل إحصاءات MinMax، انظر إعداد MergeTree المسمى `auto_statistics_types`)
-للأجزاء التي جُسِّدت فيها هذه الإحصاءات، ولا تُقرأ سوى الأجزاء المتبقية.
+لأجزاء البيانات التي جُسِّدت فيها هذه الإحصاءات، ولا تُقرأ سوى أجزاء البيانات المتبقية.
+كما يُجاب عن `count()` إلى جانب عمليات التجميع `use_statistics_for_sum_avg_aggregation`.
 
 القيم الممكنة:
 
 * 0 — معطل.
-* 1 — مُمكّن.
+* 1 — مفعّل.
 
-## use_statistics_for_part_pruning
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "إعداد جديد لاستخدام الإحصاءات لاستبعاد الأجزاء أثناء تنفيذ الاستعلام."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "إعداد جديد لاستخدام الإحصاءات لاستبعاد أجزاء البيانات أثناء تنفيذ الاستعلام."}]}]} />
 
-استخدم الإحصاءات لتصفية الأجزاء أثناء تنفيذ الاستعلام.
+استخدم الإحصاءات لتصفية أجزاء البيانات أثناء تنفيذ الاستعلام.
 
-عند التمكين، سيُستخدم استبعاد الأجزاء في استعلامات SELECT بالاعتماد على إحصاءات الأعمدة (مثل إحصاءات MinMax) لاستبعاد الأجزاء التي لا يمكن أن تحتوي على بيانات مطابقة قبل قراءة أي بيانات.
+عند التمكين، سيُستخدم استبعاد أجزاء البيانات في استعلامات SELECT بالاعتماد على إحصاءات الأعمدة (مثل إحصاءات MinMax) لاستبعاد أجزاء البيانات التي لا يمكن أن تحتوي على بيانات مطابقة قبل قراءة أي بيانات.
+
+القيم الممكنة:
+
+* 0 — معطّل.
+* 1 — مفعّل.
+
+## use_statistics_for_sum_avg_aggregation {#use_statistics_for_sum_avg_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لحساب نتائج عمليات التجميع `sum` و`avg` و`sumCount` و`count(column)` التي لا تتضمن `GROUP BY` أو عوامل تصفية، انطلاقًا من إحصاءات الأعمدة الخاصة بكل جزء بيانات. القيمة previous_value=false، وبذلك يُبقي إعداد `compatibility` مع الإصدارات السابقة للإصدار 26.11 هذا التحسين معطّلًا ويستعيد الخطة السابقة."}]}]} />
+
+يحسب هذا الإعداد نتائج عمليات التجميع `sum` و`avg` و`sumCount` على أعمدة الأعداد الصحيحة وأعمدة `Decimal` غير المعرّفة كـ `Nullable` أو
+`LowCardinality`، والتي لا تتضمن `GROUP BY` أو عوامل تصفية، انطلاقًا من إحصاءات الأعمدة الخاصة بكل جزء بيانات (نوع الإحصاءات `basic`، راجع
+إعداد `MergeTree` المسمى `auto_statistics_types`) لأجزاء البيانات التي تكون فيها هذه الإحصاءات مُجسَّدة، ولا يقرأ إلا أجزاء البيانات
+المتبقية. أما `count(column)` لعمود غير معرّف كـ `Nullable` أو `LowCardinality` فتُحسب نتيجته في تلك أجزاء البيانات من عدد الصفوف.
+وتكون النتيجة مطابقة تمامًا لتلك التي يُحصل عليها عند قراءة البيانات.
 
 القيم الممكنة:
 

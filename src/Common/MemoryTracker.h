@@ -133,6 +133,10 @@ private:
 
         std::atomic<DB::PageCache *> page_cache = nullptr;
 
+        /// The sizes of the allocations over the hard limit that are being refused: they are in `amount` until they are
+        /// reverted, so the peak of an allocation that exceeded the limit without a check does not count them.
+        std::atomic<Int64> refusing_amount = 0;
+
         bool log_peak_memory_usage_in_destructor = true;
     };
 #pragma clang diagnostic pop
@@ -389,6 +393,11 @@ public:
     void resetPageCache() noexcept
     {
         page_cache.store(nullptr);
+    }
+
+    DB::PageCache * getPageCache() const noexcept
+    {
+        return page_cache.load(std::memory_order_relaxed);
     }
 
     /// Reset the accumulated data

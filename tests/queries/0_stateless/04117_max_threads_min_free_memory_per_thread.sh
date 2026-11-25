@@ -43,83 +43,79 @@ max_pipeline_parallelism() {
     awk 'BEGIN{m=1} match($0, /× [0-9]+/) {n=substr($0, RSTART+2, RLENGTH-2)+0; if (n>m) m=n} END{print m}'
 }
 
-for analyzer in 1; do
-    echo "=== enable_analyzer=${analyzer} ==="
+echo "-- SELECT, limiter disabled --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT count() FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
+" | source_stream_count
 
-    echo "-- SELECT, limiter disabled --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT count() FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
-    " | source_stream_count
+echo "-- SELECT, limiter 16Gi: expected 1 --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT count() FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
+" | source_stream_count
 
-    echo "-- SELECT, limiter 16Gi: expected 1 --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT count() FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
-    " | source_stream_count
+echo "-- UNION ALL, limiter disabled --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT * FROM numbers_mt(1000000) UNION ALL SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
+" | source_stream_count
 
-    echo "-- UNION ALL, limiter disabled --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT * FROM numbers_mt(1000000) UNION ALL SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
-    " | source_stream_count
+echo "-- UNION ALL, limiter 16Gi: expected 1 --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT * FROM numbers_mt(1000000) UNION ALL SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
+" | source_stream_count
 
-    echo "-- UNION ALL, limiter 16Gi: expected 1 --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT * FROM numbers_mt(1000000) UNION ALL SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
-    " | source_stream_count
+echo "-- INTERSECT, limiter disabled --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT * FROM numbers_mt(1000000) INTERSECT SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
+" | source_stream_count
 
-    echo "-- INTERSECT, limiter disabled --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT * FROM numbers_mt(1000000) INTERSECT SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
-    " | source_stream_count
+echo "-- INTERSECT, limiter 16Gi: expected 1 --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT * FROM numbers_mt(1000000) INTERSECT SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
+" | source_stream_count
 
-    echo "-- INTERSECT, limiter 16Gi: expected 1 --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT * FROM numbers_mt(1000000) INTERSECT SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
-    " | source_stream_count
+echo "-- INSERT SELECT, both limiters disabled: expected 8 sinks --"
+run_local --query "
+    EXPLAIN PIPELINE
+    INSERT INTO FUNCTION null('x UInt64') SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_insert_threads = 8,
+             max_threads_min_free_memory_per_thread = 0,
+             max_insert_threads_min_free_memory_per_thread = 0
+" | count_labels "NullSinkToStorage"
 
-    echo "-- INSERT SELECT, both limiters disabled: expected 8 sinks --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        INSERT INTO FUNCTION null('x UInt64') SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_insert_threads = 8,
-                 max_threads_min_free_memory_per_thread = 0,
-                 max_insert_threads_min_free_memory_per_thread = 0
-    " | count_labels "NullSinkToStorage"
+echo "-- INSERT SELECT, insert limiter 16Gi: expected 1 sink --"
+run_local --query "
+    EXPLAIN PIPELINE
+    INSERT INTO FUNCTION null('x UInt64') SELECT * FROM numbers_mt(1000000)
+    SETTINGS max_threads = 8, max_insert_threads = 8,
+             max_threads_min_free_memory_per_thread = 0,
+             max_insert_threads_min_free_memory_per_thread = '16Gi'
+" | count_labels "NullSinkToStorage"
 
-    echo "-- INSERT SELECT, insert limiter 16Gi: expected 1 sink --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        INSERT INTO FUNCTION null('x UInt64') SELECT * FROM numbers_mt(1000000)
-        SETTINGS max_threads = 8, max_insert_threads = 8,
-                 max_threads_min_free_memory_per_thread = 0,
-                 max_insert_threads_min_free_memory_per_thread = '16Gi'
-    " | count_labels "NullSinkToStorage"
+echo "-- GROUP BY, limiter disabled: pipeline-wide parallelism > 1 --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT number % 100 AS k, count() FROM numbers_mt(1000000) GROUP BY k
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
+" | max_pipeline_parallelism
 
-    echo "-- GROUP BY, limiter disabled: pipeline-wide parallelism > 1 --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT number % 100 AS k, count() FROM numbers_mt(1000000) GROUP BY k
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = 0
-    " | max_pipeline_parallelism
-
-    # Regression for the pipeline thread cap path (`query_plan.setMaxThreads` in
-    # `PlannerJoinTree`): when free memory is exhausted, the cap must apply to
-    # downstream pipeline stages too, not just to source streams.
-    echo "-- GROUP BY, limiter 16Gi: pipeline-wide parallelism capped to 1 --"
-    run_local --enable_analyzer "$analyzer" --query "
-        EXPLAIN PIPELINE
-        SELECT number % 100 AS k, count() FROM numbers_mt(1000000) GROUP BY k
-        SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
-    " | max_pipeline_parallelism
-done
+# Regression for the pipeline thread cap path (`query_plan.setMaxThreads` in
+# `PlannerJoinTree`): when free memory is exhausted, the cap must apply to
+# downstream pipeline stages too, not just to source streams.
+echo "-- GROUP BY, limiter 16Gi: pipeline-wide parallelism capped to 1 --"
+run_local --query "
+    EXPLAIN PIPELINE
+    SELECT number % 100 AS k, count() FROM numbers_mt(1000000) GROUP BY k
+    SETTINGS max_threads = 8, max_threads_min_free_memory_per_thread = '16Gi'
+" | max_pipeline_parallelism

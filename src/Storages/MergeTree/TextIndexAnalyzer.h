@@ -29,9 +29,9 @@ public:
     {
     public:
         explicit ReadableRows(std::vector<RowsRange> ranges_);
-        std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        [[nodiscard]] std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
         PostingList clipPostings(const PostingList & postings);
-        size_t getSizeInBytes() const;
+        [[nodiscard]] size_t getSizeInBytes() const;
 
     private:
         std::vector<RowsRange> ranges;
@@ -65,7 +65,8 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken(std::string_view token);
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
+        /// `embedded_postings` are the clipped embedded postings, or nullptr if there are none.
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
@@ -81,17 +82,17 @@ public:
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    bool alwaysFalse() const { return always_false; }
-    const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
-    const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
+    [[nodiscard]] bool alwaysFalse() const { return always_false; }
+    [[nodiscard]] const TokenToPostingsInfosMap & getAllTokenInfos() const { return all_token_infos; }
+    [[nodiscard]] const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
     /// True if `query` is one of the queries of the condition this analyzer was built from.
-    bool hasQueryBuilder(const TextSearchQuery & query) const;
-    const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
+    [[nodiscard]] bool hasQueryBuilder(const TextSearchQuery & query) const;
+    [[nodiscard]] const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     /// True if at least one active query still depends on this token.
-    bool isTokenNeeded(std::string_view token) const;
+    [[nodiscard]] bool isTokenNeeded(std::string_view token) const;
     /// True if this token's posting list has already been added (embdded or read from disk).
-    bool hasReadPostings(std::string_view token) const;
+    [[nodiscard]] bool hasReadPostings(std::string_view token) const;
 
     void addMissingToken(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
@@ -103,8 +104,12 @@ public:
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
-    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
-    bool canFilterTokensByLiterals() const;
+    [[nodiscard]] std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    [[nodiscard]] bool canFilterTokensByLiterals() const;
+    [[nodiscard]] bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
+    /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
+    TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);
     /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
     void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
@@ -132,7 +137,7 @@ private:
     void markAllQueriesFailed();
 
     /// Estimates the cardinality of a query from already-read postings and `cardinality` hints for unread tokens.
-    double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
+    [[nodiscard]] double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
@@ -143,6 +148,7 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+    std::vector<TextIndexDictionaryDFA::Cursor> pattern_cursors;
 
     /* Fields updated dynamically during text index analysis. */
 
