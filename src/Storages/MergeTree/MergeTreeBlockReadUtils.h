@@ -101,6 +101,26 @@ struct MergeTreeBlockSizePredictor
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
     }
 
+    /// Predicts what number of rows, as read before they are filtered, takes `bytes_quota`. 0 while nothing was read.
+    [[nodiscard]] size_t estimateNumRowsBeforeFilter(size_t bytes_quota) const
+    {
+        if (read_bytes_per_row <= 0 || static_cast<double>(bytes_quota) >= static_cast<double>(std::numeric_limits<size_t>::max()))
+            return 0;
+        return static_cast<size_t>(static_cast<double>(bytes_quota) / std::max(1.0, read_bytes_per_row));
+    }
+
+    /// An increase is taken at once, so that larger rows do not make the block that is read exceed the quota.
+    void updateReadBytesPerRow(size_t rows_was_read, size_t bytes_was_read, double decay = calculateDecay())
+    {
+        if (rows_was_read == 0)
+            return;
+        double alpha = std::pow(1. - decay, rows_was_read);
+        double current = static_cast<double>(bytes_was_read) / static_cast<double>(rows_was_read);
+        read_bytes_per_row = current > read_bytes_per_row
+            ? current
+            : alpha * read_bytes_per_row + (1.0 - alpha) * current;
+    }
+
     /// Aggressiveness of bytes_per_row updates. See update() implementation.
     /// After n=NUM_UPDATES_TO_TARGET_WEIGHT updates v_{n} = (1 - TARGET_WEIGHT) * v_{0} + TARGET_WEIGHT * v_{target}
     static constexpr double TARGET_WEIGHT = 0.5;
@@ -151,6 +171,9 @@ public:
     double bytes_per_row_global = 0;
 
     double filtered_rows_ratio = 0;
+
+    /// Bytes per row of the columns as they are read, before the rows are filtered.
+    double read_bytes_per_row = 0;
 };
 
 }

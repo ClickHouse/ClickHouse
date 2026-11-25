@@ -278,7 +278,7 @@ private:
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling)>;
 
-    UInt64 estimateNumRows() const;
+    UInt64 estimateNumRows(bool scale_by_filtration_ratio) const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;
