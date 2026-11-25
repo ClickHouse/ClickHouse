@@ -6257,6 +6257,16 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     [&](const auto & gated) { return gated.filter_id == descr.filter_id; });
             });
 
+    /// `FINAL` may prune only by a sorting key column: all row versions of a key share its value, so no version of a key
+    /// that passes the filter is dropped. Erased here, because the pruning predicate is built from all the descriptors left.
+    if (query_info.isFinal())
+    {
+        const NameSet safe_columns = getSortingKeyNamesSafeBeforeFinal(storage_snapshot);
+        std::erase_if(
+            runtime_filters_for_data_read,
+            [&](const auto & descr) { return descr.is_global_row_index || !safe_columns.contains(descr.key_column_name); });
+    }
+
     /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
     /// computed, so `selectRangesToRead` never ran for this step and no indexes were built. The join
     /// runtime filter pruning below needs the key condition templates, so build them here on demand.
@@ -6287,11 +6297,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         || mutations_snapshot->hasPatchParts() || data.hasEnabledMaskingPolicies(context);
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
-        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
-        /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
-        /// setting's description documents this no-op, and
-        /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
-        && !query_info.isFinal()
         && runtime_filter_lookup
         && !runtime_filters_for_data_read.empty()
         && !pending_mutations
@@ -6312,8 +6317,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
-        /// part is gated by use_skip_indexes (buildIndexes builds key_condition_rpn_template regardless).
-        const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes];
+        /// part is gated by use_skip_indexes (buildIndexes builds key_condition_rpn_template regardless),
+        /// and under `FINAL` by use_skip_indexes_if_final as well.
+        const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes]
+            && (!query_info.isFinal() || context->getSettingsRef()[Setting::use_skip_indexes_if_final]);
 
         /// Need to check ignore_data_skipping_indices
         std::unordered_set<String> ignored_index_names; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `parseIdentifiersOrStringLiteralsToSet`, which returns std::unordered_set
@@ -6475,7 +6482,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     /// Need a reader if the join runtime filter selected something to prune.
-    /// The flags stay unset when the guard above bails (setting off or FINAL).
+    /// The flags stay unset when the guard above bails (setting off or pending mutations).
     if (!skip_index_reader && (runtime_prune_primary_key || runtime_prune_global_row_index || !runtime_skip_indexes.empty()))
     {
         skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
