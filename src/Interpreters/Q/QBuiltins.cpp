@@ -1871,24 +1871,36 @@ const std::unordered_map<String, Handler> & handlers()
             return aggregate(c, [](ASTPtr column) { return fn("arrayProduct", fn("groupArray", column)); },
                 [&](ASTPtr list) { return fn("arrayProduct", withoutNulls(c.compiler, std::move(list))); });
         };
-        h["all"] = [](Call & c)
+        /// `all` and `any` test whether the values are not zero, whatever their type is: 256 and 0.5 are true.
+        /// A null is not zero. They return a boolean for an atom as well.
+        auto all_or_any = [](bool all)
         {
-            return aggregate(c, [](ASTPtr column) { return fn("toBool", fn("min", fn("toUInt8", column))); },
-                [&](ASTPtr list)
+            return [all](Call & c)
+            {
+                auto truth = [](ASTPtr value) { return fn("ifNull", fn("notEquals", std::move(value), lit(Field(static_cast<UInt64>(0)))), one()); };
+
+                c.expectArgs(1);
+                QValue value = c.scalarArg(0);
+                if (value.kind != QValueKind::Column && value.depth == 0)
                 {
-                    String item = c.compiler.newLambdaParameter();
-                    return fn("arrayAll", makeLambda({item}, ident(item)), list);
-                }, false, QType::Boolean);
+                    /// The characters of a string are not zero, so only `any` of an empty string is false.
+                    ASTPtr test = !value.is_string ? truth(value.ast) : (all ? one() : fn("notEmpty", value.ast));
+                    QValue result = QCompiler::scalar(fn("toBool", test));
+                    result.aggregated = value.aggregated;
+                    result.qtype = QType::Boolean;
+                    return result;
+                }
+                return aggregate(c,
+                    [&](ASTPtr column) { return fn("toBool", fn(all ? "min" : "max", truth(std::move(column)))); },
+                    [&](ASTPtr list)
+                    {
+                        String item = c.compiler.newLambdaParameter();
+                        return fn("toBool", fn(all ? "arrayAll" : "arrayExists", makeLambda({item}, truth(ident(item))), std::move(list)));
+                    }, false, QType::Boolean);
+            };
         };
-        h["any"] = [](Call & c)
-        {
-            return aggregate(c, [](ASTPtr column) { return fn("toBool", fn("max", fn("toUInt8", column))); },
-                [&](ASTPtr list)
-                {
-                    String item = c.compiler.newLambdaParameter();
-                    return fn("arrayExists", makeLambda({item}, ident(item)), list);
-                }, false, QType::Boolean);
-        };
+        h["all"] = all_or_any(true);
+        h["any"] = all_or_any(false);
         h["count"] = [](Call & c) { return countValue(c); };
         h["first"] = [](Call & c) { return firstOrLast(c, true); };
         h["last"] = [](Call & c) { return firstOrLast(c, false); };
