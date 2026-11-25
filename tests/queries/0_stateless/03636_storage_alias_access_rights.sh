@@ -17,6 +17,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
 
     CREATE TABLE test_alias ENGINE = Alias('test_table');
     CREATE USER ${username} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${username};
 "
 
 # Test: SELECT

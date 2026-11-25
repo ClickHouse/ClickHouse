@@ -326,6 +326,9 @@ enum class AccessType : uint16_t
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
     \
+    M(USE_ALIAS_TABLE, "", GLOBAL, ALL) /* allows to create tables with the `Alias` engine and to access their data and target-derived metadata,
+                                           including the tables of `Overlay` and `Remote` databases, which are internally represented by aliases */ \
+    \
     M(SYSTEM_SHUTDOWN, "SYSTEM KILL, SHUTDOWN", GLOBAL, SYSTEM) \
     M(SYSTEM_DROP_DNS_CACHE, "SYSTEM CLEAR DNS CACHE, SYSTEM DROP DNS, DROP DNS CACHE, DROP DNS", GLOBAL, SYSTEM_DROP_CACHE)  \
     M(SYSTEM_DROP_CONNECTIONS_CACHE, "SYSTEM CLEAR CONNECTIONS CACHE, SYSTEM DROP CONNECTIONS CACHE, DROP CONNECTIONS CACHE", GLOBAL, SYSTEM_DROP_CACHE)  \

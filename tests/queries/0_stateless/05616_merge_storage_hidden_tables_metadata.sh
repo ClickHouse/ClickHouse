@@ -31,6 +31,7 @@ CREATE TABLE m_alias (id UInt32, s String) ENGINE = Merge(currentDatabase(), '^(
 CREATE TABLE a_show ENGINE = Alias(currentDatabase(), t_show);
 CREATE TABLE m_ashow (id UInt32, s String) ENGINE = Merge(currentDatabase(), '^(t_visible|a_show)\$');
 CREATE USER ${user} IDENTIFIED WITH plaintext_password BY '${user}';
+GRANT USE ALIAS TABLE ON *.* TO ${user};
 GRANT SELECT ON t_visible TO ${user};
 GRANT SELECT ON m TO ${user};
 GRANT SELECT ON m_show TO ${user};

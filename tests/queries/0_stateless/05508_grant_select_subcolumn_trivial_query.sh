@@ -39,6 +39,7 @@ check()
 reset()
 {
     $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user"
+    $CLICKHOUSE_CLIENT -q "GRANT USE ALIAS TABLE ON *.* TO $user"
 }
 
 reset

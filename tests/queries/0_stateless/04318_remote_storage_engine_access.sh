@@ -29,6 +29,7 @@ CREATE TABLE $db.local_target (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO $db.local_target VALUES (42);
 
 CREATE USER $user;
+GRANT USE ALIAS TABLE ON *.* TO $user;
 -- The user may create and read tables in its own database, but starts without any rights on the
 -- local target the engine points at, so the local-shard check below is exercised in isolation.
 GRANT CREATE TABLE, SELECT, INSERT ON $db.* TO $user;

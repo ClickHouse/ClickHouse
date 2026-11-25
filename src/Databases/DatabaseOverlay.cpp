@@ -827,6 +827,12 @@ An `Overlay` database cannot be used as a source of another `Overlay` database.
 
 ## Access control {#access-control}
 
+Every table of the overlay database is internally an `Alias` table, so any access to it — reading and writing data as well as its target-derived metadata — additionally requires the global [`USE ALIAS TABLE`](/reference/engines/table-engines/special/alias#access-control) privilege. Without it, a user is denied the tables of the overlay database regardless of the per-table grants they hold; listing the table names still works. Grant it only to users who actually need to work through aliases or overlay databases:
+
+```sql
+GRANT USE ALIAS TABLE ON *.* TO user
+```
+
 As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
 A table of the overlay database is visible only to a user who can see both the overlay database and the source table (the `SHOW TABLES` privilege on both).
 A name is resolved in the first source database where the user can see a table with this name: a table that is hidden from the user is skipped, as if it did not exist.

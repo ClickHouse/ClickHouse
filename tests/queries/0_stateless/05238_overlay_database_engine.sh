@@ -72,6 +72,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${ov}.t"
 
 echo "--- access requires grants on both the overlay database and the source table"
 $CLICKHOUSE_CLIENT -q "CREATE USER ${user} IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT USE ALIAS TABLE ON *.* TO ${user}"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT, INSERT ON ${ov}.* TO ${user}"
 error $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT * FROM ${ov}.t"
 error $CLICKHOUSE_CLIENT --user "${user}" -q "INSERT INTO ${ov}.t VALUES (5)"

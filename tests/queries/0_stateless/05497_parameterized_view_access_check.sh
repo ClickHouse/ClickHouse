@@ -32,6 +32,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE TABLE sink_dist AS sink_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), sink_local);
 
     CREATE USER ${username} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${username};
 "
 
 as_user()

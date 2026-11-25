@@ -12,6 +12,7 @@ user="user_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH plaintext_password BY 'password'"
+${CLICKHOUSE_CLIENT} --query "GRANT USE ALIAS TABLE ON *.* TO ${user}"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON system.one TO ${user}"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.secret (id UInt64, password String) ENGINE = MergeTree ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.secret_alias ENGINE = Alias('${CLICKHOUSE_DATABASE}', 'secret')"

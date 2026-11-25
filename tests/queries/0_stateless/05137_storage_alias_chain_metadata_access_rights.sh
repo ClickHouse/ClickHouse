@@ -40,6 +40,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE TABLE chain_a3 ENGINE = Alias(currentDatabase(), 'chain_base');
 
     CREATE USER ${user} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${user};
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${user};
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${user};
     GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${user};
@@ -51,11 +52,13 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SELECT ON system.data_skipping_indices TO ${user};
 
     CREATE USER ${mid_user} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${mid_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${mid_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${mid_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_base TO ${mid_user};
 
     CREATE USER ${col_user} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${col_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${col_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${col_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${col_user};
@@ -63,6 +66,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SELECT ON system.completions TO ${col_user};
 
     CREATE USER ${rev_user} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${rev_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a1 TO ${rev_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a2 TO ${rev_user};
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${rev_user};
@@ -70,6 +74,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     REVOKE SHOW COLUMNS(secret_payload) ON chain_base FROM ${rev_user};
 
     CREATE USER ${sel_user} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${sel_user};
     GRANT SELECT(secret_payload) ON chain_a1 TO ${sel_user};
     GRANT SELECT(secret_payload) ON chain_a2 TO ${sel_user};
     GRANT SELECT(secret_payload) ON chain_a3 TO ${sel_user};

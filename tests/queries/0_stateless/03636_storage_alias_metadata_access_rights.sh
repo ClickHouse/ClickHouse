@@ -40,6 +40,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     INSERT INTO test_buffer_access VALUES (3, 'three');
 
     CREATE USER ${access_username} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${access_username};
     GRANT CREATE TABLE ON test_alias_access TO ${access_username};
     GRANT CREATE TABLE ON test_alias_buffer_access TO ${access_username};
     GRANT CREATE TABLE ON test_buffer_infer_access TO ${access_username};
@@ -306,6 +307,7 @@ create_as_username="create_as_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE USER ${create_as_username} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${create_as_username};
     GRANT SHOW COLUMNS ON test_alias_access TO ${create_as_username};
     GRANT CREATE TABLE, SHOW COLUMNS ON ${copy_table} TO ${create_as_username};
     GRANT TABLE ENGINE ON Memory TO ${create_as_username};

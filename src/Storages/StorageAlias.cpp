@@ -79,7 +79,10 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     /// Table-level access check only. Column-level checks resolve subcolumns against the target
     /// metadata snapshot, so they are done by the caller that owns that snapshot (see `StorageAlias::read`).
     if (access_check)
+    {
+        access_check->context->checkAccess(AccessType::USE_ALIAS_TABLE);
         access_check->context->checkAccess(access_check->access_type, target_database, target_table);
+    }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
@@ -90,6 +93,9 @@ bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType 
         return false;
 
     auto access = query_context->getAccess();
+    if (!access->isGranted(AccessType::USE_ALIAS_TABLE))
+        return false;
+
     if (column_name.empty())
         return access->isGranted(access_type, target_database, target_table);
 
@@ -159,6 +165,9 @@ NameSet StorageAlias::filterColumnsSelectableThroughChain(
 {
     NameSet selectable(column_names.begin(), column_names.end());
     auto access = query_context->getAccess();
+    if (!access->isGranted(AccessType::USE_ALIAS_TABLE))
+        return {};
+
     for (const auto & [database, table] : getTargetChain())
     {
         if (selectable.empty())
@@ -791,7 +800,10 @@ void registerStorageAlias(StorageFactory & factory)
         }
 
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            local_context->checkAccess(AccessType::USE_ALIAS_TABLE);
             local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
+        }
 
         /// The restrictions below read the catalog, so they may only judge freshly supplied input:
         /// an already accepted definition must stay loadable, because a rejection while loading
@@ -852,6 +864,27 @@ The `Alias` table does not support explicit column definitions. Columns are auto
 <Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
 </Note>
+
+## Access Control {#access-control}
+
+An alias is a transparent proxy: every operation on it has to hold at every table of the chain the privilege the same operation on a normal table requires, so a privilege must be granted both on the alias name and on the target (and on every intermediate table when the target is itself resolved through further proxies). This proxying is also a security risk: every place in the server that checks access for a normal table has to repeat the check against the target chain for an alias, and a missed check is a potential privilege escalation.
+
+For this reason, any access through an alias additionally requires the global `USE ALIAS TABLE` privilege:
+
+```sql
+GRANT USE ALIAS TABLE ON *.* TO user
+```
+
+Without it, a user is denied everything that resolves through the target, regardless of the per-table grants they hold:
+
+- Reading and writing data: `SELECT` (including the trivial `count()` shortcut), `INSERT`, `ALTER` and mutations, `OPTIMIZE`, `TRUNCATE`, `CHECK`.
+- Target-derived metadata: `DESCRIBE`, the columns and sizes in `system.columns` and `system.tables`, schema inference, `hasColumnInTable`, and reads through `Merge`, `Buffer` and `remote` over an alias.
+- Creating a new alias table.
+- Tables of `Overlay` and `Remote` databases, which are internally represented by aliases.
+
+The privilege is part of the `ALL` group, so users with `GRANT ALL` hold it implicitly. Users with fine-grained grants must be granted it explicitly; grant it only to users who actually need to work through aliases.
+
+Operations that touch only the alias's own catalog entry and resolve nothing through the target — `DROP TABLE`, `RENAME TABLE`, `DETACH`/`ATTACH`, `SHOW CREATE TABLE`, listing the alias's name — stay governed by the ordinary privileges alone.
 
 ## Supported Operations {#supported-operations}
 

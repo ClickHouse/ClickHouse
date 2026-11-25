@@ -25,9 +25,11 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE TABLE loop_access_live_alias ENGINE = Alias(currentDatabase(), loop_access_live_target);
 
     CREATE USER ${username} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${username};
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
 
     CREATE USER ${user_col} NOT IDENTIFIED;
+    GRANT USE ALIAS TABLE ON *.* TO ${user_col};
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${user_col};
     GRANT SELECT ON loop_access_live_alias TO ${user_col};
     GRANT SELECT(c0) ON loop_access_live_target TO ${user_col};

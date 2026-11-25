@@ -20,6 +20,7 @@ CREATE TABLE al ENGINE = Alias('$db', 'dst');
 CREATE TABLE buf (k UInt64, t Tuple(a UInt8, b String), m Map(String, UInt8))
     ENGINE = Buffer('$db', dst, 1, 10, 100, 10000, 1000000, 10000000, 100000000);
 CREATE USER $user;
+GRANT USE ALIAS TABLE ON *.* TO $user;
 GRANT SELECT ON $db.al TO $user;
 GRANT SELECT ON $db.buf TO $user;
 "

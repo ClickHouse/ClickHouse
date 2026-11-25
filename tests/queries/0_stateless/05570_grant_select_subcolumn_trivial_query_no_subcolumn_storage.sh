@@ -34,6 +34,7 @@ check()
 
 for table in s j a; do
     $CLICKHOUSE_CLIENT -q "REVOKE ALL ON *.* FROM $user"
+    $CLICKHOUSE_CLIENT -q "GRANT USE ALIAS TABLE ON *.* TO $user"
     $CLICKHOUSE_CLIENT -q "GRANT SELECT(other) ON $CLICKHOUSE_DATABASE.$table TO $user"
     [ "$table" = a ] && $CLICKHOUSE_CLIENT -q "GRANT SELECT(other) ON $CLICKHOUSE_DATABASE.s TO $user"
     check "$table" "GRANT(other)"
