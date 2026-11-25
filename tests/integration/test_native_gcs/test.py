@@ -198,6 +198,12 @@ def test_mergetree_on_gcs_disk(started_cluster):
     )
     assert node.query("SELECT count() FROM gcs_mt").strip() == "2000"
 
+    # A short `ATTACH` re-reads the stored definition, which was opted in when the table was created,
+    # so it needs no `use_native_gcs` in the attaching session.
+    node.query("DETACH TABLE gcs_mt")
+    node.query("ATTACH TABLE gcs_mt", settings={"use_native_gcs": 0})
+    assert node.query("SELECT count() FROM gcs_mt").strip() == "2000"
+
     # Merge parts (writes new part blobs, deletes old ones) and re-read.
     node.query("OPTIMIZE TABLE gcs_mt FINAL")
     assert node.query("SELECT count() FROM gcs_mt").strip() == "2000"

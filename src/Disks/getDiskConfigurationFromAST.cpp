@@ -487,7 +487,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(
         info->uses_server_credentials = relies_on_server_credentials || gcs_relies_on_server_credentials;
     }
 
-    if (gcs_relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
+    /// With an `include` or an indirect backend type, `maybe_gcs_disk` is only a guess: the backend may resolve to
+    /// HDFS or a local disk. Such a disk is re-checked against its resolved configuration by
+    /// `validateResolvedGCSDiskCredentials`, so refuse here only a disk whose literal definition is the whole story.
+    /// Refusing a guess would also make a non-GCS disk created with the credential opt-in unloadable on restart:
+    /// the opt-in marker is persisted only when the resolved configuration needs it.
+    if (gcs_relies_on_server_credentials && !has_include && !type_is_indirect && context->shouldRestrictUserQueryS3Credentials()
+        && !restriction_exempt)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
@@ -838,7 +844,8 @@ void validateResolvedGCSDiskCredentials(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context,
     bool is_loading_from_existing_metadata,
-    const DynamicS3DiskCredentialInfo & info)
+    const DynamicS3DiskCredentialInfo & info,
+    bool stored_definition)
 {
 #if USE_GOOGLE_CLOUD
     /// A wrapper such as `encrypted` or `cache` may name a native GCS disk another session created with the
@@ -879,7 +886,9 @@ void validateResolvedGCSDiskCredentials(
         /// Resolve the experimental-feature gate after `include`, `from_env`, and `from_zk` are processed.
         /// The AST-level approximation is intentionally retained for credential and arbitrary-file checks, but
         /// must not reject a non-GCS backend merely because its type was supplied indirectly.
-        if (!is_loading_from_existing_metadata && !context->getSettingsRef()[Setting::use_native_gcs])
+        /// The gate applies to a definition the query supplies: a stored one (server startup, or a short `ATTACH`
+        /// that re-reads the definition the server stored for the table) was opted in when the table was created.
+        if (!is_loading_from_existing_metadata && !stored_definition && !context->getSettingsRef()[Setting::use_native_gcs])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The native GCS object storage backend is experimental. Set `use_native_gcs = 1` to use "

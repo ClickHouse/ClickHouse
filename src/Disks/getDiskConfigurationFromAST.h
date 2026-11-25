@@ -124,7 +124,8 @@ void validateResolvedGCSDiskCredentials(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context,
     bool is_loading_from_existing_metadata,
-    const DynamicS3DiskCredentialInfo & info);
+    const DynamicS3DiskCredentialInfo & info,
+    bool stored_definition = false);
 
 /// Whether the *resolved* configuration -- after `include`, `from_env` and `from_zk` are substituted -- really
 /// describes a backend that the user-query credential restriction would refuse: an S3 backend whose credentials

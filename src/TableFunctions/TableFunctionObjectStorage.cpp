@@ -855,9 +855,11 @@ See the [Google interoperability docs](https://cloud.google.com/storage/docs/int
 
 ## Native GCS integration {#native-gcs}
 
-:::note Experimental feature
+<Note>
+**Experimental feature**
+
 Native GCS integration is an experimental feature (the `use_native_gcs` setting is in the experimental tier and off by default). Its behavior may change in future releases.
-:::
+</Note>
 
 By default `gcs` talks to Google Cloud Storage through its S3-compatible XML API (using the AWS SDK and HMAC keys). Enable the [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs) setting to instead use the native Google Cloud SDK (`google-cloud-cpp`, the GCS JSON API):
 
