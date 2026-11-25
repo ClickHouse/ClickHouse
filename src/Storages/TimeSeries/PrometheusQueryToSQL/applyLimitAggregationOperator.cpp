@@ -267,7 +267,9 @@ namespace
     SQLQueryPiece applyLimitRatioOperator(
         const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
     {
-        checkArgumentTypes(operator_node, arguments, context);
+        checkNumberOfArguments(operator_node, arguments, 2);
+        checkArgumentType(operator_node, arguments, 0, ResultType::SCALAR, context);
+        checkArgumentType(operator_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
 
         auto & r_arg = arguments[0];
         auto & vector_arg = arguments[1];
