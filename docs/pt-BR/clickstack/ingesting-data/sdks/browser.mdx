@@ -1,202 +1,159 @@
 ---
 slug: /use-cases/observability/clickstack/sdks/browser
-description: 'SDK de navegador para ClickStack - a stack de observabilidade do ClickHouse'
+description: 'Colete logs, rastros e reproduções de sessão do navegador com o SDK do ClickStack para navegador.'
 title: 'JS para navegador'
 doc_type: 'guide'
-keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+keywords: ['ClickStack', 'SDK', 'browser', 'session replay']
+sidebarTitle: 'JS para navegador'
 ---
 
-O SDK de navegador do ClickStack permite instrumentar sua aplicação de frontend para
-enviar eventos ao ClickStack. Com isso, você pode visualizar solicitações de rede
-e exceções junto com eventos de backend em uma única linha do tempo.
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Além disso, ele captura e correlaciona automaticamente dados de replay de sessão, para que
-você possa acompanhar visualmente e depurar o que um usuário estava vendo enquanto usava sua
-aplicação.
+O SDK do ClickStack para navegador é baseado no OpenTelemetry e coleta requisições do navegador, erros e dados de reprodução de sessão. Use-o para investigar eventos de frontend junto com a telemetria do seu backend no ClickStack.
 
-Este guia integra o seguinte:
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-* **Logs do Console**
-* **Replays de Sessão**
-* **Solicitações XHR/Fetch/WebSocket**
-* **Exceções**
+## Instalação {#install}
 
-<div id="getting-started">
-  ## Primeiros passos
-</div>
+Instale o pacote na sua aplicação frontend:
 
-<br />
+```shell
+npm install @clickhouse/clickstack-browser
+```
 
-<Tabs>
-  <Tab title="Importação de pacote">
-    **Instale por importação de pacote (recomendado)**
+O pacote usa ES modules. O npm instala automaticamente as peer dependencies do OpenTelemetry. Se a sua aplicação também instalar `@opentelemetry/api` diretamente, use a versão `~1.9.1` e mantenha uma única cópia, pois a versão 1.10 está fora do intervalo de versões compatíveis com este SDK.
 
-    Use o comando a seguir para instalar o [pacote do navegador](https://www.npmjs.com/package/@hyperdx/browser).
+## Configure o destino {#configure-destination}
 
-    ```shell
-    npm install @hyperdx/browser
-    ```
-
-    **Inicialize o ClickStack**
-
-    ```javascript
-    import HyperDX from '@hyperdx/browser';
-
-    HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', //omita para Managed ClickStack
-        service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // Defina para vincular traces do frontend a requisições de backend
-        consoleCapture: true, // Captura logs do console (padrão: false)
-        advancedNetworkCapture: true, // Captura cabeçalhos e corpos completos de requisição/resposta HTTP (padrão: false)
-    });
-    ```
-  </Tab>
-
-  <Tab title="Tag de script">
-    **Instale via tag de script (alternativa)**
-
-    Você também pode incluir e instalar o script por meio de uma tag de script, em vez de
-    instalá-lo via NPM. Isso expõe a variável global `HyperDX` e pode ser
-    usada da mesma forma que o pacote NPM.
-
-    Isso é recomendado se o seu site não usa um bundler no momento.
-
-    ```html
-    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
-    <script>
-      window.HyperDX.init({
-        url: 'http://localhost:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', //omita para Managed ClickStack
-        service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // Defina para vincular traces do frontend a requisições de backend
-      });
-    </script>
-    ```
-  </Tab>
-</Tabs>
-
-<div id="options">
-  ### Opções
-</div>
-
-* `apiKey` - Sua API key de ingestão do ClickStack.
-* `service` - O nome do serviço com que os eventos aparecerão na UI do HyperDX.
-* `tracePropagationTargets` - Uma lista de padrões regex para corresponder a
-  requisições HTTP e vincular traces de frontend e backend; isso adicionará um
-  cabeçalho `traceparent` adicional a todas as requisições que correspondam a
-  qualquer um dos padrões. Isso deve ser definido como o domínio da API do seu
-  backend (ex.: `api.yoursite.com`).
-* `consoleCapture` - (Opcional) Captura todos os logs do console (padrão `false`).
-* `advancedNetworkCapture` - (Opcional) Captura cabeçalhos e corpos completos
-  de requisições e respostas (padrão `false`).
-* `url` - (Opcional) A URL do OpenTelemetry Collector, necessária apenas para
-  instâncias self-hosted.
-* `maskAllInputs` - (Opcional) Se deve mascarar todos os campos de entrada no
-  replay de sessão (padrão `false`).
-* `maskAllText` - (Opcional) Se deve mascarar todo o texto no replay de sessão (padrão
-  `false`).
-* `disableIntercom` - (Opcional) Se deve desabilitar a integração com o Intercom (padrão `false`)
-* `disableReplay` - (Opcional) Se deve desabilitar o replay de sessão (padrão `false`)
-
-<div id="additional-configuration">
-  ## Configuração adicional
-</div>
-
-<div id="attach-user-information-or-metadata">
-  ### Associar informações ou metadados do usuário
-</div>
-
-Associar informações do usuário permitirá que você pesquise/filtre sessões e eventos
-na UI do HyperDX. Isso pode ser feito a qualquer momento durante a sessão do cliente. A
-sessão atual do cliente e todos os eventos enviados após essa chamada serão associados
-às informações do usuário.
-
-`userEmail`, `userName` e `teamName` preencherão a UI de sessões com os
-valores correspondentes, mas podem ser omitidos. Quaisquer outros valores adicionais podem ser
-especificados e usados para pesquisar eventos.
+Use o endpoint OTLP HTTP do seu coletor e a chave de ingestão configurada nele. O endpoint deve estar acessível a partir dos navegadores dos seus usuários. Para configurar o coletor, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
 
 ```javascript
-HyperDX.setGlobalAttributes({
-  userId: user.id,
-  userEmail: user.email,
-  userName: user.name,
-  teamName: user.team.name,
-  // Outras propriedades personalizadas...
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
 });
 ```
 
-<div id="auto-capture-react-error-boundary-errors">
-  ### Captura automática de erros em error boundaries do React
-</div>
+Use a chave configurada para o receptor OTLP do seu coletor. O coletor deve permitir a origem da sua aplicação na configuração de CORS do receptor HTTP.
 
-Se você estiver usando React, poderá capturar automaticamente erros que ocorram em
-error boundaries do React ao passar seu componente de error boundary
-para a função `attachToReactErrorBoundary`.
+Chame `init` uma vez por carregamento de página, no nível superior do seu módulo de entrada, como `src/main.ts` no Vite ou `instrumentation-client.ts` no Next.js. A inicialização é executada de forma assíncrona; requisições feitas imediatamente no mesmo tick podem não ser capturadas. Não faça a inicialização dentro de um effect do React: uma rotina de limpeza que chame `shutdown` interrompe permanentemente a telemetria naquele carregamento de página.
 
-```javascript
-// Importe seu ErrorBoundary (estamos usando react-error-boundary como exemplo)
-import { ErrorBoundary } from 'react-error-boundary';
+<Note>
+  A configuração do navegador, incluindo a chave de ingestão, fica visível para qualquer pessoa que carregue a página. Para manter a chave no seu servidor, use um endpoint de mesma origem, como `/otel`, omita `apiKey` e configure o servidor para encaminhar as requisições OTLP com o cabeçalho de autorização apropriado.
+</Note>
 
-// Isso se conectará ao componente ErrorBoundary e capturará quaisquer erros que ocorram
-// em qualquer instância dele.
-HyperDX.attachToReactErrorBoundary(ErrorBoundary);
-```
+## Verificar a ingestão {#verify-ingestion}
 
-<div id="send-custom-actions">
-  ### Enviar ações personalizadas
-</div>
+Carregue sua aplicação, interaja com a página, faça uma requisição e gere um erro no console. No ClickStack, selecione um intervalo de tempo recente e pesquise por `my-frontend-app` em Logs ou Rastros. Abra a Reaplicação de sessão para inspecionar a sessão gravada.
 
-Para rastrear explicitamente um evento específico da aplicação (ex.: cadastro, envio,
-etc.), você pode chamar a função `addAction` com o nome do evento e metadados
-opcionais do evento.
+Se os dados não aparecerem, inspecione o console do navegador e as requisições de rede para `/v1/traces` e `/v1/logs`. Verifique o endpoint, o cabeçalho de autorização, o CORS e a Content Security Policy. Confirme se a sua versão do ClickStack oferece suporte à reaplicação de sessão e ao atributo padrão `session.id` do SDK; o simples recebimento de registros não garante que as sessões apareçam na UI.
 
-Exemplo:
+## Opções de inicialização {#initialization-options}
 
-```javascript
-HyperDX.addAction('Form-Completed', {
-  formId: 'signup-form',
-  formName: 'Signup Form',
-  formType: 'signup',
-});
-```
+Passe estas opções para `init`. Use `endpoint` para um coletor compartilhado ou informe os dois endpoints de sinal quando rastros e logs tiverem destinos diferentes.
 
-<div id="enable-network-capture-dynamically">
-  ### Ativar a captura de rede dinamicamente
-</div>
+| Opção                | Padrão                                                                | Finalidade                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`           | Obrigatório, a menos que os dois endpoints de sinal estejam definidos | URL base OTLP HTTP ou caminho de proxy de mesma origem; o SDK acrescenta os caminhos de cada sinal                                                 |
+| `tracesEndpoint`     | Não definido                                                          | URL completa de rastros, usada exatamente como informada no lugar da URL derivada de `endpoint`                                                    |
+| `logsEndpoint`       | Não definido                                                          | URL completa de logs e reaplicação, usada exatamente como informada no lugar da URL derivada de `endpoint`                                              |
+| `serviceName`        | Obrigatório                                                           | Define `service.name` em toda a telemetria                                                                                                         |
+| `apiKey`             | Não definido                                                          | Valor do cabeçalho `authorization`; use o formato correspondente ao seu destino, descrito acima                                                    |
+| `traceOrigins`       | Não definido                                                          | Origens de backend ou expressões regulares que recebem o contexto de rastreamento                                                                  |
+| `replay`             | `true`                                                                | Grava a reaplicação de sessão; `false` mantém a telemetria do navegador, mas desativa a reaplicação                                                      |
+| `resourceAttributes` | Não definido                                                          | Atributos de recurso adicionais, inclusive na reaplicação; `serviceName`, `serviceVersion` e `environment` têm precedência sobre chaves correspondentes |
+| `maskAllText`        | `true`                                                                | Mascara o texto na reaplicação                                                                                                                          |
+| `maskAllInputs`      | `true`                                                                | Mascara os valores de input, textarea e select                                                                                                     |
+| `console`            | `'error'`                                                             | Captura `'error'`, `'warn'`, `'info'` (incluindo `console.log`) ou `'debug'` e níveis mais severos; use `false` para desativar                     |
+| `serviceVersion`     | Não definido                                                          | Identifica a versão da sua aplicação                                                                                                               |
+| `environment`        | Não definido                                                          | Define `deployment.environment.name`                                                                                                               |
+| `sanitizeUrl`        | Não definido                                                          | Reescreve as URLs gravadas, por exemplo, para remover parâmetros de consulta                                                                       |
 
-Para ativar ou desativar a captura de rede dinamicamente, basta chamar a função `enableAdvancedNetworkCapture` ou `disableAdvancedNetworkCapture`, conforme necessário.
+Para conhecer a API completa, consulte a [Referência do SDK para Navegador](https://github.com/ClickHouse/clickstack-browser#quick-start).
 
-```javascript
-HyperDX.enableAdvancedNetworkCapture();
-```
+## Reaplicação de sessão e privacidade {#session-replay-and-privacy}
 
-<div id="enable-resource-timing-for-cors-requests">
-  ### Habilite a medição de tempo de recursos para solicitações CORS
-</div>
+A reaplicação de sessão vem habilitada por padrão. Textos e valores de entrada são mascarados por padrão.
 
-Se o seu aplicativo frontend faz solicitações de API para um domínio diferente, você pode
-opcionalmente habilitar o cabeçalho [`Timing-Allow-Origin`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) para ser enviado com a solicitação. Isso permitirá que o ClickStack capture informações detalhadas de
-tempo do recurso para a solicitação, como resolução de DNS, download da resposta
-etc., por meio de [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming).
+O mascaramento não oculta o estado de caixas de seleção e botões de opção, nem atributos como URLs de links e marcadores de posição. Use a classe `rr-block` para excluir elementos sensíveis. A sanitização de URLs não abrange URLs presentes no conteúdo da página reaplicada, em rastreamentos de pilha ou em mensagens do console. Colete apenas as informações de usuário permitidas pela sua política de privacidade.
 
-Se você estiver usando `express` com os pacotes `cors`, poderá usar o snippet
-a seguir para habilitar o cabeçalho:
+Para pausar a reaplicação sem interromper a telemetria do navegador:
 
 ```javascript
-var cors = require('cors');
-var onHeaders = require('on-headers');
+import { pauseReplay } from '@clickhouse/clickstack-browser';
 
-// ... todo o seu código
-
-app.use(function (req, res, next) {
-  onHeaders(res, function () {
-    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
-    if (allowOrigin) {
-      res.setHeader('Timing-Allow-Origin', allowOrigin);
-    }
-  });
-  next();
-});
-app.use(cors());
+pauseReplay();
 ```
+
+Quando quiser retomar a gravação:
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## Vincular traces de frontend e de backend {#trace-propagation}
+
+Para associar as requisições do navegador aos traces de backend, adicione `traceOrigins` às opções de `init`, substituindo o exemplo pela origem do seu backend:
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+As requisições para a própria origem da página e para os backends correspondentes incluem `traceparent`, `tracestate` e `baggage`. Seu backend precisa estar instrumentado para dar continuidade a esse contexto.
+
+Backends de outra origem devem permitir esses cabeçalhos via CORS. O coletor de telemetria também deve aceitar a origem do frontend. Se a sua aplicação usar Content Security Policy (CSP), permita o endpoint do coletor em `connect-src`.
+
+## Identificar usuários e registrar erros {#users-and-errors}
+
+Ao fazer login, use `setUser` para anexar informações do usuário aos spans e logs subsequentes:
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+No logout, limpe as informações do usuário e inicie uma nova sessão:
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+Para anexar metadados da aplicação aos spans e logs subsequentes, use `setAttributes`. Cada chamada substitui o conjunto anterior; passe `null` para removê-lo:
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+Erros não capturados e rejeições não tratadas são capturados automaticamente. Error boundaries do React que reportam por meio de `console.error` também são capturados por padrão. Use `recordException` para erros tratados que ainda não foram registrados em log; registrar com `recordException` e também em log o mesmo erro gera eventos duplicados:
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+Substitua `submitCheckout` pela operação da aplicação que você deseja monitorar.
+
+## Migração a partir do SDK do HyperDX para navegador {#migration}
+
+Esta não é uma atualização que se limita a trocar o nome do pacote. `url` passa a ser `endpoint`, `service` passa a ser `serviceName` e `tracePropagationTargets` passa a ser `traceOrigins`. O mascaramento de texto e de campos de entrada agora tem `true` como padrão. Substitua `setGlobalAttributes` por `setUser` para a identidade do usuário e por `setAttributes` para os metadados da aplicação. Error boundaries do React que reportam erros por meio de `console.error` não precisam de nenhum hook adicional; use `recordException` quando um erro ainda não tiver sido registrado.
+
+Consulte o [guia de migração do SDK](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md) para ver as opções removidas e as mudanças nos atributos. Para uma instalação via tag script ou para uma aplicação que já inicializa o OpenTelemetry, consulte o [README do SDK](https://github.com/ClickHouse/clickstack-browser#readme).
+
+Se o SDK do ClickStack para navegador causar um problema de compatibilidade na sua aplicação, você pode usar o [SDK legado do HyperDX para navegador](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) enquanto investiga a causa. Restaure a configuração e as chamadas de API correspondentes seguindo o guia de migração acima; os dois SDKs não são intercambiáveis e não devem ser executados simultaneamente.

@@ -15,6 +15,9 @@ SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_optimize_count_from_text_index = 0;
 SET use_query_condition_cache = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+-- One mark per read: a read that ends inside a mark splits it into two windows, and a window without rows
+-- of one of the posting lists stops the intersection early.
+SET max_block_size = 8192;
 
 DROP TABLE IF EXISTS tab_bf_early_exit;
 

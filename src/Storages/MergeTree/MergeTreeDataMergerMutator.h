@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <expected>
+#include <optional>
 
 namespace DB
 {
@@ -34,6 +35,12 @@ class MergeTreeDataMergerMutator
     void updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
+    /// Undo the due time that `updateTTLMergeTimes` advanced for a TTL merge that was selected but
+    /// discarded before it could run (`StorageMergeTree::merge` does that when no executor slot is
+    /// free). Only restores the due time if it is still exactly the value that selection installed,
+    /// so an advance made by a later selection is never overwritten.
+    void rollbackTTLMergeTime(const String & partition_id, MergeType merge_type);
+
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
@@ -58,8 +65,8 @@ public:
         const std::optional<PartitionIdsHint> & partitions_hint);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to merge one part "with itself",
-      * but if setting optimize_skip_merged_partitions is true than single part with level > 0
+      * force_full_partition_merge - choose to merge even a single part - that is, allow to merge one part "with itself",
+      * but if skip_merged_partition is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
     std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
@@ -67,8 +74,8 @@ public:
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
         const String & partition_id,
-        bool final,
-        bool optimize_skip_merged_partitions);
+        bool force_full_partition_merge,
+        bool skip_merged_partition);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
@@ -130,6 +137,16 @@ private:
 
     /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
     PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
+
+    /// The due time advance of the last TTL merge selection of a partition, kept so that a
+    /// discarded selection can be undone. See `rollbackTTLMergeTime`.
+    struct TTLMergeTimeAdvance
+    {
+        time_t installed = 0;
+        std::optional<time_t> previous;
+    };
+    std::unordered_map<String, TTLMergeTimeAdvance> last_delete_ttl_merge_time_advance;
+    std::unordered_map<String, TTLMergeTimeAdvance> last_recompress_ttl_merge_time_advance;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };

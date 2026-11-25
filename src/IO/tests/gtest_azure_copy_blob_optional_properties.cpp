@@ -32,7 +32,7 @@ class OwningBodyStream : public Azure::Core::IO::BodyStream
 public:
     explicit OwningBodyStream(std::string data_) : data(std::move(data_)) { }
 
-    int64_t Length() const override { return static_cast<int64_t>(data.size()); }
+    [[nodiscard]] int64_t Length() const override { return static_cast<int64_t>(data.size()); }
 
     void Rewind() override { position = 0; }
 

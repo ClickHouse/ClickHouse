@@ -1,4 +1,5 @@
 *** Test fetches ***
+all_0_0_0	0	1
 *** replica 1 ***
 1	1
 2	2
@@ -15,10 +16,10 @@ all_0_1_1	2
 *** Test part removal ***
 *** replica 1 ***
 all_0_1_1
-all_0_1_1
+all_0_1_1	0	1
 *** replica 2 ***
 all_0_1_1
-all_0_1_1
+all_0_1_1	0	1
 *** Test ALTER ***
 *** replica 1 ***
 1	1

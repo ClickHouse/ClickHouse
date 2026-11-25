@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This test depends A LOT on timing, so it's very sensitive when the system is overloaded. For that
 # reason, margins of 20% were added initially. They've been increased over time in an attempt to

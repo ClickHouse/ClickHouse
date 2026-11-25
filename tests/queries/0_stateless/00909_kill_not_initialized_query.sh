@@ -30,12 +30,12 @@ $CLICKHOUSE_CLIENT -q "$query_to_kill" &>/dev/null &
 sleep 1 # just to be sure that kill of $query_to_kill will be executed after $query_to_kill.
 
 # Kill $query_to_kill with ASYNC kill. We will check that information about KILL is not lost.
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC" &>/dev/null
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC SETTINGS kill_throw_if_noop = false" &>/dev/null
 
 sleep 1
 
 # Kill $query_for_pending SYNC. This query is not blocker, so it should be killed fast.
-timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
+timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC SETTINGS kill_throw_if_noop = false" &>/dev/null
 
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
 for _ in {1..15}

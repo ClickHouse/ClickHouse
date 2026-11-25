@@ -1,0 +1,14 @@
+OR of an unsafe and a safe branch, both rows must survive:
+44	1
+5	2
+AND of an unsafe and a safe conjunct, the safe one may be pushed down:
+44	1
+OR nested under AND keeps the whole disjunction local:
+44	1
+5	2
+Query: SELECT `u`, `i` FROM `t`
+Query: SELECT `u`, `i` FROM `t` WHERE `i` = 1
+Query: SELECT `u`, `i` FROM `t` WHERE `i` >= 1
+1
+1
+2

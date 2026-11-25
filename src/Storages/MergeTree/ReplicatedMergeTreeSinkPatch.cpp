@@ -58,7 +58,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
         try
         {
-            auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_blocks_ids);
+            auto [conflicts, _] = commitPart(zookeeper, part, deduplication_hashes, deduplication_blocks_ids);
             if (!conflicts.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
