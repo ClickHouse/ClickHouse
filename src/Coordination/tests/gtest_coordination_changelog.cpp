@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstring>
 #include <future>
+#include <optional>
 #include <thread>
 
 
@@ -1368,6 +1369,63 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestMixedLogTypes)
 
         changelog_files.push_back("./logs/changelog_37_56.bin");
         verify_changelog_files();
+    }
+}
+
+TYPED_TEST(CoordinationChangelogTest, WriteAtKeepsFileEncodingAfterCompressionToggle)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    const std::string old_extension = this->extension;
+    const std::string new_extension = this->enable_compression ? "" : ".zstd";
+
+    const auto append_range = [](DB::KeeperLogStore & store, uint64_t from, uint64_t to, std::optional<uint64_t> term)
+    {
+        for (uint64_t i = from; i <= to; ++i)
+        {
+            auto entry = getLogEntry("value_" + std::to_string(i), term.value_or(i));
+            store.append(entry);
+        }
+        store.end_of_append_batch(0, 0);
+        waitDurableLogs(store);
+    };
+
+    DB::LogFileSettings settings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 10};
+    {
+        DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.init(0, 0);
+        append_range(changelog, 1, 35, std::nullopt); /// term == index; files 1_10, 11_20, 21_30, 31_40
+    }
+
+    settings.compress_logs = !this->enable_compression;
+    {
+        DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        changelog.init(0, 0);
+        EXPECT_EQ(changelog.next_slot(), 36);
+
+        /// A conflicting tail from a new leader overwrites index 25, stored in a file written before the toggle.
+        auto rewritten = getLogEntry("rewritten_25", 1000);
+        changelog.write_at(25, rewritten);
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        /// 26..30 stay in the reopened file, 31 starts a new file in the new encoding.
+        append_range(changelog, 26, 32, 1000);
+        changelog.flush();
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin" + old_extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_31_40.bin" + new_extension));
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+    EXPECT_EQ(changelog.next_slot(), 33);
+    for (uint64_t i = 21; i <= 32; ++i)
+    {
+        auto entry = changelog.entry_at(i);
+        ASSERT_NE(entry, nullptr) << "index " << i;
+        EXPECT_EQ(entry->get_term(), i < 25 ? i : 1000) << "index " << i;
     }
 }
 
