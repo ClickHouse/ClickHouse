@@ -164,7 +164,7 @@ debug_symbols=/usr/lib/debug$binary.debug
 # `addressToLine` falls back to the name of the file the symbols were read from when it
 # finds no line, and the binary has no lines. When the build id of the debug symbols does
 # not match the binary, `SymbolIndex` reads the binary instead.
-object=$(clickhouse local -q "
+object=$(clickhouse local --tmp -q "
     SELECT addressToLine(address_begin)
     FROM system.symbols
     WHERE symbol LIKE '%StorageSystemSymbols%'
@@ -192,7 +192,7 @@ case "$1" in
         false
         ;;
 esac
-clickhouse local -q "
+clickhouse local --tmp -q "
     SELECT count(), sum(cityHash64(address_begin, address_end, symbol))
     FROM system.symbols
     SETTINGS allow_introspection_functions = 1
