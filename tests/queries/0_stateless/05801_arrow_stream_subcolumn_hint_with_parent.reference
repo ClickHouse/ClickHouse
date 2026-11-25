@@ -187,10 +187,10 @@ a top-level field with a dotted name next to a struct with the same path
 (19723)	('2024-01-01')
 null struct row with string and raw-byte siblings
 (\'label\',\'abcdefghijklmnop\')	label	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
-(\'\',\'\')		::
+(NULL,\'\')	\N	::
 (NULL,\'abcdefghijklmnop\')	\N	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 (\'label\',\'abcdefghijklmnop\')	label
-(\'\',\'\')	
+(NULL,\'\')	\N
 (NULL,\'abcdefghijklmnop\')	\N
 6162:6364:6566:6768:696a:6b6c:6d6e:6f70
 ::
