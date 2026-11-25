@@ -158,7 +158,12 @@ std::shared_ptr<StorageWebConfiguration> TableFunctionURL::createWebObjectStorag
     /// An archive read pins one resource: a failover group would let the metadata probe and the data read
     /// land on different origins, so the archive identity, the caches and the distributed task would all
     /// have to carry the selected origin. Not supported: use a single URL.
-    object_storage_configuration->setRejectArchiveFailover(!is_replayed_table_definition);
+    /// A definition read back from the metadata keeps the failover it was written with. A table of a
+    /// dynamic `URL` database carries its name in the query, not in a stored definition, so there is
+    /// nothing written to preserve: it is rejected like a fresh call, or a `|` in the path of the name
+    /// would be read with a leniency `url()` does not have.
+    object_storage_configuration->setRejectArchiveFailover(
+        !is_replayed_table_definition || is_dynamic_database_table);
     auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure_, compression_method_, configuration.headers);
     StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
     return object_storage_configuration;

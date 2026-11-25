@@ -14,3 +14,6 @@ necessary to have the grant READ ON URL
 necessary to have the grant READ ON URL
 necessary to have the grant READ ON URL
 4851
+--- a failover group in the name of a dynamic database table is refused like a fresh url() call
+Failover patterns ('|') in the path are not supported
+Failover patterns ('|') in the path are not supported

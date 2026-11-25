@@ -181,4 +181,15 @@ ${CLICKHOUSE_CLIENT} --user="${no_source}" --query \
     | grep -o 'necessary to have the grant READ ON URL' | head -1
 ${CLICKHOUSE_CLIENT} --user="${reader}" --query \
     "SELECT sum(c1) FROM ${url_database_table} SETTINGS max_http_get_redirects = 1"
+
+echo "--- a failover group in the name of a dynamic database table is refused like a fresh url() call"
+failover_url="http://127.0.0.1:${PORT}/redirect/{a|b}/**/p.csv"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query \
+    "SELECT 1 FROM url('${failover_url}', 'CSV') SETTINGS allow_url_wildcard_from_index_pages = 1" 2>&1 \
+    | grep -o "Failover patterns ('|') in the path are not supported" | head -1
+failover_table="${CLICKHOUSE_DATABASE}_url_database.\`${failover_url}\`"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query \
+    "SELECT 1 FROM ${failover_table} SETTINGS allow_url_wildcard_from_index_pages = 1" 2>&1 \
+    | grep -o "Failover patterns ('|') in the path are not supported" | head -1
+
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_url_database"
