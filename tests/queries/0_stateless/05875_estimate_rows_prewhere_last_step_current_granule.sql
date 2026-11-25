@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t_estimate_rows_last_step;
 CREATE TABLE t_estimate_rows_last_step (id UInt64, s String) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, index_granularity_bytes = '100Ki', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     enable_vertical_merge_algorithm = 0, merge_max_block_size = 8192, ratio_of_defaults_for_sparse_serialization = 1,
-    use_const_adaptive_granularity = 0;
+    use_const_adaptive_granularity = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_estimate_rows_last_step SELECT number, '' FROM numbers(8192);
 INSERT INTO t_estimate_rows_last_step SELECT 8192 + number, repeat('x', 1000) FROM numbers(8192);
