@@ -4,6 +4,11 @@ mode 1: the same result
 mode 1: spilled 1, halved 0
 mode 0: the same result
 mode 0: spilled 0, halved 1
+--- the last block takes the join over the spill threshold
+mode 1: the same result
+mode 1: spilled 1, halved 0
+mode 0: the same result
+mode 0: spilled 0, halved 1
 --- the memory spill scheduler asks the join to free memory
 100	4950
 mode 1: spilled 1, halved 0

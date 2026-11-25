@@ -101,7 +101,7 @@ public:
 
     /// When the buckets may switch to the Robin Hood mode. Call it before inserting.
     /// The mode `OnMemoryPressure` needs a `budget`, which all the buckets share.
-    void setRobinHoodMode(RobinHoodMode mode, HashTableGrowthBudget * budget = nullptr)
+    void setRobinHoodMode(RobinHoodMode mode, HashTableGrowthBudget * budget)
     requires GrowerWithRobinHood<Grower>
     {
         for (auto & impl : impls)

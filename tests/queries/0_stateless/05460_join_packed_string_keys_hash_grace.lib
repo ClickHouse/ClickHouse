@@ -112,8 +112,10 @@ function settings_of()
     case $1 in
         hash) echo "join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0" ;;
         # With the packed keys, a spilling join that keeps every right row starts below the threshold and crosses it
-        # after a few right blocks. The other settings keep the size of the build as it is measured here.
-        hspill) echo "join_algorithm = 'hash', max_bytes_before_external_join = 8000000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 2, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, collect_hash_table_stats_during_joins = 0, enable_hash_join_row_store = 0, query_plan_join_swap_table = 'false'" ;;
+        # after a few right blocks. The other settings keep the size of the build as it is measured here. By default a join
+        # with the parallel layout can stay below the threshold in the Robin Hood mode, which
+        # `enable_robin_hood_hash_for_joins = 1` does not take for hash tables this small.
+        hspill) echo "join_algorithm = 'hash', enable_robin_hood_hash_for_joins = 1, max_bytes_before_external_join = 8000000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 2, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, collect_hash_table_stats_during_joins = 0, enable_hash_join_row_store = 0, query_plan_join_swap_table = 'false'" ;;
         grace) echo "join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4" ;;
     esac
 }

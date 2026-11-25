@@ -32,6 +32,7 @@ extern const int LOGICAL_ERROR;
 namespace FailPoints
 {
 extern const char spilling_hash_join_throw_after_maps_release[];
+extern const char spilling_hash_join_halving_does_not_fit[];
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -232,6 +233,7 @@ namespace
 /// Halving allocates the new bucket buffers before it frees the old ones, so near the memory limit it fails where a spill would not.
 bool fitsInMemory(size_t bytes)
 {
+    fiu_do_on(FailPoints::spilling_hash_join_halving_does_not_fit, { return false; });
     const auto available_memory = getAvailableMemoryForSpilling();
     return !available_memory || *available_memory > bytes;
 }
@@ -410,7 +412,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
+        /// halve the hash tables here if that is enough, or switch to `GraceHashJoin`, so the configured cap is honored.
         const auto exceeds_threshold = [this](size_t bytes) { return bytes >= max_bytes_before_external_join; };
         if (exceeds_threshold(hash_join->getTotalByteCount()) && !stayInMemoryByHalving(exceeds_threshold))
         {

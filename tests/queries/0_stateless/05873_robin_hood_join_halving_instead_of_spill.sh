@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # By default a hash join that reaches the spill threshold, or that the memory spill scheduler asks to free memory, rebuilds
 # its hash tables in the Robin Hood mode in half their cells when that is enough to stay in memory.
 # `enable_robin_hood_hash_for_joins = 1` does not halve, and switches only hash tables much larger than these, so a join
-# with `1` spills as a join that never switches does.
+# with `1` spills.
 
 # Prints whether the query with that label switched to `GraceHashJoin` and whether it halved hash tables.
 events()
@@ -46,6 +46,31 @@ do
         --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = $mode, max_bytes_before_external_join = $THRESHOLD")
     echo "mode $mode: $([ "$result" = "$EXPECTED" ] && echo 'the same result' || echo "$result")"
     echo "mode $mode: $(events "threshold_$mode")"
+done
+
+echo "--- the last block takes the join over the spill threshold"
+# The right table has two blocks: 1.5 million keys, then the same keys with long strings. The hash tables stop growing in
+# the first block, and the join stays below half of the threshold until the second, so only the check after the last block,
+# at the full threshold, sees the bytes of the join.
+$CLICKHOUSE_CLIENT --query "CREATE TABLE right_blocks (k UInt64, v UInt64, s String) ENGINE = Memory"
+$CLICKHOUSE_CLIENT --query "INSERT INTO right_blocks SELECT intHash64(number), number, '' FROM numbers(1500000)
+    SETTINGS max_block_size = 2000000, max_insert_block_size = 2000000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0"
+$CLICKHOUSE_CLIENT --query "INSERT INTO right_blocks SELECT intHash64(number), number, repeat('x', 130) FROM numbers(1500000)
+    SETTINGS max_block_size = 2000000, max_insert_block_size = 2000000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0"
+LAST_BLOCK_QUERY="SELECT count(), sum(r.v), sum(length(r.s)) FROM (SELECT intHash64(number) AS k FROM numbers(100000)) AS l
+    INNER JOIN right_blocks AS r ON l.k = r.k"
+LAST_BLOCK_SETTINGS="$SETTINGS, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0"
+LAST_BLOCK_EXPECTED=$($CLICKHOUSE_CLIENT --query "$LAST_BLOCK_QUERY SETTINGS $LAST_BLOCK_SETTINGS, enable_robin_hood_hash_for_joins = 1")
+FULL=$($CLICKHOUSE_CLIENT --query "$LAST_BLOCK_QUERY SETTINGS $LAST_BLOCK_SETTINGS, enable_robin_hood_hash_for_joins = 1,
+    max_bytes_before_external_join = 100000000000, send_logs_level = 'debug'" 2>&1 \
+    | grep -oE 'All blocks fit in memory \([0-9]+ bytes' | grep -oE '[0-9]+' | head -n 1)
+# Halving frees about 11% of the bytes of the join.
+for mode in 1 0
+do
+    result=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_last_block_$mode" --query "$LAST_BLOCK_QUERY SETTINGS
+        $LAST_BLOCK_SETTINGS, enable_robin_hood_hash_for_joins = $mode, max_bytes_before_external_join = $((FULL * 95 / 100))")
+    echo "mode $mode: $([ "$result" = "$LAST_BLOCK_EXPECTED" ] && echo 'the same result' || echo "$result")"
+    echo "mode $mode: $(events "last_block_$mode")"
 done
 
 echo "--- the memory spill scheduler asks the join to free memory"

@@ -389,8 +389,6 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
         precalculated_max_fill = maxFill(size_degree, robin_hood);
     }
 
-    /// Whether a hash table that grows past `robin_hood_size_degree` switches to the Robin Hood mode.
-    [[nodiscard]] bool robinHoodAllowedNow() const { return robin_hood_mode == RobinHoodMode::Always; }
 
 public:
     [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
@@ -422,7 +420,7 @@ public:
     void increaseSizeDegree(UInt8 delta)
     {
         UInt8 new_size_degree = size_degree + delta;
-        setSizeDegree(new_size_degree, robin_hood || (robinHoodAllowedNow() && new_size_degree > robin_hood_size_degree));
+        setSizeDegree(new_size_degree, robin_hood || (robin_hood_mode == RobinHoodMode::Always && new_size_degree > robin_hood_size_degree));
     }
 
     static constexpr auto initial_count = 1ULL << initial_size_degree;
@@ -454,7 +452,7 @@ public:
             if (robin_hood_mode == RobinHoodMode::Always)
                 in_place = size_degree >= robin_hood_size_degree;
             /// The smallest hash tables hold no more elements in the Robin Hood mode, so they grow.
-            else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure && maxFill(size_degree, true) > maxFill(size_degree, false))
+            else if (maxFill(size_degree, true) > maxFill(size_degree, false))
                 in_place = budget->preferSmallerTable(bufSize() * ((1ULL << step) - 1), bufSize());
         }
 
@@ -478,7 +476,7 @@ public:
         {
             robin_hood_size = plain_size_degree > robin_hood_size_degree;
         }
-        else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure && (1ULL << plain_size_degree) > bufSize())
+        else if ((1ULL << plain_size_degree) > bufSize())
         {
             robin_hood_size = budget->preferSmallerTable((1ULL << plain_size_degree) - bufSize(), bufSize());
             first_size_degree = initial_size_degree;
@@ -500,7 +498,7 @@ public:
     void setBufSize(size_t buf_size_)
     {
         UInt8 new_size_degree = static_cast<UInt8>(log2(buf_size_ - 1) + 1);
-        setSizeDegree(new_size_degree, robinHoodAllowedNow() && new_size_degree > robin_hood_size_degree);
+        setSizeDegree(new_size_degree, robin_hood_mode == RobinHoodMode::Always && new_size_degree > robin_hood_size_degree);
     }
 };
 
