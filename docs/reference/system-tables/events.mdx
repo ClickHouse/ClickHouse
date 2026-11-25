@@ -4948,6 +4948,10 @@ The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range wa
 
 The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
 
+### PartCheckPassedAfterPageCacheReadError {#partcheckpassedafterpagecachereaderror}
+
+Number of times a data part of a ReplicatedMergeTree table that failed to be read passed its check with direct I/O, bypassing the OS page cache. The read error was probably caused by wrong data in the page cache, not by the data on disk.
+
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
 Total time spent holding data parts lock in MergeTree tables
@@ -6880,6 +6884,10 @@ Number of segments skipped because the output region was already resolved (all-o
 
 Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 
+### TextIndexPatternScanSkippedByCost {#textindexpatternscanskippedbycost}
+
+Number of times a text index pattern dictionary scan of a part was skipped because the dictionary blocks to scan take more bytes than the rows still readable after the primary key and prior skip indexes take in the indexed columns.
+
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
 Candidate rows (postings intersection) examined by candidate-driven phrase search.
@@ -7207,6 +7215,10 @@ Number of new-row keys that superseded a live row in an existing part on the UNI
 ### UniqueKeyDedupProbes {#uniquekeydedupprobes}
 
 Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.
+
+### UniqueKeyDeleteRows {#uniquekeydeleterows}
+
+Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.
 
 ### UniqueKeyIndexCacheHits {#uniquekeyindexcachehits}
 
