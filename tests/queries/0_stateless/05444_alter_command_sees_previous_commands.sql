@@ -323,3 +323,10 @@ ALTER TABLE t_alter_previous_commands_group_order ADD COLUMN gap UInt32 AFTER `n
 ALTER TABLE t_alter_previous_commands_group_order MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM t_alter_previous_commands_group_order;
 DROP TABLE t_alter_previous_commands_group_order;
+
+-- A missing-column marker renamed to the name of a dropped column is dropped by a later command also in a compact part.
+CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
+ALTER TABLE t_alter_previous_commands_marker DROP COLUMN q, RENAME COLUMN x TO q, DROP COLUMN q, ADD COLUMN IF NOT EXISTS x UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
+SELECT id, x FROM t_alter_previous_commands_marker;
+DROP TABLE t_alter_previous_commands_marker;

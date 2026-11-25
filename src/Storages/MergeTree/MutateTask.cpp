@@ -1056,6 +1056,11 @@ static void splitAndModifyMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
+            /// `part_columns` keeps the names of the dropped stored columns, and a marker can be renamed to one of them.
+            else if (auto it = marker_dropped_by.find(&command); it != marker_dropped_by.end())
+            {
+                for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = it->second});
+            }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
                           has_column = part_columns.has(command.column_name),
                           has_nested_column = share_nested && part_columns.hasNested(command.column_name);
@@ -1092,12 +1097,8 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                if (auto it = marker_dropped_by.find(&command); it != marker_dropped_by.end())
-                {
-                    for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = it->second});
-                }
-                else if (command.clear && part->getSerializationInfos().isMissingColumn(nameInPart(command.column_name)))
+                /// Marker-only CLEAR must still update metadata and dependencies.
+                if (command.clear && part->getSerializationInfos().isMissingColumn(nameInPart(command.column_name)))
                 {
                     for_interpreter.push_back(command);
                     mutated_columns.emplace(command.column_name);
