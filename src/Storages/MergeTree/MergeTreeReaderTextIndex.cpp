@@ -195,7 +195,8 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             physical_header, need_col, combined_columns, context_copy,
             /*save_unneeded_columns=*/ true, /*null_as_default=*/ false,
             /*allow_reading_tables=*/ settings.read_context != nullptr,
-            settings.default_expressions_sets.get());
+            settings.default_expressions_sets.get(),
+            /*enable_experimental_settings=*/ true);
         if (!dag)
             continue;
 

@@ -32,7 +32,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Common/SettingsChanges.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Databases/enableAllExperimentalSettings.h>
 
 
 namespace DB
@@ -402,6 +401,26 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
     return names;
 }
 
+/// The `additional_table_filters` of the reading query restrict the rows that it reads from a table, so they also
+/// apply to the tables that a default reads: `x IN table` must not tell whether a filtered out row of `table` exists.
+/// A filter names a table relative to the current database of the reading query, while a default is evaluated with
+/// the current database of the storage, so in case they differ the unqualified names are qualified explicitly.
+static Field getReaderAdditionalTableFilters(const Context & read_context, const String & storage_database)
+{
+    Field filters = read_context.getSettingsRef().get("additional_table_filters");
+    const String reader_database = read_context.getCurrentDatabase();
+    if (reader_database.empty() || reader_database == storage_database)
+        return filters;
+
+    for (auto & filter : filters.safeGet<Map>())
+    {
+        auto & table = filter.safeGet<Tuple>().at(0).safeGet<String>();
+        if (!table.contains('.'))
+            table = reader_database + "." + table;
+    }
+    return filters;
+}
+
 /// The other settings of the storage context that replace the settings of the reading query must not bypass the constraints
 /// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
 /// the user may read, whatever the settings of the storage are. The same holds for the readonly mode of the reading
@@ -456,6 +475,9 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
         const auto & reader_settings = settings.read_context->getSettingsRef();
         for (std::string_view name : getReaderSettingsForDefaultExpressions())
             default_expressions_settings.set(name, reader_settings.get(name));
+        default_expressions_settings.set(
+            "additional_table_filters",
+            getReaderAdditionalTableFilters(*settings.read_context, storage_context->getCurrentDatabase()));
         keepReaderSettingsConstraints(default_expressions_settings, *settings.read_context);
         context_copy->setSettings(default_expressions_settings);
         context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
@@ -466,7 +488,10 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     }
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
-    enableAllExperimentalSettings(context_copy);
+    /// So the expressions are resolved with all such features enabled (`enable_experimental_settings` of
+    /// `evaluateMissingDefaults` and `performRequiredConversions`). They are not enabled in this context:
+    /// the tables that a default reads, such as a view in `x IN view`, are read with its settings, and
+    /// the restrictions of the reading query, such as `allow_fuzz_query_functions = 0`, must hold for them.
     return context_copy;
 }
 
@@ -530,7 +555,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             /*save_unneeded_columns=*/ true,
             /*null_as_default=*/ false,
             /*allow_reading_tables=*/ settings.read_context != nullptr,
-            settings.default_expressions_sets.get());
+            settings.default_expressions_sets.get(),
+            /*enable_experimental_settings=*/ true);
 
         if (dag)
         {
@@ -1032,7 +1058,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             storage_snapshot->metadata->getColumns().getDefaults(),
             /*forbid_default_defaults=*/ false,
             /*allow_reading_tables=*/ settings.read_context != nullptr,
-            settings.default_expressions_sets.get());
+            settings.default_expressions_sets.get(),
+            /*enable_experimental_settings=*/ true);
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

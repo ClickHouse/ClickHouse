@@ -52,6 +52,9 @@ QueryTreeNodePtr resolveMissingDefaults(
 /// A default that reads a table (`x IN table`) has its set built right away, with the access of `context`.
 /// If `allow_reading_tables` is false, because `context` belongs to no query, such a default throws `ACCESS_DENIED`.
 /// If `reused_sets` is set, the sets already built for it are reused, and the sets built here are added to it.
+/// If `enable_experimental_settings` is set, the defaults are resolved with all the experimental and suspicious
+/// features enabled, as the expressions stored in a table that were checked when it was created, while the tables
+/// they read (the views of `x IN view`) are still read with the settings of `context`.
 /// Return nullptr if no actions required.
 std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
@@ -61,13 +64,14 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool save_unneeded_columns = true,
     bool null_as_default = false,
     bool allow_reading_tables = true,
-    DefaultExpressionsSets * reused_sets = nullptr);
+    DefaultExpressionsSets * reused_sets = nullptr,
+    bool enable_experimental_settings = false);
 
 /// Tries to convert columns in block to required_columns
 /// A conversion of `NULL` to the default of a column may read a table (`x IN table`), as in `evaluateMissingDefaults`.
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
     const ColumnDefaults & column_defaults, bool forbid_default_defaults = false, bool allow_reading_tables = true,
-    DefaultExpressionsSets * reused_sets = nullptr);
+    DefaultExpressionsSets * reused_sets = nullptr, bool enable_experimental_settings = false);
 
 /// Checks that the columns of `block` can be converted to `required_columns`, as `performRequiredConversions`
 /// would do, without changing `block`. It is meant for the validation of metadata (`ALTER`), so it never reads

@@ -1,0 +1,17 @@
+no filters
+2	2
+1
+additional_table_filters
+1	1
+1
+0	0
+additional_table_filters from another database
+2	2
+1	1
+allow_fuzz_query_functions = 1
+2	2	3
+allow_fuzz_query_functions = 0
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+3	2

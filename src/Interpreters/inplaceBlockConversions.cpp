@@ -47,6 +47,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
+#include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
 #include <base/defines.h>
 #include <Common/quoteString.h>
@@ -54,7 +55,11 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 
@@ -238,7 +243,50 @@ struct ResolvedExpressionList
     std::shared_ptr<TableNode> table;
 };
 
-ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+/// The stored expressions are resolved with all the experimental and suspicious features enabled (see
+/// `resolveExpressionList`), but the queries they contain are planned and executed later, and that reads the tables:
+/// a view is analyzed when its plan is built, with the settings of the query that reads it. Those must be the settings
+/// of `execution_context`, so that enabling the features for the stored expression does not lift the restrictions of
+/// the reading query, such as `allow_fuzz_query_functions = 0`, for the views that the expression reads.
+void restoreSettingsOfSubqueries(const QueryTreeNodePtr & expression, const Context & analysis_context, const Context & execution_context)
+{
+    std::vector<ContextMutablePtr> contexts;
+    traverseQueryTree(
+        expression,
+        [](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; },
+        [&](const QueryTreeNodePtr & node)
+        {
+            if (auto * query_node = node->as<QueryNode>())
+                contexts.push_back(query_node->getMutableContext());
+            else if (auto * union_node = node->as<UnionNode>())
+                contexts.push_back(union_node->getMutableContext());
+        });
+
+    if (contexts.empty())
+        return;
+
+    const auto & analysis_settings = analysis_context.getSettingsRef();
+    const auto & execution_settings = execution_context.getSettingsRef();
+    SettingsChanges restored_settings;
+    for (std::string_view name : execution_settings.getAllRegisteredNames())
+    {
+        Field value = execution_settings.get(name);
+        if (value != analysis_settings.get(name))
+            restored_settings.emplace_back(name, std::move(value));
+    }
+
+    for (const auto & context : contexts)
+        if (context)
+            for (const auto & change : restored_settings)
+                context->setSetting(change.name, change.value);
+}
+
+/// If `enable_experimental_settings` is set, the expressions are resolved with all the experimental and suspicious
+/// features enabled: they are stored in the metadata of a table and were checked when it was created, possibly with
+/// other settings than the ones of the query that reads the table now. The queries inside them still run with the
+/// settings of `context`, see `restoreSettingsOfSubqueries`.
+ResolvedExpressionList resolveExpressionList(
+    const Block & header, const ASTPtr & expr_list, ContextPtr context, bool enable_experimental_settings = false)
 {
     auto execution_context = Context::createCopy(context);
 
@@ -249,17 +297,27 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
     execution_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     execution_context->setInitiatorVersionIfUnset();
 
-    auto expression = buildQueryTree(expr_list, execution_context);
+    ContextMutablePtr analysis_context = execution_context;
+    if (enable_experimental_settings)
+    {
+        analysis_context = Context::createCopy(execution_context);
+        enableAllExperimentalSettings(analysis_context);
+    }
+
+    auto expression = buildQueryTree(expr_list, analysis_context);
 
     ColumnsDescription fake_column_descriptions{};
     // Add columns from index to ensure names are unique in case of duplicated columns.
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, analysis_context);
 
     QueryAnalyzer analyzer(false);
-    analyzer.resolve(expression, fake_table_expression, execution_context);
+    analyzer.resolve(expression, fake_table_expression, analysis_context);
+
+    if (enable_experimental_settings)
+        restoreSettingsOfSubqueries(expression, *analysis_context, *execution_context);
 
     return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
 }
@@ -404,12 +462,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     ContextPtr context,
     TablesReading tables_reading,
     bool * has_unbuilt_sets = nullptr,
-    DefaultExpressionsSets * reused_sets = nullptr)
+    DefaultExpressionsSets * reused_sets = nullptr,
+    bool enable_experimental_settings = false)
 {
     if (!expr_list)
         return {};
 
-    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto resolved = resolveExpressionList(header, expr_list, context, enable_experimental_settings);
     auto & expression = resolved.expression;
     auto & execution_context = resolved.context;
 
@@ -450,7 +509,8 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     {
         if (!reused_sets->build(planner_context, execution_context))
             return createExpressionsAnalyzer(
-                header, expr_list, save_unneeded_columns, context, tables_reading, has_unbuilt_sets, reused_sets);
+                header, expr_list, save_unneeded_columns, context, tables_reading, has_unbuilt_sets, reused_sets,
+                enable_experimental_settings);
     }
     else
         buildPreparedSetsInplace(planner_context, execution_context);
@@ -483,7 +543,8 @@ void performRequiredConversions(
     const ColumnDefaults & column_defaults,
     bool forbid_default_defaults,
     bool allow_reading_tables,
-    DefaultExpressionsSets * reused_sets)
+    DefaultExpressionsSets * reused_sets,
+    bool enable_experimental_settings)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
@@ -491,7 +552,7 @@ void performRequiredConversions(
 
     std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
         block, conversion_expr_list, true, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
-        /*has_unbuilt_sets=*/ nullptr, reused_sets);
+        /*has_unbuilt_sets=*/ nullptr, reused_sets, enable_experimental_settings);
 
     if (dag)
     {
@@ -557,7 +618,8 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool save_unneeded_columns,
     bool null_as_default,
     bool allow_reading_tables,
-    DefaultExpressionsSets * reused_sets)
+    DefaultExpressionsSets * reused_sets,
+    bool enable_experimental_settings)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
@@ -565,7 +627,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     return createExpressionsAnalyzer(
         header, expr_list, save_unneeded_columns, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
-        /*has_unbuilt_sets=*/ nullptr, reused_sets);
+        /*has_unbuilt_sets=*/ nullptr, reused_sets, enable_experimental_settings);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
