@@ -73,7 +73,7 @@ plan with its `DelayedCreatingSets` placeholder as an ordinary step, and the
 set-building subqueries are planned separately, distributed like any other query.
 
 The feature fails closed. `make_distributed_plan` first rejects plan shapes the
-distributed pipeline cannot execute correctly (`WITH TOTALS`, `ROLLUP`, `CUBE`, extremes,
+distributed pipeline cannot execute correctly (`WITH TOTALS`, extremes,
 `PASTE JOIN`) and distributed reads a worker cannot reproduce (pinned block-number
 boundaries, `_part_index` / `_part_starting_offset`). When Cascades is active, a second
 pre-check rejects reads that cannot be cloned, `LOCAL` joins, non-full sorts, and
@@ -526,18 +526,30 @@ enforces (the keys of an inner join under the filter) are tracked as equivalence
 classes, and an equality inside such a class removes nothing. A read also carries its
 physical scan volume (see the cost model) next to the output estimate.
 
+A step that emits the rows of several inputs or several sets of groups adds them up.
+`UNION ALL` has the rows of all its inputs; the distinct count of a column is the sum over
+the inputs, which is its upper limit, and an input without a count adds its rows. `ROLLUP`,
+`CUBE` and `GROUPING SETS` have one set of groups for each of their key sets: the prefixes
+of the keys for `ROLLUP`, all the subsets for `CUBE`. A key that is absent from a set holds
+a default value or `NULL` in the rows of that set, so it has one more distinct value. A
+step with no estimate of its own (`WindowStep`, `ArrayJoinStep`, ...) takes the rows of its
+first input and keeps the statistics of the columns that it passes with the same name and
+type; a column that it adds or changes has no statistics. An expression or a filter also
+emits the input columns that its actions do not read, and these keep their statistics.
+
 Row widths drive the exchange costs, so they come from measured data, not type sizes.
 A read's per-column average widths come from the parts' column-data sizes (compact parts
 carry only a total, so type-based estimates are scaled to match it; the total deliberately
 excludes non-column files such as statistics sketches, which can dwarf a small table's
-data). A test hint overrides them: per-column `column_bytes` first, else a table-level
-`avg_row_bytes` distributed over the columns by type (a hinted table's physical parts are
-stand-ins and are not trusted). Widths follow columns through renames only while the value
-bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
+data). A test hint overrides them: per-column `column_bytes` first, else `avg_row_bytes`,
+the width of the rows that a read of the table emits, divided between the emitted columns
+by type (a hinted table's physical parts are stand-ins and are not trusted). Widths follow
+columns through renames only while the value bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
 such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
-for `String`). Joins and aggregations recompute their width from their actual output
-header using the known column widths. The only floor is 1 byte per row, guarding against
-a zero-width row (a bare `count()`) making exchanges look free.
+for `String`). The row width of every step is the sum of the widths of its output columns:
+the known width of a column, else the default of its type. So a projection that drops a
+column makes the rows narrower for the exchanges above it. The only floor is 1 byte per row,
+guarding against a zero-width row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 

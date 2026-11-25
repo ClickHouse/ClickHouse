@@ -15,24 +15,24 @@ GatherExchange
   Expression ((Project names + Projection))
     Filter (HAVING)
       Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ShuffleExchange
+        ShuffleExchange
+          Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (ParallelRead default.t_points)
 -- 4. distributed_plan_force_shuffle_aggregation: shuffle of the input rows
 GatherExchange
   Expression ((Project names + Projection))
     Filter (HAVING)
       Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ShuffleExchange
+        ShuffleExchange
+          Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (ParallelRead default.t_points)
 -- 5. no merge of the states on each node (distributed_plan_partial_aggregation_before_shuffle = 0): shuffle of the input rows
 GatherExchange
   Expression ((Project names + Projection))
     Filter (HAVING)
       Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ShuffleExchange
+        ShuffleExchange
+          Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (ParallelRead default.t_points)
 -- 6. the shuffle join distributes its output by x: one aggregation step in each bucket, no exchange between the join and the aggregation
 GatherExchange

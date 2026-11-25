@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -89,6 +90,28 @@ Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTrack
     }
 
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
+}
+
+void remapColumnStatisticsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, const ActionsDAG & actions, const Block & output_header)
+{
+    UnorderedSetWithMemoryTracking<String> names_in_actions;
+    for (const auto * input : actions.getInputs())
+        names_in_actions.insert(input->result_name);
+    for (const auto * output : actions.getOutputs())
+        names_in_actions.insert(output->result_name);
+
+    /// See `ActionsDAG::updateHeader`: a column of the input that is not an input of `actions` goes to the
+    /// output unchanged.
+    UnorderedMapWithMemoryTracking<String, ColumnStats> passed_unchanged;
+    for (const auto & [column_name, statistics] : column_statistics)
+    {
+        if (!names_in_actions.contains(column_name) && output_header.has(column_name))
+            passed_unchanged.emplace(column_name, statistics);
+    }
+
+    QueryPlanOptimizations::remapColumnStats(column_statistics, actions);
+    column_statistics.insert(passed_unchanged.begin(), passed_unchanged.end());
 }
 
 /// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
@@ -243,16 +266,22 @@ UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const R
 
 UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
 {
-    Float64 type_width_sum = 0;
-    for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
-        type_width_sum += estimateColumnWidthFromType(*column.type);
-    const Float64 scale = type_width_sum > 0 ? row_bytes / type_width_sum : 1.0;
-
     const auto & header = *read_step.getOutputHeader();
     UnorderedMapWithMemoryTracking<String, Float64> widths;
+    Float64 type_width_sum = 0;
     for (const auto & column_name : read_step.getAllColumnNames())
-        if (const auto * header_column = header.findByName(column_name))
-            widths[column_name] = estimateColumnWidthFromType(*header_column->type) * scale;
+    {
+        const auto * header_column = header.findByName(column_name);
+        if (!header_column)
+            continue;
+        const Float64 type_width = estimateColumnWidthFromType(*header_column->type);
+        if (widths.emplace(column_name, type_width).second)
+            type_width_sum += type_width;
+    }
+
+    const Float64 scale = type_width_sum > 0 ? row_bytes / type_width_sum : 1.0;
+    for (auto & [column_name, width] : widths)
+        width *= scale;
     return widths;
 }
 
@@ -283,8 +312,9 @@ static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(Q
     stats.estimated_row_count = relation_stats.estimated_rows ? Float64(*relation_stats.estimated_rows) : rows;
     stats.column_statistics = std::move(relation_stats.column_stats);
 
-    /// The manifests give no uncompressed sizes, so every column has the width of its type.
-    const auto & header = *read_step.getOutputHeader();
+    /// The manifests give no uncompressed sizes, so every column has the width of its type. The columns are
+    /// those of the step itself: a filter over the read can drop a column.
+    const auto & header = *node.step->getOutputHeader();
     for (const auto & column : header)
     {
         auto & column_stats = stats.column_statistics[column.name];
@@ -310,10 +340,11 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
     std::optional<ExpressionStatistics> stats;
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
+    const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get());
 
     /// Only for ReadFromMergeTree or Filter -> ReadFromMergeTree
     if (read_step ||
-        (typeid_cast<FilterStep *>(node.step.get()) && node.children.size() == 1 && typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get())))
+        (filter_step && node.children.size() == 1 && typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get())))
     {
         if (!read_step)
             read_step = typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get());
@@ -331,15 +362,21 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             auto storage_widths = relation_stats.avg_row_bytes
                 ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
                 : estimateReadColumnWidths(*read_step);
+            /// Column statistics that hold only the sizes, the form that `remapColumnStatisticsOfStep` takes.
+            UnorderedMapWithMemoryTracking<String, ColumnStats> column_sizes;
             for (const auto & [column_name, width] : storage_widths)
+                column_sizes[column_name].avg_bytes = width;
+            /// The statistics of a filter over the read have the names of the filter's output columns. A column
+            /// that the filter passes through keeps the size of its read column.
+            if (filter_step)
+                remapColumnStatisticsOfStep(column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
+            for (const auto & [column_name, column_size] : column_sizes)
             {
                 auto & column_stats = stats->column_statistics[column_name];
                 if (column_stats.avg_bytes == 0)
-                    column_stats.avg_bytes = width;
+                    column_stats.avg_bytes = column_size.avg_bytes;
             }
-            stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
-                ? *relation_stats.avg_row_bytes
-                : estimateRowWidth(*read_step->getOutputHeader(), stats->column_statistics);
+            stats->estimated_bytes_per_row = estimateRowWidth(*node.step->getOutputHeader(), stats->column_statistics);
             /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.
