@@ -74,7 +74,7 @@ public:
 
     void updateHashImpl(SipHash & hash) const override { function->updateHash(hash); }
 
-    bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    [[nodiscard]] bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
     {
         return function->resultDependsOnSetting(setting, arguments, result_type);
     }

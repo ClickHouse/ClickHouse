@@ -239,7 +239,7 @@ public:
     /// Whether a declared result setting changes the result for the argument types this function was built for, as
     /// `getMonotonicityForRange` answers for its types. E.g. `session_timezone` changes `toDateTime` of a `String`, but not of
     /// a `DateTime64`, whose time zone is part of its type.
-    virtual bool resultDependsOnSetting(const FunctionResultSetting & /*setting*/) const { return true; }
+    [[nodiscard]] virtual bool resultDependsOnSetting(const FunctionResultSetting & /*setting*/) const { return true; }
 
     const Array & getParameters() const final;
 
@@ -706,7 +706,7 @@ public:
     virtual void updateHash(SipHash &) const {}
 
     /// See `IFunctionBase::resultDependsOnSetting`: the adaptor that wraps this interface into one forwards to this.
-    virtual bool resultDependsOnSetting(
+    [[nodiscard]] virtual bool resultDependsOnSetting(
         const FunctionResultSetting & /*setting*/, const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const
     {
         return true;

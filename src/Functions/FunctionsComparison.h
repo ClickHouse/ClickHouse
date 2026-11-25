@@ -1905,7 +1905,8 @@ public:
     void updateHash(SipHash & hash) const override { params.updateHash(hash); }
 
     /// A comparison of text with a time parses the text into the type of the time, see `conversionResultDependsOnSetting`.
-    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
     {
         return arguments.size() != 2 || conversionResultDependsOnSetting(setting, arguments[0], arguments[1], /*creates_result_type=*/ false)
             || conversionResultDependsOnSetting(setting, arguments[1], arguments[0], /*creates_result_type=*/ false);

@@ -809,7 +809,7 @@ public:
     void updateHashImpl(SipHash & hash) const override { hash.update(settings_hash); }
 
     /// The JSON (text or a `JSON` value) is converted into the result type.
-    bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    [[nodiscard]] bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
     {
         const auto & arguments = getArgumentTypes();
         return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], getResultType());

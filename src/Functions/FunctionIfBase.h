@@ -19,12 +19,6 @@ namespace DB
 
 class FunctionIfBase : public IFunction
 {
-public:
-    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
-    {
-        return stringBranchesResultDependsOnSetting(setting, result_type);
-    }
-
 #if USE_EMBEDDED_COMPILER
 public:
     [[nodiscard]] bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
@@ -135,6 +129,13 @@ private:
         return result.getSizeOfValueInMemory() == sizeof(Int32) && lifted < std::numeric_limits<Int32>::lowest();
     }
 #endif
+
+public:
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
+    {
+        return stringBranchesResultDependsOnSetting(setting, result_type);
+    }
 };
 
 }

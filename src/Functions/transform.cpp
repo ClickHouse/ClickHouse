@@ -101,7 +101,8 @@ namespace
 
         String getName() const override { return name; }
 
-        bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
+        [[nodiscard]] bool resultDependsOnSetting(
+            const FunctionResultSetting & setting, const DataTypes & /*arguments*/, const DataTypePtr & result_type) const override
         {
             return stringBranchesResultDependsOnSetting(setting, result_type);
         }

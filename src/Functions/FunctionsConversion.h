@@ -3972,7 +3972,8 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
-    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (arguments.empty())
             return true;
@@ -4601,7 +4602,8 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
-    bool resultDependsOnSetting(const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type);
     }
@@ -6142,7 +6144,7 @@ public:
 
     void updateHashImpl(SipHash & hash) const override { settings.updateHash(hash); }
 
-    bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
+    [[nodiscard]] bool resultDependsOnSetting(const FunctionResultSetting & setting) const override
     {
         return argument_types.empty() || conversionResultDependsOnSetting(setting, argument_types[0], return_type);
     }
