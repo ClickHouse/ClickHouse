@@ -1,0 +1,24 @@
+<test>
+    <settings>
+        <!-- JIT compiles some of these functions after a few runs and then bypasses the batch path -->
+        <compile_aggregate_expressions>0</compile_aggregate_expressions>
+    </settings>
+
+    <create_query>CREATE TABLE nullable_arguments (k8 UInt8, k4 UInt32, k1000 UInt32, k_many UInt32, v Nullable(Decimal(15, 2)), v_rare_nulls Nullable(Decimal(15, 2)), v_half_nulls Nullable(Decimal(15, 2)), v_sixteenth_nulls Nullable(Decimal(15, 2))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO nullable_arguments SELECT number % 6, number % 4, number % 1000, number % 1000000, number % 1000, if(number % 20000 = 0, NULL, number % 1000), if(cityHash64(number) % 2 = 0, NULL, number % 1000), if(number % 16 = 0, NULL, number % 1000) FROM numbers_mt(30000000)</fill_query>
+
+    <query>SELECT k8, sum(v), avg(v) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
+    <query>SELECT k4, sum(v), avg(v) FROM nullable_arguments GROUP BY k4 FORMAT Null</query>
+    <query>SELECT k1000, sum(v), avg(v) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k_many, sum(v), avg(v) FROM nullable_arguments GROUP BY k_many FORMAT Null</query>
+    <query>SELECT k4, uniqExact(v) FROM nullable_arguments GROUP BY k4 FORMAT Null</query>
+    <query>SELECT k8, sum(v_rare_nulls), avg(v_rare_nulls) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
+    <query>SELECT k1000, sum(v_rare_nulls), avg(v_rare_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k8, sum(v_half_nulls), avg(v_half_nulls) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
+    <query>SELECT k1000, sumDistinct(v_half_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k1000, sumDistinct(v_sixteenth_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k, sumDistinct(x) FROM (SELECT toUInt8(number % 6) AS k, if(number % 16 = 0, NULL, if(cityHash64(number) % 5 &lt; 3, toDecimal64(number, 2), toDecimal64(number % 1000, 2))) AS x FROM numbers_mt(3000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, sumDistinct(x) FROM (SELECT number % 1000 AS k, if(number % 16 = 0, NULL, if(cityHash64(number) % 5 &lt; 3, toDecimal64(number, 2), toDecimal64(number % 1000, 2))) AS x FROM numbers_mt(3000000)) GROUP BY k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS nullable_arguments</drop_query>
+</test>

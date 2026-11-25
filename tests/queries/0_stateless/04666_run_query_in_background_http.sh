@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-darwin
-# no-darwin: hangs until the timeout on macOS ARM, https://github.com/ClickHouse/ClickHouse/issues/127841
+# Tags: no-ordinary-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,6 +12,14 @@ function run_http()
 {
     local query=$1 query_id=${2:-} run_in_background=${3:-1} user=${4:-}
     $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=${run_in_background}${query_id:+&query_id=$query_id}${user:+&user=$user}" -d "$query"
+}
+
+# Runs the query $1 with query_id $2 in the background; curl writes how long it waited for the answer.
+function run_http_timed()
+{
+    local query=$1 query_id=$2
+    $CLICKHOUSE_CURL -sS -w '%{stderr}%{time_total}' "${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=1&query_id=$query_id" \
+        -d "$query" 2>"$CLICKHOUSE_TMP/$query_id.time"
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"

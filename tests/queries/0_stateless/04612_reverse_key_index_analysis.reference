@@ -8,14 +8,14 @@ ENGINE = MergeTree ORDER BY (g, r DESC);
 INSERT INTO t_enum_rev VALUES ('manual', 'ok'), ('manual', 'poor'), ('novel', 'great'), ('novel', 'great');
 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 0;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_enum_rev WHERE g = 'novel' AND r = 'great' SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
@@ -29,56 +29,56 @@ ENGINE = MergeTree ORDER BY (g, r DESC);
 INSERT INTO t_str_int VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r >= 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r >= 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r >= 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, +Inf)), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r <= 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r <= 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r <= 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in (-Inf, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g >= 'novel' AND r = 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g >= 'novel' AND r = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g >= 'novel' AND r = 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', +Inf)))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_str_int WHERE g = 'manual' AND r > 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'manual' AND r > 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'manual' AND r > 1 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [2, +Inf)), (g in [\'manual\', \'manual\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g = 'manual' AND r = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'manual' AND r = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'manual' AND r = 1 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [1, 1]), (g in [\'manual\', \'manual\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 2;
 0
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_str_int WHERE g = 'novel' AND r = 2 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [2, 2]), (g in [\'novel\', \'novel\']))
 Parts: 0/1
 Granules: 0/1
@@ -92,35 +92,35 @@ ENGINE = MergeTree ORDER BY (r DESC, g);
 INSERT INTO t_rev_first VALUES (2, 'manual'), (1, 'manual'), (3, 'novel'), (3, 'zzz');
 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((g in [\'novel\', \'novel\']), (r in [3, 3]))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3 AND g = 'novel' SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((g in [\'novel\', \'novel\']), (r in [3, 3]))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_rev_first WHERE r = 1 AND g = 'manual';
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 1 AND g = 'manual') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 1 AND g = 'manual' SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((g in [\'manual\', \'manual\']), (r in [1, 1]))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_rev_first WHERE r >= 2 AND g >= 'a';
 3
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r >= 2 AND g >= 'a') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r >= 2 AND g >= 'a' SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((g in [\'a\', +Inf)), (r in [2, +Inf)))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_rev_first WHERE r = 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_rev_first WHERE r = 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: (r in [3, 3])
 Parts: 1/1
 Granules: 1/1
@@ -134,28 +134,28 @@ ENGINE = MergeTree ORDER BY (a DESC, b DESC) SETTINGS index_granularity = 2;
 INSERT INTO t_both_rev SELECT 1 + intDiv(number, 3), 1 + number % 3 FROM numbers(9);
 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((b in [2, 2]), (a in [2, 2]))
 Parts: 1/1
 Granules: 2/5
 Search Algorithm: binary search
 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b = 2 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((b in [2, 2]), (a in [2, 2]))
 Parts: 1/1
 Granules: 2/5
 Search Algorithm: binary search
 SELECT count() FROM t_both_rev WHERE a = 2 AND b >= 2;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b >= 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a = 2 AND b >= 2 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((b in [2, +Inf)), (a in [2, 2]))
 Parts: 1/1
 Granules: 2/5
 Search Algorithm: binary search
 SELECT count() FROM t_both_rev WHERE a >= 2 AND b <= 2;
 4
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a >= 2 AND b <= 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_both_rev WHERE a >= 2 AND b <= 2 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((b in (-Inf, 2]), (a in [2, +Inf)))
 Parts: 1/1
 Granules: 3/5
@@ -170,49 +170,49 @@ SETTINGS allow_nullable_key = 1, index_granularity = 2;
 INSERT INTO t_null VALUES ('a', NULL), ('a', 5), ('a', 3), ('b', NULL), ('b', NULL), ('b', 7);
 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [7, 7]), (g in [\'b\', \'b\']))
 Parts: 1/1
 Granules: 1/3
 Search Algorithm: binary search
 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [7, 7]), (g in [\'b\', \'b\']))
 Parts: 1/1
 Granules: 1/3
 Search Algorithm: binary search
 SELECT count() FROM t_null WHERE g = 'a' AND r >= 4;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'a' AND r >= 4) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'a' AND r >= 4 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [4, +Inf)), (g in [\'a\', \'a\']))
 Parts: 1/1
 Granules: 1/3
 Search Algorithm: binary search
 SELECT count() FROM t_null WHERE g = 'b' AND r IS NULL;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r IS NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r IS NULL SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r isNull), (g in [\'b\', \'b\']))
 Parts: 1/1
 Granules: 2/3
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_null WHERE g = 'b' AND r IS NOT NULL;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r IS NOT NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'b' AND r IS NOT NULL SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r isNotNull), (g in [\'b\', \'b\']))
 Parts: 1/1
 Granules: 1/3
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_null WHERE g = 'a' AND r IS NOT NULL;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'a' AND r IS NOT NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE g = 'a' AND r IS NOT NULL SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r isNotNull), (g in [\'a\', \'a\']))
 Parts: 1/1
 Granules: 2/3
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_null WHERE r IS NULL;
 3
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE r IS NULL) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_null WHERE r IS NULL SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: (r isNull)
 Parts: 1/1
 Granules: 3/3
@@ -226,70 +226,70 @@ ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4;
 INSERT INTO t_big SELECT number % 10, 1000 - number FROM numbers(1000);
 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [995, 995]), (g in [5, 5]))
 Parts: 1/1
 Granules: 2/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 995 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [995, 995]), (g in [5, 5]))
 Parts: 1/1
 Granules: 2/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [945, 945]), (g in [5, 5]))
 Parts: 1/1
 Granules: 1/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r = 945 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [945, 945]), (g in [5, 5]))
 Parts: 1/1
 Granules: 1/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r >= 900;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r >= 900) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r >= 900 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [900, +Inf)), (g in [5, 5]))
 Parts: 1/1
 Granules: 4/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r BETWEEN 500 AND 600;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r BETWEEN 500 AND 600) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r BETWEEN 500 AND 600 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and(and((r in (-Inf, 600]), (r in [500, +Inf))), (g in [5, 5]))
 Parts: 1/1
 Granules: 4/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 9 AND r < 100;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 9 AND r < 100) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 9 AND r < 100 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in (-Inf, 99]), (g in [9, 9]))
 Parts: 1/1
 Granules: 3/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE r = 995;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE r = 995) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE r = 995 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: (r in [995, 995])
 Parts: 1/1
 Granules: 15/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_big WHERE g = 5 AND toInt64(r) >= 900;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND toInt64(r) >= 900) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND toInt64(r) >= 900 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((toInt64(r) in [900, +Inf)), (g in [5, 5]))
 Parts: 1/1
 Granules: 4/250
 Search Algorithm: binary search
 SELECT count() FROM t_big WHERE g = 5 AND r IN (995, 5, 123);
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r IN (995, 5, 123)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_big WHERE g = 5 AND r IN (995, 5, 123) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in 3-element set), (g in [5, 5]))
 Parts: 1/1
 Granules: 4/250
@@ -304,35 +304,35 @@ SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_rows_for_wide_p
 INSERT INTO t_nofinal SELECT 1 + intDiv(number, 5), 5 - number % 5 FROM numbers(10);
 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [1, 1]), (g in [2, 2]))
 Parts: 1/1
 Granules: 2/4
 Search Algorithm: binary search
 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r = 1 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [1, 1]), (g in [2, 2]))
 Parts: 1/1
 Granules: 2/4
 Search Algorithm: binary search
 SELECT count() FROM t_nofinal WHERE g = 2 AND r <= 2;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r <= 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r <= 2 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in (-Inf, 2]), (g in [2, 2]))
 Parts: 1/1
 Granules: 2/4
 Search Algorithm: binary search
 SELECT count() FROM t_nofinal WHERE g = 2 AND r >= 4;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r >= 4) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 2 AND r >= 4 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [4, +Inf)), (g in [2, 2]))
 Parts: 1/1
 Granules: 2/4
 Search Algorithm: binary search
 SELECT count() FROM t_nofinal WHERE g = 1 AND r = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 1 AND r = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nofinal WHERE g = 1 AND r = 1 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [1, 1]), (g in [1, 1]))
 Parts: 1/1
 Granules: 1/4
@@ -346,35 +346,35 @@ ENGINE = MergeTree ORDER BY (a, b DESC, c) SETTINGS index_granularity = 4;
 INSERT INTO t_skip SELECT intDiv(number, 100), 9 - intDiv(number % 100, 10), number % 10 FROM numbers(1000);
 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((c in [7, 7]), (a in [5, 5]))
 Parts: 1/1
 Granules: 16/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND c = 7 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((c in [7, 7]), (a in [5, 5]))
 Parts: 1/1
 Granules: 16/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c = 7;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c = 7) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c = 7 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((c in [7, 7]), and((b in [3, 3]), (a in [5, 5])))
 Parts: 1/1
 Granules: 1/250
 Search Algorithm: binary search
 SELECT count() FROM t_skip WHERE a = 5 AND b >= 8 AND c <= 1;
 4
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b >= 8 AND c <= 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b >= 8 AND c <= 1 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((c in (-Inf, 1]), and((b in [8, +Inf)), (a in [5, 5])))
 Parts: 1/1
 Granules: 3/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c >= 8;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c >= 8) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_skip WHERE a = 5 AND b = 3 AND c >= 8 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((c in [8, +Inf)), and((b in [3, 3]), (a in [5, 5])))
 Parts: 1/1
 Granules: 2/250
@@ -390,42 +390,42 @@ SETTINGS index_granularity = 4,
 INSERT INTO t_unloaded SELECT intDiv(number, 100), 9 - intDiv(number % 100, 10), number % 10 FROM numbers(1000);
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((b in [3, 3]), (a in [5, 5])))
 Parts: 1/1
 Granules: 26/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((b in [3, 3]), (a in [5, 5])))
 Parts: 1/1
 Granules: 26/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 20
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((b in [8, +Inf)), (a in [5, 5])))
 Parts: 1/1
 Granules: 26/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 20
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b >= 8) OR a >= 100 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((b in [8, +Inf)), (a in [5, 5])))
 Parts: 1/1
 Granules: 26/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3 AND c = 7) OR a >= 100;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3 AND c = 7) OR a >= 100) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b = 3 AND c = 7) OR a >= 100 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((c in [7, 7]), and((b in [3, 3]), (a in [5, 5]))))
 Parts: 1/1
 Granules: 26/250
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_unloaded WHERE (a = 5 AND b <= 1) OR a >= 100;
 20
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b <= 1) OR a >= 100) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_unloaded WHERE (a = 5 AND b <= 1) OR a >= 100 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: or((a in [100, +Inf)), and((b in (-Inf, 1]), (a in [5, 5])))
 Parts: 1/1
 Granules: 26/250
@@ -439,21 +439,21 @@ ENGINE = MergeTree ORDER BY (g, r DESC) PRIMARY KEY (g, r);
 INSERT INTO t_explicit_pk VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r = 3 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
 Search Algorithm: binary search
 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r >= 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r >= 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_explicit_pk WHERE g = 'novel' AND r >= 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, +Inf)), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
@@ -466,7 +466,7 @@ CREATE TABLE t_asc (g String, r Int8) ENGINE = MergeTree ORDER BY (g, r);
 INSERT INTO t_asc VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_asc WHERE g = 'novel' AND r = 3;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_asc WHERE g = 'novel' AND r = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_asc WHERE g = 'novel' AND r = 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [3, 3]), (g in [\'novel\', \'novel\']))
 Parts: 1/1
 Granules: 1/1
@@ -481,35 +481,35 @@ ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 1;
 INSERT INTO t_nan VALUES (1, 0/0), (1, 0/0), (1, 5), (1, 3), (2, 0/0), (2, 7);
 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [4., +Inf)), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r >= 4 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [4., +Inf)), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan WHERE g = 1 AND r = 5;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r = 5) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r = 5 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [5., 5.]), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan WHERE g = 1 AND r <= 3;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r <= 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 1 AND r <= 3 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in (-Inf, 3.]), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan WHERE g = 2;
 2
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan WHERE g = 2 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: (g in [2, 2])
 Parts: 1/1
 Granules: 3/6
@@ -523,28 +523,28 @@ ENGINE = MergeTree ORDER BY (g, r) SETTINGS index_granularity = 1;
 INSERT INTO t_nan_asc VALUES (1, 3), (1, 5), (1, 0/0), (1, 0/0), (2, 7), (2, 0/0);
 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [5., 5.]), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 0;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r = 5 SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [5., 5.]), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan_asc WHERE g = 1 AND r >= 4;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r >= 4) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 1 AND r >= 4 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [4., +Inf)), (g in [1, 1]))
 Parts: 1/1
 Granules: 2/6
 Search Algorithm: binary search
 SELECT count() FROM t_nan_asc WHERE g = 2 AND r = 7;
 1
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 2 AND r = 7) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_nan_asc WHERE g = 2 AND r = 7 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((r in [7., 7.]), (g in [2, 2]))
 Parts: 1/1
 Granules: 2/6
@@ -569,14 +569,14 @@ SELECT countIf(org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC')) FROM t_ra
 2933
 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1;
 2933
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in [1781913601, +Inf)), (org in [\'org_m\', \'org_m\']))
 Parts: 1/1
 Granules: 24/95
 Search Algorithm: binary search
 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0;
 2933
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_m' AND dt > toDateTime('2026-06-20', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in [1781913601, +Inf)), (org in [\'org_m\', \'org_m\']))
 Parts: 1/1
 Granules: 24/95
@@ -585,14 +585,14 @@ SELECT countIf(org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC')) FROM t_ra
 267
 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1;
 267
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in (-Inf, 1780617599]), (org in [\'org_a\', \'org_a\']))
 Parts: 1/1
 Granules: 3/95
 Search Algorithm: binary search
 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0;
 267
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in (-Inf, 1780617599]), (org in [\'org_a\', \'org_a\']))
 Parts: 1/1
 Granules: 3/95
@@ -601,7 +601,7 @@ SELECT countIf(org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC')) FROM t_ra
 285
 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC');
 285
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC') SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in [1782604801, +Inf)), (org in [\'org_z\', \'org_z\']))
 Parts: 1/1
 Granules: 4/95
@@ -610,7 +610,7 @@ SELECT countIf(org = 'org_z' AND dt < toDateTime('2026-06-10', 'UTC')) FROM t_ra
 0
 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt < toDateTime('2026-06-10', 'UTC');
 0
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt < toDateTime('2026-06-10', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT count() FROM t_ranges WHERE org = 'org_z' AND dt < toDateTime('2026-06-10', 'UTC') SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in (-Inf, 1781049599]), (org in [\'org_z\', \'org_z\']))
 Parts: 0/1
 Granules: 0/95
@@ -620,7 +620,7 @@ SELECT dt, id FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05'
 2026-06-04 23:45:36	266
 2026-06-04 23:24:00	265
 2026-06-04 23:02:24	264
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT dt, id FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') ORDER BY org, dt DESC, id LIMIT 3 SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT dt, id FROM t_ranges WHERE org = 'org_a' AND dt < toDateTime('2026-06-05', 'UTC') ORDER BY org, dt DESC, id LIMIT 3 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in (-Inf, 1780617599]), (org in [\'org_a\', \'org_a\']))
 Parts: 1/1
 Granules: 3/95
@@ -629,7 +629,7 @@ SELECT dt, id FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28'
 2026-06-30 23:44:52	1999
 2026-06-30 23:29:45	1998
 2026-06-30 23:14:38	1997
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT dt, id FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC') ORDER BY org, dt DESC, id LIMIT 3 SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1, actions = 0, pretty = 0 SELECT dt, id FROM t_ranges WHERE org = 'org_z' AND dt > toDateTime('2026-06-28', 'UTC') ORDER BY org, dt DESC, id LIMIT 3 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Search Algorithm%';
 Condition: and((dt in [1782604801, +Inf)), (org in [\'org_z\', \'org_z\']))
 Parts: 1/1
 Granules: 4/95
