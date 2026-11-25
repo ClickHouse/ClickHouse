@@ -95,6 +95,12 @@ Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
     Expression (Before WINDOW) (rows: ~1000.0, cost: 34200.0)
       Filter ((WHERE + Change column names to column identifiers)) (rows: ~1000.0, cost: 34100.0)
         ReadFromMergeTree (default.t_stats_columns_row_hint) (rows: ~1000.0, cost: 34000.0)
+-- a filter over the read reads only x; k passes it and keeps its distinct count: 10 groups
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: ~10.0, cost: 7390.0)
+    Expression ((Before GROUP BY + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))) (rows: ~1000.0, cost: 6200.0)
+      Filter (((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))[split]) (rows: ~1000.0, cost: 6100.0)
+        ReadFromMergeTree (default.t_stats_columns_small) (rows: ~1000.0, cost: 6000.0)
 -- ARRAY JOIN makes a column of the elements, which does not keep the size of the array: 1 + 2 + 8 + 8
 Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
   Window (Window step for window \'\') (rows: ~1000.0, cost: 85200.0)

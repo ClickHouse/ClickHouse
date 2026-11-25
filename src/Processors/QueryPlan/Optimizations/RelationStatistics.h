@@ -13,6 +13,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class Block;
 
 struct RelationStats
 {
@@ -65,6 +66,12 @@ void keepOnlyEnclosingValueRanges(UnorderedMapWithMemoryTracking<String, ColumnS
 /// single-argument function of it (which cannot increase the distinct count). A function that may
 /// change values records `NDVBoundExpression` and loses the value range, see `keepOnlyEnclosingValueRange`.
 void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+/// Changes the column statistics of the input of a step that runs `actions` into those of its output, which has
+/// `output_header`. The outputs of `actions` get their statistics as in `remapColumnStats`. The step also emits
+/// the input columns that `actions` do not read; these keep their statistics.
+void remapColumnStatsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions, const Block & output_header);
 
 /// The statistics of a direct grouping key of GROUP BY over `input_relation`, which preserves its distinct
 /// set and value range. The distinct count is clamped to the input row count. The input NULL fraction is not

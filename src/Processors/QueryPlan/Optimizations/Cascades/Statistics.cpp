@@ -92,28 +92,6 @@ Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTrack
     return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
-void remapColumnStatisticsOfStep(
-    UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, const ActionsDAG & actions, const Block & output_header)
-{
-    UnorderedSetWithMemoryTracking<String> names_in_actions;
-    for (const auto * input : actions.getInputs())
-        names_in_actions.insert(input->result_name);
-    for (const auto * output : actions.getOutputs())
-        names_in_actions.insert(output->result_name);
-
-    /// See `ActionsDAG::updateHeader`: a column of the input that is not an input of `actions` goes to the
-    /// output unchanged.
-    UnorderedMapWithMemoryTracking<String, ColumnStats> passed_unchanged;
-    for (const auto & [column_name, statistics] : column_statistics)
-    {
-        if (!names_in_actions.contains(column_name) && output_header.has(column_name))
-            passed_unchanged.emplace(column_name, statistics);
-    }
-
-    QueryPlanOptimizations::remapColumnStats(column_statistics, actions);
-    column_statistics.insert(passed_unchanged.begin(), passed_unchanged.end());
-}
-
 /// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
 /// (average bytes of one value per column) are optional:
 ///
@@ -362,14 +340,15 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             auto storage_widths = relation_stats.avg_row_bytes
                 ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
                 : estimateReadColumnWidths(*read_step);
-            /// Column statistics that hold only the sizes, the form that `remapColumnStatisticsOfStep` takes.
+            /// Column statistics that hold only the sizes, the form that `remapColumnStatsOfStep` takes.
             UnorderedMapWithMemoryTracking<String, ColumnStats> column_sizes;
             for (const auto & [column_name, width] : storage_widths)
                 column_sizes[column_name].avg_bytes = width;
             /// The statistics of a filter over the read have the names of the filter's output columns. A column
             /// that the filter passes through keeps the size of its read column.
             if (filter_step)
-                remapColumnStatisticsOfStep(column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
+                QueryPlanOptimizations::remapColumnStatsOfStep(
+                    column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
             for (const auto & [column_name, column_size] : column_sizes)
             {
                 auto & column_stats = stats->column_statistics[column_name];

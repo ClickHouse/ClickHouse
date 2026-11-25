@@ -91,12 +91,6 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 /// over the type-based estimate.
 Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics);
 
-/// Changes the column statistics of the input of a step that runs `actions` into those of its output, which has
-/// `output_header`. The outputs of `actions` get their statistics as in `QueryPlanOptimizations::remapColumnStats`.
-/// The step also emits the input columns that `actions` do not read; these keep their statistics.
-void remapColumnStatisticsOfStep(
-    UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, const ActionsDAG & actions, const Block & output_header);
-
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 
 /// Sets `physical_read_bytes` from the rows the primary key keeps (`physical_selected_rows`,

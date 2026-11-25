@@ -1,9 +1,11 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
 
+#include <Core/Block.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
@@ -107,6 +109,28 @@ void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapp
             stats.avg_bytes = 0;
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
+}
+
+void remapColumnStatsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions, const Block & output_header)
+{
+    UnorderedSetWithMemoryTracking<String> names_in_actions;
+    for (const auto * input : actions.getInputs())
+        names_in_actions.insert(input->result_name);
+    for (const auto * output : actions.getOutputs())
+        names_in_actions.insert(output->result_name);
+
+    /// See `ActionsDAG::updateHeader`: a column of the input that is not an input of `actions` goes to the
+    /// output unchanged.
+    UnorderedMapWithMemoryTracking<String, ColumnStats> passed_unchanged;
+    for (const auto & [column_name, stats] : mapped)
+    {
+        if (!names_in_actions.contains(column_name) && output_header.has(column_name))
+            passed_unchanged.emplace(column_name, stats);
+    }
+
+    remapColumnStats(mapped, actions);
+    mapped.insert(passed_unchanged.begin(), passed_unchanged.end());
 }
 
 UInt64 toUInt64Saturating(Float64 estimate)
