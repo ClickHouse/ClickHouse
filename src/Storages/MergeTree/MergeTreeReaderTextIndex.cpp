@@ -694,7 +694,7 @@ void MergeTreeReaderTextIndex::registerReadRanges()
     if (positions_stream)
         positions_stream->recordBytesConsumed();
 
-    ReadRangesRegistry::Batch batch;
+    size_t bytes = 0;
     auto register_file = [&](FileRangesRead & file, std::string_view kind)
     {
         if (file.ranges.empty())
@@ -702,11 +702,11 @@ void MergeTreeReaderTextIndex::registerReadRanges()
         if (!file.read_ranges)
             file.read_ranges = &read_ranges_registry->getReadRanges(fmt::format(
                 "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
-        read_ranges_registry->registerRanges(batch, *file.read_ranges, file.ranges);
+        bytes += read_ranges_registry->registerRanges(*file.read_ranges, file.ranges);
     };
     register_file(postings_ranges_read, "postings");
     register_file(positions_ranges_read, "positions");
-    read_ranges_registry->commit(batch);
+    read_ranges_registry->commit(bytes);
 
     if (read_ranges_registry->stopped())
     {
