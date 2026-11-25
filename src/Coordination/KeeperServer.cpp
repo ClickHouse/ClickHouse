@@ -15,7 +15,9 @@
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/callback.hxx>
@@ -40,7 +42,6 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadStatus.h>
-#include <base/unaligned.h>
 
 #include <algorithm>
 
@@ -985,31 +986,22 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
 std::string KeeperServer::takeSessionTouches()
 {
     std::unordered_set<int64_t> session_touches;
-    std::string metadata;
     {
         std::lock_guard lock(session_touches_mutex);
         if (pending_session_touches.empty())
             return {};
 
-        metadata.resize(SESSION_TOUCHES_METADATA_HEADER_SIZE + sizeof(Int64) * pending_session_touches.size());
         session_touches.swap(pending_session_touches);
     }
 
-    char * position = metadata.data();
-    memcpy(position, SESSION_TOUCHES_METADATA_MAGIC.data(), SESSION_TOUCHES_METADATA_MAGIC.size());
-    position += SESSION_TOUCHES_METADATA_MAGIC.size();
-    unalignedStoreLittleEndian<UInt8>(position, static_cast<UInt8>(CURRENT_SESSION_TOUCHES_METADATA_VERSION));
-    position += sizeof(UInt8);
-    unalignedStoreLittleEndian<UInt64>(position, session_touches.size());
-    position += sizeof(UInt64);
-
+    WriteBufferFromOwnString buf;
+    writeString(SESSION_TOUCHES_METADATA_MAGIC, buf);
+    writeBinaryLittleEndian(static_cast<UInt8>(CURRENT_SESSION_TOUCHES_METADATA_VERSION), buf);
+    writeBinaryLittleEndian(static_cast<UInt64>(session_touches.size()), buf);
     for (int64_t session_id : session_touches)
-    {
-        unalignedStoreLittleEndian<Int64>(position, session_id);
-        position += sizeof(session_id);
-    }
+        writeBinaryLittleEndian(session_id, buf);
 
-    return metadata;
+    return buf.str();
 }
 
 void KeeperServer::applySessionTouches(std::string_view metadata)
@@ -1018,13 +1010,14 @@ void KeeperServer::applySessionTouches(std::string_view metadata)
         || !metadata.starts_with(SESSION_TOUCHES_METADATA_MAGIC))
         return;
 
-    const char * position = metadata.data() + SESSION_TOUCHES_METADATA_MAGIC.size();
-    const auto version = static_cast<SessionTouchesMetadataVersion>(unalignedLoadLittleEndian<UInt8>(position));
-    if (version != CURRENT_SESSION_TOUCHES_METADATA_VERSION)
+    ReadBufferFromMemory in(metadata.substr(SESSION_TOUCHES_METADATA_MAGIC.size()));
+    UInt8 version = 0;
+    readBinaryLittleEndian(version, in);
+    if (static_cast<SessionTouchesMetadataVersion>(version) != CURRENT_SESSION_TOUCHES_METADATA_VERSION)
         return;
 
-    position += sizeof(UInt8);
-    const auto count = unalignedLoadLittleEndian<UInt64>(position);
+    UInt64 count = 0;
+    readBinaryLittleEndian(count, in);
     if (count > (metadata.size() - SESSION_TOUCHES_METADATA_HEADER_SIZE) / sizeof(Int64))
     {
         LOG_WARNING(
@@ -1046,16 +1039,12 @@ void KeeperServer::applySessionTouches(std::string_view metadata)
         return;
     }
 
-    std::vector<int64_t> session_ids;
-    session_ids.reserve(count);
-    position = metadata.data() + SESSION_TOUCHES_METADATA_HEADER_SIZE;
-    for (UInt64 i = 0; i < count; ++i)
-    {
-        session_ids.push_back(unalignedLoadLittleEndian<Int64>(position));
-        position += sizeof(Int64);
-    }
+    std::vector<int64_t> session_ids(count);
+    for (auto & session_id : session_ids)
+        readBinaryLittleEndian(session_id, in);
 
-    state_machine->touchSessions(session_ids);
+    std::lock_guard lock(received_session_touches_mutex);
+    received_session_touches.insert(session_ids.begin(), session_ids.end());
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
@@ -1258,8 +1247,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         session_expiry_queue_refreshed_for_leadership = false;
         /// Do not carry pending touches into another leadership term.
-        std::lock_guard lock(session_touches_mutex);
-        pending_session_touches.clear();
+        {
+            std::lock_guard lock(session_touches_mutex);
+            pending_session_touches.clear();
+        }
+        {
+            std::lock_guard lock(received_session_touches_mutex);
+            received_session_touches.clear();
+        }
     }
 
     if (type == nuraft::cb_func::BecomeLeader)
@@ -1676,7 +1671,26 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
         return {};
     }
 
-    return state_machine->getDeadSessions();
+    std::unordered_set<int64_t> session_touches;
+    {
+        std::lock_guard lock(received_session_touches_mutex);
+        session_touches.swap(received_session_touches);
+    }
+
+    if (!session_touches.empty())
+        state_machine->touchSessions({session_touches.begin(), session_touches.end()});
+
+    auto dead_sessions = state_machine->getDeadSessions();
+    if (!dead_sessions.empty())
+    {
+        /// A touch received after the batch was taken must also prevent expiration in this check.
+        std::lock_guard lock(received_session_touches_mutex);
+        std::erase_if(dead_sessions, [&](int64_t session_id) TSA_REQUIRES(received_session_touches_mutex)
+        {
+            return received_session_touches.contains(session_id);
+        });
+    }
+    return dead_sessions;
 }
 
 KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(

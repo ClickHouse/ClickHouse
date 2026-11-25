@@ -123,6 +123,10 @@ private:
     std::mutex session_touches_mutex;
     std::unordered_set<int64_t> pending_session_touches TSA_GUARDED_BY(session_touches_mutex);
 
+    /// Follower touches received by the leader, applied before checking for expired sessions.
+    std::mutex received_session_touches_mutex;
+    std::unordered_set<int64_t> received_session_touches TSA_GUARDED_BY(received_session_touches_mutex);
+
     mutable std::mutex leader_unavailable_metrics_mutex;
     UInt64 leader_unavailable_since_ms = 0;
     UInt64 election_since_ms = 0;
