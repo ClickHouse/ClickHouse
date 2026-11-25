@@ -2,6 +2,7 @@
 #include <IO/PackedFilesReader.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileView.h>
+#include <IO/ReadPipeline.h>
 
 #include <filesystem>
 
@@ -149,8 +150,10 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
     /// they require special alignment which cannot be achieved while reading archive file.
     /// So just disable them.
-    auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint);
-    return std::make_unique<ReadBufferFromFileView>(std::move(in), file_name, offset, offset + size);
+    ReadPipeline pipeline;
+    disk->prepareRead(data_file_name, patchSettings(settings), read_hint, pipeline);
+    pipeline.setInitialReadBounds(offset, offset + size);
+    return std::make_unique<ReadBufferFromFileView>(pipeline.build(), file_name, offset, offset + size);
 }
 
 }

@@ -215,6 +215,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
     impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
 
+    if (initial_read_bounds)
+        impl->setReadBounds(initial_read_bounds->first, initial_read_bounds->second);
+
     return impl;
 }
 
@@ -839,10 +842,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     if (layers && initial_read_bounds)
     {
         const size_t headers_size = layers * FileEncryption::Header::kSize;
-        const auto [left, right] = *initial_read_bounds;
-        const size_t end = left == 0 ? headers_size + right : headers_size;
-        impl->setReadUntilPosition(end);
-        impl->setReadBounds(0, end);
+        impl->setReadUntilPosition(headers_size);
+        impl->setReadBounds(0, headers_size);
     }
     else if (layers && initial_read_until_position)
     {

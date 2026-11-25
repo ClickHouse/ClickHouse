@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileView.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadPipeline.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -161,8 +162,10 @@ MergeTreeMarksLoader::OpenedMarks MergeTreeMarksLoader::openMarksReader()
         size_t mark_size = num_columns_in_mark * sizeof(MarkInCompressedFile);
         auto path_for_errors = fmt::format("{} [{}, {})", (fs::path(data_part_storage->getFullPath()) / mrk_path).string(), slice->begin, slice->end);
 
-        auto file_buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(slice_size), slice_size);
-        auto view = std::make_unique<ReadBufferFromFileView>(std::move(file_buffer), path_for_errors, slice->begin, slice->end);
+        ReadPipeline pipeline;
+        data_part_storage->prepareRead(mrk_path, read_settings.adjustBufferSize(slice_size), slice_size, pipeline);
+        pipeline.setInitialReadBounds(slice->begin, slice->end);
+        auto view = std::make_unique<ReadBufferFromFileView>(pipeline.build(), path_for_errors, slice->begin, slice->end);
         auto reader = std::make_unique<CompressedReadBufferFromFile>(std::move(view));
         return {std::move(reader), /*adaptive=*/ false, mark_size, std::move(path_for_errors)};
     }
