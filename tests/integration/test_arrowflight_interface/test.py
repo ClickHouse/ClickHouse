@@ -992,3 +992,21 @@ def test_table_function():
     assert node.query(
         "SELECT * FROM arrowFlight(flight1, dataset = 'mytable') ORDER BY id"
     ) == TSV([[1, "a"], [2, "b"], [3, "c"]])
+
+
+def test_table_function_enum_check():
+    node.query("CREATE TABLE mytable (x Int8) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO mytable VALUES (5), (7)")
+    node.query(
+        "CREATE TABLE enum_flight (x Enum8('a' = 5, 'b' = 6)) ENGINE = ArrowFlight(flight1, dataset = 'mytable')"
+    )
+    try:
+        assert "UNKNOWN_ELEMENT_OF_ENUM" in node.query_and_get_error(
+            "SELECT CAST(x, 'Int8') FROM enum_flight"
+        )
+        assert node.query(
+            "SELECT CAST(x, 'Int8') AS v FROM enum_flight ORDER BY v",
+            settings={"check_conversion_from_numbers_to_enum": 0},
+        ) == TSV([[5], [7]])
+    finally:
+        node.query("DROP TABLE enum_flight")
