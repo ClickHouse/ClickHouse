@@ -57,6 +57,7 @@ struct LastElementCacheStats
 
     void update(size_t num_tries, size_t num_misses)
     {
+        chassert(num_misses <= num_tries);
         hits += num_tries - num_misses;
         misses += num_misses;
     }

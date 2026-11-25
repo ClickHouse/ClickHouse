@@ -40,19 +40,6 @@ FileEncryption::Header readHeader(ReadBufferFromFileBase & read_buffer)
 
 }
 
-SecretString DiskEncryptedSettings::findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const
-{
-    auto it = all_keys.find(key_fingerprint);
-    if (it == all_keys.end())
-    {
-        throw Exception(
-            ErrorCodes::DATA_ENCRYPTION_ERROR,
-            "Not found an encryption key required to decipher file {}",
-            quoteString(path_for_logs));
-    }
-    return it->second;
-}
-
 void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     auto wrapped_from_path = wrappedPath(from_file_path);
@@ -111,7 +98,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
             old_file_size = size - FileEncryption::Header::kSize;
             auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
-            key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
+            key = current_settings.findKeyByFingerprint(header.key_fingerprint, "file " + quoteString(path));
         }
         else if (size == FileEncryption::Header::kSize)
         {
