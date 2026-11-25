@@ -1,0 +1,3 @@
+--- Statements other than SELECT are rejected
+--- What the database reads differently from ClickHouse is rejected
+--- SELECT is sent
