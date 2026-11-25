@@ -22,6 +22,13 @@ constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 /// Checked for every table path the store builds. The handler maps `BAD_ARGUMENTS` to a 400 response.
 void validateTableName(const String & name);
 
+/// What Keeper stores for a namespace. The uuid pins the identity across a drop and re-create under the same name.
+struct IcebergNamespaceState
+{
+    String uuid;
+    std::map<String, String> properties;
+};
+
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {
@@ -44,7 +51,8 @@ struct UpdateNamespacePropertiesResult
 /// Layout under `root_path`, which is `<warehouse node>/<warehouse uuid>`.
 /// `<root>/namespaces` and `<root>/tables_by_uuid` are created with the warehouse.
 /// A warehouse dropped and created again gets a new uuid. So a request that still holds the old warehouse cannot write into the new one.
-///   <root>/namespaces/<level>              data: JSON object of namespace properties
+///   <root>/namespaces/<level>              data: namespace uuid, written once at create
+///   <root>/namespaces/<level>/<uuid>       data: JSON object of namespace properties, the node a property update sets
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
 ///   <root>/namespaces/<level>/tables/<t>   data: table uuid, written once at create
@@ -54,6 +62,8 @@ struct UpdateNamespacePropertiesResult
 /// The uuid node is outside the namespace tree, so a rename moves only the name node and the version keeps counting.
 /// Drop and rename read the uuid from the name node and then remove the guard child in the same multi-request as the name node.
 /// A table re-created under the same name has another guard child, so the multi-request fails instead of acting on the wrong table.
+/// The namespace uuid node pins the identity of a namespace. A namespace re-created under the same name gets another uuid,
+/// so a stale property update or table create misses it.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -72,7 +82,17 @@ public:
 
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
-    std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+    enum class DropNamespaceResult
+    {
+        Dropped,
+        NamespaceMissing,
+        /// The namespace has tables or child namespaces.
+        NotEmpty,
+    };
+
+    DropNamespaceResult dropNamespace(const IcebergNamespaceName & name);
+
+    std::optional<IcebergNamespaceState> getNamespace(const IcebergNamespaceName & name) const;
 
     /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
     std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
@@ -88,7 +108,8 @@ public:
         NamespaceMissing,
     };
 
-    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer);
+    /// The table is registered only while the namespace still has `namespace_uuid`, the uuid its location came from.
+    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & namespace_uuid, const String & table, const IcebergTablePointer & pointer);
 
     std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
 
@@ -147,6 +168,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     String namespacePath(const IcebergNamespaceName & name) const;
+    String namespaceUuidPath(const IcebergNamespaceName & name, const String & uuid) const;
     /// Node that holds the direct children of `name`. Empty `name` means the root list.
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;

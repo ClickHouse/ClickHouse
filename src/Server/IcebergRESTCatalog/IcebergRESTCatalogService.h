@@ -74,6 +74,7 @@ private:
     [[nodiscard]] IcebergRESTResponse handleCreateNamespace(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleLoadNamespace(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleNamespaceExists(const RoutedRequest & request) const;
+    [[nodiscard]] IcebergRESTResponse handleDropNamespace(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleUpdateNamespaceProperties(const RoutedRequest & request) const;
 
     /// Tables.
@@ -106,6 +107,7 @@ private:
     [[nodiscard]] IcebergRESTCatalogWarehouse::CreateTableResult writeAndRegisterTable(
         const IcebergRESTCatalogWarehouse & warehouse,
         const IcebergNamespaceName & ns,
+        const String & namespace_uuid,
         const String & table,
         const IcebergTablePointer & pointer,
         const Poco::JSON::Object::Ptr & metadata,
