@@ -395,6 +395,7 @@ static struct InitFiu
     REGULAR(merge_task_throw_while_preparing_next_column) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
+    PAUSEABLE(rmt_cleanup_pause_before_removing_part_from_filesystem) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
     PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
     PAUSEABLE(merge_tree_background_task_marked_for_deletion) \

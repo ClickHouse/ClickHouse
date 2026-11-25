@@ -258,6 +258,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
+    extern const char rmt_cleanup_pause_before_removing_part_from_filesystem[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
     extern const char zero_copy_lock_zk_fail_before_op[];
@@ -9507,13 +9508,22 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKee
     }
     parts.clear();
 
+    /// Removing a large batch from remote storage can take minutes, and `partialShutdown` waits for it, keeping
+    /// the table readonly after a session expiration. Skipped parts are rolled back to Outdated; for those already
+    /// removed from ZooKeeper, the next attempt finds no node and only removes them from the filesystem.
+    auto is_cancelled = [this]
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_cleanup_pause_before_removing_part_from_filesystem);
+        return partial_shutdown_called || shutdown_called;
+    };
+
     /// Delete duplicate parts from filesystem
     if (!parts_to_delete_only_from_filesystem.empty())
     {
         /// It can happen that some error appear during part removal from FS.
         /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
         /// Otherwise nobody will try to remove them again (see grabOldParts).
-        clearPartsFromFilesystemAndRollbackIfError(parts_to_delete_only_from_filesystem, "old duplicate");
+        clearPartsFromFilesystemAndRollbackIfError(parts_to_delete_only_from_filesystem, "old duplicate", is_cancelled);
     }
 
     /// Delete normal parts from ZooKeeper
@@ -9559,7 +9569,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKee
         /// It can happen that some error appear during part removal from FS.
         /// In case of such exception we have to change state of failed parts from Deleting to Outdated.
         /// Otherwise nobody will try to remove them again (see grabOldParts).
-        clearPartsFromFilesystemAndRollbackIfError(parts_to_remove_from_filesystem, "old");
+        clearPartsFromFilesystemAndRollbackIfError(parts_to_remove_from_filesystem, "old", is_cancelled);
     }
 }
 

@@ -5391,7 +5391,8 @@ catch (...)
 }
 
 
-void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete)
+void MergeTreeData::clearPartsFromFilesystemImpl(
+    const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete, const std::function<bool()> & is_cancelled)
 {
     NameSet part_names_succeed;
 
@@ -5412,7 +5413,11 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
 
     try
     {
-        clearPartsFromFilesystemImplMaybeInParallel(parts, &part_names_succeed);
+        clearPartsFromFilesystemImplMaybeInParallel(parts, &part_names_succeed, is_cancelled);
+        /// Without an exception, the only reason to skip a part is cancellation.
+        if (part_names_succeed.size() != parts.size())
+            LOG_INFO(log, "Removal of parts from filesystem was cancelled after removing {} of {} parts",
+                     part_names_succeed.size(), parts.size());
         get_failed_parts();
     }
     catch (...)
@@ -5426,19 +5431,24 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
     }
 }
 
-void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
+void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(
+    const DataPartsVector & parts_to_remove, NameSet * part_names_succeed, const std::function<bool()> & is_cancelled)
 {
     if (parts_to_remove.empty())
         return;
 
     const auto settings = getSettings();
 
-    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
+    auto cancelled = [&is_cancelled] { return is_cancelled && is_cancelled(); };
+
+    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed, &cancelled]()
     {
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
+            if (cancelled())
+                return;
             asMutableDeletingPart(part)->remove();
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
@@ -5488,8 +5498,10 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             /// Passing by reference here is safe:
             /// part is part of parts_to_remove which outlives runner
             /// part_names_mutex is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
+            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, &cancelled, thread_group = CurrentThread::getGroup()]
             {
+                if (cancelled())
+                    return;
                 asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
                 {
@@ -5572,18 +5584,21 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), ThreadName::MERGETREE_PARTS_CLEANUP);
 
-    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed](
+    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed, &cancelled](
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
         /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
         /// part_names_mutex is fine since it's created before runner and outlives it
         runner.enqueueAndKeepTrack(
-            [this, range, &part_names_mutex, part_names_succeed, batch = std::move(parts_in_range)]
+            [this, range, &part_names_mutex, part_names_succeed, &cancelled, batch = std::move(parts_in_range)]
         {
             LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
 
             for (const auto & part : batch)
             {
+                /// Stopping keeps the order inside the range: later parts of a mutation chain are not removed before earlier ones.
+                if (cancelled())
+                    return;
                 asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
                 {
@@ -5673,10 +5688,11 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
-size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type)
+size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(
+    const DataPartsVector & parts_to_delete, const String & parts_type, const std::function<bool()> & is_cancelled)
 {
     NameSet parts_failed_to_delete;
-    clearPartsFromFilesystemImpl(parts_to_delete, false, &parts_failed_to_delete);
+    clearPartsFromFilesystemImpl(parts_to_delete, false, &parts_failed_to_delete, is_cancelled);
 
     DataPartsVector finally_remove_parts;
     if (!parts_failed_to_delete.empty())

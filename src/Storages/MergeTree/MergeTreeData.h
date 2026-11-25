@@ -1146,17 +1146,25 @@ public:
 
     /// Try to clear parts from filesystem.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+    /// If `is_cancelled` returns `true`, the remaining parts are not removed and are reported as failed.
+    void clearPartsFromFilesystemImpl(
+        const DataPartsVector & parts,
+        bool throw_on_error,
+        NameSet * parts_failed_to_delete,
+        const std::function<bool()> & is_cancelled = {});
 
     /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
     /// Throw exception in case of errors.
     /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+    /// `is_cancelled` is checked before removing each part.
+    void clearPartsFromFilesystemImplMaybeInParallel(
+        const DataPartsVector & parts_to_remove, NameSet * part_names_succeed, const std::function<bool()> & is_cancelled);
 
     /// Try to clear parts from filesystem.
     /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
     /// That allows to schedule them for deletion a bit later
-    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
+    size_t clearPartsFromFilesystemAndRollbackIfError(
+        const DataPartsVector & parts_to_delete, const String & parts_type, const std::function<bool()> & is_cancelled = {});
 
     /// Root-level temporary directory prefixes used by periodic cleanup.
     /// Intentionally does not include `delete_tmp_`: active part removal owns those directories.
