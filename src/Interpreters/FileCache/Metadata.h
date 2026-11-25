@@ -308,7 +308,7 @@ private:
     struct DownloadThread
     {
         std::unique_ptr<ThreadFromGlobalPool> thread;
-        bool stop_flag{false};
+        std::atomic<bool> stop_flag{false};
     };
 
     std::atomic<size_t> download_threads_num;
@@ -318,14 +318,14 @@ private:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);
 
     MetadataBucket & getMetadataBucket(const Key & key);
-    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory) const;
+    void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory, const std::atomic<bool> & stop_flag) const;
     MetadataBucket::iterator removeEmptyKey(
         MetadataBucket & bucket,
         MetadataBucket::iterator it,
         LockedKey &,
         const CacheMetadataGuard::Lock &);
 
-    void downloadThreadFunc(const bool & stop_flag);
+    void downloadThreadFunc(const std::atomic<bool> & stop_flag);
 
     /// Firstly, this cleanup does not delete cache files,
     /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.

@@ -375,12 +375,19 @@ String FileSegment::getOrSetDownloader(const IOSchedulingSettings & io_schedulin
 
         auto & download = getOrCreateDownloadDataUnlocked(lk);
         setReaderIOSchedulingUnlocked(download, io_scheduling);
+        download.downloader_workload = io_scheduling.workload;
         current_downloader = download.downloader_id = caller_id;
         setDownloadState(State::DOWNLOADING, lk);
         chassert(key_metadata.lock());
     }
 
     return current_downloader;
+}
+
+std::shared_ptr<const IOSchedulingWorkload> FileSegment::getDownloaderWorkload() const
+{
+    auto lk = lock();
+    return download_data ? download_data->downloader_workload : nullptr;
 }
 
 scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
@@ -402,6 +409,7 @@ scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
     /// Unbind it like `getOrSetDownloader` does, because `complete` keeps the links while there is a downloader
     /// and they would outlive the holder they belong to.
     setReaderIOSchedulingUnlocked(download, {});
+    /// It does not download, so `downloader_workload` stays that of the last download.
     download.downloader_id = getCallerId();
     setDownloadState(State::DOWNLOADING, lk);
     return [this]

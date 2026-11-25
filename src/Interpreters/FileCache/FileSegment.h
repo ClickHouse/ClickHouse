@@ -150,6 +150,9 @@ public:
     /// When the caller is elected, the remote reader is switched to `io_scheduling` (the caller's links).
     String getOrSetDownloader(const IOSchedulingSettings & io_scheduling = {});
 
+    /// The workload of the last elected downloader, which the background download is charged to.
+    std::shared_ptr<const IOSchedulingWorkload> getDownloaderWorkload() const;
+
     bool isDownloader() const;
 
     DownloaderId getDownloader() const;
@@ -372,6 +375,8 @@ private:
         RemoteFileReaderPtr remote_file_reader;
         /// The links `remote_file_reader` carries: empty, or those of a holder that has not finished `complete`.
         IOSchedulingSettings reader_io_scheduling;
+        /// Unlike the links, it stays after the downloader's query ends.
+        std::shared_ptr<const IOSchedulingWorkload> downloader_workload;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
         mutable std::mutex write_mutex;

@@ -9,6 +9,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
 #include <unordered_set>
@@ -890,7 +891,8 @@ private:
     std::atomic<size_t> queue_size_limit;
     mutable std::mutex mutex;
     std::condition_variable cv;
-    bool cancelled = false;
+    /// Written under `mutex`, read without it by a running download.
+    std::atomic<bool> cancelled = false;
 
     struct DownloadInfo
     {
@@ -912,7 +914,44 @@ private:
     std::queue<DownloadInfo> queue;
 };
 
-void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
+namespace
+{
+
+/// Makes the links of a background download for the workload of the query that left the file segment
+/// partially downloaded. Returns false if the workload or one of its resources no longer exists.
+bool getBackgroundDownloadLinks(
+    const std::shared_ptr<const IOSchedulingWorkload> & workload, ClassifierPtr & classifier, IOSchedulingSettings & io_scheduling)
+{
+    try
+    {
+        /// The download is not the query, so it does not get the query's weight or priority.
+        classifier = Context::getGlobalContextInstance()->getResourceManager()->acquire(workload->workload, ClassifierSettings{});
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+
+    auto get_link = [&](const String & resource, ResourceLink & link)
+    {
+        if (resource.empty())
+            return true;
+        if (!classifier->has(resource))
+            return false;
+        link = classifier->get(resource);
+        return true;
+    };
+    if (!get_link(workload->read_resource, io_scheduling.read_resource_link)
+        || !get_link(workload->write_resource, io_scheduling.write_resource_link))
+        return false;
+    io_scheduling.workload = workload;
+    return true;
+}
+
+}
+
+void CacheMetadata::downloadThreadFunc(const std::atomic<bool> & stop_flag)
 {
     std::optional<Memory<>> memory;
     while (true)
@@ -945,6 +984,8 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 
         try
         {
+            /// Owns the links of the download and must outlive the `complete` of `holder`, which unbinds the reader from them.
+            ClassifierPtr classifier;
             FileSegmentsHolderPtr holder;
             try
             {
@@ -969,13 +1010,27 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 
                 auto & file_segment = holder->front();
 
-                if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
+                IOSchedulingSettings io_scheduling;
+                if (auto workload = file_segment.getDownloaderWorkload())
+                {
+                    if (!getBackgroundDownloadLinks(workload, classifier, io_scheduling))
+                    {
+                        LOG_TEST(
+                            log, "Skipping background download of {}:{}, because workload `{}` or its resource does not exist",
+                            file_segment.key(), file_segment.offset(), workload->workload);
+                        holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+                        continue;
+                    }
+                    holder->setIOSchedulingSettings(io_scheduling);
+                }
+
+                if (file_segment.getOrSetDownloader(io_scheduling) != FileSegment::getCallerId())
                     continue;
 
                 chassert(file_segment.getDownloadedSize() != file_segment.range().size());
                 chassert(file_segment.assertCorrectness());
 
-                downloadImpl(file_segment, memory);
+                downloadImpl(file_segment, memory, stop_flag);
                 holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
@@ -1010,7 +1065,7 @@ bool CacheMetadata::setBackgroundDownloadQueueSizeLimit(size_t size)
     return download_queue->setQueueLimit(size);
 }
 
-void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory) const
+void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory, const std::atomic<bool> & stop_flag) const
 {
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
@@ -1045,7 +1100,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         buf->seek(offset, SEEK_SET);
 
     FileCacheReserveAhead reserve_ahead;
-    while (size_to_download && !buf->eof())
+    /// A read can wait for the workload's limits, so stop between reads not to hold up the shutdown.
+    while (size_to_download && !stop_flag && !download_queue->cancelled && !buf->eof())
     {
         const auto available = buf->available();
         chassert(available);
