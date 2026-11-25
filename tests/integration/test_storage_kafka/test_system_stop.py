@@ -1126,3 +1126,54 @@ def test_refresh_survives_unready_dependencies(kafka_cluster):
         instance.query(f"ATTACH TABLE test.{table}_dst")
         wait_dst_count(table, 6)
         assert_dst_count_stable(table, 6, seconds=5)
+
+
+@pytest.mark.parametrize("refresh_while_stopped", [False, True], ids=["streaming", "refresh"])
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, refresh_while_stopped):
+    # A view created while a streaming cycle waits must get the messages that cycle polls,
+    # although its insert pipeline was built without the view.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_new_view_{k.random_string(6)}"
+    failpoint = "kafka_pause_after_building_insert_pipeline"
+    with k.kafka_topic(admin_client, table):
+        setup_consuming_table(table, table, keeper=keeper)
+        instance.query(
+            f"CREATE TABLE test.{table}_dst2 (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key"
+        )
+
+        produce(kafka_cluster, table, 0, 1)
+        wait_dst_count(table, 1)
+
+        if refresh_while_stopped:
+            stopped = f"test.{table}.*Consumption is stopped"
+            before = int(instance.count_in_log(stopped))
+            instance.query(f"SYSTEM STOP test.{table}")
+            deadline = time.monotonic() + 60
+            while int(instance.count_in_log(stopped)) <= before:
+                assert time.monotonic() < deadline, "the streaming task of the stopped table did not run"
+                time.sleep(0.5)
+
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            if refresh_while_stopped:
+                instance.query(f"SYSTEM REFRESH test.{table}")
+            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            instance.query(
+                f"CREATE MATERIALIZED VIEW test.{table}_mv2 TO test.{table}_dst2 AS "
+                f"SELECT key, value FROM test.{table}"
+            )
+            produce(kafka_cluster, table, 1, 100)
+        finally:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        wait_dst_count(table, 101)
+        result = instance.query_with_retry(
+            f"SELECT count() FROM test.{table}_dst2",
+            check_callback=lambda res: int(res) == 100,
+            retry_count=120,
+            sleep_time=0.5,
+        )
+        assert int(result) == 100, f"expected 100 rows in {table}_dst2, got {result!r}"
+        assert int(instance.query(f"SELECT uniqExact(key) FROM test.{table}_dst2")) == 100
+        assert_dst_count_stable(table, 101, seconds=3)

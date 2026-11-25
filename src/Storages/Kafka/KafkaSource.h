@@ -28,7 +28,8 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         bool commit_in_suffix = false,
-        std::optional<UInt64> cancel_epoch_ = {});
+        std::optional<UInt64> cancel_epoch_ = {},
+        std::optional<std::vector<StorageID>> streaming_views_ = {});
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -37,6 +38,7 @@ public:
 
     void commit();
     bool isStalled() const { return !consumer || consumer->isStalled(); }
+    bool endedOnViewsChange() const { return ended_on_views_change; }
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
@@ -57,6 +59,9 @@ private:
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;
     const UInt64 cancel_epoch;
+    /// Background streaming only: the ready views the insert pipeline of this cycle was built for.
+    const std::optional<std::vector<StorageID>> streaming_views;
+    bool ended_on_views_change = false;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

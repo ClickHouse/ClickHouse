@@ -132,6 +132,7 @@ namespace FailPoints
 {
 extern const char kafka2_remove_zk_before_get_children[];
 extern const char kafka2_remove_zk_before_final_multi[];
+extern const char kafka_pause_after_building_insert_pipeline[];
 }
 
 namespace ErrorCodes
@@ -1300,8 +1301,9 @@ void StorageKafka2::threadFunc(size_t idx)
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
         const UInt64 refresh_epoch = task->last_seen_refresh_epoch;
+        bool claimed_blocked_refresh = false;
         const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
-        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch, &claimed_blocked_refresh);
 
         if (num_views && run_cycle)
         {
@@ -1333,7 +1335,8 @@ void StorageKafka2::threadFunc(size_t idx)
                 while (!task->stream_cancelled && num_created_consumers > 0)
                 {
                     maybe_stall_reason.reset();
-                    if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                    auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                    if (views.empty())
                     {
                         ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                         break;
@@ -1341,8 +1344,15 @@ void StorageKafka2::threadFunc(size_t idx)
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
+                    const bool refresh_cycle = std::exchange(claimed_blocked_refresh, false);
+                    bool views_changed = false;
+                    maybe_stall_reason = streamToViews(idx, cycle_epoch, views, views_changed);
+                    /// A REFRESH cycle that ended unconsumed on a view change gives its permit back.
+                    if (views_changed && refresh_cycle)
+                        task->last_seen_refresh_epoch = refresh_epoch;
+
                     // Exit the loop & reschedule if some stream stalled
-                    if (maybe_stall_reason = streamToViews(idx, cycle_epoch); maybe_stall_reason.has_value())
+                    if (maybe_stall_reason.has_value())
                     {
                         LOG_TRACE(
                             log,
@@ -1392,7 +1402,8 @@ void StorageKafka2::threadFunc(size_t idx)
     }
 }
 
-std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch)
+std::optional<StorageKafka2::StallKind>
+StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
 
@@ -1422,7 +1433,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch, cycle_epoch, views, views_changed);
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
@@ -1557,7 +1568,12 @@ void StorageKafka2::cleanConsumers()
     consumers.clear();
 }
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, UInt64 cycle_epoch)
+std::optional<size_t> StorageKafka2::streamFromConsumer(
+    KeeperHandlingConsumer & consumer,
+    const Stopwatch & watch,
+    UInt64 cycle_epoch,
+    const std::vector<StorageID> & views,
+    bool & views_changed)
 {
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -1578,10 +1594,17 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
         /* async_insert */ false);
     auto block_io = interpreter.execute();
 
+    FailPointInjection::pauseFailPoint(FailPoints::kafka_pause_after_building_insert_pipeline);
+
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
 
-    if (isConsumeCancelRequested(cycle_epoch))
+    const bool cancelled = isConsumeCancelRequested(cycle_epoch);
+    views_changed = !cancelled && maybe_blocks_and_guard.has_value() && !maybe_blocks_and_guard->blocks.empty()
+        && StorageKafkaUtils::viewsChanged(getStorageID(), getContext(), views);
+    if (cancelled || views_changed)
     {
+        if (views_changed)
+            LOG_TRACE(log, "Dependent views changed since the streaming cycle started, rolling back the batch");
         /// The batch (if there is one) is abandoned before the insert started. If it is a fresh
         /// batch, nobody tried to insert its messages, so there is nothing to deduplicate and its
         /// intent is discarded; otherwise the next batch would needlessly replay exactly the same

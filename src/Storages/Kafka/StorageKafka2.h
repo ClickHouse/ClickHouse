@@ -243,14 +243,19 @@ private:
         LongStall,
     };
 
-    std::optional<StallKind> streamToViews(size_t idx, UInt64 cycle_epoch);
+    std::optional<StallKind> streamToViews(size_t idx, UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed);
 
     /// KeeperHandlingConsumer has to be acquired before polling it
     KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
     void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
     void cleanConsumers();
 
-    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch, UInt64 cycle_epoch);
+    std::optional<size_t> streamFromConsumer(
+        KeeperHandlingConsumer & consumer_info,
+        const Stopwatch & watch,
+        UInt64 cycle_epoch,
+        const std::vector<StorageID> & views,
+        bool & views_changed);
 
     // Returns true if this is the first replica
     bool createTableIfNotExists();

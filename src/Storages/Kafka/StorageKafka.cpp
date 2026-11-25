@@ -31,6 +31,7 @@
 #include <librdkafka/rdkafka.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Stopwatch.h>
@@ -104,6 +105,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
     extern const int ABORTED;
+}
+
+namespace FailPoints
+{
+    extern const char kafka_pause_after_building_insert_pipeline[];
 }
 
 class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
@@ -621,8 +627,10 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const UInt64 refresh_epoch = task->last_seen_refresh_epoch;
+        bool claimed_blocked_refresh = false;
         const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
-        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
+        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch, &claimed_blocked_refresh);
 
         if (num_views && run_cycle)
         {
@@ -631,7 +639,8 @@ void StorageKafka::threadFunc(size_t idx)
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
-                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                if (views.empty())
                 {
                     ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
@@ -639,8 +648,14 @@ void StorageKafka::threadFunc(size_t idx)
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
+                const bool refresh_cycle = std::exchange(claimed_blocked_refresh, false);
+                bool views_changed = false;
                 // Exit the loop & reschedule if some stream stalled
-                auto some_stream_is_stalled = streamToViews(cycle_epoch);
+                auto some_stream_is_stalled = streamToViews(cycle_epoch, views, views_changed);
+                /// A REFRESH cycle that ended unconsumed on a view change gives its permit back.
+                if (views_changed && refresh_cycle)
+                    task->last_seen_refresh_epoch = refresh_epoch;
+
                 if (some_stream_is_stalled)
                 {
                     LOG_TRACE(log, "Stream(s) stalled. Rescheduling in {} ms.", (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
@@ -690,7 +705,7 @@ void StorageKafka::threadFunc(size_t idx)
 }
 
 
-bool StorageKafka::streamToViews(UInt64 cycle_epoch)
+bool StorageKafka::streamToViews(UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed)
 {
     Stopwatch watch;
 
@@ -726,6 +741,8 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
         /* async_insert */ false);
     auto block_io = interpreter.execute();
 
+    FailPointInjection::pauseFailPoint(FailPoints::kafka_pause_after_building_insert_pipeline);
+
     // Create a stream for each consumer and join them in a union stream
     std::vector<std::shared_ptr<KafkaSource>> sources;
     Pipes pipes;
@@ -735,7 +752,8 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
+        auto source = std::make_shared<KafkaSource>(
+            *this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch, views);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -767,6 +785,8 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
+
+    views_changed = std::ranges::any_of(sources, [](const auto & source) { return source->endedOnViewsChange(); });
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)

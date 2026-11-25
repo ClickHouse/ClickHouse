@@ -101,6 +101,9 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
+/// True if the ready dependent views of `table_id` differ from `views`.
+bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StorageID> & views);
+
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
 /// Given the full write header and the Kafka virtual column mapping setting, splits columns into

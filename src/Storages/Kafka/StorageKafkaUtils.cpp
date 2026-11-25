@@ -1270,6 +1270,13 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
 }
 
+bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StorageID> & views)
+{
+    const auto ready_views = DatabaseCatalog::instance().getReadyDependentViews(table_id, context);
+    return ready_views.size() != views.size()
+        || !std::ranges::all_of(ready_views, [&](const StorageID & view) { return std::ranges::contains(views, view); });
+}
+
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
