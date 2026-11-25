@@ -902,23 +902,34 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
     return conjuncts;
 }
 
-bool optimizePlanForExists(QueryPlan & query_plan)
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
 {
     auto * node = query_plan.getRootNode();
+    /// `arrayJoin` can make the result empty, so the plan is kept from the topmost such step.
+    QueryPlan::Node * changes_number_of_rows = nullptr;
     while (true)
     {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        if (auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
         {
+            if (!changes_number_of_rows && !expression->getTransformTraits().preserves_number_of_rows)
+                changes_number_of_rows = node;
             node = node->children[0];
             continue;
         }
         if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
         {
             const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            bool always_one_row = params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set;
+            /// Decorrelation loses the row of an empty input of a keyless aggregate and applies `max_rows_to_group_by`
+            /// to all outer rows at once, so for a correlated subquery the steps above such an aggregate are ignored.
+            if (is_correlated && (always_one_row || params.max_rows_to_group_by != 0))
+                changes_number_of_rows = nullptr;
+            if (always_one_row)
             {
-                /// Subquery will always produce at least one row
-                return true;
+                /// Subquery will always produce at least one row.
+                if (!changes_number_of_rows)
+                    return true;
+                break;
             }
             node = node->children[0];
             continue;
@@ -937,6 +948,9 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         }
         break;
     }
+
+    if (changes_number_of_rows)
+        node = changes_number_of_rows;
 
     if (node != query_plan.getRootNode())
     {

@@ -403,6 +403,9 @@ public:
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
 
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
+
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
     /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
