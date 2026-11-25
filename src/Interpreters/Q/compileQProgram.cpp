@@ -2321,32 +2321,68 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
     return makeTable(outer.build(), result_keys, result_qtypes);
 }
 
+ASTPtr QCompiler::compileConstraints(const std::vector<QNodePtr> & where, QTable & table, QEnvironment & env)
+{
+    /// The aggregates and the uniform functions of a constraint apply to the rows that the previous constraints select,
+    /// so they are calculated over the partition of those rows.
+    ASTPtr condition;
+    for (const auto & constraint : where)
+    {
+        std::vector<std::pair<ASTPtr, String>> pre;
+        QScope scope;
+        scope.columns = table.columns;
+        scope.qtypes = table.qtypes;
+        scope.pre_aggregation = &pre;
+        if (condition)
+            scope.partition = {condition};
+
+        QValue value = toScalar(compile(constraint, env, &scope), constraint->offset);
+        if (value.kind == QValueKind::Scalar && value.aggregated)
+            value = broadcast(value, &scope);
+        if (value.depth > 0 || (value.kind != QValueKind::Column && value.kind != QValueKind::Scalar))
+            throwQError(ErrorCodes::TYPE_MISMATCH, constraint->offset, "A constraint of the where phrase must be a boolean column");
+
+        ASTPtr passes = condition ? ASTPtr(makeASTFunction("and", condition, value.ast)) : value.ast;
+        bool simple = !value.windowed && pre.empty() && !scope.uses_row_number && !hasWindow(value.ast);
+        if (simple)
+        {
+            condition = passes;
+            continue;
+        }
+
+        /// The condition has a window function now, and a window function cannot be a key of the partition of another
+        /// one. So it becomes a column of a query layer, which the next constraints and the caller refer to by its name.
+        /// The column is not among the columns of the table: it only goes along with the rows.
+        String flag = newName();
+        QSelectBuilder flagged;
+        flagged.from = buildSource(table, scope, pre);
+        flagged.select.push_back(make_intrusive<ASTAsterisk>());
+        flagged.select.push_back(withAlias(passes, flag));
+        if (scope.uses_row_number)
+            flagged.order_by.emplace_back(makeIdentifier("__qrow"), false);
+
+        QSelectBuilder layer;
+        layer.from = makeSubqueryTableExpression(flagged.build());
+        for (const auto & column : table.columns)
+            layer.select.push_back(makeIdentifier(column.name));
+        layer.select.push_back(makeIdentifier(flag));
+        table.table_expression = makeSubqueryTableExpression(layer.build());
+        condition = makeIdentifier(flag);
+    }
+    return condition;
+}
+
 QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source, QEnvironment & env)
 {
+    /// The where phrase selects the rows to update.
+    QTable rows = source;
+    ASTPtr condition = compileConstraints(sql.where, rows, env);
+
     std::vector<std::pair<ASTPtr, String>> pre;
     QScope scope;
     scope.columns = source.columns;
     scope.qtypes = source.qtypes;
     scope.pre_aggregation = &pre;
-
-    /// The where phrase selects the rows to update. Aggregates in a constraint apply to the rows selected by the previous constraints.
-    ASTPtr condition;
-    for (const auto & constraint : sql.where)
-    {
-        QScope constraint_scope = scope;
-        if (condition)
-            constraint_scope.partition = {condition};
-        QValue value = toScalar(compile(constraint, env, &constraint_scope), constraint->offset);
-        scope.uses_row_number |= constraint_scope.uses_row_number;
-        if (value.kind == QValueKind::Scalar && value.aggregated)
-            value = broadcast(value, &constraint_scope);
-        if (value.depth > 0 || (value.kind != QValueKind::Column && value.kind != QValueKind::Scalar))
-            throwQError(ErrorCodes::TYPE_MISMATCH, constraint->offset, "A constraint of the where phrase must be a boolean column");
-        ASTPtr ast = value.ast;
-        if (value.windowed)
-            ast = columnForAggregation(value, &scope);
-        condition = condition ? ASTPtr(makeASTFunction("and", condition, ast)) : ast;
-    }
 
     for (const auto & phrase : sql.by)
     {
@@ -2399,7 +2435,7 @@ QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source,
             replaced[name] = inner;
     }
 
-    main.from = buildSource(source, scope, pre);
+    main.from = buildSource(rows, scope, pre);
     if (scope.uses_row_number)
         main.order_by.emplace_back(makeIdentifier("__qrow"), false);
 
@@ -2446,26 +2482,8 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
         return makeTable(builder.build(), keys, source.qtypes);
     }
 
-    std::vector<std::pair<ASTPtr, String>> pre;
-    QScope scope;
-    scope.columns = source.columns;
-    scope.qtypes = source.qtypes;
-    scope.pre_aggregation = &pre;
-
-    ASTPtr condition;
-    for (const auto & constraint : sql.where)
-    {
-        QScope constraint_scope = scope;
-        if (condition)
-            constraint_scope.partition = {condition};
-        QValue value = toScalar(compile(constraint, env, &constraint_scope), constraint->offset);
-        scope.uses_row_number |= constraint_scope.uses_row_number;
-        if (value.kind == QValueKind::Scalar && value.aggregated)
-            value = broadcast(value, &constraint_scope);
-        if (value.depth > 0 || (value.kind != QValueKind::Column && value.kind != QValueKind::Scalar))
-            throwQError(ErrorCodes::TYPE_MISMATCH, constraint->offset, "A constraint of the where phrase must be a boolean column");
-        condition = condition ? ASTPtr(makeASTFunction("and", condition, value.ast)) : value.ast;
-    }
+    QTable rows = source;
+    ASTPtr condition = compileConstraints(sql.where, rows, env);
     if (!condition)
     {
         /// `delete from t` without the where phrase deletes all the rows:
@@ -2480,11 +2498,9 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
 
     String flag = newName();
     QSelectBuilder main;
-    main.from = buildSource(source, scope, pre);
+    main.from = rows.table_expression;
     main.select.push_back(make_intrusive<ASTAsterisk>());
     main.select.push_back(withAlias(makeASTFunction("ifNull", condition, makeLiteral(Field(false))), flag));
-    if (scope.uses_row_number)
-        main.order_by.emplace_back(makeIdentifier("__qrow"), false);
 
     QSelectBuilder outer;
     outer.from = makeSubqueryTableExpression(main.build());

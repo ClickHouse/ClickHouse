@@ -263,6 +263,11 @@ private:
     /// Applies the where phrase of a select: returns the filtered table.
     QTable applyWhere(const QTable & source, const std::vector<QNodePtr> & where, QEnvironment & env);
 
+    /// The where phrase of `update` and `delete`, which keep the rows that do not pass it: returns the condition that
+    /// tells whether a row passes all the constraints (null if there are none). It is an expression of the columns of
+    /// `table`, whose `table_expression` is replaced when a constraint needs a query layer of its own.
+    ASTPtr compileConstraints(const std::vector<QNodePtr> & where, QTable & table, QEnvironment & env);
+
     std::optional<QValue> resolveTable(const String & name);
 
     ASTPtr finalQuery(const QValue & value, const QNodePtr & statement);
