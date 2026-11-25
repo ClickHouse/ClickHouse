@@ -53,7 +53,7 @@ flowchart LR
     Impact["Impact analysis, recommended"]
     Deploy["Deployment"]
     Rebuild["Rebuild the table, then EXCHANGE TABLES"]
-    Cleanup["Cleanup flow drops the old table after you click the button"]
+    Cleanup["Cleanup"]
     Alter["ALTER the production table"]
 
     Rec --> Impact
@@ -105,17 +105,20 @@ If you like the results of the impact analysis, you can deploy after. Else you c
 Schema Advisor creates the new table, copies the data, checks the copy, and then swaps it into place with [`EXCHANGE TABLES`](/sql-reference/statements/exchange).
 The exchange is atomic, so the production name points at the new table with no downtime.
 Schema Advisor shows the exact statement, and the workflow runs it after you approve it.
-After the swap, the old table is not dropped automatically. Schema Advisor has a separate cleanup flow that drops the old table, and it only runs after you click the button to start it.
+After the swap, the old table is not dropped automatically. [Cleanup](#cleanup) runs only after you click the button.
 - **`ALTER TABLE`.** These changes apply in place, with no rebuild and no `EXCHANGE TABLES`. These include adding an index or a projection.
 Schema Advisor shows the exact `ALTER` statement. After you approve it, the workflow runs that statement on the production table.
 
-<Warning>
-After a full table rebuild, the old table is not dropped automatically. The cleanup flow drops it, and it only runs after you click the button.
-</Warning>
+## Cleanup {#cleanup}
+
+After a full table rebuild, the old table remains as the backup. Cleanup does not run until you click the **Clean up** button.
+When you click it, Schema Advisor drops any existing backup tables and any ephemeral services. 
 
 ## Models and data handling {#models-and-data-handling}
 
 By default, model calls from Schema Advisor go through the ClickHouse Inference Gateway on Amazon Bedrock.
+
+We do not train models on your data. The only information sent to the model is metadata about your table schema and the recommendation.
 
 ## Limitations {#limitations}
 
