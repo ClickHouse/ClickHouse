@@ -29,7 +29,7 @@ public:
             std::optional<UInt64> cancel_epoch_ = {},
             bool drive_loop_on_worker_ = false,
             UInt64 first_poll_timeout_ms_ = 0,
-            std::optional<std::vector<StorageID>> streaming_views_ = {});
+            std::optional<UInt64> streaming_views_version_ = {});
 
     ~RabbitMQSource() override;
 
@@ -65,8 +65,8 @@ private:
     bool drive_loop_on_worker = false;
     /// How long an empty first poll waits for a message, like Kafka's poll timeout (0: return at once).
     const UInt64 first_poll_timeout_ms;
-    /// Background streaming only: the views the insert pipeline of this cycle reaches (StorageRabbitMQ::getReachableViews).
-    const std::optional<std::vector<StorageID>> streaming_views;
+    /// Background streaming only: DatabaseCatalog::getViewDependenciesVersion() before this cycle's insert pipeline was built.
+    const std::optional<UInt64> streaming_views_version;
     const Block non_virtual_header;
     const Block virtual_header;
     const UInt64 cancel_epoch;
@@ -96,11 +96,11 @@ private:
         std::optional<UInt64> cancel_epoch_ = {},
         bool drive_loop_on_worker_ = false,
         UInt64 first_poll_timeout_ms_ = 0,
-        std::optional<std::vector<StorageID>> streaming_views_ = {});
+        std::optional<UInt64> streaming_views_version_ = {});
 
     Chunk generateImpl();
 
-    /// True if StorageRabbitMQ::getReachableViews differs from streaming_views (always false without them).
+    /// True if the view dependencies changed since streaming_views_version (always false without it).
     bool viewsChanged() const;
 
     /// Budget of driveLoopUntilMessage: for a REFRESH cycle the flush interval when set, else a finite

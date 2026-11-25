@@ -7,6 +7,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/logger_useful.h>
@@ -66,7 +67,7 @@ RabbitMQSource::RabbitMQSource(
     std::optional<UInt64> cancel_epoch_,
     bool drive_loop_on_worker_,
     UInt64 first_poll_timeout_ms_,
-    std::optional<std::vector<StorageID>> streaming_views_)
+    std::optional<UInt64> streaming_views_version_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -82,7 +83,7 @@ RabbitMQSource::RabbitMQSource(
         cancel_epoch_,
         drive_loop_on_worker_,
         first_poll_timeout_ms_,
-        std::move(streaming_views_))
+        streaming_views_version_)
 {
 }
 
@@ -101,7 +102,7 @@ RabbitMQSource::RabbitMQSource(
     std::optional<UInt64> cancel_epoch_,
     bool drive_loop_on_worker_,
     UInt64 first_poll_timeout_ms_,
-    std::optional<std::vector<StorageID>> streaming_views_)
+    std::optional<UInt64> streaming_views_version_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -113,7 +114,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , drive_loop_on_worker(drive_loop_on_worker_)
     , first_poll_timeout_ms(first_poll_timeout_ms_)
-    , streaming_views(std::move(streaming_views_))
+    , streaming_views_version(streaming_views_version_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -161,12 +162,7 @@ uint64_t RabbitMQSource::driveBudgetMs() const
 
 bool RabbitMQSource::viewsChanged() const
 {
-    if (!streaming_views)
-        return false;
-
-    const auto views = storage.getReachableViews(context);
-    return views.size() != streaming_views->size()
-        || !std::ranges::all_of(views, [&](const StorageID & view) { return std::ranges::contains(*streaming_views, view); });
+    return streaming_views_version && DatabaseCatalog::instance().getViewDependenciesVersion() != *streaming_views_version;
 }
 
 bool RabbitMQSource::driveLoopUntilMessage()

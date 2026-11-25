@@ -1336,22 +1336,6 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
-std::vector<StorageID> StorageRabbitMQ::getReachableViews(const ContextPtr & query_context) const
-{
-    auto views = DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), query_context);
-    for (size_t i = 0; i < views.size(); ++i)
-    {
-        const auto view = DatabaseCatalog::instance().tryGetTable(views[i], query_context);
-        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
-        if (!materialized_view)
-            continue;
-        for (const auto & dependent : DatabaseCatalog::instance().getDependentViews(materialized_view->getTargetTableId()))
-            if (!std::ranges::contains(views, dependent))
-                views.push_back(dependent);
-    }
-    return views;
-}
-
 void StorageRabbitMQ::threadFunc()
 {
     try
@@ -1380,7 +1364,8 @@ void StorageRabbitMQ::threadFunc()
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
-                    auto views = getReachableViews(getContext());
+                    const UInt64 views_version = DatabaseCatalog::instance().getViewDependenciesVersion();
+                    auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
                     if (views.empty())
                         break;
 
@@ -1391,7 +1376,7 @@ void StorageRabbitMQ::threadFunc()
                     /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
                     bool views_changed = false;
-                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views, views_changed);
+                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views_version, views_changed);
                     /// A REFRESH cycle that ended unconsumed on a view change gives its permit back, so the refresh runs for the new views.
                     if (drive_loop_on_worker && views_changed)
                         last_seen_refresh_epoch = refresh_epoch_before_claim;
@@ -1455,7 +1440,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, const std::vector<StorageID> & views, bool & views_changed)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, UInt64 views_version, bool & views_changed)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1490,7 +1475,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
             /* drive_loop_on_worker */drive_loop_on_worker,
             /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
-            /* streaming_views */views);
+            /* streaming_views_version */views_version);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);

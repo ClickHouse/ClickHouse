@@ -28,9 +28,6 @@ public:
     /// SYSTEM STOP/PAUSE blocks future cycles; the source checks it to end an idle wait early.
     bool isConsumeBlocked() const { return stream_control.isBlocked(); }
 
-    /// The ready dependent views and, transitively, the views of their target tables (empty while not ready).
-    std::vector<StorageID> getReachableViews(const ContextPtr & query_context) const;
-
     StorageRabbitMQ(
             const StorageID & table_id_,
             ContextPtr context_,
@@ -211,7 +208,7 @@ private:
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, const std::vector<StorageID> & views, bool & views_changed);
+    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, UInt64 views_version, bool & views_changed);
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

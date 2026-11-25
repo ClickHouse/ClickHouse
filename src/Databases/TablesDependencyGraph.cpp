@@ -65,6 +65,7 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(TablesDependencyGraph &
         nodes_by_uuid = std::exchange(src.nodes_by_uuid, decltype(nodes_by_uuid){});
         levels_calculated = std::exchange(src.levels_calculated, false);
         nodes_sorted_by_level_lazy = std::exchange(src.nodes_sorted_by_level_lazy, decltype(nodes_sorted_by_level_lazy){});
+        ++version;
     }
     return *this;
 }
@@ -623,6 +624,7 @@ void TablesDependencyGraph::setNeedRecalculateLevels() const
 {
     levels_calculated = false;
     nodes_sorted_by_level_lazy.clear();
+    ++version;
 }
 
 
