@@ -18,6 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -124,6 +125,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -623,6 +628,8 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+A named collection created with `CREATE NAMED COLLECTION` accepts only the `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/26.8/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, such as `ssl.ca.location` or `sasl.kerberos.keytab`, ClickHouse returns `BAD_ARGUMENTS`. To use these properties, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created. Instead of the path of a TLS file, a named collection created with SQL can contain the contents of the file: `ssl.key.pem`, `ssl.certificate.pem`, and `ssl.ca.pem`.
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
