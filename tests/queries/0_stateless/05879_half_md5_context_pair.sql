@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, no-openssl-fips
+
 SELECT hex(halfMD5('')) = 'D41D8CD98F00B204', hex(halfMD5('abc')) = '900150983CD24FB0';
 
 SELECT countIf(halfMD5(value) != reinterpretAsUInt64(reverse(substring(MD5(value), 1, 8))))
