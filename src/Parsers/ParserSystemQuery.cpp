@@ -1365,6 +1365,18 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM DROP ORC METADATA CACHE {#drop-orc-metadata-cache}
+
+Clears the in-memory cache of serialized ORC file tails, which contain the footer, metadata, and postscript.
+
+```sql
+SYSTEM DROP ORC METADATA CACHE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM DROP ORC METADATA CACHE` privilege.
+
+This clears existing entries but leaves the cache enabled, so subsequent reads can populate it again. To disable the cache instead, set the server-level `orc_metadata_cache_size` setting to `0`. To bypass it for a query, set `use_orc_metadata_cache` to `0`.
+
 ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
 
 Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
