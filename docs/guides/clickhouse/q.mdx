@@ -79,7 +79,17 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
 
 A grouped `select` returns the groups sorted by the keys, like q. A non-aggregated column in a grouped
 `select` becomes a list per group. The nulls of the column stay in the list, so the lists of two columns
-of one group match item by item; the arithmetic aggregates (`sum`, `avg`, ...) skip the nulls.
+of one group match item by item; the arithmetic aggregates (`sum`, `avg`, ...) skip the nulls, and `wavg`
+skips a pair if either of its values is a null.
+
+The nulls are compared by the rules of q, not of SQL: a null is equal to a null and is less than every other
+value, so `0N=0N` is true and `where x=0N` selects the rows with nulls. The same holds for `~`, `differ`,
+and the keys of the joins.
+
+A cast with `$` converts like q: a number is rounded when it becomes an integer (`` `int$3.7 `` is `4`), and
+a number that becomes a temporal value counts the units of the type since 2000.01.01: `"p"$42` is 42
+nanoseconds after 2000.01.01, `"d"$42` is 42 days, `"t"$42` is 42 milliseconds, `"u"$42` is 42 minutes.
+The cast of a temporal value to a number is the reverse.
 
 ## Differences from q {#differences-from-q}
 
@@ -100,6 +110,9 @@ of one group match item by item; the arithmetic aggregates (`sum`, `avg`, ...) s
 - The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
   function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
   the setting `max_expanded_ast_elements`.
+- A program is compiled when the query is already in the process list, so the compilation is under the limits of
+  the query, such as `max_memory_usage`: a table literal of ten million items takes its memory even if the program
+  does not use the table.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant
