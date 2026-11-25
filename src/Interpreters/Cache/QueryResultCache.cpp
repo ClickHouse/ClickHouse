@@ -58,6 +58,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_bernoulli_sample;
+    extern const SettingsUInt64 bernoulli_sample_seed;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
     extern const SettingsString obfuscate_seed;
@@ -239,12 +241,22 @@ static ContextPtr applyQueryLevelSettings(const ASTPtr & settings_ast, const Con
     return updated_context;
 }
 
-/// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
-/// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
-/// `obfuscate_seed` makes the output reproducible and therefore cacheable. The setting can be
-/// overridden by the SETTINGS clause of any enclosing (sub)query, and that override is what the
-/// table function effectively runs with, so track the effective value while descending into the AST.
-static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context)
+/// Detects the sources of non-determinism which depend on the settings a (sub)query effectively runs with:
+///
+///  - The `obfuscate` table function with an empty seed derives a fresh random seed per execution
+///    (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
+///    `obfuscate_seed` makes the output reproducible and therefore cacheable.
+///
+///  - Bernoulli sampling (`SAMPLE` on a table without a `SAMPLE BY` key, enabled by
+///    `allow_experimental_bernoulli_sample`) with `bernoulli_sample_seed = 0` draws a fresh seed for every
+///    query. The cache key contains the setting value `0`, not the generated seed, so caching such a result
+///    would replay one sample for every later execution. Whether the sampled table has a `SAMPLE BY` key is
+///    unknown at this point, so every `SAMPLE` is conservatively treated as Bernoulli sampling.
+///
+/// These settings can be overridden by the SETTINGS clause of any enclosing (sub)query - with any spelling
+/// of the value, or indirectly through `profile` - and that override is what the (sub)query effectively
+/// runs with, so track the effective values while descending into the AST.
+static bool hasSettingsDependentNonDeterminism(const ASTPtr & node, ContextPtr context)
 {
     if (!node)
         return false;
@@ -285,8 +297,15 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
         if (function->name == "obfuscate" && context->getSettingsRef()[Setting::obfuscate_seed].value.empty())
             return true;
 
+    if (const auto * table_expression = node->as<ASTTableExpression>(); table_expression && table_expression->sample_size)
+    {
+        const Settings & settings = context->getSettingsRef();
+        if (settings[Setting::allow_experimental_bernoulli_sample] && settings[Setting::bernoulli_sample_seed] == 0)
+            return true;
+    }
+
     for (const auto & child : node->children)
-        if (hasNonDeterministicObfuscate(child, context))
+        if (hasSettingsDependentNonDeterminism(child, context))
             return true;
 
     return false;
@@ -298,7 +317,7 @@ static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions
-        || hasNonDeterministicObfuscate(ast, context);
+        || hasSettingsDependentNonDeterminism(ast, context);
 }
 
 /// Does AST contain system tables like "system.processes"?

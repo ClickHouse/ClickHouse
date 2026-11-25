@@ -1,0 +1,5 @@
+--- skip-index top-K
+1
+3
+--- query condition cache with TopK entries of an unsampled read
+1
