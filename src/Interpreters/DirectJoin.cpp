@@ -131,7 +131,7 @@ static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, Mutable
     size_t offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
-        size_t n = offsets[i] - offsets[i - 1];
+        size_t n = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
         if (n == 0)
             continue;
         filtered_null_map[i] = null_map[offset];

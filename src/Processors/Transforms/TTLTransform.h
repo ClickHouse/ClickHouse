@@ -12,6 +12,7 @@ namespace DB
 {
 
 class Block;
+class WriteBuffer;
 
 class TTLTransform final : public IAccumulatingTransform
 {
@@ -26,7 +27,7 @@ public:
         time_t current_time,
         bool apply_ttl_,
         bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        std::shared_ptr<WriteBuffer> ttl_skip_flags_ = nullptr
     );
 
     String getName() const override { return "TTL"; }
@@ -51,8 +52,10 @@ private:
     /// If false, only fills default values for `expired_columns`: no TTL algorithm runs and the part keeps its TTL infos.
     /// TODO: move the fill into its own step, build `TTLStep` only when the merge applies TTL, and drop this flag.
     const bool apply_ttl = true;
-    /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
-    const bool ttl_delete_applied_by_merge = false;
+    /// If set, `consume` writes one byte per input row to it: 1 if dropped, 0 if kept, as the skip flag of `RowSourcePart`.
+    const std::shared_ptr<WriteBuffer> ttl_skip_flags;
+    /// The column in which `consume` tags each row with its position in the chunk, if `ttl_skip_flags` is set.
+    String ttl_row_position_column_name;
 
     PreparedSets::Subqueries subqueries_for_sets;
 
@@ -66,6 +69,7 @@ private:
         DataTypePtr type;
         ExpressionActionsPtr default_expression;
         String default_column_name;
+        bool shares_nested_offsets;
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
 

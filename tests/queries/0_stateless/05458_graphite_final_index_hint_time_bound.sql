@@ -17,6 +17,9 @@ SELECT 'hint', Value, Version FROM t_graphite_final_hint FINAL WHERE Path = 'sum
 SELECT 'chain', Value, Version FROM t_graphite_final_hint FINAL WHERE toUInt32(Time) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 1;
 SELECT 'no chain', Value, Version FROM t_graphite_final_hint FINAL WHERE toUInt32(Time) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 0;
 
+-- a subquery column named like the path column is still the time column
+SELECT 'chain alias', Value, Version FROM (SELECT Time AS Path, Value, Version FROM t_graphite_final_hint FINAL) WHERE toUInt32(Path) + 3600 < Version AND Version < 960004000 SETTINGS optimize_and_compare_chain = 1;
+
 -- a hint on the path still prunes
 SELECT 'path hint', Path, Value FROM t_graphite_final_hint FINAL WHERE indexHint(Path = 'sum_2') ORDER BY ALL;
 
