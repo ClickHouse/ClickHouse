@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
@@ -16,7 +17,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -26,29 +26,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        size_t expected_number_of_arguments = 1;
-
-        if (arguments.size() != expected_number_of_arguments)
-        {
-                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Function '{}' expects {} {}, got {} arguments",
-                                function_name, expected_number_of_arguments, (expected_number_of_arguments == 1 ? "argument" : "arguments"),
-                                arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::RANGE_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function {} expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::RANGE_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -268,6 +245,9 @@ bool needsSamplesBeforeWindow(const Node * range_vector_node, const ConverterCon
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::RANGE_VECTOR, context);
+
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
 
@@ -281,8 +261,6 @@ SQLQueryPiece applyFunctionOverRange(
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
-
-    checkArgumentTypes(function_name, arguments, context);
 
     /// The exact mode is not supported for a subquery, like the `anchored` modifier in Prometheus.
     if (impl_info->supports_exact_rate && context.exact_rate && isSubquery(arguments[0].node))
