@@ -29,6 +29,7 @@ TEST(AdaptiveAggregationSpilledPartition, AppendAfterBrokenWriteRethrowsItsError
 
     /// Random records do not compress, so one append writes more than the limit.
     PartitionedRecordBuffer records(/*num_partitions_=*/1, /*partitions_per_group_=*/1);
+    /// NOLINTNEXTLINE(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) a fixed seed keeps the records reproducible
     std::mt19937_64 rng(42);
     for (size_t i = 0; i < 16; ++i)
     {
