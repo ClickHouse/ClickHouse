@@ -18,6 +18,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 #include <limits>
@@ -124,8 +126,8 @@ static std::optional<String> mapToReadingColumn(const std::optional<ActionsDAG> 
 /// Whether `predicate` is deterministic and depends only on the columns in `columns`.
 static bool dependsOnlyOn(const ActionsDAG::Node * predicate, const NameSet & columns)
 {
-    std::vector<const ActionsDAG::Node *> stack{predicate};
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{predicate};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -175,8 +177,8 @@ static std::optional<NameSet> getRequiredColumns(const std::optional<ActionsDAG>
         return {};
 
     NameSet columns;
-    std::vector<const ActionsDAG::Node *> stack{output};
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{output};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -555,7 +557,7 @@ static void tryApply(
             /// time is proportional to the selected granules, not to the whole part, and stays linear even when no run
             /// has enough rows (e.g. `LIMIT n BY` with `n` larger than every run).
             const size_t indexed_granules = std::min(num_granules, index_rows);
-            std::vector<size_t> selected;
+            VectorWithMemoryTracking<size_t> selected;
             for (const auto & range : part.ranges)
                 for (size_t mark = range.begin; mark < std::min<size_t>(range.end, indexed_granules); ++mark)
                     selected.push_back(mark);
@@ -573,8 +575,8 @@ static void tryApply(
             /// `rows_before[i]`: such rows of the run of granule `selected[i]` in the granules before it. A granule before
             /// it that starts with the same prefix lies entirely in the run, because the next one does too.
             const size_t num_selected = selected.size();
-            std::vector<size_t> rows_after;
-            std::vector<size_t> rows_before;
+            VectorWithMemoryTracking<size_t> rows_after;
+            VectorWithMemoryTracking<size_t> rows_before;
             if (need_group_end)
             {
                 rows_after.assign(num_selected, 0);
@@ -665,7 +667,7 @@ static void tryApply(
 /// the same value of `k` in a skipped granule.
 static void tryApplyToLimitBy(const LimitByStep & limit_by, QueryPlan::Node & limit_by_node)
 {
-    std::vector<const ExpressionStep *> expressions;
+    VectorWithMemoryTracking<const ExpressionStep *> expressions;
     QueryPlan::Node * node = limit_by_node.children.front();
     while (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
     {
