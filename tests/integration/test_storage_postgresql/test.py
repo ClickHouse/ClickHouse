@@ -2055,6 +2055,78 @@ def test_postgres_delete_errors(started_cluster):
     cursor.execute("DROP ROLE delete_norole")
 
 
+def test_postgres_delete_schema_and_quoted_identifiers(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP SCHEMA IF EXISTS delete_schema CASCADE")
+    cursor.execute("CREATE SCHEMA delete_schema")
+    # Mixed-case table and column names force PostgreSQL identifier quoting in the pushed-down DELETE.
+    cursor.execute('CREATE TABLE delete_schema."MyTable" ("Id" integer, "Value" text)')
+    cursor.execute(
+        "INSERT INTO delete_schema.\"MyTable\" SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_schema (`Id` Int32, `Value` String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'MyTable', 'postgres', '{pg_pass}', 'delete_schema')"
+    )
+
+    node1.query("DELETE FROM test.pg_delete_schema WHERE `Id` < 5")
+    cursor.execute('SELECT count(*), min("Id") FROM delete_schema."MyTable"')
+    assert cursor.fetchall() == [(5, 5)]
+    # The schema, table and column reach PostgreSQL as quoted identifiers; `contains_in_log` wraps
+    # its pattern in double quotes, so each one must be backslash-escaped (see test_postgres_delete).
+    assert node1.contains_in_log(
+        'Query: DELETE FROM \\"delete_schema\\".\\"MyTable\\" WHERE \\"Id\\" < 5'
+    )
+
+    node1.query("DROP TABLE test.pg_delete_schema")
+    cursor.execute("DROP SCHEMA delete_schema CASCADE")
+
+
+def test_postgres_delete_named_collection(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_nc")
+    cursor.execute("CREATE TABLE test_delete_nc (a integer, b integer)")
+    cursor.execute("INSERT INTO test_delete_nc SELECT i, i FROM generate_series(0, 9) AS i")
+
+    # The `postgres1` named collection carries host/user/password/db; the table name is overridden.
+    # DELETE must work the same whether the connection is configured positionally or by collection.
+    node1.query(
+        "CREATE TABLE test.pg_delete_nc (a Int32, b Int32) "
+        "ENGINE = PostgreSQL(postgres1, table='test_delete_nc')"
+    )
+    node1.query("DELETE FROM test.pg_delete_nc WHERE a >= 5")
+    cursor.execute("SELECT count(*) FROM test_delete_nc")
+    assert cursor.fetchall() == [(5,)]
+
+    node1.query("DROP TABLE test.pg_delete_nc")
+    cursor.execute("DROP TABLE test_delete_nc")
+
+
+def test_postgres_delete_in_partition_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_partition")
+    cursor.execute("CREATE TABLE test_delete_partition (id integer)")
+    cursor.execute("INSERT INTO test_delete_partition SELECT i FROM generate_series(0, 9) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_partition (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_partition', 'postgres', '{pg_pass}')"
+    )
+
+    # A PostgreSQL table has no MergeTree partitions; `IN PARTITION` is rejected before any remote
+    # statement is sent, so it can never widen the scope of the delete.
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_partition IN PARTITION 1 WHERE id = 1"
+    )
+    assert "IN PARTITION is not supported" in error
+    cursor.execute("SELECT count(*) FROM test_delete_partition")
+    assert cursor.fetchall() == [(10,)]
+
+    node1.query("DROP TABLE test.pg_delete_partition")
+    cursor.execute("DROP TABLE test_delete_partition")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

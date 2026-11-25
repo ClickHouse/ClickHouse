@@ -10,6 +10,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ThreadPool.h>
 
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
@@ -33,6 +34,7 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -57,9 +59,16 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <fmt/format.h>
+
+#include <array>
+#include <condition_variable>
+#include <mutex>
+
+#include <libpq-fe.h>
 
 
 namespace DB
@@ -670,12 +679,51 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     const String query = fmt::format("DELETE FROM {} WHERE {}", quoted_table, where);
     LOG_TRACE(log, "Query: {}", query);
 
+    /// Lets `KILL QUERY` and `max_execution_time` interrupt a statement blocked on a remote lock.
+    const QueryStatusPtr query_status = local_context->getProcessListElement();
+
     /// The statement is executed in a single transaction and the function returns only after
     /// PostgreSQL confirms the commit. It is not retried on any failure: once the statement may
     /// have reached the server, a retry could apply it twice.
     try
     {
         pqxx::work tx(connection);
+
+        /// `exec`/`commit` below block, and libpqxx offers no way to interrupt them. So a watcher
+        /// thread sends `PQcancel` (thread-safe, and built against this connection before the
+        /// statement starts) the moment the query is killed; the cancelled statement then returns a
+        /// `query_canceled` error, surfaced as the cancellation it is in the `sql_error` handler.
+        /// The watcher is woken the instant the statement finishes, so it never outlives the call.
+        auto cancel_handle = makeCancelHandle(tx);
+        std::mutex watcher_mutex;
+        std::condition_variable watcher_cv;
+        bool statement_finished = false;
+
+        ThreadFromGlobalPool cancel_watcher([&]
+        {
+            std::unique_lock lock(watcher_mutex);
+            while (!statement_finished)
+            {
+                if (query_status && query_status->isKilled())
+                {
+                    std::array<char, 256> error{};
+                    if (!PQcancel(cancel_handle.get(), error.data(), static_cast<int>(error.size())))
+                        LOG_WARNING(log, "Cannot cancel the PostgreSQL statement: {}", error.data());
+                    return;
+                }
+                watcher_cv.wait_for(lock, std::chrono::milliseconds(100));
+            }
+        });
+
+        SCOPE_EXIT({
+            {
+                std::lock_guard lock(watcher_mutex);
+                statement_finished = true;
+            }
+            watcher_cv.notify_all();
+            cancel_watcher.join();
+        });
+
         const auto result = tx.exec(query);
         tx.commit();
         LOG_DEBUG(log, "Deleted {} rows on the PostgreSQL side", result.affected_rows());
@@ -702,6 +750,12 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     }
     catch (const pqxx::sql_error & e)
     {
+        /// A statement cancelled by `KILL QUERY` or `max_execution_time` comes back here as a
+        /// `query_canceled` error (the watcher sent `PQcancel`); report it as the cancellation it
+        /// is — `QUERY_WAS_CANCELLED` / `TIMEOUT_EXCEEDED` — not a generic PostgreSQL error. The
+        /// transaction was rolled back by PostgreSQL, so nothing was applied.
+        if (query_status)
+            query_status->throwIfKilled();
         /// Also `pqxx::transaction_rollback`: a deadlock or serialization failure ends here,
         /// rolled back on the PostgreSQL side and reported to the caller.
         throw Exception(ErrorCodes::POSTGRESQL_QUERY_ERROR,
