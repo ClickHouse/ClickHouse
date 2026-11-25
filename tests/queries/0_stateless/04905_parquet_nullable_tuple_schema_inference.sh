@@ -74,18 +74,20 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_top.parquet', Parquet);
     SELECT * FROM file('${T}_top.parquet', Parquet) ORDER BY p.1;"
 
-# tupleSubtreeIsAllRequired refuses these two: a descendant OPTIONAL adds its own definition level,
-# so a leaf null map is not the group null map. Reading them with a Nullable(Tuple) hint is rejected
-# too, so inference must not name a type the read cannot honour.
-echo '--- nested optional group: plain Tuple'
+# A descendant OPTIONAL adds its own definition level, so a leaf's null map is not the group's, but
+# the group's own level still is: both are named Nullable(Tuple(...)) and the read honours it, at
+# every nesting depth.
+echo '--- nested optional group: Nullable(Tuple), inner group nullable too'
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
-    DESC file('${T}_nest.parquet', Parquet);"
+    DESC file('${T}_nest.parquet', Parquet);
+    SELECT * FROM file('${T}_nest.parquet', Parquet) ORDER BY toString(p);"
 
-echo '--- optional leaf under an optional group: plain Tuple'
+echo '--- optional leaf under an optional group: Nullable(Tuple)'
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
-    DESC file('${T}_optleaf.parquet', Parquet);"
+    DESC file('${T}_optleaf.parquet', Parquet);
+    SELECT * FROM file('${T}_optleaf.parquet', Parquet) ORDER BY toString(p);"
 
 echo '--- required group: no struct-level NULL exists'
 $CLICKHOUSE_LOCAL -m -q "
