@@ -1229,7 +1229,8 @@ QValue QCompiler::compileTableLiteral(const QNode & node, QEnvironment & env, QS
     {
         inner.select.push_back(withAlias(values[i].ast, names[i]));
         outer.select.push_back(makeIdentifier(names[i]));
-        if (values[i].depth > 0 && !values[i].is_string)
+        /// A list becomes the rows of the column, including a list of strings (a string itself is an atom, without a depth).
+        if (values[i].depth > 0)
             outer.array_join.push_back(makeIdentifier(names[i]));
     }
 
@@ -2120,7 +2121,7 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             QValue value = values[i];
             if (value.kind == QValueKind::Scalar && value.aggregated)
                 value = broadcast(value, &scope);
-            else if (value.kind == QValueKind::Scalar && value.depth > 0 && !value.is_string)
+            else if (value.kind == QValueKind::Scalar && value.depth > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A list cannot be a column of a select with other columns ('length)");
             String inner = newName();
             main.select.push_back(withAlias(value.ast, inner));
@@ -2201,7 +2202,7 @@ QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source,
         QValue value = toScalar(compile(phrase.expression, env, &scope), phrase.expression->offset);
         if (value.kind == QValueKind::Scalar && value.aggregated)
             value = broadcast(value, &scope);
-        if (value.kind == QValueKind::Scalar && value.depth > 0 && !value.is_string)
+        if (value.kind == QValueKind::Scalar && value.depth > 0)
             throwQError(ErrorCodes::NOT_IMPLEMENTED, phrase.expression->offset, "A list cannot be a column of update ('length)");
         if (value.kind != QValueKind::Scalar && value.kind != QValueKind::Column)
             throwQError(ErrorCodes::TYPE_MISMATCH, phrase.expression->offset, "A column of update must be an atom or a column");
