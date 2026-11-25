@@ -1280,7 +1280,9 @@ std::vector<StorageID> getStreamingViews(const StorageID & table_id, const Conte
         const StorageID view_id = std::move(pending.back());
         pending.pop_back();
         const auto view = catalog.tryGetTable(view_id, context);
-        const StorageID id = view ? view->getStorageID() : view_id;
+        if (!view)
+            continue;
+        const StorageID id = view->getStorageID();
         if (std::ranges::contains(views, id))
             continue;
         views.push_back(id);

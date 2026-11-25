@@ -676,6 +676,10 @@ void StorageKafka::threadFunc(size_t idx)
                     break;
                 }
             }
+
+            /// A REFRESH claimed on a stopped table whose cycle never started gives its permit back.
+            if (claimed_blocked_refresh)
+                task->last_seen_refresh_epoch = refresh_epoch;
         }
         else if (num_views && stream_control.isBlocked())
             LOG_DEBUG(log, "Consumption is stopped");

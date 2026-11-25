@@ -101,8 +101,8 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
-/// The views a streaming insert into `table_id` reaches, by UUID: the ready dependent views and, through each
-/// materialized view's target table, their views. Empty while the dependent views are not ready.
+/// The resolvable views (by UUID) a streaming insert into `table_id` reaches: the ready dependent views and, through
+/// each materialized view's target table, their views. Empty while the dependent views are not ready.
 std::vector<StorageID> getStreamingViews(const StorageID & table_id, const ContextPtr & context);
 
 /// True if getStreamingViews(table_id, context) differs from `views`.
