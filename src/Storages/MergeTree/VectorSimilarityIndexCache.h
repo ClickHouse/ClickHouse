@@ -90,10 +90,7 @@ public:
 
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
-    {
-        /// Shared by all queries, see `CacheBase::markServerOwned`.
-        markServerOwned();
-    }
+    {}
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>

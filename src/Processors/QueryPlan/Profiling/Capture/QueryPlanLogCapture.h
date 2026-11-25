@@ -15,6 +15,8 @@ using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 class QueryPlanLogCapture
 {
 public:
+    ~QueryPlanLogCapture();
+
     /// Whether this query should have its plan captured. `query` is the text of the query as the
     /// client sent it, before `query_masking_rules` were applied.
     static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, std::string_view query, bool internal);
@@ -32,7 +34,7 @@ public:
 
     /// Forgets the captured plan, so that a query whose profiling could not be set up logs no
     /// plan at all rather than one that can never be given its statistics.
-    void dropCapturedPlan() { captured.reset(); }
+    void dropCapturedPlan();
 
     /// Records what the pipeline measured. Does not keep the pipeline object, but extracts
     /// the statistics out of it.

@@ -1,3 +1,5 @@
+#include <future>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -83,6 +85,39 @@ TEST(ServerOwnedMemory, AttachedJobReleasesCapturesInQuery)
             pool.scheduleOrThrowOnError(attachedJob(ThreadName::UNKNOWN, [buffer = std::vector<char>(64 << 10, 'x')] {}));
         pool.wait();
         CurrentThread::detachFromGroupIfNotDetached();
+
+        EXPECT_LT(std::abs(group->memory_tracker.get()), 1 << 20) << "the query is left charged " << group->memory_tracker.get();
+    });
+    t.join();
+}
+
+/// A job dropped without running, here by a pool that shuts down after an exception, releases its captures in the query.
+TEST(ServerOwnedMemory, AttachedJobDroppedUnrunReleasesCapturesInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1, 1, 10);
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+        pool.scheduleOrThrowOnError([&started, unblock_future]
+        {
+            started.set_value();
+            unblock_future.wait();
+            throw std::runtime_error("shut the pool down");
+        });
+        started.get_future().wait();
+
+        CurrentThread::attachToGroupIfDetached(group);
+        pool.scheduleOrThrowOnError(attachedJob(ThreadName::UNKNOWN, [buffer = std::vector<char>(8 << 20, 'x')] {}));
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        unblock.set_value();
+        EXPECT_THROW(pool.wait(), std::runtime_error);
 
         EXPECT_LT(std::abs(group->memory_tracker.get()), 1 << 20) << "the query is left charged " << group->memory_tracker.get();
     });

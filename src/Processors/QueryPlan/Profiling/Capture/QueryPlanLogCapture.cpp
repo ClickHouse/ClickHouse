@@ -2,6 +2,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
@@ -164,6 +165,18 @@ void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char 
         reason);
 }
 
+QueryPlanLogCapture::~QueryPlanLogCapture()
+{
+    dropCapturedPlan();
+}
+
+void QueryPlanLogCapture::dropCapturedPlan()
+{
+    /// Captured as the server's, in `QueryPlan::buildQueryPipeline`, so that it does not take from the memory of the query.
+    ServerOwnedMemoryScope server_owned;
+    captured.reset();
+}
+
 void QueryPlanLogCapture::capturePlanStructure(const PlanWalk & walk, const PrettyNamesPerPlan & pretty_names, size_t max_description_length)
 {
     /// One plan per query, and nothing is asked of this before it.
@@ -182,6 +195,8 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
     /// Runs on the query-finish path after the client has already received the result. An exception
     /// here would fail a query that had already succeeded, so diagnostics must not propagate.
+    /// The captured plan is the server's, see `capturePlanStructure`.
+    ServerOwnedMemoryScope server_owned;
     LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     try

@@ -324,8 +324,6 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
 {
-    /// Shared by all queries, see `CacheBase::markServerOwned`.
-    cache.markServerOwned();
 }
 
 void QueryConditionCache::write(

@@ -4,6 +4,7 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <boost/core/noncopyable.hpp>
@@ -52,22 +53,33 @@ private:
 
 /// A pool job that runs `f` attached to the thread group of the scheduling thread, like
 ///   pool->scheduleOrThrow(attachedJob(ThreadName::X, [captures] { ... }));
-/// `f` is destroyed before the thread detaches, so what it captured is released by the query it belongs to. The job holds
-/// one pointer to a server-owned block, so it fits in the buffer of `std::function` and costs no query memory itself.
+/// `f` is destroyed attached as well, so what it captured is released by the query it belongs to, also when the job is
+/// dropped without running. The job holds one pointer to a server-owned block, so it fits in the buffer of `std::function`
+/// and costs no query memory itself.
 template <typename F>
 auto attachedJob(ThreadName thread_name, F && f)
 {
     struct State
     {
         ThreadGroupPtr thread_group;
-        std::decay_t<F> f;
+        std::optional<std::decay_t<F>> f;
         ThreadName thread_name;
+
+        ~State()
+        {
+            /// Not run: dropped by the pool, or after a failed schedule on the scheduling thread, where this does nothing.
+            if (!f)
+                return;
+            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+            f.reset();
+        }
     };
     auto job_state = std::allocate_shared<State>(ServerOwnedAllocator<State>{}, getCurrentThreadGroup(), std::forward<F>(f), thread_name);
     return [state = std::move(job_state)]
     {
         ThreadGroupSwitcher switcher(std::move(state->thread_group), state->thread_name);
-        auto local = std::move(state->f);
+        auto local = std::move(*state->f);
+        state->f.reset();
         local();
     };
 }

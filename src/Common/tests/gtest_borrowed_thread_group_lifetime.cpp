@@ -260,6 +260,47 @@ TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesThrowingCallbackInQuery)
     t.join();
 }
 
+/// A cancelled task never runs, but what its callback captured is still the query's.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesCancelledCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        std::promise<void> started;
+        std::promise<void> unblock;
+        auto unblock_future = unblock.get_future().share();
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([&started, unblock_future]
+            {
+                started.set_value();
+                unblock_future.wait();
+            });
+            started.get_future().wait();
+            auto task = runner.enqueueAndGiveOwnership([buffer = std::vector<char>(8 << 20, 'x')] {});
+
+            /// Cancel it while the worker is busy, like `cancelScheduledTasks` does (`SCHEDULED` is 0, `CANCELLED` is 3).
+            using TaskState = decltype(task->state.load());
+            auto expected = static_cast<TaskState>(0);
+            EXPECT_TRUE(task->state.compare_exchange_strong(expected, static_cast<TaskState>(3)));
+
+            unblock.set_value();
+            pool->wait();
+        }
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
 /// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning

@@ -35,10 +35,7 @@ public:
     explicit MMappedFileCache(size_t max_size_in_cells)
         // Note, it is OK to use max_size_in_bytes=max_size_in_cells since default weight is 1
         : Base(CurrentMetrics::end(), CurrentMetrics::MMapCacheCells, /*max_size_in_bytes=*/ max_size_in_cells)
-    {
-        /// Shared by all queries, see `CacheBase::markServerOwned`.
-        markServerOwned();
-    }
+    {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1);

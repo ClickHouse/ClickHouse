@@ -764,7 +764,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     ServerOwnedMemoryScope not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = makeServerOwned<Index>(std::move(index_columns));
+    index = std::make_shared<Index>(std::move(index_columns));
 }
 
 void IMergeTreeDataPart::unloadIndex()

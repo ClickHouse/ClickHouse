@@ -220,6 +220,15 @@ private:
         Callback callback;
         ThreadName thread_name;
         std::promise<Result> promise{std::allocator_arg, ServerOwnedAllocator<char>{}};
+
+        ~JobState()
+        {
+            /// Not run (cancelled, or dropped by the pool): what the callback captured is the query's, so release it there.
+            if (!thread_group)
+                return;
+            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+            callback = {};
+        }
     };
 
     PoolT & pool;

@@ -171,8 +171,6 @@ ParquetMetadataCache::ParquetMetadataCache(
         size_ratio)
     , log(getLogger("ParquetMetadataCache"))
 {
-    /// Shared by all queries, see `CacheBase::markServerOwned`.
-    markServerOwned();
 }
 ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path, const String & file_attr)
 {
