@@ -356,7 +356,6 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
-        /// Without a next row, a key that constrains nothing is done.
         if (next_original_row[pos].isNull() && !hasSomeConstraints(pos))
             continue;
 
