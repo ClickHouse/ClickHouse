@@ -209,8 +209,7 @@ public:
         }
 
     private:
-        /// Runs the `String` implementation on the JSON text of the column. For a path of plain constant keys it writes
-        /// only the text of the value at the path, read from the subcolumn of the path.
+        /// Runs the `String` implementation on the JSON text of the column, or only of the value at a path of plain constant keys.
         template <typename TName, template <typename> typename TImpl>
         static ColumnPtr runForObjectColumn(
             const ColumnsWithTypeAndName & arguments,
@@ -243,7 +242,6 @@ public:
                     keys.push_back(std::move(key));
             }
 
-            /// Each prefix of the path; the last one is the path.
             Strings prefixes;
             for (const auto & key : keys)
                 prefixes.push_back(prefixes.empty() ? key : prefixes.back() + "." + key);
