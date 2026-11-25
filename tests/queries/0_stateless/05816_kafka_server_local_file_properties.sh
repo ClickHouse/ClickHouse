@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, zookeeper
 # no-fasttest: the Kafka engine is not built in fasttest
 # no-replicated-database: named collections created by SQL are not replicated
+# zookeeper: a section creates its own Replicated database
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
@@ -172,3 +173,21 @@ run_local "SELECT count() FROM d.kafka_path SETTINGS stream_like_engine_allow_di
 run_local "INSERT INTO d.kafka_null VALUES (1)"
 run_local "DROP TABLE d.kafka_path; DROP TABLE d.kafka_null; SELECT count() FROM system.tables WHERE database = 'd'"
 rm -rf "$local_path"
+
+echo '--- A new replica of a Replicated database recovers a stored table, and its consumers are refused'
+replicated_collection="${collection}_replicated"
+all_collections+=("$replicated_collection")
+db_r1="${CLICKHOUSE_DATABASE}_kafka_r1"
+db_r2="${CLICKHOUSE_DATABASE}_kafka_r2"
+zk_path="/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/kafka_replicated"
+run "
+    SET distributed_ddl_output_mode = 'none';
+    CREATE NAMED COLLECTION ${replicated_collection} AS ${required_keys};
+    CREATE DATABASE ${db_r1} ENGINE = Replicated('${zk_path}', 's1', 'r1');
+    CREATE TABLE ${db_r1}.kafka_replicated (x UInt64) ENGINE = Kafka(${replicated_collection}) ${table_settings};
+    ALTER NAMED COLLECTION ${replicated_collection} SET \`kafka.ssl_key_location\` = '/etc/passwd';
+    CREATE DATABASE ${db_r2} ENGINE = Replicated('${zk_path}', 's1', 'r2');
+    DROP DATABASE ${db_r1} SYNC;"
+run "SET receive_timeout = 60; SYSTEM SYNC DATABASE REPLICA ${db_r2}; SELECT name FROM system.tables WHERE database = '${db_r2}'"
+run "SELECT count() FROM ${db_r2}.kafka_replicated SETTINGS stream_like_engine_allow_direct_select = 1"
+run "DROP DATABASE IF EXISTS ${db_r1} SYNC; DROP DATABASE ${db_r2} SYNC"

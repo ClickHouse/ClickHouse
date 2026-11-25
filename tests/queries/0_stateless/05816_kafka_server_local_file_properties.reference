@@ -59,3 +59,8 @@ OK kafka_null,kafka_path
 Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 Kafka property name `ssl_key_location\0suffix` contains a null character. (BAD_ARGUMENTS)
 OK 0
+--- A new replica of a Replicated database recovers a stored table, and its consumers are refused
+OK
+OK kafka_replicated
+Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
+OK

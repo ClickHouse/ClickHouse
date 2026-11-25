@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/Kafka/Kafka_fwd.h>
@@ -128,8 +129,10 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// Not at server startup, so that the table stays loadable: consumers and producers check the collection again.
-            if (!isLoadingFromExistingMetadata(args.mode))
+            /// Only for a statement of the user: a replayed definition must stay loadable, and consumers and producers check the collection again.
+            const auto local_context = args.getLocalContext();
+            if (!isLoadingFromExistingMetadata(args.mode) && !isSecondaryDDLReplay(local_context)
+                && !local_context->isRecoveryFromStoredMetadata())
                 KafkaConfigLoader::checkNamedCollection(*named_collection);
 
             kafka_settings->loadFromNamedCollection(named_collection);
