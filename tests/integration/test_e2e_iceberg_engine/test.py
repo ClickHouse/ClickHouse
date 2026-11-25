@@ -879,6 +879,11 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     # Copy-on-write delete: the first data file is replaced by a rewritten one.
     manager.delete_rows(table_name, "id = 1")
     snapshot_count = len(manager.get_snapshot_timestamps(table_name))
+    # What only the older snapshots reach: the replaced data file, their manifests and manifest lists.
+    expired_only_files = manager.files_only_in_old_snapshots(table_name)
+    assert len([path for path in expired_only_files if path.endswith(".parquet")]) == 1
+    for path in expired_only_files:
+        assert manager.file_exists(table_name, path), path
 
     tbl = _create_engine_table(node, manager, table_name)
     is_azure = isinstance(manager, IcebergAzureCatalogManager)
@@ -889,7 +894,9 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     # Orphans are removed before ClickHouse's first commit: that commit names its metadata file
     # `vN.metadata.json` next to pyiceberg's `NNNNN-<uuid>.metadata.json`, and then both commands
     # refuse to run on the table: https://github.com/ClickHouse/ClickHouse/issues/125431
-    manager.put_file(table_name, f"data/orphan-{uuid.uuid4().hex[:8]}.parquet", b"orphan")
+    orphan = f"data/orphan-{uuid.uuid4().hex[:8]}.parquet"
+    manager.put_file(table_name, orphan, b"orphan")
+    assert manager.file_exists(table_name, orphan)
     # Object timestamps have one-second precision and come from the storage's clock;
     # the margin covers normal clock drift between it and the server.
     cutoff = node.query("SELECT now() + 2").strip()
@@ -903,12 +910,13 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
             query_id=query_id,
         )
     )
-    # With a hierarchical namespace, Azure lists directories too; cleanup takes them for orphans and
-    # cannot delete them because they are not empty: https://github.com/ClickHouse/ClickHouse/issues/125462
-    failed = removed.pop("failed_deletions_count") if is_azure else 0
-    # The `data` and `metadata` directories, and nothing else.
-    assert failed == (2 if is_azure else 0)
+    # Only the planted file, and no failed deletions: with a hierarchical namespace, Azure directories
+    # are not taken for orphans (https://github.com/ClickHouse/ClickHouse/issues/125462).
     assert removed == {"deleted_data_files_count": 1}
+    # The counter is not enough: the object itself must be gone, and nothing a snapshot reaches with it.
+    assert not manager.file_exists(table_name, orphan)
+    for path in expired_only_files:
+        assert manager.file_exists(table_name, path), path
 
     node.query("SYSTEM FLUSH LOGS query_log")
     delete_event, list_event = ("AzureDeleteObjects", "AzureListObjects") if is_azure else ("S3DeleteObjects", "S3ListObjects")
@@ -916,7 +924,7 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
         f"SELECT ProfileEvents['{delete_event}'], ProfileEvents['{list_event}'] "
         f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' FORMAT TSV"
     ).split()
-    assert int(deletes) == 1 + failed
+    assert int(deletes) == 1
     # Counts list requests (pages), not files: a few listings of `metadata/` and one of the table root.
     # Listing once per file would exceed it.
     assert int(lists) <= 10
@@ -929,6 +937,9 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     )
     assert expired["deleted_data_files_count"] == 1
     assert expired["deleted_manifest_lists_count"] == snapshot_count - 1
+    # The counters are not enough: everything only the expired snapshots reached must be gone.
+    leaked = [path for path in expired_only_files if manager.file_exists(table_name, path)]
+    assert not leaked, leaked
     assert "No snapshot found" in node.query_and_get_error(
         f"SELECT count() FROM {tbl}",
         settings={"iceberg_snapshot_id": snapshot_ids[0]},

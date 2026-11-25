@@ -2,6 +2,7 @@ import io
 import uuid
 
 import pytest
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
@@ -75,6 +76,7 @@ def test_iceberg_table_maintained_across_versions(started_cluster):
 
     orphan = f"{TABLE_PATH}/data/orphan-{uuid.uuid4().hex}.parquet"
     cluster.minio_client.put_object(cluster.minio_bucket, orphan, io.BytesIO(b"orphan"), 6)
+    cluster.minio_client.stat_object(cluster.minio_bucket, orphan)
     # Object timestamps have one-second precision and come from MinIO's clock.
     cutoff = new_node.query("SELECT now() + 2").strip()
     assert_eq_with_retry(new_node, f"SELECT now() > toDateTime('{cutoff}')", "1")
@@ -89,6 +91,9 @@ def test_iceberg_table_maintained_across_versions(started_cluster):
     removed.pop("deleted_metadata_files_count", None)
     # Only the planted file goes: nothing written by the old version is taken for an orphan.
     assert removed == {"deleted_data_files_count": "1"}
+    # The counter is not enough: the planted object itself must be gone from MinIO.
+    with pytest.raises(S3Error, match="NoSuchKey"):
+        cluster.minio_client.stat_object(cluster.minio_bucket, orphan)
 
     expected += "5\te\n"
     assert new_node.query(SELECT_ALL) == expected

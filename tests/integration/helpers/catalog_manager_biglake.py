@@ -605,6 +605,11 @@ class BigLakeCatalogManager(CatalogManager):
     def delete_gcs_path(self, gcs_path: str) -> None:
         self._delete_gcs_prefix(gcs_path)
 
+    def gcs_path_exists(self, gcs_path: str) -> bool:
+        # A new filesystem without the instance cache: a cached listing must not answer for the storage.
+        fs = gcsfs.GCSFileSystem(token=self._credential.token, skip_instance_cache=True)
+        return fs.exists(gcs_path)
+
     def _delete_gcs_prefix(self, gcs_path: str) -> None:
         try:
             fs = gcsfs.GCSFileSystem(token=self._credential.token)

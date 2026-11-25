@@ -1,7 +1,9 @@
 import io
+import re
 import shutil
 
 import pytest
+from minio.error import S3Error
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -24,6 +26,25 @@ SETTINGS = {
 def metrics(instance, table, command):
     rows = instance.query(f"ALTER TABLE {table} EXECUTE {command}", settings=SETTINGS)
     return {name: int(value) for name, value in (line.split("\t") for line in rows.splitlines())}
+
+
+def object_exists(cluster, instance, storage_type, path):
+    """Whether the file at the absolute `path` is in the storage itself, whatever ClickHouse reports."""
+    if storage_type == "s3":
+        try:
+            cluster.minio_client.stat_object(cluster.minio_bucket, path.lstrip("/"))
+        except S3Error as e:
+            assert e.code == "NoSuchKey", e
+            return False
+        return True
+    if storage_type == "azure":
+        return cluster.blob_service_client.get_blob_client(cluster.azure_container_name, path).exists()
+    return instance.exec_in_container(["bash", "-c", f"test -e '{path}' && echo yes || echo no"]).strip() == "yes"
+
+
+def spark_paths(spark, query):
+    # Spark writes `file:/...` locations for a local warehouse; the storages get the plain absolute path.
+    return {re.sub("^file:/+", "/", row[0]) for row in spark.sql(query).collect()}
 
 
 @pytest.mark.parametrize("format_version", ["2", "3"])
@@ -50,9 +71,16 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
     spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true'))")
     spark.sql(f"CALL spark_catalog.system.compute_table_stats(table => 'default.{table}')")
     expected = spark.sql(f"SELECT count(*), sum(id) FROM {table}").first()
+    # Data and delete files of the current snapshot, and the ones only older snapshots reach.
+    current_files = spark_paths(spark, f"SELECT file_path FROM default.{table}.files")
+    expired_only_files = spark_paths(spark, f"SELECT file_path FROM default.{table}.all_files") - current_files
+    assert current_files and expired_only_files
+    assert all(path.startswith(local_path + "/") for path in current_files | expired_only_files)
 
     default_upload_directory(cluster, storage_type, f"/iceberg_data/default/{table}/", f"/iceberg_data/default/{table}/")
     create_iceberg_table(storage_type, instance, table, cluster)
+    for path in current_files | expired_only_files:
+        assert object_exists(cluster, instance, storage_type, path), path
 
     expired = metrics(instance, table, "expire_snapshots(retention_period = '1ms', retain_last = 1)")
     assert expired["deleted_data_files_count"] > 0
@@ -63,6 +91,12 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
         assert expired["deleted_position_delete_files_count"] > 0
     else:
         assert expired["deleted_position_delete_files_count"] == 0
+    # The counters are not enough: the files only expired snapshots reached must be gone from the
+    # storage, and every file of the current snapshot must still be there.
+    leaked = sorted(path for path in expired_only_files if object_exists(cluster, instance, storage_type, path))
+    assert not leaked, leaked
+    lost = sorted(path for path in current_files if not object_exists(cluster, instance, storage_type, path))
+    assert not lost, lost
 
     orphan = f"{local_path}/data/orphan.parquet"
     if storage_type == "s3":
@@ -71,12 +105,14 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
         cluster.blob_service_client.get_blob_client(cluster.azure_container_name, orphan).upload_blob(b"junk")
     else:
         instance.exec_in_container(["bash", "-c", f"echo junk > {orphan}"])
+    assert object_exists(cluster, instance, storage_type, orphan)
     cutoff = instance.query("SELECT toString(now() + 1)").strip()
     assert_eq_with_retry(instance, f"SELECT now() > toDateTime('{cutoff}')", "1")
     removed = metrics(instance, table, f"remove_orphan_files(older_than = '{cutoff}')")
     # metadata.json files are left out: ClickHouse's own commit may leave one out of metadata-log.
     removed.pop("deleted_metadata_files_count")
     assert {name: value for name, value in removed.items() if value} == {"deleted_data_files_count": 1}
+    assert not object_exists(cluster, instance, storage_type, orphan)
 
     expected_row = f"{expected[0]}\t{expected[1]}\n"
     assert instance.query(f"SELECT count(), sum(id) FROM {table}") == expected_row

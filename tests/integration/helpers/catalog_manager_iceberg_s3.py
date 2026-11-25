@@ -18,6 +18,26 @@ from helpers.catalog_manager import arrow_to_iceberg_schema
 log = logging.getLogger(__name__)
 
 
+def files_only_in_old_snapshots(table, table_name: str) -> List[str]:
+    """Data files, manifests and manifest lists that no file of the current snapshot refers to,
+    as paths relative to the table location. Expiring all older snapshots must delete exactly these."""
+
+    def reachable(snapshot):
+        paths = {snapshot.manifest_list}
+        for manifest in snapshot.manifests(table.io):
+            paths.add(manifest.manifest_path)
+            for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+                paths.add(entry.data_file.file_path)
+        return paths
+
+    current = table.current_snapshot()
+    old = set()
+    for snapshot in table.metadata.snapshots:
+        if snapshot.snapshot_id != current.snapshot_id:
+            old |= reachable(snapshot)
+    return sorted(path.split(f"/default/{table_name}/", 1)[1] for path in old - reachable(current))
+
+
 @dataclass
 class IcebergS3Config:
     bucket: str
@@ -240,6 +260,14 @@ class IcebergS3CatalogManager:
     def put_file(self, table_name: str, relative_path: str, data: bytes) -> None:
         key = f"{self.config.prefix}/{self._dir_name}/default/{table_name}/{relative_path}"
         self._s3.put_object(Bucket=self.config.bucket, Key=key, Body=data)
+
+    def file_exists(self, table_name: str, relative_path: str) -> bool:
+        key = f"{self.config.prefix}/{self._dir_name}/default/{table_name}/{relative_path}"
+        response = self._s3.list_objects_v2(Bucket=self.config.bucket, Prefix=key)
+        return any(obj["Key"] == key for obj in response.get("Contents", []))
+
+    def files_only_in_old_snapshots(self, table_name: str) -> List[str]:
+        return files_only_in_old_snapshots(self._catalog.load_table(f"default.{table_name}"), table_name)
 
     def load_stored_table(self, table_name: str) -> StaticTable:
         """Load the table from its newest metadata file in S3, even if ClickHouse wrote it."""

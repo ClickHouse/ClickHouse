@@ -1308,12 +1308,14 @@ def test_expire_snapshots_with_catalog_requires_grant(started_cluster):
             "allow_experimental_expire_snapshots": 1,
             "allow_iceberg_remove_orphan_files": 1,
         }
-        error = node.query_and_get_error(expire_query, settings=settings, user=user)
-        assert "ACCESS_DENIED" in error, error
+        orphan_query = f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files(dry_run = 1)"
+        for query in (expire_query, orphan_query):
+            error = node.query_and_get_error(query, settings=settings, user=user)
+            assert "ACCESS_DENIED" in error, error
 
         node.query(f"GRANT ALTER TABLE EXECUTE ON {CATALOG_NAME}.* TO {user}")
         node.query(expire_query, settings=settings, user=user)
-        node.query(f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files(dry_run = 1)", settings=settings, user=user)
+        node.query(orphan_query, settings=settings, user=user)
     finally:
         node.query(f"DROP USER {user}")
 

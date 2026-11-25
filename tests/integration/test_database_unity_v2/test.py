@@ -750,13 +750,16 @@ def test_insert_with_read_only_vended_credentials_commits_nothing(started_cluste
         table_key = table.split("`")[1].replace(".", "/")
         node.query(f"INSERT INTO {table} VALUES (1, 'a')", settings=DELTA_WRITE_SETTINGS)
 
-        def delta_log():
+        def table_objects():
             objects = started_cluster.minio_client.list_objects(
-                started_cluster.minio_bucket, prefix=f"{table_key}/_delta_log/", recursive=True
+                started_cluster.minio_bucket, prefix=f"{table_key}/", recursive=True
             )
             return sorted(obj.object_name for obj in objects)
 
-        commits = delta_log()
+        objects_before = table_objects()
+        # The listing sees both the log and the data file of the first `INSERT`.
+        assert any("/_delta_log/" in name for name in objects_before), objects_before
+        assert any("/_delta_log/" not in name and name.endswith(".parquet") for name in objects_before), objects_before
 
         vend_credentials(node, read_only_key, read_only_secret)
         try:
@@ -770,7 +773,8 @@ def test_insert_with_read_only_vended_credentials_commits_nothing(started_cluste
         assert read_only_secret not in error
 
         assert node.query(f"SELECT * FROM {table}") == "1\ta\n"
-        assert delta_log() == commits
+        # Neither a commit nor a data file outside the log is left behind.
+        assert table_objects() == objects_before
 
 
 def test_drop_table(started_cluster):

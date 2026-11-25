@@ -1386,10 +1386,12 @@ def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         assert expired["deleted_manifest_lists_count"] == 2
         assert node.query(select_all) == rows_before
 
+        orphan = f"data/orphan-{suffix}.parquet"
         node.query(
-            f"INSERT INTO FUNCTION s3({nc}, url = '{url}/data/orphan-{suffix}.parquet', "
+            f"INSERT INTO FUNCTION s3({nc}, url = '{url}/{orphan}', "
             "format = 'RawBLOB', structure = 'data String') SELECT 'orphan'"
         )
+        assert catalog_manager.gcs_path_exists(f"{table_path}/{orphan}")
         # Object timestamps have one-second precision and come from the storage's clock;
         # the margin covers normal clock drift between it and the server.
         cutoff = node.query("SELECT now() + 2").strip()
@@ -1405,6 +1407,8 @@ def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         # https://github.com/ClickHouse/ClickHouse/issues/118812
         removed.pop("deleted_metadata_files_count", None)
         assert removed == {"deleted_data_files_count": 1}
+        # The counter is not enough: the object itself must be gone from GCS.
+        assert not catalog_manager.gcs_path_exists(f"{table_path}/{orphan}")
         assert node.query(select_all) == rows_before
     finally:
         node.query(f"DROP TABLE IF EXISTS {tbl}")
