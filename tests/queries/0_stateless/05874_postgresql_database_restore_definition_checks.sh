@@ -97,15 +97,21 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" --query "
 engine_arguments_of plain
 
 echo "--- a computed key of an override in the backup"
-# Such a key is now replaced at `CREATE`, so the backup is edited on disk into one with the expression, which databases created
-# before keep. The replaced text has the same size, which the metadata of the backup records.
-make_backup computed "PostgreSQL(${NC}, schema = 'publicxxxxxxxxxxxxxx')"
-BACKUPS_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name = 'backups'")
-sed -i "s/schema = 'publicxxxxxxxxxxxxxx'/concat('sch', 'ema') = 'public'/" \
-    "${BACKUPS_PATH}${BACKUP_PREFIX}_computed/metadata/${DB}_computed.sql"
+# Such a key is now replaced at `CREATE`, so the backup is edited into one with the expression, which databases created before
+# keep. The backup is in S3 to edit it with a query. The replaced text has the same size, which the metadata of the backup records.
+S3_BACKUP="http://localhost:11111/test/backups/${BACKUP_PREFIX}_computed"
+S3_METADATA="s3('${S3_BACKUP}/metadata/${DB}_computed.sql', 'test', 'testtest', 'RawBLOB')"
 ${CLICKHOUSE_CLIENT} --query "
-    RESTORE DATABASE ${DB}_computed ON CLUSTER test_shard_localhost FROM $(backup_of computed) FORMAT Null" 2>&1 \
+    CREATE DATABASE ${DB}_computed ENGINE = PostgreSQL(${NC}, schema = 'publicxxxxxxxxxxxxxx');
+    BACKUP DATABASE ${DB}_computed TO S3('${S3_BACKUP}', 'test', 'testtest') FORMAT Null;
+    DROP DATABASE ${DB}_computed;
+    INSERT INTO FUNCTION ${S3_METADATA}
+        SELECT replaceOne(raw_blob, 'schema = \\'publicxxxxxxxxxxxxxx\\'', 'concat(\\'sch\\', \\'ema\\') = \\'public\\'')
+        FROM ${S3_METADATA}
+        SETTINGS s3_truncate_on_insert = 1;"
+${CLICKHOUSE_CLIENT} --query "
+    RESTORE DATABASE ${DB}_computed ON CLUSTER test_shard_localhost FROM S3('${S3_BACKUP}', 'test', 'testtest') FORMAT Null" 2>&1 \
     | grep -o -m1 'CANNOT_RESTORE_DATABASE'
 exists computed
-${CLICKHOUSE_CLIENT} --query "RESTORE DATABASE ${DB}_computed FROM $(backup_of computed) FORMAT Null"
+${CLICKHOUSE_CLIENT} --query "RESTORE DATABASE ${DB}_computed FROM S3('${S3_BACKUP}', 'test', 'testtest') FORMAT Null"
 engine_arguments_of computed
