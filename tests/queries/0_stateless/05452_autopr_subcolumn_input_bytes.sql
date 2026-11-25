@@ -54,6 +54,9 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 SET optimize_functions_to_subcolumns = 1;
+-- With unused columns kept, the plan with parallel replicas of a read filtered by the primary key does not match the
+-- single-replica plan, and no statistics are collected at all, see `05292_autopr_stats_key_constants`.
+SET query_plan_remove_unused_columns = 1;
 
 SELECT key, avg(length(s)) FROM t_wide WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide';
 SELECT key, avg(length(s)) FROM t_wide_single_stream WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide_single_stream';
