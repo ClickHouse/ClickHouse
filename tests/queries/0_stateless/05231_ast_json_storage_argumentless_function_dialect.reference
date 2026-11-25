@@ -11,9 +11,9 @@ for key 'children' has no 'arguments' list
 for key 'order_by' has no 'arguments' list
 for key 'sample_by' has no 'arguments' list
 for key 'predicate' has no 'arguments' list
-for key 'select' has no 'arguments' list
-for key 'select' has no 'arguments' list
-for key 'select' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'where' has no 'arguments' list
+for key 'where' has no 'arguments' list
 for key 'predicate' has no 'arguments' list
 for key 'table_function' has no 'arguments' list
 for key 'as_table_function' has no 'arguments' list

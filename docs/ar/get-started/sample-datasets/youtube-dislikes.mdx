@@ -10,24 +10,26 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
 في نوفمبر 2021، أزال YouTube عدد ***عدم الإعجاب*** العام من جميع مقاطع الفيديو الخاصة به. وبينما لا يزال بإمكان منشئي المحتوى رؤية عدد حالات عدم الإعجاب، لا يمكن للمشاهدين سوى رؤية عدد ***الإعجابات*** التي حصل عليها الفيديو.
 
 <Warning>
-  تضم مجموعة البيانات أكثر من 4.55 مليار سجل، لذا توخَّ الحذر عند نسخ الأوامر أدناه ولصقها، ما لم تكن مواردك قادرة على التعامل مع هذا الحجم. نُفِّذت الأوامر أدناه على مثيل **Production** من [ClickHouse Cloud](https://clickhouse.cloud).
+  تضم مجموعة البيانات أكثر من 4.55 مليار سجل، لذا توخَّ الحذر عند نسخ الأوامر أدناه ولصقها، ما لم تكن مواردك قادرة على التعامل مع هذا الحجم. نُفِّذت هذه الأوامر على خدمة [ClickHouse Cloud](/ar/products/cloud/getting-started/intro) ذات سعة مناسبة.
 </Warning>
+
+<Tip>
+  لتجربة هذه الأوامر بنفسك، يمكنك التسجيل للحصول على [نسخة تجريبية مجانية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-youtube-dislikes) أو إعداد [ClickHouse مستضاف ذاتيًا](/ar/get-started/setup/install).
+</Tip>
 
 البيانات بتنسيق JSON، ويمكن تنزيلها من [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). وقد أتحنا هذه البيانات نفسها على S3 بحيث يمكن تنزيلها بكفاءة أعلى إلى مثيل ClickHouse Cloud.
 
 فيما يلي خطوات إنشاء جدول في ClickHouse Cloud وإدخال البيانات.
 
 <Note>
-  ستعمل الخطوات أدناه بسهولة أيضًا على تثبيت محلي لـ ClickHouse. والتغيير الوحيد هو استخدام الدالة `s3` بدلًا من `s3cluster` (إلا إذا كان لديك عنقود مُعدّ — وفي هذه الحالة غيّر `default` إلى اسم العنقود لديك).
+  تعمل الخطوات أدناه أيضًا على تثبيت محلي لـ ClickHouse.
 </Note>
 
-<div id="step-by-step-instructions">
-  ## تعليمات خطوة بخطوة
-</div>
+## تعليمات خطوة بخطوة {#step-by-step-instructions}
 
 <Steps>
   <Step title="استكشاف البيانات" id="data-exploration">
-    لنرَ شكل البيانات. تُرجِع دالة الجدول `s3cluster` جدولًا، لذا يمكننا `DESCRIBE` النتيجة:
+    لنرَ شكل البيانات. تُرجِع دالة الجدول `s3` جدولًا، لذا يمكننا `DESCRIBE` النتيجة:
 
     ```sql
     DESCRIBE s3(
@@ -241,13 +243,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
   </Step>
 </Steps>
 
-<div id="questions">
-  ## الأسئلة
-</div>
+## الأسئلة {#questions}
 
-<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
-  ### إذا عطّل أحدهم التعليقات، فهل يقلّ احتمال أن يضغط الآخرون فعلاً على زر الإعجاب أو عدم الإعجاب؟
-</div>
+### إذا عطّل أحدهم التعليقات، فهل يقلّ احتمال أن يضغط الآخرون فعلاً على زر الإعجاب أو عدم الإعجاب؟ {#if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike}
 
 عندما تكون التعليقات معطّلة، هل يكون الناس أكثر ميلاً إلى الضغط على زر الإعجاب أو عدم الإعجاب للتعبير عن مشاعرهم تجاه الفيديو؟
 
@@ -302,9 +300,7 @@ ORDER BY
 
 يبدو أن تفعيل التعليقات يرتبط بارتفاع معدل التفاعل.
 
-<div id="how-does-the-number-of-videos-change-over-time---notable-events">
-  ### كيف يتغيّر عدد مقاطع الفيديو مع مرور الوقت، وما الأحداث البارزة؟
-</div>
+### كيف يتغيّر عدد مقاطع الفيديو مع مرور الوقت، وما الأحداث البارزة؟ {#how-does-the-number-of-videos-change-over-time---notable-events}
 
 ```sql
 SELECT
@@ -342,9 +338,7 @@ ORDER BY month ASC;
 
 يُلاحظ ارتفاع حاد في عدد رافعي المحتوى [بالتزامن تقريبًا مع جائحة كوفيد](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
-<div id="more-subtitles-over-time-and-when">
-  ### المزيد من الترجمات المصاحبة مع مرور الوقت ومتى
-</div>
+### المزيد من الترجمات المصاحبة مع مرور الوقت ومتى {#more-subtitles-over-time-and-when}
 
 مع تطور التعرّف على الكلام، أصبح إنشاء ترجمات مصاحبة للفيديو أسهل من أي وقت مضى، وقد أضاف يوتيوب التسميات التوضيحية التلقائية في أواخر عام 2009 - فهل كانت القفزة حينها؟
 
@@ -381,9 +375,7 @@ ORDER BY month ASC;
 تُظهر نتائج البيانات ارتفاعًا حادًا في عام 2009. ويبدو أنه في ذلك الوقت كانت YouTube تلغي ميزة التسميات التوضيحية المجتمعية، التي كانت تتيح لك إضافة تسميات توضيحية إلى مقاطع فيديو الآخرين.
 وقد أدى ذلك إلى إطلاق حملة ناجحة جدًا لحثّ منشئي المحتوى على إضافة تسميات توضيحية إلى مقاطع الفيديو الخاصة بهم من أجل المشاهدين ضعاف السمع والصم.
 
-<div id="top-uploaders-over-time">
-  ### أبرز رافعي المحتوى عبر الزمن
-</div>
+### أبرز رافعي المحتوى عبر الزمن {#top-uploaders-over-time}
 
 ```sql
 WITH uploaders AS
@@ -426,9 +418,7 @@ ORDER BY
 │ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
 ```
 
-<div id="how-do-like-ratio-changes-as-views-go-up">
-  ### كيف تتغير نسبة الإعجاب مع زيادة عدد المشاهدات؟
-</div>
+### كيف تتغير نسبة الإعجاب مع زيادة عدد المشاهدات؟ {#how-do-like-ratio-changes-as-views-go-up}
 
 ```sql
 SELECT
@@ -476,9 +466,7 @@ ORDER BY
 └───────────────────┴─────────────────────┴────────────┘
 ```
 
-<div id="how-are-views-distributed">
-  ### كيف تتوزع المشاهدات؟
-</div>
+### كيف تتوزع المشاهدات؟ {#how-are-views-distributed}
 
 ```sql
 SELECT

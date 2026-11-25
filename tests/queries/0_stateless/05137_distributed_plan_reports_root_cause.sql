@@ -13,7 +13,8 @@ INSERT INTO t_root_cause SELECT number FROM numbers(100000);
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 0,
     distributed_plan_force_exchange_kind = 'Streaming',
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0;
+    distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 
 -- The main task fails: rowNumberInAllBlocks() keeps the expression above the gather. The initiator's
 -- result reader sees the closed socket before any task status arrives.
@@ -29,6 +30,12 @@ SELECT throwIf(rowNumberInAllBlocks() > 10, 'main task fails') FROM t_root_cause
 SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fails') GROUP BY x FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SYSTEM DISABLE FAILPOINT distributed_plan_delay_root_cause_report;
+
+-- The failing task frees its resources for longer than the initiator waits for each task when it
+-- cancels them. The task reports its failure before it frees them.
+SYSTEM ENABLE FAILPOINT distributed_plan_delay_failed_task_release;
+SELECT x, count() FROM t_root_cause WHERE NOT throwIf(x = 777, 'reading task fails') GROUP BY x FORMAT Null; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SYSTEM DISABLE FAILPOINT distributed_plan_delay_failed_task_release;
 
 -- Without a failure the same queries complete.
 SELECT count() FROM (SELECT throwIf(rowNumberInAllBlocks() > 1000000, 'never') FROM t_root_cause);

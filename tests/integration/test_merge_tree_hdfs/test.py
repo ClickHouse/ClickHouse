@@ -6,6 +6,7 @@ import pytest
 from pyhdfs import HdfsClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.config_manager import ConfigManager
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -85,7 +86,14 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
+            "node",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/hdfs_locations.xml",
+            ],
+            macros={"hdfs_host": "hdfs1"},
+            with_hdfs=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -109,15 +117,25 @@ def list_hdfs_objects(fs, path="/clickhouse"):
     ]
 
 
+def count_hdfs_objects(fs, path="/clickhouse"):
+    # `fileCount` is recursive: it counts the files of the whole subtree in one request.
+    return fs.get_content_summary(path).fileCount
+
+
+def assert_hdfs_objects_count(fs, expected):
+    count = count_hdfs_objects(fs)
+    assert count == expected, f"{count} != {expected}: {list_hdfs_objects(fs)}"
+
+
 def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
     while num_tries > 0:
-        num_hdfs_objects = len(list_hdfs_objects(fs))
+        num_hdfs_objects = count_hdfs_objects(fs)
         if num_hdfs_objects == expected:
             break
         num_tries -= 1
         time.sleep(1)
-    assert len(list_hdfs_objects(fs)) == expected
+    assert_hdfs_objects_count(fs, expected)
 
 
 @pytest.fixture(autouse=True)
@@ -125,17 +143,16 @@ def drop_table(cluster):
     node = cluster.instances["node"]
 
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
-    hdfs_objects = list_hdfs_objects(fs)
-    print("Number of hdfs objects to delete:", len(hdfs_objects), sep=" ")
+    print("Number of hdfs objects to delete:", count_hdfs_objects(fs), sep=" ")
 
     node.query("DROP TABLE IF EXISTS hdfs_test SYNC")
 
     try:
         wait_for_delete_hdfs_objects(cluster, 0)
     finally:
-        hdfs_objects = list_hdfs_objects(fs)
-        if len(hdfs_objects) == 0:
+        if count_hdfs_objects(fs) == 0:
             return
+        hdfs_objects = list_hdfs_objects(fs)
         print(
             "Manually removing extra objects to prevent tests cascade failing: ",
             hdfs_objects,
@@ -165,9 +182,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
 
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
-    hdfs_objects = list_hdfs_objects(fs)
-    print(hdfs_objects)
-    assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + files_per_part)
 
     values2 = generate_values("2020-01-04", 4096)
     node.query("INSERT INTO hdfs_test VALUES {}".format(values2))
@@ -176,8 +191,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
         == values1 + "," + values2
     )
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + files_per_part * 2)
 
     assert (
         node.query("SELECT count(*) FROM hdfs_test where id = 1 FORMAT Values") == "(2)"
@@ -246,8 +260,7 @@ def test_attach_detach_partition(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -301,20 +314,17 @@ def test_move_partition_to_another_disk(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdfs'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
 
 def test_table_manipulations(cluster):
@@ -333,8 +343,7 @@ def test_table_manipulations(cluster):
     node.query("RENAME TABLE hdfs_test TO hdfs_renamed")
     assert node.query("SELECT count(*) FROM hdfs_renamed FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("RENAME TABLE hdfs_renamed TO hdfs_test")
     assert (
@@ -348,8 +357,7 @@ def test_table_manipulations(cluster):
     node.query("ATTACH TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("TRUNCATE TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
@@ -383,8 +391,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
-    hdfs_objects = list_hdfs_objects(fs)
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
+    assert_hdfs_objects_count(fs, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4)
 
     create_table(cluster, "hdfs_clone")
 
@@ -396,9 +403,6 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_clone FORMAT Values") == "(8192)"
 
     # Number of objects in HDFS should be unchanged.
-    hdfs_objects = list_hdfs_objects(fs)
-    for obj in hdfs_objects:
-        print("Object in HDFS after move", obj)
     wait_for_delete_hdfs_objects(
         cluster,
         FILES_OVERHEAD * 2
@@ -418,10 +422,6 @@ def test_move_replace_partition_to_another_table(cluster):
     )
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
-
-    hdfs_objects = list_hdfs_objects(fs)
-    for obj in hdfs_objects:
-        print("Object in HDFS after insert", obj)
 
     wait_for_delete_hdfs_objects(
         cluster,
@@ -452,11 +452,6 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     # Data should remain in hdfs
-    hdfs_objects = list_hdfs_objects(fs)
-
-    for obj in hdfs_objects:
-        print("Object in HDFS after drop", obj)
-
     wait_for_delete_hdfs_objects(
         cluster,
         FILES_OVERHEAD
@@ -464,3 +459,141 @@ def test_move_replace_partition_to_another_table(cluster):
         - FILES_OVERHEAD_METADATA_VERSION * 2
         + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
+
+
+def test_sql_hdfs_disk_remote_host_filter(cluster):
+    node = cluster.instances["node"]
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
+    include_settings = {
+        "dynamic_disk_allow_include": 1,
+        "s3_allow_server_credentials_in_user_queries": 1,
+    }
+
+    def hdfs_disk(path, host="hdfs1"):
+        return f"disk(type = 'hdfs', endpoint = 'hdfs://{host}:9000/sql_disk_filter/{path}/')"
+
+    existing_disk = hdfs_disk("filter_existing")
+    macro_disk = hdfs_disk("filter_macro", host="{hdfs_host}")
+    locations_disk = "disk(type = 'object_storage', include = 'hdfs_locations')"
+    named_disk = (
+        "disk(name = 'old_hdfs', type = 'hdfs', "
+        "endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_named/')"
+    )
+    read_only_disk = (
+        "disk(type = 'hdfs', endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_ro/', read_only = 1)"
+    )
+    include_wrapper_disk = "disk(type = 'encrypted', include = 'encrypted_old_hdfs')"
+    include_config = "/etc/clickhouse-server/config.d/hdfs_locations.xml"
+    wrapper_disks = [
+        "disk(type = 'encrypted', disk = 'old_hdfs', key = '0123456789abcdef', path = 'bypass/')",
+        "disk(type = 'cache', disk = 'old_hdfs', path = 'hdfs_bypass_cache/', max_size = '1Mi')",
+    ]
+
+    def create(table, disk, settings=None):
+        node.query(
+            f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk}",
+            settings=settings,
+        )
+        node.query(f"INSERT INTO {table} VALUES (1)")
+
+    def assert_rejected(disk, settings=None):
+        error = node.query_and_get_error(
+            f"CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk}",
+            settings=settings,
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+
+    def assert_reuse_rejected():
+        assert_rejected(existing_disk)
+        assert_rejected(locations_disk, settings=include_settings)
+        # A new wrapper takes the old custom disk by name, without building an HDFS object storage.
+        for wrapper in wrapper_disks:
+            assert_rejected(wrapper)
+        # The policy of a custom disk selects that disk, so its endpoint is checked like the disk itself.
+        # Engines other than MergeTree also take a custom disk by name.
+        # `Distributed` checks its policy before it resolves the cluster, which is not defined here.
+        for query in [
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+            "SETTINGS storage_policy = '__old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) "
+            "ENGINE = Distributed(no_cluster, default, t_default_policy, rand(), '__old_hdfs')",
+            "ALTER TABLE t_default_policy MODIFY SETTING storage_policy = '__old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = Set SETTINGS disk = 'old_hdfs'",
+            "CREATE TABLE t_rejected_hdfs_disk (x UInt32) "
+            "ENGINE = Log SETTINGS storage_policy = '__old_hdfs'",
+        ]:
+            error = node.query_and_get_error(query)
+            assert "UNACCEPTABLE_URL" in error, error
+
+    # Created before the list excludes hdfs1: loaded from metadata on restart, so they are only reported.
+    create("t_existing_hdfs_disk", existing_disk)
+    create("t_locations_hdfs_disk", locations_disk, settings=include_settings)
+    create("t_named_hdfs_disk", named_disk)
+    # The policy of a custom disk may be used while the host of that disk is allowed.
+    node.query(
+        "CREATE TABLE t_policy_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = '__old_hdfs'"
+    )
+    node.query("INSERT INTO t_policy_hdfs_disk VALUES (1)")
+    node.query("CREATE TABLE t_default_policy (x UInt32) ENGINE = MergeTree ORDER BY x")
+    create("t_macro_hdfs_disk", macro_disk)
+    create("t_include_wrapper_disk", include_wrapper_disk, settings=include_settings)
+    # The disk is cached when it is created, even if a MergeTree table on an empty read-only disk then fails.
+    node.query_and_get_answer_with_error(
+        f"CREATE TABLE t_ro_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {read_only_disk}"
+    )
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
+
+        assert_rejected(hdfs_disk("filter_blocked"))
+        # Rejected before HDFSObjectStorage connects, so the access check wrote nothing.
+        assert not fs.exists("/sql_disk_filter/filter_blocked")
+        # Identical definitions reuse the disks created before the list was tightened.
+        assert_reuse_rejected()
+        assert_rejected(read_only_disk)
+
+        # A short ATTACH uses the policy of its stored definition, so it is not checked.
+        node.query("DETACH TABLE t_policy_hdfs_disk")
+        node.query("ATTACH TABLE t_policy_hdfs_disk")
+        assert node.query("SELECT x FROM t_policy_hdfs_disk") == "1\n"
+        # On restart its policy exists only once the table that declares `old_hdfs` is loaded.
+        node.query("DROP TABLE t_policy_hdfs_disk SYNC")
+
+        # The cached wrapper still delegates to old_hdfs even though its include now names a server disk.
+        node.replace_in_config(include_config, "<disk>old_hdfs</disk>", "<disk>default</disk>")
+        try:
+            assert_rejected(include_wrapper_disk, settings=include_settings)
+        finally:
+            node.replace_in_config(include_config, "<disk>default</disk>", "<disk>old_hdfs</disk>")
+        # Its disk wraps the disk of another table, which may not be loaded yet on restart.
+        node.query("DROP TABLE t_include_wrapper_disk SYNC")
+
+        # The macro now expands to an allowed host, but the reused disk still points at hdfs1.
+        cm.add_main_config(node, "configs/macros_override.xml")
+        assert node.query("SELECT getMacro('hdfs_host')") == "allowed.example.com\n"
+        assert_rejected(macro_disk)
+        # On restart the macro would point the table at a nonexistent host.
+        node.query("DROP TABLE t_macro_hdfs_disk SYNC")
+
+        node.restart_clickhouse()
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+        assert node.query("SELECT x FROM t_locations_hdfs_disk") == "1\n"
+        assert node.query("SELECT x FROM t_named_hdfs_disk") == "1\n"
+        assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
+        # Identical definitions reuse the disks loaded from metadata with only a warning.
+        assert_reuse_rejected()
+
+        # A short ATTACH reuses the disk of its stored definition, so it is not checked.
+        node.query("DETACH TABLE t_existing_hdfs_disk")
+        node.query("ATTACH TABLE t_existing_hdfs_disk")
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+
+    for table in [
+        "t_existing_hdfs_disk",
+        "t_locations_hdfs_disk",
+        "t_named_hdfs_disk",
+        "t_default_policy",
+    ]:
+        node.query(f"DROP TABLE {table} SYNC")
+    node.query("DROP TABLE IF EXISTS t_ro_hdfs_disk SYNC")

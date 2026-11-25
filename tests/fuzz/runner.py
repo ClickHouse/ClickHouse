@@ -221,7 +221,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
         "malloc_limit_mb",      # If non-zero, the fuzzer will exit if the target tries to allocate this number of Mb with one malloc call. If zero (default)
                                 # same limit as rss_limit_mb is applied.
         "only_ascii",           # If 1, generate only ASCII (isprint``+``isspace) inputs. Defaults to 0.
+        "use_value_profile",    # If 1, use value profile to guide corpus expansion (adds coverage features for comparison operands). Defaults to 0.
         "dict",                 # Provide a dictionary of input keywords, if absent fuzzer specific dictionary with name <fuzzer>.dict is used when present.
+        "detect_leaks",         # If 1 (default) and LeakSanitizer is enabled, try to detect memory leaks during fuzzing (i.e. not only at shut down).
     ]
 
     allowed_merge_libfuzzer_options = [
@@ -250,19 +252,22 @@ def run_fuzzer(fuzzer: str, timeout: int):
         parser.read(path)
 
         if parser.has_section("asan"):
-            env_common["ASAN_OPTIONS"] = (
-                f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
-            )
+            env_common["ASAN_OPTIONS"] = ":".join(
+                [os.environ.get("ASAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["asan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("msan"):
-            env_common["MSAN_OPTIONS"] = (
-                f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
-            )
+            env_common["MSAN_OPTIONS"] = ":".join(
+                [os.environ.get("MSAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["msan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("ubsan"):
-            env_common["UBSAN_OPTIONS"] = (
-                f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
-            )
+            env_common["UBSAN_OPTIONS"] = ":".join(
+                [os.environ.get("UBSAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["ubsan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("fuzzer_arguments"):
             fuzzer_arguments = " ".join(

@@ -21,7 +21,8 @@ node = cluster.add_instance(
 )
 
 # Same configuration, but with compress_snapshots_with_zstd_format turned off, so that
-# snapshots are written in ClickHouse's own compressed block format instead of zstd.
+# snapshots are written in ClickHouse's own compressed block format instead of zstd,
+# and with the nodes digest enabled.
 node_uncompressed = cluster.add_instance(
     "node_uncompressed",
     main_configs=["configs/enable_keeper.xml", "configs/uncompressed_snapshots.xml"],
@@ -327,6 +328,153 @@ def test_snapshot_survives_restart(started_cluster, request, node_name):
         node_zk = get_connection_zk(keeper_node.name)
         node_zk.chroot = chroot
         assert len(node_zk.get_children("/")) == 100
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
+        except:
+            pass
+
+
+def run_snapshot_analyzer(keeper_node, snapshot_path, extra_args=""):
+    """Returns (exit_code, combined stdout+stderr) of `clickhouse keeper-utils snapshot-analyzer`."""
+    output = keeper_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "/usr/bin/clickhouse keeper-utils snapshot-analyzer "
+            f"--snapshot-path {snapshot_path} {extra_args} 2>&1; echo EXIT_CODE=$?",
+        ]
+    )
+    lines = output.splitlines()
+    assert lines[-1].startswith("EXIT_CODE="), output
+    return int(lines[-1][len("EXIT_CODE=") :]), "\n".join(lines[:-1])
+
+
+def parse_stat(output, name):
+    """Extracts the integer after `  <name>: ` from the analyzer output."""
+    for line in output.splitlines():
+        if line.strip().startswith(name + ":"):
+            return int(line.split(":", 1)[1].strip().split()[0])
+    assert False, f"no '{name}' line in output:\n{output}"
+
+
+# 'node' writes zstd-compressed snapshots without digest, 'node_uncompressed' writes
+# CompressedWriteBuffer-compressed snapshots with digest.
+@pytest.mark.parametrize("node_name", ["node", "node_uncompressed"])
+def test_snapshot_analyzer(started_cluster, request, node_name):
+    keeper_node = started_cluster.instances[node_name]
+    keeper_utils.wait_until_connected(started_cluster, keeper_node)
+    snapshots_dir = "/var/lib/clickhouse/coordination/snapshots"
+    node_zk = None
+    try:
+        node_zk = get_connection_zk(keeper_node.name)
+
+        chroot = f"/test_snapshot_analyzer_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+        for i in range(100):
+            node_zk.create("/node" + str(i), random_string(123).encode())
+        node_zk.create("/ephemeral", b"e", ephemeral=True)
+        node_zk.create("/big", b"x" * 1000)
+
+        # Same dance as in test_snapshot_survives_restart: 'csnp' refuses while an automatic
+        # snapshot is in flight or when the committed index is already covered by a snapshot.
+        for _ in range(20):
+            snapshot_idx = keeper_utils.send_4lw_cmd(
+                started_cluster, keeper_node, "csnp"
+            ).strip()
+            if snapshot_idx.isdigit():
+                break
+            node_zk.set("/node0", random_string(123).encode())
+            time.sleep(1)
+        else:
+            assert False, f"csnp kept refusing to schedule: {snapshot_idx!r}"
+
+        keeper_node.wait_for_log_line(
+            f"Created persistent snapshot {snapshot_idx} with path"
+        )
+        snapshot_files = keeper_node.exec_in_container(
+            ["bash", "-c", f"ls {snapshots_dir} | grep ^snapshot_{snapshot_idx}_"]
+        ).split()
+        assert len(snapshot_files) == 1, snapshot_files
+        snapshot_file = snapshot_files[0]
+        if node_name == "node":
+            assert snapshot_file.endswith(".bin.zstd"), snapshot_file
+        else:
+            assert snapshot_file.endswith(".bin"), snapshot_file
+
+        # A single snapshot file, with every optional section enabled.
+        exit_code, output = run_snapshot_analyzer(
+            keeper_node,
+            f"{snapshots_dir}/{snapshot_file}",
+            "--with-node-stats --subtrees-limit 3 --sample-size 5 --top-children 3",
+        )
+        assert exit_code == 0, output
+        assert f"=== Snapshot: {snapshots_dir}/{snapshot_file} ===" in output
+        assert parse_stat(output, "Last committed log index") == int(snapshot_idx)
+        # The chroot itself, 102 children, the root and the system nodes; the keeper is shared
+        # with the other tests of this module, so only lower bounds can be checked.
+        assert parse_stat(output, "Number of nodes") >= 104
+        assert parse_stat(output, "Ephemeral nodes") >= 1
+        assert parse_stat(output, "Nodes with non-empty data") >= 103
+        assert parse_stat(output, "Max node data size") >= 1000
+        assert parse_stat(output, "Total node data size") >= 100 * 123 + 1000
+        assert parse_stat(output, "Max number of children") >= 102
+        assert parse_stat(output, "Number of sessions") >= 1
+        assert "  Top 3 nodes by children count:\n" in output
+        assert f"    {chroot}: 102 children\n" in output
+        assert "  Random sample of up to 5 nodes (path: data size):\n" in output
+        assert "  Predicted KeeperMemNodesStorage memory usage" in output
+        assert "  Top 3 biggest subtrees:\n" in output
+        assert f"    {chroot}: 102 descendants\n" in output
+        if node_name == "node":
+            assert "  Digest: none" in output
+        else:
+            assert "  Digest: none" not in output
+            assert parse_stat(output, "Digest") != 0
+
+        # Directory mode: every snapshot is analyzed, newest first.
+        exit_code, output = run_snapshot_analyzer(keeper_node, snapshots_dir)
+        assert exit_code == 0, output
+        analyzed = [
+            line[len("=== Snapshot: ") : -len(" ===")]
+            for line in output.splitlines()
+            if line.startswith("=== Snapshot: ")
+        ]
+        assert snapshot_file in analyzed, output
+        assert f"Found {len(analyzed)} snapshots in {snapshots_dir}:" in output
+        indices = [int(name.split("_")[1]) for name in analyzed]
+        assert indices == sorted(indices, reverse=True), analyzed
+        assert output.count("  Number of nodes: ") == len(analyzed)
+
+        # A broken snapshot makes the command fail, but in directory mode the other snapshots
+        # are still analyzed.
+        broken_dir = f"/tmp/test_snapshot_analyzer_{get_retry_number(request)}"
+        keeper_node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -rf {broken_dir} && mkdir {broken_dir} && cp {snapshots_dir}/{snapshot_file} {broken_dir}/ "
+                f"&& printf 'this is not a snapshot' > {broken_dir}/snapshot_1_00000000deadbeef.bin",
+            ]
+        )
+        exit_code, output = run_snapshot_analyzer(
+            keeper_node, f"{broken_dir}/snapshot_1_00000000deadbeef.bin"
+        )
+        assert exit_code != 0, output
+        assert "Number of nodes" not in output
+
+        exit_code, output = run_snapshot_analyzer(keeper_node, broken_dir)
+        assert exit_code != 0, output
+        assert f"Found 2 snapshots in {broken_dir}:" in output
+        assert output.index(f"=== Snapshot: {snapshot_file} ===") < output.index(
+            "=== Snapshot: snapshot_1_00000000deadbeef.bin ==="
+        )
+        assert output.count("  Number of nodes: ") == 1
+        assert "Error analyzing snapshot snapshot_1_00000000deadbeef.bin" in output
+        assert f"Failed to analyze 1 of 2 snapshots in {broken_dir}" in output
     finally:
         try:
             if node_zk is not None:

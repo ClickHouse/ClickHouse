@@ -48,7 +48,7 @@ EXISTS TABLE eligible_test SETTINGS use_query_cache = true;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- KILL
-KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true;
+KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, kill_throw_if_noop = false;
 SELECT COUNT(*) FROM system.query_cache;
 
 -- OPTIMIZE

@@ -69,12 +69,11 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::HASH: return "HASH";
         case JoinAlgorithm::PARTIAL_MERGE: return "PARTIAL_MERGE";
         case JoinAlgorithm::PREFER_PARTIAL_MERGE: return "PREFER_PARTIAL_MERGE";
-        case JoinAlgorithm::PARALLEL_HASH: return "PARALLEL_HASH";
         case JoinAlgorithm::DIRECT: return "DIRECT";
         case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
         case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE: return "PARALLEL_FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
-        case JoinAlgorithm::IE_JOIN: return "IE_JOIN";
+        case JoinAlgorithm::INEQUALITY: return "INEQUALITY";
     }
 }
 

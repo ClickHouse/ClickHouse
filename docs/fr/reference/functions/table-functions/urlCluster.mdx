@@ -10,17 +10,13 @@ doc_type: 'reference'
 
 Permet de traiter en parallèle des fichiers à partir d’une URL depuis plusieurs nœuds d’un cluster spécifié. Sur l’initiateur, une connexion est établie avec tous les nœuds du cluster, l’astérisque présent dans le chemin de fichier de l’URL est développé, puis chaque fichier est réparti dynamiquement. Sur le nœud worker, celui-ci demande à l’initiateur la tâche suivante à traiter, puis la traite. Cette opération est répétée jusqu’à ce que toutes les tâches soient terminées.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument       | Description                                                                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -29,15 +25,11 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Format](/fr/reference/formats/index) des données. Type : [String](/fr/reference/data-types/string).                                                               |
 | `structure`    | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string). |
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+## Valeur renvoyée {#returned-value}
 
 Une table au format et à la structure spécifiés, contenant les données de l’`URL` définie.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Récupération des 3 premières lignes d’une table contenant des colonnes de type `String` et [UInt32](/fr/reference/data-types/int-uint) depuis un serveur HTTP qui répond au format [CSV](/fr/reference/formats/CSV/CSV).
 
@@ -63,16 +55,14 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-<div id="globs-in-url">
-  ## Globs dans l’URL
-</div>
+## Globs dans l’URL {#globs-in-url}
 
 Les motifs dans `{ }` sont utilisés pour générer un ensemble de shards ou pour spécifier des adresses de basculement. Pour connaître les types de motifs pris en charge ainsi que des exemples, consultez la description de la fonction [remote](/fr/reference/functions/table-functions/remote#globs-in-addresses).
 Le caractère `|` à l’intérieur des motifs est utilisé pour spécifier des adresses de basculement. Celles-ci sont parcourues dans le même ordre que celui dans lequel elles sont listées dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-<div id="related">
-  ## Voir aussi
-</div>
+Les adresses sont générées une par une à mesure que les tâches sont confiées aux nœuds du cluster. Ainsi, `glob_expansion_max_elements` limite le nombre d’adresses qu’une requête peut lire plutôt que la taille du motif, comme l’explique la documentation de la fonction [url](/fr/reference/functions/table-functions/url#globs-in-url). Un prédicat `_path` ou `_file` est appliqué à chaque adresse lors de sa génération : les adresses qu’il rejette sont donc elles aussi générées et comptabilisées dans cette limite ; seules celles qui satisfont le prédicat sont transmises.
+
+## Voir aussi {#related}
 
 * [Moteur HDFS](/fr/reference/engines/table-engines/integrations/hdfs)
 * [fonction de table URL](/fr/reference/engines/table-engines/special/url)
