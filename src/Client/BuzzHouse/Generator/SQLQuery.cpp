@@ -2233,7 +2233,9 @@ bool StatementGenerator::generateStarSelect(
     /// Collect which entity types are available and pick one uniformly
     bool supports_final = false;
     const uint32_t n_choices = static_cast<uint32_t>(has_t) + static_cast<uint32_t>(has_v) + static_cast<uint32_t>(has_d);
-    uint32_t choice = rg.randomInt<uint32_t>(0, n_choices - 1);
+    /// Signed, because the matching branch decrements the counter past zero and an unsigned
+    /// `choice--` would wrap there.
+    int32_t choice = static_cast<int32_t>(rg.randomInt<uint32_t>(0, n_choices - 1));
 
     if (has_t && choice-- == 0)
     {
