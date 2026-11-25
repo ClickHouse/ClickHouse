@@ -138,12 +138,6 @@ def keeper_store_root(keeper_parent=KEEPER_PARENT):
     return f"{keeper_parent}/my_warehouse/{warehouse_uuid}"
 
 
-# There is no drop-namespace endpoint yet. The tables must be dropped first.
-def remove_namespace_in_keeper(warehouse, ns):
-    warehouse_uuid = stored_warehouse_definition(warehouse)["uuid"]
-    get_keeper().delete(f"{KEEPER_PARENT}/{warehouse}/{warehouse_uuid}/namespaces/{ns}", recursive=True)
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     global keeper
@@ -1513,7 +1507,7 @@ def test_warehouse_discovery(started_cluster):
 
     # After the warehouse is deleted it is unknown again.
     catalog_request("DELETE", f"{namespaces_url}/ns/tables/t", expected_code=204)
-    remove_namespace_in_keeper(warehouse, "ns")
+    catalog_request("DELETE", f"/v1/{warehouse}/namespaces/ns", expected_code=204)
     delete_warehouse(warehouse)
     catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
     response = catalog_request("GET", namespaces_url, expected_code=404)
@@ -1582,7 +1576,7 @@ def test_warehouse_delete_refuses_with_namespaces(started_cluster):
     # Nothing was removed. The warehouse still serves requests.
     assert catalog_request("GET", f"/v1/{warehouse}/namespaces").json()["namespaces"] == [["ns"]]
 
-    remove_namespace_in_keeper(warehouse, "ns")
+    catalog_request("DELETE", f"/v1/{warehouse}/namespaces/ns", expected_code=204)
     delete_warehouse(warehouse)
 
 
@@ -1617,7 +1611,7 @@ def test_warehouse_credential_rotation(started_cluster):
 
     for table in ["before", "after"]:
         catalog_request("DELETE", f"/v1/{warehouse}/namespaces/ns/tables/{table}", expected_code=204)
-    remove_namespace_in_keeper(warehouse, "ns")
+    catalog_request("DELETE", f"/v1/{warehouse}/namespaces/ns", expected_code=204)
     delete_warehouse(warehouse)
 
 
