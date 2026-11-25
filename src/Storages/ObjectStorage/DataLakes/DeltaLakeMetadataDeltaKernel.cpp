@@ -853,8 +853,13 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
+    /// The kernel opens the table at its latest version for the transaction.
+    auto latest_snapshot = snapshot;
+    if (snapshot_version.has_value())
+        latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(/* version */ std::nullopt, kernel_helper, object_storage, log);
+
     /// The kernel requires the statistics of the clustering columns, and the writer only writes `numRecords`.
-    if (snapshot->hasWriterFeature("clustering"))
+    if (latest_snapshot->hasWriterFeature("clustering"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writing to clustered DeltaLake tables is not supported");
 
     auto write_object_storage = object_storage_;
@@ -873,17 +878,9 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         }
     }
 
-    /// The kernel opens the table at its latest version for the transaction, so an older pinned
-    /// snapshot's schema is not the one a reader resolves this data file against.
+    /// An older pinned snapshot's schema is not the one a reader resolves this data file against.
     std::unordered_set<String> table_timestamp_ntz_paths;
-    if (snapshot_version.has_value())
-    {
-        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
-            /* version */ std::nullopt, kernel_helper, object_storage, log);
-        if (latest_snapshot->getVersion() == *snapshot_version)
-            table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
-    }
-    else
+    if (!snapshot_version.has_value() || latest_snapshot->getVersion() == *snapshot_version)
         table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
 
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(

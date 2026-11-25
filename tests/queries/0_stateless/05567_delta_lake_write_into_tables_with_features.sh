@@ -85,4 +85,18 @@ do
     if diff -rq "$CUR_DIR/data_lake_corpus/delta/$table" "$BASE/$table" > /dev/null; then echo "$table: unchanged"; else echo "$table: changed"; fi
 done
 
+# Version 1 enables clustering. The INSERT is committed on the latest version, so it is rejected with version 0 pinned too.
+mkdir -p "$BASE/clustered_later/_delta_log"
+cat > "$BASE/clustered_later/_delta_log/00000000000000000000.json" <<'JSON'
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"clustered_later","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}
+JSON
+cat > "$BASE/clustered_later/_delta_log/00000000000000000001.json" <<'JSON'
+{"protocol":{"minReaderVersion":1,"minWriterVersion":7,"writerFeatures":["appendOnly","invariants","domainMetadata","clustering"]}}
+{"domainMetadata":{"domain":"delta.clustering","configuration":"{\"clusteringColumns\":[[\"id\"]],\"domainName\":\"delta.clustering\"}","removed":false}}
+JSON
+cp -r "$BASE/clustered_later" "$BASE/clustered_later_before"
+echo "clustered_later, version 0 pinned: $(SETTINGS="$SETTINGS --delta_lake_snapshot_version 0" insert clustered_later "(1)")"
+if diff -rq "$BASE/clustered_later_before" "$BASE/clustered_later" > /dev/null; then echo "clustered_later: unchanged"; else echo "clustered_later: changed"; fi
+
 rm -rf "$BASE"
