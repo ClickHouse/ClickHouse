@@ -729,7 +729,7 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 In this case, `?role=my_role&role=my_other_role` works similarly to executing `SET ROLE my_role, my_other_role` before the statement.
 
-The `role` query parameter is not affected by the `access_control_improvements.readonly_restricts_set_role` server setting, which refuses only the `SET ROLE` statement.
+The `role` query parameter is not affected by the `access_control_improvements.readonly_restricts_set_role` server setting, which refuses only the `SET ROLE` and `SET DEFAULT ROLE` statements.
 
 ## HTTP response codes caveats {#http_response_codes_caveats}
 
