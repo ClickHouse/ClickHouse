@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,6 +81,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
 }
 
 namespace ServerSetting
@@ -180,6 +182,44 @@ bool runsWhenFolded(const ASTFunction & call, const ContextPtr & context)
         || UserDefinedSQLFunctionFactory::instance().has(call.name) || UserDefinedExecutableFunctionFactory::has(call.name, context);
 }
 
+/// Refuses a structure string whose column defaults would run, since a table function parses it with the parser and limits
+/// of `parseColumnsListFromString` and folds them (a string that does not parse fails the table function first).
+void checkStructureLoadsPassively(const String & structure, const ASTCreateQuery & create, const ASTFunction & function, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    ParserColumnDeclarationList parser(true, true);
+    String error;
+    const char * begin = structure.data();
+    const ASTPtr columns = tryParseQuery(parser, begin, structure.data() + structure.size(), error, false, "columns declaration list",
+        false, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+    if (!columns)
+        return;
+    AliasColumns aliases;
+    std::vector<const IAST *> stack;
+    for (const auto & column : columns->children)
+        if (const auto * declaration = column->as<ASTColumnDeclaration>(); declaration && declaration->getDefaultExpression())
+        {
+            stack.push_back(declaration->getDefaultExpression().get());
+            if (declaration->default_specifier == ColumnDefaultSpecifier::Alias)
+                aliases.emplace(declaration->name, declaration->getDefaultExpression().get());
+        }
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !readsColumn(*call, aliases))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: {} in the structure of {} would run when the table is loaded",
+                backQuote(create.getTable()), call->formatForErrorMessage(), function.name);
+        if (node->as<ASTSubquery>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot load {} with `load_tables_readonly`: the subquery {} in the structure of {} would run when the table is loaded",
+                backQuote(create.getTable()), node->formatForErrorMessage(), function.name);
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+}
+
 /// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.
 void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQuery & create, const ContextPtr & context)
 {
@@ -188,6 +228,8 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
     const auto & arguments = function->arguments->children;
     static const std::unordered_set<String> remote_names{"Remote", "RemoteSecure", "remote", "remoteSecure", "cluster", "clusterAllReplicas"};
     const bool reads_through_table_function = remote_names.contains(function->name);
+    /// A table created `AS` a table function reads a structure from a string, also a folded one, when it is loaded.
+    const bool reads_structure = create.as_table_function && create.as_table_function->as<ASTFunction>() == function;
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         /// The sharding key of `Distributed` runs per row, so only its calls on constants are folded at load.
@@ -209,10 +251,30 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot load {} with `load_tables_readonly`: the subquery {} in the arguments of {} would run when the table is loaded",
                     backQuote(create.getTable()), node->formatForErrorMessage(), function->name);
+            if (const auto * literal = node->as<ASTLiteral>(); reads_structure && literal && literal->value.getType() == Field::Types::String)
+                checkStructureLoadsPassively(literal->value.safeGet<String>(), create, *function, context);
             const bool child_not_run = in_not_run || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectQuery>();
             for (const auto & child : node->children)
                 stack.emplace_back(child.get(), child_not_run);
         }
+        /// The table function folds the argument, or the value of a `key = value` one, before it reads a structure from it.
+        const auto * computed = arguments[i]->as<ASTFunction>();
+        if (computed && computed->name == "equals" && computed->arguments && computed->arguments->children.size() == 2
+            && computed->arguments->children[0]->as<ASTIdentifier>())
+            computed = computed->arguments->children[1]->as<ASTFunction>();
+        if (!reads_structure || !computed || TableFunctionFactory::instance().isTableFunctionName(computed->name))
+            continue;
+        ASTPtr folded;
+        try
+        {
+            folded = evaluateConstantExpressionAsLiteral(computed->clone(), context);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Not a constant, so the table function cannot fold it into a structure either.
+        }
+        if (const auto * literal = folded ? folded->as<ASTLiteral>() : nullptr; literal && literal->value.getType() == Field::Types::String)
+            checkStructureLoadsPassively(literal->value.safeGet<String>(), create, *function, context);
     }
 }
 

@@ -5943,6 +5943,52 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
         && mergeSourcesAnalyzePassively(catalog, *database, regexp->value.safeGet<String>(), depth + 1, &table);
 }
 
+/// Whether the defaults of the structure a table function reads, which the server parses and folds, pass the probe's checks,
+/// failing for a structure this client cannot parse, or cannot fold as the server does (`null` and `generateRandom` fold one).
+bool structureAnalyzesPassively(const ASTFunction & function, const ContextPtr & context)
+{
+    const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); };
+    const ASTs arguments = function.arguments ? function.arguments->children : ASTs{};
+    /// `values` reads its first argument as a structure only when it is a literal and rows follow it.
+    size_t position = arguments.size();
+    if (is("url") || is("executable"))
+        position = 2;
+    else if (is("input") || is("null") || is("generateRandom") || (is("values") && arguments.size() > 1))
+        position = 0;
+    if (position >= arguments.size() || arguments[position]->as<ASTSetQuery>())
+        return true;
+    std::optional<Field> structure;
+    if (const auto * literal = arguments[position]->as<ASTLiteral>())
+        structure = literal->value;
+    else if (is("values"))
+        return true;
+    else
+        structure = tryFoldStructureArgument(arguments[position], context);
+    if (!structure)
+        return false;
+    if (structure->getType() != Field::Types::String || equalsCaseInsensitive(structure->safeGet<String>(), "auto"))
+        return true;
+    ASTPtr columns;
+    try
+    {
+        ParserColumnDeclarationList parser;
+        columns = parseQuery(parser, structure->safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+    bool passive = true;
+    for (const auto & child : columns->children)
+        if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getDefaultExpression())
+            forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
+            {
+                const auto * call = node.as<ASTFunction>();
+                passive = passive && !node.as<ASTSubquery>() && (!call || functionAnalyzesPassively(*call, context));
+            });
+    return passive;
+}
+
 /// Whether the storage of a table function builds and analyzes without I/O, including the tables `merge` and `loop` read.
 bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth)
 {
@@ -5970,7 +6016,7 @@ bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCat
         }
         return source && tableAnalyzesPassively(catalog, *source, depth + 1);
     }
-    return tableFunctionIsGeneratorOrPassive(function);
+    return tableFunctionIsGeneratorOrPassive(function) && structureAnalyzesPassively(function, catalog.context);
 }
 
 /// Whether the analyzer can resolve this function without I/O. It folds a function whose arguments are all constant, and

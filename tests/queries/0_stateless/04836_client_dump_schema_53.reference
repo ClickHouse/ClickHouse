@@ -1,0 +1,56 @@
+--- a table created AS a table function whose structure has a default that loads a dictionary is refused ---
+url_default: dump failed: 1
+in the structure of url would run when the table is loaded
+url_default: dumped: 0
+url_default: no command ran
+url_function: dump failed: 1
+in the structure of url would run when the table is loaded
+url_function: dumped: 0
+url_function: no command ran
+url_columns: dump failed: 1
+in the structure of url would run when the table is loaded
+url_columns: dumped: 0
+url_columns: no command ran
+url_named_structure: dump failed: 1
+in the structure of url would run when the table is loaded
+url_named_structure: dumped: 0
+url_named_structure: no command ran
+values_structure: dump failed: 1
+in the structure of values would run when the table is loaded
+values_structure: dumped: 0
+values_structure: no command ran
+generate_random_computed: dump failed: 1
+in the structure of generateRandom would run when the table is loaded
+generate_random_computed: dumped: 0
+generate_random_computed: no command ran
+url_computed: dump failed: 1
+in the structure of url would run when the table is loaded
+url_computed: dumped: 0
+url_computed: no command ran
+generate_random_alias: dump failed: 1
+in the structure of generateRandom would run when the table is loaded
+generate_random_alias: dumped: 0
+generate_random_alias: no command ran
+--- a materialized view reading a table function whose structure has such a default is not probed ---
+mv_url: dump failed: 0
+mv_url: dumped: 1
+mv_url: no command ran
+mv_values: dump failed: 0
+mv_values: dumped: 1
+mv_values: no command ran
+mv_null_computed: dump failed: 0
+mv_null_computed: dumped: 1
+mv_null_computed: no command ran
+--- a default that looks a column up, or loads nothing, is not run, and the table is dumped ---
+url_column_lookup: dump failed: 0
+url_column_lookup: dumped: 1
+url_column_lookup: no command ran
+generate_random_alias_column: dump failed: 0
+generate_random_alias_column: dumped: 1
+generate_random_alias_column: no command ran
+url_plain: dump failed: 0
+url_plain: dumped: 1
+url_plain: no command ran
+mv_url_plain: dump failed: 0
+mv_url_plain: dumped: 1
+mv_url_plain: no command ran
