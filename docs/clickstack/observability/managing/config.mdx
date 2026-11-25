@@ -82,6 +82,8 @@ The API credentials are separate from the ingestion API key under **Data → Man
 
 **Export to Terraform** is marked **Experimental**. Select the resource types to include and use **Download import file** to add them to a Terraform project. The UI provides the command for generating resource configuration with the ClickHouse provider. Platform-managed connections are exported as reference-only locals.
 
+Alerts on saved searches and on dashboard tiles are exported. A file that contains a tile alert requires version 3.28.0 or later of the ClickHouse Terraform provider. Chart Explorer alerts aren't exported, and neither are tile alerts whose tile has no unique, non-blank name on its dashboard. The configuration generated for a tile alert sets `dashboard_id` and `tile_id` to literal values: replace them with references to the `clickhouse_clickstack_dashboard` resource before you apply it.
+
 ### Configure Generative AI {#generative-ai}
 
 Use **Configure Generative AI** to enable or disable generative AI features for the service. These include the Chart AI Assistant in Chart Explorer and [AI Notebooks](/clickstack/observability/notebooks).
