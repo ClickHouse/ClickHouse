@@ -110,6 +110,8 @@ public:
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;
     bool supportsSubcolumns() const override;
     bool supportsOptimizationToSubcolumns() const override;
+    bool supportsSubcolumnOptimizationWithFinal() const override;
+    bool hasBucketedMapSerialization() const override;
 
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;

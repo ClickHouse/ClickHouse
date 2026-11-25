@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['s3', 'производительность', 'оптимизация', 'объектное хранилище', 'загрузка данных']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Этот раздел посвящён оптимизации производительности при чтении и вставке данных из S3 с помощью [табличных функций s3](/ru/reference/functions/table-functions/s3).
 
 <Info>
@@ -27,7 +25,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ### Размер блока вставки
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/insert_mechanics.webp" size="lg" border alt="Механика размера блока вставки в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Механика размера блока вставки в ClickHouse](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</Frame>
+
+</div>
 
 При выполнении `INSERT INTO SELECT` ClickHouse получает некоторую порцию данных и ① формирует из неё (как минимум) один блок вставки в памяти (для каждого [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key)). Данные в блоке сортируются, и к ним применяются оптимизации, специфичные для движка таблицы. Затем данные сжимаются и ② записываются в хранилище базы данных в виде новой части данных.
 
@@ -35,7 +41,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 При использовании запроса `INSERT INTO SELECT` в сочетании с движком интеграционной таблицы или табличной функцией данные загружаются сервером ClickHouse:
 
-<Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="Загрузка данных из внешних источников в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Загрузка данных из внешних источников в ClickHouse](/images/integrations/data-ingestion/s3/pull.webp)
+
+</Frame>
+
+</div>
 
 Пока данные не будут полностью загружены, сервер выполняет цикл:
 
@@ -68,7 +82,15 @@ Go to ①
 
 ClickHouse будет непрерывно [сливать части](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) в более крупные, пока они не [достигнут](/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) сжатого размера около 150 GiB. Эта диаграмма показывает, как сервер ClickHouse сливает части:
 
-<Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="Фоновые слияния в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Фоновые слияния в ClickHouse](/images/integrations/data-ingestion/s3/merges.webp)
+
+</Frame>
+
+</div>
 
 Один сервер ClickHouse использует несколько [фоновых потоков слияния](/ru/reference/settings/server-settings/settings/background#background_pool_size) для выполнения параллельных [слияний частей](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Каждый поток выполняет цикл:
 
@@ -94,13 +116,29 @@ ClickHouse будет непрерывно [сливать части](https://c
   ### Параллелизм вставки
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/resource_usage.webp" size="lg" border alt="Использование ресурсов при параллелизме вставки" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Использование ресурсов при параллелизме вставки](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</Frame>
+
+</div>
 
 Сервер ClickHouse может обрабатывать и вставлять данные параллельно. Уровень параллелизма вставки влияет на пропускную способность ингестии и потребление памяти сервером ClickHouse. Параллельная загрузка и обработка данных требует больше оперативной памяти, но повышает пропускную способность ингестии, поскольку данные обрабатываются быстрее.
 
 Табличные функции, такие как s3, позволяют задавать наборы имён файлов для загрузки с помощью glob-шаблонов. Если glob-шаблон соответствует нескольким существующим файлам, ClickHouse может распараллеливать чтение как между этими файлами, так и внутри них, а также параллельно вставлять данные в таблицу, используя одновременно работающие потоки вставки (на сервер):
 
-<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="Параллельные потоки вставки в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Параллельные потоки вставки в ClickHouse](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</Frame>
+
+</div>
 
 Пока не будут обработаны все данные из всех файлов, каждый поток вставки выполняет следующий цикл:
 
@@ -128,7 +166,15 @@ Go to ①.
   ## Влияние конфигурации оборудования
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/hardware_size.webp" size="lg" border alt="Влияние конфигурации оборудования на производительность ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Влияние конфигурации оборудования на производительность ClickHouse](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</Frame>
+
+</div>
 
 Количество доступных ядер процессора и объём оперативной памяти влияют на:
 
@@ -359,7 +405,15 @@ SETTINGS max_threads = 92
 
 Сервер, который первым получает запрос на вставку, сначала разворачивает glob-шаблон, а затем динамически распределяет обработку каждого подходящего файла между собой и другими серверами.
 
-<Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="функция s3Cluster в ClickHouse" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![функция s3Cluster в ClickHouse](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</Frame>
+
+</div>
 
 Повторим предыдущий запрос на чтение, распределив нагрузку между 3 узлами и изменив запрос так, чтобы использовать `s3Cluster`. В ClickHouse Cloud это делается автоматически — достаточно указать кластер `default`.
 

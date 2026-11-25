@@ -35,19 +35,27 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_)
     : values(std::move(values_)), offsets(std::move(offsets_)), _size(size_)
 {
-    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
+    /// Use `std::as_const` for read-only validation: a non-const `WrappedPtr::get`/
+    /// `operator->` goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
+    /// This constructor is reached from `ColumnSparse::create(const ColumnPtr &, ...)`
+    /// where the caller may keep a reference to `values_`/`offsets_`, so `use_count()`
+    /// is `> 1` and the assertion would fire.
+    const auto & const_offsets = std::as_const(offsets);
+    const auto & const_values = std::as_const(values);
+
+    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(const_offsets.get());
 
     if (!offsets_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", const_offsets->getName());
 
     /// 'values' should contain one extra element: default value at 0 position.
-    if (offsets->size() + 1 != values->size())
+    if (const_offsets->size() + 1 != const_values->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
+            "Values size ({}) is inconsistent with offsets size ({})", const_values->size(), const_offsets->size());
 
-    if (_size < offsets->size())
+    if (_size < const_offsets->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, const_offsets->size());
 
     if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -55,7 +63,11 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
                 _size, offsets_concrete->getData().back());
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    const auto & offsets_data = getOffsetsData();
+    /// Use the `const` overload of `getOffsetsData` (via `std::as_const(*this)`) so the
+    /// internal `*offsets` deref goes through `WrappedPtr::operator*` const, avoiding
+    /// `assumeMutableRef` and its `chassert(use_count() == 1)`. This constructor is
+    /// reached from `ColumnSparse::create(const ColumnPtr &, ...)` with shared inputs.
+    const auto & offsets_data = std::as_const(*this).getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
@@ -220,7 +232,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             for (size_t i = offset_start + 1; i < offset_end; ++i)
             {
-                size_t current_diff = src_offsets[i] - src_offsets[i - 1];
+                size_t current_diff = src_offsets[i] - src_offsets[static_cast<ssize_t>(i) - 1];
                 insertManyDefaults(current_diff - 1);
                 offsets_data.push_back(_size);
                 ++_size;
@@ -228,7 +240,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
             /// Since 'end' is excluded, need to subtract one more row from result.
-            insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
+            insertManyDefaults(end - src_offsets[static_cast<ssize_t>(offset_end) - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
         else
@@ -370,7 +382,7 @@ public:
     }
 
     /// The number of rows the whole filter keeps.
-    size_t countAll() const
+    [[nodiscard]] size_t countAll() const
     {
         size_t res = kept_before_word + std::popcount(bits);
         const size_t next_word_begin = (word + 1) * 64;
@@ -380,7 +392,7 @@ public:
     }
 
 private:
-    UInt64 loadWord(size_t w) const
+    [[nodiscard]] UInt64 loadWord(size_t w) const
     {
         const size_t begin = w * 64;
         if (begin + 64 <= size)
@@ -544,6 +556,18 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         return res;
     }
 
+    /// A sparse filter computed from this column selects exactly its non-default rows, so the result shares `values`.
+    if constexpr (std::is_same_v<Type, UInt64>)
+    {
+        const auto & offsets_data = getOffsetsData();
+        if (limit == offsets_data.size() && memcmp(indexes.data(), offsets_data.data(), limit * sizeof(UInt64)) == 0)
+        {
+            auto res_offsets = ColumnUInt64::create(limit);
+            iota(res_offsets->getData().data(), limit, UInt64(0));
+            return ColumnSparse::create(values, std::move(res_offsets), limit);
+        }
+    }
+
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
     auto res_values = values->cloneEmpty();
@@ -584,10 +608,13 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     if (execute_linear)
     {
-        PaddedPODArray<UInt64> values_index(_size);
-        auto offset_it = begin();
-        for (size_t i = 0; i < _size; ++i, ++offset_it)
-            values_index[i] = offset_it.getValueIndex();
+        /// Scatter instead of walking the iterator row by row: that loop compares every row with the next
+        /// offset, and clang-23 compiles it into a `cmov` chain where each row waits for the previous one's
+        /// load of `offsets`. The scatter touches each offset once and has no per-row branch at all.
+        PaddedPODArray<UInt64> values_index(_size, 0);
+        const auto & offsets_data = getOffsetsData();
+        for (size_t i = 0; i < offsets_data.size(); ++i)
+            values_index[offsets_data[i]] = i + 1;
 
         for (size_t i = 0; i < limit;)
         {
@@ -615,7 +642,36 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
             pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
             const bool found = pos != offsets_end && *pos == indexes[i];
             pos += found;
-            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+
+            if (found && run_end == i + 1)
+            {
+                /// The following rows that are the next offsets, each once, select the next values.
+                const size_t value_index = pos - offsets_begin;
+                while (run_end < limit && pos != offsets_end && indexes[run_end] == *pos
+                       && (run_end + 1 == limit || indexes[run_end + 1] != indexes[run_end]))
+                {
+                    ++run_end;
+                    ++pos;
+                }
+
+                const size_t length = run_end - i;
+                if (length == 1)
+                {
+                    res_values->insertFrom(*values, value_index);
+                    res_offsets_data.push_back(i);
+                }
+                else
+                {
+                    res_values->insertRangeFrom(*values, value_index, length);
+                    const size_t old_size = res_offsets_data.size();
+                    res_offsets_data.resize(old_size + length);
+                    iota(res_offsets_data.data() + old_size, length, static_cast<UInt64>(i));
+                }
+            }
+            else
+            {
+                insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+            }
             i = run_end;
         }
 
@@ -839,7 +895,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
         {
             if (!offset_it.isDefault())
             {
-                size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
+                size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
                 total_offsets_size += replicate_size;
             }
         }
@@ -851,8 +907,8 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     {
         if (!offset_it.isDefault())
         {
-            size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
+            size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+            for (size_t row = replicate_offsets[static_cast<ssize_t>(i) - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
             }
@@ -1029,18 +1085,31 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
+namespace
+{
+
+const ColumnSparse & getSourceSparseColumn(const IColumn & source, const ColumnSparse & column, std::string_view operation)
+{
+    const auto * source_sparse = typeid_cast<const ColumnSparse *>(&source);
+    if (!source_sparse)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Sparse, but {}", operation, column.getName(), source.getName());
+    return *source_sparse;
+}
+
+}
+
 void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "merge").getValuesPtr());
     values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+    values->takeExactDynamicStructureFrom(getSourceSparseColumn(source, *this, "dynamic structure").getValuesColumn());
 }
 
 void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
@@ -1048,7 +1117,7 @@ void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "statistics").getValuesPtr());
     values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 

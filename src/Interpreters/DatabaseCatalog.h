@@ -68,11 +68,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     ~TemporaryTableHolder();
 
-    StorageID getGlobalTableID() const;
+    [[nodiscard]] StorageID getGlobalTableID() const;
 
-    StoragePtr getTable() const;
+    [[nodiscard]] StoragePtr getTable() const;
 
-    std::shared_ptr<IDatabase> getDatabase() const;
+    [[nodiscard]] std::shared_ptr<IDatabase> getDatabase() const;
 
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
@@ -224,6 +224,11 @@ public:
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    /// Replaces `old_table` with `new_table` in the mapping of `uuid`, but only if the mapping holds
+    /// `old_table` and nobody holds it apart from the mapping and the caller, who holds one reference.
+    /// Returns whether the mapping was replaced. For a lazily loaded table, see
+    /// `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    bool replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
     /// Collisions of random 122-bit integers are very unlikely to happen,
@@ -342,9 +347,6 @@ private:
     void dropTablesParallel(TablesMarkedAsDropped tables);
     void rescheduleDropTableTask();
 
-    void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
-
     void reloadDisksTask();
 
     static constexpr size_t reschedule_time_ms = 100;
@@ -399,7 +401,6 @@ private:
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     std::condition_variable wait_table_finally_dropped;
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
@@ -413,7 +414,8 @@ private:
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
 /// But such object may start using a directory in store/ since its creation.
-/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
+/// To prevent another table or database from using the same UUID (and so the same directory)
+/// concurrently, we have to mark UUID as used first.
 /// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
 /// or remove the lock if creation failed.
 /// See also addUUIDMapping(...)
