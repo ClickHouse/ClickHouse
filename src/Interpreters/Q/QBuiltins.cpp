@@ -226,6 +226,39 @@ QValue binaryFunction(Call & call, const String & function, std::optional<QType>
     return binary(call, [&](ASTPtr a, ASTPtr b) { return fn(function, std::move(a), std::move(b)); }, qtype);
 }
 
+/// A comparison by the rules of q: the nulls are equal to each other and are less than every other value.
+/// In ClickHouse a comparison with a `NULL` is a `NULL`, so `0N=0N` would not be true and `where x=0N` would select nothing.
+/// `plain`: both values are known to have no nulls. Then the function of ClickHouse is used as it is,
+/// which also lets a filter use the indices of the table.
+ASTPtr compare(const String & function, ASTPtr left, ASTPtr right, bool plain)
+{
+    if (plain)
+        return fn(function, std::move(left), std::move(right));
+    if (function == "equals")
+        return fn("isNotDistinctFrom", std::move(left), std::move(right));
+    if (function == "notEquals")
+        return fn("not", fn("isNotDistinctFrom", std::move(left), std::move(right)));
+
+    /// The result when at least one of the values is a null.
+    ASTPtr with_null;
+    if (function == "less")
+        with_null = fn("and", fn("isNull", left), fn("isNotNull", right));
+    else if (function == "greater")
+        with_null = fn("and", fn("isNotNull", left), fn("isNull", right));
+    else if (function == "lessOrEquals")
+        with_null = fn("isNull", left);
+    else
+        with_null = fn("isNull", right);
+    return fn("ifNull", fn(function, left, right), std::move(with_null));
+}
+
+QValue comparison(Call & call, const String & function)
+{
+    call.expectArgs(2);
+    bool plain = call.compiler.isNotNull(call.arg(0).ast) && call.compiler.isNotNull(call.arg(1).ast);
+    return binary(call, [&](ASTPtr a, ASTPtr b) { return compare(function, std::move(a), std::move(b), plain); }, QType::Boolean);
+}
+
 /// An aggregate: a column folds into a scalar per group, a list into an atom, an atom stays as is.
 QValue aggregate(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column, const std::function<ASTPtr(ASTPtr)> & over_list,
     bool atom_is_one = false, std::optional<QType> qtype = std::nullopt)
@@ -810,8 +843,9 @@ QValue joinTables(Call & call, QJoinKind kind, const QTable & left, const QTable
     ASTs conditions;
     for (size_t i = 0; i < keys.size(); ++i)
     {
+        /// The keys are matched by the rules of q: a null key matches a null key.
         bool asof_key = kind == QJoinKind::AsOf && i + 1 == keys.size();
-        conditions.push_back(fn(asof_key ? "greaterOrEquals" : "equals", qualified(left_alias, keys[i]), qualified(right_alias, keys[i])));
+        conditions.push_back(fn(asof_key ? "greaterOrEquals" : "isNotDistinctFrom", qualified(left_alias, keys[i]), qualified(right_alias, keys[i])));
     }
     ASTPtr condition = conditions.size() == 1 ? conditions[0] : fn("and", conditions);
     table_join->on_expression = condition;
@@ -1447,22 +1481,22 @@ const std::unordered_map<String, Handler> & handlers()
                 return binaryFunction(c, "or", QType::Boolean);
             return binaryFunction(c, "greatest");
         };
-        h["="] = [](Call & c) { return binaryFunction(c, "equals", QType::Boolean); };
-        h["<>"] = [](Call & c) { return binaryFunction(c, "notEquals", QType::Boolean); };
+        h["="] = [](Call & c) { return comparison(c, "equals"); };
+        h["<>"] = [](Call & c) { return comparison(c, "notEquals"); };
         h["<"] = [](Call & c)
         {
             if (c.args.size() == 1)
                 return handlers().at("iasc")(c);
-            return binaryFunction(c, "less", QType::Boolean);
+            return comparison(c, "less");
         };
         h[">"] = [](Call & c)
         {
             if (c.args.size() == 1)
                 return handlers().at("idesc")(c);
-            return binaryFunction(c, "greater", QType::Boolean);
+            return comparison(c, "greater");
         };
-        h["<="] = [](Call & c) { return binaryFunction(c, "lessOrEquals", QType::Boolean); };
-        h[">="] = [](Call & c) { return binaryFunction(c, "greaterOrEquals", QType::Boolean); };
+        h["<="] = [](Call & c) { return comparison(c, "lessOrEquals"); };
+        h[">="] = [](Call & c) { return comparison(c, "greaterOrEquals"); };
         h["~"] = [](Call & c)
         {
             if (c.args.size() == 1)
@@ -1474,12 +1508,12 @@ const std::unordered_map<String, Handler> & handlers()
             {
                 ASTPtr left = a.kind == QValueKind::Column ? c.compiler.collectColumn(c.compiler.columnForAggregation(a, c.scope)) : a.ast;
                 ASTPtr right = b.kind == QValueKind::Column ? c.compiler.collectColumn(c.compiler.columnForAggregation(b, c.scope)) : b.ast;
-                QValue result = QCompiler::scalar(fn("equals", left, right));
+                QValue result = QCompiler::scalar(fn("isNotDistinctFrom", left, right));
                 result.aggregated = true;
                 result.qtype = QType::Boolean;
                 return result;
             }
-            QValue result = QCompiler::scalar(fn("equals", a.ast, b.ast));
+            QValue result = QCompiler::scalar(fn("isNotDistinctFrom", a.ast, b.ast));
             result.aggregated = a.aggregated || b.aggregated;
             result.qtype = QType::Boolean;
             return result;
@@ -2056,11 +2090,21 @@ const std::unordered_map<String, Handler> & handlers()
         h["differ"] = [lag](Call & c)
         {
             c.expectArgs(1);
-            QValue result = uniform(c, [&](ASTPtr column) { return fn("ifNull", fn("notEquals", column, lag(c, column, 1)), lit(Field(true))); },
+            /// The first item always differs, and the others are compared with their predecessors by the rules of q:
+            /// a null does not differ from a null.
+            QValue result = uniform(c,
+                [&](ASTPtr column)
+                {
+                    ASTPtr position = c.compiler.makeWindowFunction("count", {}, c.scope, std::nullopt, 0);
+                    return fn("if", fn("equals", std::move(position), one()), one(), compare("notEquals", column, lag(c, column, 1), false));
+                },
                 [&](ASTPtr list)
                 {
                     return mapWithIndex(c.compiler, list,
-                        [&](ASTPtr item, ASTPtr index) { return fn("ifNull", fn("notEquals", item, previousItem(list, index)), lit(Field(true))); });
+                        [&](ASTPtr item, ASTPtr index)
+                        {
+                            return fn("if", fn("equals", index, one()), one(), compare("notEquals", item, previousItem(list, index), false));
+                        });
                 });
             result.qtype = QType::Boolean;
             return result;

@@ -187,6 +187,12 @@ public:
     String newName();
     String newLambdaParameter();
 
+    /// The values that are known to have no nulls: the literals other than nulls, and the columns of the types that are
+    /// not `Nullable`. They are told by their ASTs, so a value derived from one of them is not taken for it.
+    /// A comparison of two such values is the comparison of ClickHouse as it is, see `compare` in `QBuiltins.cpp`.
+    void markNotNull(const ASTPtr & ast);
+    [[nodiscard]] bool isNotNull(const ASTPtr & ast) const;
+
     [[nodiscard]] ContextPtr getContext() const { return context; }
 
     /// The maximum nesting of inlined lambdas.
@@ -212,6 +218,9 @@ private:
 
     void checkExpandedSize(const ASTPtr & ast);
     void checkExpandedSize(const QValue & value);
+
+    /// See `markNotNull`. The ASTs are held, so that an address is not reused.
+    std::unordered_map<const IAST *, ASTPtr> not_null_asts;
 
     QValue compileNode(const QNodePtr & node, QEnvironment & env, QScope * scope);
     QValue applyFunction(const QFunctionPtr & function, QValues args, QEnvironment & env, QScope * scope, size_t offset);

@@ -661,6 +661,17 @@ void QCompiler::checkExpandedSize(const ASTPtr & ast)
     expanded_sizes.emplace(ast.get(), std::pair(ast, size));
 }
 
+void QCompiler::markNotNull(const ASTPtr & ast)
+{
+    if (ast)
+        not_null_asts.emplace(ast.get(), ast);
+}
+
+bool QCompiler::isNotNull(const ASTPtr & ast) const
+{
+    return ast && not_null_asts.contains(ast.get());
+}
+
 void QCompiler::checkExpandedSize(const QValue & value)
 {
     checkExpandedSize(value.ast);
@@ -985,6 +996,7 @@ QValue QCompiler::compileLiteral(const QNode & node)
         QValue value = scalar(makeLiteral(node.atoms.front().value));
         value.is_string = true;
         value.qtype = QType::Char;
+        markNotNull(value.ast);
         return value;
     }
 
@@ -994,6 +1006,9 @@ QValue QCompiler::compileLiteral(const QNode & node)
     {
         value = scalar(atomToAST(node.type, node.atoms.front(), node.offset));
         value.qtype = node.type;
+        /// A null symbol is an empty string, not a `NULL`.
+        if (!node.atoms.front().is_null || node.type == QType::Symbol)
+            markNotNull(value.ast);
         return value;
     }
 
@@ -1028,8 +1043,15 @@ QValue QCompiler::compileName(const QNodePtr & node, QEnvironment & env, QScope 
         if (!scope)
             return std::nullopt;
         for (const auto & column : scope->columns)
+        {
             if (column.name == name)
-                return columnValue(column);
+            {
+                QValue value = columnValue(column);
+                if (value.depth == 0 && !removeLowCardinality(column.type)->isNullable())
+                    markNotNull(value.ast);
+                return value;
+            }
+        }
         if (name == "i" && !scope->columns.empty())
         {
             QValue value;
