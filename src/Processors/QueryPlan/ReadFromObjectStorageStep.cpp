@@ -159,7 +159,16 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
+}
+
+bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    /// The format of a data lake is only the format new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return false;
+    return formatSkipsDataByStatistics(configuration->format, format_settings ? *format_settings : getFormatSettings(getContext()))
+        && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -179,9 +188,8 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
     return data_lake_read_estimate;
 }
 
-/// Zero means "always preliminary-merge", so it must never reach the group-count division.
-/// The cap and the grouping have to read the same value or the cap admits a file count the
-/// grouping cannot divide.
+/// Zero means "always preliminary-merge". The cap and the in-order pipe read the same value,
+/// so no merge group holds more than this many files.
 static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
 {
     return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -256,7 +264,8 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
-    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
+    /// One group per stream, so the preliminary merges run in parallel.
+    const size_t num_groups = std::max<size_t>(2, std::min(num_streams, num_files));
     VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
@@ -320,6 +329,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// The amount of keys (zero) was probably underestimated.
         /// We will keep one stream for this particular case.
         num_streams = 1;
+    }
+
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
     }
 
     // here create for node -> query -> level thread pool
@@ -427,10 +442,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_file_pruning.push_back(descriptor);
 }
 
 void ReadFromObjectStorageStep::createIterator()
@@ -451,7 +465,8 @@ void ReadFromObjectStorageStep::createIterator()
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"),
+        format_settings);
 
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
     if (!join_runtime_filters_for_file_pruning.empty())
@@ -545,22 +560,14 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
     /// the same files and filter could let other rows through from query to query. The sort column
     /// itself never has one (see `supportsTopKDynamicFilter`).
-    auto has_default = [&](const String & name)
-    {
-        if (info.columns_description.hasDefault(name))
-            return true;
-        /// A subcolumn (`t.a`) is read from its column.
-        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
-            if (info.columns_description.hasDefault(name.substr(0, pos)))
-                return true;
-        return false;
-    };
+    auto has_default = [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); };
     auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
     {
         return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
     };
     if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
-        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
+        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions))
+        || std::ranges::any_of(top_k_filter->columns_deciding_threshold, has_default))
         return {};
 
     /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
@@ -790,7 +797,9 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         format_settings,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }
