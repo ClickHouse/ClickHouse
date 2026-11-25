@@ -1387,8 +1387,8 @@ static bool isComparableColumn(const SQLColumn & col)
 
     while (tp && (tp->getTypeClass() == SQLTypeClass::NULLABLE || tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY))
     {
-        tp = tp->getTypeClass() == SQLTypeClass::NULLABLE ? dynamic_cast<const Nullable *>(tp)->subtype.get()
-                                                          : dynamic_cast<const LowCardinality *>(tp)->subtype.get();
+        tp = tp->getTypeClass() == SQLTypeClass::NULLABLE ? dynamic_cast<const Nullable &>(*tp).subtype.get()
+                                                          : dynamic_cast<const LowCardinality &>(*tp).subtype.get();
     }
     if (!tp)
     {
