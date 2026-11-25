@@ -236,6 +236,15 @@ function fuzz
         sleep 1
     done
     server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
+    # With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID of its supervisor, whose child is the
+    # init of the PID namespace, whose child is the watchdog or the server.
+    if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == clickhouse-isol ]]; then
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == ClickHouseWatch ]]; then
+            server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        fi
+    fi
 
     kill -0 $server_pid
 

@@ -2,7 +2,7 @@
 sidebarTitle: 'Kafka table engine'
 slug: /integrations/kafka/kafka-table-engine
 description: 'Kafka テーブルエンジン の使用'
-title: 'Kafka テーブルエインジン の使用'
+title: 'Kafka テーブルエンジン の使用'
 doc_type: 'guide'
 keywords: ['Kafka', 'テーブルエンジン', 'ストリーミング', 'リアルタイム', 'メッセージキュー']
 ---
@@ -10,7 +10,7 @@ keywords: ['Kafka', 'テーブルエンジン', 'ストリーミング', 'リア
 Kafka テーブルエンジン は、Apache Kafka やその他の Kafka API 互換ブローカー (例: Redpanda、Amazon MSK) から[**データを読み取る**](#kafka-to-clickhouse)ことも、[**データを書き込む**](#clickhouse-to-kafka)こともできます。
 
 <div id="kafka-to-clickhouse">
-  ### Kafka から ClickHouse
+  ### Kafka から ClickHouse {#kafka-to-clickhouse}
 </div>
 
 <Note>
@@ -19,28 +19,22 @@ Kafka テーブルエンジン は、Apache Kafka やその他の Kafka API 互�
 
 Kafka テーブルエンジン を使用するには、[ClickHouse materialized views](/ja/concepts/features/materialized-views/cascading-materialized-views) について一通り理解している必要があります。
 
-<div id="overview">
-  #### 概要
-</div>
+#### 概要 {#overview}
 
 まずは、最も一般的なユースケースである、Kafka テーブルエンジン を使って Kafka から ClickHouse にデータを挿入する方法を見ていきます。
 
-Kafka テーブルエンジン を使うと、ClickHouse は Kafka トピックから直接データを読み取れます。トピック上のメッセージを確認する用途には便利ですが、この engine は設計上、一回限りの取得しかできません。つまり、テーブルエンジン に対してクエリを実行すると、結果を呼び出し元に返す前にキューからデータを消費し、consumer の OFFSET を進めます。そのため、これらの OFFSET をリセットしない限り、実質的にデータを再読込することはできません。
+Kafka テーブルエンジン を使うと、ClickHouse は Kafka トピックから直接データを読み取れます。トピック上のメッセージを確認する用途には便利ですが、この エンジン は設計上、一回限りの取得しかできません。つまり、テーブルエンジン に対してクエリを実行すると、結果を呼び出し元に返す前にキューからデータを消費し、コンシューマー の オフセット を進めます。そのため、これらの オフセット をリセットしない限り、実質的にデータを再読込することはできません。
 
-テーブルエンジン から読み取ったデータを永続化するには、そのデータを取り込み、別の table に挿入する仕組みが必要です。トリガーベースの materialized view は、この機能をネイティブに提供します。materialized view は テーブルエンジン に対する読み取りを開始し、ドキュメントの batches を受け取ります。TO 句はデータの宛先を決定します。通常は [MergeTree ファミリー](/ja/reference/engines/table-engines/mergetree-family/index) の table です。この処理を以下に示します。
+テーブルエンジン から読み取ったデータを永続化するには、そのデータを取り込み、別の テーブル に挿入する仕組みが必要です。トリガーベースの materialized view は、この機能をネイティブに提供します。materialized view は テーブルエンジン に対する読み取りを開始し、ドキュメントの batches を受け取ります。TO 句はデータの宛先を決定します。通常は [MergeTree ファミリー](/ja/reference/engines/table-engines/mergetree-family/index) の テーブル です。この処理を以下に示します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Kafka テーブルエンジン アーキテクチャ図](/images/integrations/data-ingestion/kafka/kafka_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Kafka テーブルエンジンのアーキテクチャ図](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+  </Frame>
 </div>
 
 <div id="steps">
-  #### 手順
+  #### 手順 {#steps}
 </div>
 
 <Steps>
@@ -219,11 +213,11 @@ Kafka テーブルエンジン を使うと、ClickHouse は Kafka トピック�
 </Steps>
 
 <div id="common-operations">
-  #### 主な操作
+  #### 主な操作 {#common-operations}
 </div>
 
 <div id="stopping--restarting-message-consumption">
-  ##### メッセージ消費の停止と再開
+  ##### メッセージ消費の停止と再開 {#stopping--restarting-message-consumption}
 </div>
 
 メッセージ消費を停止するには、Kafkaエンジンのテーブルをデタッチします:
@@ -239,7 +233,7 @@ ATTACH TABLE github_queue;
 ```
 
 <div id="adding-kafka-metadata">
-  ##### Kafka メタデータの追加
+  ##### Kafka メタデータの追加 {#adding-kafka-metadata}
 </div>
 
 ClickHouse に取り込んだ後も、元の Kafka メッセージのメタデータを追跡できると便利です。たとえば、特定のトピックやパーティションをどれだけ消費したかを把握したい場合があります。このため、Kafka テーブルエンジンは複数の[仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)を公開しています。スキーマと materialized view の SELECT ステートメントを変更することで、これらをターゲットテーブルのカラムとして永続化できます。
@@ -302,13 +296,13 @@ LIMIT 10;
 | Oxonium         | CommitCommentEvent | 2011-02-12 12:31:28 | github | 0         |
 
 <div id="modify-kafka-engine-settings">
-  ##### Kafka エンジン設定の変更
+  ##### Kafka エンジン設定の変更 {#modify-kafka-engine-settings}
 </div>
 
 Kafka エンジンテーブルはいったん削除し、新しい設定で再作成することを推奨します。この作業中にmaterialized viewを変更する必要はありません。Kafka エンジンテーブルを再作成すると、メッセージの消費が再開されます。
 
 <div id="debugging-issues">
-  ##### 問題のデバッグ
+  ##### 問題のデバッグ {#debugging-issues}
 </div>
 
 認証の問題などのエラーは、KafkaエンジンのDDLに対する応答には返されません。問題を診断するには、メインのClickHouseログファイル `clickhouse-server.err.log` を使用することを推奨します。基盤となるKafkaクライアントライブラリ [librdkafka](https://github.com/edenhill/librdkafka) については、設定によりさらに詳細なトレースログを有効にできます。
@@ -320,7 +314,7 @@ Kafka エンジンテーブルはいったん削除し、新しい設定で再�
 ```
 
 <div id="handling-malformed-messages">
-  ##### 不正な形式のメッセージの処理
+  ##### 不正な形式のメッセージの処理 {#handling-malformed-messages}
 </div>
 
 Kafka は、しばしばデータの「投げ込み先」として使われます。その結果、トピック内で複数のメッセージ形式が混在したり、フィールド名に一貫性がなくなったりします。こうした状況は避け、Kafka に書き込む前にメッセージが整形式かつ一貫したものになるよう、Kafka Streams や ksqlDB などの Kafka の機能を活用してください。これらの方法が使えない場合でも、ClickHouse には対処に役立つ機能がいくつかあります。
@@ -330,13 +324,13 @@ Kafka は、しばしばデータの「投げ込み先」として使われま�
 * 設定 `kafka_skip_broken_messages` の利用も検討してください。これを使うには、不正な形式のメッセージに対するブロックごとの許容度を、`kafka_max_block_size` を踏まえてユーザーが指定する必要があります。この許容度を超えた場合 (絶対メッセージ数で判定) 、通常どおり例外が発生し、それ以外のメッセージはスキップされます。
 
 <div id="delivery-semantics-and-challenges-with-duplicates">
-  ##### 配信セマンティクスと重複に関する課題
+  ##### 配信セマンティクスと重複に関する課題 {#delivery-semantics-and-challenges-with-duplicates}
 </div>
 
 Kafka テーブルエンジン は少なくとも 1 回の配信セマンティクスを持っています。既知のまれな状況がいくつかあり、その場合は重複が発生する可能性があります。たとえば、メッセージが Kafka から読み取られ、ClickHouse への挿入に成功することがあります。新しいオフセットをコミットする前に、Kafka への接続が失われる可能性があります。この状況では、ブロックの再試行が必要です。ブロックは、ターゲットテーブルとして分散テーブルまたは ReplicatedMergeTree を使用することで[重複排除](/ja/reference/engines/table-engines/mergetree-family/replication)できます。これにより重複する行が発生する可能性は低くなりますが、これはブロックが同一であることを前提としています。Kafka のリバランシングのような事象によってこの前提が崩れ、まれに重複が発生することがあります。
 
 <div id="quorum-based-inserts">
-  ##### クォーラムベースのインサート
+  ##### クォーラムベースのインサート {#quorum-based-inserts}
 </div>
 
 ClickHouse でより高い配信保証が必要な場合は、[クォーラムベースのインサート](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が必要になることがあります。これは materialized view やターゲットテーブルには設定できませんが、ユーザープロファイルには設定できます。たとえば次のようになります。
@@ -350,28 +344,22 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
 ```
 
 <div id="clickhouse-to-kafka">
-  ### ClickHouse から Kafka へ
+  ### ClickHouse から Kafka へ {#clickhouse-to-kafka}
 </div>
 
 比較的まれなユースケースではありますが、ClickHouse のデータを Kafka に永続化することもできます。たとえば、ここでは Kafka テーブルエンジンに手動で行を insert します。このデータは同じ Kafka エンジンによって読み取られ、その materialized view によってデータが MergeTree テーブルに格納されます。最後に、既存の source table からテーブルを読み取るために、Kafka への insert で materialized view を適用する方法を示します。
 
-<div id="steps-1">
-  #### 手順
-</div>
+#### 手順 {#steps-1}
 
 最初の目的は、次の図を見るとわかりやすいでしょう。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![insert を伴う Kafka テーブルエンジンの図](/images/integrations/data-ingestion/kafka/kafka_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![挿入 を伴う Kafka テーブルエンジンの図](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+  </Frame>
 </div>
 
-[Kafka to ClickHouse](#kafka-to-clickhouse) の手順で作成したテーブルとビューが存在し、トピックは完全に消費済みであることを前提とします。
+[Kafka から ClickHouse へ](#kafka-to-clickhouse) の手順で作成したテーブルとビューが存在し、トピックは完全に消費済みであることを前提とします。
 
 <Steps>
   <Step title="行を直接 insert する" id="1-inserting-rows-directly">
@@ -414,13 +402,9 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
     テーブルにドキュメントが挿入されたとき、materialized view を利用してメッセージを Kafka エンジン (およびトピック) に送ることができます。GitHub テーブルに行が挿入されると、materialized view がトリガーされ、その結果、行は Kafka エンジン に再度挿入され、新しいトピックにも送られます。これも図で見るのが最もわかりやすいでしょう。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![materialized view を使用した Kafka テーブルエンジン の図](/images/integrations/data-ingestion/kafka/kafka_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![materialized view を使用した Kafka テーブルエンジン の図](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+      </Frame>
     </div>
 
     新しい Kafka トピック `github_out` または同等のものを作成してください。Kafka テーブルエンジン `github_out_queue` がこのトピックを指していることを確認してください。
@@ -504,44 +488,36 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
 </Steps>
 
 <div id="clusters-and-performance">
-  ### クラスターとパフォーマンス
+  ### クラスターとパフォーマンス {#clusters-and-performance}
 </div>
 
-<div id="working-with-clickhouse-clusters">
-  #### ClickHouseクラスターの使用
-</div>
+#### ClickHouseクラスターの使用 {#working-with-clickhouse-clusters}
 
 Kafkaのコンシューマグループを使うことで、複数のClickHouseインスタンスが同じトピックを読み取ることができます。各コンシューマーは、トピック内の1つのパーティションに1:1で割り当てられます。Kafka テーブルエンジンを使用してClickHouseのデータ取り込みをスケールする場合、クラスター内のコンシューマー総数はトピックのパーティション数を超えられない点に注意してください。そのため、対象のトピックでは事前に適切なパーティション化を設定しておく必要があります。
 
 複数のClickHouseインスタンスを、同じ コンシューマグループ id を使って1つのトピックを読み取るように設定できます。これはKafka テーブルエンジンの作成時に指定します。その結果、各インスタンスは1つ以上のパーティションから読み取り、ローカルのターゲットテーブルにセグメントを挿入します。さらに、ターゲットテーブルは、データの重複を処理するためにReplicatedMergeTreeを使用するよう設定できます。この方法では、Kafkaのパーティション数が十分にあれば、ClickHouseクラスターに合わせてKafkaからの読み取りをスケールできます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouseクラスターでのKafka テーブルエンジンの図](/images/integrations/data-ingestion/kafka/kafka_04.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouseクラスターを使用したKafka テーブルエンジンの構成図](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+  </Frame>
 </div>
 
-<div id="tuning-performance">
-  #### パフォーマンスのチューニング
-</div>
+#### パフォーマンスのチューニング {#tuning-performance}
 
-Kafka Engine テーブルのスループットを向上させる際は、次の点を考慮してください。
+Kafka エンジンテーブルのスループットを向上させたい場合は、次の点を考慮してください。
 
-* パフォーマンスは、メッセージサイズ、フォーマット、ターゲットテーブルの types によって異なります。単一のテーブルエンジンで 10 万行/秒は十分に達成可能な水準です。デフォルトでは、メッセージは `kafka_max_block_size` パラメーターで制御されるブロック単位で読み取られます。これはデフォルトで [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) に設定されており、既定値は 1,048,576 です。メッセージが極端に大きい場合を除き、この値はほぼ常に増やすべきです。500k ～ 1M 程度の値も珍しくありません。スループットへの影響をテストして評価してください。
-* テーブルエンジンのコンシューマー数は `kafka_num_consumers` で増やせます。ただし、デフォルトでは `kafka_thread_per_consumer` を既定値の `1` から変更しない限り、インサートは単一スレッドで直列化されます。フラッシュが並列に実行されるよう、これを `1` に設定してください。なお、N 個のコンシューマーを持つ Kafka エンジンのテーブル (`kafka_thread_per_consumer=1`) を作成することは、それぞれに materialized view があり、`kafka_thread_per_consumer=0` が設定された N 個の Kafka engine を作成するのと論理的に等価です。
-* コンシューマー数の増加は無償ではありません。各コンシューマーは独自のバッファーとスレッドを保持するため、サーバーのオーバーヘッドが増えます。まずは可能であればクラスター全体で線形にスケールさせ、コンシューマーによるオーバーヘッドを意識してください。
-* Kafka メッセージのスループットにばらつきがあり、遅延を許容できる場合は、より大きなブロックがフラッシュされるよう `stream_flush_interval_ms` を増やすことを検討してください。
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) は、バックグラウンドタスクを実行するスレッド数を設定します。これらのスレッドは Kafka ストリーミングに使用されます。この設定は ClickHouseサーバーの起動時に適用され、ユーザーセッション中に変更することはできません。既定値は 16 です。ログにタイムアウトが見られる場合は、この値を増やすのが適切なことがあります。
-* Kafka との通信には `librdkafka` ライブラリが使用されており、このライブラリ自体もスレッドを作成します。そのため、多数の Kafka テーブルやコンシューマーがあると、大量のコンテキストスイッチが発生する可能性があります。この負荷はクラスター全体に分散し、可能であればターゲットテーブルのみをレプリケートするか、1 つのテーブルエンジンで複数のトピックを読み取ることを検討してください。値のリストがサポートされています。1 つのテーブルから複数の materialized view を読み取ることができ、それぞれが特定のトピックのデータをフィルタリングできます。
+* パフォーマンスは、メッセージサイズ、フォーマット、およびターゲットテーブルの種類によって異なります。単一のテーブルエンジンで毎秒 100k 行程度は達成可能と考えてよいでしょう。デフォルトでは、メッセージはブロック単位で読み取られ、ブロックサイズはパラメータ kafka&#95;max&#95;block&#95;size によって制御されます。この値はデフォルトで [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) と同じになり、そのデフォルト値は 1,048,576 です。メッセージが極端に大きい場合を除き、ほぼ常にこの値を増やすべきです。500k～1M の値もよく使われます。スループットへの影響をテストして評価してください。
+* テーブルエンジンのコンシューマー数は kafka&#95;num&#95;consumers で増やすことができます。ただし、kafka&#95;thread&#95;per&#95;consumer をデフォルト値の 1 から変更しない限り、デフォルトでは挿入は単一スレッドで直列に実行されます。flush を並列に実行するには、これを 1 に設定してください。なお、N 個のコンシューマー (および kafka&#95;thread&#95;per&#95;consumer=1) を持つ Kafkaエンジンテーブルを作成することは、それぞれに materialized view と kafka&#95;thread&#95;per&#95;consumer=0 を持つ N 個の Kafka エンジンを作成することと論理的に等価です。
+* コンシューマーを増やすことにはコストが伴います。各コンシューマーは独自のバッファとスレッドを保持するため、サーバーのオーバーヘッドが増加します。コンシューマーのオーバーヘッドを考慮し、可能であれば、まずクラスター全体で線形にスケールさせてください。
+* Kafka メッセージのスループットが変動し、遅延が許容できる場合は、stream&#95;flush&#95;interval&#95;ms を増やして、より大きなブロックが flush されるようにすることを検討してください。
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) は、バックグラウンドタスクを実行するスレッド数を設定します。これらのスレッドは Kafka のストリーミングに使用されます。この設定は ClickHouseサーバーの起動時に適用され、ユーザーの session 内では変更できません。デフォルト値は 16 です。ログにタイムアウトが記録されている場合は、この値を増やすとよいでしょう。
+* Kafka との通信には librdkafka ライブラリが使用されており、このライブラリ自体もスレッドを作成します。そのため、Kafka テーブルやコンシューマーの数が多いと、大量のコンテキストスイッチが発生する可能性があります。この負荷をクラスター全体に分散させる (可能であれば宛先テーブルのみを複製する) か、1 つのテーブルエンジンで複数のトピックから読み取ることを検討してください (トピックは値のリストで指定できます)。単一のテーブルから複数の materialized view で読み取り、それぞれで特定のトピックのデータのみにフィルタリングできます。
 
-設定の変更は必ずテストしてください。適切にスケールできていることを確認するため、Kafka のコンシューマラグを監視することを推奨します。
+設定を変更した場合は、必ずテストしてください。適切にスケールされていることを確認するため、Kafka のコンシューマーラグを監視することを推奨します。
 
 <div id="additional-settings">
-  #### 追加の設定
+  #### 追加の設定 {#additional-settings}
 </div>
 
 上述の設定に加えて、以下の設定も参考になります。

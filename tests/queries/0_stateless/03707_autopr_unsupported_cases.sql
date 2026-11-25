@@ -56,13 +56,15 @@ SETTINGS log_comment='supported_aggregation';
 -- plan builds name their columns differently (`__table3.number` in one, `__table4.number` in the
 -- other) and those names reached the cache key. They no longer do, so the shape is supported.
 --
--- `max_bytes_before_external_group_by` is pinned off because the test runner randomizes it together
--- with `max_threads`: with a single thread the whole 1e6-key table lands in one aggregation state and
--- exceeds the randomized threshold, the aggregation spills, and a spilling aggregation calls
--- `markUnsupportedCase` and collects nothing (see `AggregatingTransform`). That is about statistics
--- collection, not about the matching this case is here to cover.
+-- `max_bytes_before_external_group_by` and `max_bytes_ratio_before_external_group_by` are pinned off
+-- because the test runner randomizes them together with `max_threads`: with a single thread the whole
+-- 1e6-key table lands in one aggregation state and exceeds the randomized threshold, the aggregation
+-- spills, and a spilling aggregation calls `markUnsupportedCase` and collects nothing (see
+-- `AggregatingTransform`). That is about statistics collection, not about the matching this case is
+-- here to cover.
 SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP BY number) FORMAT Null
-SETTINGS max_bytes_before_external_group_by=0, log_comment='supported_aggregation_over_aggregation';
+SETTINGS max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0,
+    log_comment='supported_aggregation_over_aggregation';
 
 -- `query_plan_optimize_join_order_randomize` is pinned off: the single-node plan and the plan with
 -- parallel replicas are built independently, so a randomized join order makes them diverge and the

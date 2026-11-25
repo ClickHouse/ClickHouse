@@ -2,75 +2,63 @@
 slug: /use-cases/AI_ML/AIChat/semantic-layer
 sidebarTitle: 'Personalizar el chat de Assistant con una capa semántica'
 title: 'Optimizar las conversaciones de Assistant con una capa semántica'
-description: 'Guía para usar AGENTS.md para proporcionar al agente de chat de Assistant lógica de negocio personalizada e instrucciones específicas de los datos'
-keywords: ['AI', 'ClickHouse Cloud', 'Agente', 'AGENTS.md', 'Capa semántica', 'Instrucciones personalizadas', 'Prompt del sistema']
+description: 'Guía para usar AGENTS.md y proporcionar al agente de chat de Assistant lógica de negocio personalizada e instrucciones específicas para sus datos'
+keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-El agente de chat de Assistant se puede personalizar para que comprenda la lógica de negocio, las estructuras de datos y el conocimiento del dominio específicos de su organización mediante **AGENTS.md**, una consulta guardada especial que actúa como una capa semántica sobre el prompt del sistema del agente.
+El agente de chat de Assistant se puede personalizar para que comprenda su lógica de negocio, sus estructuras de datos y el conocimiento propio de su dominio mediante **AGENTS.md**, una consulta guardada especial que actúa como capa semántica sobre la instrucción del sistema del agente.
 
-Al crear un archivo AGENTS.md, puede proporcionar instrucciones personalizadas que se insertan al inicio de cada conversación para orientar la generación de consultas SQL y el análisis de datos según los requisitos, cálculos y convenciones específicos de su organización.
+Al crear un archivo AGENTS.md, puede proporcionar instrucciones personalizadas que se insertan al inicio de cada conversación para orientar la generación de consultas SQL y el análisis de datos de acuerdo con los requisitos, cálculos y convenciones particulares de su organización.
 
-<div id="how-it-works">
-  ## Cómo funciona
-</div>
+## Cómo funciona {#how-it-works}
 
-Cuando guarda una consulta llamada &quot;AGENTS.md&quot; (sensible a mayúsculas y minúsculas) en la Cloud Console:
+Cuando guarda una consulta con el nombre «AGENTS.md» (sensible a mayúsculas y minúsculas) en la Consola de la nube:
 
-1. El agente de chat de Assistant carga automáticamente este archivo cuando se envía un mensaje
-2. El contenido se coloca dentro de una etiqueta de contenido estructurado y se inyecta en el prompt del sistema del agente
-3. Las instrucciones se aplican a todas las conversaciones de chat de Assistant de ese servicio
+1. El agente de chat de Assistant carga automáticamente este archivo al enviarse un mensaje
+2. El contenido se incluye dentro de una etiqueta de contenido estructurado y se inyecta en la instrucción del sistema del agente
+3. Las instrucciones se aplican a todas las conversaciones de chat de Assistant en ese servicio
 
-<div id="creating-agents-md">
-  ## Crear AGENTS.md
-</div>
+## Creación de AGENTS.md {#creating-agents-md}
 
 <Steps>
-  <Step title="Crea la consulta guardada" id="create-query">
-    1. En la Cloud Console, crea una consulta nueva
-    2. Asígnale exactamente este nombre: **&quot;AGENTS.md&quot;** (sensible a mayúsculas y minúsculas)
-    3. Escribe tus instrucciones personalizadas en el editor de texto de la consulta (no SQL)
-    4. Guarda la consulta
+  <Step title="Crear la consulta guardada" id="create-query">
+    1. En la Consola de la nube, cree una nueva consulta
+    2. Asígnele exactamente este nombre: **&quot;AGENTS.md&quot;** (sensible a mayúsculas y minúsculas)
+    3. Escriba sus instrucciones personalizadas en el editor de texto de la consulta (no se trata de SQL real)
+    4. Guarde la consulta
   </Step>
 
-  <Step title="Añade tus instrucciones" id="add-instructions">
-    Estructura tus instrucciones con un lenguaje claro y práctico. Incluye:
+  <Step title="Agregar sus instrucciones" id="add-instructions">
+    Estructure sus instrucciones con un lenguaje claro y práctico. Incluya:
 
     * Reglas de negocio y cálculos
-    * Indicaciones sobre la estructura de los datos
+    * Pautas sobre la estructura de datos
     * Terminología específica del dominio
     * Patrones de consulta habituales
     * Reglas de optimización del rendimiento
   </Step>
 </Steps>
 
-<div id="best-practices">
-  ## Buenas prácticas
-</div>
+## Buenas prácticas {#best-practices}
 
-<div id="finite-resource">
-  ### Considera el contexto como un recurso finito
-</div>
+### Trate el contexto como un recurso finito {#finite-resource}
 
-El contexto es valioso: cada token consume el &quot;presupuesto de atención&quot; del agente. Al igual que los seres humanos, cuya memoria de trabajo es limitada, los modelos de lenguaje ven degradado su rendimiento a medida que aumenta el contexto. Esto significa encontrar el **conjunto más pequeño posible de tokens con alta señal** que maximice la probabilidad de obtener el resultado deseado.
+El contexto es valioso: cada token consume parte del «presupuesto de atención» del agente. Al igual que los humanos, cuya memoria de trabajo es limitada, los modelos de lenguaje sufren una degradación del rendimiento a medida que crece el contexto. Por ello, se trata de encontrar el **conjunto de tokens de alta señal más pequeño posible** que maximice la probabilidad de obtener el resultado deseado.
 
-<div id="right-altitude">
-  ### Encuentra el nivel de detalle adecuado
-</div>
+### Encuentre el nivel de abstracción adecuado {#right-altitude}
 
-Logra un equilibrio entre dos extremos:
+Busque un equilibrio entre dos extremos:
 
-* **Demasiado específico**: Codificar de forma rígida una lógica `if-else` frágil que genera complejidad de mantenimiento
-* **Demasiado vago**: Orientación de alto nivel que no ofrece señales concretas o que asume erróneamente un contexto compartido
+* **Demasiado específico**: codificar de forma rígida una lógica if-else frágil, lo que añade fragilidad y complica el mantenimiento
+* **Demasiado vago**: orientaciones de alto nivel que no aportan señales concretas o que dan por sentado, erróneamente, un contexto compartido
 
-El nivel de detalle óptimo es lo bastante específico como para guiar el comportamiento de forma eficaz y, al mismo tiempo, lo bastante flexible como para que el modelo aplique heurísticas sólidas. Empieza con un prompt mínimo en el mejor modelo disponible y, después, añade instrucciones claras en función de los modos de fallo observados.
+El nivel óptimo es lo bastante específico como para guiar el comportamiento de forma eficaz, pero lo suficientemente flexible como para que el modelo aplique heurísticas sólidas. Empiece con un prompt mínimo en el mejor modelo disponible y, después, añada instrucciones claras en función de los modos de fallo observados.
 
-<div id="structured-sections">
-  ### Organiza con secciones bien estructuradas
-</div>
+### Organiza el contenido en secciones estructuradas {#structured-sections}
 
-Usa etiquetas XML o encabezados de Markdown para crear secciones diferenciadas y fáciles de recorrer:
+Usa etiquetas XML o encabezados de Markdown para crear secciones bien diferenciadas y fáciles de leer de un vistazo:
 
 ```xml
 <background_information>
@@ -86,30 +74,24 @@ How to use specific ClickHouse features
 </tool_guidance>
 ```
 
-<div id="canonical-examples">
-  ### Proporcione ejemplos diversos y canónicos
-</div>
+### Proporcione ejemplos diversos y canónicos {#canonical-examples}
 
-Los ejemplos son las «imágenes que valen más que mil palabras». En lugar de incluir todos los casos extremos en su `prompt`, seleccione un conjunto acotado de ejemplos diversos que ilustre con eficacia el comportamiento esperado.
+Los ejemplos son esas «imágenes que valen más que mil palabras». En lugar de saturar su prompt con todos los casos extremos posibles, seleccione un conjunto acotado de ejemplos diversos que reflejen con eficacia el comportamiento esperado.
 
-<div id="minimal-complete">
-  ### Que sea mínimo, pero completo
-</div>
+### Mínimo pero completo {#minimal-complete}
 
-* Incluye solo las instrucciones que se necesitan con frecuencia
-* Sé conciso: un contexto más amplio degrada el rendimiento debido al &quot;deterioro del contexto&quot;
-* Elimina las reglas obsoletas o que rara vez se usan
-* Asegúrate de incluir información suficiente para orientar el comportamiento deseado
+* Incluya solo las instrucciones que se necesitan con frecuencia
+* Sea conciso: un contexto más extenso degrada el rendimiento debido a la «degradación del contexto» (*context rot*)
+* Elimine las reglas obsoletas o que apenas se usan
+* Asegúrese de que haya información suficiente para orientar el comportamiento deseado
 
 <Tip>
-  Que sea mínimo no significa necesariamente que deba ser corto. Necesitas suficiente detalle para garantizar que el agente se ajuste al comportamiento esperado; simplemente evita la verbosidad innecesaria.
+  Mínimo no significa necesariamente breve. Necesita el detalle suficiente para garantizar que el agente se ajuste al comportamiento esperado; basta con evitar la verbosidad innecesaria.
 </Tip>
 
-<div id="example-calculated-metrics">
-  ## Ejemplo: Métricas calculadas a partir de datos en bruto
-</div>
+## Ejemplo: Métricas calculadas a partir de datos sin procesar {#example-calculated-metrics}
 
-Indica al agente cuándo las métricas requieren cálculos específicos en lugar de acceder directamente a las columnas:
+Oriente al agente cuando las métricas requieran cálculos específicos en lugar de un acceso directo a las columnas:
 
 ```xml
 <metric_calculations>
@@ -130,11 +112,9 @@ GROUP BY date;
 </metric_calculations>
 ```
 
-<div id="example-business-logic">
-  ## Ejemplo: Reglas de lógica de negocio
-</div>
+## Ejemplo: reglas de lógica de negocio {#example-business-logic}
 
-Defina cálculos y clasificaciones específicos del dominio:
+Defina cálculos y categorizaciones específicos del dominio:
 
 ```xml
 <business_rules>
@@ -166,11 +146,9 @@ Always include these categorizations when generating traffic or revenue reports.
 </business_rules>
 ```
 
-<div id="example-data-quirks">
-  ## Ejemplo: peculiaridades de la estructura de datos
-</div>
+## Ejemplo: peculiaridades de la estructura de datos {#example-data-quirks}
 
-Documenta formatos de datos no convencionales o decisiones heredadas sobre el esquema:
+Documente los formatos de datos poco convencionales o las decisiones de esquema heredadas:
 
 ```xml
 <data_structure_notes>
@@ -197,11 +175,9 @@ FROM products;
 </data_structure_notes>
 ```
 
-<div id="example-terminology">
-  ## Ejemplo: terminología del dominio
-</div>
+## Ejemplo: terminología del dominio {#example-terminology}
 
-Asigne los términos empresariales a la implementación técnica:
+Asocie los términos de negocio con su implementación técnica:
 
 ```xml
 <terminology>

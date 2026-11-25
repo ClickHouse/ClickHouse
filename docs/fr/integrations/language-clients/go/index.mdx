@@ -201,11 +201,11 @@ Pour les workloads de requête axés sur les agrégations, ou pour des workloads
 
 La v1 du pilote est obsolète et ne recevra plus de mises à jour de fonctionnalités ni de prise en charge des nouveaux types ClickHouse. Nous vous recommandons de migrer vers la v2, qui offre de meilleures performances.
 
-Pour installer la version 2.x du client, ajoutez le paquet à votre fichier go.mod :
+Pour installer la version 2.x du client, ajoutez le paquet à votre fichier go.mod :
 
 `require github.com/ClickHouse/clickhouse-go/v2 main`
 
-Ou clonez le dépôt :
+Ou clonez le dépôt :
 
 ```bash
 git clone --branch v2 https://github.com/clickhouse/clickhouse-go.git $GOPATH/src/github
@@ -219,7 +219,7 @@ mkdir my-clickhouse-app && cd my-clickhouse-app
 cat > go.mod <<-END
   module my-clickhouse-app
 
-  go 1.21
+  go 1.26
 
   require github.com/ClickHouse/clickhouse-go/v2 main
 END
@@ -263,6 +263,7 @@ Le client prend en charge :
 | &gt;= 2.3, &lt; 2.41 |        1.18+       |
 |      &gt;= 2.41      |        1.21+       |
 |      &gt;= 2.43      |        1.24+       |
+|      &gt;= 2.50      |        1.26+       |
 
 ## Bonnes pratiques {#best-practices}
 
