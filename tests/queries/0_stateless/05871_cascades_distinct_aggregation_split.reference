@@ -136,15 +136,6 @@ Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + Change column names to column identifiers))
       ReadFromMergeTree (default.t_distinct_split_narrow)
--- 10b. the same without radix partitioning: the hash sets of uniqExact on one node cost more than the shuffle
-Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Aggregating
-          Expression ((Before GROUP BY + Change column names to column identifiers))
-            ShuffleExchange
-              ReadFromMergeTree (ParallelRead default.t_distinct_split_narrow)
 -- 11. no hint: the distinct count comes from the statistics of the table
 Expression ((Project names + Projection))
   MergingAggregated

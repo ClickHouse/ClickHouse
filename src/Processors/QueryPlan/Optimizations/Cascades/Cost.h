@@ -60,6 +60,10 @@ struct CostConfig
     Float64 unknown_leaf_cost = 100500;
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
+    /// The price of one distinct value that a `uniqExact` state holds, relative to a hash table entry of an
+    /// aggregation and to a row of an exchange. 0 without `cascades_distinct_aggregation_split`: the values
+    /// of states then have no price.
+    Float64 distinct_state_value_cost = 1.0;
 
     [[nodiscard]] String dump() const;
 };
@@ -131,7 +135,8 @@ struct ExpressionProperties;
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
 {
-    /// The plan step; used by the type dispatcher, ignored by the strategy cost functions.
+    /// The plan step; used by the type dispatcher. The cost function of an aggregation reads its keys and
+    /// its aggregate functions.
     const IQueryPlanStep * step = nullptr;
     const ExpressionStatistics & output_stats;
     /// Per-input statistics, aligned with the expression inputs; an entry is null when the
@@ -149,10 +154,6 @@ struct CostInputs
     /// A sorted gather reads the stream layout from it: a sender with several streams per
     /// node merges them before shipping, which costs like a sort's final merge.
     const ExpressionProperties * first_input_properties = nullptr;
-    /// The distinct values that an aggregation without keys holds in the hash sets of its `uniqExact` states,
-    /// and their bytes. Resolved by the caller from the statistics of the input.
-    Float64 distinct_state_values = 0;
-    Float64 distinct_state_bytes = 0;
     const CostConfig & config;
 };
 

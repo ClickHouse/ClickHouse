@@ -40,8 +40,6 @@ SET distributed_aggregation_memory_efficient = 1;
 SET cascades_aggregation_pushdown = 0;
 SET optimize_aggregation_in_order = 0;
 SET cascades_distinct_aggregation_split = 1;
--- Without it, `uniqExact` on one node holds all the values in hash sets, which have a cost (case 10b).
-SET optimize_uniq_exact_radix_partitioning = 1;
 SET param__internal_cascades_cluster_node_count = 8;
 -- The table stands in for a large one: 1 billion rows, 100 million distinct values in each column.
 SET param__internal_join_table_stat_hints = '{"t_distinct_split": {"cardinality": 1000000000, "avg_row_bytes": 40, "distinct_keys": {"x": 100000000, "n": 100000000, "s": 100000000, "f": 100000000, "k": 100000000}}}';
@@ -88,9 +86,6 @@ SELECT '-- 10. two nodes, almost every row has its own value: uniqExact on one n
 SET param__internal_join_table_stat_hints = '{"t_distinct_split_narrow": {"cardinality": 1000000000, "avg_row_bytes": 12, "distinct_keys": {"x": 900000000}}}';
 SET param__internal_cascades_cluster_node_count = 2;
 EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split_narrow;
-
-SELECT '-- 10b. the same without radix partitioning: the hash sets of uniqExact on one node cost more than the shuffle';
-EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split_narrow SETTINGS optimize_uniq_exact_radix_partitioning = 0;
 SET param__internal_cascades_cluster_node_count = 8;
 
 SELECT '-- 11. no hint: the distinct count comes from the statistics of the table';

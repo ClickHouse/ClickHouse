@@ -110,8 +110,7 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
             aggregating_step->getParams().keys, *aggregating_step->getOutputHeader(), input_statistics(0));
         /// A non-final aggregation without keys emits one row of states, and its `uniqExact` states hold
         /// all the distinct values.
-        if (memo.getContext().cascades_distinct_aggregation_split
-            && !aggregating_step->getFinal() && aggregating_step->getParams().keys.empty())
+        if (!aggregating_step->getFinal() && aggregating_step->getParams().keys.empty())
         {
             std::tie(group->statistics->distinct_state_values, group->statistics->distinct_state_bytes)
                 = estimateDistinctValuesOfStates(*aggregating_step, input_statistics(0));

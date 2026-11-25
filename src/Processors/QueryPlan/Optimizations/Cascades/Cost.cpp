@@ -70,6 +70,7 @@ CostConfig parseCostConfig(const String & json_str)
         read("unknown_leaf_cost", config.unknown_leaf_cost);
         read("funnel_sequential_cost_per_row", config.funnel_sequential_cost_per_row);
         read("merge_sequential_cost_per_row", config.merge_sequential_cost_per_row);
+        read("distinct_state_value_cost", config.distinct_state_value_cost);
     }
     catch (const Poco::Exception & e)
     {
@@ -96,6 +97,7 @@ CostConfig parseCostConfig(const String & json_str)
     require(config.unknown_leaf_cost, "unknown_leaf_cost");
     require(config.funnel_sequential_cost_per_row, "funnel_sequential_cost_per_row");
     require(config.merge_sequential_cost_per_row, "merge_sequential_cost_per_row");
+    require(config.distinct_state_value_cost, "distinct_state_value_cost");
     return config;
 }
 
@@ -111,6 +113,7 @@ String CostConfig::dump() const
     obj.set("unknown_leaf_cost", unknown_leaf_cost);
     obj.set("funnel_sequential_cost_per_row", funnel_sequential_cost_per_row);
     obj.set("merge_sequential_cost_per_row", merge_sequential_cost_per_row);
+    obj.set("distinct_state_value_cost", distinct_state_value_cost);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     obj.stringify(oss);
     return oss.str();
@@ -164,15 +167,30 @@ static Cost fullReadCost(const CostInputs & inputs)
     return Cost{.work = inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row};
 }
 
+/// The count and the bytes of the distinct values that an aggregation without keys puts into the hash sets
+/// of its `uniqExact` states: each thread fills a set with the values, and the sets are then merged into one.
+/// A single `uniqExact` in a final aggregation takes much less time for a value, so it has none here. With
+/// radix partitioning it builds a small set for each bucket and merges nothing. In the order of its argument,
+/// equal values are adjacent, and it needs no set. Radix partitioning is a setting of the pipeline that is on
+/// by default, and the cost model takes it as on.
+static std::pair<Float64, Float64> distinctValuesInHashSets(const CostInputs & inputs)
+{
+    const auto * aggregating_step = typeid_cast<const AggregatingStep *>(inputs.step);
+    if (!aggregating_step || !aggregating_step->getParams().keys.empty() || aggregating_step->canUseRadixUniqExact())
+        return {0, 0};
+    return estimateDistinctValuesOfStates(*aggregating_step, inputStats(inputs, 0));
+}
+
 /// Hash table build + probe + output materialization, divided when each node handles 1/N.
-/// The distinct values of the `uniqExact` states are entries of hash tables as the output rows are,
-/// so they have the same price.
+/// The distinct values of the `uniqExact` states are entries of hash tables as the output rows are.
 static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
 {
+    const auto [distinct_state_values, distinct_state_bytes] = distinctValuesInHashSets(inputs);
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-                 + inputs.distinct_state_values + inputs.distinct_state_bytes
+                 + inputs.config.distinct_state_value_cost * distinct_state_values
+                 + inputs.config.distinct_state_value_cost * distinct_state_bytes
                  + inputStats(inputs, 0).estimated_row_count) / divide_by;
     return cost;
 }
@@ -267,7 +285,8 @@ static Cost mergingAggregatedCost(const CostInputs & inputs)
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
         + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputStats(inputs, 0).estimated_row_count + inputStats(inputs, 0).distinct_state_values) / inputs.parallelism;
+        + inputStats(inputs, 0).estimated_row_count
+        + inputs.config.distinct_state_value_cost * inputStats(inputs, 0).distinct_state_values) / inputs.parallelism;
     /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
     /// merge for large outputs; bucket-level merge within a node is parallel.
     cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
@@ -283,7 +302,7 @@ static Cost broadcastExchangeCost(const CostInputs & inputs)
     /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
     /// a shuffle of the same data.
     cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputs.output_stats.distinct_state_bytes;
+        + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_bytes;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     return cost;
 }
@@ -300,7 +319,8 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// optimizer keeps big scans on a single node.
     /// The distinct values in `uniqExact` states are not in the row width. The exchange sends and reads
     /// such a state value by value, so a value has the price of a row here and in the funnel below.
-    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row + inputs.output_stats.distinct_state_bytes;
+    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row
+        + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_bytes;
     if (dynamic_cast<const ShuffleExchangeStep *>(&step))
         network_bytes /= std::max(1.0, inputs.node_count);
     cost.network += network_bytes;
@@ -318,7 +338,8 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
         if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
             sorted_gather && sorted_gather->getMaintainSortDescription())
             funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * (funnel_rows + inputs.output_stats.distinct_state_values);
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row
+            * (funnel_rows + inputs.config.distinct_state_value_cost * inputs.output_stats.distinct_state_values);
     }
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())
@@ -436,18 +457,6 @@ String Cost::dump(const CostConfig & config) const
     return fmt::format("work={} network={} sequential={} total={}", work, network, sequential, total(config));
 }
 
-/// Whether an aggregation without keys holds the distinct values of its `uniqExact` states in hash sets:
-/// each thread fills a set, and the sets are then merged into one. A single `uniqExact` that is computed
-/// with radix partitioning or in the order of its argument builds no set of all the values.
-static bool holdsDistinctValuesInHashSets(const AggregatingStep & step, const OptimizerContext & context)
-{
-    if (!step.getParams().keys.empty())
-        return false;
-    const bool has_no_set_of_all_values = step.canUseRadixUniqExact()
-        && (context.optimize_uniq_exact_radix_partitioning || step.hasUniqExactInOrder());
-    return !has_no_set_of_all_values;
-}
-
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
@@ -509,19 +518,6 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         auto input_group = memo.getGroup(input.group_id);
         inputs.input_stats.push_back(input_group->statistics ? &*input_group->statistics : nullptr);
-    }
-
-    /// An aggregation without keys has one output row, and it holds all the distinct values of its
-    /// `uniqExact` states in hash sets. So its cost function gets the values from here.
-    {
-        const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step);
-        if (aggregating_step && memo.getContext().cascades_distinct_aggregation_split
-            && holdsDistinctValuesInHashSets(*aggregating_step, memo.getContext())
-            && !inputs.input_stats.empty() && inputs.input_stats[0])
-        {
-            std::tie(inputs.distinct_state_values, inputs.distinct_state_bytes)
-                = estimateDistinctValuesOfStates(*aggregating_step, *inputs.input_stats[0]);
-        }
     }
 
     /// A partial top-N emits at most L rows on each of its nodes, while the group statistics are

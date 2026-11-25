@@ -265,15 +265,19 @@ aggregation stay in the group, and the costs select.
 - **Estimates**: to compare the plans, the costs count the distinct values that the
   `uniqExact` states of an aggregation without keys hold (bytes from
   `IAggregateFunction::getStateBytesPerDistinctInput`):
-  - The aggregation holds them in hash sets. `CostEstimator` estimates them from the statistics
-    of the input, and the cost function prices them as hash table entries.
+  - The aggregation puts them into hash sets. Its cost function estimates them from the
+    statistics of its input and prices them as hash table entries.
   - A non-final aggregation emits the states in one row. Its statistics keep the row count and
     the row width, and have the values and their bytes beside them
     (`ExpressionStatistics::distinct_state_values`, `distinct_state_bytes`). The exchange and
     the merge above it price each value as a row. A step that takes the statistics of its input
     keeps the values only while its rows have aggregate states: a final `ROLLUP` has none.
-  - A single `uniqExact` that is computed with radix partitioning, or in the order of its
-    argument, builds no hash set of all the values, and has no such price.
+  - A single `uniqExact` in a final aggregation has no such price. With radix partitioning
+    (on by default, and the cost model takes it as on) it keeps the values in a small set for
+    each bucket and merges nothing, and in the order of its argument it needs no set. Both take
+    much less time for each value.
+  - The price of a value is the constant `distinct_state_value_cost` of the cost configuration:
+    1 with the setting, 0 without it, so that the costs without the setting do not change.
 
 ## Architecture Details
 
@@ -449,7 +453,8 @@ replicated read of such a table would look almost free.
 The whole cost configuration is overridable at query time via one JSON parameter —
 the three weights, the per-exchange overhead, and the calibration constants
 (`expression_cost_per_row`, `hash_table_build_factor`, `unknown_leaf_cost`,
-`funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`):
+`funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`,
+`distinct_state_value_cost`):
 ```sql
 SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":32}';
 ```

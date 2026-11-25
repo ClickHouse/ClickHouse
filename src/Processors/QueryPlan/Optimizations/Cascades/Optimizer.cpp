@@ -138,7 +138,9 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.cascades_distinct_aggregation_split = optimization_settings.cascades_distinct_aggregation_split;
-    context.optimize_uniq_exact_radix_partitioning = optimization_settings.optimize_uniq_exact_radix_partitioning;
+    /// The setting also turns on the price of the values that `uniqExact` states hold.
+    if (!context.cascades_distinct_aggregation_split)
+        context.cost_config.distinct_state_value_cost = 0;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
