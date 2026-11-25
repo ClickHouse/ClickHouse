@@ -154,8 +154,8 @@ SELECT sumTuple(t) FROM (SELECT if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(In
 -- `-TupleIf` over `Nullable(Tuple)`: both the if-flag and the null map filter rows. cond = number % 2
 -- keeps odd numbers 1,3,5, of which 3 is NULL -> kept 1,5 -> sums 6.
 SELECT sumTupleIf(t, cond) FROM (SELECT number % 2 AS cond, if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(Int64, Float64))'), CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))')) AS t FROM numbers(6));
--- GROUP BY over `Nullable(Tuple)` goes through the `Null` wrapper's generic batch loop, which calls
--- the nested `-Tuple` `add` fallback row by row (the wrapper has no keyed batch override):
+-- GROUP BY over `Nullable(Tuple)` with this many NULLs goes through the `Null` wrapper's row loop, which calls
+-- the nested `-Tuple` `add` fallback row by row:
 -- k=0 keeps 2,4 (0 is NULL); k=1 keeps 1,5 (3 is NULL).
 SELECT k, sumTuple(t) FROM (SELECT number % 2 AS k, if(number % 3 = 0, CAST(NULL, 'Nullable(Tuple(Int64, Float64))'), CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))')) AS t FROM numbers(6)) GROUP BY k ORDER BY k;
 

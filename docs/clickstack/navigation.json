@@ -480,6 +480,12 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "November",
+                      "pages": [
+                        "clickstack/demo-days/2026/2026-11-12"
+                      ]
+                    },
+                    {
                       "group": "October",
                       "pages": [
                         "clickstack/demo-days/2026/2026-10-22",
@@ -595,6 +601,7 @@
                     "clickstack/integration-examples/jvm-metrics",
                     "clickstack/integration-examples/kafka-metrics",
                     "clickstack/integration-examples/kubernetes",
+                    "clickstack/integration-examples/loom",
                     "clickstack/integration-examples/mysql",
                     "clickstack/integration-examples/nodejs-traces",
                     "clickstack/integration-examples/postgres-logs",
