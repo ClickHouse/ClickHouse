@@ -1,3 +1,6 @@
+patch_dup_equal_keys_1_collect	0	0
+patch_dup_equal_keys_2_at_default	1	0
+patch_dup_equal_keys_3_disabled	0	1
 patch_dup_join_1_collect	0	0
 patch_dup_join_2_at_default	1	0
 patch_dup_join_3_disabled	0	1
