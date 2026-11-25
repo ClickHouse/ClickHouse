@@ -1,6 +1,8 @@
 full pread_threadpool	1
 range pread_threadpool	1
 point pread_threadpool	1
+full pread_threadpool prefetch	1
+range pread_threadpool prefetch	1
 full pread_fake_async	1
 range pread_fake_async	1
 point pread_fake_async	1
