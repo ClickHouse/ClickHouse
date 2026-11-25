@@ -48,6 +48,7 @@ public:
         /// Merges the appended ranges into the merged ones and returns the bytes they add. Never throws.
         size_t merge() TSA_REQUIRES(mutex);
 
+    private:
         std::mutex mutex;
         /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
         CompressedBlockRanges united_ranges TSA_GUARDED_BY(mutex);
