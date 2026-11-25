@@ -2420,9 +2420,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.refresh_strategy && !create.refresh_strategy->isAppend()
         && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_uuid_losing_restore))
     {
-        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+        if (database && !database->supportsAtomicTableReplacement())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                "Refreshable materialized views (except with APPEND) require atomic table replacement, but database {} with engine {} does not support it", create.getDatabase(), database->getEngineName());
 
         std::string message;
         if (!supportsAtomicRename(&message))
