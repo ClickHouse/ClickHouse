@@ -45,12 +45,13 @@ std::pair<std::string, std::string> parseClientCertificateFiles(
 std::unique_ptr<InterserverCredentials>
 InterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag)
 {
-    if (config.has(root_tag + ".user") && !config.has(root_tag + ".password"))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Configuration parameter interserver_http_credentials.password is required when user is specified");
+    /// Preserve validation behavior for configurations that predate certificate authentication.
+    if (config.has("user") && !config.has("password"))
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Configuration parameter interserver_http_credentials.password can't be empty");
 
-    if (!config.has(root_tag + ".user") && config.has(root_tag + ".password"))
+    if (!config.has("user") && config.has("password"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "Configuration parameter interserver_http_credentials.user is required when password is specified");
+                        "Configuration parameter interserver_http_credentials.user can't be empty if user specified");
 
     /// They both can be empty
     auto user = config.getString(root_tag + ".user", "");

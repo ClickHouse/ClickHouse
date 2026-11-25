@@ -73,7 +73,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def request(node, cert_name=None, basic=False, basic_password="secret"):
+def request(node, cert_name=None, basic=False, basic_user="replica", basic_password="secret"):
     context = WrapSSLContextWithSNI("interserver.test", ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=str(CERT_DIR / "ca-cert.pem"))
     context.check_hostname = True
@@ -85,7 +85,7 @@ def request(node, cert_name=None, basic=False, basic_password="secret"):
 
     headers = {}
     if basic:
-        token = base64.b64encode(f"replica:{basic_password}".encode()).decode("ascii")
+        token = base64.b64encode(f"{basic_user}:{basic_password}".encode()).decode("ascii")
         headers["Authorization"] = f"Basic {token}"
 
     connection = http.client.HTTPSConnection(
@@ -245,3 +245,33 @@ def test_interserver_client_certificate_rotation():
         certificate_only.query("SYSTEM RELOAD CONFIG")
 
     assert_eq_with_retry(certificate_only, "SELECT id FROM rotation_parts", "1")
+
+
+def test_legacy_basic_configuration_remains_accepted():
+    config_path = "/etc/clickhouse-server/config.d/basic_only.xml"
+    original = (Path(__file__).parent / "configs/basic_only.xml").read_text()
+
+    try:
+        basic_only.replace_config(config_path, "<clickhouse/>")
+        basic_only.query("SYSTEM RELOAD CONFIG")
+        assert_accepted(basic_only)
+        assert_rejected(basic_only, "Incorrect user or password", basic=True)
+
+        basic_only.replace_config(
+            config_path,
+            "<clickhouse><interserver_http_credentials><user>replica</user></interserver_http_credentials></clickhouse>",
+        )
+        basic_only.query("SYSTEM RELOAD CONFIG")
+        assert_accepted(basic_only, basic=True, basic_password="")
+        assert_rejected(basic_only, "requires HTTP Basic authentication")
+
+        basic_only.replace_config(
+            config_path,
+            "<clickhouse><interserver_http_credentials><password>secret</password></interserver_http_credentials></clickhouse>",
+        )
+        basic_only.query("SYSTEM RELOAD CONFIG")
+        assert_accepted(basic_only, basic=True, basic_user="")
+        assert_rejected(basic_only, "requires HTTP Basic authentication")
+    finally:
+        basic_only.replace_config(config_path, original)
+        basic_only.query("SYSTEM RELOAD CONFIG")

@@ -50,15 +50,15 @@ String getEndpointNameFromURI(const HTTPServerRequest & request)
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
+    const auto server_credentials = server.context()->getInterserverCredentials();
     String certificate_status = "not_configured";
 #if USE_SSL
-    const auto certificate_credentials = server.context()->getInterserverCredentials();
-    if (certificate_credentials && !certificate_credentials->getAllowedCertificateSubjects().empty())
+    if (server_credentials && !server_credentials->getAllowedCertificateSubjects().empty())
     {
         certificate_status = "missing_certificate";
         if (request.havePeerCertificate())
         {
-            const auto & allowed = certificate_credentials->getAllowedCertificateSubjects();
+            const auto & allowed = server_credentials->getAllowedCertificateSubjects();
             const auto presented = request.peerCertificate().extractAllSubjects();
             certificate_status = presented.empty() ? "no_supported_subjects" : "subject_not_allowed";
             for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
@@ -103,7 +103,6 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         }
     }
 
-    auto server_credentials = server.context()->getInterserverCredentials();
     if (server_credentials)
     {
         if (!request.hasCredentials())
