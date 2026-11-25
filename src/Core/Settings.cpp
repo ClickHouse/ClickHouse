@@ -11522,7 +11522,7 @@ SET dialect = 'q';
 select vwap: size wavg price, n: count i by sym from trades where size > 100
 ```
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the `q` dialect (the language of kdb+)."}) \
+        {"26.12", false, false, "New setting to enable the `q` dialect (the language of kdb+)."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
