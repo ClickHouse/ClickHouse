@@ -22,6 +22,7 @@ bitmap_contains.xml                                      # AggregateFunction col
 codecs_t64_select.xml                                    # loop() over the table
 columns_cache_prewhere_gaps.xml                          # FINAL
 compact_part_subcolumns.xml                              # JSON column
+compress_per_substream_in_compact_parts.xml              # JSON column
 distinct_json_paths.xml                                  # JSON column
 dotProduct.xml                                           # type BFloat16 in CREATE ... AS SELECT
 dynamic_compact_read.xml                                 # Dynamic column
@@ -62,6 +63,7 @@ json_shared_typed_paths.xml                              # JSON column
 json_subcolumn_serialization_cache.xml                   # JSON column
 json_subcolumns_required_conversions.xml                 # JSON column
 json_to_string.xml                                       # JSON column
+json_type_conversion.xml                                 # JSON column
 json_type_skip_regexp.xml                                # JSON column
 json_typed_path_subcolumn_lookup.xml                     # JSON column
 json_typed_paths_insert.xml                              # JSON column

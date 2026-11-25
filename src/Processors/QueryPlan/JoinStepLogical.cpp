@@ -2635,17 +2635,31 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         return isString(removeNullable(removeLowCardinality(column.type)));
     });
-    if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
+    /// The row store and the packed `String` keys need the average sizes of the right columns.
+    const bool needs_right_column_avg_bytes
+        = join_settings.enable_hash_join_row_store || join_settings.enable_packed_string_keys_in_hash_join;
+    if (needs_right_column_avg_bytes && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
-        auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(
-                  *children[1],
-                  QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
-                  .column_stats
-            : right_relation_column_stats;
+        /// A step taken over the wire has neither the statistics nor the row estimate of the right side. This host
+        /// estimates the read of the right side itself. The rows are used only for the choice of packed `String` keys.
+        const bool needs_local_rows = join_settings.enable_packed_string_keys_in_hash_join && !join_algorithm_params.rhs_size_estimation;
+        auto right_column_stats = right_relation_column_stats;
+        if (right_column_stats.empty() || needs_local_rows)
+        {
+            auto local_estimate = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[1],
+                QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read});
+            if (needs_local_rows)
+                join_algorithm_params.local_rhs_rows_estimation = local_estimate.estimated_rows;
+            if (right_column_stats.empty())
+                right_column_stats = std::move(local_estimate.column_stats);
+        }
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
             table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
+        for (const auto * output : right_dag.getOutputs())
+            if (!holdsInputValues(*output))
+                table_join->setRightColumnComputed(output->result_name);
     }
 
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
@@ -2732,6 +2746,9 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
+        join_step->join_algorithm_params->runtime_filter_keeps_matching_rows = join_step->runtime_filter_keeps_matching_rows;
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3104,7 +3121,9 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
     /// that the receiver does not take them again. Both bits stand for a decision that reads a row
     /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
-    /// decided for itself would decide from an empty estimate and could decide differently. The byte
+    /// decided for itself would decide from an empty estimate and could decide differently. The one
+    /// exception is the packed-key bit: a receiver that has a row estimate of its own, from the
+    /// optimizer or from its read of the right side, decides from it and ignores the bit. The byte
     /// is left out of a plan cache key because it differs between the single-node and the
     /// parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
@@ -3117,9 +3136,12 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         /// Only `full_sorting_merge` is ever planned.
         if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
             optimizer_flags |= 4;
-        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate.
-        if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
-            && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
+        /// `min_rows_for_packed_string_keys_in_hash_join` compares against the right side's estimate. A step that came
+        /// over the wire has no estimate, so it passes on the bit it received.
+        if (join_settings.enable_packed_string_keys_in_hash_join
+            && (sender_estimated_small_right_side
+                || (right_relation.estimated_rows
+                    && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)))
             optimizer_flags |= 8;
         if (has_runtime_filters)
             optimizer_flags |= 16;
@@ -3199,8 +3221,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
         if (optimizer_flags & 4)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
-        if (optimizer_flags & 8)
-            step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->sender_estimated_small_right_side = bool(optimizer_flags & 8);
         step->has_runtime_filters = bool(optimizer_flags & 16);
     }
     return step;
@@ -3246,6 +3267,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->sender_estimated_small_right_side = sender_estimated_small_right_side;
+    result_step->runtime_filter_keeps_matching_rows = runtime_filter_keeps_matching_rows;
     result_step->has_runtime_filters = has_runtime_filters;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;

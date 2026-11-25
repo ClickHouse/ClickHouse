@@ -18,6 +18,7 @@
 #include <mutex>
 #include <optional>
 #include <variant>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -393,6 +394,8 @@ struct Reader
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle top_k_dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
+        /// If not null, the column index is taken from it instead of `column_index_prefetch`.
+        KeptOffsetIndexes::ColumnIndexPtr kept_column_index;
         PrefetchHandle offset_index_prefetch;
         PrefetchHandle data_pages_prefetch;
         size_t data_pages_bytes = 0;
@@ -745,7 +748,9 @@ struct Reader
 
     /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
     size_t max_read_offset_indexes_bytes = 0;
-    /// The offset indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
+    /// The same for the column indexes read.
+    size_t max_read_column_indexes_bytes = 0;
+    /// The offset and column indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
     VectorWithMemoryTracking<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
 
@@ -869,6 +874,7 @@ private:
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) override;
 
     private:
@@ -925,6 +931,7 @@ private:
     std::mutex read_offset_indexes_mutex;
     VectorWithMemoryTracking<KeptOffsetIndexes::Entry> read_offset_indexes TSA_GUARDED_BY(read_offset_indexes_mutex);
     size_t read_offset_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
+    size_t read_column_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
 };
 
 }
