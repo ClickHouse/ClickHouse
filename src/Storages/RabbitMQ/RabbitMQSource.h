@@ -28,7 +28,8 @@ public:
             LoggerPtr log_,
             std::optional<UInt64> cancel_epoch_ = {},
             bool drive_loop_on_worker_ = false,
-            UInt64 first_poll_timeout_ms_ = 0);
+            UInt64 first_poll_timeout_ms_ = 0,
+            std::optional<std::vector<StorageID>> streaming_views_ = {});
 
     ~RabbitMQSource() override;
 
@@ -62,6 +63,8 @@ private:
     bool drive_loop_on_worker = false;
     /// How long an empty first poll waits for a message, like Kafka's poll timeout (0: return at once).
     const UInt64 first_poll_timeout_ms;
+    /// Background streaming only: the dependent views the insert pipeline of this cycle was built for.
+    const std::optional<std::vector<StorageID>> streaming_views;
     const Block non_virtual_header;
     const Block virtual_header;
     const UInt64 cancel_epoch;
@@ -90,9 +93,13 @@ private:
         LoggerPtr log_,
         std::optional<UInt64> cancel_epoch_ = {},
         bool drive_loop_on_worker_ = false,
-        UInt64 first_poll_timeout_ms_ = 0);
+        UInt64 first_poll_timeout_ms_ = 0,
+        std::optional<std::vector<StorageID>> streaming_views_ = {});
 
     Chunk generateImpl();
+
+    /// True if the dependent views of the table differ from `streaming_views` (always false outside streaming).
+    bool dependentViewsChanged() const;
 
     /// Budget of driveLoopUntilMessage: for a REFRESH cycle the flush interval when set, else a finite
     /// default (the flush interval may be 0); for streaming the poll timeout, capped by the flush interval.
