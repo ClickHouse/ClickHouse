@@ -586,11 +586,7 @@ int SecureSocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
 	while (true)
 	{
 		/// The queued bytes leave also while the caller waits only for data: the peer can wait for them.
-		bool queued = false;
-		{
-			NonBlockingFilterBIO::NonBlockingScope scope(filter);
-			queued = !filter.sendQueued();
-		}
+		const bool queued = !filter.sendQueued();
 
 		/// Not `SSL_has_pending`: it is true for a part of a record too, and the caller would spin.
 		if (wantReceive && SSL_pending(_pSSL) > 0)
@@ -621,9 +617,9 @@ int SecureSocketImpl::waitForSendOrReceive(Poco::Timespan& timeout, int mode)
 
 int SecureSocketImpl::sendNow(const void* buffer, int length)
 {
-	ScopedLock lock(*_mutex);
 	if (length <= 0)
 		throw InvalidArgumentException("sendNow needs a positive length");
+	ScopedLock lock(*_mutex);
 	NonBlockingFilterBIO& filter = nonBlockingFilter();
 	if (holdsSendError())
 		return -1;
@@ -679,9 +675,9 @@ int SecureSocketImpl::sendNow(const void* buffer, int length)
 
 int SecureSocketImpl::receiveNow(void* buffer, int length)
 {
-	ScopedLock lock(*_mutex);
 	if (length <= 0)
 		throw InvalidArgumentException("receiveNow needs a positive length");
+	ScopedLock lock(*_mutex);
 	NonBlockingFilterBIO& filter = nonBlockingFilter();
 
 	/// Outside the OpenSSL call, and counted in plaintext, as `receiveBytes` does.
