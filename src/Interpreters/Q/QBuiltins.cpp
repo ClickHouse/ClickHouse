@@ -293,12 +293,23 @@ QValue aggregate(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column,
     return result;
 }
 
-QValue simpleAggregate(Call & call, const String & function, const String & list_function, std::optional<QType> qtype = std::nullopt)
+/// An aggregate function of ClickHouse over a column, and the same function over a list (`arrayReduce`),
+/// so that both skip the nulls: the array functions like `arraySum` do not take nullable items at all.
+QValue simpleAggregate(Call & call, const String & function, std::optional<QType> qtype = std::nullopt)
 {
     return aggregate(call,
         [&](ASTPtr column) { return fn(function, std::move(column)); },
-        [&](ASTPtr list) { return list_function.empty() ? fn("arrayReduce", lit(Field(function)), std::move(list)) : fn(list_function, std::move(list)); },
+        [&](ASTPtr list) { return fn("arrayReduce", lit(Field(function)), std::move(list)); },
         false, qtype);
+}
+
+/// The items of a list without the nulls, with the type of the items not nullable.
+ASTPtr withoutNulls(QCompiler & compiler, ASTPtr list)
+{
+    String item = compiler.newLambdaParameter();
+    String kept = compiler.newLambdaParameter();
+    return fn("arrayMap", makeLambda({kept}, fn("assumeNotNull", ident(kept))),
+        fn("arrayFilter", makeLambda({item}, fn("isNotNull", ident(item))), std::move(list)));
 }
 
 /// A uniform function: a column becomes a window function, a list an array function.
@@ -1232,7 +1243,7 @@ QValue castOrCond(Call & call)
     call.unsupported("This form of '$'");
 }
 
-QValue movingWindow(Call & call, const String & function, const String & list_function)
+QValue movingWindow(Call & call, const String & function)
 {
     call.expectArgs(2);
     auto n = constantInt(call.arg(0));
@@ -1251,9 +1262,7 @@ QValue movingWindow(Call & call, const String & function, const String & list_fu
                 {
                     ASTPtr start = fn("greatest", one(), fn("minus", index, lit(Field(size - 1))));
                     ASTPtr window = fn("arraySlice", list, start, fn("plus", fn("minus", index, start), one()));
-                    if (list_function.empty())
-                        return fn("arrayReduce", lit(Field(function)), window);
-                    return fn(list_function, window);
+                    return fn("arrayReduce", lit(Field(function)), window);
                 });
         });
 }
@@ -1787,10 +1796,10 @@ const std::unordered_map<String, Handler> & handlers()
         };
 
         /// Aggregates.
-        h["sum"] = [](Call & c) { return simpleAggregate(c, "sum", "arraySum"); };
-        h["avg"] = [](Call & c) { return simpleAggregate(c, "avg", "arrayAvg", QType::Float); };
-        h["min"] = [](Call & c) { return simpleAggregate(c, "min", "arrayMin"); };
-        h["max"] = [](Call & c) { return simpleAggregate(c, "max", "arrayMax"); };
+        h["sum"] = [](Call & c) { return simpleAggregate(c, "sum"); };
+        h["avg"] = [](Call & c) { return simpleAggregate(c, "avg", QType::Float); };
+        h["min"] = [](Call & c) { return simpleAggregate(c, "min"); };
+        h["max"] = [](Call & c) { return simpleAggregate(c, "max"); };
         h["med"] = [](Call & c)
         {
             /// The median of q is the mean of the two middle values when the count of the values is even.
@@ -1809,14 +1818,14 @@ const std::unordered_map<String, Handler> & handlers()
                 [](ASTPtr list) { return fn("arrayReduce", lit(Field(String("quantileExactInclusive(0.5)"))), std::move(list)); },
                 false, QType::Float);
         };
-        h["dev"] = [](Call & c) { return simpleAggregate(c, "stddevPop", "", QType::Float); };
-        h["sdev"] = [](Call & c) { return simpleAggregate(c, "stddevSamp", "", QType::Float); };
-        h["var"] = [](Call & c) { return simpleAggregate(c, "varPop", "", QType::Float); };
-        h["svar"] = [](Call & c) { return simpleAggregate(c, "varSamp", "", QType::Float); };
+        h["dev"] = [](Call & c) { return simpleAggregate(c, "stddevPop", QType::Float); };
+        h["sdev"] = [](Call & c) { return simpleAggregate(c, "stddevSamp", QType::Float); };
+        h["var"] = [](Call & c) { return simpleAggregate(c, "varPop", QType::Float); };
+        h["svar"] = [](Call & c) { return simpleAggregate(c, "varSamp", QType::Float); };
         h["prd"] = [](Call & c)
         {
             return aggregate(c, [](ASTPtr column) { return fn("arrayProduct", fn("groupArray", column)); },
-                [](ASTPtr list) { return fn("arrayProduct", list); });
+                [&](ASTPtr list) { return fn("arrayProduct", withoutNulls(c.compiler, std::move(list))); });
         };
         h["all"] = [](Call & c)
         {
@@ -1846,16 +1855,15 @@ const std::unordered_map<String, Handler> & handlers()
             QValue values = c.scalarArg(1);
             /// A null in either argument excludes the whole pair. The product of such a pair is a null, and the sum skips it.
             /// The sum of the weights has to skip the same pairs, so a weight is replaced with a null where the value is one.
-            /// The lists are summed with the aggregate function as well: `arraySum` does not take nulls.
             QValue product = c.compiler.atomic(c.name, {weights, values}, [](const ASTs & asts) { return fn("multiply", asts[0], asts[1]); }, c.scope);
             QValue paired_weights = c.compiler.atomic(c.name, {weights, values},
                 [](const ASTs & asts) { return fn("if", fn("isNull", asts[1]), lit(Field()), asts[0]); }, c.scope);
             QValues numerator_args{product};
             Call numerator_call{c.compiler, c.name, numerator_args, c.env, c.scope, c.offset};
-            QValue numerator = simpleAggregate(numerator_call, "sum", "");
+            QValue numerator = simpleAggregate(numerator_call, "sum");
             QValues denominator_args{paired_weights};
             Call denominator_call{c.compiler, c.name, denominator_args, c.env, c.scope, c.offset};
-            QValue denominator = simpleAggregate(denominator_call, "sum", "");
+            QValue denominator = simpleAggregate(denominator_call, "sum");
             QValue result = QCompiler::scalar(fn("divide", numerator.ast, denominator.ast), numerator.depth);
             result.aggregated = numerator.aggregated || denominator.aggregated;
             result.qtype = QType::Float;
@@ -1868,7 +1876,7 @@ const std::unordered_map<String, Handler> & handlers()
                 [](const ASTs & asts) { return fn("multiply", asts[0], asts[1]); }, c.scope);
             QValues sum_args{product};
             Call sum_call{c.compiler, c.name, sum_args, c.env, c.scope, c.offset};
-            return simpleAggregate(sum_call, "sum", "arraySum");
+            return simpleAggregate(sum_call, "sum");
         };
         auto pair_aggregate = [](const String & function)
         {
@@ -1993,25 +2001,24 @@ const std::unordered_map<String, Handler> & handlers()
         };
 
         /// Uniform functions.
-        auto running = [](const String & window_function, const String & list_function)
+        /// The running aggregates skip the nulls like the aggregates do, which for the sums is the same as taking a null for zero.
+        auto running = [](const String & function)
         {
-            return [window_function, list_function](Call & c)
+            return [function](Call & c)
             {
                 c.expectArgs(1);
                 return uniform(c,
-                    [&](ASTPtr column) { return c.compiler.makeWindowFunction(window_function, {column}, c.scope, std::nullopt, 0); },
+                    [&](ASTPtr column) { return c.compiler.makeWindowFunction(function, {column}, c.scope, std::nullopt, 0); },
                     [&](ASTPtr list)
                     {
-                        if (list_function == "arrayCumSum")
-                            return fn("arrayCumSum", list);
                         return mapWithIndex(c.compiler, list,
-                            [&](ASTPtr, ASTPtr index) { return fn(list_function, fn("arraySlice", list, one(), index)); });
+                            [&](ASTPtr, ASTPtr index) { return fn("arrayReduce", lit(Field(function)), fn("arraySlice", list, one(), index)); });
                     });
             };
         };
-        h["sums"] = running("sum", "arrayCumSum");
-        h["maxs"] = running("max", "arrayMax");
-        h["mins"] = running("min", "arrayMin");
+        h["sums"] = running("sum");
+        h["maxs"] = running("max");
+        h["mins"] = running("min");
         h["prds"] = [](Call & c)
         {
             c.expectArgs(1);
@@ -2022,7 +2029,8 @@ const std::unordered_map<String, Handler> & handlers()
                 },
                 [&](ASTPtr list)
                 {
-                    return mapWithIndex(c.compiler, list, [&](ASTPtr, ASTPtr index) { return fn("arrayProduct", fn("arraySlice", list, one(), index)); });
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr, ASTPtr index) { return fn("arrayProduct", withoutNulls(c.compiler, fn("arraySlice", list, one(), index))); });
                 });
         };
         auto lag = [](Call & c, ASTPtr column, UInt64 n)
@@ -2119,14 +2127,14 @@ const std::unordered_map<String, Handler> & handlers()
                     return fn("arrayFill", makeLambda({item}, fn("isNotNull", ident(item))), list);
                 });
         };
-        h["mavg"] = [](Call & c) { return movingWindow(c, "avg", "arrayAvg"); };
-        h["msum"] = [](Call & c) { return movingWindow(c, "sum", "arraySum"); };
-        h["mmax"] = [](Call & c) { return movingWindow(c, "max", "arrayMax"); };
-        h["mmin"] = [](Call & c) { return movingWindow(c, "min", "arrayMin"); };
-        h["mcount"] = [](Call & c) { return movingWindow(c, "count", "length"); };
+        h["mavg"] = [](Call & c) { return movingWindow(c, "avg"); };
+        h["msum"] = [](Call & c) { return movingWindow(c, "sum"); };
+        h["mmax"] = [](Call & c) { return movingWindow(c, "max"); };
+        h["mmin"] = [](Call & c) { return movingWindow(c, "min"); };
+        h["mcount"] = [](Call & c) { return movingWindow(c, "count"); };
         h["mdev"] = [](Call & c)
         {
-            return movingWindow(c, "stddevPop", "");
+            return movingWindow(c, "stddevPop");
         };
 
         /// Adverbs as keywords.
