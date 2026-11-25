@@ -2853,7 +2853,7 @@ Possible values:
 )", EXPERIMENTAL, \
         {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
     DECLARE(Bool, log_query_plans_time, false, R"(
-When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, also collect the work intervals of its processors, the same as the `time` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-concurrency). The plan stored in `system.query_log.query_plan` then has `Time` and `Concurrency` groups on its steps, with the wall-clock time and the concurrency level of each step and of its branch.
+When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, also collect the work intervals of its processors, the same as the `time` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-concurrency). The plan stored in `system.query_log.query_plan` then has `Time` and `Concurrency` groups on its steps, with the wall-clock time and the concurrency level of each step and of its branch, and an `ExecutionTimeBreakdown` at its root, which splits the execution time into the time spent in the steps of the plan, outside them, and with no thread running anything.
 
 Has no effect unless `log_query_plans` is enabled and the query is captured.
 )", EXPERIMENTAL, \

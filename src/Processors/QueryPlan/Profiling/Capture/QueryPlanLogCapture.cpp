@@ -31,6 +31,8 @@ namespace Setting
 extern const SettingsBool allow_experimental_analyzer;
 extern const SettingsBool log_queries;
 extern const SettingsBool log_query_plans;
+extern const SettingsBool log_query_plans_join_matches;
+extern const SettingsBool log_query_plans_time;
 extern const SettingsFloat log_query_plans_probability;
 extern const SettingsBool make_distributed_plan;
 }
@@ -152,6 +154,13 @@ bool QueryPlanLogCapture::canCapturePlan(const ContextPtr & context, const ASTPt
     return true;
 }
 
+CollectedStatistics QueryPlanLogCapture::collectedStatisticsFromSettings(const Settings & settings)
+{
+    return {
+        .work_intervals = settings[Setting::log_query_plans_time],
+        .join_matches = settings[Setting::log_query_plans_join_matches]};
+}
+
 void QueryPlanLogCapture::declineCapture(const ContextPtr & context, const char * reason)
 {
     if (!context->getSettingsRef()[Setting::log_query_plans])
@@ -205,6 +214,7 @@ void QueryPlanLogCapture::captureStatistics(QueryPipeline & pipeline)
 
         captured->execution_time_ns = stats.getExecutionTimeNs();
         captured->max_threads = stats.getMaxThreads();
+        captured->execution_time_breakdown = stats.executionTimeBreakdown();
     }
     catch (...)
     {

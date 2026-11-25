@@ -57,6 +57,8 @@ struct CapturedPlan
     /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
+    /// Execution time split by what the threads were doing. Only when the work intervals were collected.
+    std::optional<ExecutionTimeBreakdown> execution_time_breakdown;
 
     /// What the query collected beyond the default statistics, so a reader can tell a metric that
     /// was not collected from one the step does not have.

@@ -38,6 +38,9 @@ SELECT
     -- Whether any step reports the `Time` and `Concurrency` groups, which come from the work intervals.
     arrayExists(n -> JSONHas(n, 'Statistics', 'Time'), JSONExtractArrayRaw(plan, 'Nodes')),
     arrayExists(n -> JSONHas(n, 'Statistics', 'Concurrency'), JSONExtractArrayRaw(plan, 'Nodes')),
+    -- The query-level split of the execution time comes from the work intervals too.
+    JSONHas(plan, 'ExecutionTimeBreakdown'),
+    JSONExtractUInt(plan, 'ExecutionTimeBreakdown', 'InStepsNs') > 0,
     -- Which table ends up on the build side is the optimiser's choice, so the count is not pinned.
     JSONExtractUInt(join_stats, 'Right', 'Matched') > 0
 FROM

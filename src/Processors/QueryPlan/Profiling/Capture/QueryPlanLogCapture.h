@@ -9,6 +9,7 @@ namespace DB
 {
 
 class QueryPipeline;
+struct Settings;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
@@ -23,6 +24,9 @@ public:
     /// Whether this query should have its plan captured. `query` is the text of the query as the
     /// client sent it, before `query_masking_rules` were applied.
     static bool canCapturePlan(const ContextPtr & context, const ASTPtr & ast, std::string_view query, bool internal);
+
+    /// What the settings of a logged query ask its plan to collect beyond the default statistics.
+    static CollectedStatistics collectedStatisticsFromSettings(const Settings & settings);
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);

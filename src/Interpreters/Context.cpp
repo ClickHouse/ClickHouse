@@ -392,8 +392,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
-    extern const SettingsBool log_query_plans_join_matches;
-    extern const SettingsBool log_query_plans_time;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_cache_temporarily;
@@ -10712,13 +10710,8 @@ const ServerSettings & Context::getServerSettings() const
     return shared->server_settings;
 }
 
-void Context::enablePlanLogCapture()
+void Context::enablePlanLogCapture(const CollectedStatistics & collected)
 {
-    const auto & settings = getSettingsRef();
-    const CollectedStatistics collected{
-        .work_intervals = settings[Setting::log_query_plans_time],
-        .join_matches = settings[Setting::log_query_plans_join_matches]};
-
     query_plan_log_capture = std::make_shared<QueryPlanLogCapture>(collected);
     setJoinAnalyzeMode(collected.join_matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 }
