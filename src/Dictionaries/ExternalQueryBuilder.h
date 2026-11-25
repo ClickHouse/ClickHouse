@@ -84,10 +84,10 @@ protected:
     void composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Expression in form (x, y, ...)
-    void composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const;
+    void composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end, bool reinterpret_float_keys = false) const;
 
     /// Expression in form (c1, c2, ...)
-    void composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
+    void composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end, bool reinterpret_float_keys = false) const;
 
     /// Compose update condition
     static void composeUpdateCondition(const std::string & update_field, const std::string & bound, WriteBuffer & out);
