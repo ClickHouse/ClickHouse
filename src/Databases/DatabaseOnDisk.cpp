@@ -34,6 +34,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -152,6 +153,22 @@ bool readsColumn(const ASTFunction & call, const AliasColumns & aliases)
     return false;
 }
 
+/// Whether a subquery reads no table and names no column or alias, so it computes from literals only.
+bool computesFromLiterals(const IAST & subquery)
+{
+    std::vector<const IAST *> stack{&subquery};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+        if (node->as<ASTTablesInSelectQuery>() || node->as<ASTIdentifier>())
+            return false;
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+    return true;
+}
+
 /// Whether folding the call loads a dictionary or runs a user-defined function.
 bool runsWhenFolded(const ASTFunction & call, const ContextPtr & context)
 {
@@ -224,7 +241,7 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: {} would run when the table is loaded",
                 backQuote(create.getTable()), call->formatForErrorMessage());
-        if (node->as<ASTSubquery>())
+        if (node->as<ASTSubquery>() && !computesFromLiterals(*node))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot load {} with `load_tables_readonly`: the subquery {} would run when the table is loaded",
                 backQuote(create.getTable()), node->formatForErrorMessage());

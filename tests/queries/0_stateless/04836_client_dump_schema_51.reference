@@ -1,0 +1,25 @@
+--- a subquery of literals only in a TTL or a projection is dumped ---
+projection_in_constant: dump failed: 0
+projection_in_constant: table dumped: 1
+projection_in_constant: no command ran
+ttl_where_constant: dump failed: 0
+ttl_where_constant: table dumped: 1
+ttl_where_constant: no command ran
+--- a subquery that reads a table, or names a column or an alias, is refused ---
+ttl_where_nested: dump failed: 1
+would run when the table is loaded
+ttl_where_nested: table dumped: 0
+ttl_where_nested: no command ran
+ttl_where_in_table: dump failed: 1
+would run when the table is loaded
+ttl_where_in_table: table dumped: 0
+ttl_where_in_table: no command ran
+ttl_where_with_dictionary: dump failed: 1
+would run when the table is loaded
+ttl_where_with_dictionary: table dumped: 0
+ttl_where_with_dictionary: no command ran
+--- a dictionary lookup on constants inside a subquery of literals is refused ---
+ttl_where_dictionary: dump failed: 1
+would run when the table is loaded
+ttl_where_dictionary: table dumped: 0
+ttl_where_dictionary: no command ran
