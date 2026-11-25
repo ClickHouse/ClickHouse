@@ -1679,7 +1679,7 @@ void HashJoin::monitorAutoFingerprints(const ScatteredBlock & block)
             ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
         return;
     }
-    std::array<UInt64, AutoFingerprintPolicy::monitor_sample_rows> sampled_keys;
+    std::array<UInt64, AutoFingerprintPolicy::monitor_sample_rows> sampled_keys{};
     const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, sampled_keys);
     const bool frequent_hits = samples && hits * AutoFingerprintPolicy::monitor_sample_rows
         >= AutoFingerprintPolicy::monitor_disable_hits * samples;
