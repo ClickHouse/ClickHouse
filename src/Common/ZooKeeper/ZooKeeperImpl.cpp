@@ -36,6 +36,9 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#if USE_SILK
+#include <silk/util/tsc.h>
+#endif
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -107,6 +110,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -531,7 +535,11 @@ ZooKeeper::ZooKeeper(
     }
 
     if (!args.auth_scheme.empty())
-        sendAuth(args.auth_scheme, args.identity);
+        sendAuth(args.auth_scheme, String(args.identity));
+
+    /// From now on, one thread writes to the socket and another one reads from it.
+    if (socket.secure())
+        out->setWaitBeforeSend();
 
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
@@ -539,6 +547,9 @@ ZooKeeper::ZooKeeper(
         std::chrono::duration_cast<std::chrono::microseconds>(
             clock::now().time_since_epoch()).count(),
         std::memory_order_relaxed);
+#if USE_SILK
+    last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
+#endif
 
     try
     {
@@ -760,7 +771,7 @@ void ZooKeeper::sendHandshake()
     int32_t handshake_length = 45;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    std::string password = args.password;
+    std::string password(args.password);
     password.resize(Coordination::PASSWORD_LENGTH, '\0');
     bool read_only = true;
 
@@ -1168,6 +1179,9 @@ void ZooKeeper::receiveThread()
                     std::chrono::duration_cast<std::chrono::microseconds>(
                         clock::now().time_since_epoch()).count(),
                     std::memory_order_relaxed);
+#if USE_SILK
+                last_received_cycles.store(silk::Tsc::getCycles(), std::memory_order_relaxed);
+#endif
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesReceived,
@@ -1524,6 +1538,15 @@ void ZooKeeper::logDeferredExceptions() noexcept
 }
 
 
+silk::FiberEvent & ZooKeeper::getExpiredEvent()
+{
+#if USE_SILK
+    return expired_event;
+#else
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Waiting for the session to expire requires the silk runtime");
+#endif
+}
+
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
@@ -1552,6 +1575,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             active_session_metric_increment.destroy();
             /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
             EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
+#if USE_SILK
+            expired_event.set();
+#endif
         }
     };
 
@@ -1845,7 +1871,7 @@ bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     return keeper_feature_flags.isEnabled(feature_flag);
 }
 
-std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, const std::string & description)
+std::optional<String> ZooKeeper::tryGetSystemZnode(std::string_view path, const std::string & description)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();

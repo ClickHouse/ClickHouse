@@ -1,4 +1,5 @@
 #include <Columns/ColumnObject.h>
+#include <Formats/FormatSettings.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>

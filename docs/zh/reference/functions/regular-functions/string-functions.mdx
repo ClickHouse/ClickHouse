@@ -206,6 +206,8 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
+**别名**：`from_base32`
+
 **参数**
 
 * `encoded` — String 类型的列或常量。[`String`](/zh/reference/data-types/string)
@@ -230,7 +232,7 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 ## base32Encode {#base32Encode}
 
-引入于：v25.6.0
+引入版本：v25.6.0
 
 使用 [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) 对字符串进行编码。
 
@@ -239,6 +241,8 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
+
+**别名**: `to_base32`
 
 **参数**
 
@@ -424,6 +428,8 @@ SELECT base64Encode('clickhouse')
 base64URLDecode(encoded)
 ```
 
+**别名**: `from_base64url`
+
 **参数**
 
 * `encoded` — 要进行编码的 String 类型列或常量。如果该字符串不是有效的 Base64 编码字符串，则会抛出异常。[`String`](/zh/reference/data-types/string)
@@ -434,7 +440,7 @@ base64URLDecode(encoded)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
@@ -457,6 +463,8 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**别名**：`to_base64url`
 
 **参数**
 
@@ -1097,7 +1105,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**别名**: `levenshteinDistanceUTF8`
+**别名**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **参数**
 
@@ -1110,7 +1118,7 @@ editDistanceUTF8(s1, s2)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT editDistanceUTF8('我是谁', '我是我') AS distance
@@ -1170,6 +1178,8 @@ SELECT
 endsWith(s, suffix)
 ```
 
+**别名**：`ends_with`
+
 **参数**
 
 * `s` — 要检查的字符串。[`String`](/zh/reference/data-types/string)
@@ -1181,7 +1191,7 @@ endsWith(s, suffix)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT endsWith('ClickHouse', 'House');
@@ -2873,7 +2883,7 @@ SELECT sparseGramsUTF8('алиса', 3)
 
 ## startsWith {#startsWith}
 
-首次引入于：v1.1.0
+引入版本：v1.1.0
 
 检查字符串是否以给定字符串开头。
 
@@ -2883,9 +2893,11 @@ SELECT sparseGramsUTF8('алиса', 3)
 startsWith(s, prefix)
 ```
 
+**别名**：`starts_with`
+
 **参数**
 
-* `s` — 要检查的字符串。[`String`](/zh/reference/data-types/string)
+* `s` — 待检查的字符串。[`String`](/zh/reference/data-types/string)
 * `prefix` — 要检查的前缀。[`String`](/zh/reference/data-types/string)
 
 **返回值**

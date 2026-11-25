@@ -19,7 +19,7 @@ public:
     /// Open a seekable buffer over the object, positioned at its start.
     virtual std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) = 0;
 
-    virtual String name() const = 0;
+    [[nodiscard]] virtual String name() const = 0;
 };
 
 }
