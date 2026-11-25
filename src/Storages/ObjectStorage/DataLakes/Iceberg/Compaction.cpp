@@ -1313,6 +1313,7 @@ void compactIcebergTable(
     std::vector<IcebergPathFromMetadata> attempt_files;
     /// The statistics file of the current attempt, a storage path.
     std::optional<String> statistics_file_path;
+    bool committed = false;
     bool commit_status_unknown = false;
 
     auto remove_statistics_file = [&]()
@@ -1773,6 +1774,7 @@ void compactIcebergTable(
             switch (outcome)
             {
                 case CommitOutcome::Committed:
+                    committed = true;
                     persistent_table_components.invalidateMetadataCache();
                     LOG_INFO(
                         log,
@@ -1796,7 +1798,7 @@ void compactIcebergTable(
     }
     catch (...)
     {
-        if (!commit_status_unknown)
+        if (!committed && !commit_status_unknown)
         {
             removeObjectsIfExist(attempt_files, path_resolver, object_storage, log);
             remove_statistics_file();
