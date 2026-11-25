@@ -13,32 +13,28 @@
          `max_threads = 8` give four streams per part, concatenated per part by
          `PrefetchingConcatProcessor`; if that processor lets only a fixed number of its inputs
          run, the number of reads in flight collapses to roughly one per part and the query
-         becomes latency-bound on a queue it is not allowed to fill. The table is deliberately
-         small: what is measured is concurrency, not throughput. -->
+         becomes latency-bound on a queue it is not allowed to fill. What is measured is
+         concurrency, not throughput. -->
     <create_query>
         CREATE TABLE read_in_order_direct_io (key String, payload UInt64)
-        ENGINE = MergeTree PARTITION BY intDiv(payload, 5000000) ORDER BY key
+        ENGINE = MergeTree PARTITION BY intDiv(payload, 20000000) ORDER BY key
         SETTINGS index_granularity = 8192
-        AS SELECT concat('k/', toString(number % 100000), '/v'), number FROM numbers_mt(10000000)
+        AS SELECT concat('k/', toString(number % 100000), '/v'), number FROM numbers_mt(40000000)
     </create_query>
 
     <fill_query>OPTIMIZE TABLE read_in_order_direct_io FINAL</fill_query>
 
-    <!-- Warm-up. On the ARM runners the reads of this table under `O_DIRECT` are faster during
-         the first seconds of reading (about 0.6 s instead of 0.8 s for the `DESC` query, on the
-         reference server as well, with the same rows, bytes and CPU time), then the disk latency
-         steps up to the steady state, which is the time AMD runners show from the first run. Without
-         a warm-up the step fell into the measured runs and the time grew run over run. Read the
-         table for a few seconds here so that the measured runs start at the steady state. -->
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
-    <fill_query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</fill_query>
-
-    <query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</query>
+    <!-- The size of the table is chosen so that one run reads for a few seconds. On the ARM
+         runners the latency of the reads under `O_DIRECT` doubles after the first one to three
+         seconds of reading at full rate (`DiskReadElapsedMicroseconds` of a run goes from 1.4 s
+         to 2.7 s with the same bytes and CPU time, on both servers at the same moment) and
+         recovers as soon as the reading slows down, which it does during the prewarm run, where
+         the client receives the rows. With a 10-million-row table a run took 0.1 to 0.8 s, the
+         step fell between the measured runs and their time grew run over run; warm-up queries
+         before the measurement cannot help, because the prewarm run follows them. With a longer
+         run the step is inside the first run and every run measures the steady state. The
+         ascending read of this table is five times faster than the descending one and would
+         need a table five times larger for the same, so only the descending one is measured. -->
     <query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS read_in_order_direct_io</drop_query>
