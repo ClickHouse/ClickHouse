@@ -43,7 +43,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
 
 ## What is supported {#what-is-supported}
 
-- Evaluation from right to left without operator precedence: `2*3+4` is `14`.
+- Evaluation from right to left without operator precedence: `2*3+4` is `14`. The arguments of a function and
+  the items of a list are evaluated from the last one to the first one as well: `a:0; a+(a:2)` is `4`.
 - Literals: numbers with type suffixes, booleans (`101b`), symbols (`` `a`b ``), strings, dates (`2024.01.15`),
   months, timestamps (`2024.01.15D10:30:00`), timespans (`0D01:15:00`), times (`10:30:00.000`), minutes,
   seconds, nulls (`0N`, `0Nd`) and infinities (`0w`).
@@ -56,7 +57,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
   `fby`, `xbar`, `within`, `in`, `like`, casts with `$`.
 - Tables: table literals (`([] a: 1 2; b: `x`y)`), keyed tables (`([k: 1 2] v: 3 4)`, `` `k xkey t ``, `1!t`),
   `xasc`, `xdesc`, `xcol`, `xcols`, `cols`, `meta`, `count`, `n#t`, `t1,t2`.
-- Joins: `lj`, `ij`, `ej`, `uj`, `aj` (an `ASOF JOIN`), and `cross`.
+- Joins: `lj`, `ij`, `ej`, `uj`, `aj` and `aj0` (an `ASOF JOIN`; `aj0` returns the time of the matched row),
+  and `cross`.
 - `.ch.sql "SELECT ..."` uses the result of a ClickHouse query as a table.
 
 ## How q values map to ClickHouse {#mapping}
@@ -76,7 +78,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
 | null | `NULL` |
 
 A grouped `select` returns the groups sorted by the keys, like q. A non-aggregated column in a grouped
-`select` becomes a list per group (`groupArray`).
+`select` becomes a list per group. The nulls of the column stay in the list, so the lists of two columns
+of one group match item by item; the arithmetic aggregates (`sum`, `avg`, ...) skip the nulls.
 
 ## Differences from q {#differences-from-q}
 
@@ -88,6 +91,15 @@ A grouped `select` returns the groups sorted by the keys, like q. A non-aggregat
 - The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
   system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
 - General lists must consist of items of the same shape; dictionaries are supported in simple forms.
+- A temporal literal must be in the range of its type in q: the dates within the years 0001..9999, the minutes, seconds,
+  and times within 32 bits, and the timestamps and timespans within 64 bits of nanoseconds (`106751D23:47:16.854775807`
+  is the longest timespan). A literal out of range is a syntax error. The values that ClickHouse stores are limited by
+  the ranges of `Date32`, `DateTime64`, `Time`, and `Time64`.
+- The depth of an expression is limited by the setting `max_parser_depth`. A long expression without parentheses counts
+  too, because it nests to the right: `1+1+1+...` with a thousand operators is rejected by default.
+- The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
+  function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
+  the setting `max_expanded_ast_elements`.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant
