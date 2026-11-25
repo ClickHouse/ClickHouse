@@ -756,38 +756,27 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
-std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol);
-
 /// The running listeners that accept connections of users, each with the user that a connection without a user name gets.
 std::vector<UsersWithoutPasswordWarning::Listener> getUserListeners(
-    const Poco::Util::AbstractConfiguration & config,
     const String & global_default_session_user,
     std::initializer_list<const std::vector<ProtocolServerAdapter> *> server_lists)
 {
-    static constexpr std::string_view protocols_prefix = "protocols.";
-    static constexpr std::string_view port_suffix = ".port";
-
     std::vector<UsersWithoutPasswordWarning::Listener> listeners;
     for (const auto * server_list : server_lists)
     {
         for (const auto & server : *server_list)
         {
             /// Keeper and the interserver protocol do not authenticate users.
-            const String & port_name = server.getPortName();
-            if (server.isStopping() || port_name.starts_with("keeper_server.")
+            if (server.isStopping() || server.getPortName().starts_with("keeper_server.")
                 || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTP
                 || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTPS)
                 continue;
 
-            /// An endpoint of the `protocols` section (with the port `protocols.<name>.port`) can override the setting.
-            String default_session_user = global_default_session_user;
-            if (port_name.starts_with(protocols_prefix) && port_name.ends_with(port_suffix))
-            {
-                if (auto endpoint_user = getEffectiveDefaultSessionUser(config, port_name.substr(0, port_name.size() - port_suffix.size())))
-                    default_session_user = std::move(*endpoint_user);
-            }
-
-            listeners.push_back({.host = server.getListenHost(), .default_session_user = std::move(default_session_user)});
+            /// An endpoint of the `protocols` section can override the setting. The override is the one the handlers were
+            /// created with: the current configuration may differ for a server that a reload has not re-created.
+            listeners.push_back(
+                {.host = server.getListenHost(),
+                 .default_session_user = server.getDefaultSessionUser().value_or(global_default_session_user)});
         }
     }
     return listeners;
@@ -2755,7 +2744,6 @@ try
         try
         {
             warning.setListeners(getUserListeners(
-                config(),
                 global_context->getServerSettings()[ServerSetting::default_session_user],
                 {&servers, &servers_to_start_before_tables, &introspection_servers}));
         }
@@ -4437,7 +4425,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
     bool & is_secure,
-    ServerType::Type & protocol_type)
+    ServerType::Type & protocol_type,
+    std::optional<String> & default_session_user)
 {
     /// The default session user for the endpoint: the `default_session_user` key looked up
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
@@ -4446,7 +4435,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     /// It is resolved for the whole `impl` chain up front, because a module can be both typed
     /// (so its handler factory is created while walking the chain) and inherit the setting from
     /// a module it references, which the walk reaches only later.
-    const std::optional<String> default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+    default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
 
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
@@ -4654,8 +4643,9 @@ void Server::createServers(
         {
             bool is_secure = false;
             auto protocol_type = ServerType::Type::END;
+            std::optional<String> default_session_user;
             auto stack = buildProtocolStackFromConfig(
-                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type);
+                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type, default_session_user);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -4667,7 +4657,7 @@ void Server::createServers(
                 socket.setReceiveTimeout(settings[Setting::receive_timeout]);
                 socket.setSendTimeout(settings[Setting::send_timeout]);
 
-                return ProtocolServerAdapter(
+                ProtocolServerAdapter adapter(
                     host,
                     port_name.c_str(),
                     protocol_type,
@@ -4678,6 +4668,8 @@ void Server::createServers(
                         socket,
                         makeServerParams(server_settings),
                         is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
+                adapter.setDefaultSessionUser(default_session_user);
+                return adapter;
             });
         }
     }

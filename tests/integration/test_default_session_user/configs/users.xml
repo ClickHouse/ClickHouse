@@ -107,6 +107,14 @@
             <profile>default</profile>
             <quota>default</quota>
         </proto_prometheus_user>
+        <proto_introspection_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_introspection_user>
         <fixed_handler_user>
             <password></password>
             <networks>

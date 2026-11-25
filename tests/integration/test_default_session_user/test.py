@@ -983,7 +983,7 @@ def test_users_without_password_warning():
     assert users_without_password(node_reject)[0] == "default"
 
     # node1 also reports the users that connections without a user name get: the global default session user and
-    # those of the endpoints in the `protocols` section, also when inherited through `impl`.
+    # those of the endpoints in the `protocols` section, also when inherited through `impl` or of an introspection endpoint.
     for user in [
         "global_default_user",
         "proto_tcp_user",
@@ -991,6 +991,7 @@ def test_users_without_password_warning():
         "proto_shared_impl_user",
         "proto_mysql_user",
         "proto_pg_user",
+        "proto_introspection_user",
     ]:
         assert user in users, users
     # Not reported: default session users with a password, an explicitly named user, and the default session user of a
@@ -1100,6 +1101,34 @@ def test_users_without_password_warning_sql_users():
         wait_for_users_without_password(node2, ["default"])
     finally:
         node2.query("DROP USER IF EXISTS undeclared_user, unrelated_user")
+
+
+def test_users_without_password_warning_introspection_reload():
+    # A configuration reload never re-creates the introspection servers, so their handlers keep the default session user
+    # they were started with. The warning must follow the running listener rather than the reloaded configuration.
+    hello = 0
+    override_path = "/etc/clickhouse-server/config.d/z_introspection_default_session_user.xml"
+    assert "proto_introspection_user" in users_without_password(node1)
+    with assert_login_success("proto_introspection_user", "TCP"):
+        assert native_hello(9119, "") == hello
+    try:
+        node1.replace_config(
+            override_path,
+            "<clickhouse><protocols><introspection_defuser><default_session_user></default_session_user>"
+            "</introspection_defuser></protocols></clickhouse>",
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # A fresh connection without a user name still gets the user the listener was started with ...
+        with assert_login_success("proto_introspection_user", "TCP"):
+            assert native_hello(9119, "") == hello
+        # ... so the warning still reports it.
+        assert "proto_introspection_user" in users_without_password(node1)
+    finally:
+        node1.exec_in_container(["rm", "-f", override_path])
+        node1.query("SYSTEM RELOAD CONFIG")
+
+    assert "proto_introspection_user" in users_without_password(node1)
 
 
 def test_config_reload_prometheus_keeper_metrics_only_switch():

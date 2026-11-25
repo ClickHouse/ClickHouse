@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <memory>
+#include <optional>
 #include <string>
 
 
@@ -91,6 +92,13 @@ public:
 
     [[nodiscard]] const std::string & getDescription() const { return description; }
 
+    /// The `default_session_user` of the endpoint in the `protocols` section this server was created for, which overrides
+    /// the server setting; nullopt if the server uses the server setting. This is the value the handlers of the server were
+    /// created with, not the one of the current configuration: they keep it until the server is re-created, which
+    /// a configuration reload does not do for every server (it never re-creates the introspection servers, for example).
+    [[nodiscard]] const std::optional<String> & getDefaultSessionUser() const { return default_session_user; }
+    void setDefaultSessionUser(std::optional<String> default_session_user_) { default_session_user = std::move(default_session_user_); }
+
 private:
     class Impl
     {
@@ -113,6 +121,7 @@ private:
     ServerType::Type protocol_type;
     std::string description;
     std::unique_ptr<Impl> impl;
+    std::optional<String> default_session_user;
     bool supports_runtime_reconfiguration = true;
     bool started = false;
 };

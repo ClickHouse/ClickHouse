@@ -280,5 +280,15 @@
             <default_session_user></default_session_user>
             <description>keeper-metrics-only prometheus protocol that rejects anonymous scrapes</description>
         </prometheus_no_anonymous>
+        <!-- A configuration reload never re-creates an introspection endpoint, so its handlers keep the
+             default session user they were started with even if a reload changes it. -->
+        <introspection_defuser>
+            <type>tcp</type>
+            <introspection>true</introspection>
+            <host>0.0.0.0</host>
+            <port>9119</port>
+            <default_session_user>proto_introspection_user</default_session_user>
+            <description>introspection protocol with its own default session user</description>
+        </introspection_defuser>
     </protocols>
 </clickhouse>
