@@ -45,13 +45,13 @@ TEST(BlockRowsWithoutColumns, CopyAndMove)
 
     Block moved = std::move(block);
     ASSERT_EQ(moved.rows(), 42);
-    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
+    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
     ASSERT_TRUE(block.hasNoColumnsAndNoRows());
 
     Block assigned;
     assigned = std::move(moved);
     ASSERT_EQ(assigned.rows(), 42);
-    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
+    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved,clang-analyzer-cplusplus.Move)
     ASSERT_TRUE(moved.hasNoColumnsAndNoRows());
 
     Block swapped;
