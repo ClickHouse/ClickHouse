@@ -7,12 +7,26 @@ hasAnyTokens	8000
 IN	8000
 control: column	0
 control: index used	1
+ARRAY JOIN	8000
+arrayJoin	8000
+arrayJoin IN	8000
+control: index on arr used	1
+arrayJoin of arrayShuffle	8000
+arrayJoin of arrayShuffle IN	8000
+mapContains	8000
+map element	8000
+map element IN	8000
+keyValuePairs, map element	8000
+keyValuePairs, map element IN	8000
+keyValuePairs, mapContainsKeyValue	8000
 -- tokenbf_v1
 equals	8000
 hasToken	8000
 IN	8000
 control: column	0
 control: index used	1
+ARRAY JOIN	8000
+arrayJoin IN	8000
 -- ngrambf_v1
 equals	8000
 LIKE	8000
