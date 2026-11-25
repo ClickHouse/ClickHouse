@@ -1,6 +1,5 @@
 #pragma once
 
-#include <span>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteBufferFromString.h>
@@ -43,7 +42,7 @@ protected:
     void writeBeforeExtremes() final;
 
     void writePrefix() override;
-    void writeLine(std::span<const String> values);
+    void writeLine(const std::vector<String> & values);
 
     bool with_names;
     bool with_types;

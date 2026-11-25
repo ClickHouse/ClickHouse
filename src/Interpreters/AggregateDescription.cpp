@@ -1,13 +1,12 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Analyzer/TableQualifiers.h>
-#include <Core/Block.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
 
@@ -18,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
@@ -97,36 +97,6 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
     }
 }
 
-void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
-{
-    auto & out = settings.out;
-
-    if (function)
-        out << function->getName();
-
-    const Array & aggregate_parameters = function ? function->getParameters() : parameters;
-    bool first_param = true;
-    for (const auto & param : aggregate_parameters)
-    {
-        out << (first_param ? "(" : ", ");
-        first_param = false;
-        out << applyVisitor(FieldVisitorToString(), param);
-    }
-    if (!aggregate_parameters.empty())
-        out << ')';
-
-    out << '(';
-    bool first = true;
-    for (const auto & arg : argument_names)
-    {
-        if (!first)
-            out << ", ";
-        first = false;
-        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
-    }
-    out << ')';
-}
-
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
 {
     map.add("Name", column_name);
@@ -164,21 +134,12 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        /// `column_name` is the rendered call (`calculateActionNodeName`), a label rather than semantic
-        /// state, and the shard rewrite can render it differently for the same aggregate by inlining
-        /// aliases. A cache key leaves it out and keeps what the call is made of - the argument names, the
-        /// function and its parameters, all written below. The argument names, which are column
-        /// references, still go through `writeCacheKeyColumnName`.
-        if (for_cache_key)
-            writeStringBinary(String{}, out);
-        else
-            writeStringBinary(aggregate.column_name, out);
+        writeStringBinary(aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -195,10 +156,7 @@ void serializeAggregateDescriptions(
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            if (for_cache_key)
-                writeCacheKeyColumnName(aggregate.argument_names[i], input_header, out);
-            else
-                writeStringBinary(aggregate.argument_names[i], out);
+            writeStringBinary(aggregate.argument_names[i], out);
             encodeDataType(argument_types[i], out);
         }
 
@@ -210,16 +168,16 @@ void serializeAggregateDescriptions(
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
 {
-    UInt64 num_aggregates = 0;
+    UInt64 num_aggregates;
     readVarUInt(num_aggregates, in);
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
         readStringBinary(aggregate.column_name, in);
 
-        UInt64 num_args = 0;
+        UInt64 num_args;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
 
@@ -229,13 +187,13 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+            argument_types.emplace_back(decodeDataType(in));
         }
 
         String function_name;
         readStringBinary(function_name, in);
 
-        UInt64 num_params = 0;
+        UInt64 num_params;
         readVarUInt(num_params, in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
@@ -249,59 +207,129 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 
 }
 
-void serializeAggregateDescriptionsWithoutArguments(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * /*input_header*/)
+void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header)
 {
-    writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        /// A rendered label, left out of a cache key - see `serializeAggregateDescriptions`.
-        if (for_cache_key)
-            writeStringBinary(String{}, out);
-        else
-            writeStringBinary(aggregate.column_name, out);
-        writeStringBinary(aggregate.function->getName(), out);
-
+        /// `AggregateFunctionFactory` resolves functions for the types without `LowCardinality`,
+        /// and the `Aggregator` removes it from the argument columns accordingly.
         const auto & argument_types = aggregate.function->getArgumentTypes();
-        writeVarUInt(argument_types.size(), out);
-        for (const auto & argument_type : argument_types)
-            encodeDataType(argument_type, out);
+        if (argument_types.size() != aggregate.argument_names.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Aggregate function {} of a deserialized query plan step has {} argument types for {} arguments",
+                aggregate.column_name, argument_types.size(), aggregate.argument_names.size());
 
-        writeVarUInt(aggregate.parameters.size(), out);
-        for (const auto & param : aggregate.parameters)
-            writeFieldBinary(param, out);
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            const auto & name = aggregate.argument_names[i];
+            const auto * column = header.findByName(name);
+            if (!column)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} is not in the input of a deserialized query plan step",
+                    name, aggregate.column_name);
+
+            if (!recursiveRemoveLowCardinality(column->type)->equals(*recursiveRemoveLowCardinality(argument_types[i])))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                    "but the function is resolved for {}",
+                    name, aggregate.column_name, column->type->getName(), argument_types[i]->getName());
+        }
     }
 }
 
-void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void checkDeserializedFinalizedAggregates(const AggregateDescriptions & aggregates, const Block & header)
 {
-    UInt64 num_aggregates = 0;
-    readVarUInt(num_aggregates, in);
-    aggregates.resize(num_aggregates);
-    for (auto & aggregate : aggregates)
+    for (const auto & aggregate : aggregates)
     {
-        readStringBinary(aggregate.column_name, in);
+        const auto * column = header.findByName(aggregate.column_name);
+        if (!column)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is not in the input of a deserialized query plan step",
+                aggregate.column_name);
 
-        String function_name;
-        readStringBinary(function_name, in);
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column->type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column->type->getName(), aggregate.function->getName());
+    }
+}
 
-        UInt64 num_args = 0;
-        readVarUInt(num_args, in);
-        DataTypes argument_types;
-        argument_types.reserve(num_args);
-        for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
-            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+void checkDeserializedAggregateOutputNames(const Names & keys, const AggregateDescriptions & aggregates)
+{
+    /// The output header has a column for every key and aggregate, and the finalization finds the states by name,
+    /// so a repeated name would leave a state of the second occurrence unfinalized under a finalized type.
+    NameSet names;
+    for (const auto & key : keys)
+        if (!names.insert(key).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate key or aggregate function {} in a deserialized query plan step", key);
+    for (const auto & aggregate : aggregates)
+        if (!names.insert(aggregate.column_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step", aggregate.column_name);
+}
 
-        UInt64 num_params = 0;
-        readVarUInt(num_params, in);
-        aggregate.parameters.resize(num_params);
-        for (auto & param : aggregate.parameters)
-            param = readFieldBinary(in);
+void checkDeserializedMergedAggregatesLayout(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout, bool exact)
+{
+    const size_t keys_size = keys.size();
+    if (exact && layout.size() != keys_size + aggregates.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized query plan step merging aggregate states has {} columns "
+            "instead of {} keys and {} aggregate functions",
+            layout.size(), keys_size, aggregates.size());
+    if (layout.size() < keys_size + aggregates.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized query plan step merging aggregate states has {} columns "
+            "for {} keys and {} aggregate functions",
+            layout.size(), keys_size, aggregates.size());
 
-        /// `argument_names` stays empty, mirroring the writer's state (see the header comment).
-        AggregateFunctionProperties properties;
-        aggregate.function = AggregateFunctionFactory::instance().get(
-            function_name, NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
+    /// The `Aggregator` looks up the types of the keys and the states by name, but merges the columns
+    /// by position. With distinct names at the expected positions, both refer to the same columns.
+    NameSet names;
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (!names.insert(keys[i]).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states", keys[i]);
+        if (layout[i].name != keys[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Key {} is expected at position {} of the input of a deserialized query plan step merging aggregate states, "
+                "but there is {}",
+                keys[i], i, layout[i].name);
+    }
+
+    for (size_t i = 0; i < aggregates.size(); ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & column = layout[keys_size + i];
+        if (!names.insert(aggregate.column_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                aggregate.column_name);
+        if (column.name != aggregate.column_name)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is expected at position {} of the input of a deserialized query plan step, "
+                "but there is {}",
+                aggregate.column_name, keys_size + i, column.name);
+
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column.type->getName(), aggregate.function->getName());
+    }
+
+    /// The headers of the merge-only steps are built from the whole input, so a later column with the name
+    /// of a key or a state would also be there, but not in the merged chunks.
+    for (size_t i = keys_size + aggregates.size(); i < layout.size(); ++i)
+    {
+        if (names.contains(layout[i].name))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                layout[i].name);
     }
 }
 

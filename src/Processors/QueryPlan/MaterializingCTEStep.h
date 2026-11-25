@@ -5,15 +5,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
-#include <unordered_set>
-
 namespace DB
 {
-
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-
-using MaterializedCTESet = std::unordered_set<MaterializedCTEPtr>;
 
 
 class MaterializingCTEStep : public ITransformingStep
@@ -97,50 +90,14 @@ public:
 
     /// Returns the subset of pre-built CTE plans that still need to be executed,
     /// atomically marking each as materialized. CTEs already marked are skipped.
-    /// The plans must have already been optimized via `optimizePlans` in the
-    /// first traversal of `resolveMaterializingCTEs`.
-    static std::vector<ClaimedCTE> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
-
-    /// Optimize each owned CTE's pre-built plan. Called by
-    /// `resolveMaterializingCTEs`'s first traversal; the matching second
-    /// traversal then calls `makePlansForCTEs` to claim and attach.
-    /// Safe to call even after `makePlansForCTEs` has moved a CTE's plan
-    /// out — the per-CTE check `if (cte->plan)` makes the call a no-op
-    /// for CTEs whose plan has already been claimed (which happens when a
-    /// recursive `buildSetInplace` claims the same CTE first).
-    void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
-
-    /// Drop the CTEs in `ctes_to_erase` from this step, so that it no longer
-    /// claims them. Returns true if the step is left owning nothing, i.e. the
-    /// node can be spliced out of the plan.
-    bool eraseCTEs(const MaterializedCTESet & ctes_to_erase);
+    static std::vector<ClaimedCTE> makePlansForCTEs(
+        DelayedMaterializingCTEsStep && step,
+        const QueryPlanOptimizationSettings & optimization_settings);
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
     std::vector<MaterializedCTEPtr> ctes;
 };
-
-/// Strip every `DelayedMaterializingCTEsStep` node from `plan`'s tree, at
-/// any depth. Called from `DelayedCreatingSetsStep::makePlansForSets` when
-/// attaching a pre-built IN-subquery plan for runtime set construction; the
-/// strip forces the outer query plan to win `is_materialization_planned`
-/// for every referenced CTE so the outer `MaterializingCTEsStep`'s
-/// `DelayedPortsProcessor` becomes the single point that gates every
-/// reader. Nested `DelayedCreatingSetsStep` source plans (held in
-/// `subqueries`, not in the immediate node tree) are not touched.
-void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan);
-
-/// Same as `removeAllDelayedMaterializingCTEsStep`, but restricted to the CTEs
-/// in `ctes_to_remove`: a step that also owns CTEs outside that set keeps those
-/// and stays in the plan. Used by `ReadFromMerge` and the parallel replicas local
-/// plan to stop a nested plan from claiming a CTE that the outer query references
-/// as well - see the comments at the call sites.
-void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedCTESet & ctes_to_remove);
-
-/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
-/// all references to one CTE - including the ones a child plan resolves by name to
-/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
-MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node);
 
 }

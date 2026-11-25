@@ -29,12 +29,14 @@ public:
     void cancel() noexcept override;
 
 private:
+    friend class RabbitMQProducerTest;
+
     String getProducingTaskName() const override { return "RabbitMQProducingTask"; }
 
     struct Payload
     {
         String message;
-        UInt64 id{};
+        UInt64 id;
     };
 
     using Payloads = ConcurrentBoundedQueue<Payload>;
