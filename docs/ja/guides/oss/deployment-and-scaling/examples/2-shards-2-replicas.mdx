@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['クラスターのデプロイ', 'レプリケーション', '分片化', '高可用性', 'スケーラビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ja/_config_explanation.mdx';
 import ListenHost from '/snippets/ja/_listen_host.mdx';
 import KeeperConfig from '/snippets/ja/_keeper_config.mdx';
@@ -16,6 +14,7 @@ import KeeperConfigExplanation from '/snippets/ja/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ja/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ja/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ja/_working_example.mdx';
+
 import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 > この例では、レプリケーションとスケールアウトの両方に対応したシンプルな ClickHouse クラスターのセットアップ方法を学びます。
@@ -24,7 +23,15 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 セットアップするクラスターのアーキテクチャを以下に示します。
 
-<Image img="/images/deployment-guides/replication-sharding-examples/both.webp" size="md" alt="2 つの分片と 1 つのレプリカのアーキテクチャ図" />
+<div className="ch-image-md">
+
+<Frame>
+
+![2 つの分片と 1 つのレプリカのアーキテクチャ図](/images/deployment-guides/replication-sharding-examples/both.webp)
+
+</Frame>
+
+</div>
 
 <DedicatedKeeperServers />
 

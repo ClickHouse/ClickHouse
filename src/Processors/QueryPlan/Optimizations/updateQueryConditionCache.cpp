@@ -17,6 +17,19 @@ namespace DB::QueryPlanOptimizations
 
 using VirtualColumnUtils::isDeterministicAllowingTopKFilter;
 
+/// Whether `node` is a condition `filter_actions_dag` was built from, or an `and` of such conditions.
+static bool isConjunctionOfCollectedConditions(const ActionsDAG::Node & node, const ReadFromMergeTree & read_from_merge_tree)
+{
+    if (read_from_merge_tree.filterActionsDAGWasBuiltFrom(node.result_name))
+        return true;
+    if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "and")
+        return false;
+    for (const auto * child : node.children)
+        if (!isConjunctionOfCollectedConditions(*child, read_from_merge_tree))
+            return false;
+    return true;
+}
+
 /// This is not really an optimization. The purpose of this function is to extract and hash the filter condition of WHERE or PREWHERE
 /// filters. These correspond to these steps:
 ///
@@ -192,6 +205,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     }
 
     if (!filter_step_to_tag)
+        return;
+
+    /// `filter_actions_dag` is frozen at index analysis; a later-merged step can carry conjuncts it omits.
+    const auto * filter_node_to_tag = filter_step_to_tag->getExpression().tryFindInOutputs(filter_step_to_tag->getFilterColumnName());
+    if (!filter_node_to_tag || !isConjunctionOfCollectedConditions(*filter_node_to_tag, *read_from_merge_tree))
         return;
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where

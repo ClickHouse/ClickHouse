@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_NAMED_COLLECTIONS;
+    extern const int DATA_ENCRYPTION_ERROR;
 }
 
 namespace FailPoints
@@ -99,6 +100,37 @@ NamedCollectionsMap NamedCollectionFactory::getAll() const
 bool NamedCollectionFactory::exists(const std::string & collection_name, std::lock_guard<std::mutex> &) const
 {
     return loaded_named_collections.contains(collection_name);
+}
+
+NamedCollectionFactory::StoredEntry NamedCollectionFactory::loadIfInStorage(const std::string & collection_name, std::lock_guard<std::mutex> & lock)
+{
+    if (exists(collection_name, lock))
+        return StoredEntry::loaded;
+
+    if (!metadata_storage->exists(collection_name))
+        return StoredEntry::none;
+
+    MutableNamedCollectionPtr collection;
+    try
+    {
+        collection = metadata_storage->get(collection_name);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        /// Removed through another server between the check and the read.
+        if (e.code == Coordination::Error::ZNONODE)
+            return StoredEntry::none;
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::DATA_ENCRYPTION_ERROR)
+            return StoredEntry::unreadable;
+        throw;
+    }
+
+    add(collection_name, collection, lock);
+    return StoredEntry::loaded;
 }
 
 MutableNamedCollectionPtr NamedCollectionFactory::tryGet(
@@ -313,7 +345,8 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    if (exists(query.collection_name, lock))
+    const auto stored = loadIfInStorage(query.collection_name, lock);
+    if (stored == StoredEntry::loaded)
     {
         if (query.if_not_exists)
             return;
@@ -329,6 +362,21 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
 
         loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
         return;
+    }
+
+    if (stored == StoredEntry::unreadable)
+    {
+        /// A named collection all the same, so it is not created again. It cannot be read back, so
+        /// nothing but the key it was encrypted with tells what overwriting it would lose: it is not
+        /// replaced either, only dropped.
+        if (query.if_not_exists)
+            return;
+
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+            "A named collection `{}` already exists in the storage, but could not be loaded, see the server log. "
+            "Configure the encryption key it was written with to load it, or drop it",
+            query.collection_name);
     }
 
     /// `max_named_collection_num_to_throw` is enforced here, under the mutex, rather than in
@@ -353,7 +401,8 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
-    if (!exists(query.collection_name, lock))
+    const auto stored = loadIfInStorage(query.collection_name, lock);
+    if (stored == StoredEntry::none)
     {
         if (query.if_exists)
             return;
@@ -365,7 +414,9 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
     }
 
     metadata_storage->remove(query.collection_name);
-    remove(query.collection_name, lock);
+    /// An unreadable entry is not loaded; dropping it is the way to get rid of it.
+    if (stored == StoredEntry::loaded)
+        remove(query.collection_name, lock);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)

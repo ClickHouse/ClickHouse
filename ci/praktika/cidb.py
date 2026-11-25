@@ -1,24 +1,12 @@
 import copy
 import dataclasses
 import json
-import os
 import time
 import urllib
 from typing import List, Optional
 
 from ._environment import _Environment
 from .info import Info
-
-try:
-    import requests
-except ImportError as ex:
-    if not Info().is_local_run:
-        raise ex
-    else:
-        print(
-            "WARNING: 'requests' module is not installed: "
-            f"{ex}. CIDB will not work - ok for local runs only."
-        )
 
 from .result import Result
 from .settings import Settings
@@ -27,7 +15,10 @@ from .utils import Utils
 
 
 class CIDBTimeoutError(RuntimeError):
-    """Every attempt of a CIDB request timed out on the client side."""
+    """CIDB was unavailable: the last attempt of a request timed out on the
+    client side or found the server out of memory, or the connection was still
+    refused after `CIDB.refused_retry_sec`, and no attempt got another error
+    answer."""
 
 
 class CIDB:
@@ -91,7 +82,7 @@ class CIDB:
             # Transparently convert Result.Status values to legacy CIDB strings
             self.check_status = CIDB.convert_status(self.check_status)
 
-    def __init__(self, url, user=None, passwd=None):
+    def __init__(self, url, user=None, passwd=None, refused_retry_sec=0):
         # Falsy user/passwd (None, empty string, JSON null) means "send no
         # auth header" — used when the runner-facing CH user is configured
         # with <no_password/> + a network ACL on the server side.
@@ -101,6 +92,8 @@ class CIDB:
             self.auth["X-ClickHouse-User"] = user
         if passwd:
             self.auth["X-ClickHouse-Key"] = passwd
+        # With 0, a refused connection fails like any other error after `retries`.
+        self.refused_retry_sec = refused_retry_sec
 
     @classmethod
     def from_connection_secret(cls, connection_str: str) -> "CIDB":
@@ -122,18 +115,6 @@ class CIDB:
             user=data.get("user"),
             passwd=data.get("password"),
         )
-
-    READ_URL_ENV = "CI_DB_READ_URL"
-
-    @staticmethod
-    def lookup_read_url(source) -> str:
-        url = json.loads(source.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value())["url"]
-        assert "@" not in url, f"CI DB url must not carry credentials, got [{url.rsplit('@', 1)[-1]}]"
-        return url
-
-    @staticmethod
-    def get_read_url(info) -> str:
-        return os.environ.get(CIDB.READ_URL_ENV) or CIDB.lookup_read_url(info)
 
     def get_link_to_test_case_statistics(
         self,
@@ -347,12 +328,18 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # Imported here so that local runs, which never post to CI DB, work without `requests`.
+        import requests
+
         # At `max_concurrent_queries` the server waits this long for a free slot
         # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
         params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}
+        deadline = time.monotonic() + self.refused_retry_sec
+        answered_error = False
         retry = 0
         while True:
             retry += 1
+            refused = False
             try:
                 response = requests.post(
                     url=self.url,
@@ -363,15 +350,30 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
-                timed_out = False
+                # An overloaded server times out some requests and rejects others for lack of memory.
+                overloaded = "(total) memory limit exceeded" in response.text
+                # Any other answer is an error of the request itself.
+                answered_error = answered_error or not overloaded
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
-                timed_out = isinstance(ex, requests.exceptions.Timeout)
+                overloaded = isinstance(ex, requests.exceptions.Timeout)
+                refused = not isinstance(
+                    ex, requests.exceptions.ProxyError
+                ) and "Connection refused" in str(ex)
                 error = f"{what} failed, exception [{ex}]"
 
+            if refused and self.refused_retry_sec and not answered_error:
+                remaining = deadline - time.monotonic()
+                print(
+                    f"WARNING: CIDB {error} - attempt {retry}, {max(remaining, 0):.0f} s left to retry"
+                )
+                if remaining <= 0:
+                    raise CIDBTimeoutError(f"CIDB {error}")
+                time.sleep(min(2**retry, remaining))
+                continue
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
-                if timed_out:
+                if overloaded and not answered_error:
                     raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)

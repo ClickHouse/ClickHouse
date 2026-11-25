@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Любому решению для обсервабилити нужен механизм для сбора и экспорта журналов и трассировок. Для этого ClickHouse рекомендует [проект OpenTelemetry (OTel)](https://opentelemetry.io/).
 
 &quot;OpenTelemetry — это фреймворк и набор инструментов для обсервабилити, предназначенный для создания и управления телеметрическими данными, такими как трассировки, метрики и журналы.&quot;
@@ -62,7 +60,15 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 Коллектор использует термины [приёмник](https://opentelemetry.io/docs/collector/configuration/#receivers), [процессор](https://opentelemetry.io/docs/collector/configuration/#processors) и [экспортер](https://opentelemetry.io/docs/collector/configuration/#exporters) для обозначения трёх основных этапов обработки. Приёмники используются для сбора данных и могут работать либо по модели pull, либо push. Процессоры позволяют выполнять преобразования и обогащение сообщений. Экспортеры отвечают за отправку данных в целевой сервис. Хотя теоретически таким сервисом может быть и другой коллектор, в дальнейшем мы исходим из того, что все данные отправляются напрямую в ClickHouse.
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="Сбор журналов" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Сбор журналов](/images/use-cases/observability/observability-3.webp)
+
+</Frame>
+
+</div>
 
 Мы рекомендуем ознакомиться с полным набором приёмников, процессоров и экспортеров.
 
@@ -70,13 +76,29 @@ OpenTelemetry включает ряд компонентов. Помимо сп�
 
 **Через OTLP** - В этом случае журналы отправляются (push) напрямую в коллектор из OpenTelemetry SDK по протоколу OTLP. В [демо OpenTelemetry](https://opentelemetry.io/docs/demo/) используется именно этот подход: OTLP-экспортеры для каждого языка предполагают локальную конечную точку коллектора. В этом случае коллектор должен быть настроен с OTLP-приёмником — см. [пример конфигурации в демо выше](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). Преимущество этого подхода в том, что данные журналов автоматически будут содержать Trace ID, что позволит впоследствии находить трассировки для конкретного журнала и наоборот.
 
-<Image img="/images/use-cases/observability/observability-4.webp" alt="Сбор журналов через OTLP" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Сбор журналов через OTLP](/images/use-cases/observability/observability-4.webp)
+
+</Frame>
+
+</div>
 
 Этот подход требует, чтобы пользователи инструментировали свой код с помощью [подходящего SDK для своего языка](https://opentelemetry.io/docs/languages/).
 
 * **Сбор через ресивер filelog** - Этот приёмник читает файлы журналов на диске, формирует сообщения журналов и отправляет их в ClickHouse. Он также решает более сложные задачи: определяет многострочные сообщения, обрабатывает ротацию журналов, сохраняет контрольные точки для устойчивости к перезапуску и извлекает структуру. Кроме того, этот приёмник может читать журналы контейнеров Docker и Kubernetes, разворачиваться как Helm-чарт, [извлекать из них структуру](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) и обогащать их сведениями о поде.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="Ресивер filelog" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Ресивер filelog](/images/use-cases/observability/observability-5.webp)
+
+</Frame>
+
+</div>
 
 **В большинстве развертываний используется комбинация указанных выше приёмников. Рекомендуем прочитать [документацию по коллектору](https://opentelemetry.io/docs/collector/) и ознакомиться с базовыми понятиями, а также со [структурой конфигурации](https://opentelemetry.io/docs/collector/configuration/) и [способами установки](https://opentelemetry.io/docs/collector/installation/).**
 
@@ -650,7 +672,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 Если нельзя гарантировать большие батчи, можно делегировать батчинг ClickHouse, используя [асинхронные вставки](/ru/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). При асинхронных вставках данные сначала помещаются в буфер, а затем позже, то есть асинхронно, записываются в хранилище базы данных.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Асинхронные вставки" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Асинхронные вставки](/images/use-cases/observability/observability-6.webp)
+
+</Frame>
+
+</div>
 
 При [включенных асинхронных вставках](/ru/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), когда ClickHouse ① получает запрос на вставку, данные запроса ② сразу записываются во внутренний буфер в памяти. Когда ③ происходит следующий сброс буфера, данные из буфера [сортируются](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) и записываются как часть в хранилище базы данных. Обратите внимание, что до сброса в хранилище базы данных эти данные недоступны для поиска запросами; сброс буфера [настраивается](/ru/concepts/features/operations/insert/asyncinserts).
 
@@ -680,7 +710,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 В архитектуре только с агентами пользователи разворачивают OTel collector на периферии в роли агентов. Они получают трассировки от локальных приложений (например, из sidecar-контейнера) и собирают журналы с серверов и узлов Kubernetes. В этом режиме агенты отправляют данные напрямую в ClickHouse.
 
-<Image img="/images/use-cases/observability/observability-7.webp" alt="Только агенты" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Только агенты](/images/use-cases/observability/observability-7.webp)
+
+</Frame>
+
+</div>
 
 Эта архитектура подходит для небольших и средних развертываний. Ее главное преимущество в том, что она не требует дополнительного оборудования и позволяет свести к минимуму общее потребление ресурсов решением ClickHouse для обсервабилити, сохраняя простое соответствие между приложениями и коллекторами.
 
@@ -696,7 +734,15 @@ SETTINGS ttl_only_drop_parts = 1
 
 OTel коллекторы можно развернуть в роли шлюзов, чтобы устранить перечисленные выше ограничения. Они предоставляют автономный сервис, как правило, на каждый центр обработки данных или регион. Они получают события от приложений (или других коллекторов в роли агента) через единую конечную точку OTLP. Обычно развертывается набор экземпляров шлюза, а для распределения нагрузки между ними используется стандартный балансировщик нагрузки.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Масштабирование со шлюзами" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Масштабирование со шлюзами](/images/use-cases/observability/observability-8.webp)
+
+</Frame>
+
+</div>
 
 Цель этой архитектуры — снять с агентов ресурсоёмкую вычислительную обработку и тем самым минимизировать потребление ими ресурсов. Эти шлюзы могут выполнять задачи преобразования, которые в противном случае пришлось бы выполнять агентам. Кроме того, агрегируя события от множества агентов, шлюзы могут обеспечивать отправку в ClickHouse крупных батчей, что позволяет выполнять эффективную вставку. Эти коллекторы в роли шлюза можно легко масштабировать по мере добавления новых агентов и роста пропускной способности потока событий. Ниже показан пример конфигурации шлюза вместе со связанной конфигурацией агента, которая использует пример структурированного файла журнала. Обратите внимание на использование OTLP для взаимодействия между агентом и шлюзом.
 
@@ -792,7 +838,15 @@ service:
 
 Тем не менее, если вам нужны высокие гарантии доставки или возможность повторного воспроизведения данных (возможно, в несколько источников), Kafka может стать полезным дополнением к архитектуре.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="Добавление kafka" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Добавление kafka](/images/use-cases/observability/observability-9.webp)
+
+</Frame>
+
+</div>
 
 В этом случае агентов OTel можно настроить на отправку данных в Kafka через [экспортёр Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Экземпляры шлюза, в свою очередь, получают сообщения с помощью [приёмника Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). За дополнительной информацией рекомендуем обратиться к документации Confluent и OTel.
 

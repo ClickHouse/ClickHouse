@@ -528,7 +528,21 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
+    /// A block that is a whole stripe of the columns cache is read whole, beyond `rows_to_read`, because it shares the
+    /// columns of the cache. But the functions and filters of the query run over the whole block and copy what passes,
+    /// so the rows that pass the filters of `PREWHERE` must stay within `rows_to_read`, which keeps a block of wide rows
+    /// to `preferred_block_size_bytes`. A selective `PREWHERE` lets whole stripes be read, as the filtered rows cost
+    /// little to the later steps. Never beyond `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
+    UInt64 max_stripe_block_rows = block_size_params.max_block_size_rows;
+    if (size_predictor)
+    {
+        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
+        double rows_before_filtration = static_cast<double>(rows_to_read) / filtration_ratio;
+        if (rows_before_filtration < static_cast<double>(max_stripe_block_rows))
+            max_stripe_block_rows = std::max(rows_to_read, static_cast<UInt64>(rows_before_filtration));
+    }
+
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, max_stripe_block_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)
@@ -579,7 +593,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         .unmatched_mark_ranges = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
             ? read_result.computeUnmatchedMarkRanges()
             : MarkRanges{},
-        .query_condition_cache_attributable_marks = std::move(read_result.query_condition_cache_attributable_marks),
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
@@ -590,11 +603,6 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
-}
-
-void MergeTreeReadTask::addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_)
-{
-    query_condition_cache_attributable_marks.insert(query_condition_cache_attributable_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
 bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const

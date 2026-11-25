@@ -36,7 +36,7 @@ public:
     explicit WindowNode(WindowFrame window_frame_);
 
     /// Get window node window frame
-    const WindowFrame & getWindowFrame() const
+    [[nodiscard]] const WindowFrame & getWindowFrame() const
     {
         return window_frame;
     }
@@ -48,13 +48,13 @@ public:
     }
 
     /// Returns true if window node has parent window name, false otherwise
-    bool hasParentWindowName() const
+    [[nodiscard]] bool hasParentWindowName() const
     {
         return parent_window_name.empty();
     }
 
     /// Get parent window name
-    const String & getParentWindowName() const
+    [[nodiscard]] const String & getParentWindowName() const
     {
         return parent_window_name;
     }
@@ -66,13 +66,13 @@ public:
     }
 
     /// Returns true if window node has order by, false otherwise
-    bool hasOrderBy() const
+    [[nodiscard]] bool hasOrderBy() const
     {
         return !getOrderBy().getNodes().empty();
     }
 
     /// Get order by
-    const ListNode & getOrderBy() const
+    [[nodiscard]] const ListNode & getOrderBy() const
     {
         return children[order_by_child_index]->as<const ListNode &>();
     }
@@ -84,7 +84,7 @@ public:
     }
 
     /// Get order by node
-    const QueryTreeNodePtr & getOrderByNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getOrderByNode() const
     {
         return children[order_by_child_index];
     }
@@ -96,13 +96,13 @@ public:
     }
 
     /// Returns true if window node has partition by, false otherwise
-    bool hasPartitionBy() const
+    [[nodiscard]] bool hasPartitionBy() const
     {
         return !getPartitionBy().getNodes().empty();
     }
 
     /// Get partition by
-    const ListNode & getPartitionBy() const
+    [[nodiscard]] const ListNode & getPartitionBy() const
     {
         return children[partition_by_child_index]->as<const ListNode &>();
     }
@@ -114,7 +114,7 @@ public:
     }
 
     /// Get partition by node
-    const QueryTreeNodePtr & getPartitionByNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getPartitionByNode() const
     {
         return children[partition_by_child_index];
     }
@@ -126,13 +126,13 @@ public:
     }
 
     /// Returns true if window node has FRAME begin offset, false otherwise
-    bool hasFrameBeginOffset() const
+    [[nodiscard]] bool hasFrameBeginOffset() const
     {
         return getFrameBeginOffsetNode() != nullptr;
     }
 
     /// Get FRAME begin offset node
-    const QueryTreeNodePtr & getFrameBeginOffsetNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getFrameBeginOffsetNode() const
     {
         return children[frame_begin_offset_child_index];
     }
@@ -144,13 +144,13 @@ public:
     }
 
     /// Returns true if window node has FRAME end offset, false otherwise
-    bool hasFrameEndOffset() const
+    [[nodiscard]] bool hasFrameEndOffset() const
     {
         return getFrameEndOffsetNode() != nullptr;
     }
 
     /// Get FRAME end offset node
-    const QueryTreeNodePtr & getFrameEndOffsetNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getFrameEndOffsetNode() const
     {
         return children[frame_end_offset_child_index];
     }
@@ -161,7 +161,7 @@ public:
         return children[frame_end_offset_child_index];
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::WINDOW;
     }
@@ -169,13 +169,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     static constexpr size_t order_by_child_index = 0;
