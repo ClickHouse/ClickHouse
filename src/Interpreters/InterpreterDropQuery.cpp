@@ -34,10 +34,6 @@
 
 #include "config.h"
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
