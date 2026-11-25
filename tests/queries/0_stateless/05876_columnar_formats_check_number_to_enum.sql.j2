@@ -8,7 +8,7 @@ SET allow_suspicious_variant_types = 1;
 
 {% set E = "Enum8(\\'a\\' = 5, \\'b\\' = 6)" -%}
 {% set E_DDL = "Enum8('a' = 5, 'b' = 6)" -%}
-{% for format in ['Parquet', 'ORC', 'Arrow', 'Native'] -%}
+{% for format in ['Parquet', 'ORC', 'Arrow', 'ArrowStream', 'Native'] -%}
 SELECT '{{ format }}';
 INSERT INTO FUNCTION file(currentDatabase() || '_05876.{{ format }}', '{{ format }}') SELECT
     number AS id,
