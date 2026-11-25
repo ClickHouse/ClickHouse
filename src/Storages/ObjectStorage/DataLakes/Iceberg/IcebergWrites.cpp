@@ -121,7 +121,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int ICEBERG_COMMIT_REJECTED;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
@@ -132,6 +131,8 @@ namespace FailPoints
 {
     extern const char iceberg_writes_cleanup[];
     extern const char iceberg_writes_pause_before_commit[];
+    extern const char iceberg_writes_lose_metadata_commit_response[];
+    extern const char iceberg_writes_lose_metadata_commit_request[];
 }
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
@@ -1541,8 +1542,8 @@ void IcebergStorageSink::readLatestMetadata()
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
-    /// Cancellation skips `onException`, so clean up here when the commit outcome permits it.
-    if (cleanup_on_abort)
+    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
+    if (!committed && !commit_outcome_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -2012,64 +2013,52 @@ bool IcebergStorageSink::initializeMetadata()
                 context);
 
         {
-            std::string json_representation = stringifyJSON(metadata, 4);
-
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_writes_pause_before_commit);
 
-            LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
-            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-            if (!catalog_writes_metadata_file)
+            const auto read_latest_metadata = [&]
             {
-                if (!writeMetadataFileAndVersionHint(
-                        persistent_table_components.path_resolver,
-                        metadata_info,
-                        json_representation,
-                        hint_path,
-                        object_storage,
-                        context,
-                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
-                {
-                    LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                    prepareRetryAfterMetadataConflict();
-                    return false;
-                }
-                LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
-            }
+                const auto latest = getLatestMetadataFileAndVersionWithCatalog(
+                    object_storage,
+                    catalog,
+                    table_id.getTableName(),
+                    persistent_table_components.table_path,
+                    *data_lake_settings,
+                    persistent_table_components.metadata_cache,
+                    context,
+                    log.get(),
+                    persistent_table_components.table_uuid,
+                    persistent_table_components.metadata_compression_method,
+                    /* ignore_metadata_pointer_overrides */ true);
+                return getMetadataJSONObject(latest.path, object_storage, nullptr, context, log, latest.compression_method, std::nullopt);
+            };
 
-            if (catalog)
+            if (!commitMetadataFile(
+                    resolver,
+                    metadata_info,
+                    hint_path,
+                    metadata,
+                    new_snapshot,
+                    base_catalog_metadata_location,
+                    catalog,
+                    table_id,
+                    /* create_version_hint */ (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint],
+                    read_latest_metadata,
+                    {.lose_request = FailPoints::iceberg_writes_lose_metadata_commit_request,
+                     .lose_response = FailPoints::iceberg_writes_lose_metadata_commit_response},
+                    "insert",
+                    commit_outcome_unknown,
+                    object_storage,
+                    context,
+                    log))
             {
-                auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
-
-                const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-                /// Once the request starts, preserve files unless the catalog confirms rejection.
-                cleanup_on_abort = false;
-                try
-                {
-                    if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
-                    {
-                        cleanup_on_abort = true;
-                        if (!catalog_writes_metadata_file)
-                            removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
-                        prepareRetryAfterMetadataConflict();
-                        return false;
-                    }
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::ICEBERG_COMMIT_REJECTED)
-                    {
-                        cleanup_on_abort = true;
-                        if (!catalog_writes_metadata_file)
-                            removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
-                    }
-                    throw;
-                }
+                prepareRetryAfterMetadataConflict();
+                return false;
             }
-            cleanup_on_abort = false;
+            committed = true;
         }
 
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
@@ -2077,7 +2066,8 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        if (cleanup_on_abort)
+        /// The snapshot that references the files is published, or may be.
+        if (!committed && !commit_outcome_unknown)
             removeDataFilesAndManifests();
         throw;
     }
