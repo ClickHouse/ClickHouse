@@ -97,6 +97,8 @@ struct PatternData
 struct PatternInfo
 {
     std::vector<PatternData> patterns;
+    /// Ids of the scalar subqueries that gave the patterns, carried onto the constant that replaces them.
+    std::vector<size_t> scalar_subquery_ids;
 
     [[nodiscard]] bool canUseMultiSearchAny() const
     {
@@ -415,6 +417,9 @@ public:
 
             per_key_data[idx].originals.push_back(argument);
             per_key_data[idx].info.patterns.push_back(std::move(data));
+            const auto & pattern_ids = pattern->getScalarSubqueryIds();
+            per_key_data[idx].info.scalar_subquery_ids.insert(
+                per_key_data[idx].info.scalar_subquery_ids.end(), pattern_ids.begin(), pattern_ids.end());
             if (conversion_failed)
                 per_key_data[idx].keep_originals = true;
         }
@@ -498,7 +503,9 @@ public:
                 String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                 match_function = std::make_shared<FunctionNode>(func_name);
                 match_function->getArguments().getNodes().push_back(key_data.key);
-                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getSubstrings()}));
+                auto patterns_constant = std::make_shared<ConstantNode>(Field{info.getSubstrings()});
+                patterns_constant->addScalarSubqueryIds(info.scalar_subquery_ids);
+                match_function->getArguments().getNodes().push_back(std::move(patterns_constant));
                 auto resolver = FunctionFactory::instance().get(func_name, context);
                 match_function->resolveAsFunction(resolver);
             }
@@ -523,7 +530,9 @@ public:
                 /// broader set). A group that fails any of these checks keeps its original branches (below).
                 match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(key_data.key);
-                match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
+                auto patterns_constant = std::make_shared<ConstantNode>(Field{info.getRegexps()});
+                patterns_constant->addScalarSubqueryIds(info.scalar_subquery_ids);
+                match_function->getArguments().getNodes().push_back(std::move(patterns_constant));
                 auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
                 match_function->resolveAsFunction(resolver);
             }

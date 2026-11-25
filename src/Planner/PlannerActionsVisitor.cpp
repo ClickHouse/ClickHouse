@@ -1102,8 +1102,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
     bool in_second_is_deterministic = false;
+    /// A constant set can come from scalar subqueries, for example an `OR` chain of `equals` against
+    /// their values that a pass turned into `IN`. The set keeps their ids, as any other constant does.
+    std::vector<size_t> in_second_scalar_subquery_ids;
     if (const auto * const_node = in_second_argument->as<const ConstantNode>())
+    {
         in_second_is_deterministic = const_node->isDeterministic();
+        in_second_scalar_subquery_ids = const_node->getScalarSubqueryIds();
+    }
 
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
@@ -1137,7 +1143,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
-    actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
+    actions_stack[0].addConstantIfNecessary(
+        name, column, type, name, in_second_is_deterministic, /*is_masked_secret=*/ false, in_second_scalar_subquery_ids);
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)

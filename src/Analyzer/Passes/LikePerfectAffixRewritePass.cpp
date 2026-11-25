@@ -97,6 +97,8 @@ public:
         }
 
         auto affix_constant = std::make_shared<ConstantNode>(std::move(affix.prefix));
+        /// The affix is cut from the pattern, so it reads whatever scalar subquery gave the pattern.
+        affix_constant->addScalarSubqueryIds(pattern_constant->getScalarSubqueryIds());
 
         /// Create startsWith/endsWith function
         FunctionNodePtr new_node = operation(is_suffix ? "endsWith" : "startsWith", args[0], affix_constant);

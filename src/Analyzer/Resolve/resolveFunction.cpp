@@ -2355,6 +2355,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
                 ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+                /// The result is computed from the subquery's value, so it reads the subquery too.
+                tme_const_node->addScalarSubqueryIds(const_node->getScalarSubqueryIds());
                 auto res = tme_const_node->getValueStringRepresentation();
                 node = std::move(tme_const_node);
                 return {std::move(res)};
