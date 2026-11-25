@@ -395,7 +395,8 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
     for (const auto & [begin, end] : ranges)
     {
         chassert(begin <= end);
-        /// Reading mostly goes on from where the last range ended.
+        /// A reader mostly goes on from where its last range ended. When several threads read the file, their ranges
+        /// interleave and are appended instead, to be coalesced by the next merge.
         if (!united_ranges.empty())
         {
             auto & [last_begin, last_end] = united_ranges.back();
