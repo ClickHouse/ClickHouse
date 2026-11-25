@@ -75,7 +75,7 @@ public:
     /// by the index of the first token of the argument: when an enclosing expression is parsed again after
     /// backtracking, the failed attempt is not repeated. Otherwise every nesting level would double the work.
     void markUniquePredicateParseFailed(size_t index) { failed_unique_predicate_positions.insert(index); }
-    bool isUniquePredicateParseFailed(size_t index) const { return failed_unique_predicate_positions.contains(index); }
+    [[nodiscard]] bool isUniquePredicateParseFailed(size_t index) const { return failed_unique_predicate_positions.contains(index); }
 };
 
 
@@ -116,7 +116,7 @@ public:
 
     /// See `Tokens::markUniquePredicateParseFailed`.
     void markUniquePredicateParseFailed() { tokens->markUniquePredicateParseFailed(index); }
-    bool isUniquePredicateParseFailed() const { return tokens->isUniquePredicateParseFailed(index); }
+    [[nodiscard]] bool isUniquePredicateParseFailed() const { return tokens->isUniquePredicateParseFailed(index); }
 };
 
 

@@ -80,7 +80,7 @@ public:
     /// so a lambda or a user defined function with the same name cannot replace it.
     void markAsBuiltin() { is_builtin = true; }
 
-    bool isBuiltin() const { return is_builtin; }
+    [[nodiscard]] bool isBuiltin() const { return is_builtin; }
 
     /// Get parameters
     [[nodiscard]] const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
