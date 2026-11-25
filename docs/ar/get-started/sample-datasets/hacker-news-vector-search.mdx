@@ -7,9 +7,7 @@ keywords: ['البحث الدلالي', 'تشابه المتجهات', 'أقرب
 doc_type: 'guide'
 ---
 
-<div id="introduction">
-  ## مقدمة
-</div>
+## مقدمة {#introduction}
 
 تحتوي [مجموعة بيانات Hacker News](https://news.ycombinator.com/) على 28.74 مليون
 منشور وتضميناتها المتجهية. وقد أُنشئت هذه التضمينات باستخدام نموذج [SentenceTransformers](https://sbert.net/)‏ [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2). ويبلغ بُعد كل متجه تضمين `384`.
@@ -17,17 +15,13 @@ doc_type: 'guide'
 يمكن استخدام مجموعة البيانات هذه لاستعراض جوانب التصميم وتقدير السعة والأداء لتطبيق
 بحث متجهي واسع النطاق وواقعي، مبني على بيانات نصية ينشئها المستخدمون.
 
-<div id="dataset-details">
-  ## تفاصيل مجموعة البيانات
-</div>
+## تفاصيل مجموعة البيانات {#dataset-details}
 
 توفّر ClickHouse مجموعة البيانات الكاملة مع التضمينات المتجهية في ملف `Parquet` واحد ضمن [حاوية S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
 
 نوصي المستخدمين أولًا بإجراء تقدير للحجم لتحديد متطلبات التخزين والذاكرة لمجموعة البيانات هذه بالرجوع إلى [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes).
 
-<div id="steps">
-  ## خطوات
-</div>
+## خطوات {#steps}
 
 <Steps>
   <Step title="إنشاء جدول" id="create-table">
@@ -108,7 +102,7 @@ doc_type: 'guide'
     تحتوي مجموعة بيانات HackerNews هذه على تمثيلات متجهية (تضمينات) تم إنشاؤها باستخدام نموذج
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
-    يُقدَّم فيما يلي مثال على سكريبت بايثون يوضح كيفية توليد متجهات التضمين برمجيًا باستخدام حزمة بايثون `sentence_transformers`. يُمرَّر بعد ذلك متجه تضمين البحث كوسيط إلى دالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT`.
+    يُقدَّم فيما يلي مثال على سكريبت بايثون يوضح كيفية توليد متجهات التضمين برمجيًا باستخدام حزمة بايثون `sentence_transformers1. يُمرَّر بعد ذلك متجه تضمين البحث كوسيط إلى دالة [`cosineDistance()`](/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT&#96;.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -211,7 +205,7 @@ doc_type: 'guide'
     ---------
     ```
 
-    ## تطبيق تجريبي للتلخيص
+## تطبيق تجريبي للتلخيص {#summarization-demo-application}
 
     يوضح المثال أعلاه البحث الدلالي واسترداد المستندات باستخدام ClickHouse.
 
@@ -223,7 +217,7 @@ doc_type: 'guide'
     2. يُنشئ متجه تضمين للـ *موضوع* باستخدام `SentenceTransformers` مع النموذج `all-MiniLM-L6-v2`
     3. يسترجع منشورات/تعليقات وثيقة الصلة باستخدام البحث بالتشابه المتجهي على الجدول `hackernews`
     4. يستخدم `LangChain` وواجهة Chat API من OpenAI للنموذج `gpt-3.5-turbo` **لتلخيص** المحتوى المسترجع في الخطوة رقم 3.
-       وتُمرَّر المنشورات/التعليقات المسترجعة في الخطوة رقم 3 على أنها *سياق* إلى Chat API، وهي حلقة الوصل الأساسية في Generative AI.
+       وتُمرَّر المنشورات/التعليقات المسترجعة في الخطوة رقم 3 على أنها *سياق* إلى Chat API، وهي حلقة الوصل الأساسية في Generative AI.
 
     أدناه مثال على تشغيل تطبيق التلخيص، يليه كود التطبيق. يتطلب تشغيل التطبيق ضبط مفتاح OpenAI API في متغير البيئة `OPENAI_API_KEY`. يمكن الحصول على مفتاح OpenAI API بعد التسجيل على https://platform.openai.com.
 

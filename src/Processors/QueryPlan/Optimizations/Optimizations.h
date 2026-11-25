@@ -198,6 +198,10 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 /// join validation still runs.
 size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Replace a LEFT or RIGHT JOIN by the side it preserves if nothing of the other side is read and the join outputs
+/// every preserved row exactly once: an ANY join, or a join whose other side is unique by the join keys.
+size_t tryRemoveUnusedJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
@@ -305,6 +309,7 @@ inline const auto & getOptimizations()
         {tryShortCircuitConstantFalseJoin,
          "shortCircuitConstantFalseJoin",
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
+        {tryRemoveUnusedJoin, "removeUnusedJoin", &QueryPlanOptimizationSettings::remove_unused_joins},
         /// the steps that other optimizations create after `lowerArrayJoinFunctions`
         {tryLowerArrayJoinFunction, "lowerArrayJoinFunction", &QueryPlanOptimizationSettings::lower_array_join_function},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
@@ -386,6 +391,10 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
+/// Descends from `node` through order-preserving steps to the reading step below it and marks that
+/// read as preferring multiple streams, so `PrefetchingConcatProcessor` does not collapse the
+/// per-stream pipeline into a single stream and serialize per-stream work above the read.
+void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);

@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) é um padrão aberto para coletar traces e métricas de aplicações distribuídas. O ClickHouse oferece algum suporte a OpenTelemetry.
 
-## Fornecendo contexto de rastreamento ao ClickHouse {#supplying-trace-context-to-clickhouse}
+## Fornecendo contexto de trace ao ClickHouse {#supplying-trace-context-to-clickhouse}
 
-O ClickHouse aceita cabeçalhos HTTP de contexto de rastreamento, conforme descrito na [recomendação do W3C](https://www.w3.org/TR/trace-context/). Ele também aceita contexto de rastreamento por um protocolo nativo usado na comunicação entre servidores do ClickHouse ou entre o cliente e o servidor. Para testes manuais, cabeçalhos de contexto de rastreamento em conformidade com a recomendação Trace Context podem ser fornecidos ao `clickhouse-client` usando as flags `--opentelemetry-traceparent` e `--opentelemetry-tracestate`.
+O ClickHouse aceita cabeçalhos HTTP de contexto de trace, conforme descrito na [recomendação do W3C](https://www.w3.org/TR/trace-context/). Ele também aceita contexto de trace por um protocolo nativo usado na comunicação entre servidores do ClickHouse ou entre o cliente e o servidor. Os manipuladores HTTP dos protocolos do Prometheus (exposição de métricas, gravação remota, leitura remota e a API de consultas) também aceitam cabeçalhos HTTP de contexto de trace. Para testes manuais, cabeçalhos de contexto de trace em conformidade com a recomendação Trace Context podem ser fornecidos ao `clickhouse-client` usando as flags `--opentelemetry-traceparent` e `--opentelemetry-tracestate`.
 
-Se nenhum contexto de rastreamento pai for fornecido, ou se o contexto de rastreamento informado não estiver em conformidade com o padrão W3C mencionado acima, o ClickHouse poderá iniciar um novo rastreamento, com probabilidade controlada pela configuração [opentelemetry&#95;start&#95;trace&#95;probability](/pt-BR/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Se nenhum contexto de trace pai for fornecido, ou se o contexto de trace informado não estiver em conformidade com o padrão W3C mencionado acima, o ClickHouse poderá iniciar um novo trace, com probabilidade controlada pela configuração [opentelemetry&#95;start&#95;trace&#95;probability](/pt-BR/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 ## Propagação do contexto de rastreamento {#propagating-the-trace-context}
 

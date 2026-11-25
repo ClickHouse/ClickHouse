@@ -13,7 +13,7 @@ integration:
 O ClickPipes é compatível com o Postgres 12 e versões posteriores.
 
 <div id="enable-logical-replication">
-  ## Habilite a replicação lógica
+  ## Habilite a replicação lógica {#enable-logical-replication}
 </div>
 
 O Crunchy Bridge vem com a replicação lógica habilitada por [padrão](https://docs.crunchybridge.com/how-to/logical-replication). Verifique se as configurações abaixo estão definidas corretamente. Caso contrário, ajuste-as conforme necessário.
@@ -24,9 +24,7 @@ SHOW max_wal_senders; -- deve ser 10
 SHOW max_replication_slots; -- deve ser 10
 ```
 
-<div id="creating-clickpipes-user-and-granting-permissions">
-  ## Criando o usuário do ClickPipes e concedendo permissões
-</div>
+## Criando o usuário do ClickPipes e concedendo permissões {#creating-clickpipes-user-and-granting-permissions}
 
 Conecte-se ao seu Crunchy Bridge Postgres usando o usuário `postgres` e execute os comandos abaixo:
 
@@ -62,42 +60,32 @@ Conecte-se ao seu Crunchy Bridge Postgres usando o usuário `postgres` e execute
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Para criar uma publicação para todas as tabelas em um schema específico:
+* Para criar uma publicação para todas as tabelas em um schema específico:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
-<div id="safe-list-clickpipes-ips">
-  ## Inclua os IPs do ClickPipes na lista de permissões
-</div>
+## Inclua os IPs do ClickPipes na lista de permissões {#safe-list-clickpipes-ips}
 
 Inclua os [IPs do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) na lista de permissões adicionando as regras de firewall no Crunchy Bridge.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Onde encontrar as regras de firewall no Crunchy Bridge?](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
-
-</Frame>
-
+  <Frame>
+    ![Onde encontrar as regras de firewall no Crunchy Bridge?](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Adicione as regras de firewall para o ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
-
-</Frame>
-
+  <Frame>
+    ![Adicione as regras de firewall para o ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp)
+  </Frame>
 </div>
 
 <div id="whats-next">
-  ## O que vem a seguir?
+  ## O que vem a seguir? {#whats-next}
 </div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e começar a ingerir dados da sua instância do Postgres no ClickHouse Cloud.

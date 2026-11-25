@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-在 managed 模式下，连接器会运行第三个组件 executor。ClickHouse Cloud 正是通过它在你的 Kubernetes 集群中运维 ClickHouse 服务。本页介绍如何创建服务、如何查看服务的 status、ClickHouse Cloud 会对其执行哪些操作，以及它如何退役。
+在托管模式下，连接器会运行第三个组件 executor。ClickHouse Cloud 正是通过它在你的 Kubernetes 集群中运维 ClickHouse 服务。本页介绍如何创建服务、如何查看服务的 status、ClickHouse Cloud 会对其执行哪些操作，以及它如何退役。
 
 ## managed 模式的作用 {#what-managed-mode-does}
 
@@ -33,21 +33,17 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
 
 通过连接器端点创建服务的功能按环境逐一启用；开始之前请与你的客户团队确认。
 
-创建服务需要两条命令。`prepare` 负责在你这一侧创建所有资源；`instances create` 则通过你的连接器端点将创建请求提交给 ClickHouse Cloud。ClickHouse Cloud 会生成服务定义，并通过其出站通道将创建请求下发给 executor。executor 将其应用到你的 集群 并回报结果。
+创建服务需要两条命令。`prepare` 负责在你这一侧创建所有资源；`instances create` 则通过你的连接器端点将创建请求提交给 ClickHouse Cloud。ClickHouse Cloud 会渲染服务定义，并通过其出站通道将创建请求下发给 executor。executor 将其应用到你的 集群 并回报结果。
 
-只有 `prepare` 需要 AWS 凭证：它会创建 S3 桶 和 IAM role。`instances create` 需要连接器的配置和 凭证，且仅在使用 `--wait` 时才会访问 executor 的本地 API。在 VM 上，请在连接器主机上以 root 身份运行这两条命令。在 Kubernetes 上，请在配置了该 Managed 集群 的 kube context 的工作机上运行这两条命令：
+只有 `prepare` 需要 AWS 凭证：它会创建 S3 桶 和 IAM role。`instances create` 需要连接器的配置和 凭证，且仅在使用 `--wait` 时才会访问 executor 的本地 API。在 VM 上，请在连接器主机上以 root 身份运行这两条命令。在 Kubernetes 上，请在配置了该 Managed 集群 的 kube context 的工作站上运行这两条命令：
 
 * `prepare` 需要一份连接器配置的副本 (`--config`) 、一个指向 executor 本地 API 的 `kubectl port-forward`，以及一个可写的 `--output-dir`。它会向 executor 核对 服务 name，若无法连接到 executor 则拒绝运行。
 * 当本机缺少配置中所指定的 凭证 文件时，`instances create` 会从 `clicklink-hmac` 和 `clicklink-mtls` Secrets 中读取这些文件，并在每次读取时给出提示。若连接器所在命名空间不是 `clicklink`，请添加 `--connector-namespace`。只有 `instances create` 具备这一 fallback 行为。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Connector service lifecycle in managed mode](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
-
-</Frame>
-
+  <Frame>
+    ![托管模式下的 ClickHouse 连接器服务生命周期](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+  </Frame>
 </div>
 
 <Steps>
@@ -55,35 +51,35 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
     <Tabs>
       <Tab title="Kubernetes" id="prepare-kubernetes">
         ```bash
-        CONNECTOR_NAMESPACE='clicklink'   # 在 init 时选择的连接器命名空间
+        CONNECTOR_NAMESPACE='clicklink'   # 初始化时选择的连接器命名空间
         kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
           -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
         kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
         clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
         ```
 
-        请保留该输出目录：其中存放着创建请求正文和名称记录，`instances create` 及任何重试操作都会读取它们。
+        请保留该输出目录：其中包含创建请求体和名称记录，`instances create` 以及后续的任何重试都会读取这些文件。
       </Tab>
 
-      <Tab title="Linux VM" id="prepare-vm">
+      <Tab title="Linux 虚拟机" id="prepare-vm">
         ```bash
         sudo clicklink clctl executor prepare --config /etc/clicklink/config.yaml
         ```
       </Tab>
     </Tabs>
 
-    该命令按顺序执行四个步骤，并在第一个失败处停止：
+    该命令按顺序执行以下四个步骤，任一步骤失败即停止：
 
-    1. **名称。** 选取一个服务名称，或校验你通过 `--instance <name>` 传入的名称。生成的名称会记录在 `<output-dir>/_prepare/<eks-cluster-name>.name` 中，并在下次运行时沿用，因此重试会复用首次运行的桶和 role。使用 `--new-name` 可另选一个名称。若某个名称仍被 executor 占用，或其命名空间中已存在 ClickHouse cluster，该命令会拒绝使用该名称。
-    2. **存储。** 创建数据桶和 backup 桶，以及 IAM role `CH-S3-<name>-<region>-00-Role`。默认桶名为 `<cluster>-clickhouse-data-<rand>` 和 `<cluster>-clickhouse-backup-<rand>`，可通过 `--data-bucket` 和 `--backup-bucket` 覆盖。若使用 `--role-arn`，则只校验你自带的 role，不写入任何 IAM。
-    3. **授权与应用。** 在 VM 上，为服务命名空间 (`ns-<name>`) 渲染 executor 的访问支持包，应用其 RBAC，并在 executor 的 registry 中注册该 service。在 Kubernetes 上会跳过此步骤：executor 以其 Pod 的 ServiceAccount 身份运行，并在创建请求到达时自行注册该 service。
-    4. **摘要。** 生成 `default` USER 的密码，并将创建请求正文写入 `<output-dir>/_prepare/<name>.create.json` (mode 为 `0600`，其中仅包含该密码的哈希值) ，同时在 `Next:` 行打印下一条应执行的命令。
+    1. **名称。** 选取一个服务名称，或验证你通过 `--instance <name>` 传入的名称。生成的名称会记录在 `<output-dir>/_prepare/<eks-cluster-name>.name` 中，下次运行时会沿用该名称，因此重试会复用首次运行创建的桶和角色。使用 `--new-name` 可另选一个名称。如果某个名称仍被 executor 占用，或其命名空间中已存在 ClickHouse 集群，该命令将拒绝使用该名称。
+    2. **存储。** 创建数据桶、备份桶以及 IAM role `CH-S3-<name>-<region>-00-Role`。默认桶名称为 `<cluster>-clickhouse-data-<rand>` 和 `<cluster>-clickhouse-backup-<rand>`，可通过 `--data-bucket` 和 `--backup-bucket` 覆盖。指定 `--role-arn` 时，该命令会验证你自行提供的角色，且不会写入任何 IAM 配置。
+    3. **授权与应用。** 在虚拟机上，为服务命名空间 (`ns-<name>`) 渲染 executor 的访问包，应用其中的 RBAC，并在 executor 的 registry 中注册该服务。在 Kubernetes 上会跳过此步骤：executor 以其 Pod 的 ServiceAccount 身份运行，并在收到创建请求时自行注册服务。
+    4. **摘要。** 生成 `default` 用户的密码，并将创建请求体写入 `<output-dir>/_prepare/<name>.create.json` (权限模式为 `0600`；其中仅包含密码的哈希值) 。最后在 `Next:` 行中输出下一条要执行的命令。
 
     <Warning>
-      `prepare` 只会在 stderr 上打印一次 `default` USER 的密码。创建请求正文和 `--output json` 均不包含该密码，ClickHouse Cloud 也只会收到其哈希值。请先妥善保存，再继续后续操作。若重新运行时发现已有创建请求正文，则会沿用已写入的哈希值，并给出相应提示。
+      `prepare` 仅会在 stderr 中输出一次 `default` 用户的密码。创建请求体和 `--output json` 中均不包含该密码，ClickHouse Cloud 也只会收到其哈希值。请在继续操作前妥善保存该密码。重新运行时，如果检测到已有创建请求体，命令会保留已写入的哈希值，并给出相应提示。
     </Warning>
 
-    当 kubeconfig 中包含多个 context 时，请传入 `--context <name>`；该 context 必须指向配置中 `executor.cluster` 所指定的 EKS cluster。`--dry-run` 会执行所有步骤，但不创建或写入任何内容。哈希步骤使用 SHA-1，而 Go 在 `GODEBUG=fips140=only` 下会拒绝该算法，因此请在未设置该选项的主机上运行 `prepare`。
+    如果 kubeconfig 中包含多个上下文，请传入 `--context <name>`；该上下文必须指向 config 中 `executor.cluster` 所指定的 EKS cluster。`--dry-run` 会执行所有步骤，但不会创建或写入任何内容。哈希步骤使用 SHA-1，而在 `GODEBUG=fips140=only` 下 Go 会拒绝使用该算法，因此请在未启用该设置的主机上运行 `prepare`。
   </Step>
 
   <Step title="提交创建请求" id="create">
@@ -96,10 +92,10 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
           --wait
         ```
 
-        请保持 `prepare` 阶段建立的端口转发处于开启状态：`--wait` 会通过它轮询 executor。
+        请保持 `prepare` 步骤中建立的端口转发处于开启状态：`--wait` 会通过它轮询 executor。
       </Tab>
 
-      <Tab title="Linux VM" id="create-vm">
+      <Tab title="Linux 虚拟机" id="create-vm">
         ```bash
         sudo clicklink clctl instances create \
           --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
@@ -109,11 +105,11 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
       </Tab>
     </Tabs>
 
-    该命令会使用连接器自身的 credentials，将准备好的请求正文发送到你的连接器端点，并输出 `created <spoken-name> (state provisioning)` 以及一条 `watch:` 提示。`<spoken-name>` 是 ClickHouse Cloud 分配的名称 (例如 `amberaws-kq-42`) ，而非你在准备阶段指定的 service name。`watch:` 提示和所有 `clctl` 命令使用的都是你的 service name。
+    该命令会使用连接器自身的凭证，将准备好的请求正文发送到您的连接器端点，并输出 `created <spoken-name> (state provisioning)` 和一条 `watch:` 提示。`<spoken-name>` 是 ClickHouse Cloud 分配的名称 (例如 `amberaws-kq-42`) ，而不是您准备的服务名称。`watch:` 提示和所有 `clctl` 命令使用的都是您的服务名称。
 
-    使用相同输入重试是安全的。幂等性 key 默认由你的环境和 service name 派生而来，因此重新提交只会返回首次创建的结果。
+    使用相同的输入重试是安全的。幂等键默认根据您的环境和服务名称生成，因此重复提交只会返回首次创建的结果。
 
-    `--wait` 会每 10 秒轮询一次 executor 的本地 API，直到 service 进入 `running` 状态，最长等待 `--wait-timeout` (默认 `30m`) 。若 executor 记录到该名称的创建失败，或 service 变为 `terminating`、`terminated` 或 `stale`，命令会立即失败并输出所记录的 error。
+    `--wait` 每 10 秒轮询一次 executor 的本地 API，直到服务变为 `running`，最长等待时间由 `--wait-timeout` 指定 (默认 `30m`) 。如果 executor 记录到该名称的创建失败，或服务变为 `terminating`、`terminated` 或 `stale`，该命令会立即失败并返回所记录的错误。
   </Step>
 
   <Step title="验证" id="verify">
@@ -121,7 +117,7 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
     clicklink clctl instances get --name <name> --cluster <eks-cluster-name>
     ```
 
-    当 service 的 `status` 变为 `running` 时，表示该 service 已就绪。其 `default` 用户的密码即为 `prepare` 输出的密码。`--cluster` 也可以通过 `CLCTL_CLUSTER` 环境变量指定。
+    当服务的 `status` 为 `running` 时，即表示服务已就绪。其 `default` 用户的密码即为 `prepare` 输出的密码。`--cluster` 也可以通过 `CLCTL_CLUSTER` 环境变量设置。
   </Step>
 </Steps>
 
@@ -227,12 +223,12 @@ executor 会将 scraper 接入它创建的每个 服务，但不会 provision tr
 
 若不加 `--yes`，命令会在记录步骤后停止，并列出将被清空的桶名称。`--dry-run` 只读取，不做任何写入。对于您通过 `--role-arn` 自带的 role，或并非由 `prepare` 创建的桶，命令会将其报告为保留，并且不会做任何改动。若该服务的命名空间中仍存在 ClickHouse 集群，命令会拒绝执行。由于它会在删除任何内容之前先读取全部信息，被拒绝的执行不会造成任何更改。
 
-## 当连接器离线时 {#when-the-connector-is-offline}
+## 连接器离线时 {#when-the-connector-is-offline}
 
-正在运行的 服务 并不依赖 executor。集群中的 ClickHouse operator 会维持它们继续运行，连接器断开不会中断任何正在提供查询服务的负载。
+运行中的服务不依赖 executor。集群中的 ClickHouse Operator 会保持这些服务持续运行，连接器断开连接不会中断任何正在处理查询的服务。
 
-在没有 executor 连接期间，ClickHouse Cloud 无法向其派发新任务。已经接受的 create、delete 或平台同步会被保留并重试：create 自最后一次进度上报起重试 30 分钟，delete 为 2 小时，平台同步最多重试 10 次。超出该限额后，你的连接器端点会将该命令标记为失败。其余所有生命周期命令 (scale、stop、start、restart、backup、备份删除) 都会被直接拒绝，而不会排队。在没有 executor 连接期间提交的 create 或 delete 同样会被拒绝；只有此前已接受的命令才会重试。
+在没有 executor 连接期间，ClickHouse Cloud 无法向其分派新任务。executor 已接受的创建、删除或平台同步操作会被保留并重试：创建操作自最近一次进度报告起重试 30 分钟，删除操作重试 2 小时，平台同步最多重试 10 次。超出上述限额后，连接器端点会将该命令标记为失败。其他所有生命周期命令 (扩缩容、停止、启动、重启、备份、删除备份) 会被直接拒绝，而不会进入队列。在没有 executor 连接期间提交的创建或删除操作同样会被拒绝；只有已被接受的命令才会重试。
 
-executor 已接受的命令会继续执行直至完成；此前未能上报的结果会在下一次建立连接时发送。
+executor 已接受的命令会一直执行到完成；未能上报的结果会在下次连接时发送。
 
-`instances create` 要求从其运行所在的主机能够访问你的连接器端点。`--wait`、`instances list`、`instances get` 和 `commands list` 依赖 executor 的本地 API，因此 executor 必须处于运行状态。平台批准的令牌按自身的时钟过期，与连接状态无关；参见[批准窗口](/zh/products/bring-your-own-cloud/connector/platform-updates#the-approval-window)。
+`instances create` 要求在运行该命令的主机上能够访问连接器端点。`--wait`、`instances list`、`instances get` 和 `commands list` 依赖 executor 的本地 API，因此 executor 必须处于运行状态。平台批准的令牌过期时间单独计算，与连接状态无关；请参阅[批准窗口](/zh/products/bring-your-own-cloud/connector/platform-updates#the-approval-window)。
