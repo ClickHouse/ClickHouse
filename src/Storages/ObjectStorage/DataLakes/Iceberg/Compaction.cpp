@@ -1273,6 +1273,23 @@ static bool writeMetadataFiles(
                 if (key != Iceberg::f_metadata_snapshot_id)
                     new_refs->getObject(Iceberg::f_main)->set(key, value);
 
+    /// An incremental refreshable materialized view resumes from the refresh cursor of the current snapshot.
+    if (const auto rebuilt_current = snapshot_id_to_snapshot.find(metadata_object->optValue<Int64>(Iceberg::f_current_snapshot_id, -1));
+        rebuilt_current != snapshot_id_to_snapshot.end())
+    {
+        const auto initial_current_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+        const auto initial_snapshots = plan.initial_metadata_object->getArray(Iceberg::f_snapshots);
+        for (UInt32 i = 0; i < initial_snapshots->size(); ++i)
+        {
+            const auto snapshot = initial_snapshots->getObject(i);
+            const auto summary = snapshot->getObject(Iceberg::f_summary);
+            if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == initial_current_id && summary
+                && summary->has(Iceberg::f_refresh_cursor))
+                rebuilt_current->second->getObject(Iceberg::f_summary)->set(
+                    Iceberg::f_refresh_cursor, summary->getValue<String>(Iceberg::f_refresh_cursor));
+        }
+    }
+
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;

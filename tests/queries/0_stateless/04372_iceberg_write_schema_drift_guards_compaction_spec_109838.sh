@@ -205,6 +205,30 @@ m = json.load(open(sys.argv[1]))
 print([s['summary']['operation'] for s in m['snapshots']], sorted((k, v) for k, v in m['refs']['main'].items() if k != 'snapshot-id'))
 " "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
 
+# --- OPTIMIZE keeps the refresh cursor: the next APPEND INCREMENTAL refresh appends only new rows
+reset
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE}_src (c0 Int32) ENGINE = MergeTree ORDER BY c0 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+CREATE TABLE ${TABLE} (c0 Int32) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version = 2;
+CREATE MATERIALIZED VIEW ${TABLE}_mv REFRESH EVERY 1 YEAR APPEND INCREMENTAL TO ${TABLE} EMPTY AS SELECT c0 FROM ${TABLE}_src;
+INSERT INTO ${TABLE}_src VALUES (1), (2);
+SYSTEM REFRESH VIEW ${TABLE}_mv;
+SYSTEM WAIT VIEW ${TABLE}_mv;
+ALTER TABLE ${TABLE} DELETE WHERE c0 = 1;
+"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+python3 -c "import json, sys; print([s['summary']['operation'] for s in json.load(open(sys.argv[1]))['snapshots']])" \
+    "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+${CLICKHOUSE_CLIENT} --query "
+INSERT INTO ${TABLE}_src VALUES (3);
+SYSTEM REFRESH VIEW ${TABLE}_mv;
+SYSTEM WAIT VIEW ${TABLE}_mv;
+SELECT arraySort(groupArray(c0)) FROM ${TABLE};
+DROP TABLE ${TABLE}_mv;
+DROP TABLE ${TABLE}_src;
+"
+
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 
