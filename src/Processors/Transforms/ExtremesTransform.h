@@ -16,6 +16,9 @@ public:
 
     String getName() const override { return "ExtremesTransform"; }
 
+    /// Preview chunks pass through without contributing to the extremes.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     OutputPort & getExtremesPort() { return outputs.back(); }
 
     Status prepare() override;

@@ -8,6 +8,8 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -20,6 +22,9 @@ namespace
 {
 
 constexpr size_t arena_replace_bytes = 16 << 20;
+
+/// The most units a single finalization is charged: at least 64 finalizations per cancellation check.
+constexpr Int64 max_finalization_units = CancellationBudget::units_per_check / 64;
 
 }
 
@@ -75,8 +80,13 @@ void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 e
     }
 }
 
-void AggregateState::insertResultInto(IColumn & result)
+void AggregateState::insertResultInto(IColumn & result, Int64 frame_rows)
 {
+    /// Without this, a run of finalizations that add few rows each, such as the growing prefix of a moving frame
+    /// or an unbounded preceding frame, would not reach a cancellation check for a very long time. The charge is
+    /// capped, so that cheap finalizations of large frames (e.g. `sum`) do not check the time limit on every row.
+    budget.chargeUnits(1 + static_cast<size_t>(std::clamp<Int64>(frame_rows, 0, max_finalization_units)));
+
     checkCreated();
     if (is_state)
         function->insertMergeResultInto(place.data(), result, arena.get());

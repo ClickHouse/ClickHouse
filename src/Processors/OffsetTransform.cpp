@@ -1,5 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Processors/OffsetTransform.h>
+
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -127,6 +129,31 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     data.current_chunk = input.pull(true);
 
     auto rows = data.current_chunk.getNumRows();
+
+    /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`): apply the
+    /// offset to it alone, without advancing `rows_read` or the counters.
+    if (isQueryResultPreview(data.current_chunk))
+    {
+        /// An empty preview is a preview state of its own: it replaces the previous one and tells
+        /// the client to clear it. Dropping it here would leave stale rows on the screen.
+        if (offset >= rows)
+        {
+            data.current_chunk.setColumns(output.getHeader().cloneEmptyColumns(), 0);
+            output.push(std::move(data.current_chunk));
+            return Status::PortFull;
+        }
+
+        if (offset > 0)
+        {
+            auto columns = data.current_chunk.detachColumns();
+            for (auto & column : columns)
+                column = column->cut(offset, rows - offset);
+            data.current_chunk.setColumns(std::move(columns), rows - offset);
+        }
+
+        output.push(std::move(data.current_chunk));
+        return Status::PortFull;
+    }
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(rows);
