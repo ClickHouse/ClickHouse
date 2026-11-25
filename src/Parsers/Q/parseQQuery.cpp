@@ -181,7 +181,8 @@ String quoteQString(std::string_view value)
 /// When the program is compiled, they are parts of the generated query, which is logged without them as every query is.
 /// But the text of the program itself is logged if the compilation fails, so it needs a form without the secrets as well:
 /// every embedded query that has secrets is replaced with its form for logging, and one that does not parse is hidden
-/// as a whole, because it is not known what is secret in it.
+/// as a whole, because it is not known what is secret in it. An embedded query over the limits of the parser (the depth,
+/// the backtracks) is an exception for the whole program here, as it would be at its compilation.
 String hideSecretsOfEmbeddedQueries(
     const String & text, const QProgram & program, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
@@ -210,20 +211,20 @@ String hideSecretsOfEmbeddedQueries(
         ++end;
 
         const String & embedded_text = literal->atoms.front().value.safeGet<String>();
+        const char * embedded_pos = embedded_text.data();
+        const char * embedded_end = embedded_pos + embedded_text.size();
+        ParserQuery parser(embedded_end);
+        String error_message;
+        ASTPtr embedded = tryParseQuery(parser, embedded_pos, embedded_end, error_message, /*hilite=*/ false, "", /*allow_multi_statements=*/ false,
+            max_query_size, max_parser_depth, max_parser_backtracks, /*skip_insignificant=*/ true);
+
         String shown;
-        try
-        {
-            ParserQuery parser(embedded_text.data() + embedded_text.size());
-            ASTPtr embedded = parseQuery(parser, embedded_text.data(), embedded_text.data() + embedded_text.size(), "",
-                max_query_size, max_parser_depth, max_parser_backtracks);
-            if (!embedded->hasSecretParts())
-                continue;
-            shown = embedded->formatForLogging();
-        }
-        catch (const Exception &)
-        {
+        if (!embedded)
             shown = "[HIDDEN]";
-        }
+        else if (embedded->hasSecretParts())
+            shown = embedded->formatForLogging();
+        else
+            continue;
         result.replace(begin, end - begin, quoteQString(shown));
         changed = true;
     }
