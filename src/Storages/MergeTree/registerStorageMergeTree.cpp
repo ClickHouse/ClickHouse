@@ -951,10 +951,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
 
+        /// Analyzed with the query context, as `ALTER TABLE ... MODIFY TTL` does, so that the settings of the query and the
+        /// session gate the codec of `RECOMPRESS` (`allow_suspicious_codecs`, `enable_*_codec`) like a column `CODEC`.
+        /// `getTTLForTableFromAST` checks itself that the TTL can also be analyzed in the global context, where it is loaded.
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
+                args.storage_def->ttl_table->ptr(), metadata.columns, args.getLocalContext(), metadata.primary_key, ttl_validation_mode);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -2726,6 +2729,8 @@ Certain MergeTree settings can be overridden at column level:
 
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. Data written in larger blocks by older versions cannot be read.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+For a column with a `Quantized` codec, both settings apply only to its vectors (the array elements); its array sizes and quantized codes use the table-level values. Array sizes shared by several columns of a `Nested` structure are written once, with the settings of the column that writes them first.
 
 Example:
 

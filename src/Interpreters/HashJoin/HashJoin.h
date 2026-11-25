@@ -29,6 +29,7 @@
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/PartitionedFixedHashTable.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
