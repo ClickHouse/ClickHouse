@@ -1870,6 +1870,13 @@ const std::unordered_map<String, Handler> & handlers()
         {
             c.expectArgs(2);
             QValue result = joinValues(c);
+            if (result.kind == QValueKind::Table)
+            {
+                /// The distinct rows of the two tables, in the order of their first occurrence.
+                QSelectBuilder builder = selectColumns(*result.table);
+                builder.distinct = true;
+                return tableValue(c.compiler, builder.build(), result.table->keys);
+            }
             result.ast = fn("arrayDistinct", result.ast);
             return result;
         };
