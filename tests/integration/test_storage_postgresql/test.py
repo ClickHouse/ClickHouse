@@ -983,12 +983,13 @@ def test_filter_pushdown_boolean_column(started_cluster):
     # - in a multi-column `IN`, a column that is not `Nullable` (here `id` of the declared table) reads
     #   a `NULL` as a value that a row of the set can have;
     # - a multi-column `NOT IN` selects a row with a `NULL` in ClickHouse and not in PostgreSQL.
-    for table, condition in [
-        ("pg_boolean_filter_not_null", "deleted IN (1, '0')"),
-        ("pg_boolean_filter", "(deleted, id) IN ((0, 0), (1, 2))"),
-        (inferred, "(deleted, id) NOT IN ((0, 1))"),
+    # PostgreSQL names the operator of the comparison in the message: `=` for `IN`, `<>` for `NOT IN`.
+    for table, condition, operator in [
+        ("pg_boolean_filter_not_null", "deleted IN (1, '0')", "="),
+        ("pg_boolean_filter", "(deleted, id) IN ((0, 0), (1, 2))", "="),
+        (inferred, "(deleted, id) NOT IN ((0, 1))", "<>"),
     ]:
-        assert "operator does not exist: boolean = integer" in node1.query_and_get_error(
+        assert f"operator does not exist: boolean {operator} integer" in node1.query_and_get_error(
             f"SELECT id FROM {table} WHERE {condition}"
         )
 
