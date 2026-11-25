@@ -1,0 +1,12 @@
+merged parts	t_horizontal	all_1_2_1_3
+merged parts	t_vertical	all_1_2_1_3
+statistics	t_horizontal	c	42	42	\N
+statistics	t_horizontal	n	5	5	0
+statistics	t_vertical	c	42	42	\N
+statistics	t_vertical	n	5	5	0
+pruned vertical	200
+pruned vertical	200
+pruned horizontal	200
+pruned horizontal	200
+values vertical	200	200
+values horizontal	200	200

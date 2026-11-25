@@ -1005,8 +1005,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     else
     {
-        for (const auto & part : global_ctx->future_part->parts)
+        for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
         {
+            const auto & part = global_ctx->future_part->parts[part_num];
+
             /// Skip empty parts,
             /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
             /// since they can incorrectly set min,
@@ -1036,13 +1038,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 continue;
 
             auto part_statistics = part->loadStatistics();
+            /// A pending DROP or RENAME COLUMN can give a name of the part to another column: build its statistics from the data read.
+            const auto columns_with_replaced_data = global_ctx->alter_conversions[part_num]->getColumnsInvalidatingIndexes();
 
             for (const auto & [column_name, column_stats] : result_statistics)
             {
                 auto it = part_statistics.find(column_name);
 
                 if (it == part_statistics.end() || !column_stats->structureEquals(*it->second)
-                    || (column_stats->hasSum() && !it->second->hasSum()))
+                    || (column_stats->hasSum() && !it->second->hasSum())
+                    || columns_with_replaced_data.contains(column_name))
                     global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, column_stats->cloneEmpty());
                 else
                     column_stats->merge(it->second);
