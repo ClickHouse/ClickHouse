@@ -386,10 +386,13 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_
 {
     checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
     const auto & settings = local_context->getSettingsRef();
-    if (auto version_range = getChangeDataFeedVersionRange(settings, /* snapshot_version */ std::nullopt))
+    const auto snapshot_version = getSnapshotVersion(settings);
+    /// A range without an end version ends at the version pinned by `delta_lake_snapshot_version`, as it does when
+    /// the files are listed: the kernel rejects a range whose first and last versions have different schemas, so the
+    /// range must not extend to a later commit which changes the schema.
+    if (auto version_range = getChangeDataFeedVersionRange(settings, snapshot_version))
         return getTableChanges(*version_range)->getSchema();
 
-    const auto snapshot_version = getSnapshotVersion(local_context->getSettingsRef());
     return getTableSnapshot(snapshot_version)->getTableSchema();
 }
 

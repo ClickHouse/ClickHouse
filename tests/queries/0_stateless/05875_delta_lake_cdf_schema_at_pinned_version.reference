@@ -1,0 +1,14 @@
+-- delta_lake_reload_schema_for_consistency = 0
+value
+_change_type
+_commit_version
+_commit_timestamp
+45	10	['insert']	[0]
+-- delta_lake_reload_schema_for_consistency = 1
+value
+_change_type
+_commit_version
+_commit_timestamp
+45	10	['insert']	[0]
+-- the same range with an explicit end version
+45	10
