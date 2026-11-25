@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
@@ -55,8 +56,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
 
     extern const S3AuthSettingsString role_arn;
@@ -67,14 +68,16 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
-    extern const S3AuthSettingsString google_service_account_key;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace ErrorCodes
@@ -84,12 +87,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static const std::unordered_set<std::string_view> required_configuration_keys =
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys =
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys =
 {
     "format",
     "compression",
@@ -113,6 +116,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "delete_checksum_algorithm",
     "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
@@ -135,7 +139,7 @@ String StorageS3Configuration::getDataSourceDescription() const
 
 String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
+    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const
@@ -208,6 +212,10 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
+/// Request settings which the storage definition (arguments or named collection) takes over the `<s3>` config,
+/// see `StorageS3Configuration::getExplicitRequestSettings`.
+static constexpr std::array explicit_request_setting_names = {"upload_checksum_algorithm", "delete_checksum_algorithm"};
+
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
@@ -229,7 +237,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
+            (std::filesystem::path(collection_url) / filename).string(),
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
@@ -261,7 +269,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->auth_settings.clearServerManagedRequestAuth();
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
-    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<SecretString>("secret_access_key");
     /// Default to 0 so a URL-only collection reads anonymously instead of using the server's identity; a
     /// collection can still opt in with `use_environment_credentials = 1`.
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
@@ -269,7 +277,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
-    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<SecretString>("session_token");
 
     if (collection.has("partition_strategy"))
     {
@@ -332,9 +340,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
     /// An explicit Google ADC triple or service account key is a user-supplied credential, so `gcp_oauth` with it is allowed.
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
-    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
-    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
-    s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<String>("google_service_account_key", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<SecretString>("google_adc_client_secret");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<SecretString>("google_adc_refresh_token");
+    s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<SecretString>("google_service_account_key");
     /// The Google credential of a collection (or of the query's key-value arguments) is explicit; the one merged from
     /// the server config above has just been replaced by it.
     s3_settings->auth_settings.google_credentials_explicit
@@ -346,6 +354,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     structure = collection.getOrDefault<String>("structure", "auto");
 
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
+
+    /// The collection already includes query overrides. The storage refreshes its settings from the `<s3>` config,
+    /// which must not replace what the collection set.
+    for (const auto * name : explicit_request_setting_names)
+    {
+        if (collection.has(name))
+            explicit_request_settings[name] = collection.get<String>(name);
+    }
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
 }
@@ -434,7 +450,7 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {
-        String path = s3_object_storage.getURI().uri_str;
+        String path(s3_object_storage.getURI().uri_str);
         fs::path root = path;
         fs::path suffix = parsing_result.path_suffix;
         url = S3::URI(String(root / suffix));
@@ -895,6 +911,18 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
 
+    /// Explicit arguments take priority over the `<s3>` config, both here and when the storage refreshes its settings
+    /// (see `StorageS3Configuration::getExplicitRequestSettings`).
+    /// Writes re-apply the `s3_*` session settings on top, so `s3_upload_checksum_algorithm` still wins for uploads.
+    for (const auto * name : explicit_request_setting_names)
+    {
+        if (auto value = getFromPositionOrKeyValue<String>(name, args, {}, key_value_args); value.has_value())
+        {
+            s3_settings->request_settings.setByName(name, value.value());
+            explicit_request_settings[name] = value.value();
+        }
+    }
+
     if (extra_credentials)
         args.push_back(extra_credentials);
 
@@ -1188,6 +1216,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     url = std::move(parsed_arguments.url);
     s3_settings = std::move(parsed_arguments.s3_settings);
+    explicit_request_settings = std::move(parsed_arguments.explicit_request_settings);
     s3_capabilities = std::move(parsed_arguments.s3_capabilities);
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 }

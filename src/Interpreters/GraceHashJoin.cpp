@@ -10,7 +10,6 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <base/FnTraits.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
@@ -138,27 +137,13 @@ namespace
         bool eof = false;
     };
 
-    std::deque<size_t> generateRandomPermutation(size_t from, size_t to)
+    std::vector<size_t> generateRandomPermutation(size_t from, size_t to)
     {
         size_t size = to - from;
-        std::deque<size_t> indices(size);
+        std::vector<size_t> indices(size);
         std::iota(indices.begin(), indices.end(), from);
         std::shuffle(indices.begin(), indices.end(), thread_local_rng);
         return indices;
-    }
-
-    // Try to apply @callback in the order specified in @indices
-    // Until it returns true for each index in the @indices.
-    void retryForEach(std::deque<size_t> indices, Fn<bool(size_t)> auto callback)
-    {
-        while (!indices.empty())
-        {
-            size_t bucket_index = indices.front();
-            indices.pop_front();
-
-            if (!callback(bucket_index))
-                indices.push_back(bucket_index);
-        }
     }
 }
 
@@ -271,19 +256,14 @@ public:
         std::unique_lock<std::mutex> lock(right_file_mutex, std::try_to_lock);
         if (!lock.owns_lock())
             return false;
-
-        if (inherited)
-        {
-            /// Ancestors are read before descendants, so this prefix also preserves right-side input order.
-            if (!right_prefix_file)
-                right_prefix_file.emplace(std::make_shared<const Block>(right_file.getHeader()), tmp_data);
-            addBlockImpl(block, *right_prefix_file, lock);
-        }
-        else
-            addBlockImpl(block, right_file, lock);
-        right_rows += block.rows();
-        right_bytes += block.bytes();
+        addRightBlockLocked(block, inherited, lock);
         return true;
+    }
+
+    void addRightBlock(const Block & block, bool inherited)
+    {
+        BucketLock lock(right_file_mutex);
+        addRightBlockLocked(block, inherited, lock);
     }
 
     /// Returns the planning estimate (rows, logical bytes) that the new sibling inherits, see `inherited_rows_estimate`.
@@ -372,6 +352,21 @@ public:
     const size_t idx;
 
 private:
+    void addRightBlockLocked(const Block & block, bool inherited, BucketLock & lock)
+    {
+        if (inherited)
+        {
+            /// Ancestors are read before descendants, so this prefix also preserves right-side input order.
+            if (!right_prefix_file)
+                right_prefix_file.emplace(std::make_shared<const Block>(right_file.getHeader()), tmp_data);
+            addBlockImpl(block, *right_prefix_file, lock);
+        }
+        else
+            addBlockImpl(block, right_file, lock);
+        right_rows += block.rows();
+        right_bytes += block.bytes();
+    }
+
     bool addBlockImpl(const Block & block, TemporaryBlockStreamHolder & writer, std::unique_lock<std::mutex> & lock)
     {
         ensureState(State::WRITING_BLOCKS);
@@ -429,29 +424,46 @@ template <JoinTableSide table_side>
 void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets, size_t except_index = 0, bool inherited_right = false)
 {
     chassert(blocks.size() == buckets.size());
-    retryForEach(
-        generateRandomPermutation(0, buckets.size()),
-        [&](size_t i)
+
+    /// The buckets whose file was being written by another thread when we tried them.
+    std::vector<size_t> busy_buckets;
+
+    /// First, write to the buckets that are free at the moment.
+    /// The order is random, so that the threads do not go to the same buckets at the same time.
+    for (size_t i : generateRandomPermutation(0, buckets.size()))
+    {
+        /// Skip empty and current bucket
+        if (!blocks[i].rows() || i == except_index)
+            continue;
+
+        bool flushed = false;
+        if constexpr (table_side == JoinTableSide::Left)
+            flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
+        if constexpr (table_side == JoinTableSide::Right)
         {
-            /// Skip empty and current bucket
-            if (!blocks[i].rows() || i == except_index)
-                return true;
+            if (inherited_right)
+                chassert(i > except_index);
+            flushed = buckets[i]->tryAddRightBlock(blocks[i], inherited_right);
+        }
 
-            bool flushed = false;
-            if constexpr (table_side == JoinTableSide::Left)
-                flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
-            if constexpr (table_side == JoinTableSide::Right)
-            {
-                if (inherited_right)
-                    chassert(i > except_index);
-                flushed = buckets[i]->tryAddRightBlock(blocks[i], inherited_right);
-            }
+        if (flushed)
+            blocks[i].clear();
+        else
+            busy_buckets.push_back(i);
+    }
 
-            if (flushed)
-                blocks[i].clear();
+    /// Then wait for the others. It is important to wait on the mutex and not to try again in a loop:
+    /// the owner of a mutex compresses and writes a block while holding it, so with many threads and
+    /// few buckets the threads would spend most of the CPU time on the attempts to lock.
+    for (size_t i : busy_buckets)
+    {
+        if constexpr (table_side == JoinTableSide::Left)
+            buckets[i]->addLeftBlock(blocks[i]);
+        if constexpr (table_side == JoinTableSide::Right)
+            buckets[i]->addRightBlock(blocks[i], inherited_right);
 
-            return flushed;
-        });
+        blocks[i].clear();
+    }
 }
 }
 

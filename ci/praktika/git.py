@@ -1,3 +1,4 @@
+import re
 import shlex
 import time
 
@@ -31,6 +32,13 @@ class Git:
     @staticmethod
     def get_commit_sha(ref: str) -> str:
         return Shell.get_output_or_raise(f"git rev-list -n1 {shlex.quote(ref)}")
+
+    @staticmethod
+    def merge_pr_number(commit: str) -> str:
+        """The number N of a GitHub pull request merge `Merge pull request #N ...`, or "" for any other commit."""
+        subject = Shell.get_output_or_raise(f"git log -1 --format=%s {shlex.quote(commit)}")
+        match = re.match(r"Merge pull request #(\d+) ", subject)
+        return match.group(1) if match else ""
 
     @staticmethod
     def tag_exists(name: str) -> bool:
