@@ -2,7 +2,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-
 cluster = ClickHouseCluster(__file__)
 initiator = cluster.add_instance("initiator")
 source = cluster.add_instance("source")
@@ -27,9 +26,16 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("layout", ["COMPLEX_KEY_DIRECT()", "COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)"])
+@pytest.mark.parametrize(
+    "layout", ["COMPLEX_KEY_DIRECT()", "COMPLEX_KEY_CACHE(SIZE_IN_CELLS 16)"]
+)
 def test_remote_source_user_profile(layout):
-    assert initiator.query("SELECT value FROM system.settings WHERE name = 'in_null_as_unknown'") == "0\n"
+    assert (
+        initiator.query(
+            "SELECT value FROM system.settings WHERE name = 'in_null_as_unknown'"
+        )
+        == "0\n"
+    )
     initiator.query("DROP DICTIONARY IF EXISTS default.squality_remote_dict")
     try:
         initiator.query(
