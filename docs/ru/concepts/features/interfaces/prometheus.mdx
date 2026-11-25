@@ -54,15 +54,18 @@ SET enable_time_series_table = 1;
 
 `<defaults/>` сохраняет встроенные обработчики для таких конечных точек, как `/ping`, а также для SQL-запросов. Указанный выше префикс предоставляет доступ к этим конечным точкам через один обработчик:
 
-| Конечная точка                    | Назначение                      |
-| --------------------------------- | ------------------------------- |
-| `/prometheus/api/v1/write`        | удалённая запись Prometheus     |
-| `/prometheus/api/v1/read`         | удалённое чтение Prometheus     |
-| `/prometheus/api/v1/query`        | мгновенные запросы PromQL       |
-| `/prometheus/api/v1/query_range`  | запросы PromQL по диапазону     |
-| `/prometheus/api/v1/format_query` | форматирование выражений PromQL |
-| `/prometheus/api/v1/series`       | Метаданные серии                |
-| `/prometheus/api/v1/metadata`     | Метаданные семейства метрик     |
+| Конечная точка                           | Назначение                      |
+| ---------------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`               | удалённая запись Prometheus     |
+| `/prometheus/api/v1/read`                | удалённое чтение Prometheus     |
+| `/prometheus/api/v1/query`               | мгновенные запросы PromQL       |
+| `/prometheus/api/v1/query_range`         | запросы PromQL по диапазону     |
+| `/prometheus/api/v1/format_query`        | форматирование выражений PromQL |
+| `/prometheus/api/v1/series`              | Метаданные серии                |
+| `/prometheus/api/v1/labels`              | Имена меток                     |
+| `/prometheus/api/v1/label/<name>/values` | Значения меток                  |
+| `/prometheus/api/v1/metadata`            | Метаданные семейства метрик     |
+| `/prometheus/api/v1/federate`            | Федерация последних выборок    |
 
 В примере в обработчике не указаны `database` и `table`. В каждом запросе необходимо передавать параметр запроса `table` (кроме `/format_query`, который только разбирает переданное выражение PromQL и не требует таблицы). Также можно передать `database`, использовать полное имя таблицы, например `prometheus.metrics`, или не указывать базу данных, чтобы использовать `default`. Это позволяет одному обработчику обслуживать несколько таблиц `TimeSeries`.
 
@@ -194,7 +197,7 @@ Grafana добавляет `/api/v1/query` или `/api/v1/query_range` к эт�
 При `httpMethod: POST` Grafana передаёт параметры запроса в теле запроса. ClickHouse читает как тело запроса, так и строку запроса URL, поэтому `customQueryParameters` по-прежнему применяется. Используйте `POST` для длинных выражений PromQL, поскольку длина URL ограничена.
 
 <Note>
-  Реализованы только конечные точки запросов `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, а также конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки, причём в `<name>` может использоваться принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов.
+  Реализованы только конечные точки запросов `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`, а также конечная точка [федерации](#federation) `/api/v1/federate`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки, причём в `<name>` может использоваться принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов.
 </Note>
 
 ### Точки входа SQL {#sql-entry-points}
@@ -240,6 +243,23 @@ curl --user default:<password> --get \
   --data-urlencode "metric=http_requests_total" \
   --data-urlencode "database=prometheus" \
   --data-urlencode "table=metrics"
+```
+
+## Федерация метрик {#federation}
+
+ClickHouse поддерживает конечную точку [федерации Prometheus](https://prometheus.io/docs/prometheus/latest/federation/) по адресу `/prometheus/api/v1/federate` (а также по любому пути, оканчивающемуся на `/federate`, который обслуживается обработчиком типа `query`). Для каждой серии, соответствующей селекторам `match[]`, она возвращает последнюю выборку за последние 5 минут в текстовом формате Prometheus, чтобы сервер Prometheus мог собирать с неё метрики:
+
+```yaml
+scrape_configs:
+  - job_name: clickhouse-federate
+    honor_labels: true
+    scheme: https
+    metrics_path: /prometheus/api/v1/federate
+    params:
+      'match[]': ['{job="node"}']
+      table: ['prometheus.metrics']
+    static_configs:
+      - targets: ['clickhouse.example.com:8443']
 ```
 
 ## Чтение метрик через удалённое чтение {#remote-read}

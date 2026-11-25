@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: '在 ClickHouse Observability 中使用 AI 驱动的 Text-to-Chart 功能，通过自然语言提示词生成图表。'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', '可视化', 'Chart Explorer', '自然语言', '可观测性']
+---
+
+借助 ClickHouse Observability 中的 Text-to-Chart 功能，您只需用纯文本描述想要查看的内容，即可创建可视化。无需手动选择指标、筛选条件和 group-by 字段，只要输入诸如“过去 3 天内按服务统计的错误计数”这样的提示词，AI 助手便会自动生成相应的图表。
+
+该功能借助大语言模型 (LLM) 将您的文本提示词转换为查询，再在 [Chart Explorer](/zh/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) 中生成可视化。
+
+## 前置条件 {#prerequisites}
+
+团队管理员需先在 **团队设置** 的 **配置生成式 AI** 中启用生成式 AI，具体步骤请参阅[启用生成式 AI](/zh/clickstack/observability/notebooks#enabling-generative-ai)。AI 模型和提供商由平台自动管理。
+
+## 使用 Text-to-Chart {#using-text-to-chart}
+
+<Steps>
+  <Step title="打开 Chart Explorer" id="navigate-chart-explorer">
+    在左侧边栏中选择 **Chart Explorer**。
+  </Step>
+
+  <Step title="选择数据源" id="select-data-source">
+    如果 Chart Explorer 顶部的 **AI 助手** 处于折叠状态，请将其展开。然后在提示词输入框旁的选择器中选择要可视化的数据源，例如 **日志** 或 **链路追踪**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Chart Explorer 界面：AI 助手已展开，已选择日志，并显示 Generate 按钮](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="输入文本提示词" id="enter-text-prompt">
+    在 **AI 助手** 的提示词输入框中，用自然语言描述要创建的图表。例如：
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    点击 **Generate**，即可根据提示词生成图表。随后在下方的构建器中检查生成的配置。您可以调整图表类型、筛选条件和分组方式，然后点击 **运行** 更新可视化。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![生成的按服务统计错误计数图表，AI 助手提示词已高亮显示](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 示例提示词 {#example-prompts}
+
+以下提示词展示了处理可观测性数据时的常见用例：
+
+| 提示词                                               | 数据源  | 描述              |
+| ------------------------------------------------- | ---- | --------------- |
+| `Error count by service over time`                | 日志   | 以图表展示各服务的错误发生频率 |
+| `Average request duration grouped by endpoint`    | 链路追踪 | 展示各端点的延迟模式      |
+| `P99 latency by service`                          | 链路追踪 | 识别各服务的尾延迟       |
+| `Count of 5xx status codes over the last 6 hours` | 日志   | 跟踪服务器错误趋势       |
+
+提示词可以引用已配置数据源中的任意列或属性。在提示词中写明具体的列名、筛选条件和时间范围，有助于 AI 生成您所需的图表。
+
+## 限制 {#limitations}
+
+* 目前仅支持将日志和链路追踪作为数据源，尚不支持 Prometheus 指标。
+* 图表的准确性取决于提示词是否清晰以及底层数据的结构。如果生成的图表不符合预期，请尝试换一种方式表述提示词，或显式指定列名。
+
+## 延伸阅读 {#further-reading}
+
+* [Text-to-Dashboard](/zh/clickstack/observability/text-to-dashboard) — 根据提示词生成并保存包含多个卡片的仪表盘
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 介绍该功能的博客文章
+
+* [仪表盘与可视化](/zh/clickstack/observability/features/dashboards/overview) — 使用 Chart Explorer 手动创建图表
+
+* [搜索](/zh/clickstack/observability/features/search) — 全文搜索与属性搜索语法
