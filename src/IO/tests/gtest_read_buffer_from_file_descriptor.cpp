@@ -163,7 +163,7 @@ void checkReadBigAgainstModel(bool with_seeks)
                 size_t forward = std::min(data.size() - pos, 2 * buf_size);
                 off_t shift = static_cast<off_t>(rng() % (back + forward + 1)) - static_cast<off_t>(back);
                 ASSERT_EQ(buf.seek(shift, SEEK_CUR), static_cast<off_t>(pos) + shift);
-                pos += shift;
+                pos = static_cast<size_t>(static_cast<off_t>(pos) + shift);
             }
             else
             {
@@ -173,7 +173,7 @@ void checkReadBigAgainstModel(bool with_seeks)
                 {
                     off_t shift = -static_cast<off_t>(1 + rng() % std::min(pos, buf_size - 1));
                     ASSERT_EQ(buf.seek(shift, SEEK_CUR), static_cast<off_t>(pos) + shift);
-                    pos += shift;
+                    pos = static_cast<size_t>(static_cast<off_t>(pos) + shift);
                 }
             }
 
