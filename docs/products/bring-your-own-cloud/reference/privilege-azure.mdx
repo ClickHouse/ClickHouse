@@ -1,0 +1,59 @@
+---
+title: 'BYOC privilege on Azure'
+slug: /cloud/reference/byoc/reference/privilege-azure
+sidebarTitle: 'Azure'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilege', 'azure', 'managed identity', 'service principal']
+description: 'The custom roles, managed identities, and role assignments that ClickHouse BYOC uses in your Azure subscription, with their permissions, scope, and purpose'
+doc_type: 'reference'
+---
+
+This page gives the permissions, scope, and purpose of each custom role, managed identity, and role assignment that ClickHouse BYOC uses in your Azure subscription. For a high-level summary of the BYOC permission model, see [BYOC privilege](/products/bring-your-own-cloud/reference/privilege).
+
+## Onboarding service principal {#onboarding-service-principal}
+
+The [Terraform module for Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) creates a service principal in your tenant for the ClickHouse BYOC multi-tenant application. The module assigns the custom role `ClickHouse BYOC Provisioner` to this service principal on the subscription. The scope of each permission is the subscription that the role is assigned to, so the service principal cannot change resources in other subscriptions or tenants.
+
+The following table describes the permissions of the `ClickHouse BYOC Provisioner` role. Each row is a group of Azure actions.
+
+| Permission group | Permissions | Purpose |
+|---|---|---|
+| Resource providers | Register the `Microsoft.Network`, `Microsoft.ContainerService`, `Microsoft.ManagedIdentity`, and `Microsoft.Storage` resource providers | Make sure that the subscription can host the BYOC resources |
+| Resource groups | Read, create, change, and delete resource groups | The resource groups `clickhouse-cloud-<infra>-default` and `clickhouse-cloud-<infra>-storage` of each BYOC infrastructure |
+| Virtual network | Read, create, change, and delete virtual networks, subnets, public IP addresses, and NAT gateways. Join subnets, public IP addresses, and NAT gateways. | The BYOC VNet and its outbound path |
+| Network security groups | Read, create, change, and delete network security groups and their rules. Join network security groups. | Control network access to the cluster |
+| Private Link | Read, create, change, and delete Private Link services. Join the frontend IP configurations of load balancers. | Private access to the AKS API server. The load balancer of the API server is in the AKS node resource group (`MC_<infra>_<region>`). |
+| Storage | Read, create, and change storage accounts, blob services, and blob containers. List the storage account keys. Read file services. No deletion of storage accounts or containers. No blob read or write. | Storage accounts that keep ClickHouse table data, backups, and monitoring data |
+| AKS | Read, create, change, and delete AKS clusters and node pools. Get the cluster admin and cluster user credentials. | Manage the AKS cluster and install the BYOC software |
+| Managed identities (read) | Read user-assigned managed identities. Assign them to resources. Read, create, change, and delete federated identity credentials. | Connect the managed identities to the Kubernetes service accounts in the cluster (workload identity) |
+| Managed identities (write) (optional, on by default) | Create, change, and delete user-assigned managed identities | Create the managed identities in the next section. You do not need it if you [bring your own IAM](/products/bring-your-own-cloud/onboarding/customization-azure#customer-managed-iam-azure) (`include_iam_write_permissions = false`). |
+| Authorization (read) | Read role definitions and role assignments | Read the IAM state |
+| Authorization (write) (optional, on by default) | Create, change, and delete custom role definitions and role assignments | Give the managed identities in the next section their roles. You do not need it if you [bring your own IAM](/products/bring-your-own-cloud/onboarding/customization-azure#customer-managed-iam-azure). |
+| Key Vault (optional, off by default) | Register the `Microsoft.KeyVault` resource provider. Check vault names. Read deleted vaults. Read, create, and change key vaults. Read, create, and change keys. Read key rotation policies. No deletion or purge of vaults or keys. No encrypt, decrypt, wrap, or unwrap. | Keys for [Transparent Data Encryption (TDE)](/products/cloud/guides/security/cmek#transparent-data-encryption-tde) |
+
+The module also gives the service principal the Microsoft Graph application permission `Application.ReadWrite.OwnedBy`. With this permission, the service principal can manage only the Entra applications and service principals that it owns. ClickHouse uses it to create the Entra application of the AKS cluster. The service principal cannot read or change users or other applications in your tenant.
+
+For the exact role definitions, see the [Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/azure/roles.tf).
+
+## Additional managed identities created by the controller {#additional-managed-identities-created-by-the-controller}
+
+In addition to the onboarding service principal created via Terraform, the controller creates several user-assigned managed identities and roles for each BYOC infrastructure.
+Each managed identity and custom role in the following table has the infra name as a prefix, such as `infra-ab-123`. Each managed identity is in the resource group `clickhouse-cloud-<infra>-default`. All ClickHouse services on the infrastructure share these managed identities. The workloads get short-lived tokens through federated identity credentials (workload identity). No secrets are kept for these managed identities.
+
+| Managed identity | Permissions | Purpose |
+|---|---|---|
+| `data-plane-mgmt` | `Storage Account Contributor` and `Storage Blob Data Contributor` on the storage resource group. `Managed Identity Contributor` on the default resource group. A custom role `data-plane-mgmt-pls-reader` on the default resource group: read Private Link services, read and approve private endpoint connections. `Azure Kubernetes Service Cluster Admin Role` on the AKS cluster. If autoscaling is on, also `Azure Kubernetes Service Cluster User Role` and `Azure Kubernetes Service RBAC Cluster Admin` on the AKS cluster. The ClickHouse management service uses it through a federated identity credential. | Day-to-day management of your ClickHouse services: storage accounts, access for the ClickHouse server pods, private endpoint connections, and the cluster |
+| `clickhouse-byoc` | A custom role `clickhouse-byoc` on the storage resource group: read and write blob containers. Read, write, delete, move, and add blobs. Used through workload identity by the pods of each ClickHouse service. | Identity of the ClickHouse server pods. Reads and writes table data and backups. |
+| `monitoring` | A custom role `monitoring` on the storage resource group, with the same permissions as `clickhouse-byoc`. Used through workload identity by Prometheus and Thanos. | Stores metrics for monitoring |
+| `tde-delegate` (only if TDE is on) | `Key Vault Crypto User` on the TDE key vault only. Used by the ClickHouse management service and by the pods of each ClickHouse service that has TDE on. | Encrypts and decrypts the TDE data keys. You can revoke its access to the key. |
+
+The controller also creates the following resources in your subscription for each BYOC infrastructure:
+
+| Resource | Permissions | Purpose |
+|---|---|---|
+| Entra application and service principal `<infra>-aks` | `Network Contributor` on the default resource group. `AcrPull` on the ClickHouse container registry, which is in a ClickHouse subscription. The onboarding service principal owns the application. The application has a client secret, which ClickHouse keeps. | Identity of the AKS cluster: network resources for the load balancers, and image pulls. The application is multi-tenant, so that it can pull images from the ClickHouse container registry. |
+| Key vault `<infra>-tde` with the key `tde-default-kek` (only if TDE is on) | `Key Vault Crypto User` for `<infra>-tde-delegate` | Key encryption key for TDE |
+| Key vault `<infra>-snc` with the key `snc-kek` (only if named collections are on) | `Key Vault Crypto User` for `<infra>-data-plane-mgmt` and `<infra>-clickhouse-byoc` | Encrypts the secrets of named collections |
+
+ClickHouse does not delete the key vaults or their keys when it deletes the BYOC infrastructure. The vaults and the keys stay in your subscription.
+
+For the exact role definitions, see the [`azure-per-infra-iam` module](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/azure-per-infra-iam/main.tf). This module creates the same managed identities and roles that the controller creates.
