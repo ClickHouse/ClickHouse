@@ -35,6 +35,11 @@ struct MarkInCompressedFile
  * `Reader` keeps a bounded set of decoded blocks. Plain marks use a bit-packed
  * representation that allows random access in O(1) time.
  *
+ * A retained compressed file is cheap to load, but every `Reader` decodes the blocks it touches again.
+ * So it is kept only while it pays off: it is not created at all if the bit-packed representation is
+ * estimated to take less memory, and it is converted to the bit-packed representation once its readers
+ * have decoded as many bytes as decoding the whole file takes (see `tryConvertToPacked`).
+ *
  * Typical memory usage of the bit-packed representation:
  *  * ~3 bytes/mark for integer columns
  *  * ~5 bytes/mark for string columns
@@ -108,12 +113,25 @@ public:
     static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
 
     /// Index and checksum the compressed blocks without decoding all marks.
+    /// If the bit-packed representation is estimated (by decoding a few samples of marks) to take
+    /// less memory than the compressed file with its block index, decodes all marks and returns
+    /// the bit-packed representation instead, so the choice never makes a cache entry larger.
     static std::shared_ptr<MarksInCompressedFile> createFromCompressedFile(
         PODArray<char, 4096, JemallocCacheAllocator> && content, size_t num_rows,
         size_t num_columns, bool adaptive, const String & file_name);
 
     [[nodiscard]] std::unique_ptr<Reader> createReader() const;
     [[nodiscard]] MarkInCompressedFile get(size_t idx, Reader * reader = nullptr) const;
+
+    /// True if this is a retained compressed file whose readers have already decoded, in total, at least as
+    /// many bytes as the whole file decompresses to. From this point on, decoding on demand costs more than
+    /// decoding everything once, so the entry should be replaced with the bit-packed representation.
+    [[nodiscard]] bool shouldConvertToPacked() const;
+
+    /// Decodes all marks of a retained compressed file into the bit-packed representation.
+    /// Returns nullptr if this is not a compressed file or if another thread has already claimed the conversion,
+    /// so concurrent readers of a shared cache entry don't repeat the work.
+    [[nodiscard]] std::shared_ptr<MarksInCompressedFile> tryConvertToPacked() const;
 
     [[nodiscard]] size_t approximateMemoryUsage() const;
 
@@ -168,6 +186,10 @@ private:
     PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
     PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
     std::shared_ptr<const CompressedFile> compressed_file;
+
+    [[nodiscard]] std::shared_ptr<MarksInCompressedFile> convertToPacked() const;
+    /// Estimates `approximateMemoryUsage` of the bit-packed representation from a few samples of marks.
+    [[nodiscard]] size_t estimatePackedMemoryUsage() const;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     [[nodiscard]] std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;

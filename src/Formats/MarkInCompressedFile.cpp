@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <iterator>
 #include <mutex>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -45,6 +47,13 @@ struct MarksInCompressedFile::CompressedFile
     String file_name;
     size_t num_columns = 0;
     size_t row_size = 0;
+    /// Size of all marks after decompression.
+    size_t decompressed_size = 0;
+
+    /// Total size of the blocks decompressed by all readers of this file so far.
+    mutable std::atomic<size_t> decoded_bytes{0};
+    /// Set by the thread that converts this file to the bit-packed representation.
+    mutable std::atomic<bool> conversion_claimed{false};
 };
 
 struct MarksInCompressedFile::Reader::Impl
@@ -71,11 +80,13 @@ struct MarksInCompressedFile::Reader::Impl
         size_t offset = index / file->num_columns * file->row_size + index % file->num_columns * sizeof(MarkInCompressedFile);
         const auto * end = std::upper_bound(file->blocks.begin(), file->blocks.end(), offset,
             [](size_t value, const CompressedFile::Block & block) { return value < block.decompressed_offset; });
+        bool is_decoded = false;
         for (size_t i = 0; i < readers.size(); ++i)
         {
             if (!readers[i]->buffer().empty() && static_cast<size_t>(readers[i]->getPosition()) == end->compressed_offset)
             {
                 next_eviction = i;
+                is_decoded = true;
                 break;
             }
         }
@@ -84,6 +95,8 @@ struct MarksInCompressedFile::Reader::Impl
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot reuse a failed marks reader for {}", file->file_name);
         next_eviction = (next_eviction + 1) % readers.size();
         const auto & block = *std::prev(end);
+        if (!is_decoded)
+            file->decoded_bytes.fetch_add(end->decompressed_offset - block.decompressed_offset, std::memory_order_relaxed);
         reader.seek(block.compressed_offset, offset - block.decompressed_offset);
         MarkInCompressedFile mark{};
         readBinaryLittleEndian(mark.offset_in_compressed_file, reader);
@@ -154,6 +167,7 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::createFromCompress
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected decompressed size {}, expected {}", decompressed_offset, expected_size);
         /// Sentinel for locating the last block and recognizing a reader positioned at its end.
         file->blocks.push_back(CompressedFile::Block{file->content.size(), decompressed_offset});
+        file->decompressed_size = decompressed_offset;
         /// The mark cache charges the allocated bytes, and the initial allocation is much larger than a typical index.
         file->blocks.shrink_to_fit();
     }
@@ -164,7 +178,103 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::createFromCompress
     }
     auto result = std::shared_ptr<MarksInCompressedFile>(new MarksInCompressedFile(num_rows * num_columns, {}, {}));
     result->compressed_file = std::move(file);
+
+    /// The mark cache charges an entry by its memory usage, so retaining the compressed file must not make
+    /// the entry larger than the bit-packed representation. This is not the case, for example, for small
+    /// compressed blocks (every block has a header and an index entry), for weak codecs, for small files
+    /// (the fixed overhead dominates), and for the repeated marks of `LowCardinality` dictionaries
+    /// (which bit-pack into almost nothing).
+    try
+    {
+        if (result->approximateMemoryUsage() > result->estimatePackedMemoryUsage())
+            return result->convertToPacked();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While decoding compressed marks from {}", file_name);
+        throw;
+    }
+
+    /// Sampling for the estimate is not a part of the work of the readers.
+    result->compressed_file->decoded_bytes.store(0, std::memory_order_relaxed);
     return result;
+}
+
+size_t MarksInCompressedFile::estimatePackedMemoryUsage() const
+{
+    /// Bit-pack a few windows of marks: at the beginning, in the middle, and at the end of the file.
+    /// A window spans several blocks of the bit-packed representation to account for their headers.
+    static constexpr size_t window_size = 4 * MARKS_PER_BLOCK;
+    static constexpr size_t num_windows = 3;
+
+    VectorWithMemoryTracking<std::pair<size_t, size_t>> windows;
+    if (num_marks <= window_size * num_windows)
+        windows.emplace_back(0, num_marks);
+    else
+        for (size_t i = 0; i < num_windows; ++i)
+            windows.emplace_back((num_marks - window_size) / (num_windows - 1) * i / MARKS_PER_BLOCK * MARKS_PER_BLOCK, window_size);
+
+    Reader reader(compressed_file);
+    PlainArray sample;
+    size_t sampled_marks = 0;
+    size_t sampled_bytes = 0;
+    for (const auto & [begin, count] : windows)
+    {
+        sample.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            sample[i] = reader.get(begin + i);
+
+        auto packed_sample = create(sample);
+        sampled_marks += count;
+        sampled_bytes += packed_sample->blocks.size() * sizeof(BlockInfo);
+        /// Without the overallocated element, which exists once per array and not once per window.
+        if (!packed_sample->packed.empty())
+            sampled_bytes += (packed_sample->packed.size() - 1) * sizeof(UInt64);
+    }
+
+    size_t fixed_bytes = sizeof(*this) + sizeof(UInt64);
+    if (!sampled_marks)
+        return fixed_bytes;
+    return fixed_bytes + static_cast<size_t>(static_cast<double>(sampled_bytes) * static_cast<double>(num_marks) / static_cast<double>(sampled_marks));
+}
+
+std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::convertToPacked() const
+{
+    const auto & file = *compressed_file;
+    CompressedReadBufferFromFile in(std::make_unique<ReadBufferFromOutsideMemoryFile>(
+        file.file_name, std::string_view(file.content.data(), file.content.size())));
+    /// The immutable compressed bytes were already checksummed while indexing.
+    in.disableChecksumming();
+
+    size_t granularity_size = file.row_size - file.num_columns * sizeof(MarkInCompressedFile);
+    size_t num_rows = num_marks / file.num_columns;
+    PlainArray row(file.num_columns);
+    Builder builder(num_marks);
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        for (auto & mark : row)
+        {
+            readBinaryLittleEndian(mark.offset_in_compressed_file, in);
+            readBinaryLittleEndian(mark.offset_in_decompressed_block, in);
+        }
+        in.ignore(granularity_size);
+        builder.addMarks(row.data(), row.size());
+    }
+    return builder.finish();
+}
+
+bool MarksInCompressedFile::shouldConvertToPacked() const
+{
+    return compressed_file
+        && !compressed_file->conversion_claimed.load(std::memory_order_relaxed)
+        && compressed_file->decoded_bytes.load(std::memory_order_relaxed) >= compressed_file->decompressed_size;
+}
+
+std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::tryConvertToPacked() const
+{
+    if (!compressed_file || compressed_file->conversion_claimed.exchange(true))
+        return nullptr;
+    return convertToPacked();
 }
 
 std::unique_ptr<MarksInCompressedFile::Reader> MarksInCompressedFile::createReader() const

@@ -141,6 +141,21 @@ MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
         marks = loadMarksSync();
     }
 
+    /// The readers of a compressed marks file decode its blocks again in every query. Once they have decoded
+    /// as much as the whole file, replace the cache entry with the bit-packed representation, so that further
+    /// queries don't decode anything. This bounds the total cost of decoding on demand by twice the cost of
+    /// decoding all marks during loading, while cold reads of a few ranges still decode only what they need.
+    if (mark_cache && save_marks_in_cache && marks->shouldConvertToPacked())
+    {
+        /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        if (auto packed_marks = marks->tryConvertToPacked())
+        {
+            mark_cache->replaceIfMatches(getCacheKey(), marks, packed_marks);
+            marks = std::move(packed_marks);
+        }
+    }
+
     watch.stop();
     ProfileEvents::increment(ProfileEvents::WaitMarksLoadMicroseconds, watch.elapsedMicroseconds());
     return std::make_unique<MergeTreeMarksGetter>(marks, num_columns_in_mark);
@@ -190,9 +205,10 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     /// The mark cache charges a lazily decoded marks file by its compressed size, while the
     /// bit-packed representation takes about 3 bytes per mark for integer columns and 5 bytes
-    /// per mark for string columns. Retain the compressed file only when it is not larger than
-    /// that, so weak codecs (such as `NONE` or `LZ4`) and tiny compressed blocks don't reduce
-    /// the number of parts the mark cache can hold. Otherwise decode and bit-pack all marks.
+    /// per mark for string columns. A compressed file larger than that is never worth retaining
+    /// (for example, with the `NONE` or `LZ4` codecs), so decode and bit-pack all its marks while reading it.
+    /// This is only a cheap upper bound that avoids buffering such files:
+    /// `createFromCompressedFile` makes the precise choice between the two representations.
     static constexpr size_t max_retained_compressed_bytes_per_mark = 4;
     bool retain_compressed_file = index_granularity_info.mark_type.compressed
         && file_size <= total_marks * max_retained_compressed_bytes_per_mark;
