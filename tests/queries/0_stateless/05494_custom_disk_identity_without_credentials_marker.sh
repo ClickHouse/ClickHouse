@@ -49,47 +49,63 @@ run_case()
     rm -rf "${dir}"
 }
 
-run_case created_before_26_7 ''
-run_case created_on_26_8 "${add_s3_marker}"
-run_case created_on_26_11 "${add_both_markers}"
-# The value may also be a quoted identifier.
-run_case created_on_26_11_identifier "${add_both_markers}" '`from_env T`'
-
 # A table detached permanently is not loaded at startup, so its disk is not registered when it is attached again. The
 # short `ATTACH` must still find the disk by the definition stored by the older version, not create an empty one.
 # `local_blob_storage` keeps its metadata in a directory named after the disk.
 export T2=local_blob_storage
-dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_permanently_detached"
-rm -rf "${dir}"
-run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1 -mn -q "$1" -- --custom_local_disks_base_directory="${dir}/" 2>&1 | grep -oE '^[0-9]+$|\([A-Z_]+\)'; }
-echo "--- permanently_detached"
-run "CREATE DATABASE d ENGINE = Atomic; CREATE TABLE d.p (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = disk(type = 'from_env T2', path = '${dir}/blobs/'); INSERT INTO d.p VALUES (7)"
-old_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_)
-sed -i "${add_both_markers}" "${dir}"/data/store/*/*/p.sql
-# Load the definition once to learn the name an older version gave the disk, and move the metadata there.
-run "SELECT 1" > /dev/null
-legacy_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_ | grep -v "${old_disk}")
-rm -rf "${dir}/data/disks/${legacy_disk}"
-mv "${dir}/data/disks/${old_disk}" "${dir}/data/disks/${legacy_disk}"
-run "SELECT count() FROM d.p"
-run "DETACH TABLE d.p PERMANENTLY"
-echo "attach"
-run "ATTACH TABLE d.p; INSERT INTO d.p VALUES (8); SELECT count() FROM d.p"
-echo "after restart"
-run "SELECT count() FROM d.p"
-rm -rf "${dir}"
+permanently_detached()
+{
+    local dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_permanently_detached"
+    rm -rf "${dir}"
+    run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1 -mn -q "$1" -- --custom_local_disks_base_directory="${dir}/" 2>&1 | grep -oE '^[0-9]+$|\([A-Z_]+\)'; }
+    echo "--- permanently_detached"
+    run "CREATE DATABASE d ENGINE = Atomic; CREATE TABLE d.p (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = disk(type = 'from_env T2', path = '${dir}/blobs/'); INSERT INTO d.p VALUES (7)"
+    local old_disk legacy_disk
+    old_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_)
+    sed -i "${add_both_markers}" "${dir}"/data/store/*/*/p.sql
+    # Load the definition once to learn the name an older version gave the disk, and move the metadata there.
+    run "SELECT 1" > /dev/null
+    legacy_disk=$(ls "${dir}/data/disks" | grep __tmp_internal_ | grep -v "${old_disk}")
+    rm -rf "${dir}/data/disks/${legacy_disk}"
+    mv "${dir}/data/disks/${old_disk}" "${dir}/data/disks/${legacy_disk}"
+    run "SELECT count() FROM d.p"
+    run "DETACH TABLE d.p PERMANENTLY"
+    echo "attach"
+    run "ATTACH TABLE d.p; INSERT INTO d.p VALUES (8); SELECT count() FROM d.p"
+    echo "after restart"
+    run "SELECT count() FROM d.p"
+    rm -rf "${dir}"
+}
 
 # A wrapper declared by an older version names the disk of the older form below it, while a newer table can have
 # registered the disk of the newer form too. Declaring the same wrapper again must find the wrapper.
-dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_mixed"
-rm -rf "${dir}"
-run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1 -mn -q "$1" -- --custom_local_disks_base_directory="${dir}/" --custom_cached_disks_base_directory="${dir}/caches/" 2>&1 | grep -oE '^[0-9a-z_]+$|\([A-Z_]+\)'; }
-leaf="disk(type = 'from_env T2', path = '${dir}/blobs/')"
-wrapper="disk(name = 'wrapper_disk', type = cache, path = '${dir}/caches/w/', max_size = '1Gi', disk = ${leaf})"
-echo "--- mixed"
-run "CREATE TABLE w (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; CREATE TABLE l (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${leaf}"
-sed -i "${add_both_markers}" "${dir}"/data/store/*/*/w.sql
-run "CREATE TABLE w2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; SELECT 'wrapper_ok'"
-w2_definition=$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w2.sql)
-[ -n "${w2_definition}" ] && [ "${w2_definition}" = "$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w.sql)" ] && echo "w2 same as w"
-rm -rf "${dir}"
+mixed()
+{
+    local dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_mixed"
+    rm -rf "${dir}"
+    run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1 -mn -q "$1" -- --custom_local_disks_base_directory="${dir}/" --custom_cached_disks_base_directory="${dir}/caches/" 2>&1 | grep -oE '^[0-9a-z_]+$|\([A-Z_]+\)'; }
+    local leaf="disk(type = 'from_env T2', path = '${dir}/blobs/')"
+    local wrapper="disk(name = 'wrapper_disk', type = cache, path = '${dir}/caches/w/', max_size = '1Gi', disk = ${leaf})"
+    echo "--- mixed"
+    run "CREATE TABLE w (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; CREATE TABLE l (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${leaf}"
+    sed -i "${add_both_markers}" "${dir}"/data/store/*/*/w.sql
+    run "CREATE TABLE w2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; SELECT 'wrapper_ok'"
+    local w2_definition
+    w2_definition=$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w2.sql)
+    [ -n "${w2_definition}" ] && [ "${w2_definition}" = "$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w.sql)" ] && echo "w2 same as w"
+    rm -rf "${dir}"
+}
+
+# The cases use separate directories and `clickhouse-local` processes, so they run concurrently (each runs
+# `clickhouse-local` many times, which is slow in sanitizer builds); their outputs are printed in order.
+out="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_out"
+run_case created_before_26_7 '' > "${out}_1" &
+run_case created_on_26_8 "${add_s3_marker}" > "${out}_2" &
+run_case created_on_26_11 "${add_both_markers}" > "${out}_3" &
+# The value may also be a quoted identifier.
+run_case created_on_26_11_identifier "${add_both_markers}" '`from_env T`' > "${out}_4" &
+permanently_detached > "${out}_5" &
+mixed > "${out}_6" &
+wait
+cat "${out}"_{1,2,3,4,5,6}
+rm -f "${out}"_{1,2,3,4,5,6}
