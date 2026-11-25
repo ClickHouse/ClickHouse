@@ -2,6 +2,10 @@
 # Tags: no-fasttest
 # Tag no-fasttest: needs the PostgreSQL and MySQL table engines, which the fast test does not build
 
+# A self-connect attempt that times out on a slow build is retried, and the failed attempt is reported at Warning.
+# The runner fails a test whose stderr is not empty, so keep only Error and above for all of this test's clients.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

@@ -6,8 +6,6 @@
 -- The run() error path throws BAD_ARGUMENTS when the requested pass count exceeds
 -- the total (46); previously uncovered because tests used valid pass counts or the default.
 
-SET enable_analyzer = 1;
-
 -- dump(WriteBuffer &, size_t): lists the first 3 pass names and descriptions, then the query tree
 EXPLAIN QUERY TREE dump_passes = 1, passes = 3 SELECT 1 + 1;
 

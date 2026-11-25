@@ -1,0 +1,91 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/python
+description: 'Установка и настройка Python для ClickHouse Observability и самоуправляемых развертываний.'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'инструментирование']
+sidebarTitle: 'Python'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Python SDK для ClickStack позволяет отправлять журналы и трассировку в ClickHouse Observability. SDK представляет собой дистрибутив OpenTelemetry, опубликованный под именем `hyperdx-opentelemetry`, и автоматически инструментирует поддерживаемые библиотеки и фреймворки Python.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## Установка SDK {#install-the-sdk}
+
+Установите [ClickStack Python SDK](https://github.com/hyperdxio/hyperdx-py) в окружение Python вашего приложения:
+
+```shell
+pip install hyperdx-opentelemetry
+opentelemetry-bootstrap -a install
+```
+
+Команда bootstrap устанавливает инструментирование для уже установленных зависимостей вашего приложения. Запускайте её после того, как эти зависимости будут установлены.
+
+## Настройте пункт назначения {#configure-destination}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия" />
+
+    Откройте в своём сервисе **Team Settings → Data → Managed Telemetry** и скопируйте **конечную точку OTLP HTTP** и **API key**. Используйте полную конечную точку HTTPS с указанием порта:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export HYPERDX_API_KEY='Bearer YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+
+  <Tab title="Самоуправляемый">
+    Используйте конечную точку OTLP HTTP вашего коллектора и ключ для ингестии. Если для коллектора не настроен TLS, укажите `http://` вместо `https://`. Инструкции по настройке коллектора см. в разделе [Приём данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export HYPERDX_API_KEY='YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    export OTEL_SERVICE_NAME='my-python-app'
+    ```
+  </Tab>
+</Tabs>
+
+## Запуск приложения {#start-your-application}
+
+Запустите приложение с автоматическим инструментированием:
+
+```shell
+export OTEL_LOG_LEVEL='warning'
+export OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION='false'
+opentelemetry-instrument python app.py
+```
+
+Замените `app.py` на точку входа вашего приложения.
+
+`OTEL_LOG_LEVEL` задаёт уровень логирования SDK. Укажите значение `warning`, чтобы зафиксировать приведённое ниже тестовое сообщение, или `info`, чтобы получать также журналы приложений с более низким уровнем важности. Если уровень не настроен, SDK по умолчанию использует `ERROR`.
+
+ClickStack SDK уже устанавливает экспортер журналов. Параметр `OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false` не позволяет инструментированию логирования OpenTelemetry добавить ещё один экспортер, что привело бы к дублированию записей журнала; при этом SDK по-прежнему экспортирует журналы.
+
+## Проверка ингестии {#verify-ingestion}
+
+Отправьте несколько запросов к приложению и запишите в журнал Python сообщение с уровнем `WARNING` или выше. В ClickHouse Observability выберите недавний временной диапазон и найдите в разделе Logs или Traces значение `my-python-app` (или настроенное вами имя сервиса).
+
+## Дополнительная настройка {#optional-configuration}
+
+Чтобы собирать заголовки и тела HTTP-запросов, перед запуском приложения включите расширенный сбор сетевых данных:
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+Заголовки и тела запросов могут содержать конфиденциальные данные. Включайте захват только тех данных, которые действительно планируете собирать.
+
+## Устранение неполадок {#troubleshooting}
+
+Если журналы не поступают, проверьте `OTEL_LOG_LEVEL`, а также уровни логгера и обработчиков вашего приложения. Настройте их так, чтобы фиксировались сообщения нужного уровня серьёзности.
+
+Сведения об устранении неполадок, связанных с инструментированием и экспортерами, см. в [руководстве по устранению неполадок OpenTelemetry для Python](https://opentelemetry.io/docs/zero-code/python/troubleshooting/).

@@ -21,6 +21,8 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
@@ -37,6 +39,7 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
+    extern const Event RowsSkippedByPrewhereReaders;
 }
 
 namespace DB
@@ -52,30 +55,6 @@ LoggerPtr getMergeTreeRangeReaderLogger()
 {
     static LoggerPtr log = getLogger("MergeTreeRangeReader");
     return log;
-}
-
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
-{
-    if (!column)
-        return true;
-
-    if (filter_column == column)
-        return false;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn, filter_column))
-            can_inplace = false;
-    });
-
-    return can_inplace;
 }
 
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
@@ -111,6 +90,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const auto & filter_data = filter.getData();
+    const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
 
     for (auto & column : columns)
     {
@@ -120,10 +100,14 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            if (canInplaceFilter(column, filter.getColumn()))
+            if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
+                column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
             {
-                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
-                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
+                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
+                column = column_sparse->index(*sparse_indices, 0);
+            }
+            else if (canInplaceFilter(column))
+            {
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);
                 column = std::move(mutable_column);
@@ -392,6 +376,7 @@ size_t MergeTreeRangeReader::Stream::finalize(MutableColumns & columns, Columns 
 void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffset granule_offset)
 {
     rows_per_granule.push_back(num_rows_);
+    raw_rows_per_granule.push_back(num_rows_);
     granule_offsets.push_back(std::move(granule_offset));
     total_rows_per_granule += num_rows_;
 }
@@ -567,6 +552,52 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
     return result;
 }
 
+MergeTreeRangeReader::ReadResult::NumRows MergeTreeRangeReader::ReadResult::survivingRowsPerGranule() const
+{
+    /// Without a pending filter, `rows_per_granule` already holds the survivor count of each granule:
+    /// a const-true filter keeps the raw rows (all survive), a const-false one is materialized by
+    /// `clear`, which zeroes every entry. With a pending filter, `rows_per_granule` may still hold the
+    /// raw rows read (filtering of an incomplete trailing granule, or of a not-yet-shrunk block, is
+    /// deferred), so the survivor count has to be read from `final_filter`, whose size equals
+    /// `total_rows_per_granule` and whose set bits are laid out granule by granule in `rows_per_granule`
+    /// order (see `checkInternalConsistency`).
+    if (!final_filter.present())
+        return rows_per_granule;
+
+    NumRows result(rows_per_granule.size());
+    size_t offset = 0;
+
+    if (final_filter.isSparse())
+    {
+        /// Sparse filter: the set positions are sorted and absolute within [0, total_rows_per_granule).
+        const auto & indices = final_filter.getSparseIndices()->getData();
+        size_t idx_pos = 0;
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            const size_t end = offset + rows_per_granule[i];
+            size_t survived = 0;
+            while (idx_pos < indices.size() && indices[idx_pos] < end)
+            {
+                ++idx_pos;
+                ++survived;
+            }
+            result[i] = survived;
+            offset = end;
+        }
+    }
+    else
+    {
+        const UInt8 * filter_data = final_filter.getData().data();
+        for (size_t i = 0; i < rows_per_granule.size(); ++i)
+        {
+            result[i] = countBytesInFilter(filter_data, offset, offset + rows_per_granule[i]);
+            offset += rows_per_granule[i];
+        }
+    }
+
+    return result;
+}
+
 std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
     WriteBufferFromOwnString out;
@@ -704,7 +735,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
     /// Shrinking a tail ends the current delayed read and forces a fresh seek
     /// for the next granule, so it only pays off when enough rows are dropped
     /// to outweigh the extra seek and misaligned filesystem-cache segment.
-    if (2 * total_zero_rows_in_tails > filter.size())
+    /// A chain that cannot read incomplete granules (Compact parts) only has whole-granule tails,
+    /// and its reader seeks to each column of each granule anyway, so dropping one costs no seek.
+    if (2 * total_zero_rows_in_tails > filter.size() || (!can_read_incomplete_granules_ && total_zero_rows_in_tails > 0))
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
@@ -895,7 +928,7 @@ static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
     if (isArchSupported(TargetArch::x86_64_v4))
         return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
@@ -1053,7 +1086,7 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset", "_distance", "_part_granule_offset"};
+[[clang::no_destroy]] const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset", "_distance", "_part_granule_offset"};
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
@@ -1095,18 +1128,20 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
 /// A block that is a whole stripe is served from the cache and written to it without a copy.
 /// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
-/// much less: the block shares the columns of the cache, so its size costs no memory. But not beyond
-/// twice `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs. Only if every reader of the
-/// chain can: the columns a later reader reads from disk would make the block as large.
+/// less: the block shares the columns of the cache, so it is not copied. But not beyond twice
+/// `max_stripe_block_rows`, see `MergeTreeReadTask::read`. Only if every reader of the chain can: the
+/// columns a later reader reads from disk would make the block as large.
 size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
-    size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
+    size_t rows_num, size_t stripe_marks, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const
 {
     const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);
     const size_t stripe_end = (current_mark / stripe_marks + 1) * stripe_marks;
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows)
+    /// `stripe_rows > 2 * max_stripe_block_rows` without overflowing for a huge `max_block_size`
+    /// (`stripe_rows` is positive here, because `rows >= stripe_rows` otherwise).
+    if (rows >= stripe_rows || (stripe_rows - 1) / 2 >= max_stripe_block_rows)
         return rows;
     for (auto * reader : columns_cache_readers)
     {
@@ -1183,7 +1218,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 }
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
-    size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
+    size_t max_rows, MarkRanges & ranges, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers)
 {
     IMergeTreeReader * const this_reader[] = {merge_tree_reader};
     if (columns_cache_readers.empty())
@@ -1253,7 +1288,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
 
             if (!aligned_to_stripes)
             {
-                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_block_size_rows, columns_cache_readers);
+                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_stripe_block_rows, columns_cache_readers);
                 aligned_to_stripes = true;
             }
 
@@ -1415,7 +1450,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
                 --last;
 
             chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
+            result.max_part_offset = result.granule_offsets[static_cast<ssize_t>(last) - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
         }
     }
 }
@@ -1772,7 +1807,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_icelake))
     {
         TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
@@ -1797,7 +1832,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
 {
     result.checkInternalConsistency();
 
@@ -1848,15 +1883,18 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
-
-        /// Carry over columns projected out at earlier steps: they may be needed
-        /// to evaluate defaults of columns missing in the part.
-        for (const auto & col : result.additional_columns)
+        /// Columns might be projected out. A later step may need them to evaluate defaults of columns missing in the part.
+        Block additional_columns;
+        if (keep_additional_columns)
         {
-            if (!additional_columns.has(col.name))
-                additional_columns.insert(col);
+            additional_columns = block;
+
+            /// Carry over columns projected out at earlier steps.
+            for (const auto & col : result.additional_columns)
+            {
+                if (!additional_columns.has(col.name))
+                    additional_columns.insert(col);
+            }
         }
 
         if (prewhere_info->actions)
@@ -1873,8 +1911,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!is_last_reader)
+        if (keep_additional_columns)
         {
             const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;
 
@@ -1916,12 +1953,20 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
-        /// is an O(rows) scan that the following optimize() does not otherwise need, so
-        /// keep it behind the guard.
-        if (performance_counters)
-            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
+
+        /// PREWHERE ProfileEvents: the number of rows this step filters out. The granule-level counters
+        /// (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders) are computed once per part by
+        /// `MergeTreeReadersChain` from the final, all-steps-applied result, because a granule may be split
+        /// across read blocks and a later PREWHERE step may drop a granule that an earlier one did not.
+        /// Rows that survived the previous steps and therefore enter this one. When an earlier step deferred its
+        /// filter, `num_rows` is still the full block size, so the survivor count has to be read from final_filter.
+        const size_t rows_before_prewhere_filter
+            = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+
         result.optimize(current_filter, can_read_incomplete_granules, false);
+        /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {
@@ -1933,6 +1978,17 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                     : current_filter;
 
             result.applyFilter(filter_to_apply);
+        }
+
+        /// Rows that this step filtered out: those that entered the step minus those that still survive
+        /// (mirrors the survivor count used for `rows_passed_filter` above). Summed over all steps, this is
+        /// the total number of rows dropped by PREWHERE. Counted only for the query's PREWHERE predicate, so a
+        /// row-level-security filter, a lightweight-delete mask, or an on-fly mutation is not attributed to it.
+        if (prewhere_info->is_query_prewhere)
+        {
+            const size_t rows_after_prewhere_filter
+                = result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
+            ProfileEvents::increment(ProfileEvents::RowsSkippedByPrewhereReaders, rows_before_prewhere_filter - rows_after_prewhere_filter);
         }
     }
 

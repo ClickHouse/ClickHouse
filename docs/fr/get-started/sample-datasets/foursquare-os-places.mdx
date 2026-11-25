@@ -7,25 +7,23 @@ keywords: ['jeu de données exemple', 'Foursquare', 'géospatial', 'Iceberg', 'p
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
-Foursquare OS Places contient plus de 100 millions de points d’intérêt commerciaux (POI),
+Foursquare OS Places contient plus de 100 millions de points d’intérêt commerciaux (POI),
 notamment des magasins, des restaurants, des parcs, des aires de jeux et des monuments. Dans ce guide, vous
 connecterez ClickHouse au catalogue Iceberg de Foursquare, explorerez le jeu de données et le chargerez
 dans une table optimisée pour les requêtes géospatiales.
 
 Le jeu de données est disponible via le [Foursquare Places Portal](https://places.foursquare.com/)
-et est gratuit sous licence Apache 2.0.
+et est gratuit sous licence Apache 2.0.
 
 <Note>
   Foursquare a modifié le mode d’accès à OS Places. Les anciennes versions de ce guide interrogeaient
-  des fichiers datés dans un bucket S3 public ; l’accès s’effectue désormais via le Places Portal et un
+  des fichiers date-pinned dans un bucket S3 public ; l’accès s’effectue désormais via le Places Portal et un
   catalogue Iceberg authentifié. Consultez la [documentation de Foursquare sur l’accès à OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)
   pour plus de détails.
 </Note>
 
 <div id="before-you-begin">
-  ## Avant de commencer
+  ## Avant de commencer {#before-you-begin}
 </div>
 
 Avant d’exécuter les requêtes de ce guide, vous avez besoin des éléments suivants :
@@ -34,7 +32,7 @@ Avant d’exécuter les requêtes de ce guide, vous avez besoin des éléments s
 * Un jeton d’accès créé depuis l’onglet **Access Data** du jeu de données **OS Places**
 
 <div id="connect-to-the-foursquare-catalog">
-  ## Connectez-vous au catalogue Foursquare
+  ## Connectez-vous au catalogue Foursquare {#connect-to-the-foursquare-catalog}
 </div>
 
 Gardez votre jeton d’accès confidentiel. Démarrez votre client ClickHouse, puis remplacez
@@ -58,7 +56,7 @@ donc évoluer au fil du temps. Les requêtes sans clause `ORDER BY` peuvent par 
 différentes de celles présentées dans les réponses de ce guide.
 
 <div id="verify-the-connection">
-  ## Vérifier la connexion
+  ## Vérifier la connexion {#verify-the-connection}
 </div>
 
 Interrogez une ligne de la table Iceberg `places_os` :
@@ -102,7 +100,7 @@ bbox:                (NULL,NULL,NULL,NULL)
 ```
 
 <div id="explore-the-data">
-  ## Explorer les données
+  ## Explorer les données {#explore-the-data}
 </div>
 
 La ligne d’exemple contient plusieurs champs NULL. Ajoutez des filtres pour obtenir une ligne plus complète :
@@ -189,7 +187,7 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## Chargez les données dans ClickHouse
+  ## Chargez les données dans ClickHouse {#loading-the-data}
 </div>
 
 Pour stocker les données, créez une table sur `clickhouse-server` ou dans ClickHouse Cloud.
@@ -364,9 +362,7 @@ ne désalignent les valeurs importées. La requête exclut `unresolved_flags`, c
 n’est pas nécessaire dans la table locale, et filtre les lignes sans coordonnées, car elles
 ne peuvent pas être positionnées sur la carte. Les autres valeurs sources nullables restent nulles dans la table locale.
 
-<div id="data-visualization">
-  ## Visualiser les données
-</div>
+## Visualiser les données {#data-visualization}
 
 <Note>
   Le modèle d&#39;accès de Foursquare a changé depuis la création de ces visualisations. La
@@ -378,10 +374,26 @@ ne peuvent pas être positionnées sur la carte. Les autres valeurs sources null
 Lors d&#39;un hackathon de l&#39;entreprise, le cofondateur et CTO de ClickHouse, Alexey Milovidov, a utilisé ClickHouse
 pour créer les visualisations suivantes à partir du jeu de données Foursquare.
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Carte de densité des points d'intérêt en Europe" />
+<div className="ch-image-md">
+  <Frame>
+    ![Carte de densité des points d'intérêt en Europe](/images/getting-started/example-datasets/visualization_1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="Bars à saké au Japon" />
+<div className="ch-image-md">
+  <Frame>
+    ![Bars à saké au Japon](/images/getting-started/example-datasets/visualization_2.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="Distributeurs automatiques de billets" />
+<div className="ch-image-md">
+  <Frame>
+    ![Distributeurs automatiques de billets](/images/getting-started/example-datasets/visualization_3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="Carte de l'Europe avec des points d'intérêt classés par pays" />
+<div className="ch-image-md">
+  <Frame>
+    ![Carte de l'Europe avec des points d'intérêt classés par pays](/images/getting-started/example-datasets/visualization_4.webp)
+  </Frame>
+</div>

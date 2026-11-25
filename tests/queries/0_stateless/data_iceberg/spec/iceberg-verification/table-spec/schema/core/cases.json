@@ -1,0 +1,526 @@
+{
+  "cases": [
+    {
+      "id": "flat-required-and-optional",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "data", "required": false, "type": "string" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "data", "parent": null, "required": false, "type": "string", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "fields-not-in-id-order",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 3, "name": "c", "required": true, "type": "int" },
+          { "id": 1, "name": "a", "required": true, "type": "int" },
+          { "id": 2, "name": "b", "required": false, "type": "int" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 3, "name": "c", "parent": null, "required": true, "type": "int", "doc": null },
+          { "id": 1, "name": "a", "parent": null, "required": true, "type": "int", "doc": null },
+          { "id": 2, "name": "b", "parent": null, "required": false, "type": "int", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "nested-struct",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "location",
+            "required": false,
+            "type": {
+              "type": "struct",
+              "fields": [
+                { "id": 3, "name": "lat", "required": true, "type": "double" },
+                { "id": 4, "name": "lon", "required": true, "type": "double" }
+              ]
+            }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "location", "parent": null, "required": false, "type": "struct", "doc": null },
+          { "id": 3, "name": "lat", "parent": 2, "required": true, "type": "double", "doc": null },
+          { "id": 4, "name": "lon", "parent": 2, "required": true, "type": "double", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "list-of-primitive",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "tags",
+            "required": true,
+            "type": { "type": "list", "element-id": 3, "element-required": false, "element": "string" }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "tags", "parent": null, "required": true, "type": "list", "doc": null },
+          { "id": 3, "name": "element", "parent": 2, "required": false, "type": "string", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "map-of-primitive",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "props",
+            "required": true,
+            "type": {
+              "type": "map",
+              "key-id": 3,
+              "key": "string",
+              "value-id": 4,
+              "value-required": false,
+              "value": "int"
+            }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "props", "parent": null, "required": true, "type": "map", "doc": null },
+          { "id": 3, "name": "key", "parent": 2, "required": true, "type": "string", "doc": null },
+          { "id": 4, "name": "value", "parent": 2, "required": false, "type": "int", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "list-of-struct",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "points",
+            "required": true,
+            "type": {
+              "type": "list",
+              "element-id": 3,
+              "element-required": true,
+              "element": {
+                "type": "struct",
+                "fields": [
+                  { "id": 4, "name": "x", "required": true, "type": "int" },
+                  { "id": 5, "name": "y", "required": false, "type": "int" }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "points", "parent": null, "required": true, "type": "list", "doc": null },
+          { "id": 3, "name": "element", "parent": 2, "required": true, "type": "struct", "doc": null },
+          { "id": 4, "name": "x", "parent": 3, "required": true, "type": "int", "doc": null },
+          { "id": 5, "name": "y", "parent": 3, "required": false, "type": "int", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "map-with-struct-value",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "by_name",
+            "required": false,
+            "type": {
+              "type": "map",
+              "key-id": 3,
+              "key": "string",
+              "value-id": 4,
+              "value-required": false,
+              "value": { "type": "struct", "fields": [{ "id": 5, "name": "count", "required": true, "type": "long" }] }
+            }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "by_name", "parent": null, "required": false, "type": "map", "doc": null },
+          { "id": 3, "name": "key", "parent": 2, "required": true, "type": "string", "doc": null },
+          { "id": 4, "name": "value", "parent": 2, "required": false, "type": "struct", "doc": null },
+          { "id": 5, "name": "count", "parent": 4, "required": true, "type": "long", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "schema-id-and-identifier-fields",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 7,
+        "identifier-field-ids": [1, 2],
+        "fields": [
+          { "id": 1, "name": "tenant", "required": true, "type": "string" },
+          { "id": 2, "name": "key", "required": true, "type": "long" },
+          { "id": 3, "name": "payload", "required": false, "type": "string" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 7,
+        "identifier-field-ids": [1, 2],
+        "fields": [
+          { "id": 1, "name": "tenant", "parent": null, "required": true, "type": "string", "doc": null },
+          { "id": 2, "name": "key", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 3, "name": "payload", "parent": null, "required": false, "type": "string", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "field-doc",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long", "doc": "primary key" },
+          { "id": 2, "name": "data", "required": false, "type": "string" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": "primary key" },
+          { "id": 2, "name": "data", "parent": null, "required": false, "type": "string", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "all-primitive-types",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "f_boolean", "required": false, "type": "boolean" },
+          { "id": 2, "name": "f_int", "required": false, "type": "int" },
+          { "id": 3, "name": "f_long", "required": false, "type": "long" },
+          { "id": 4, "name": "f_float", "required": false, "type": "float" },
+          { "id": 5, "name": "f_double", "required": false, "type": "double" },
+          { "id": 6, "name": "f_date", "required": false, "type": "date" },
+          { "id": 7, "name": "f_time", "required": false, "type": "time" },
+          { "id": 8, "name": "f_timestamp", "required": false, "type": "timestamp" },
+          { "id": 9, "name": "f_timestamptz", "required": false, "type": "timestamptz" },
+          { "id": 10, "name": "f_string", "required": false, "type": "string" },
+          { "id": 11, "name": "f_uuid", "required": false, "type": "uuid" },
+          { "id": 12, "name": "f_fixed", "required": false, "type": "fixed[16]" },
+          { "id": 13, "name": "f_binary", "required": false, "type": "binary" },
+          { "id": 14, "name": "f_decimal", "required": false, "type": "decimal(9, 2)" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "f_boolean", "parent": null, "required": false, "type": "boolean", "doc": null },
+          { "id": 2, "name": "f_int", "parent": null, "required": false, "type": "int", "doc": null },
+          { "id": 3, "name": "f_long", "parent": null, "required": false, "type": "long", "doc": null },
+          { "id": 4, "name": "f_float", "parent": null, "required": false, "type": "float", "doc": null },
+          { "id": 5, "name": "f_double", "parent": null, "required": false, "type": "double", "doc": null },
+          { "id": 6, "name": "f_date", "parent": null, "required": false, "type": "date", "doc": null },
+          { "id": 7, "name": "f_time", "parent": null, "required": false, "type": "time", "doc": null },
+          { "id": 8, "name": "f_timestamp", "parent": null, "required": false, "type": "timestamp", "doc": null },
+          { "id": 9, "name": "f_timestamptz", "parent": null, "required": false, "type": "timestamptz", "doc": null },
+          { "id": 10, "name": "f_string", "parent": null, "required": false, "type": "string", "doc": null },
+          { "id": 11, "name": "f_uuid", "parent": null, "required": false, "type": "uuid", "doc": null },
+          {
+            "id": 12,
+            "name": "f_fixed",
+            "parent": null,
+            "required": false,
+            "type": { "type": "fixed", "length": 16 },
+            "doc": null
+          },
+          { "id": 13, "name": "f_binary", "parent": null, "required": false, "type": "binary", "doc": null },
+          {
+            "id": 14,
+            "name": "f_decimal",
+            "parent": null,
+            "required": false,
+            "type": { "type": "decimal", "precision": 9, "scale": 2 },
+            "doc": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "decimal-max-precision",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "amount", "required": false, "type": "decimal(38, 10)" }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          {
+            "id": 2,
+            "name": "amount",
+            "parent": null,
+            "required": false,
+            "type": { "type": "decimal", "precision": 38, "scale": 10 },
+            "doc": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-field-does-not-exist",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [999],
+        "fields": [{ "id": 1, "name": "id", "required": true, "type": "long" }]
+      }
+    },
+    {
+      "id": "reject-identifier-optional-field",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [2],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "note", "required": false, "type": "string" }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-double-field",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [2],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "score", "required": true, "type": "double" }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-float-field",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [2],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          { "id": 2, "name": "score", "required": true, "type": "float" }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-non-primitive-field",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [2],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "loc",
+            "required": true,
+            "type": { "type": "struct", "fields": [{ "id": 3, "name": "x", "required": true, "type": "long" }] }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-nested-in-list",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [4],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "rows",
+            "required": true,
+            "type": {
+              "type": "list",
+              "element-id": 3,
+              "element-required": true,
+              "element": { "type": "struct", "fields": [{ "id": 4, "name": "k", "required": true, "type": "string" }] }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-nested-in-map-value",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [5],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "rows",
+            "required": true,
+            "type": {
+              "type": "map",
+              "key-id": 3,
+              "key": "string",
+              "value-id": 4,
+              "value-required": true,
+              "value": { "type": "struct", "fields": [{ "id": 5, "name": "k", "required": true, "type": "string" }] }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-map-key",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [3],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "props",
+            "required": true,
+            "type": {
+              "type": "map",
+              "key-id": 3,
+              "key": "string",
+              "value-id": 4,
+              "value-required": true,
+              "value": "string"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "identifier-nested-in-required-struct",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [3],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "key",
+            "required": true,
+            "type": { "type": "struct", "fields": [{ "id": 3, "name": "part", "required": true, "type": "string" }] }
+          }
+        ]
+      },
+      "decoded": {
+        "schema-id": 0,
+        "identifier-field-ids": [3],
+        "fields": [
+          { "id": 1, "name": "id", "parent": null, "required": true, "type": "long", "doc": null },
+          { "id": 2, "name": "key", "parent": null, "required": true, "type": "struct", "doc": null },
+          { "id": 3, "name": "part", "parent": 2, "required": true, "type": "string", "doc": null }
+        ]
+      }
+    },
+    {
+      "id": "reject-identifier-nested-in-optional-struct",
+      "valid": false,
+      "input": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [3],
+        "fields": [
+          { "id": 1, "name": "id", "required": true, "type": "long" },
+          {
+            "id": 2,
+            "name": "loc",
+            "required": false,
+            "type": { "type": "struct", "fields": [{ "id": 3, "name": "x", "required": true, "type": "long" }] }
+          }
+        ]
+      }
+    }
+  ]
+}

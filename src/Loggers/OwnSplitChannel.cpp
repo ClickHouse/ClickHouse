@@ -142,6 +142,11 @@ void logToSystemTextLogQueue(
     elem.logger_name = msg.getSource();
     elem.level = msg.getPriority();
     elem.source_file = msg.getSourceFile();
+    if (*msg.getSourceFunction() != '\0')
+    {
+        elem.source_file += "; ";
+        elem.source_file += msg.getSourceFunction();
+    }
 
     elem.source_line = msg.getSourceLine();
     elem.message_format_string = msg.getFormatString();
@@ -234,6 +239,11 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>>
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
+void OwnSplitChannel::setTextLogLevel(int max_priority)
+{
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+
 void OwnSplitChannel::setLevel(const std::string & name, int level)
 {
      auto it = channels.find(name);
@@ -282,8 +292,11 @@ void OwnAsyncSplitChannel::open()
     is_open = true;
     try
     {
-        if (text_log_max_priority && !text_log_thread)
+        if (text_log_runnable && (text_log_max_priority || text_log_has_consumer) && !text_log_thread)
+        {
             start_thread(text_log_thread, "AsyncTextLog", *text_log_runnable);
+            text_log_has_consumer = true;
+        }
 
         for (size_t i = 0; i < channels.size(); i++)
         {
@@ -518,12 +531,13 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// The async text-log thread services this handshake. It is disabled when text_log.level is none, and is
+    /// The async text-log thread services this handshake. It is not started when text_log.level is none at
+    /// startup (a later reload to none keeps it running, so messages accepted before still get flushed), and is
     /// not running while logging is stopped around
     /// remapExecutable (where the only caller is the fatal signal handler; the server accepts no connections
     /// yet) nor after shutdown, so return instead of waiting forever for a flag nobody will clear. Anything
     /// queued meanwhile is drained when the thread (re)starts.
-    if (!text_log_max_priority || !is_open)
+    if (!text_log_has_consumer || !is_open)
         return;
 
     /// Take a request number and wait until the async thread reports it as served. The thread checks the
@@ -548,6 +562,7 @@ void OwnAsyncSplitChannel::flushTextLogs()
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 {
     AsyncLogQueueSizes metrics;
+    std::lock_guard lock(registration_mutex);
     for (const auto & [name, channel] : name_to_channels)
     {
         for (size_t i = 0; i < channels.size(); i++)
@@ -786,26 +801,47 @@ void OwnAsyncSplitChannel::addChannel(
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel '{}' while the split channel is open", name);
 
-    auto element = name_to_channels.try_emplace(name, channel);
-    if (!element.second)
+    std::lock_guard lock(registration_mutex);
+    if (name_to_channels.contains(name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Channel {} is already registered", name);
-    channel->setLevel(level);
 
+    /// Do everything that can throw before changing any state, so a failure leaves the object as it was and
+    /// `channels`, `queues`, `threads` and `runnables` keep the same size for getAsynchronousMetrics.
+    auto queue = std::make_unique<LogQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_);
+    const size_t i = channels.size();
+    auto runnable = std::make_unique<OwnRunnableForChannel>(*this, i);
+    channels.reserve(i + 1);
+    queues.reserve(i + 1);
+    threads.reserve(i + 1);
+    runnables.reserve(i + 1);
+    auto element = name_to_channels.try_emplace(name, channel);
+
+    /// Nothing below can throw.
+    channel->setLevel(level);
     channels.emplace_back(element.first->second.get());
-    queues.emplace_back(std::make_unique<LogQueue>(async_queue_size, event_on_passed_message_, event_on_dropped_message_));
+    queues.emplace_back(std::move(queue));
     threads.emplace_back(nullptr);
-    const size_t i = threads.size() - 1;
-    runnables.emplace_back(new OwnRunnableForChannel(*this, i));
+    runnables.emplace_back(std::move(runnable));
 }
 
 void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority)
 {
     if (is_open)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempted to register channel for text_log while the split channel is open");
+    std::lock_guard lock(registration_mutex);
     text_log = log_queue;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
     text_log_thread = nullptr;
     text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
+}
+
+void OwnAsyncSplitChannel::setTextLogLevel(int max_priority)
+{
+    /// The consumer thread is started in `open` only when the initial level is not 0. Without it,
+    /// raising the level would enqueue messages nobody drains, so keep text_log off in that case.
+    if (!text_log_runnable || (is_open && !text_log_has_consumer))
+        return;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
