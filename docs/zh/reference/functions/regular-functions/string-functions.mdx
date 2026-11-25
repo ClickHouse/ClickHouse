@@ -1093,6 +1093,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+引入版本：v26.11.0
+
+计算两个字节字符串之间经归一化的[编辑距离](https://en.wikipedia.org/wiki/Edit_distance)相似度：
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`。
+返回值介于 `0` (编辑距离等于较长字符串的长度，例如 `'ab'` 和 `'ba'`) 与 `1` (两个字符串相等) 之间。两个空字符串视为相等。
+
+**语法**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**别名**：`levenshteinRatio`
+
+**参数**
+
+* `s1` — 第一个输入字符串。[`String`](/zh/reference/data-types/string)
+* `s2` — 第二个输入字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回两个字符串之间经归一化的编辑距离相似度。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+引入版本：v26.11.0
+
+与 [`editDistanceRatio`](#editDistanceRatio) 类似，但适用于 UTF8-encoded 字符串：编辑距离和长度均按码点计算。
+
+**语法**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**别名**：`levenshteinRatioUTF8`
+
+**参数**
+
+* `s1` — 第一个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
+* `s2` — 第二个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回两个 UTF8 字符串之间基于归一化编辑距离的相似度。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 引入版本：v24.6.0
@@ -1321,7 +1397,7 @@ SELECT endsWithUTF8('данных', 'ых');
 此函数会移除 HTML 标签、注释以及 script/style 元素，仅保留文本内容。它支持：
 
 * 移除所有 HTML/XML 标签
-* 移除注释 (`{/* */}`)
+* 移除注释 (`<!-- -->`)
 * 移除 script 和 style 元素及其内容
 * 处理 CDATA 区段 (按原样复制)
 * 正确处理并规范化空白字符
@@ -2691,7 +2767,7 @@ SELECT soundex('aksel')
 
 ## space {#space}
 
-首次引入版本：v23.5.0
+引入版本：v23.5.0
 
 按指定次数重复拼接空格 (` `) 。
 
@@ -2711,7 +2787,7 @@ space(n)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 SELECT space(3) AS res, length(res);
@@ -3163,6 +3239,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+引入版本：v26.11.0
+
+计算两个字节字符串之间归一化的 indel 相似度，结果与 Python 的 `Levenshtein.ratio` 相同：
+`2 * LCS / (length(s1) + length(s2))`，其中 `LCS` 为[最长公共子序列](https://en.wikipedia.org/wiki/Longest_common_subsequence)的长度。
+也可等价表示为 `1 - (insertions + deletions) / (length(s1) + length(s2))`。
+返回值介于 `0` (完全不同) 和 `1` (字符串相等) 之间。两个空字符串视为相等。
+
+**语法**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**参数**
+
+* `s1` — 第一个输入字符串。[`String`](/zh/reference/data-types/string)
+* `s2` — 第二个输入字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回两个字符串之间归一化的 indel 相似度。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**名称的模糊匹配**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+引入版本：v26.11.0
+
+与 [`stringSimilarityRatio`](#stringSimilarityRatio) 类似，但适用于 UTF8-encoded 字符串：长度按码点计算。
+
+**语法**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**参数**
+
+* `s1` — 第一个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
+* `s2` — 第二个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+返回两个 UTF8 字符串之间归一化的 indel 相似度。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}
