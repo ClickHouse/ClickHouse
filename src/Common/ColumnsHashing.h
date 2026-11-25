@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
 #include <base/demangle.h>
 #include <base/getL2CacheSize.h>
 #include <Common/HashTable/HashTable.h>
@@ -650,7 +651,7 @@ struct HashMethodSerialized
             chassert(row >= lc_range_begin && row < lc_range_end);
             if (lc_hashed_shift)
             {
-                LcHashedSlot & slot = lc_hashed_cache[(position * 0x9E3779B97F4A7C15ULL) >> lc_hashed_shift];
+                LcHashedSlot & slot = lc_hashed_cache[common::mulIgnoreOverflow(position, 0x9E3779B97F4A7C15ULL) >> lc_hashed_shift];
                 if (slot.position != position)
                 {
                     slot.position = position;
