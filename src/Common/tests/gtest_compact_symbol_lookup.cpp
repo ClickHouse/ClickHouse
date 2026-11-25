@@ -1,4 +1,5 @@
 #include <Common/CompactSymbolLookup.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -14,6 +15,12 @@ namespace DB
 {
 namespace
 {
+
+/// A step of a linear congruential generator: the multiplication and the addition are modulo 2^64.
+NO_SANITIZE_UNSIGNED_OVERFLOW uint64_t nextRandom(uint64_t state)
+{
+    return state * 6364136223846793005ULL + 1442695040888963407ULL;
+}
 
 /// A section produced by the encoder and the names in name index order, which is the sorted order.
 struct TestTable
@@ -45,24 +52,25 @@ protected:
     CompactNameWorkspace workspace;
     UInt64 now = 1000;
 
-    size_t maximumNameSize() const
+    [[nodiscard]] size_t maximumNameSize() const
     {
         return std::max(first.table->reader.maximumNameSize(), second.table->reader.maximumNameSize());
     }
 
-    size_t maximumGranuleSize() const
+    [[nodiscard]] size_t maximumGranuleSize() const
     {
         return std::max(first.table->reader.maximumNameGranuleSize(), second.table->reader.maximumNameGranuleSize());
     }
 
-    uint32_t sourceId(const TestTable & table) const { return &table == &first ? 0 : 1; }
+    [[nodiscard]] uint32_t sourceId(const TestTable & table) const { return &table == &first ? 0 : 1; }
 
     /// Looks the name up as the server does and checks it against the expected one.
     void expectName(const TestTable & table, uint32_t name_index)
     {
         std::string_view name = workspace.getName(*table.table, sourceId(table), name_index, now, maximumNameSize(), maximumGranuleSize());
         ASSERT_EQ(name, table.names.at(name_index)) << "name index " << name_index;
-        ASSERT_EQ(name.data()[name.size()], '\0');
+        /// The terminator is right after the view.
+        ASSERT_EQ(*(name.data() + name.size()), '\0');
     }
 
     static bool isCached(const TestTable & table, uint32_t name_index, UInt64 now_seconds)
@@ -134,7 +142,7 @@ TEST_F(CompactSymbolLookupTest, TwoTablesAlternately)
     uint64_t state = 1;
     for (size_t step = 0; step < 20000; ++step)
     {
-        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        state = nextRandom(state);
         const TestTable & table = (state >> 63) ? first : second;
         /// A small working set, so that names get cached and hits mix with misses.
         auto name_index = static_cast<uint32_t>((state >> 20) % 64 * 11 % table.names.size());

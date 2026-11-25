@@ -1,5 +1,6 @@
 #include <IO/ZstdContext.h>
 #include <Common/CompactSymbols.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <array>
@@ -29,6 +30,12 @@ constexpr size_t names_offset_field = 72;
 constexpr size_t names_size_field = 80;
 constexpr size_t addresses_offset_field = 88;
 constexpr size_t addresses_size_field = 96;
+
+/// A step of a linear congruential generator: the multiplication and the addition are modulo 2^64.
+NO_SANITIZE_UNSIGNED_OVERFLOW uint64_t nextRandom(uint64_t state)
+{
+    return state * 6364136223846793005ULL + 1442695040888963407ULL;
+}
 
 struct DecodedSymbol
 {
@@ -70,6 +77,13 @@ std::string_view nameGranuleFrame(const std::vector<char> & data, uint32_t granu
     return std::string_view(data.data() + names_offset + begin, end - begin);
 }
 
+/// `value + delta` for a delta that may be negative.
+template <typename T>
+T shifted(T value, int64_t delta)
+{
+    return static_cast<T>(static_cast<int64_t>(value) + delta);
+}
+
 /// Splices `frame` in place of a name granule and shifts the marks and the parts after it.
 void replaceNameGranule(std::vector<char> & data, uint32_t granule, std::string_view frame)
 {
@@ -85,10 +99,10 @@ void replaceNameGranule(std::vector<char> & data, uint32_t granule, std::string_
     for (uint32_t index = granule; index < granule_count; ++index)
     {
         size_t mark = marks_offset + index * sizeof(uint32_t);
-        writeField<uint32_t>(data, mark, static_cast<uint32_t>(readField<uint32_t>(data, mark) + delta));
+        writeField<uint32_t>(data, mark, shifted(readField<uint32_t>(data, mark), delta));
     }
-    writeField<uint64_t>(data, names_size_field, readField<uint64_t>(data, names_size_field) + delta);
-    writeField<uint64_t>(data, addresses_offset_field, readField<uint64_t>(data, addresses_offset_field) + delta);
+    writeField<uint64_t>(data, names_size_field, shifted(readField<uint64_t>(data, names_size_field), delta));
+    writeField<uint64_t>(data, addresses_offset_field, shifted(readField<uint64_t>(data, addresses_offset_field), delta));
     if (readField<uint64_t>(data, names_offset_field) != names_offset)
         throw std::runtime_error("Compact symbols test moved the names part");
 }
@@ -115,8 +129,11 @@ std::string decompressFrame(std::string_view frame, std::string_view dictionary)
     ZstdDCtxPtr context(ZSTD_createDCtx());
     if (!context)
         throw std::bad_alloc();
-    unsigned long long content_size = ZSTD_getFrameContentSize(frame.data(), frame.size());
-    if (content_size == ZSTD_CONTENTSIZE_ERROR || content_size == ZSTD_CONTENTSIZE_UNKNOWN)
+    /// zstd defines these as `0ULL - 1` and `0ULL - 2`; as constants they are computed at compile time.
+    static constexpr auto content_size_unknown = ZSTD_CONTENTSIZE_UNKNOWN;
+    static constexpr auto content_size_error = ZSTD_CONTENTSIZE_ERROR;
+    const auto content_size = ZSTD_getFrameContentSize(frame.data(), frame.size());
+    if (content_size == content_size_error || content_size == content_size_unknown)
         throw std::runtime_error("Compact symbols test frame has no content size");
     std::string payload(content_size, '\0');
     size_t size = ZSTD_decompress_usingDict(
@@ -243,11 +260,11 @@ struct LargeInput
         while (front_coded_size < training_size + training_size / 10)
         {
             /// A random token after the namespace keeps the prefix shared by sorted neighbours short.
-            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            state = nextRandom(state);
             std::string name = "_ZN2DB" + std::to_string(state >> 32);
             for (size_t word = 0; word < 8; ++word)
             {
-                state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+                state = nextRandom(state);
                 std::string_view chosen = words[(state >> 59) & 15];
                 name += std::to_string(chosen.size());
                 name += chosen;

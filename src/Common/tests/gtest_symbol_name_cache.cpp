@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/SymbolNameCache.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <atomic>
@@ -18,6 +19,12 @@ constexpr size_t MAX_OFFERS = 200;
 
 /// Never offered to a cache: lookups of it only mark that lookups happen.
 constexpr UInt32 ABSENT_KEY = 0xFFFFFF00;
+
+/// The seed of the generator of a thread: the multiplication is modulo 2^64.
+NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 seedOfThread(size_t thread_num)
+{
+    return 0x9E3779B97F4A7C15ULL * (thread_num + 1);
+}
 
 std::string nameFor(UInt32 key)
 {
@@ -538,7 +545,7 @@ TEST(SymbolNameCache, ConcurrentLookupsInsertsAndMaintenance)
 
     auto worker = [&](size_t thread_num)
     {
-        UInt64 rng = 0x9E3779B97F4A7C15ULL * (thread_num + 1);
+        UInt64 rng = seedOfThread(thread_num);
         char buf[256];
         size_t hits = 0;
         for (size_t i = 0; i < ops_per_thread; ++i)

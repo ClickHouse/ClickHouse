@@ -1,5 +1,6 @@
 #include <Common/SymbolNameCache.h>
 #include <Common/PerCPU.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <bit>
@@ -22,7 +23,8 @@ ALWAYS_INLINE inline void cpuRelax()
 }
 
 /// The finalizer of MurmurHash3: symbol indices are dense, so the low bits must be mixed with the high ones.
-ALWAYS_INLINE inline UInt32 mixKey(UInt32 key)
+/// The multiplications are modulo 2^32.
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline UInt32 mixKey(UInt32 key)
 {
     key ^= key >> 16;
     key *= 0x85ebca6bU;
@@ -44,7 +46,8 @@ ALWAYS_INLINE inline UInt32 makeStamp(UInt32 clock, bool used)
 
 /// Seconds of activity from the stamp to `clock`, modulo 2^31. A stamp ahead of the clock (a thread
 /// may write a stamp with a clock value read just before another thread advanced it) counts as age 0.
-ALWAYS_INLINE inline UInt32 stampAge(UInt32 stamp, UInt32 clock)
+/// The subtraction is modulo 2^32.
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline UInt32 stampAge(UInt32 stamp, UInt32 clock)
 {
     UInt32 age = ((clock << 1) - (stamp & ~1U)) >> 1;
     return age >= (1U << 30) ? 0 : age;
@@ -61,9 +64,18 @@ ALWAYS_INLINE inline bool isRecentlyUsed(UInt32 stamp, UInt32 clock)
     return stampWasUsed(stamp) && stampAge(stamp, clock) <= SymbolNameCache::RECENT_WINDOW_SECONDS;
 }
 
+/// Whether an offered miss is admitted: one offer in `ADMISSION_ONE_IN`, chosen by a hash of the key and of the
+/// number of the offer in its thread, so that neither a key nor a position in a sequence is always rejected.
+/// The counter and the multiplication are modulo 2^32.
+ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW inline bool isOfferAdmitted(UInt32 key, UInt32 & offers)
+{
+    ++offers;
+    return mixKey(key ^ (offers * 0x9E3779B9U)) % SymbolNameCache::ADMISSION_ONE_IN == 0;
+}
+
 UInt32 readNameSize(const char * block)
 {
-    UInt32 size;
+    UInt32 size = 0;
     memcpy(&size, block, sizeof(size));
     return size;
 }
@@ -116,18 +128,19 @@ struct BucketScan
     }
 
     /// No free place and no victim: every entry is recently used, and only growth makes room.
-    bool fullOfRecentlyUsed() const { return free_place == SymbolNameCache::BUCKET_SIZE && victim == SymbolNameCache::BUCKET_SIZE; }
+    [[nodiscard]] bool fullOfRecentlyUsed() const { return free_place == SymbolNameCache::BUCKET_SIZE && victim == SymbolNameCache::BUCKET_SIZE; }
 };
 
 }
 
 SymbolNameCache::Bucket::Bucket()
+    : keys{}
+    , names{}
 {
     for (size_t i = 0; i < BUCKET_SIZE; ++i)
     {
         keys[i] = EMPTY_KEY;
         stamps[i].store(0, std::memory_order_relaxed);
-        names[i] = nullptr;
     }
 }
 
@@ -155,7 +168,7 @@ public:
     ReaderSection(const ReaderSection &) = delete;
     ReaderSection & operator=(const ReaderSection &) = delete;
 
-    bool isEntered() const { return entered; }
+    [[nodiscard]] bool isEntered() const { return entered; }
 
 private:
     ReaderSlot & slot;
@@ -181,7 +194,7 @@ public:
     WriterLock(const WriterLock &) = delete;
     WriterLock & operator=(const WriterLock &) = delete;
 
-    bool isLocked() const { return locked; }
+    [[nodiscard]] bool isLocked() const { return locked; }
 
 private:
     std::atomic<bool> & flag;
@@ -219,7 +232,7 @@ public:
     ExclusiveLock(const ExclusiveLock &) = delete;
     ExclusiveLock & operator=(const ExclusiveLock &) = delete;
 
-    bool isLocked() const { return locked; }
+    [[nodiscard]] bool isLocked() const { return locked; }
 
 private:
     SymbolNameCache & cache;
@@ -357,7 +370,7 @@ void SymbolNameCache::add(UInt32 key, std::string_view name, UInt64 now_seconds)
         return;
 
     thread_local UInt32 offers = 0;
-    if (mixKey(key ^ (++offers * 0x9E3779B9U)) % ADMISSION_ONE_IN != 0)
+    if (!isOfferAdmitted(key, offers))
         return;
 
     const UInt32 clock = advanceClock(now_seconds);
