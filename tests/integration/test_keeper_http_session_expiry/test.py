@@ -49,6 +49,12 @@ def run_command(node, command, timeout):
     )
 
 
+def get_last_log_idx(node):
+    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="lgif")
+    info = dict(line.split("\t") for line in data.splitlines() if "\t" in line)
+    return int(info["last_log_idx"])
+
+
 def test_pending_requests_fail_on_session_expiry(started_cluster):
     keeper_utils.wait_nodes(cluster, [node1, node2])
     leader = keeper_utils.get_leader(cluster, [node1, node2])
@@ -68,14 +74,20 @@ def test_pending_requests_fail_on_session_expiry(started_cluster):
         pm.partition_instances(leader, follower)
         response = requests.get(storage_url(leader, prefix), timeout=30)
         assert response.status_code == 200, response.text
+        last_log_idx = get_last_log_idx(leader)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             # The write cannot commit without the follower, so the 5 s session expires while it is pending.
             write = executor.submit(
                 requests.post, storage_url(leader, prefix + "/child"), timeout=20
             )
-            time.sleep(1)
-            # The command's reads are queued behind the pending write of the same session.
+            # Wait until the write is in the leader's log, so the command's reads are queued behind it.
+            deadline = time.monotonic() + 3
+            while get_last_log_idx(leader) <= last_log_idx:
+                assert (
+                    time.monotonic() < deadline
+                ), "The write is not in the leader's log"
+                time.sleep(0.05)
             find = executor.submit(run_command, leader, find_command, 20)
             write_response = write.result()
             find_response = find.result()
