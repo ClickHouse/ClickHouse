@@ -1476,16 +1476,18 @@ size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
+    /// This check goes before any use of the descriptor: otherwise the error would depend on whether
+    /// the descriptor is open, and a query could find out which descriptor numbers the server uses.
+    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
+    if (args.format_name == "Distributed")
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
+
     struct stat buf{};
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
-
-    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
-    if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;
@@ -2815,7 +2817,7 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// recomputed values while the reader compares its own placeholders against it, which can drop
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
 }
 
 bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
@@ -3067,6 +3069,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// pushed into the format (without the conjuncts on virtual and hive partition columns).
     /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
+        return {};
+
+    if (std::ranges::any_of(top_k_filter->columns_deciding_threshold, [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); }))
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
