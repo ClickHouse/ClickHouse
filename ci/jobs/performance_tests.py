@@ -3070,16 +3070,14 @@ def rebuild_table(port, source, destination):
         Shell.check(f'{client} --query "DROP TABLE {source} SYNC"', strict=True, verbose=True)
 
 
-def rewrite_parts(port, database):
-    # Rewrite every part of the database with this server's binary and settings.
-    # Parts are not merged. Each keeps its part type and sparse columns.
+def rebuild_database(port, database):
+    # Rebuild every table of the database in place. Each table ends as one part.
     client = _perf_client(port)
     tables = Shell.get_output(f'{client} --query "SHOW TABLES FROM {database}"', strict=True).split()
     if not tables:
-        raise RuntimeError(f"rewrite_parts: no tables in {database}")
+        raise RuntimeError(f"rebuild_database: no tables in {database}")
     for table in tables:
-        # Without mutations_sync the ALTER does not wait for the rewrite.
-        Shell.check(f'{client} --query "ALTER TABLE {database}.{table} REWRITE PARTS SETTINGS mutations_sync = 1"', strict=True, verbose=True)
+        rebuild_table(port, f"{database}.{table}", f"{database}.{table}")
 
 
 POPULATE_DONE_MARKER = "test._populate_done"
@@ -3174,11 +3172,11 @@ def attach_datasets(port, server_db):
 
 
 def populate_data(port):
-    # Rebuild the hits datasets on one server, sequentially. The three inserts
+    # Rebuild the datasets on one server, sequentially. The three hits inserts
     # share the per-user memory limit (~28GiB) and hits_100m_single alone uses
     # ~21GiB, so running them in parallel is killed by the OvercommitTracker.
-    # A dedicated marker table is created only after everything below is
-    # done: it is the "done" signal for the re-entrant restart() skip. Table
+    # A dedicated marker table is created only after all tables are
+    # rebuilt: it is the "done" signal for the re-entrant restart() skip. Table
     # existence cannot serve as the marker, because the in-place *_single tables
     # already exist (attached from the tarball) before they are rebuilt.
     client = f"clickhouse-client --port {port}"
@@ -3186,13 +3184,13 @@ def populate_data(port):
         print(f"populate_data: server {port} already populated, skipping")
         return
     Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS test"', strict=True, verbose=True)
-    # Hits are re-inserted, tpch and tpcds are rewritten in place.
+    # The hits, tpch and tpcds datasets are rebuilt.
     # The values dataset keeps its tarball parts.
     rebuild_table(port, "default.hits_10m_single", "default.hits_10m_single")
     rebuild_table(port, "default.hits_100m_single", "default.hits_100m_single")
     rebuild_table(port, "datasets.hits_v1", "test.hits")
-    rewrite_parts(port, "tpch10")
-    rewrite_parts(port, "tpcds")
+    rebuild_database(port, "tpch10")
+    rebuild_database(port, "tpcds")
     Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
 
 
@@ -3719,9 +3717,9 @@ def main():
             f"cp -rv {perf_right_config} {perf_left}/",
             # Make copies of the original db for both servers. Use hardlinks instead
             # of copying to save space. The datasets are attached as-is; each
-            # server re-inserts or rewrites them on startup (see populate_data),
-            # so the parts are written by that server's own binary and settings
-            # instead of the frozen tarball format.
+            # server re-inserts them into its final tables on startup (see
+            # populate_data), so the parts are written by that server's own
+            # binary and settings instead of the frozen tarball format.
             f"rm -rf {perf_left}/db {perf_right}/db",
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
             f"cp -al {db_path} {perf_left}/db ||:",
