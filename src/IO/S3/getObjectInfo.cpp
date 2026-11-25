@@ -17,6 +17,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char s3_pause_between_head_object_and_get_object_tagging[];
+    extern const char s3_pause_before_get_object_tags_of_generation[];
 }
 
 namespace DB::ErrorCodes
@@ -200,6 +201,29 @@ ObjectAttributes getObjectTags(
     if (tags_version_id)
         *tags_version_id = pinnableVersionId(tag_outcome.GetResult().GetVersionId());
 
+    return tags;
+}
+
+ObjectAttributes getObjectTagsOfGeneration(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id,
+    const String & expected_etag)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::s3_pause_before_get_object_tags_of_generation);
+
+    auto tags = getObjectTags(client, bucket, key, version_id);
+    if (!version_id.empty() || expected_etag.empty())
+        return tags;
+
+    /// Looked up after the tags, so a replacement that the tags could have come from is still what the key points at.
+    const auto current = getObjectInfo(client, bucket, key, /*version_id=*/{}, /*with_metadata=*/false, /*with_tags=*/false);
+    if (current.etag != expected_etag)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "The object {} in bucket {} was rewritten before its tags were read (its `ETag` is {} instead of {})",
+            key, bucket, current.etag, expected_etag);
     return tags;
 }
 

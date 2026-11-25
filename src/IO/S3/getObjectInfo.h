@@ -64,6 +64,19 @@ ObjectAttributes getObjectTags(
     const String & version_id = {},
     String * tags_version_id = nullptr);
 
+/// The tags of the generation of an object that the caller has pinned everything else to, for a copy that restates
+/// them on a request it sends after it has read the object. `GetObjectTagging` takes no `ETag` condition, so without
+/// a `version_id` it answers for whatever the key points at now, which may be a newer generation than the bytes the
+/// caller already holds. The key is therefore looked up again after the tags are read, and
+/// `S3_OBJECT_CHANGED_DURING_READ` is thrown unless it still has `expected_etag`. Nothing is checked if `version_id`
+/// names the generation or if `expected_etag` is empty (the caller has pinned nothing).
+ObjectAttributes getObjectTagsOfGeneration(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id,
+    const String & expected_etag);
+
 size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,

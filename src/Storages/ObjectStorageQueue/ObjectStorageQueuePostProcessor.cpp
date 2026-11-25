@@ -1105,7 +1105,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(
                             else
                                 source_tags_reader = [&]
                                 {
-                                    return S3::getObjectTags(*src_client, src_bucket, object_from.remote_path, source_version_id);
+                                    /// The copy may hold the bytes of the object by now, so the tags are checked
+                                    /// to belong to the generation those bytes were read from.
+                                    return S3::getObjectTagsOfGeneration(
+                                        *src_client, src_bucket, object_from.remote_path, source_version_id, object_from.etag);
                                 };
                         }
                         /// Only a guarded move stamps the provenance, which recognises its own committed copy after a refused one.

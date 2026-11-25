@@ -813,10 +813,14 @@ void S3ObjectStorage::copyObject( // NOLINT
         std::optional<ObjectAttributes> source_tags;
         if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
             source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
-        /// An unguarded copy reads them only if it gets to a request that has to restate them.
+        /// An unguarded copy reads them only if it gets to a request that has to restate them. By then it may hold the
+        /// bytes of the object already, so the tags are checked to belong to the generation those bytes were read from.
         std::function<ObjectAttributes()> source_tags_reader;
         if (!guarded_copy && restates_source_properties && write_settings.object_storage_copy_preserve_source_tags)
-            source_tags_reader = [&] { return S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id); };
+            source_tags_reader = [&]
+            {
+                return S3::getObjectTagsOfGeneration(*current_client, src_bucket, src_key, source_version_id, source_if_match);
+            };
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
         auto blob_storage_log = BlobStorageLogWriter::create(disk_name);

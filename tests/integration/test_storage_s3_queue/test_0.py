@@ -951,6 +951,84 @@ def test_unguarded_move_without_copy_object_preserves_s3_properties(
     assert tags == {"classification": "sensitive", "team": "data platform"}
 
 
+
+PAUSE_BEFORE_TAGS_OF_GENERATION_FAILPOINT = "s3_pause_before_get_object_tags_of_generation"
+
+
+def test_unguarded_move_does_not_mix_the_tags_of_a_rewritten_source(started_cluster):
+    """With the native copy disabled the object is uploaded again: its bytes are read first, and its tags are
+    read only when the upload request is filled. `GetObjectTagging` cannot be pinned to an `ETag`, so on an
+    unversioned bucket a source replaced in between would give the bytes of one generation the tags of
+    another. The move has to notice it and publish nothing, so the replacement is ingested and moved whole."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_no_native_copy_mixed_tags_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    bucket = started_cluster.minio_bucket
+    rewritten = b"7,8,9\n"
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    client.put_object(
+        Bucket=bucket, Key=source_key, Body=b"1,2,3\n", Tagging="generation=first"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"/clickhouse/{table_name}",
+            "after_processing_move_preserve_tags": 1,
+        },
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        preserve_move_path=True,
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_TAGS_OF_GENERATION_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_TAGS_OF_GENERATION_FAILPOINT)
+        # The bytes of the first generation are buffered and its tags are not read yet.
+        client.put_object(
+            Bucket=bucket, Key=source_key, Body=rewritten, Tagging="generation=second"
+        )
+        assert count_minio_objects(started_cluster, bucket, processed_prefix) == 0
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_OF_GENERATION_FAILPOINT}"
+        )
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (1, 0)
+    )
+    destination_key = next(
+        obj.object_name
+        for obj in started_cluster.minio_client.list_objects(
+            bucket, prefix=processed_prefix, recursive=True
+        )
+    )
+    # Nothing was published from the first generation: the archive is the replacement, bytes and tags alike.
+    assert read_s3_object(started_cluster, bucket, destination_key) == rewritten
+    tags = {
+        item["Key"]: item["Value"]
+        for item in client.get_object_tagging(Bucket=bucket, Key=destination_key)[
+            "TagSet"
+        ]
+    }
+    assert tags == {"generation": "second"}
+
+
 def test_move_preserve_tags_setting(started_cluster):
     node = started_cluster.instances["instance"]
     token = generate_random_string()
