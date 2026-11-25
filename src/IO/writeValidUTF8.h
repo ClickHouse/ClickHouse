@@ -59,7 +59,7 @@ inline const char * skipASCII(const char * begin, const char * p, const char * e
     /// a vector register.
     auto non_ascii_bits = [](const char * at)
     {
-        UInt64 word;
+        UInt64 word = 0;
         memcpy(&word, at, sizeof(word));
         if constexpr (std::endian::native == std::endian::big)
             word = std::byteswap(word);
