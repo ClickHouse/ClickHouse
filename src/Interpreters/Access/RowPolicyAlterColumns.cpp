@@ -33,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
@@ -246,6 +247,15 @@ void checkRowPoliciesBeforeAlter(
             {
                 if (filter.empty())
                     continue;
+
+                /// a context without a user has the full access of the server, e.g. on a host of `ON CLUSTER`
+                if (!context->getUserID())
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Cannot check row policy {} before the ALTER: the query runs without a user, for example on a host of ON CLUSTER, "
+                        "so the check cannot apply the grants of the user to the policy. Enable the server setting "
+                        "distributed_ddl_use_initial_user_and_roles on every host and set distributed_ddl_entry_format_version "
+                        "to at least {}, or run the ALTER without ON CLUSTER",
+                        policy_name, DDLLogEntry::INITIATOR_USER_VERSION);
 
                 Names subquery_reads;
                 const auto used_columns = columnsReadByFilter(
