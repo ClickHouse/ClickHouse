@@ -44,6 +44,10 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        /// `Map` columns of `format_header` whose every requested use is `keys` (resp. `values`) and that no default expression
+        /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
+        NameSet map_columns_read_by_keys;
+        NameSet map_columns_read_by_values;
 
         void serialize(QueryPlanStepSerialization & ctx) const;
         static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
@@ -53,6 +57,8 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        bool hasDefaultOfColumnOrParent(const String & name) const;
+        bool defaultsDependOnTheirBlock(const ContextPtr & context) const;
         /// The filter without the conjuncts on hive partition and virtual columns:
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;
