@@ -31,6 +31,8 @@ for script in "SELECT (1; SELECT 2)" "SELECT 1; SELECT (2" "SELECT (1; SELECT 2]
 done
 
 # Whether the syntax error lists DoubleColon among the expected tokens.
-for query in "SELECT [1, 2] 3" "SELECT ((1, 2) 3)" "SELECT (1, (2, x) 3)" "SELECT [[1, 2], [3, x] 3]" "SELECT (1) 3" "SELECT [0x1] 3"; do
+for query in "SELECT [1, 2] 3" "SELECT ((1, 2) 3)" "SELECT (1, (2, x) 3)" "SELECT [[1, 2], [3, x] 3]" "SELECT (1) 3" "SELECT [0x1] 3" \
+    "SELECT ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] 3, x)" \
+    "SELECT ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, x] 3, x)"; do
     echo "$query: $($CLICKHOUSE_FORMAT --query "$query" 2>&1 | grep -c DoubleColon)"
 done
