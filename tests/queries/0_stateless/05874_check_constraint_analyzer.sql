@@ -89,9 +89,7 @@ WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
 
 -- The query tree passes run on an `IN` subquery: `final` is honoured and `grouping` is resolved.
 CREATE TABLE t_rmt (k Int32, v Int32) ENGINE = ReplacingMergeTree ORDER BY k;
-SYSTEM STOP MERGES t_rmt;
-INSERT INTO t_rmt SETTINGS async_insert = 0 VALUES (1, 10);
-INSERT INTO t_rmt SETTINGS async_insert = 0 VALUES (1, 20);
+INSERT INTO t_rmt SETTINGS async_insert = 0, optimize_on_insert = 0 VALUES (1, 10), (1, 20);
 CREATE TABLE t_final (x Int32, CONSTRAINT c CHECK x IN (SELECT v FROM t_rmt)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_final SETTINGS async_insert = 0, final = 1 VALUES (10); -- { serverError VIOLATED_CONSTRAINT }
 INSERT INTO t_final SETTINGS async_insert = 0, final = 1 VALUES (20);
