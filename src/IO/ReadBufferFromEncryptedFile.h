@@ -18,7 +18,7 @@ public:
         const String & file_name_,
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> in_,
-        const SecretString & key_,
+        const String & key_,
         const FileEncryption::Header & header_,
         size_t offset_ = 0);
 
@@ -33,10 +33,6 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
 
     void prefetch(Priority priority) override;
-
-    bool supportsReadAt() override { return in->supportsReadAt(); }
-    bool readsThroughPageCache() const override { return in->readsThroughPageCache(); }
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override;
 
 private:
     bool nextImpl() override;

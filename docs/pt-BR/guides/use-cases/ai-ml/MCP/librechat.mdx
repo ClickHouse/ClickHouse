@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 > Este guia explica como configurar o LibreChat com um servidor MCP ClickHouse usando Docker
 > e conectá-lo aos datasets de exemplo do ClickHouse.
 
@@ -35,7 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Crie e edite o arquivo .env" id="create-and-edit-env-file">
+  <Step title="Crie e edite o arquivo `.env`" id="create-and-edit-env-file">
     Copie o arquivo de configuração de exemplo de `.env.example` para `.env`:
 
     ```bash
@@ -107,7 +109,7 @@ doc_type: 'guide'
     usando o [host, nome de usuário e senha](/pt-BR/get-started/setup/cloud#connect-with-your-app)
     do seu serviço ClickHouse Cloud.
 
-    <Card title="Comece a usar o ClickHouse Cloud" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
+    <Card title="Comece a usar o ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
       Se você ainda não tem uma conta Cloud, comece a usar o ClickHouse Cloud hoje mesmo e receba US$ 300 em créditos. Ao final do teste gratuito de 30 dias, continue com um plano pré-pago conforme o uso ou entre em contato conosco para saber mais sobre nossos descontos por volume. Visite nossa página de preços para mais detalhes.
     </Card>
   </Step>
@@ -138,7 +140,7 @@ doc_type: 'guide'
   </Step>
 
   <Step title="Adicione um LLM local usando o Ollama (opcional)" id="add-local-llm-using-ollama">
-### Instale o Ollama {#install-ollama}
+    ### Instale o Ollama
 
     Acesse o [site do Ollama](https://ollama.com/download) e instale o Ollama no seu sistema.
 
@@ -152,7 +154,7 @@ doc_type: 'guide'
 
     Para ver uma lista de modelos, consulte a [biblioteca do Ollama](https://ollama.com/library)
 
-### Configure o Ollama em librechat.yaml {#configure-ollama-in-librechat-yaml}
+    ### Configure o Ollama em librechat.yaml
 
     Depois que o modelo for baixado, configure-o em `librechat.yaml`:
 
@@ -195,15 +197,7 @@ doc_type: 'guide'
 
     Na interface de chat, selecione `clickhouse-playground` como seu servidor MCP:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Selecione seu MCP server](/images/use-cases/AI_ML/MCP/librechat.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Selecione seu MCP server" size="md" />
 
     Agora você pode enviar um prompt ao LLM para explorar os datasets de exemplo do ClickHouse. Experimente:
 

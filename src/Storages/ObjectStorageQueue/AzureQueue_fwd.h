@@ -8,25 +8,21 @@ namespace AzureQueue
 {
 
 static constexpr auto TABLE_ENGINE_NAME = "AzureQueue";
+static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
 using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
-/// A function rather than a global map: a `static inline` map in a header is constructed by a static
-/// initializer in every translation unit that includes it.
-inline std::unordered_map<String, ValueMaskingFunc> settingsToHide()
+static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
-    return
+    {"after_processing_move_connection_string", [](const DB::Field & value) -> std::optional<std::string>
     {
-        {"after_processing_move_connection_string", [](const DB::Field & value) -> std::optional<std::string>
-        {
-            /// Not a String means there is nothing to mask; see the `nats_url` rule for why a rule
-            /// must not throw.
-            std::string masked_value;
-            if (!value.tryGet<std::string>(masked_value))
-                return {};
-            DB::maskAzureConnectionStringSecrets(masked_value);
-            return fmt::format("'{}'", masked_value);
-        }},
-    };
-}
+        /// Not a String means there is nothing to mask; see the `nats_url` rule for why a rule
+        /// must not throw.
+        std::string masked_value;
+        if (!value.tryGet<std::string>(masked_value))
+            return {};
+        DB::maskAzureConnectionStringSecrets(masked_value);
+        return fmt::format("'{}'", masked_value);
+    }},
+};
 
 }

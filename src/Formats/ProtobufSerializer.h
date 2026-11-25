@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-#include <Common/VectorWithMemoryTracking.h>
 #   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
@@ -42,7 +41,7 @@ public:
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,
         const DataTypes & data_types,
-        VectorWithMemoryTracking<size_t> & missing_column_indices,
+        std::vector<size_t> & missing_column_indices,
         const ProtobufSchemas::DescriptorHolder & descriptor,
         bool with_length_delimiter,
         bool with_envelope,

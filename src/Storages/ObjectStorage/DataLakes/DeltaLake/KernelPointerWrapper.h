@@ -13,12 +13,17 @@ namespace DeltaLake
 template <typename KernelType, void (*free_function)(KernelType *)>
 struct KernelPointerWrapper : boost::noncopyable
 {
-    KernelPointerWrapper() : ptr(nullptr) {}
+    KernelPointerWrapper() : ptr(nullptr), free_func(nullptr) {}
 
-    explicit KernelPointerWrapper(KernelType * ptr_) : ptr(ptr_) {}
+    explicit KernelPointerWrapper(KernelType * ptr_)
+        : ptr(ptr_)
+        , free_func(free_function)
+    {
+    }
 
     KernelPointerWrapper(KernelPointerWrapper && other) noexcept
         : ptr(other.ptr)
+        , free_func(other.free_func)
     {
         other.ptr = nullptr;
     }
@@ -28,6 +33,7 @@ struct KernelPointerWrapper : boost::noncopyable
     KernelPointerWrapper & operator=(KernelPointerWrapper && other) noexcept
     {
         std::swap(ptr, other.ptr);
+        std::swap(free_func, other.free_func);
         return *this;
     }
 
@@ -35,10 +41,11 @@ struct KernelPointerWrapper : boost::noncopyable
     {
         free();
         ptr = ptr_;
+        free_func = free_function;
         return *this;
     }
 
-    [[nodiscard]] KernelType * get() const { return ptr; }
+    KernelType * get() const { return ptr; }
 
     KernelType * release()
     {
@@ -49,11 +56,14 @@ struct KernelPointerWrapper : boost::noncopyable
 
 private:
     KernelType * ptr;
+    void (*free_func)(KernelType *) = nullptr;
 
     void free()
     {
-        if (ptr)
-            free_function(ptr);
+        if (ptr && free_func)
+            free_func(ptr);
+        else if (ptr)
+            chassert(free_func);
     }
 };
 

@@ -24,8 +24,6 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-/// Exported even under `-fvisibility=hidden`: libc must use these too, or memory it allocates would be freed by jemalloc.
-#pragma GCC visibility push(default)
 extern "C"
 {
 
@@ -257,7 +255,6 @@ void * __libc_pvalloc(size_t size) __attribute__((alias("pvalloc"))); // NOLINT(
 #endif
 
 } // extern "C"
-#pragma GCC visibility pop
 
 #pragma clang diagnostic pop
 

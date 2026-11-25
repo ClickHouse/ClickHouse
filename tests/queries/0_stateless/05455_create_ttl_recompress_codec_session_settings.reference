@@ -1,8 +1,0 @@
-1
-2
-t_delta	TTL d + toIntervalDay(1) RECOMPRESS CODEC(Delta) SETTINGS
-t_zxc	TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZXC) SETTINGS
-t_alter	TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZXC) SETTINGS
-t_modify	TTL d + toIntervalDay(1) RECOMPRESS CODEC(Delta) SETTINGS
-t_alter	['d','x','y']
-t_modify	['d','x','y']
