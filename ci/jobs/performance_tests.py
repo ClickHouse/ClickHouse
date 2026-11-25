@@ -3895,6 +3895,8 @@ def main():
         def run_tests():
             last_flush = time.monotonic()
             for test in test_files:
+                # Both servers store their data under perf_wd.
+                print(f"Free disk space before {test}: {shutil.disk_usage(perf_wd).free / 2**30:.1f} GiB")
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
