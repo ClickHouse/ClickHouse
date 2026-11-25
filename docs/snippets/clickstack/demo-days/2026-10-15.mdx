@@ -40,7 +40,7 @@ Connections with only a `TimeSeries` table now get a PromQL source without being
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/Lb77q9zFVmA?start=176" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
-PromQL line and stacked bar charts now have the same **Series Limit** display setting as builder and raw SQL charts. Previously, they capped rendered series at 250 in the browser, with an option to load the rest, but the setting was hidden and wasn't saved with the tile. 
+PromQL line and stacked bar charts now have the same **Series Limit** display setting as builder and raw SQL charts. Previously, they capped rendered series at 250 in the browser, with an option to load the rest, but the setting was hidden and wasn't saved with the tile.
 
 The limit is applied in the browser, just as it is for raw SQL charts. Prometheus's own `limit` parameter returns a subset sorted by labels rather than the top series by value, and the ClickHouse table-function fallback ignores it. The hidden-series hint also gives PromQL-specific advice: narrow your label matchers or add `sum by (...)`, rather than using `GROUP BY` or `WHERE`.
 
