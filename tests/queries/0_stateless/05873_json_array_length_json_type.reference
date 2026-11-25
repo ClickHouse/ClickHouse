@@ -78,10 +78,3 @@ SELECT JSONArrayLength('{"a":[1,2]}'::JSON), JSONArrayLength(materialize('{"a":[
 \N	\N
 SELECT toTypeName(JSONArrayLength('{}'::JSON)), toTypeName(JSONArrayLength([1])), toTypeName(JSONArrayLength(('{"d":[1]}'::JSON).d));
 Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)
-query condition cache keeps the format settings apart
-0
-0
-20000
-05873_qcc_tuple_1_populate	0
-05873_qcc_tuple_2_replay	1
-05873_qcc_tuple_3_other	0
