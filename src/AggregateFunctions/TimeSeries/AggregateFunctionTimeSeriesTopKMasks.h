@@ -5,7 +5,6 @@
 #include <utility>
 
 #include <memory>
-#include <unordered_map>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -23,6 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <base/sort.h>
@@ -215,7 +215,7 @@ public:
             writeBinaryLittleEndian(k, buf);
 
         /// A generic key is written once into a table of distinct keys, and entries refer to it by index.
-        [[maybe_unused]] std::unordered_map<const String *, UInt64> key_indices;
+        [[maybe_unused]] UnorderedMapWithMemoryTracking<const String *, UInt64> key_indices;
         if constexpr (generic_key)
         {
             VectorWithMemoryTracking<const String *> distinct_keys;
