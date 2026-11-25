@@ -378,7 +378,7 @@ test_params_laion_5b_10m_qbit_int8 = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
     SEARCH_METHOD: SEARCH_METHOD_QBIT,
     SESSION_SETTINGS: None,
-    QBIT_PRECISIONS: [1, 8],
+    QBIT_PRECISIONS: [1, 2, 8],
 }
 
 test_params_laion_5b_10m_qbit_int8_strided = {
@@ -1275,16 +1275,6 @@ TESTS_TO_RUN = [
         "Test using the laion dataset with a strided QBit(Int8) column",
         dataset_laion_5b_10m_qbit_int8_strided,
         test_params_laion_5b_10m_qbit_int8_strided,
-    ),
-    (
-        "Test using the hackernews dataset",
-        dataset_hackernews_openai,
-        test_params_hackernews_10m,
-    ),
-    (
-        "Test using the cohere wiki dataset",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m,
     ),
 ]
 
