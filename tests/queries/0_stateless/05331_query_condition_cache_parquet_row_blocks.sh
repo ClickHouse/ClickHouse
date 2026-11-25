@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-parallel-replicas
+# Random settings limits: input_format_parquet_preserve_order=(0, 0)
 # Tag no-fasttest: needs Parquet and S3
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache, which a parallel
 # test can clear at any moment (see 04498_query_condition_cache_local_files.sh).
