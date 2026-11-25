@@ -1407,7 +1407,7 @@ void StorageKafka2::threadFunc(size_t idx)
 }
 
 std::optional<StorageKafka2::StallKind>
-StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed)
+StorageKafka2::streamToViews(size_t idx, UInt64 cycle_epoch, const std::vector<StoragePtr> & views, bool & views_changed)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
 
@@ -1576,7 +1576,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(
     KeeperHandlingConsumer & consumer,
     const Stopwatch & watch,
     UInt64 cycle_epoch,
-    const std::vector<StorageID> & views,
+    const std::vector<StoragePtr> & views,
     bool & views_changed)
 {
     // Create an INSERT query for streaming data

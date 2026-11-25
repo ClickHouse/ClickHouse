@@ -712,7 +712,7 @@ void StorageKafka::threadFunc(size_t idx)
 }
 
 
-bool StorageKafka::streamToViews(UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed)
+bool StorageKafka::streamToViews(UInt64 cycle_epoch, const std::vector<StoragePtr> & views, bool & views_changed)
 {
     Stopwatch watch;
 

@@ -7,6 +7,7 @@
 #include <Core/StreamingHandleErrorMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <boost/circular_buffer.hpp>
 #include <cppkafka/configuration.h>
@@ -101,12 +102,13 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
-/// The resolvable views (by UUID) a streaming insert into `table_id` reaches: the ready dependent views and, through
-/// each materialized view's target table, their views. Empty while the dependent views are not ready.
-std::vector<StorageID> getStreamingViews(const StorageID & table_id, const ContextPtr & context);
+/// The resolvable views a streaming insert into `table_id` reaches: the ready dependent views and, through each
+/// materialized view's target table, their views. Empty while the dependent views are not ready.
+std::vector<StoragePtr> getStreamingViews(const StorageID & table_id, const ContextPtr & context);
 
-/// True if getStreamingViews(table_id, context) differs from `views`.
-bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StorageID> & views);
+/// True if getStreamingViews(table_id, context) returns other storage objects than `views`. Holding `views` stops an
+/// `Atomic` database from re-attaching one of them under the same UUID.
+bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StoragePtr> & views);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 

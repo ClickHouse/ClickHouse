@@ -180,7 +180,7 @@ private:
     size_t getPollTimeoutMillisecond() const;
     size_t getSchemaRegistrySkipBytes() const;
 
-    bool streamToViews(UInt64 cycle_epoch, const std::vector<StorageID> & views, bool & views_changed);
+    bool streamToViews(UInt64 cycle_epoch, const std::vector<StoragePtr> & views, bool & views_changed);
 
     void cleanConsumersByTTL();
     void cleanConsumers();

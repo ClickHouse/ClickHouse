@@ -49,7 +49,7 @@ KafkaSource::KafkaSource(
     size_t max_block_size_,
     bool commit_in_suffix_,
     std::optional<UInt64> cancel_epoch_,
-    std::optional<std::vector<StorageID>> streaming_views_)
+    std::optional<std::vector<StoragePtr>> streaming_views_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)

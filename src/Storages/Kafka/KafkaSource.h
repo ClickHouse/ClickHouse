@@ -29,7 +29,7 @@ public:
         size_t max_block_size_,
         bool commit_in_suffix = false,
         std::optional<UInt64> cancel_epoch_ = {},
-        std::optional<std::vector<StorageID>> streaming_views_ = {});
+        std::optional<std::vector<StoragePtr>> streaming_views_ = {});
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -60,7 +60,7 @@ private:
     const StreamingHandleErrorMode handle_error_mode;
     const UInt64 cancel_epoch;
     /// Background streaming only: the views (getStreamingViews) the insert pipeline of this cycle was built for.
-    const std::optional<std::vector<StorageID>> streaming_views;
+    const std::optional<std::vector<StoragePtr>> streaming_views;
     bool ended_on_views_change = false;
 
     Poco::Timespan max_execution_time = 0;
