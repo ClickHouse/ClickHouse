@@ -528,7 +528,15 @@ bool isAggregateFunctionName(const String & name)
     return AggregateFunctionFactory::instance().isAggregateFunctionName(name);
 }
 
-void windowizeImpl(ASTPtr & ast, const ASTs & partition)
+/// Makes the aggregate functions of an expression the window functions over a partition: an aggregate as a column,
+/// such as `update m: avg x by g from t`.
+///
+/// With `ordered`, the window is ordered by the number of the row (`__qrow`), and its frame is the whole partition.
+/// The values are the same, but the rows keep their order: ClickHouse sorts the rows by the keys of the partition,
+/// and the result is sorted back by `__qrow`, which is the number of the row before that sorting only if the sorting
+/// needs it (a function that a sorting does not need is calculated after it). And the aggregates that depend on
+/// the order of the rows, such as `first`, see the rows in their order.
+void windowizeImpl(ASTPtr & ast, const ASTs & partition, bool ordered)
 {
     checkStackSize();
     auto * function = ast->as<ASTFunction>();
@@ -548,6 +556,22 @@ void windowizeImpl(ASTPtr & ast, const ASTs & partition)
             definition->partition_by = makeExpressionList(std::move(keys));
             definition->children.push_back(definition->partition_by);
         }
+        if (ordered)
+        {
+            auto order = make_intrusive<ASTOrderByElement>();
+            order->direction = 1;
+            order->nulls_direction = 1;
+            order->children.push_back(makeIdentifier("__qrow"));
+            definition->order_by = makeExpressionList({order});
+            definition->children.push_back(definition->order_by);
+
+            definition->frame_is_default = false;
+            definition->frame_type = WindowFrame::FrameType::ROWS;
+            definition->frame_begin_type = WindowFrame::BoundaryType::Unbounded;
+            definition->frame_begin_preceding = true;
+            definition->frame_end_type = WindowFrame::BoundaryType::Unbounded;
+            definition->frame_end_preceding = false;
+        }
         function->setIsWindowFunction(true);
         function->window_definition = definition;
         function->children.push_back(definition);
@@ -556,7 +580,7 @@ void windowizeImpl(ASTPtr & ast, const ASTs & partition)
 
     if (function->arguments)
         for (auto & argument : function->arguments->children)
-            windowizeImpl(argument, partition);
+            windowizeImpl(argument, partition, ordered);
 }
 
 /// The names in `names` made unique by suffixes, as q does for the columns of a result: `x`, `x1`, `x2`.
@@ -808,8 +832,9 @@ QValue QCompiler::toScalar(const QValue & value, size_t offset)
 
 ASTPtr QCompiler::windowize(const ASTPtr & ast, const ASTs & partition, QScope * scope)
 {
+    /// Without a scope there is no number of the row, and the caller keeps the order of the rows itself.
     ASTPtr result = cloneForQuery(ast);
-    windowizeImpl(result, partition);
+    windowizeImpl(result, partition, scope != nullptr);
     if (scope)
         scope->uses_row_number = true;
     return result;
