@@ -2,6 +2,8 @@
 
 #include <boost/range/join.hpp>
 
+#include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
