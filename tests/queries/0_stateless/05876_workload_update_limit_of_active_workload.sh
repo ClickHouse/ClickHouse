@@ -2,8 +2,7 @@
 # Tags: no-parallel
 # no-parallel: the CPU resource schedules the threads of every query on the server
 
-# `CREATE OR REPLACE WORKLOAD` adds a limit to a workload that waits for CPU while its sibling of the same priority also waits.
-# It used to activate the workload twice in their common `fair` node and abort the server.
+# `CREATE OR REPLACE WORKLOAD` adds a limit to a workload that waits for CPU while its sibling of the same priority also waits
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
