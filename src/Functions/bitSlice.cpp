@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -38,6 +39,13 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
+    }
+
     [[nodiscard]] String getSignatureString() const override
     {
         /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).
@@ -53,6 +61,12 @@ public:
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
+
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_start, name, "offset");
+        if (number_of_arguments == 3)
+            checkIntegerArgumentFitsInt64(*arguments[2].column, name, "length");
 
         std::optional<Int64> start_const;
         std::optional<Int64> length_const;
@@ -106,7 +120,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)));
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -124,7 +138,7 @@ public:
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
+                        source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(start_value)), length_value);
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -230,7 +244,7 @@ public:
                 }
                 else
                 {
-                    UInt64 offset = -static_cast<UInt64>(start);
+                    UInt64 offset = common::negateIgnoreOverflow(static_cast<UInt64>(start));
                     size_t offset_byte = offset / word_size;
                     size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
                     if (offset_bit)
@@ -267,7 +281,7 @@ public:
 
         while (!src.isEnd())
         {
-            ssize_t remain_byte = src.getElementSize() - offset_byte;
+            ssize_t remain_byte = static_cast<ssize_t>(src.getElementSize()) - static_cast<ssize_t>(offset_byte);
             if (length < 0)
             {
                 length_byte = std::max(remain_byte + (length / word_size), 0z);
@@ -339,7 +353,7 @@ public:
             if (start && length)
             {
                 bool left_offset = start > 0;
-                size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
+                size_t offset = left_offset ? static_cast<size_t>(start - 1) : common::negateIgnoreOverflow(static_cast<size_t>(start));
                 size_t size = src.getElementSize();
 
                 size_t offset_byte = 0;
@@ -361,7 +375,7 @@ public:
                     shift_bit = left_truncate ? 0 : offset_bit;
                 }
 
-                ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
+                ssize_t remain_byte = left_offset ? static_cast<ssize_t>(size) - static_cast<ssize_t>(offset_byte) : static_cast<ssize_t>(offset_byte);
 
                 size_t length_byte = 0;
                 size_t over_bit = 0;
