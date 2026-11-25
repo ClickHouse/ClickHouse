@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Poco/Logger.h>
 #include <Common/StringUtils.h>
@@ -418,6 +419,10 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
     if (node.isFunction())
     {
+        /// An index column named like `blockSize()` stores its own values, not the result of the call.
+        if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node.getDAGNode()))
+            return false;
+
         auto function_node = node.toFunctionNode();
         auto function_name = function_node.getFunctionName();
 

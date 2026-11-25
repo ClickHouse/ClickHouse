@@ -820,6 +820,10 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
     if (node.isFunction())
     {
+        /// An index column named like `blockSize()` stores its own values, not the result of the call.
+        if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node.getDAGNode()))
+            return false;
+
         const auto function = node.toFunctionNode();
         auto function_name = function.getFunctionName();
         size_t function_arguments_size = function.getArgumentsSize();

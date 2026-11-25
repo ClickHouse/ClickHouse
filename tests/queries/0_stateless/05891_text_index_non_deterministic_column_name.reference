@@ -1,0 +1,21 @@
+-- text
+equals	8000
+equals, direct read	8000
+equals, no direct read	8000
+hasToken	8000
+hasAnyTokens	8000
+IN	8000
+control: column	0
+control: index used	1
+-- tokenbf_v1
+equals	8000
+hasToken	8000
+IN	8000
+control: column	0
+control: index used	1
+-- ngrambf_v1
+equals	8000
+LIKE	8000
+IN	8000
+control: column	0
+control: index used	1
