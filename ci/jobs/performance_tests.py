@@ -71,30 +71,47 @@ REPORT_LOCAL_SERVER_SETTINGS = [
     "--memory_worker_use_cgroup=0",
 ]
 
-GET_HISTORICAL_TRESHOLDS_QUERY = """\
-SELECT test, query_index,
-    quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    query_display_name
-FROM query_metrics_v2
--- We use results at least one week in the past, so that the current
--- changes do not immediately influence the statistics, and we have
--- some time to notice that something is wrong.
-WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
-    AND metric = 'client_time'
-    AND pr_number = 0
-    AND workflow_name = 'MasterCI'
-    -- The same runs, selected by the key prefix so that the PR runs are not read.
-    AND new_sha IN (
-        SELECT new_sha FROM perf_test_times_v1
-        -- The job writes both tables, so their dates differ by a day at most.
-        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
-                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
-            AND pr_number = 0
-            AND workflow_name = 'MasterCI')
--- The display name is part of the key: compare.sh joins this file on all three.
-GROUP BY test, query_index, query_display_name
-HAVING count() > 100"""
+# The learned per-query thresholds: 1.5 times the 0.99 quantile of what `MasterCI`
+# measured for the query over a month. The job does not compute them: that reads
+# every metric of a month of master runs, over 1 TB, which the `play` user may not
+# (`TOO_MANY_BYTES`), and the answer is the same for every job of a day. CIDB
+# computes them once a day instead. The refreshable materialized view
+# `perf_query_thresholds_mv` appends the result of this query to
+# `HISTORICAL_THRESHOLDS_TABLE`, with the time of the refresh in `computed_at`:
+#
+#     SELECT test, query_index,
+#         quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+#         quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+#         query_display_name
+#     FROM query_metrics_v2
+#     -- We use results at least one week in the past, so that the current
+#     -- changes do not immediately influence the statistics, and we have
+#     -- some time to notice that something is wrong.
+#     WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
+#         AND metric = 'client_time'
+#         AND pr_number = 0
+#         AND workflow_name = 'MasterCI'
+#         -- The same runs, selected by the key prefix so that the PR runs are not read.
+#         AND new_sha IN (
+#             SELECT new_sha FROM perf_test_times_v1
+#             -- The job writes both tables, so their dates differ by a day at most.
+#             WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+#                     AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+#                 AND pr_number = 0
+#                 AND workflow_name = 'MasterCI')
+#     -- The display name is part of the key: compare.sh joins this file on all three.
+#     GROUP BY test, query_index, query_display_name
+#     HAVING count() > 100
+HISTORICAL_THRESHOLDS_TABLE = "perf_query_thresholds_v1"
+
+GET_HISTORICAL_TRESHOLDS_QUERY = f"""\
+SELECT test, query_index, max_diff, max_stat_threshold, query_display_name
+FROM {HISTORICAL_THRESHOLDS_TABLE}
+-- The newest snapshot. One that was not refreshed for a week is not used: the
+-- answer is then empty, and the queries are judged without their learned thresholds.
+WHERE computed_at = (
+    SELECT max(computed_at) FROM {HISTORICAL_THRESHOLDS_TABLE}
+    WHERE computed_at >= now() - INTERVAL 1 WEEK)"""
 
 INSERT_HISTORICAL_DATA = """\
 INSERT INTO query_metrics_v2
@@ -1001,6 +1018,14 @@ def get_binary_commit_sha(binary):
     return sha
 
 
+def get_binary_link_flags(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    return Shell.get_output_or_raise(
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='LINK_FLAGS'\""
+    )
+
+
 def write_ci_logs_sender_user(config_dir, binary):
     """Write the `ci_logs_sender` user, which the export views run as, into a
     server's users.d - without the settings that build does not know.
@@ -1689,6 +1714,29 @@ def write_thread_stack_alignment(servers, path):
             f.write("\t".join(row) + "\n")
 
 
+def reference_timeout_warnings(workdir):
+    """A warning for each SQL query that only reads and ran out of its time limit on the reference server only.
+
+    `perf.py` measures such a query on the tested server, as a `partial` query that the report does not compare,
+    and writes a `reference-timeout` line (query index, `prewarm` or `run`, limit in seconds) to the raw output of
+    the test. A time limit exceeded on the tested server is an error of the test instead.
+    """
+    warnings = []
+    for path in sorted(Path(workdir).glob("*-raw.tsv")):
+        test = path.name.removesuffix("-raw.tsv")
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                fields = line.rstrip("\n").split("\t")
+                if fields[0] != "reference-timeout" or len(fields) < 4:
+                    continue
+                run = "the prewarm run" if fields[2] == "prewarm" else "a measured run"
+                warnings.append(
+                    f"Query {fields[1]} of test '{test}' ran out of its time limit ({fields[3]} s) on the reference "
+                    f"server in {run}: it is measured on the tested server only and is not compared"
+                )
+    return warnings
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
     parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
@@ -1700,6 +1748,11 @@ def parse_args():
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
     parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
+    parser.add_argument(
+        "--allow-non-thinlto",
+        action="store_true",
+        help="Compare a tested binary built without ThinLTO with the ThinLTO reference anyway",
+    )
     return parser.parse_args()
 
 
@@ -2994,6 +3047,20 @@ def _perf_client(port):
     )
 
 
+def remove_outdated_parts(client, table, timeout=120):
+    # A cleanup thread that finds little to remove sleeps up to max_cleanup_delay_period (300 s); START CLEANUP wakes it.
+    database, name = table.split(".")
+    # `_state` also lists the parts being deleted, which `active = 0` does not.
+    query = f"SELECT count() FROM system.parts WHERE database = '{database}' AND table = '{name}' AND _state != 'Active'"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        Shell.check(f'{client} --query "SYSTEM START CLEANUP {table}"', strict=True)
+        time.sleep(1)
+        if Shell.get_output_or_raise(f'{client} --query "{query}"') == "0":
+            return
+    raise RuntimeError(f"remove_outdated_parts: the replaced parts of {table} are still on disk after {timeout}s")
+
+
 def rebuild_table(port, source, destination):
     # Re-insert an attached dataset through the running server so its parts are
     # written by that server's own binary and settings (sparse columns,
@@ -3025,12 +3092,15 @@ def rebuild_table(port, source, destination):
     # Variable granularity would make the merged part's granules follow how the parallel INSERT split the
     # rows, which differs between the two servers; a constant one gives both the same layout.
     Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING use_const_adaptive_granularity = 1"', strict=True, verbose=True)
+    # Parts replaced by merges would otherwise stay on disk for 8 minutes, taking the space of the tests that start meanwhile.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING old_parts_lifetime = 0"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
     # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
     # the swap below can run on a table whose parts are still being merged.
     Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1"', strict=True, verbose=True)
+    remove_outdated_parts(client, target)
     # The merged part keeps its granules; the reset keeps `CREATE TABLE ... AS` clones on the default.
-    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "ALTER TABLE {target} RESET SETTING use_const_adaptive_granularity, old_parts_lifetime"', strict=True, verbose=True)
     if target != destination:
         old = f"{destination}_old"
         Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
@@ -3502,6 +3572,28 @@ def main():
         )
         res = results[-1].is_ok()
 
+    # A PR run builds `amd_release` without ThinLTO, PGO and BOLT when it skips the AMD
+    # performance comparison (`configure_amd_release_thinlto` in `filter_job.py`).
+    # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
+    # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
+    # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
+    # refuse it, unless the run compares with its own `--reference-path` binary or opts
+    # out explicitly. This does not depend on the stages: a run resumed at any stage
+    # (`--param restart`) can measure the binary that was downloaded for it. Even the
+    # `report` and `check_results` stages run the changed queries again to confirm them
+    # (`confirm_changes` in `compare.sh`).
+    if res and not args.reference_path and not args.allow_non_thinlto:
+        link_flags = get_binary_link_flags(f"{ch_path}/clickhouse")
+        results.append(
+            Result(
+                name="Tested binary is a ThinLTO build",
+                status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
+                info=f"LINK_FLAGS: {link_flags}"
+                + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
+            )
+        )
+        res = results[-1].is_ok()
+
     if not nightly:
         reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
@@ -3570,8 +3662,7 @@ def main():
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
-            # The query takes 8 to 10 s, so a 10 s timeout lost the thresholds
-            # of about half of the runs.
+            # A read of the daily snapshot, about 7500 rows.
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY,
                 timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
@@ -3804,6 +3895,8 @@ def main():
         def run_tests():
             last_flush = time.monotonic()
             for test in test_files:
+                # Both servers store their data under perf_wd.
+                print(f"Free disk space before {test}: {shutil.disk_usage(perf_wd).free / 2**30:.1f} GiB")
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
@@ -3873,7 +3966,8 @@ def main():
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
         with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
-            warnings.write(reference_warning + "\n" if reference_warning else "")
+            for warning in ([reference_warning] if reference_warning else []) + reference_timeout_warnings(perf_wd):
+                warnings.write(warning + "\n")
         right_commit = f"echo tested binary commit {tested_sha}" if nightly else "git log -1 HEAD"
         Shell.check(f"{right_commit} > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (

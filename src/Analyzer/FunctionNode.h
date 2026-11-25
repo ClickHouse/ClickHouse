@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -107,6 +108,9 @@ public:
     /// Returns true if function node has window, false otherwise
     [[nodiscard]] bool hasWindow() const { return children[window_child_index] != nullptr; }
 
+    /// Get function kind: which function object the node holds
+    [[nodiscard]] FunctionKind getFunctionKind() const { return kind; }
+
     /** Get window node.
       * Valid only for window function node.
       * Result window node can be identifier node or window node.
@@ -149,17 +153,18 @@ public:
       */
     [[nodiscard]] AggregateFunctionPtr getAggregateFunction() const;
 
-    /// Is function node resolved
+    /** Get window function.
+      * If function is not resolved nullptr returned.
+      * If function is resolved as non window function nullptr returned.
+      */
+    [[nodiscard]] GeneralWindowFunctionPtr getWindowFunction() const;
+
+    /** A resolved node represents window, an aggregation or an ordinary calls.
+      */
     [[nodiscard]] bool isResolved() const { return function != nullptr; }
-
-    /// Is function node window function
-    [[nodiscard]] bool isWindowFunction() const { return hasWindow(); }
-
-    /// Is function node aggregate function
-    [[nodiscard]] bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
-
-    /// Is function node ordinary function
-    [[nodiscard]] bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
+    [[nodiscard]] bool isWindowCall() const { return hasWindow(); }
+    [[nodiscard]] bool isAggregationCall() const { return kind == FunctionKind::AGGREGATE && !hasWindow(); }
+    [[nodiscard]] bool isOrdinaryCall() const { return kind == FunctionKind::ORDINARY; }
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.
@@ -184,7 +189,7 @@ public:
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
-    void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
+    void resolveAsWindowFunction(GeneralWindowFunctionPtr window_function_value);
 
     [[nodiscard]] QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
 

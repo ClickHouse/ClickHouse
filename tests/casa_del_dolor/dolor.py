@@ -767,6 +767,8 @@ cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
 
 if args.with_postgresql:
+    # The sidecar restarts a paused postgres1, which Docker reports as unhealthy, so dolor's unpause fails
+    cluster.process_integration_nodes("postgres", ["autoheal"], "stop")
     postgres_conn = get_postgres_conn(
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )
