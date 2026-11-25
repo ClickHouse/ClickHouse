@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <bit>
 #include <cstring>
 
 namespace DB
@@ -47,6 +48,58 @@ inline const char * skipASCIIBlocks(const char * p, const char * end)
             break;
     }
 
+    return p;
+}
+
+/// Skips ASCII from `p`, which is ASCII, in `[begin, end)`: returns the first byte of `0x80` or more, or `end`.
+inline const char * skipASCII(const char * begin, const char * p, const char * end)
+{
+    /// The high bit of each byte of the 8 at `at`, in memory order from the lowest bit. Runs between non-ASCII
+    /// characters are short, like a space or `, `: a general register finds their end without the round trip from
+    /// a vector register.
+    auto non_ascii_bits = [](const char * at)
+    {
+        UInt64 word;
+        memcpy(&word, at, sizeof(word));
+        if constexpr (std::endian::native == std::endian::big)
+            word = std::byteswap(word);
+        return word & 0x8080808080808080ULL;
+    };
+
+    if (end - p >= 8)
+    {
+        if (const UInt64 bits = non_ascii_bits(p))
+            return p + std::countr_zero(bits) / 8;
+        p = skipASCIIBlocks(p, end);
+
+        if (end - p >= 16)
+        {
+            /// The block at `p` has a byte of `0x80` or more.
+            using Bytes = Int8 __attribute__((ext_vector_type(16)));
+            using Mask = bool __attribute__((ext_vector_type(16)));
+            Bytes bytes;
+            memcpy(&bytes, p, sizeof(bytes));
+            return p + std::countr_zero(__builtin_bit_cast(UInt16, __builtin_convertvector(bytes >> 7, Mask)));
+        }
+    }
+
+    /// Fewer than 16 bytes are left.
+    if (end - p >= 8)
+    {
+        if (const UInt64 bits = non_ascii_bits(p))
+            return p + std::countr_zero(bits) / 8;
+        p += 8;
+    }
+
+    /// Fewer than 8: check them with the last 8 bytes of the input, which overlap the bytes before `p`.
+    if (p < end && end - begin >= 8)
+    {
+        const UInt64 bits = non_ascii_bits(end - 8) >> (8 * (8 - (end - p)));
+        return bits ? p + std::countr_zero(bits) / 8 : end;
+    }
+
+    while (p < end && static_cast<unsigned char>(*p) < 0x80)
+        ++p;
     return p;
 }
 
