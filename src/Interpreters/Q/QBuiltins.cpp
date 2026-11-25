@@ -414,6 +414,116 @@ std::optional<std::pair<std::function<ASTPtr(ASTPtr)>, QType>> accessor(const St
     return std::nullopt;
 }
 
+bool isIntegerType(QType type)
+{
+    return type == QType::Byte || type == QType::Short || type == QType::Int || type == QType::Long;
+}
+
+bool isNumberType(QType type)
+{
+    return isIntegerType(type) || type == QType::Boolean || type == QType::Real || type == QType::Float;
+}
+
+bool isTemporalType(QType type)
+{
+    switch (type)
+    {
+        case QType::Timestamp:
+        case QType::Month:
+        case QType::Date:
+        case QType::Datetime:
+        case QType::Timespan:
+        case QType::Minute:
+        case QType::Second:
+        case QType::Time:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// The origin of the temporal types of q: 2000.01.01. It is written as a literal, like the temporal literals of q,
+/// so both are read in the time zone of the session.
+ASTPtr epochDateTime(UInt64 scale)
+{
+    return fn("toDateTime64", lit(Field(String("2000-01-01 00:00:00"))), lit(Field(scale)));
+}
+
+ASTPtr epochDate()
+{
+    return fn("toDate32", lit(Field(String("2000-01-01"))));
+}
+
+/// q rounds a number when it converts it to an integer or to a count of units.
+ASTPtr roundedInteger(ASTPtr number)
+{
+    return fn("toInt64", fn("round", std::move(number)));
+}
+
+/// A temporal value from a number: the number counts the units of the type in q, from its origin in q.
+/// A timestamp is nanoseconds since 2000.01.01, a datetime is days (with a fraction), a date is days, a month is months,
+/// a timespan is nanoseconds, a time is milliseconds, and a second and a minute are seconds and minutes.
+ASTPtr numberToTemporal(ASTPtr number, QType type, const Call & call)
+{
+    auto scale = [] { return lit(Field(static_cast<UInt64>(9))); };
+    switch (type)
+    {
+        case QType::Timestamp:
+            return fn("addNanoseconds", epochDateTime(9), roundedInteger(std::move(number)));
+        case QType::Datetime:
+            return fn("addMilliseconds", epochDateTime(3),
+                roundedInteger(fn("multiply", std::move(number), lit(Field(static_cast<UInt64>(86'400'000))))));
+        case QType::Date:
+            return fn("addDays", epochDate(), roundedInteger(std::move(number)));
+        case QType::Month:
+            return fn("addMonths", epochDate(), roundedInteger(std::move(number)));
+        case QType::Timespan:
+            return fn("CAST", fn("divide", fn("toDecimal128", fn("round", std::move(number)), scale()), lit(Field(static_cast<UInt64>(1'000'000'000)))),
+                lit(Field(String("Time64(9)"))));
+        case QType::Time:
+            return fn("CAST", fn("divide", fn("toDecimal128", fn("round", std::move(number)), scale()), lit(Field(static_cast<UInt64>(1000)))),
+                lit(Field(String("Time64(3)"))));
+        case QType::Second:
+            return fn("CAST", roundedInteger(std::move(number)), lit(Field(String("Time"))));
+        case QType::Minute:
+            return fn("CAST", fn("multiply", roundedInteger(std::move(number)), lit(Field(static_cast<UInt64>(60)))), lit(Field(String("Time"))));
+        default:
+            call.unsupported("This cast to a temporal type");
+    }
+}
+
+/// The count of the units of a temporal value in q, from its origin in q: the reverse of `numberToTemporal`.
+/// It is an integer, except for a datetime, which is a count of days with a fraction.
+ASTPtr temporalToNumber(ASTPtr value, QType type, const Call & call)
+{
+    auto scale = [] { return lit(Field(static_cast<UInt64>(9))); };
+    switch (type)
+    {
+        case QType::Timestamp:
+            return fn("minus", fn("toUnixTimestamp64Nano", fn("toDateTime64", std::move(value), scale())),
+                fn("toUnixTimestamp64Nano", epochDateTime(9)));
+        case QType::Datetime:
+            return fn("divide",
+                fn("minus", fn("toUnixTimestamp64Milli", fn("toDateTime64", std::move(value), lit(Field(static_cast<UInt64>(3))))),
+                    fn("toUnixTimestamp64Milli", epochDateTime(3))),
+                lit(Field(static_cast<UInt64>(86'400'000))));
+        case QType::Date:
+            return fn("minus", fn("toInt64", fn("toDate32", std::move(value))), fn("toInt64", epochDate()));
+        case QType::Month:
+            return fn("dateDiff", lit(Field(String("month"))), epochDate(), fn("toDate32", std::move(value)));
+        case QType::Timespan:
+            return fn("toInt64", fn("multiply", fn("toDecimal128", std::move(value), scale()), lit(Field(static_cast<UInt64>(1'000'000'000)))));
+        case QType::Time:
+            return fn("toInt64", fn("multiply", fn("toDecimal128", std::move(value), scale()), lit(Field(static_cast<UInt64>(1000)))));
+        case QType::Second:
+            return fn("toInt64", std::move(value));
+        case QType::Minute:
+            return fn("intDiv", fn("toInt64", std::move(value)), lit(Field(static_cast<UInt64>(60))));
+        default:
+            call.unsupported("This cast from a temporal type");
+    }
+}
+
 QValue castValue(Call & call, const String & type_name, QValue value)
 {
     if (auto access = accessor(type_name))
@@ -473,9 +583,37 @@ QValue castValue(Call & call, const String & type_name, QValue value)
         return result;
     }
     String target = *type;
-    QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return fn("CAST", asts[0], lit(Field(target))); }, call.scope);
+    std::optional<QType> target_type = castQType(type_name);
+    std::optional<QType> source_type = value.qtype;
+
+    /// A conversion in q is not a `CAST` of ClickHouse: a number is rounded when it becomes an integer (`CAST` truncates),
+    /// and a number that becomes a temporal value, or the other way round, counts the units of the type from 2000.01.01
+    /// (`CAST` takes the seconds since 1970). The values without a known type are the results of arithmetic: numbers.
+    bool from_number = !value.is_string && (!source_type || isNumberType(*source_type));
+    bool from_temporal = source_type && isTemporalType(*source_type);
+    bool to_integer = target_type && isIntegerType(*target_type);
+    bool to_number = target_type && isNumberType(*target_type) && target_type != QType::Boolean;
+    bool to_temporal = target_type && isTemporalType(*target_type);
+
+    std::function<ASTPtr(ASTPtr)> convert;
+    if (from_number && to_integer)
+        convert = [&](ASTPtr x) { return fn("CAST", fn("round", std::move(x)), lit(Field(target))); };
+    else if (from_number && to_temporal)
+        convert = [&](ASTPtr x) { return numberToTemporal(std::move(x), *target_type, call); };
+    else if (from_temporal && to_number)
+        convert = [&](ASTPtr x)
+        {
+            ASTPtr count = temporalToNumber(std::move(x), *source_type, call);
+            if (to_integer)
+                count = fn("round", std::move(count));
+            return fn("CAST", std::move(count), lit(Field(target)));
+        };
+    else
+        convert = [&](ASTPtr x) { return fn("CAST", std::move(x), lit(Field(target))); };
+
+    QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return convert(asts[0]); }, call.scope);
     result.is_string = false;
-    result.qtype = castQType(type_name);
+    result.qtype = target_type;
     return result;
 }
 
