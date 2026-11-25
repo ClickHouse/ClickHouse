@@ -448,7 +448,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
 
         const auto & key_description = (*dict_struct.key)[i];
 
-        if (handle_nan && key_description.type->isFloat() && std::isnan(key_columns[i]->getFloat64(row)))
+        if (handle_nan && isFloat(key_description.type) && std::isnan(key_columns[i]->getFloat64(row)))
         {
             writeString("isNaN(", out);
             writeQuoted(key_description.name, out);
