@@ -958,6 +958,10 @@ public:
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
+    /// Throws if the parts that `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) affects
+    /// have unapplied patch parts.
+    void assertNoPatchesForClearOfBlockColumns(const AlterCommand & command, ContextPtr local_context) const;
+
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
