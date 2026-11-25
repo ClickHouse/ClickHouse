@@ -79,8 +79,7 @@ private:
     IExecutableTask::TaskResultCallback task_result_callback;
     MutateTaskPtr mutate_task;
 
-    /// Collects the counters and the memory of all threads of the task, from its first step.
-    ThreadGroupPtr thread_group;
+    ProfileEvents::Counters profile_counters;
 
     ContextMutablePtr task_context;
 

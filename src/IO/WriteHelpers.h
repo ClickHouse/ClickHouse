@@ -14,7 +14,6 @@
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
 #include <Common/transformEndianness.h>
-#include <base/DecomposedFloat.h>
 #include <base/find_symbols.h>
 #include <base/itoa.h>
 
@@ -32,9 +31,7 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Core/Defines.h>
-#include <Core/Names.h>
-#include <base/unit.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -45,7 +42,6 @@ namespace ErrorCodes
 }
 
 class Exception;
-struct FormatSettings;
 
 /// Helper functions for formatted and binary output.
 
@@ -67,45 +63,11 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
     }
 }
 
-/// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
-inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
-{
-    /// Unlike `WriteBuffer::write`, it does not check that the buffer is neither finalized nor canceled, which
-    /// saves a load per value in loops that write many small values of a size known at compile time.
-    if (size <= buf.available()) [[likely]]
-    {
-        __builtin_memcpy(buf.position(), input, size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.write(input, size);
-    }
-}
-
-/// Largest value for which __builtin_memcpy still beats a call. Above it clang emits a memcpy call
-/// anyway, so the inline path would only add branches.
-constexpr size_t MAX_INLINE_WRITE_SIZE = 64;
-
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    if constexpr (sizeof(T) <= MAX_INLINE_WRITE_SIZE)
-        writeNBytes(reinterpret_cast<const char *>(&x), sizeof(x), buf); /// NOLINT
-    else
-        buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-}
-
-/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it, just as the
-/// WriteBuffer overloads advance theirs. Restricted to trivially serializable types, for which
-/// `writeBinary` is `writePODBinary`, so a caller cannot pick up a different encoding than the
-/// WriteBuffer overloads produce.
-template <is_trivially_serializable T>
-inline void writePODBinary(const T & x, char * & dst)
-{
-    __builtin_memcpy(dst, reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-    dst += sizeof(x);
+    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
 inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
@@ -175,132 +137,17 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-namespace detail
-{
-/// The out-of-line paths of `writeFloatTextFastPath`.
-char * writeIntegerFloatText(Int64 x, char * buffer);
-char * writeIntegerFloatText(Int32 x, char * buffer);
-size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer);
-size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer);
-char * writeShortestFloatText(Float64 x, char * buffer);
-char * writeShortestFloatText(Float32 x, char * buffer);
-}
-
-/// Only the path choice is inline and each path is one call, so `writeFloatText` stays small enough to inline into column loops.
 template <typename T>
 requires is_floating_point<T>
-ALWAYS_INLINE inline size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
-{
-    size_t result = 0;
+size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point);
 
-    if constexpr (std::is_same_v<T, Float64>)
-    {
-        DecomposedFloat64 decomposed(x);
-        auto exp = decomposed.normalizedExponent();
-
-        /// Float64 integer fast path, same structure as Float32:
-        ///   exp 0..52:  exact integers (isIntegerInRepresentableRange).
-        ///   exp 53:     ULP=2, all values are even integers, itoa matches dragonbox.
-        ///   exp 54..62: ULP=4..1024, use rounding to find the "roundest" integer.
-        ///   exp < 0:    |value| < 1, not an integer.
-        ///   exp > 62:   |value| >= 2^63, overflows Int64.
-        if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-        {
-            result = detail::writeIntegerFloatText(Int64(x), buffer) - buffer;
-            if (force_decimal_point)
-                buffer[result++] = '.';
-            return result;
-        }
-        else if (exp > 53 && exp <= 62)
-        {
-            result = detail::writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
-            if (force_decimal_point)
-                buffer[result++] = '.';
-            return result;
-        }
-        else
-            result = detail::writeShortestFloatText(x, buffer) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
-    {
-        Float32 f32 = Float32(x);
-        DecomposedFloat32 decomposed(f32);
-        auto exp = decomposed.normalizedExponent();
-
-        /// Float32 integer fast path: covers exp 0..30 (values up to ~2^31).
-        ///
-        /// Three sub-ranges:
-        ///   exp 0..23:  ULP <= 1, every integer has a unique float. itoa gives the
-        ///               exact value, which is the only valid shortest representation.
-        ///               We just need to verify the float IS an integer (fractional
-        ///               mantissa bits are zero).
-        ///
-        ///   exp 24:     ULP = 2, but cast-to-int always lands on an even number.
-        ///               Exhaustive testing shows itoa matches dragonbox for all 8M values.
-        ///
-        ///   exp 25..30: ULP = 4..128. itoa gives the exact value, but dragonbox may
-        ///               prefer a "rounder" decimal (more trailing zeros). We use
-        ///               writeFloatTextFastPathFloat32Rounded to adjust, matching
-        ///               dragonbox exactly for all ~4.3 billion Float32 values
-        ///               (positive and negative, exhaustively verified).
-        ///               zmij was patched to produce identical output to dragonbox,
-        ///               so these results still hold.
-        ///
-        /// exp < 0:     |value| < 1, not an integer.
-        /// exp > 30:    |value| >= 2^31, overflows Int32.
-
-        /// Most common fast path first: exp 0..24, exact integers.
-        if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-        {
-            result = detail::writeIntegerFloatText(Int32(f32), buffer) - buffer;
-            if (force_decimal_point)
-                buffer[result++] = '.';
-            return result;
-        }
-        /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
-        else if (exp > 24 && exp <= 30)
-        {
-            result = detail::writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
-            if (force_decimal_point)
-                buffer[result++] = '.';
-            return result;
-        }
-        /// Not an integer, or exp out of range: use zmij.
-        else
-            result = detail::writeShortestFloatText(f32, buffer) - buffer;
-    }
-    else
-        static_assert(false, "`writeFloatTextFastPath` supports only `Float64`, `Float32` and `BFloat16`");
-
-    /// The integer paths have already handled `force_decimal_point`. The `zmij` path can also
-    /// emit a bare integer for large magnitudes (e.g. `toFloat32(1.23e20)` ->
-    /// `123000000000000000000`). Append a point if there is no point or exponent in its output.
-    /// The `isFinite` guard keeps `inf`/`nan` untouched. The caller guarantees at least
-    /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
-    if (force_decimal_point && isFinite(x)
-        && find_first_symbols<'.', 'e', 'E'>(buffer, buffer + result) == buffer + result)
-    {
-        buffer[result] = '.';
-        ++result;
-    }
-
-    return result;
-}
-
-namespace detail
-{
-template <typename T>
-requires is_floating_point<T>
-void writeFloatTextThroughStackBuffer(T x, WriteBuffer & buf, bool force_decimal_point);
-
-extern template void writeFloatTextThroughStackBuffer(Float64 x, WriteBuffer & buf, bool force_decimal_point);
-extern template void writeFloatTextThroughStackBuffer(Float32 x, WriteBuffer & buf, bool force_decimal_point);
-extern template void writeFloatTextThroughStackBuffer(BFloat16 x, WriteBuffer & buf, bool force_decimal_point);
-}
+extern template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
+extern template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
+extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
 
 template <typename T>
 requires is_floating_point<T>
-ALWAYS_INLINE inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = false)
+inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = false)
 {
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
@@ -309,7 +156,9 @@ ALWAYS_INLINE inline void writeFloatText(T x, WriteBuffer & buf, bool force_deci
         return;
     }
 
-    detail::writeFloatTextThroughStackBuffer(x, buf, force_decimal_point);
+    Converter::BufferType buffer;
+    size_t result = writeFloatTextFastPath(x, buffer, force_decimal_point);
+    buf.write(buffer, result);
 }
 
 template <typename T>
@@ -345,7 +194,82 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings);
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
+{
+    writeChar('"', buf);
+    for (const char * it = begin; it != end; ++it)
+    {
+        switch (*it)
+        {
+            case '\b':
+                writeChar('\\', buf);
+                writeChar('b', buf);
+                break;
+            case '\f':
+                writeChar('\\', buf);
+                writeChar('f', buf);
+                break;
+            case '\n':
+                writeChar('\\', buf);
+                writeChar('n', buf);
+                break;
+            case '\r':
+                writeChar('\\', buf);
+                writeChar('r', buf);
+                break;
+            case '\t':
+                writeChar('\\', buf);
+                writeChar('t', buf);
+                break;
+            case '\\':
+                writeChar('\\', buf);
+                writeChar('\\', buf);
+                break;
+            case '/':
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
+                writeChar('/', buf);
+                break;
+            case '"':
+                writeChar('\\', buf);
+                writeChar('"', buf);
+                break;
+            default:
+                UInt8 c = *it;
+                if (c <= 0x1F)
+                {
+                    /// Escaping of ASCII control characters.
+
+                    UInt8 higher_half = c >> 4;
+                    UInt8 lower_half = c & 0xF;
+
+                    writeCString("\\u00", buf);
+                    writeChar('0' + higher_half, buf);
+
+                    if (lower_half <= 9)
+                        writeChar('0' + lower_half, buf);
+                    else
+                        writeChar('A' + lower_half - 10, buf);
+                }
+                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
+                {
+                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
+                    ///  and these code points are alternative line separators.
+
+                    if (it[2] == '\xA8')
+                        writeCString("\\u2028", buf);
+                    if (it[2] == '\xA9')
+                        writeCString("\\u2029", buf);
+
+                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
+                    it += 2;
+                }
+                else
+                    writeChar(*it, buf);
+        }
+    }
+    writeChar('"', buf);
+}
 
 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
@@ -373,48 +297,49 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             pos = next_pos;
-            /// One `write` of a constant size per escape sequence keeps this function small enough to be inlined.
-            char escaped[2] = {'\\', 0};
-            size_t escaped_size = 2;
             switch (*pos)
             {
                 case quote_character:
+                {
                     if constexpr (escape_quote_with_quote)
-                        escaped[0] = quote_character;
-                    escaped[1] = quote_character;
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 case '\b':
-                    escaped[1] = 'b';
+                    writeChar('\\', buf);
+                    writeChar('b', buf);
                     break;
                 case '\f':
-                    escaped[1] = 'f';
+                    writeChar('\\', buf);
+                    writeChar('f', buf);
                     break;
                 case '\n':
-                    escaped[1] = 'n';
+                    writeChar('\\', buf);
+                    writeChar('n', buf);
                     break;
                 case '\r':
-                    escaped[1] = 'r';
+                    writeChar('\\', buf);
+                    writeChar('r', buf);
                     break;
                 case '\t':
-                    escaped[1] = 't';
+                    writeChar('\\', buf);
+                    writeChar('t', buf);
                     break;
                 case '\0':
-                    escaped[1] = '0';
+                    writeChar('\\', buf);
+                    writeChar('0', buf);
                     break;
                 case '\\':
                     if constexpr (escape_backslash_with_backslash)
-                        escaped[1] = '\\';
-                    else
-                        escaped_size = 1;
+                        writeChar('\\', buf);
+                    writeChar('\\', buf);
                     break;
                 default:
-                    escaped[0] = *pos;
-                    escaped_size = 1;
+                    writeChar(*pos, buf);
             }
-            if (escaped_size == 2)
-                buf.write(escaped, 2);
-            else
-                buf.write(escaped[0]);
             ++pos;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -567,6 +492,51 @@ inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatS
     writeJSONString(s.data(), s.data() + s.size(), buf, settings);
 }
 
+template <typename T>
+void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
+{
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+
+    if (need_quote)
+        writeChar('"', ostr);
+
+    if (is_finite)
+    {
+        if constexpr (is_floating_point<T>)
+            writeFloatText(x, ostr, settings);
+        else
+            writeText(x, ostr);
+    }
+    else if (!settings.json.quote_denormals)
+        writeCString("null", ostr);
+    else
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (signBit(x))
+            {
+                if (isNaN(x))
+                    writeCString("-nan", ostr);
+                else
+                    writeCString("-inf", ostr);
+            }
+            else
+            {
+                if (isNaN(x))
+                    writeCString("nan", ostr);
+                else
+                    writeCString("inf", ostr);
+            }
+        }
+    }
+
+    if (need_quote)
+        writeChar('"', ostr);
+}
+
 
 template <char c>
 void writeAnyEscapedString(std::string_view s, WriteBuffer & buf)
@@ -691,21 +661,6 @@ inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & bu
     writeChar('"', buf);
 }
 
-/// PostgreSQL quoted identifiers: a `"` is escaped by doubling it, and every other byte, backslash
-/// included, is literal. `writeDoubleQuotedString` instead emits an embedded `"` as `\"`, which
-/// PostgreSQL reads as the end of the identifier followed by SQL, and doubles a real backslash.
-inline void writeDoubleQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
-{
-    writeChar('"', buf);
-    for (char c : ref)
-    {
-        if (c == '"')
-            writeChar('"', buf);
-        writeChar(c, buf);
-    }
-    writeChar('"', buf);
-}
-
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
@@ -730,27 +685,11 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
     writeChar('`', buf);
 }
 
-/// Outputs a string in backquotes with SQLite identifier escaping. Unlike MySQL-style formatting, control
-/// characters and backslashes stay literal; only an embedded backquote is escaped by doubling it.
-inline void writeBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
-{
-    writeChar('`', buf);
-    for (char c : s)
-    {
-        if (c == '`')
-            writeChar('`', buf);
-        writeChar(c, buf);
-    }
-    writeChar('`', buf);
-}
-
 
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
-void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
-void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -919,7 +858,7 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1143,7 +1082,7 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1286,11 +1225,6 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 template <is_trivially_serializable T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it. Lets one
-/// body serialize a value to either destination.
-template <is_trivially_serializable T>
-inline void writeBinary(const T & x, char * & dst) { writePODBinary(x, dst); }
-
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 
@@ -1385,10 +1319,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
 
-    /// The decimal point and the digits are written with one `write`.
-    char point_and_digits[max_digits + 1];
-    point_and_digits[0] = '.';
-    char * buf = point_and_digits + 1;
+    char buf[max_digits];
     if constexpr (sizeof(T) <= sizeof(UInt64))
         writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
@@ -1414,7 +1345,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             --length;
     }
 
-    ostr.write(point_and_digits, length + 1);
+    writeChar('.', ostr);
+    ostr.write(buf, length);
 }
 
 template <typename T>
@@ -1467,7 +1399,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     writeIntText(part, ostr);
 
     bool fractional_written = false;
-    if (rounded_scale || (fixed_fractional_length && fractional_length > 0))
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
@@ -1682,18 +1614,17 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-/// `out` is either a WriteBuffer or a raw `char *` cursor holding at least sizeof(T) bytes.
-template <std::endian endian, typename T, typename Out>
-inline void writeBinaryEndian(T x, Out & out)
+template <std::endian endian, typename T>
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     transformEndianness<endian>(x);
-    writeBinary(x, out);
+    writeBinary(x, buf);
 }
 
-template <typename T, typename Out>
-inline void writeBinaryLittleEndian(T x, Out & out)
+template <typename T>
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
 {
-    writeBinaryEndian<std::endian::little>(x, out);
+    writeBinaryEndian<std::endian::little>(x, buf);
 }
 
 template <typename T>

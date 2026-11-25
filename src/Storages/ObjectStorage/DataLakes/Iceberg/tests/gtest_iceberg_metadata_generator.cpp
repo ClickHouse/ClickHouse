@@ -31,7 +31,12 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     metadata->set(Iceberg::f_last_sequence_number, 0);
     metadata->set(Iceberg::f_current_snapshot_id, -1);
 
-    metadata->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
+    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
+    main_branch->set(Iceberg::f_type, Iceberg::f_branch);
+    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
+    refs->set(Iceberg::f_main, main_branch);
+    metadata->set(Iceberg::f_refs, refs);
 
     metadata->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
@@ -39,12 +44,12 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     return metadata;
 }
 
-void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1, std::optional<UInt64> metadata_previous_versions_max = std::nullopt)
+void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
     auto metadata_info = generator.generateMetadataPathWithInfo();
-    MetadataGenerator(metadata, metadata_previous_versions_max).generateNextMetadata(
+    MetadataGenerator(metadata).generateNextMetadata(
         generator,
         metadata_info.path,
         parent_snapshot_id,
@@ -66,7 +71,7 @@ String snapshotOperation(
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
     auto metadata_info = generator.generateMetadataPathWithInfo();
-    auto result = MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).generateNextMetadata(
+    auto result = MetadataGenerator(metadata).generateNextMetadata(
         generator,
         metadata_info.path,
         /*parent_snapshot_id=*/ -1,
@@ -80,14 +85,6 @@ String snapshotOperation(
         /*user_defined_timestamp=*/ std::nullopt,
         operation);
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
-}
-
-void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
-{
-    FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
-    generator.setVersion(1);
-    auto metadata_info = generator.generateMetadataPathWithInfo();
-    MetadataGenerator(metadata, /* metadata_previous_versions_max */ std::nullopt).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
 }
 
 }
@@ -183,113 +180,6 @@ TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotE
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
     }
     EXPECT_FALSE(metadata->has(Iceberg::f_snapshots));
-}
-
-/// `refs` is optional per the Iceberg spec too, so a manifest-only rewrite (OPTIMIZE ... MANIFEST)
-/// must seed it. isObject is asserted, not just the absence of a throw: it matches on the same
-/// typeid(Object::Ptr) as getObject, so it also rejects seeding a raw Poco::JSON::Object pointer.
-TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
-{
-    auto metadata = makeMinimalV2Metadata();
-    ASSERT_NO_THROW(appendSnapshot(metadata));
-    ASSERT_EQ(metadata->getArray(Iceberg::f_snapshots)->size(), 1u);
-    auto parent_snapshot_id
-        = metadata->getArray(Iceberg::f_snapshots)->getObject(0)->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-
-    metadata->remove(Iceberg::f_refs);
-    EXPECT_NO_THROW(callManifestOnlySnapshot(metadata, parent_snapshot_id));
-
-    EXPECT_TRUE(metadata->isObject(Iceberg::f_refs));
-    ASSERT_FALSE(metadata->getObject(Iceberg::f_refs).isNull());
-    ASSERT_TRUE(metadata->getObject(Iceberg::f_refs)->has(Iceberg::f_main));
-    EXPECT_EQ(
-        metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
-        metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
-}
-
-static Poco::JSON::Object::Ptr makeMetadataWithLog(size_t entries)
-{
-    auto metadata = makeMinimalV2Metadata();
-    auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
-    for (size_t i = 0; i < entries; ++i)
-    {
-        Poco::JSON::Object::Ptr entry = new Poco::JSON::Object;
-        entry->set(Iceberg::f_metadata_file, "old" + std::to_string(i));
-        entry->set(Iceberg::f_timestamp_ms, static_cast<Int64>(i));
-        metadata_log->add(entry);
-    }
-    return metadata;
-}
-
-static std::vector<String> metadataLogFiles(Poco::JSON::Object::Ptr metadata)
-{
-    std::vector<String> files;
-    auto metadata_log = metadata->getArray(Iceberg::f_metadata_log);
-    for (size_t i = 0; i < metadata_log->size(); ++i)
-        files.push_back(metadata_log->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_metadata_file));
-    return files;
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogDropsOldestEntries)
-{
-    auto metadata = makeMetadataWithLog(5);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ 3);
-    auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 3u);
-    EXPECT_EQ(files[0], "old3");
-    EXPECT_EQ(files[1], "old4");
-    EXPECT_NE(files[2].find("v1"), String::npos);
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogDropsOneEntryAtLimit)
-{
-    auto metadata = makeMetadataWithLog(3);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ 3);
-    auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 3u);
-    EXPECT_EQ(files[0], "old1");
-    EXPECT_EQ(files[1], "old2");
-    EXPECT_NE(files[2].find("v1"), String::npos);
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithoutLimit)
-{
-    auto metadata = makeMetadataWithLog(5);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ std::nullopt);
-    EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithMaxLimit)
-{
-    auto metadata = makeMetadataWithLog(5);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ std::numeric_limits<UInt64>::max());
-    EXPECT_EQ(metadataLogFiles(metadata).size(), 6u);
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogTablePropertyTakesPrecedence)
-{
-    auto metadata = makeMetadataWithLog(5);
-    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-    properties->set(Iceberg::f_metadata_previous_versions_max, "2");
-    metadata->set(Iceberg::f_properties, properties);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ std::nullopt);
-    auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 3u);
-    EXPECT_EQ(files[0], "old3");
-    EXPECT_EQ(files[1], "old4");
-}
-
-TEST(IcebergMetadataGenerator, MetadataLogTablePropertyKeepsAtLeastOneEntry)
-{
-    auto metadata = makeMetadataWithLog(5);
-    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-    properties->set(Iceberg::f_metadata_previous_versions_max, "0");
-    metadata->set(Iceberg::f_properties, properties);
-    appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ 100);
-    auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 2u);
-    EXPECT_EQ(files[0], "old4");
-    EXPECT_NE(files[1].find("v1"), String::npos);
 }
 
 #endif

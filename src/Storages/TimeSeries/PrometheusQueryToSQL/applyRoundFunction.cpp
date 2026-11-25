@@ -3,12 +3,50 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
 
 
 namespace DB::PrometheusQueryToSQL
 {
+
+namespace
+{
+    /// Checks if the types of the specified arguments are valid for the round() function.
+    void checkArgumentTypes(const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    {
+        const auto & function_name = function_node->function_name;
+
+        if ((arguments.size() != 1) && (arguments.size() != 2))
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 1 or 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        if (arguments[0].type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::INSTANT_VECTOR,
+                            getPromQLText(arguments[0], context), arguments[0].type);
+        }
+
+        if ((arguments.size() == 2) && (arguments[1].type != ResultType::SCALAR))
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(arguments[1], context), arguments[1].type);
+        }
+    }
+}
+
 
 bool isRoundFunction(std::string_view function_name)
 {
@@ -19,10 +57,7 @@ bool isRoundFunction(std::string_view function_name)
 SQLQueryPiece applyRoundFunction(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    checkNumberOfArgumentsBetween(function_node, arguments, 1, 2);
-    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
-    if (arguments.size() == 2)
-        checkArgumentType(function_node, arguments, 1, ResultType::SCALAR, context);
+    checkArgumentTypes(function_node, arguments, context);
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {

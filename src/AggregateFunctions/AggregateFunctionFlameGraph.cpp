@@ -1,11 +1,7 @@
-#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Access/ContextAccess.h>
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/ThreadStatus.h>
 #include <Common/SymbolIndex.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
@@ -15,7 +11,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -34,19 +29,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-static ContextPtr tryGetCurrentQueryContext()
-{
-    return CurrentThread::isInitialized() ? CurrentThread::get().tryGetQueryContext() : nullptr;
-}
-
-static void checkIntrospectionAllowed(const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::allow_introspection_functions])
-        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
-        "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
-    context->getAccess()->checkAccess(AccessType::INTROSPECTION);
 }
 
 struct AggregateFunctionFlameGraphTree
@@ -94,9 +76,8 @@ struct AggregateFunctionFlameGraphTree
         for (size_t i = 0; i < stack_size; ++i)
         {
             UInt64 ptr = stack[i];
-            /// A frame that is not published (outside the main executable). 0 is the root's id, so skip it.
             if (ptr == 0)
-                continue;
+                break;
 
             if (!node->children)
             {
@@ -146,7 +127,7 @@ struct AggregateFunctionFlameGraphTree
 
     using Traces = VectorWithMemoryTracking<Trace>;
 
-    [[nodiscard]] Traces dump(size_t max_depth, size_t min_bytes) const
+    Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
@@ -184,7 +165,7 @@ struct AggregateFunctionFlameGraphTree
             if (enough_bytes)
             {
                 frames.push_back(current->ptr);
-                allocated_self.back() = common::subIgnoreOverflow(allocated_self.back(), current->allocated);
+                allocated_self.back() -= current->allocated;
 
                 if (enough_depth)
                 {
@@ -243,20 +224,11 @@ static void dumpFlameGraphImpl(
     PaddedPODArray<UInt8> & chars,
     PaddedPODArray<UInt64> & offsets)
 {
-    /// Checked here as well as on creation: a stored state reuses the function created with the table.
-    if (!id_to_string)
-    {
-        const ContextPtr context = tryGetCurrentQueryContext();
-        if (!context)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function flameGraph cannot resolve symbols without a query context");
-        checkIntrospectionAllowed(context);
-    }
-
     WriteBufferFromOwnString out;
 
     UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
@@ -272,21 +244,16 @@ static void dumpFlameGraphImpl(
 
             if (id_to_string)
             {
-                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved for the root).
+                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved as a stack terminator).
                 writeString((*id_to_string)[trace.frames[i] - 1], out);
                 continue;
             }
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
-            {
-                if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
-                    writeString(demangle(symbol_name), out);
-                else
-                    writePointerHex(ptr, out);
-            }
+                writeString(demangle(symbol->name), out);
             else
                 writePointerHex(ptr, out);
 #else
@@ -323,8 +290,8 @@ struct AggregateFunctionFlameGraphData
 
     /// String interning support for Array(String) traces.
     /// When a trace is provided as Array(String), each unique symbol is interned to a 1-based id and
-    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved for the root,
-    /// so `tree.find` skips it, and `dumpFlameGraphImpl` looks up the original string from
+    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved as a stack
+    /// terminator inside `tree.find`, and `dumpFlameGraphImpl` looks up the original string from
     /// `id_to_string` instead of running symbol resolution.
     bool is_string_mode = false;
     UnorderedMapWithMemoryTracking<std::string_view, UInt64> string_pool;
@@ -364,14 +331,12 @@ struct AggregateFunctionFlameGraphData
         free_list = entry;
     }
 
-    /// The counters are sums modulo 2^64: `untrack` exactly reverts `track`, and the `self` size in the dump
-    /// is the difference of such sums.
     static void track(Entry * allocation)
     {
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated = common::addIgnoreOverflow(node->allocated, allocation->size);
+            node->allocated += allocation->size;
             node = node->parent;
         }
     }
@@ -381,7 +346,7 @@ struct AggregateFunctionFlameGraphData
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated = common::subIgnoreOverflow(node->allocated, allocation->size);
+            node->allocated -= allocation->size;
             node = node->parent;
         }
     }
@@ -450,7 +415,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = common::negateIgnoreOverflow(static_cast<UInt64>(size));
+            UInt64 abs_size = -static_cast<UInt64>(size);
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -536,7 +501,7 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, static_cast<Int64>(common::negateIgnoreOverflow(deallocation->size)), nullptr, 0, arena);
+                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
             }
         }
 
@@ -626,7 +591,7 @@ public:
         const auto & trace_offsets = trace.getOffsets();
         UInt64 prev_offset = 0;
         if (row_num)
-            prev_offset = trace_offsets[static_cast<ssize_t>(row_num) - 1];
+            prev_offset = trace_offsets[row_num - 1];
         UInt64 trace_size = trace_offsets[row_num] - prev_offset;
 
         Int64 allocated = 1;
@@ -724,11 +689,13 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    /// Without a query context (e.g. attaching a table on startup) there is no principal to authorize.
-    if (const ContextPtr context = tryGetCurrentQueryContext())
-        checkIntrospectionAllowed(context);
+    /// The factory passes null when there is no query context to take settings from, and with no
+    /// principal there is nothing to authorize.
+    if (settings && !(*settings)[Setting::allow_introspection_functions])
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
+        "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 
     check(name, argument_types, params);
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
@@ -737,76 +704,16 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"DOC(
+    FunctionDocumentation::Description description = R"(
 Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
 Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
-Requires the `INTROSPECTION` grant and `allow_introspection_functions = 1`.
 
-<Note>
+:::note
 In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.
 Only allocations which were not freed are shown.
 Non mapped deallocations are ignored.
-</Note>
-
-**Recipes.**
-The stacktraces come from `system.trace_log`, which the query profiler fills in, and the array of
-strings the function returns is fed to `flamegraph.pl`. The recipes below are written for the
-command line, so they are not run as examples.
-
-**A flamegraph of the CPU time of a query.**
-
-```sql
-SET query_profiler_cpu_time_period_ns = 10000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-```
-
-```bash
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(arrayReverse(trace))) FROM system.trace_log WHERE trace_type = 'CPU' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl > flame_cpu.svg
-```
-
-**A flamegraph of every allocation of a query.**
-
-```sql
-SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-```
-
-```bash
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
-```
-
-**A flamegraph of the allocations of a query that were not freed.**
-
-```sql
-SET memory_profiler_sample_probability = 1, max_untracked_memory = 1, use_uncompressed_cache = 1, merge_tree_max_rows_to_use_cache = 100000000000, merge_tree_max_bytes_to_use_cache = 1000000000000;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-```
-
-```bash
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_untracked.svg
-```
-
-**A flamegraph of the allocations that were alive at the moment a query used the most memory.**
-
-```sql
-SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
-SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
-
--- 1. The memory usage per second.
-SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample') GROUP BY event_time ORDER BY event_time;
-
--- 2. The moment of the maximal memory usage.
-SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
-```
-
-```bash
-# 3. The allocations that were alive at that moment.
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time)" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
-
-# 4. The deallocations that happened after that moment.
-clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, -size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time > 'yyy' ORDER BY event_time DESC)" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
-```
-    )DOC";
+:::
+    )";
     FunctionDocumentation::Syntax syntax = "flameGraph(traces[, size[, ptr]])";
     FunctionDocumentation::Arguments arguments = {
         {"traces", "A stacktrace, either as raw addresses or as already-symbolized strings (e.g. `arrayMap(addressToSymbol, trace)`).", {"Array(UInt64)", "Array(String)"}},
@@ -817,21 +724,53 @@ clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGr
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings for use with flamegraph.pl utility.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Usage example",
+        "Building a flamegraph based on a CPU query profiler",
         R"(
--- The function reads raw addresses, so it needs the introspection functions.
-SET allow_introspection_functions = 1;
-
--- Three stacktraces, made of made-up addresses: two of them share a prefix.
-SELECT arrayJoin(flameGraph(trace)) AS f
-FROM VALUES('trace Array(UInt64)', ([1, 2, 3]), ([1, 2, 4]), ([1, 5]));
+SET query_profiler_cpu_time_period_ns=10000000;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
         )",
         R"(
-┌─f──────────────────────────────────────────────────────────┐
-│ 0x0000000000000001;0x0000000000000002;0x0000000000000003 1 │
-│ 0x0000000000000001;0x0000000000000002;0x0000000000000004 1 │
-│ 0x0000000000000001;0x0000000000000005 1                    │
-└────────────────────────────────────────────────────────────┘
+clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(arrayReverse(trace))) from system.trace_log where trace_type = 'CPU' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl  > flame_cpu.svg
+        )"
+    },
+    {
+        "Building a flamegraph based on a memory query profiler, showing all allocations",
+        R"(
+SET memory_profiler_sample_probability=1, max_untracked_memory=1;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+        )",
+        R"(
+clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(trace, size)) from system.trace_log where trace_type = 'MemorySample' and query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+        )"
+    },
+    {
+        "Building a flamegraph based on a memory query profiler, showing allocations which were not deallocated",
+        R"(
+SET memory_profiler_sample_probability=1, max_untracked_memory=1, use_uncompressed_cache=1, merge_tree_max_rows_to_use_cache=100000000000, merge_tree_max_bytes_to_use_cache=1000000000000;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+        )",
+        R"(
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx'" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_untracked.svg
+        )"
+    },
+    {
+        "Build a flamegraph based on memory query profiler, showing active allocations at a fixed point of time",
+        R"(
+SET memory_profiler_sample_probability=1, max_untracked_memory=1;
+SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+
+-- 1. Memory usage per second
+SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample') GROUP BY event_time ORDER BY event_time;
+
+-- 2. Find a time point with maximal memory usage
+SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
+        )",
+        R"(
+-- 3. Fix active allocations at fixed point of time
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+
+-- 4. Find deallocations at fixed point of time
+clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, -size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time > 'yyy' ORDER BY event_time desc\)\" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
         )"
     }
     };

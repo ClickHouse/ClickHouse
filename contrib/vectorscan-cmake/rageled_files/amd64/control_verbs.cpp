@@ -276,7 +276,7 @@ static const signed char _ControlVerbs_actions[] = {
 			te = 0;
 		}
 		
-#line 107 "control_verbs.rl"
+#line 106 "control_verbs.rl"
 
 		
 		try {
@@ -332,9 +332,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							
 							_mid = _lower + ((_upper-_lower) >> 1);
-							if ( ((unsigned char)(*p)) < (*( _mid)) )
+							if ( ( (*( p))) < (*( _mid)) )
 								_upper = _mid - 1;
-							else if ( ((unsigned char)(*p)) > (*( _mid)) )
+							else if ( ( (*( p))) > (*( _mid)) )
 								_lower = _mid + 1;
 							else {
 								_trans += (unsigned int)(_mid - _keys);
@@ -355,9 +355,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							
 							_mid = _lower + (((_upper-_lower) >> 1) & ~1);
-							if ( ((unsigned char)(*p)) < (*( _mid)) )
+							if ( ( (*( p))) < (*( _mid)) )
 								_upper = _mid - 2;
-							else if ( ((unsigned char)(*p)) > (*( _mid + 1)) )
+							else if ( ( (*( p))) > (*( _mid + 1)) )
 								_lower = _mid + 2;
 							else {
 								_trans += (unsigned int)((_mid - _keys)>>1);
@@ -389,9 +389,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 3:  {
 									{
-#line 78 "control_verbs.rl"
+#line 77 "control_verbs.rl"
 									{te = p+1;{
-#line 78 "control_verbs.rl"
+#line 77 "control_verbs.rl"
 											
 											mode.utf8 = true;
 										}
@@ -403,9 +403,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 4:  {
 									{
-#line 82 "control_verbs.rl"
+#line 81 "control_verbs.rl"
 									{te = p+1;{
-#line 82 "control_verbs.rl"
+#line 81 "control_verbs.rl"
 											
 											mode.ucp = true;
 										}
@@ -417,9 +417,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 5:  {
 									{
-#line 86 "control_verbs.rl"
+#line 85 "control_verbs.rl"
 									{te = p+1;{
-#line 86 "control_verbs.rl"
+#line 85 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unsupported control verb " << string(ts, te - ts);
@@ -433,9 +433,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 6:  {
 									{
-#line 92 "control_verbs.rl"
+#line 91 "control_verbs.rl"
 									{te = p+1;{
-#line 92 "control_verbs.rl"
+#line 91 "control_verbs.rl"
 											
 											ostringstream str;
 											str << "Unknown control verb " << string(ts, te - ts);
@@ -449,9 +449,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 7:  {
 									{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 									{te = p+1;{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -464,9 +464,9 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 8:  {
 									{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 									{te = p;p = p - 1;{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -479,10 +479,10 @@ static const signed char _ControlVerbs_actions[] = {
 							}
 							case 9:  {
 									{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 									{p = ((te))-1;
 										{
-#line 99 "control_verbs.rl"
+#line 98 "control_verbs.rl"
 											
 											{p = p - 1; }
 											{p += 1; goto _out; }
@@ -530,7 +530,7 @@ static const signed char _ControlVerbs_actions[] = {
 				_out: {}
 			}
 			
-#line 110 "control_verbs.rl"
+#line 109 "control_verbs.rl"
 
 		} catch (LocatedParseError &error) {
 			// cppcheck-suppress pointerLessThanZero

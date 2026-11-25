@@ -92,7 +92,7 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         }
         else
         {
-            display.showProgress("⚠️ No SQL query was generated");
+            display.showProgress("⚠️  No SQL query was generated");
         }
 
         return sql;
@@ -146,9 +146,7 @@ std::string AISQLGenerator::cleanSQL(const std::string & sql)
 
     // Trim whitespace
     cleaned.erase(0, cleaned.find_first_not_of(" \n\r\t"));
-    /// `npos + 1` for an all-whitespace string, which the previous line has already emptied.
-    const size_t last_kept = cleaned.find_last_not_of(" \n\r\t");
-    cleaned.erase(last_kept == std::string::npos ? 0 : last_kept + 1);
+    cleaned.erase(cleaned.find_last_not_of(" \n\r\t") + 1);
 
     // Convert newlines to spaces
     std::replace(cleaned.begin(), cleaned.end(), '\n', ' ');

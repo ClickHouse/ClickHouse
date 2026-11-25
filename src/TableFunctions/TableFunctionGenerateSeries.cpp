@@ -11,7 +11,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -165,7 +164,7 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
             /// Avoid signed overflow during conversion (e.g. -INT64_MIN overflows Int64).
             /// Instead, cast to UInt64 first (preserving the bit pattern), then negate in
             /// unsigned arithmetic where overflow is well-defined.
-            return {common::negateIgnoreOverflow(static_cast<UInt64>(step_val)), true};
+            return {UInt64(0) - static_cast<UInt64>(step_val), true};
         }
         return {static_cast<UInt64>(step_val), false};
     }
@@ -189,7 +188,7 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries<0>>({.description = R"DOC(Returns a table with a single 'generate_series' column of integers from a start value to a stop value inclusive; an optional third argument sets the step (default 1). Same as generateSeries.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.description = R"DOC(Returns a table with a single 'generate_series' column of integers from a start value to a stop value inclusive; an optional third argument sets the step (default 1). Same as generateSeries.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
     factory.registerFunction<TableFunctionGenerateSeries<1>>({.description = R"DOCS_MD(
 Alias: `generateSeries`
 
@@ -289,7 +288,7 @@ SELECT * FROM generate_series(9, 0, -1);
 │               0 │
 └─────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }
