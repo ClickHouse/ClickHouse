@@ -11,8 +11,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在某些场景下，需要将特定表添加到管道中，这样会更方便。随着事务型或分析型工作负载规模的扩大，这会成为一种常见需求。
 
 <div id="add-tables-steps">
@@ -28,7 +26,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
+
+</Frame>
+
+</div>
 
 5. 点击“更新”。
 6. 更新成功后，管道状态将依次变为 `Setup`、`Snapshot` 和 `Running`。该表的初始加载进度可在 **Tables** 选项卡中查看。

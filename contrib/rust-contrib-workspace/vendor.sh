@@ -4,7 +4,7 @@ set -e
 
 # std is required for sanitizers builds
 # and we need to match toolchain version for std (to vendor proper dependencies)
-TOOLCHAIN=nightly-2026-03-22
+TOOLCHAIN=nightly-2026-11-02
 function cargo() { rustup run "$TOOLCHAIN" cargo "$@"; }
 function rustc() { rustup run "$TOOLCHAIN" rustc "$@"; }
 rustup component add --toolchain "$TOOLCHAIN" rust-src
@@ -12,8 +12,8 @@ rustup component add --toolchain "$TOOLCHAIN" rust-src
 CH_TOP_DIR=$(git rev-parse --show-toplevel)
 
 cd "$CH_TOP_DIR/contrib/rust-contrib-workspace" || exit 1
-# (Re)-generate the Cargo.lock file
-cargo generate-lockfile
+# Update the Cargo.lock file only for changes of the manifests; to upgrade a dependency, run `cargo update -p <crate>` first
+cargo update --workspace
 
 #
 # Generate the vendor dir:
@@ -29,16 +29,8 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 # Handle extra dependencies that is now outside of workspace:
 #
 
-# delta-lake
+# delta-lake: cbindgen in its build script runs cargo metadata over its own workspace
 cd "$CH_TOP_DIR"/contrib/delta-kernel-rs || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
-# chdig
-cd "$CH_TOP_DIR"/contrib/chdig || exit 1
-cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
-
-# wasmtime
-cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Just in case
