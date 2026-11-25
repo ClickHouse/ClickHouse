@@ -21,3 +21,20 @@ CREATE CLUSTER t05483_dup_replica_host (
         REPLICA (host = '127.0.0.1', host = '127.0.0.2', port = 9000)
     )
 ); -- { serverError BAD_ARGUMENTS }
+
+-- Keys are case-insensitive, so a duplicate that differs only in case is rejected as well.
+CREATE CLUSTER t05483_dup_cluster_user_mixed_case (
+    user = 'a',
+    USER = 'b',
+    SHARD (host = '127.0.0.1', port = 9000, user = 'c')
+); -- { serverError BAD_ARGUMENTS }
+
+CREATE CLUSTER t05483_dup_shard_host_mixed_case (
+    SHARD (host = '127.0.0.1', HOST = '127.0.0.2', port = 9000)
+); -- { serverError BAD_ARGUMENTS }
+
+CREATE CLUSTER t05483_dup_replica_port_mixed_case (
+    SHARD (
+        REPLICA (host = '127.0.0.1', Port = 9000, PORT = 9001)
+    )
+); -- { serverError BAD_ARGUMENTS }
