@@ -1666,7 +1666,16 @@ const std::unordered_map<String, Handler> & handlers()
                 return h_where(c);
             if (c.arg(0).qtype == QType::Boolean && c.arg(1).qtype == QType::Boolean)
                 return binaryFunction(c, "and", QType::Boolean);
-            return binaryFunction(c, "least");
+
+            /// A null is less than every other value in q, so the lesser of a null and a value is the null, while
+            /// `least` of ClickHouse skips the nulls. (The greater of them is the value in both.)
+            if (c.compiler.isNotNull(c.arg(0).ast) && c.compiler.isNotNull(c.arg(1).ast))
+                return binaryFunction(c, "least");
+            return binary(c,
+                [](ASTPtr x, ASTPtr y)
+                {
+                    return fn("if", fn("or", fn("isNull", x), fn("isNull", y)), lit(Field()), fn("least", x, y));
+                });
         };
         h["|"] = [](Call & c)
         {
@@ -1849,8 +1858,17 @@ const std::unordered_map<String, Handler> & handlers()
         h["rtrim"] = [](Call & c) { return unary(c, "trimRight", std::nullopt, true, true); };
         h["string"] = [](Call & c) { return unary(c, "toString", QType::Char, false, true); };
 
-        h["and"] = [](Call & c) { return binaryFunction(c, "and", QType::Boolean); };
-        h["or"] = [](Call & c) { return binaryFunction(c, "or", QType::Boolean); };
+        /// `and` and `or` are the lesser and the greater of two values, like `&` and `|`: `2 and 3` is 2.
+        h["and"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            return handlers().at("&")(c);
+        };
+        h["or"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            return handlers().at("|")(c);
+        };
         h["mod"] = [](Call & c) { return binaryFunction(c, "positiveModulo"); };
         h["div"] = [](Call & c)
         {
