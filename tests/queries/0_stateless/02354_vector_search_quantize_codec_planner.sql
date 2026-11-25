@@ -10,7 +10,6 @@ SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the analyzer (the old-analyzer CI config does not produce the lazy read).
-SET enable_analyzer = 1;
 -- Pin the lazy-materialization settings the test harness randomizes: the shortlist size is clamped to
 -- query_plan_max_limit_for_lazy_materialization (otherwise the full-coverage exact checks become approximate), and the
 -- plan's lazy read of the vector column needs lazy materialization enabled.
@@ -42,10 +41,10 @@ FROM
     LIMIT 5 SETTINGS vector_search_index_fetch_multiplier = 50
 );
 
--- rabitq is a cosine-only estimator (it drops the vector norm), so an L2Distance query must NOT use the codes shortlist
--- (which would rank by angle and could drop the true L2-nearest rows); the rewrite bails and the query stays exact.
-SELECT 'l2_on_cosine_only_no_shortlist',
-    countIf(explain ILIKE '%quantized shortlist%') = 0
+-- rabitq is a cosine-only estimator (it drops the vector norm). An L2Distance query uses the codes shortlist ranked by
+-- the angle, and the exact rescore ranks by L2Distance.
+SELECT 'l2_on_cosine_only_uses_shortlist',
+    countIf(explain ILIKE '%quantized shortlist%') > 0
 FROM
 (
     EXPLAIN PLAN

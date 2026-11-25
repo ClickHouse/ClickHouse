@@ -8,16 +8,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -25,29 +20,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        size_t expected_number_of_arguments = 1;
-
-        if (arguments.size() != expected_number_of_arguments)
-        {
-                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Function '{}' expects {} {}, got {} arguments",
-                                function_name, expected_number_of_arguments, (expected_number_of_arguments == 1 ? "argument" : "arguments"),
-                                arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::RANGE_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function {} expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::RANGE_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -93,10 +65,31 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTimestampOfFirstToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTimestampOfLastToGrid",
+                 /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
 
@@ -107,16 +100,16 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            {"min_over_time",
+            {"ts_of_max_over_time",
              {
-                 "timeSeriesMinToGrid",
+                 "timeSeriesTimestampOfMaxToGrid",
                  /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            {"ts_of_max_over_time",
+            {"min_over_time",
              {
-                 "timeSeriesTimestampOfMaxToGrid",
+                 "timeSeriesMinToGrid",
                  /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
@@ -174,13 +167,23 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
         };
 
         auto it = impl_map.find(function_name);
@@ -201,6 +204,9 @@ bool isFunctionOverRange(std::string_view function_name)
 SQLQueryPiece applyFunctionOverRange(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::RANGE_VECTOR, context);
+
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
 
@@ -214,8 +220,6 @@ SQLQueryPiece applyFunctionOverRange(
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
-
-    checkArgumentTypes(function_name, arguments, context);
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
@@ -234,16 +238,24 @@ SQLQueryPiece applyFunctionOverRange(
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(argument, node_range, context);
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = (argument.store_method == StoreMethod::CONST_SCALAR)
+        || (argument.store_method == StoreMethod::SINGLE_SCALAR) || (argument.store_method == StoreMethod::SCALAR_GRID);
 
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else
+    {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
@@ -268,7 +280,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (!from_scalar)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
@@ -284,13 +296,20 @@ SQLQueryPiece applyFunctionOverRange(
 
     res.select_query = builder.getSelectQuery();
     res.type = ResultType::INSTANT_VECTOR;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
+    res.store_method = StoreMethod::VECTOR_GRID;
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (from_scalar)
+    {
+        /// A scalar has no metric name.
+        res.metric_name_dropped = true;
+    }
+    else if (drop_metric_name.value_or(impl_info->drop_metric_name))
+    {
         res = dropMetricName(std::move(res), context);
+    }
 
     return res;
 }

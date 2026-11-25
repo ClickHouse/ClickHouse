@@ -1,0 +1,6 @@
+apply_no_swap	1
+apply_forced_swap	1
+both_collected_statistics	same_read_measured_either_way
+1	1
+both_apply_runs_used_replicas
+1

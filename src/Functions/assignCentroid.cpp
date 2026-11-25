@@ -3,6 +3,8 @@
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -62,7 +64,7 @@ namespace
 constexpr size_t ROW_BLOCK = 6;
 constexpr size_t COL_BLOCK = 16;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 /// Score every row against one tile of centroids, keeping the running best score and id per row.
 /// See `build` and `assignBlock` for how the tile is prepared.
@@ -137,7 +139,7 @@ void scoreTile(
     }
 }
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is off (ARM, or
 /// ENABLE_MULTITARGET_CODE=OFF) only Default exists, hence the plain loops above that auto-vectorize.
@@ -148,7 +150,7 @@ void scoreTile(
     const Float32 * tile_centroids, const Float32 * tile_sq_norms, const UInt32 * tile_ids,
     size_t width, Float32 * best_score, UInt32 * result_ids)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         TargetSpecific::x86_64_v4::scoreTile(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, tile_ids, width, best_score, result_ids);
@@ -246,7 +248,7 @@ struct CentroidMatrix
 
         for (size_t row = 0; row < num_rows; ++row) /// checked up front: the scoring loop assumes dense rows
         {
-            size_t start = row ? offsets[row - 1] : 0;
+            size_t start = row ? offsets[static_cast<ssize_t>(row) - 1] : 0;
             size_t length = offsets[row] - start;
             if (length != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -338,23 +340,29 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments: assignCentroid(vec, centroids | dict_name)", name);
 
-        const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!vec_type || !isFloat(vec_type->getNestedType()))
+        const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get());
+        if (!vec_type || !isVectorElementType(vec_type->getNestedType()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument of {} must be an array of floats", name);
+                "First argument of {} must be an array of Float32, Float64, BFloat16, Int8 or UInt8", name);
 
-        /// `make_distributed_plan` relies on "second argument is a `String`" meaning the dictionary form
-        /// (`findDictionaryFunction` in `makeDistributed.cpp`); keep that check in step with any change here.
-        if (!isCentroidsArray(arguments[1]) && !isString(arguments[1]))
+        if (!isCentroidsArray(arguments[1].type) && !isString(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument of {} must be a constant array of float arrays (the centroids) "
-                "or a constant String (a dictionary name)", name);
+                "Second argument of {} must be a constant array of arrays of Float32, Float64, BFloat16, Int8 or UInt8 "
+                "(the centroids) or a constant String (a dictionary name)", name);
+
+        /// Needs recorded use here, while the query is analyzed. Qualifying the name records without loading anything.
+        /// Inspected on plans with make_distributed_plan=1 to evaluate dictionary use
+        if (const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+        {
+            const auto & context = dict_helper.getContext();
+            [[maybe_unused]] const auto qualified_table_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
+        }
 
         return std::make_shared<DataTypeUInt32>();
     }
@@ -391,7 +399,7 @@ public:
     }
 
 private:
-    /// The kernels read Float32. Any other float width is converted once here rather than rejected, so
+    /// The kernels read Float32. Any other accepted element type is converted once here rather than rejected, so
     /// `assignCentroid([1.0, 2.0], ...)` works with plain array literals, which are Array(Float64).
     static ColumnPtr toFloat32Array(const ColumnWithTypeAndName & arg)
     {
@@ -412,13 +420,15 @@ private:
     mutable std::weak_ptr<const IDictionary> cached_dict;
     mutable std::shared_ptr<const CentroidMatrix> cached_matrix;
 
+    static bool isVectorElementType(const DataTypePtr & type) { return isFloat(type) || isInt8(type) || isUInt8(type); }
+
     static bool isCentroidsArray(const DataTypePtr & type)
     {
         const auto * outer = typeid_cast<const DataTypeArray *>(type.get());
         if (!outer)
             return false;
         const auto * inner = typeid_cast<const DataTypeArray *>(outer->getNestedType().get());
-        return inner && isFloat(inner->getNestedType());
+        return inner && isVectorElementType(inner->getNestedType());
     }
 
     /// Build the matrix from a constant Array(Array(Float32)) argument. Ids are the array positions (0..k-1).
@@ -449,7 +459,7 @@ private:
         VectorWithMemoryTracking<Float32> row_major(num_centroids * dim);
         for (size_t centroid_index = 0; centroid_index < num_centroids; ++centroid_index)
         {
-            size_t start = centroid_index ? inner_array.getOffsets()[centroid_index - 1] : 0;
+            size_t start = centroid_index ? inner_array.getOffsets()[static_cast<ssize_t>(centroid_index) - 1] : 0;
             size_t length = inner_array.getOffsets()[centroid_index] - start;
             if (length != dim)
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -555,19 +565,21 @@ REGISTER_FUNCTION(AssignCentroid)
 {
     FunctionDocumentation::Description description =
         "Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant "
-        "array of float arrays, where the id is the 0-based position in that array, or as the name of a "
+        "array of arrays, where the id is the 0-based position in that array, or as the name of a "
         "`Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`.";
     FunctionDocumentation::Syntax syntax = "assignCentroid(vec, centroids | dict_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"vec", "Vector to assign. Its dimension must match the dimension of the centroids. Widths other than "
+        {"vec", "Vector to assign. Its dimension must match the dimension of the centroids. Element types other than "
                 "`Float32` are converted to `Float32`, which is what the scoring kernel uses.",
-         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)"}},
+         {"Array(Float32)", "Array(Float64)", "Array(BFloat16)", "Array(Int8)", "Array(UInt8)"}},
         {"centroids", "The centroids to score against, which must be constant. Given as an array of equally sized, "
-                      "non-empty float arrays, the id then being the 0-based position in that array; or as the name of "
-                      "a `Dictionary` with an attribute `cid` of an unsigned integer type that fits `UInt32` and an "
-                      "attribute `vec` of type `Array(Float32)`, the id then being `cid`. The dictionary is read once "
-                      "and cached until it reloads.",
-         {"Array(Array(Float32))", "Array(Array(Float64))", "Array(Array(BFloat16))", "String"}}
+                      "non-empty arrays with any of the element types accepted for `vec` (not necessarily the same "
+                      "one), the id then being the 0-based position in that array; or as the name of a `Dictionary` "
+                      "with an attribute `cid` of an unsigned integer type that fits `UInt32` and an attribute `vec` "
+                      "of type `Array(Float32)`, the id then being `cid`. The dictionary is read once and cached until "
+                      "it reloads.",
+         {"Array(Array(Float32))", "Array(Array(Float64))", "Array(Array(BFloat16))", "Array(Array(Int8))",
+          "Array(Array(UInt8))", "String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {

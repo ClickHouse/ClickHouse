@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_c ON t_hypo_proj_drift (SELECT a, c ORDER BY c);
     ALTER TABLE t_hypo_proj_drift DROP COLUMN c SETTINGS mutations_sync = 2;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_drift WHERE b = 1;
-" 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the table' | awk '{$1=$1; print}'
 
 # the same MergeTree projection gates the real ADD PROJECTION enforces
 echo "--- commit_order needs the same gates as a real projection ---"
@@ -95,7 +95,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_co ON t_hypo_proj_co INDEX b TYPE commit_order;
     ALTER TABLE t_hypo_proj_co MODIFY SETTING allow_commit_order_projection = 0;
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_co WHERE b = 1;
-" 2>&1 | grep -oE 'reason: +Hypothetical projection can no longer be added to this table' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'reason: +Hypothetical projection no longer matches the table' | awk '{$1=$1; print}'
 
 # allow_non_metadata_alters gates data-modifying ALTERs; ADD PROJECTION is metadata-only, so a
 # valid definition must still be accepted with it off
@@ -105,7 +105,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_nma ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
     SELECT 'created:', count() FROM system.hypothetical_projections WHERE name = 'p_nma';
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;
-" 2>&1 | grep -oE "created:.*|reason: +EXPLAIN WHATIF does not estimate.*" | awk '{$1=$1; print}'
+" 2>&1 | grep -oE "created:.*|reason: +Projections are disabled.*" | awk '{$1=$1; print}'
 
 echo "--- a name taken by a real projection is rejected ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_real ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -oE 'ILLEGAL_PROJECTION'
@@ -123,11 +123,11 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p ON t_hypo_proj_log (SELECT a ORDER BY a);
 " 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
 
-echo "--- EXPLAIN WHATIF lists the projection as not estimated yet ---"
+echo "--- EXPLAIN WHATIF lists the projection when projections are disabled ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;
-" 2>&1 | grep -oE 'With p_norm \(projection \(normal\), hypothetical\):|status: +not_applicable|reason: +EXPLAIN WHATIF does not estimate.*' | awk '{$1=$1; print}'
+" 2>&1 | grep -oE 'With p_norm \(normal projection, hypothetical\):|status: +not_applicable|reason: +Projections are disabled.*' | awk '{$1=$1; print}'
 
 echo "--- with nothing defined the report says so ---"
 $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;" 2>&1 | grep -oE 'No hypothetical indexes or projections defined.*' | head -1

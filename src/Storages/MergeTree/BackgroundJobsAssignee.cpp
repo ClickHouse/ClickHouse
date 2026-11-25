@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -10,6 +11,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char mt_background_jobs_assignee_throw_after_task_created[];
+}
 
 BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
@@ -48,20 +59,20 @@ void BackgroundJobsAssignee::trigger()
     holder->schedule();
 }
 
-void BackgroundJobsAssignee::postpone()
+void BackgroundJobsAssignee::postpone(bool refused_by_executor)
 {
     std::lock_guard lock(holder_mutex);
 
     if (!holder)
         return;
 
-    no_work_done_count += 1;
+    const size_t backoff_steps = refused_by_executor ? 0 : ++no_work_done_count;
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
         1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
-            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
+            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, backoff_steps))
         + random_addition));
 
     holder->scheduleAfter(next_time_to_execute, false);
@@ -95,7 +106,7 @@ bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
     bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
-    schedule_res && need_trigger ? trigger() : postpone();
+    schedule_res && need_trigger ? trigger() : postpone(/* refused_by_executor */ !schedule_res);
     return schedule_res;
 }
 
@@ -113,27 +124,61 @@ String BackgroundJobsAssignee::toString(Type type)
     }
 }
 
-void BackgroundJobsAssignee::start()
+bool BackgroundJobsAssignee::createHolderIfNeeded(const StorageID & current_storage_id)
 {
+    if (holder)
+        return false;
+
+    switch (type)
+    {
+    case Type::DataProcessing:
+    case Type::Moving:
+        holder = getContext()->getSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
+    case Type::Streaming:
+        holder = getContext()->getStreamingSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
+    }
+
+    return true;
+}
+
+bool BackgroundJobsAssignee::start()
+{
+    /// Either the task is created and activated, or the assignee is left exactly as it was: a holder
+    /// created by this call is destroyed again if activating it throws, so that a caller which rolls
+    /// back on the exception does not have to know whether the failure came before or after the
+    /// allocation. Declared before the lock so that it is destroyed after the lock is released, for
+    /// the same reason `finish` releases `holder_mutex` before `deactivate`: the lock order with the
+    /// task's own mutexes. Destroying the holder deactivates the task, which waits for a run of
+    /// `threadFunc` that may already have started; that run does not touch the storage because the
+    /// workers are disabled while a `table_readonly` toggle is in flight.
     /// Read the cached id before taking holder_mutex so that the two locks are never nested.
     const auto current_storage_id = getStorageID();
 
-    std::lock_guard lock(holder_mutex);
-    if (!holder)
+    BackgroundSchedulePoolTaskHolder failed_holder;
+    bool created = false;
     {
-        switch (type)
+        std::lock_guard lock(holder_mutex);
+        created = createHolderIfNeeded(current_storage_id);
+        try
         {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
+            holder->activateAndSchedule();
+
+            /// Models a scheduling failure after the task was allocated and is already live in the pool.
+            fiu_do_on(FailPoints::mt_background_jobs_assignee_throw_after_task_created,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while activating a background jobs assignee task");
+            });
+        }
+        catch (...)
+        {
+            if (created)
+                failed_holder = std::move(holder);
+            throw;
         }
     }
-
-    holder->activateAndSchedule();
+    return created;
 }
 
 void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
