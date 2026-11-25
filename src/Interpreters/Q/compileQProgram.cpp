@@ -919,7 +919,12 @@ std::optional<QValue> QCompiler::resolveTable(const String & name)
     if (!DatabaseCatalog::instance().isTableExist(id, context))
         return std::nullopt;
 
-    auto table_expression = makeTableIdentifierExpression(id.database_name, id.table_name);
+    /// A temporary table is referred to by its name alone, as it is written in the program: its storage lives in the
+    /// internal database of the temporary tables under a generated name, which a query is not allowed to use directly.
+    /// The generated query resolves the name within the session again, as a query in SQL does.
+    bool temporary = database.empty() && id.database_name == DatabaseCatalog::TEMPORARY_DATABASE;
+    auto table_expression = temporary ? makeTableIdentifierExpression(String(), table)
+                                      : makeTableIdentifierExpression(id.database_name, id.table_name);
 
     /// The structure is taken from the metadata of the table rather than from analyzing `SELECT * FROM t`,
     /// which would require the `SELECT` grant on every column, even if the q program uses only some of them
