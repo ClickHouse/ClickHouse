@@ -44,6 +44,7 @@ SELECT 'arrayResize', arrayResize([toDate32('2000-01-01')], 2);
 SELECT 'JSONExtract of a missing key', JSONExtract('{}', 'a', 'Date32');
 SELECT 'JSON typed path, missing', CAST('{"x":1}', 'JSON(a Date32)').a;
 SELECT 'JSON typed path, null', CAST('{"a":null}', 'JSON(a Date32)').a;
+SELECT 'JSON typed path, LowCardinality, null', CAST('{"a":null}', 'JSON(a LowCardinality(Date32))').a;
 
 DROP TABLE IF EXISTS t_lc_05876;
 CREATE TABLE t_lc_05876 (x UInt8, d LowCardinality(Date32), t Tuple(Date32)) ENGINE = MergeTree ORDER BY x;

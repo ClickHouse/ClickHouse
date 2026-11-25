@@ -16,6 +16,7 @@ arrayResize	['2000-01-01','1900-01-01']
 JSONExtract of a missing key	1900-01-01
 JSON typed path, missing	1900-01-01
 JSON typed path, null	1900-01-01
+JSON typed path, LowCardinality, null	1900-01-01
 LowCardinality and Tuple, DEFAULT in VALUES	1900-01-01	('1900-01-01')
 LowCardinality, arrayResize	['2000-01-01','1900-01-01']
 Tuple, arrayResize	[('2000-01-01'),('1900-01-01')]
