@@ -6,13 +6,11 @@ tags: ['Clients par langage']
 keywords: ['NodeJS']
 ---
 
-<div id="use-nodejs-with-clickhouseclient">
-  ## Utiliser NodeJS avec @clickhouse/client
-</div>
+## Utiliser NodeJS avec @clickhouse/client {#use-nodejs-with-clickhouseclient}
 
 Voici un exemple de code simple dans le fichier `main.ts`.
 
-`Package.json` (à placer sous `./`) :
+`Package.json` (à placer sous `./`) :
 
 ```json
 {
@@ -29,7 +27,7 @@ Voici un exemple de code simple dans le fichier `main.ts`.
 }
 ```
 
-`Main.ts` (placez-le dans `./src`) :
+`Main.ts` (placez-le dans `./src`) :
 
 ```ts
 import { ClickHouseClient, createClient } from '@clickhouse/client'; // or '@clickhouse/client-web'
@@ -57,7 +55,7 @@ interface Count {
 }
 
 //Please replace client connection parameters like`host`
-//`username`, `passowrd`, `database` as needed.
+//`username`, `password`, `database` as needed.
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({
@@ -95,7 +93,7 @@ const main = async () => {
 main();
 ```
 
-Pour installer les paquets, exécutez `yarn` dans `./` :
+Pour installer les paquets, exécutez `yarn` dans `./` :
 
 ```
 $ yarn
@@ -107,13 +105,13 @@ yarn install v1.22.19
 ✨  Done in 0.14s.
 ```
 
-exécutez le code de `main.ts` depuis `./` à l’aide de :
+exécutez le code de `main.ts` depuis `./` à l’aide de :
 
 ```
 $ npx ts-node src/main.ts
 ```
 
-affichera :
+affichera :
 
 ```
 Initialising clickhouse client

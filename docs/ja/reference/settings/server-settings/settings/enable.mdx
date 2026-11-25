@@ -20,6 +20,10 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />サーバーの起動時に GPU を確保し、その GPU 上でクエリを実行します。サーバーが GPU サポートなしでビルドされている場合、または CUDA デバイスが存在しない場合、サーバーは起動しません。
 
+## enable_iceberg_rest_catalog {#enable_iceberg_rest_catalog}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />`iceberg_rest_catalog` セクションで設定する、実験的な Iceberg REST カタログサーバーを有効にします。変更はサーバーの再起動後に反映されます。
+
 ## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />ClickHouse Cloudでのみ有効です。分散キャッシュからの読み取りを許可します。これは再起動なしで適用できるサーバーレベルのスイッチであり、独自のクエリプロファイルを持たないバックグラウンド処理 (マージ、ミューテーション、`Buffer` テーブルのフラッシュ) にも適用されます。個々のクエリでは、`force_read_through_distributed_cache` 設定を使用して異なる動作を指定できます。

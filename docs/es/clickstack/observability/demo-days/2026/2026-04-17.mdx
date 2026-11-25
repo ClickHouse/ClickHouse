@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-04-17
+title: 'Demo days - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: 'ClickStack demo days del 2026-04-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Resumir logs y trazas {#summarize-logs-and-traces}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX incorpora ahora una funcionalidad de resumen con IA que funciona con logs, trazas y patrones. El nuevo botón de resumen condensa sus datos de telemetría en un resumen legible, de modo que puede comprender rápidamente qué ocurrió en un conjunto de eventos sin tener que revisarlos manualmente uno a uno.
+
+La arquitectura está diseñada para integrarse con las API de Anthropic (u otras similares) y admite conversaciones de seguimiento, de modo que los usuarios pueden seguir haciendo preguntas después del resumen inicial.
+
+**PRs relacionados:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: AI summarize with extensible subjects, trace context, and security hardening, [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) Implement real AI summarize callbacks with smart tone mode
+
+## Mapa de calor de Deltas de eventos en el creador de gráficos {#event-deltas-heatmap-into-chart-builder}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+La visualización de mapa de calor de Deltas de eventos se está migrando al creador de gráficos principal, de modo que estará disponible como un tipo de gráfico estándar junto a las demás visualizaciones de HyperDX. Hasta ahora solo existía en su propia vista dedicada; ahora funciona dentro del Explorador de Gráficos junto al resto de tipos de gráficos.
+
+Cuando se complete, los usuarios podrán añadir el mapa de calor de Deltas de eventos directamente a los paneles del cuadro de mando, donde admitirá los mismos controles de filtrado por campo y de intervalo de tiempo que cualquier otro gráfico. Este trabajo sigue en curso.
+
+**PRs relacionados:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) feat: Wire heatmap chart into dashboard editor and tile rendering, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Implement reusable Heatmap chart with Event Deltas support
+
+## Pruebas comparativas de rendimiento para mejoras del esquema {#benchmarking-for-schema-improvements}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron repasa los resultados de las pruebas comparativas de rendimiento del nuevo esquema de registros de OpenTelemetry predeterminado de HyperDX. El cambio principal es la eliminación de la columna heredada `timestamp_time` (una marca de tiempo Unix de 32 bits con granularidad de segundos) para depender únicamente de `timestamp`, que ofrece precisión de nanosegundos y elimina una columna del esquema. En un amplio conjunto de pruebas de rendimiento de consultas, el esquema actualizado rinde igual o mejor que el anterior en casi todos los casos.
+
+El esquema final también incluye optimizaciones del orden de lectura que aportan mejoras significativas en consultas selectivas. La búsqueda de un valor de map relativamente poco frecuente se ejecutó aproximadamente el doble de rápido que con el valor de referencia, y las búsquedas de valores de alta frecuencia mejoraron todavía más. El rendimiento de inserción es ligeramente superior (hay más columnas que mantener), pero el rendimiento de las consultas es, en general, igual o mejor, por lo que se trata de una actualización sin complicaciones.
+
+**PR relacionados:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: optimized default otel-logs schema
+
+## Mejoras en el autocompletado {#improvements-to-autocomplete}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El autocompletado de HyperDX se está renovando a fondo para admitir una cardinalidad mucho mayor y cargar los valores más rápido. La nueva implementación se apoya en tablas de agregación (`AggregatingMergeTrees` que preagregan pares clave-valor en intervalos de tiempo de 15 minutos), de modo que, en lugar de consultar los datos sin procesar con cada pulsación de tecla, el sistema lee de un conjunto de datos precalculado mucho más pequeño. En una demostración en directo sobre una instancia de staging con 230 millones de filas, el autocompletado cargó con rapidez y sin retrasos perceptibles los valores de campos de alta cardinalidad como `hostname`.
+
+El sistema admite tanto una agregación solo de claves (que devuelve todas las claves pero sin valores asociados, para reducir la sobrecarga derivada de la cardinalidad) como una agregación completa de pares clave-valor. Si solo existe una agregación de claves, el sistema recurre a la estrategia actual de recuperación de valores para el paso de búsqueda de valores. Si no se detecta ninguna tabla de agregación, vuelve sin problemas al comportamiento actual. Aaron señala además que, en el futuro, una interfaz de usuario de lista de permitidos para controlar qué claves tienen agregaciones de valores sería muy útil para los clientes con datos de cardinalidad especialmente alta.
+
+**PRs relacionados:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+## Mejoras en las alertas con SQL {#improvements-to-alerting-with-sql}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Tras incorporar la semana pasada las alertas para gráficos de líneas y de barras con SQL directo, HyperDX ahora también admite alertas en gráficos numéricos con SQL directo. El parámetro de filtro de tiempo ya no es obligatorio al configurar una alerta: si se omite, se muestra una advertencia, pero las consultas sin ninguna dimensión temporal ahora son totalmente válidas. Esto facilita crear alertas sobre valores de configuración o métricas del sistema que no cambian con el tiempo, como comprobar que el número de nodos de un clúster de ClickHouse coincide con el valor esperado.
+
+También se han añadido varios tipos de umbral nuevos: not-equals, is-above, at-most, between y outside. Con ellos, los equipos disponen de mucha más flexibilidad para expresar condiciones de alerta que van más allá de las simples comparaciones de tipo «mayor que». Por último, el historial de alertas se muestra ahora directamente en el editor de bloques, de modo que, cuando una alerta disparada enlaza con un panel concreto del cuadro de mando, los usuarios pueden consultar el historial completo, entender qué la ha activado y reconocer o silenciar la alerta sin salir del panel de control.
+
+**PR relacionadas:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based paneles del cuadro de mando, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Support alerts on Raw SQL Number Charts, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: Add additional alert threshold types, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: Add between and not-between alert thresholds, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: Add alert history + ack to alert editor
+
+## Errores durante la ejecución de alertas {#errors-during-alert-execution}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Cuando una alerta no se ejecuta correctamente, HyperDX ahora muestra el error directamente en la interfaz de usuario en lugar de descartarlo sin avisar. Hasta ahora, los usuarios podían encontrar huecos en el historial de alertas sin ninguna explicación: ningún mensaje de error ni forma alguna de averiguar qué había fallado. Ahora se muestran en línea iconos de error específicos para cada tipo de fallo, como consultas no válidas, fallos en la entrega de webhooks y ajustes de webhook ausentes o mal configurados.
+
+Al hacer clic en un icono de error se muestran los detalles necesarios para diagnosticar y resolver el problema, de modo que los usuarios pueden corregir las alertas mal configuradas sin tener que rebuscar en los logs del servidor ni abrir una solicitud de soporte. El objetivo es que la resolución de fallos en las alertas sea autoservicio: ver el error, entenderlo y corregirlo.
+
+**PRs relacionadas:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: Show alert execution errors in the UI, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: Hide potentially-sensitive alert errors

@@ -1,0 +1,38 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks
+description: 'Configuración de los SDK de lenguaje para ClickHouse Observability e implementaciones autogestionadas.'
+title: 'SDK de lenguaje'
+sidebarTitle: 'Descripción general'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+---
+
+Instrumente su aplicación para enviar telemetría a ClickHouse Observability mediante los SDK de ClickStack u OpenTelemetry. Las siguientes guías abordan la instrumentación de aplicaciones y la configuración de la conexión tanto para ClickHouse Observability como para implementaciones autogestionadas.
+
+Para que un asistente de programación aplique estas instrucciones a su aplicación, consulte [Instrumentar con IA](/es/clickstack/observability/ingesting-data/sdks/instrument-with-ai).
+
+| Lenguaje o plataforma         | Guía                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| AWS Lambda                    | [SDK de Node.js de ClickStack para handlers async o capas de OpenTelemetry](/es/clickstack/observability/ingesting-data/sdks/aws-lambda) |
+| Navegador                     | [Telemetría del navegador y reproducción de sesiones](/es/clickstack/observability/ingesting-data/sdks/browser)                          |
+| Deno                          | [Compatibilidad integrada con OpenTelemetry](/es/clickstack/observability/ingesting-data/sdks/deno)                                      |
+| Elixir                        | [Tracing de Erlang/Elixir](/es/clickstack/observability/ingesting-data/sdks/elixir)                                                      |
+| Go                            | [Instrumentación de aplicaciones Go](/es/clickstack/observability/ingesting-data/sdks/golang)                                            |
+| Java                          | [Agente de Java y SDK](/es/clickstack/observability/ingesting-data/sdks/java)                                                            |
+| NestJS                        | [SDK de Node.js de ClickStack para NestJS](/es/clickstack/observability/ingesting-data/sdks/nestjs)                                      |
+| Next.js (Node.js autoalojado) | [SDK de Node.js de ClickStack](/es/clickstack/observability/ingesting-data/sdks/nextjs#self-hosted-nextjs)                               |
+| Next.js (Vercel o Edge)       | [`@vercel/otel`](/es/clickstack/observability/ingesting-data/sdks/nextjs#vercel-or-edge)                                                 |
+| Node.js                       | [SDK de Node.js de ClickStack](/es/clickstack/observability/ingesting-data/sdks/nodejs)                                                  |
+| Python                        | [Instrumentación de aplicaciones Python](/es/clickstack/observability/ingesting-data/sdks/python)                                        |
+| React Native                  | [Tracing de la capa de JavaScript de React Native](/es/clickstack/observability/ingesting-data/sdks/react-native)                        |
+| Ruby on Rails                 | [Tracing de Ruby on Rails](/es/clickstack/observability/ingesting-data/sdks/ruby)                                                        |
+
+## Conecte su aplicación {#connect-your-application}
+
+1. Siga la guía correspondiente a su lenguaje o plataforma para configurar la instrumentación.
+2. Elija su destino en esa guía:
+   * **Totalmente gestionado:** use el endpoint OTLP gestionado de su servicio y la API key de ingesta, disponibles en **Configuración del equipo → Datos → Managed Telemetry**.
+   * **Autogestionado:** use el endpoint OTLP de su Colector de OpenTelemetry y la API key de ingesta que haya configurado.
+3. Genere actividad en la aplicación y, a continuación, compruebe que la telemetría esperada aparece en la interfaz de usuario.
+
+Cada guía indica el formato de autenticación y los ajustes del exportador para cada SDK. La guía de Lambda también ofrece una opción basada en capas de OpenTelemetry que reenvía la telemetría a través de un Colector local.
