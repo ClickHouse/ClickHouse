@@ -47,6 +47,8 @@ public:
     TextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : CacheBase(cache_policy, CurrentMetrics::TextIndexTokensCacheBytes, CurrentMetrics::TextIndexTokensCacheCells, max_size_in_bytes, max_count, size_ratio)
     {
+        /// Shared by all queries, see `CacheBase::markServerOwned`.
+        markServerOwned();
     }
 
     static UInt128 hash(std::string_view index_id, std::string_view token)
@@ -130,7 +132,10 @@ class TextIndexHeaderCache : public CacheBase<UInt128, TextIndexHeader, UInt128T
 public:
     TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : CacheBase(cache_policy, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells, max_size_in_bytes, max_count, size_ratio)
-    {}
+    {
+        /// Shared by all queries, see `CacheBase::markServerOwned`.
+        markServerOwned();
+    }
 
     template <typename... Args>
     static UInt128 hash(Args... args)
@@ -215,7 +220,10 @@ class TextIndexPostingsCache : public CacheBase<UInt128, TextIndexPostingsCacheC
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : CacheBase(cache_policy, CurrentMetrics::TextIndexPostingsCacheBytes, CurrentMetrics::TextIndexPostingsCacheCells, max_size_in_bytes, max_count, size_ratio)
-    {}
+    {
+        /// Shared by all queries, see `CacheBase::markServerOwned`.
+        markServerOwned();
+    }
 
     template <typename... Args>
     static UInt128 hash(Args... args)

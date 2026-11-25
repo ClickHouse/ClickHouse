@@ -17,6 +17,8 @@ template class CacheBase<UInt128, StatisticsCacheCell, UInt128TrivialHash, Stati
 StatisticsCache::StatisticsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : Base(cache_policy, CurrentMetrics::StatisticsCacheBytes, CurrentMetrics::StatisticsCacheCells, max_size_in_bytes, 0, size_ratio)
 {
+    /// Shared by all queries, see `CacheBase::markServerOwned`.
+    markServerOwned();
 }
 
 UInt128 StatisticsCache::hash(const String & part_path, const String & column_name)

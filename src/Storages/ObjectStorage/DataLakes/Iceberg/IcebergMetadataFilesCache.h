@@ -151,7 +151,10 @@ public:
 
     IcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
-    {}
+    {
+        /// Shared by all queries, see `CacheBase::markServerOwned`.
+        markServerOwned();
+    }
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
