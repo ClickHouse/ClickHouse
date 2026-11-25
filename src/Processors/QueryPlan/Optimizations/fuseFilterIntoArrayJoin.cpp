@@ -41,8 +41,8 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
-    const auto required
-        = ActionsDAG::cloneSubDAG({&expression.findInOutputs(filter->getFilterColumnName())}, false).getRequiredColumnsNames();
+    const auto * whole_filter_node = &expression.findInOutputs(filter->getFilterColumnName());
+    const auto required = ActionsDAG::cloneSubDAG({whole_filter_node}, false).getRequiredColumnsNames();
     NameSet required_set(required.begin(), required.end());
     ColumnsWithTypeAndName all_inputs;
     for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
@@ -69,6 +69,11 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     /// Fully fused iff nothing is left to filter above: the residual filter column was removed, or it
     /// collapsed to a constant.
     const bool fully_fused = !residual.tryFindInOutputs(filter->getFilterColumnName()) || split->is_filter_const_after_push_down;
+
+    /// the conjuncts that stay above take the place of the filter column: only the filter may read it (totals skip the fused ones)
+    auto reads_whole_filter = [&](const auto & node) { return std::ranges::contains(node.children, whole_filter_node); };
+    if (!fully_fused && (!filter->removesFilterColumn() || std::ranges::any_of(expression.getNodes(), reads_whole_filter)))
+        return 0;
 
     /// a conjunct that stays above (e.g. with rand) no longer guards the fused ones and sees fewer rows
     auto ignores_row_count = [](const IFunctionBase & function) { return !function.isStateful() && !function.hasObservableSideEffects(); };
