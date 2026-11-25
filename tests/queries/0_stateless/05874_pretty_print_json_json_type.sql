@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: prettyPrintJSON needs rapidjson
+-- no-parallel-replicas: parallel replicas move the query condition cache lookups to the replicas
 
 -- prettyPrintJSON of a JSON value, a Dynamic subcolumn of JSON or another type returns the same as for the equivalent String.
 
@@ -98,13 +99,24 @@ SELECT 'query condition cache keeps the format settings apart for Dynamic and Va
 -- startsWith and not `=`: a comparison hashes the format settings by itself.
 DROP TABLE IF EXISTS t_qcc;
 CREATE TABLE t_qcc (id UInt64, j JSON, v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY id;
+SYSTEM STOP MERGES t_qcc;
 INSERT INTO t_qcc SELECT number, '{"d":18446744073709551615}', 18446744073709551615::UInt64 FROM numbers(20000);
 SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(j.d), '"')
-SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0;
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0, log_comment = '05874_qcc_dynamic_1_populate';
 SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(j.d), '"')
-SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0, log_comment = '05874_qcc_dynamic_2_replay';
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(j.d), '"')
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1, log_comment = '05874_qcc_dynamic_3_other';
 SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(v), '"')
-SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0;
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0, log_comment = '05874_qcc_variant_1_populate';
 SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(v), '"')
-SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1;
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 0, log_comment = '05874_qcc_variant_2_replay';
+SELECT count() FROM t_qcc WHERE startsWith(prettyPrintJSON(v), '"')
+SETTINGS use_query_condition_cache = 1, output_format_json_quote_64bit_integers = 1, log_comment = '05874_qcc_variant_3_other';
+SYSTEM FLUSH LOGS query_log;
+-- The replay reuses the entry, the other setting does not.
+SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05874_qcc_')
+ORDER BY log_comment;
 DROP TABLE t_qcc;
