@@ -122,7 +122,25 @@ resolved=$(clickhouse-client -q "
         AND demangle(symbol) LIKE 'DB::StorageSystemSymbols::StorageSystemSymbols(%'
         AND demangle(addressToSymbol(address_begin)) LIKE 'DB::StorageSystemSymbols::StorageSystemSymbols(%'
     SETTINGS allow_introspection_functions = 1")
-[ "$resolved" -gt 0 ]"""
+[ "$resolved" -gt 0 ]
+# The work of resolving a name from the section is bounded: repeated lookups come from the cache
+# of decoded names, and decoding a name decompresses a small granule, less than 64 KiB on average.
+lookup_cost=$(clickhouse-client -q "
+    WITH (SELECT groupArray(address_begin) FROM (SELECT address_begin FROM system.symbols ORDER BY sipHash64(address_begin) LIMIT 1000)) AS addresses
+    SELECT count() FROM numbers(200000) WHERE NOT ignore(addressToSymbol(addresses[1 + cityHash64(number) % 1000]))
+    SETTINGS allow_introspection_functions = 1, max_threads = 1, log_comment = 'symbol_name_lookup_cost'
+    FORMAT Null;
+    SYSTEM FLUSH LOGS query_log;
+    SELECT misses BETWEEN 1 AND 99999 AND bytes <= misses * 65536
+    FROM
+    (
+        SELECT ProfileEvents['SymbolNameCacheMisses'] AS misses, ProfileEvents['SymbolNameDecompressedBytes'] AS bytes
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment = 'symbol_name_lookup_cost'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    )")
+[ "$lookup_cost" = 1 ]"""
     preserve_logs = r"""#!/bin/bash
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
