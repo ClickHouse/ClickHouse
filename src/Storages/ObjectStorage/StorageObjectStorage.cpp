@@ -1534,6 +1534,13 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         return;
     }
 
+    /// `alterTable` below validates the new definition only after the data lake is changed.
+    if (!catalog)
+        applyMetadataChangesToCreateQuery(
+            DatabaseCatalog::instance().getDatabase(storage_id.database_name)->getCreateTableQuery(storage_id.table_name, context),
+            metadata_to_store,
+            context);
+
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)

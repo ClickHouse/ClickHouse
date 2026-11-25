@@ -9,11 +9,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 T="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 T2="${T}_other"
 TABLE_PATH="${USER_FILES_PATH}/${T}/"
+CHECK_PATH="${USER_FILES_PATH}/${T}_check/"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T}_s3; DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
-    rm -rf "${TABLE_PATH}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${T}_check_reader; DROP TABLE IF EXISTS ${T}_check; DROP TABLE IF EXISTS ${T}_s3; DROP TABLE IF EXISTS ${T}_mv; DROP TABLE IF EXISTS ${T}_src; DROP TABLE IF EXISTS ${T2}; DROP TABLE IF EXISTS ${T}"
+    rm -rf "${TABLE_PATH}" "${CHECK_PATH}"
 }
 trap cleanup EXIT
 
@@ -79,6 +80,14 @@ echo "schema changed by another writer"
 ${CLIENT} --query "ALTER TABLE ${T2} RENAME COLUMN s TO s2"
 ${CLIENT} --query "INSERT INTO ${T} (k) VALUES (7)"
 ${CLIENT} --query "SELECT k, s2 FROM ${T} WHERE k = 7"
+
+echo "drop of a column used by a constraint"
+${CLIENT} --query "CREATE TABLE ${T}_check (k Int32, v Int32, CONSTRAINT k_positive CHECK k > 0) ENGINE = IcebergLocal('${CHECK_PATH}')"
+${CLIENT} --query "INSERT INTO ${T}_check VALUES (1, 2)"
+${CLIENT} --max_query_size=0 --query "ALTER TABLE ${T}_check DROP COLUMN k" 2>&1 | grep -o -m1 UNKNOWN_IDENTIFIER
+${CLIENT} --query "INSERT INTO ${T}_check VALUES (3, 4)"
+${CLIENT} --query "CREATE TABLE ${T}_check_reader ENGINE = IcebergLocal('${CHECK_PATH}')"
+${CLIENT} --query "SELECT * FROM ${T}_check_reader ORDER BY k"
 
 echo "comment of a table that is not a data lake"
 ${CLIENT} --query "CREATE TABLE ${T}_s3 (id UInt64) ENGINE = S3('http://localhost:1/no-such-bucket/*.parquet', 'test', 'testtest', 'Parquet')"
