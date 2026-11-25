@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+        <allow_asynchronous_read_from_io_pool_for_merge_tree>1</allow_asynchronous_read_from_io_pool_for_merge_tree>
+        <max_streams_for_merge_tree_reading>16</max_streams_for_merge_tree_reading>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lazy_async_streams (id UInt64, text String)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 4096, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <fill_query>INSERT INTO lazy_async_streams SELECT number, arrayStringConcat(arrayMap(i -> hex(cityHash64(number, i)), range(63))) FROM numbers(250000) SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 1, 'lazy_materialization_async_read_streams: expected 1 active part') FROM system.parts WHERE database = currentDatabase() AND table = 'lazy_async_streams' AND active</fill_query>
+
+    <query>SELECT id, text FROM lazy_async_streams ORDER BY cityHash64(id) LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_async_streams</drop_query>
+</test>
