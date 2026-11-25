@@ -1,6 +1,7 @@
 #include <Storages/getStructureOfRemoteTable.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -119,6 +120,8 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
 
     for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
     {
+        current = convertBLOBColumns(current);
+
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
         ColumnPtr default_kind = current.getByName("default_type").column;
