@@ -365,6 +365,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsUInt64 merge_tree_max_bytes_to_use_cache;
     extern const SettingsUInt64 merge_tree_max_rows_to_use_cache;
     extern const SettingsUInt64 merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
@@ -1432,6 +1433,8 @@ struct PartRangesReadInfo
     size_t adaptive_parts = 0;
     size_t index_granularity_bytes = 0;
     size_t max_marks_to_use_cache = 0;
+    size_t min_rows_for_concurrent_read = 0;
+    size_t min_bytes_for_concurrent_read = 0;
     size_t min_marks_for_concurrent_read = 0;
     bool use_uncompressed_cache = false;
     bool use_columns_cache = false;
@@ -1465,8 +1468,6 @@ struct PartRangesReadInfo
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
 
-        size_t min_rows_for_concurrent_read = 0;
-        size_t min_bytes_for_concurrent_read = 0;
         if (all_parts_on_remote_disk)
         {
             min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
@@ -6521,8 +6522,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     projection_reader_settings));
         }
 
-        projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
+        projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(
+            std::move(readers),
+            info.min_rows_for_concurrent_read,
+            info.min_bytes_for_concurrent_read,
+            query_settings[Setting::merge_tree_min_read_task_size]);
     }
+
+    MergeTreeProjectionIndexReader * projection_index_reader_ptr = projection_index_reader.get();
 
     if (skip_index_reader || projection_index_reader)
     {
@@ -6549,6 +6556,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             = result.index_analysis_was_already_done_on_initiator && index_build_context->index_reader_pool->hasSkipIndexReader();
     }
 
+    const size_t parts_to_read = result.parts_with_ranges.size();
+
     Pipe pipe;
     if (query_info.isStream())
         pipe = groupPartitionsByStreams(result);
@@ -6556,6 +6565,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipe = groupStreamsByPartition(result, index_build_context, result_projection);
     else
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
+
+    if (projection_index_reader_ptr)
+    {
+        /// The threads waiting for the projection index of a part help read it. They are executor threads of this read unless
+        /// the refiner or the IO pool builds the index; with `max_threads_for_indexes` the read also stays on one thread.
+        const auto & query_settings = context->getSettingsRef();
+        size_t streams = pipe.numOutputPorts();
+        if (streams > parts_to_read && !query_settings[Setting::use_indexes_refiner_in_read_pools]
+            && !reader_settings.use_asynchronous_read_from_pool && query_settings[Setting::max_threads_for_indexes] == 0)
+            projection_index_reader_ptr->setMaxThreadsPerPart(std::min(streams, settings.max_threads));
+    }
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);

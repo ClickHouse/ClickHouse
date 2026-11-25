@@ -9,7 +9,10 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -152,6 +155,7 @@ struct ProjectionIndexBitmap
     static ProjectionIndexBitmapPtr create64();
 
     void intersectWith(const ProjectionIndexBitmap & other);
+    void unionWith(const ProjectionIndexBitmap & other);
     [[nodiscard]] size_t cardinality() const;
     [[nodiscard]] bool empty() const;
 
@@ -193,7 +197,8 @@ public:
         const ExpressionActionsSettings & actions_settings,
         const MergeTreeReaderSettings & reader_settings);
 
-    ProjectionIndexBitmapPtr read(const RangesInDataPart & ranges);
+    /// Reads the mark ranges of the projection part `ranges` and keeps the offsets that fall into `parent_ranges`.
+    ProjectionIndexBitmapPtr read(const RangesInDataPart & ranges, const PartOffsetRanges & parent_ranges);
 
     void cancel() noexcept;
 
@@ -204,17 +209,85 @@ private:
 
 using ProjectionIndexReaderByName = std::unordered_map<String, SingleProjectionIndexReader>;
 
+/// The read of one projection part, cut into tasks of consecutive mark ranges that several threads can run.
+class ProjectionIndexReadTasks
+{
+public:
+    ProjectionIndexReadTasks(SingleProjectionIndexReader & reader_, const RangesInDataPart & ranges, size_t num_tasks);
+
+    /// Runs tasks until none is left or one of them failed.
+    void run() noexcept;
+
+    /// Called when no thread runs the tasks. Rethrows the first exception of a task, returns nullptr if a task returned
+    /// no bitmap, otherwise the union of the bitmaps of the tasks.
+    ProjectionIndexBitmapPtr finish();
+
+private:
+    SingleProjectionIndexReader & reader;
+    const PartOffsetRanges & parent_ranges;
+    std::vector<RangesInDataPart> tasks;
+    std::vector<ProjectionIndexBitmapPtr> bitmaps;
+    std::atomic<size_t> next_task = 0;
+    std::atomic<bool> failed = false;
+    std::mutex exception_mutex;
+    std::exception_ptr exception;
+};
+
+/// Lets the threads that wait for the index read result of a part run the tasks of its projection parts.
+class ProjectionIndexReadSharing
+{
+public:
+    explicit ProjectionIndexReadSharing(size_t max_helpers_) : max_helpers(max_helpers_) {}
+
+    /// The building thread: makes `tasks` available, runs them together with the helpers, returns when none runs them.
+    void run(ProjectionIndexReadTasks & tasks);
+
+    /// The building thread, on every exit: the result is built or failed, the helpers stop waiting.
+    void finish();
+
+    /// A waiting thread: runs the published tasks until `finish`. Returns at once if `max_helpers` threads already help.
+    void help();
+
+private:
+    std::mutex mutex;
+    /// Helpers wait on it for new tasks or `finish`.
+    std::condition_variable helpers_cv;
+    /// The building thread waits on it for `running == 0`.
+    std::condition_variable builder_cv;
+    ProjectionIndexReadTasks * current = nullptr;
+    size_t generation = 0;
+    size_t running = 0;
+    size_t helpers = 0;
+    const size_t max_helpers;
+    bool finished = false;
+};
+
 class MergeTreeProjectionIndexReader
 {
 public:
-    explicit MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_);
+    MergeTreeProjectionIndexReader(
+        ProjectionIndexReaderByName projection_index_readers_,
+        size_t min_rows_for_concurrent_read_,
+        size_t min_bytes_for_concurrent_read_,
+        size_t min_read_task_size_);
 
-    ProjectionIndexBitmapPtr read(const RangesInDataParts & projection_parts);
+    /// The number of threads that may read the projection parts of one part. Set once, while the pipeline is built.
+    void setMaxThreadsPerPart(size_t value) { max_threads_per_part = value; }
+    [[nodiscard]] size_t maxThreadsPerPart() const { return max_threads_per_part; }
+
+    ProjectionIndexBitmapPtr read(const RangesInDataParts & projection_parts, ProjectionIndexReadSharing & sharing);
 
     void cancel() noexcept;
 
 private:
+    ProjectionIndexBitmapPtr readProjectionPart(
+        SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing) const;
+
     ProjectionIndexReaderByName projection_index_readers;
+    const size_t min_rows_for_concurrent_read;
+    const size_t min_bytes_for_concurrent_read;
+    const size_t min_read_task_size;
+    size_t max_threads_per_part = 1;
 };
 
 using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionIndexReader>;
@@ -245,7 +318,7 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 /// Key Responsibilities:
 /// - Serves as the unified access point for reading index data in a multi-threaded environment.
 /// - Lazily builds the MergeTreeIndexReadResult for a part on-demand, ensuring that only one thread performs
-///   the construction, while others wait for the result via shared futures.
+///   the construction, while the others wait for the result via shared futures, or help read its projection indexes.
 /// - Stores granule filters in a shared registry keyed by data part identity (raw pointer),
 ///   allowing concurrent tasks to reuse the result efficiently.
 /// - Handles cleanup of granule filters once the last read task for a part completes, releasing associated resources.
@@ -261,10 +334,13 @@ public:
     {
         std::shared_ptr<std::promise<MergeTreeIndexReadResultPtr>> promise;
         std::shared_future<MergeTreeIndexReadResultPtr> future;
+        /// Set whenever there is a projection index reader.
+        std::shared_ptr<ProjectionIndexReadSharing> sharing;
 
-        IndexReadResultEntry()
+        explicit IndexReadResultEntry(std::shared_ptr<ProjectionIndexReadSharing> sharing_)
             : promise(std::make_shared<std::promise<MergeTreeIndexReadResultPtr>>())
             , future(promise->get_future().share())
+            , sharing(std::move(sharing_))
         {
         }
     };
