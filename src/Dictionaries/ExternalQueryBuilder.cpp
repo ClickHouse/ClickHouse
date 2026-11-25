@@ -3,6 +3,8 @@
 #include <boost/range/join.hpp>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -448,7 +450,8 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
 
         const auto & key_description = (*dict_struct.key)[i];
 
-        if (handle_nan && isFloat(key_description.type) && std::isnan(key_columns[i]->getFloat64(row)))
+        if (handle_nan && isFloat(removeNullable(removeLowCardinality(key_description.type)))
+            && !key_columns[i]->isNullAt(row) && std::isnan(key_columns[i]->getFloat64(row)))
         {
             writeString("isNaN(", out);
             writeQuoted(key_description.name, out);

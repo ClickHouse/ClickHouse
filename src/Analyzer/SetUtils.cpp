@@ -849,7 +849,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(
         removeNullable(removeLowCardinality(lhs_expression_type)).get());
     const auto * rhs_array_type = typeid_cast<const DataTypeArray *>(rhs_type.get());
-    if (lhs_array_type && rhs_array_type
+    if (params.in_null_as_unknown && lhs_array_type && rhs_array_type
         && lhs_array_type->getNumberOfDimensions() == rhs_array_type->getNumberOfDimensions())
     {
         const auto & nested_type = rhs_array_type->getNestedType();

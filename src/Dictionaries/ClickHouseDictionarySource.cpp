@@ -33,11 +33,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool in_null_as_unknown;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -148,11 +143,10 @@ BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt6
 
 BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
-    /// Keep the dictionary's setting for user-authored source SQL. Equality
-    /// predicates retain the internal key lookup semantics in the opt-in mode.
-    const auto method = context->getSettingsRef()[Setting::in_null_as_unknown]
-        ? ExternalQueryBuilder::CLICKHOUSE_AND_OR_CHAIN : ExternalQueryBuilder::IN_WITH_TUPLES;
-    String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, method);
+    /// The source user's profile can enable three-valued `IN` independently of
+    /// this context, so the generated key predicate must not use tuple `IN`.
+    String query = query_builder->composeLoadKeysQuery(
+        key_columns, requested_rows, ExternalQueryBuilder::CLICKHOUSE_AND_OR_CHAIN);
     return createStreamForQuery(query);
 }
 
