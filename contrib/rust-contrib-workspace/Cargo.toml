@@ -44,3 +44,24 @@ _ch_rust_chdig = { path = "../chdig-cmake", optional = true }
 
 [profile.release]
 panic = "unwind"
+
+# The C Data Interface structs of arrow-rs are encoded by their C names in Clang CFI type ids (see ENABLE_CFI). Every
+# arrow-rs crate comes from the fork: they depend on each other through the fork's workspace.
+[patch.crates-io]
+arrow        = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-arith  = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-array  = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-buffer = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-cast   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-csv    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-data   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-ipc    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-json   = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-ord    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-row    = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-schema = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-select = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+arrow-string = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+parquet      = { git = "https://github.com/ClickHouse/arrow-rs", branch = "ClickHouse/58.4.1" }
+# Avoids calling an `Fn` closure through `dyn FnMut`, which fails CFI: https://github.com/rust-lang/rust/issues/166062
+ipnet        = { git = "https://github.com/ClickHouse/ipnet", branch = "ClickHouse/2.12.2" }

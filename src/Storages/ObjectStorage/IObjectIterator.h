@@ -97,6 +97,22 @@ struct ObjectInfo
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+
+/// An object whose size the table metadata records.
+struct ObjectInfoWithFileSizeHint : public ObjectInfo
+{
+    ObjectInfoWithFileSizeHint(const RelativePathWithMetadata & relative_path_with_metadata_, size_t file_size_hint_)
+        : ObjectInfo(relative_path_with_metadata_)
+        , file_size_hint(file_size_hint_)
+    {
+    }
+
+    [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoWithFileSizeHint>(*this); }
+
+    [[nodiscard]] std::optional<size_t> getFileSizeHint() const override { return file_size_hint; }
+
+    const size_t file_size_hint;
+};
 using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 

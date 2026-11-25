@@ -43,6 +43,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
     }
 #endif
+    if (!iceberg_info.has_value())
+        file_size_hint = object->getFileSizeHint();
 
 #if USE_LANCE
     if (const auto * lance_object = typeid_cast<const LanceDatasetObjectInfo *>(object.get()))
@@ -85,6 +87,10 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<LanceDatasetObjectInfo>(RelativePathWithMetadata{path}, *lance_info);
     }
 #endif
+    else if (file_size_hint)
+    {
+        object = std::make_shared<ObjectInfoWithFileSizeHint>(RelativePathWithMetadata{path}, *file_size_hint);
+    }
     else
     {
         object = std::make_shared<ObjectInfo>(path);
@@ -191,6 +197,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         writeVarUInt(data_lake_metadata.num_rows.has_value(), out);
         if (data_lake_metadata.num_rows)
             writeVarUInt(*data_lake_metadata.num_rows, out);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE)
+    {
+        writeVarUInt(file_size_hint.has_value(), out);
+        if (file_size_hint)
+            writeVarUInt(*file_size_hint, out);
     }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)
@@ -304,6 +317,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             data_lake_metadata.num_rows = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE)
+    {
+        bool has_file_size_hint = false;
+        readVarUInt(has_file_size_hint, in);
+        if (has_file_size_hint)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            file_size_hint = value;
         }
     }
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)

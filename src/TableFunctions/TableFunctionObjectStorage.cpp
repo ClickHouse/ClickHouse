@@ -331,7 +331,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && cached_columns.empty()
+        && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,

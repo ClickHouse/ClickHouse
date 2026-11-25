@@ -62,8 +62,10 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS 
 /// The number of rows of a data lake object recorded in the table metadata, to report `total_rows_approx` from the workers.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS = 14;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE = 15;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA = 16;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_SNAPSHOT_IDENTITY = 17;
+/// The size of a data lake object recorded in the table metadata, so that the workers do not request it from the object storage.
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE = 16;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA = 17;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_SNAPSHOT_IDENTITY = 18;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_SNAPSHOT_IDENTITY;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 2;

@@ -27,6 +27,8 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
+    /// The size of a data lake object recorded in the table metadata, unless `iceberg_info` carries it.
+    std::optional<size_t> file_size_hint;
 #if USE_LANCE
     /// Lance fragment-pack metadata (version + fragment_ids).
     std::optional<Lance::LanceObjectSerializableInfo> lance_info;
