@@ -1025,6 +1025,7 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
     /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
     /// be used for pruning.
     VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts = {predicate};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
     while (!conjuncts.empty())
     {
         const auto * node = conjuncts.back();
@@ -1038,6 +1039,8 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
 
         if (node->function_base->getName() == "and")
         {
+            if (!expanded.insert(node).second)
+                continue;
             conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
             continue;
         }

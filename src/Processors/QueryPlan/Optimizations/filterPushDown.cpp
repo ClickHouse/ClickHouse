@@ -1219,10 +1219,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{conjunct};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
         if (node->type == ActionsDAG::ActionType::INPUT)
             return true;
         if (node->type == ActionsDAG::ActionType::ALIAS

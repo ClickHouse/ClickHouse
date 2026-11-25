@@ -178,3 +178,35 @@ TEST(ActionsDAGTraversal, DeterminismOfSharedChain)
     EXPECT_TRUE(VirtualColumnUtils::isDeterministic(dag.getOutputs().front()));
     EXPECT_TRUE(VirtualColumnUtils::isDeterministicAllowingTopKFilter(dag.getOutputs().front()));
 }
+
+TEST(ActionsDAGTraversal, ConjunctionAtomsExpandSharedAndOnce)
+{
+    /// `c_{i+1} = and(c_i, c_i)`: 2^64 paths from the output to the input.
+    ActionsDAG dag;
+    const auto * input = &dag.addInput("x", std::make_shared<DataTypeUInt8>());
+    const auto * node = input;
+    for (size_t i = 0; i < 64; ++i)
+        node = &addFunction(dag, "and", {node, node}, "c" + std::to_string(i));
+
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtoms(node), (ActionsDAG::NodeRawConstPtrs{input, input}));
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtomsInWrittenOrder(node), (ActionsDAG::NodeRawConstPtrs{input, input}));
+}
+
+TEST(ActionsDAGTraversal, ConjunctionAtomsKeepFirstUseInEachOrder)
+{
+    ActionsDAG dag;
+    const auto & x = dag.addInput("x", std::make_shared<DataTypeUInt8>());
+    const auto & y = dag.addInput("y", std::make_shared<DataTypeUInt8>());
+    const auto & z = dag.addInput("z", std::make_shared<DataTypeUInt8>());
+
+    const auto & a = addFunction(dag, "and", {&x, &y}, "a");
+    const auto & shared = addFunction(dag, "and", {&a, &z, &a}, "shared");
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtoms(&shared), (ActionsDAG::NodeRawConstPtrs{&y, &x, &z}));
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtomsInWrittenOrder(&shared), (ActionsDAG::NodeRawConstPtrs{&x, &y, &z}));
+
+    /// Without a shared `and`, a repeated atom is kept.
+    const auto & b = addFunction(dag, "and", {&x, &y}, "b");
+    const auto & tree = addFunction(dag, "and", {&b, &z, &x}, "tree");
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtoms(&tree), (ActionsDAG::NodeRawConstPtrs{&x, &z, &y, &x}));
+    EXPECT_EQ(ActionsDAG::extractConjunctionAtomsInWrittenOrder(&tree), (ActionsDAG::NodeRawConstPtrs{&x, &y, &z, &x}));
+}

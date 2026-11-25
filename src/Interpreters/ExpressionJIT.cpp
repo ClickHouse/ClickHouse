@@ -552,13 +552,20 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
     if (!is_and(dag.getNodesCount() - 1))
         return conjuncts;
 
+    std::vector<bool> expanded(dag.getNodesCount());
     std::vector<size_t> stack{dag.getNodesCount() - 1};
     while (!stack.empty())
     {
         size_t i = stack.back();
         stack.pop_back();
         if (is_and(i))
-            stack.insert(stack.end(), dag[i].arguments.begin(), dag[i].arguments.end());
+        {
+            if (!expanded[i])
+            {
+                expanded[i] = true;
+                stack.insert(stack.end(), dag[i].arguments.begin(), dag[i].arguments.end());
+            }
+        }
         /// Only INPUTs are returned: `in` and its variants are never compiled (`FunctionIn` is not compilable and
         /// a `Set` argument has no native type), so they stay children of `node` and `isAlwaysFalseByEmptySet` can
         /// inspect their sets. If `in` becomes compilable, this walk must also handle its FUNCTION nodes in the DAG.

@@ -258,11 +258,12 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
-/// Unlike `getConjunctsList`, shared nodes are not de-duplicated: each occurrence is reported.
+/// Unlike `getConjunctsList`, a shared conjunct is reported on each occurrence; a shared `and` is expanded once.
 ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
 {
     ActionsDAG::NodeRawConstPtrs conjuncts;
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{predicate};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -270,6 +271,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node *
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
+            if (!expanded.insert(node).second)
+                continue;
             for (const auto * child : node->children | std::ranges::views::reverse)
                 stack.push_back(child);
         }

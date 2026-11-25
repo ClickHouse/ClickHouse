@@ -4167,9 +4167,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
     }
 
-    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
-    auto conjunction_atoms = extractConjunctionAtoms(predicate);
-    std::ranges::reverse(conjunction_atoms);
+    auto conjunction_atoms = extractConjunctionAtomsInWrittenOrder(predicate);
 
     /// Two copies of a runtime filter may pass different rows, and a match removed from the side an OUTER or ANTI
     /// join only matches against makes that join emit a row it would not, so no equivalent copy is pushed there.
@@ -4690,10 +4688,14 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
 }
 
-ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+namespace
 {
-    NodeRawConstPtrs atoms;
 
+/// An `and` with several parents is expanded once, at its first use in the order of the result.
+ActionsDAG::NodeRawConstPtrs extractConjunctionAtomsImpl(const ActionsDAG::Node * predicate, bool written_order)
+{
+    ActionsDAG::NodeRawConstPtrs atoms;
+    std::unordered_set<const ActionsDAG::Node *> expanded;
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
 
@@ -4701,22 +4703,40 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
     {
         const auto * node = stack.top();
         stack.pop();
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
-            const auto & name = node->function_base->getName();
-            if (name == "and")
+            if (expanded.insert(node).second)
             {
-                for (const auto * arg : node->children)
-                    stack.push(arg);
-
-                continue;
+                if (written_order)
+                {
+                    for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
+                        stack.push(*it);
+                }
+                else
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+                }
             }
+            continue;
         }
 
         atoms.push_back(node);
     }
 
     return atoms;
+}
+
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+{
+    return extractConjunctionAtomsImpl(predicate, /*written_order=*/ false);
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtomsInWrittenOrder(const Node * predicate)
+{
+    return extractConjunctionAtomsImpl(predicate, /*written_order=*/ true);
 }
 
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
