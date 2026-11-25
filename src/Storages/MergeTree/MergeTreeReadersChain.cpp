@@ -93,7 +93,7 @@ size_t MergeTreeReadersChain::numPendingRowsInCurrentGranule() const
 
 size_t MergeTreeReadersChain::numRowsInCurrentGranule() const
 {
-    return range_readers.empty() ? 0 : range_readers.back().numRowsInCurrentGranule();
+    return range_readers.empty() ? 0 : range_readers.front().numRowsInCurrentGranule();
 }
 
 size_t MergeTreeReadersChain::currentMark() const
