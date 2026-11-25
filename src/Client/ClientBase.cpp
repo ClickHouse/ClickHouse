@@ -5732,9 +5732,10 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
     /// opening its target. For an alias that points into a database of an external system
     /// (`PostgreSQL`, ...) that is a request for the definition of a table there. The settings
     /// that keep `system.tables` from enumerating a remote database do not cover an alias in a
-    /// local one; that is for the catalog tables of the server to do, and until they do it is
-    /// stated in the documentation next to the exception of the schema tools: a definition is
-    /// fetched, no data is read.
+    /// local one; that is for the catalog tables of the server to do
+    /// (https://github.com/ClickHouse/ClickHouse/issues/134368), and until they do it is stated in
+    /// the documentation next to the exception of the schema tools: a definition is fetched, no
+    /// data is read.
 
     /// Ask the server what these names are. `system.tables` only narrows its enumeration by
     /// `database = ...` and `name = ...`, so each table is looked up by a branch of its own
