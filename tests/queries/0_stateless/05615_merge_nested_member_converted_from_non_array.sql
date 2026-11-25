@@ -94,6 +94,22 @@ OPTIMIZE TABLE t_projection FINAL; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT id, n.a, n.c, n.x FROM t_projection ORDER BY id SETTINGS optimize_use_projections = 0;
 SELECT id, n.a, n.c, n.x FROM t_projection ORDER BY n.c SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+SELECT '-- converted member stored only in a patch part';
+DROP TABLE IF EXISTS t_patch;
+CREATE TABLE t_patch (id UInt64, `n.a` Array(UInt64), `n.c` Array(String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 1;
+INSERT INTO t_patch VALUES (0, [1, 2], ['p', 'q']), (1, [3], ['r']);
+ALTER TABLE t_patch ADD COLUMN `n.x` String AFTER id SETTINGS alter_sync = 2;
+SYSTEM STOP MERGES t_patch;
+UPDATE t_patch SET `n.x` = '[7]' WHERE 1 SETTINGS enable_lightweight_update = 1;
+ALTER TABLE t_patch MODIFY COLUMN `n.x` Array(UInt64);
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_patch' SYNC FORMAT Null;
+SYSTEM START MERGES t_patch;
+OPTIMIZE TABLE t_patch FINAL; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT id, n.a, n.c, n.x FROM t_patch ORDER BY id;
+
 SELECT '-- control: converted sizes match the other members';
 DROP TABLE IF EXISTS t_sizes_match;
 CREATE TABLE t_sizes_match (id UInt64, `n.x` String, `n.a` Array(UInt64), `n.c` Array(String))
@@ -164,6 +180,7 @@ DROP TABLE t_compact;
 DROP TABLE t_member_last;
 DROP TABLE t_single_part;
 DROP TABLE t_projection;
+DROP TABLE t_patch;
 DROP TABLE t_sizes_match;
 DROP TABLE t_no_shared_offsets;
 DROP TABLE t_recovery;

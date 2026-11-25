@@ -329,12 +329,13 @@ static void addMissedColumnsToSerializationInfos(
     }
 }
 
-/// Whether `part` stores a `Nested` array member as another type: its sizes after the conversion on read are then
-/// not the sizes stored for the other members, which share one sizes stream with it in the merged part.
+/// Whether `part`, or a patch applied to it, stores a `Nested` array member as another type: its sizes after the conversion
+/// on read are then not the sizes stored for the other members, which share one sizes stream with it in the merged part.
 static bool storesNestedMemberAsNonArray(
     const MergeTreeDataPartPtr & part, const AlterConversions & conversions, const NamesAndTypesList & storage_columns)
 {
     const auto & columns_in_part = part->getColumnsDescription();
+    const auto patches = conversions.getAllPatches();
     for (const auto & column : storage_columns)
     {
         if (!isArray(column.type) || Nested::splitName(column.name).second.empty())
@@ -347,6 +348,18 @@ static bool storesNestedMemberAsNonArray(
         auto column_in_part = columns_in_part.tryGetPhysical(name_in_part);
         if (column_in_part && !isArray(column_in_part->type))
             return true;
+
+        for (const auto & patch : patches)
+        {
+            const auto & patch_conversions = patch.part->getAlterConversions();
+            String name_in_patch = patch_conversions && patch_conversions->isColumnRenamed(column.name)
+                ? patch_conversions->getColumnOldName(column.name)
+                : column.name;
+
+            auto column_in_patch = patch.part->getColumnsDescription().tryGetPhysical(name_in_patch);
+            if (column_in_patch && !isArray(column_in_patch->type))
+                return true;
+        }
     }
     return false;
 }
