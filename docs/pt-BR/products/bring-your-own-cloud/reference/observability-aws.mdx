@@ -4,7 +4,7 @@ slug: /cloud/reference/byoc/observability
 sidebarTitle: 'Observabilidade'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'observabilidade', 'monitoramento', 'Prometheus', 'Grafana']
 description: 'Monitore e acompanhe sua implantação do ClickHouse em BYOC usando dashboards nativos e métricas do Prometheus'
-doc_type: 'referência'
+doc_type: 'reference'
 ---
 
 As implantações BYOC incluem recursos completos de observabilidade, permitindo que você monitore seus Serviços do ClickHouse por meio de uma stack dedicada de monitoramento do Prometheus e de endpoints de métricas expostos diretamente pelos servidores ClickHouse. Seus dados de monitoramento permanecem na sua conta na nuvem, dando a você controle total sobre sua infraestrutura de monitoramento. A telemetria limitada de uso e saúde listada em [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#outbound-connections) é o único dado de monitoramento exportado para a ClickHouse; separadamente, os dashboards da ClickHouse e, mediante escalonamento aprovado, seus engenheiros podem consultar essa stack no local por meio do Tailscale, sem que nada seja persistido do lado da ClickHouse — consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access).
