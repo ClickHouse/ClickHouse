@@ -255,7 +255,8 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
             if (footer_cache_hit && key_identifies_content)
             {
                 new_reader->reader.max_read_offset_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingBytes();
-                if (new_reader->reader.max_read_offset_indexes_bytes)
+                new_reader->reader.max_read_column_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingColumnIndexBytes();
+                if (new_reader->reader.max_read_offset_indexes_bytes || new_reader->reader.max_read_column_indexes_bytes)
                     offset_indexes_cache_cell = footer_cache_cell;
             }
         }

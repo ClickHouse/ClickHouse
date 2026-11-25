@@ -30,7 +30,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ## page_cache_policy {#page_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت للصفحات في فضاء المستخدم. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />سياسة الإخلاء لذاكرة التخزين المؤقت للصفحات في فضاء المستخدم. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`. راجع [`page_cache_max_size`](/ar/reference/settings/server-settings/settings/page-cache#page_cache_max_size) لمعرفة سعة ذاكرة التخزين المؤقت، و[`page_cache_size_ratio`](/ar/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio) لمعرفة حجم قائمة الانتظار المحمية في سياسة SLRU.
 
 ## page_cache_shards {#page_cache_shards}
 

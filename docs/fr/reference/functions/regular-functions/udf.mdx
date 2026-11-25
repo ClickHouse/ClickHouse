@@ -6,21 +6,17 @@ title: 'Fonctions définies par l''utilisateur (UDFs)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-ClickHouse prend en charge plusieurs types de fonctions définies par l&#39;utilisateur (UDFs) :
+ClickHouse prend en charge plusieurs types de fonctions définies par l&#39;utilisateur (UDFs) :
 
-* [UDFs exécutables](#executable-user-defined-functions) lancent un programme externe ou un script (Python, Bash, etc.) et lui transmettent des blocs de données en flux via STDIN / STDOUT. Utilisez-les pour intégrer du code ou des outils existants sans recompiler ClickHouse. Leur surcoût par appel est plus élevé que celui des options exécutées dans le processus, et elles conviennent mieux à une logique plus lourde ou aux cas où un environnement d&#39;exécution différent est nécessaire.
+* [UDF exécutables](#executable-user-defined-functions) lancent un programme externe ou un script (Python, Bash, etc.) et lui transmettent des blocs de données en flux via STDIN / STDOUT. Utilisez-les pour intégrer du code ou des outils existants sans recompiler ClickHouse. Leur surcoût par appel est plus élevé que celui des options exécutées dans le processus, et elles conviennent mieux à une logique plus lourde ou aux cas où un environnement d&#39;exécution différent est nécessaire.
 * [SQL UDFs](#sql-user-defined-functions) sont définies avec `CREATE FUNCTION` uniquement en SQL. Elles sont intégrées/dépliées dans le plan de requête (sans passer par un processus distinct), ce qui les rend légères et idéales pour réutiliser une logique d&#39;expression ou simplifier des colonnes calculées complexes.
-* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) exécutent du code compilé en WebAssembly dans un sandbox au sein du processus serveur. Elles offrent un surcoût par appel plus faible que les exécutables externes, avec une meilleure isolation que les extensions natives, ce qui les rend adaptées aux algorithmes personnalisés écrits dans des langages pouvant cibler WASM (par ex. C/C++/Rust).
-* [Experimental UDF exécutable basé sur un driver](#driver-based-executable-user-defined-functions) permettent à un &quot;driver&quot; fourni par l&#39;opérateur de transformer un extrait de code fourni dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une UDF exécutable au moment de la création de la fonction (par exemple, en le compilant). Elles s&#39;appuient sur les UDFs exécutables et nécessitent une configuration du driver côté serveur.
+* [UDFs WebAssembly expérimentales](#webassembly-user-defined-functions) exécutent du code compilé en WebAssembly dans un sandbox au sein du processus serveur. Elles offrent un surcoût par appel plus faible que les exécutables externes, avec une meilleure isolation que les extensions natives, ce qui les rend adaptées aux algorithmes personnalisés écrits dans des langages pouvant cibler WASM (par ex. C/C++/Rust).
+* [UDF exécutables expérimentales basées sur un pilote](#driver-based-executable-user-defined-functions) permettent à un &quot;driver&quot; fourni par l&#39;opérateur de transformer un extrait de code fourni dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une UDF exécutable au moment de la création de la fonction (par exemple, en le compilant). Elles s&#39;appuient sur les UDF exécutables et nécessitent une configuration du driver côté serveur.
 
 ## Fonctions exécutables définies par l’utilisateur {#executable-user-defined-functions}
-
-<BetaBadge />
 
 <Note>
   Dans ClickHouse Cloud, les UDF exécutables sont en disponibilité générale et sont créées via la Cloud Console, l’API Cloud ou Terraform. Consultez [les fonctions définies par l’utilisateur dans Cloud](/fr/products/cloud/features/sql-console-features/user-defined-functions) pour la procédure propre à Cloud, y compris l’environnement d’exécution Native pour les binaires compilés.
@@ -56,7 +52,14 @@ Une configuration de fonction contient les paramètres suivants :
 
 La commande doit lire les arguments depuis `STDIN` et écrire le résultat sur `STDOUT`. Elle doit traiter les arguments de manière itérative. Autrement dit, après avoir traité un fragment d’arguments, elle doit attendre le fragment suivant.
 
-## Fonctions exécutables définies par l’utilisateur {#executable-user-defined-functions}
+<Note>
+  Avec le format `TabSeparated`, ClickHouse échappe les caractères spéciaux dans les arguments qu’il transmet et déséchappe la sortie de la commande, conformément aux [règles d’échappement TabSeparated](/fr/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). Par exemple, un antislash présent dans un argument est transmis à la commande sous la forme `\\`, et une tabulation ou un saut de ligne sous la forme `\t` ou `\n`. La commande doit échapper sa sortie de la même manière. À défaut, un antislash dans la sortie, par exemple dans du texte JSON, est interprété comme le début d’une séquence d’échappement : le résultat est alors incorrect, ou ne peut pas être analysé.
+
+  Si la commande n’échappe pas sa sortie, utilisez plutôt l’un des formats suivants :
+
+  * [`TabSeparatedRaw`](/fr/reference/formats/TabSeparated/TabSeparatedRaw) : les valeurs ne sont pas échappées ; elles ne doivent donc contenir ni tabulations ni sauts de ligne.
+  * [`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow) : les chaînes de caractères peuvent contenir des antislashs, des tabulations et des sauts de ligne. Consultez l’[exemple JSON](#udf-stdin) ci-dessous.
+</Note>
 
 ## Exemples {#examples}
 

@@ -291,6 +291,10 @@ private:
 
     [[nodiscard]] bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
 
+    /// The argument of `arrayJoin` that has the index. LEFT ARRAY JOIN is `arrayJoin(emptyArrayToSingle(arr))`:
+    /// `padded` is set when the index is on `arr`, which does not have the element added for an empty array.
+    [[nodiscard]] std::optional<RPNBuilderTreeNode> getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const;
+
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""

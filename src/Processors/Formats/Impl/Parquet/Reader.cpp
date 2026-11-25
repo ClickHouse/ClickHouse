@@ -98,6 +98,7 @@ namespace ProfileEvents
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
     extern const Event ParquetMetadataCacheOffsetIndexHits;
+    extern const Event ParquetMetadataCacheColumnIndexHits;
 }
 
 namespace DB::Parquet
@@ -1094,6 +1095,12 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
+/// A `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
+static bool statisticsKeepStrippedZeroBytes(const Reader::PrimitiveColumnInfo & column, const DataTypePtr & output_type)
+{
+    return isFixedString(column.decoded_type) && isString(removeNullable(removeLowCardinality(output_type)));
+}
+
 void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
@@ -1369,15 +1376,25 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         auto condition = format_filter_info->tryGetJoinRuntimeFilterKeyCondition(*sample_block);
         if (condition && *condition && !(*condition)->alwaysUnknownOrTrue())
         {
-            join_runtime_filter_key_condition = *condition;
-            for (size_t idx_in_output_block : join_runtime_filter_key_condition->getUsedColumns())
+            VectorWithMemoryTracking<size_t> used_primitives;
+            bool statistics_usable = true;
+            for (size_t idx_in_output_block : (*condition)->getUsedColumns())
             {
                 const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
                 if (!output_idx.has_value())
                     continue;
                 const OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                if (output_info.is_primitive)
-                    primitive_columns[output_info.primitive_start].used_by_join_runtime_filter = true;
+                if (!output_info.is_primitive)
+                    continue;
+                if (statisticsKeepStrippedZeroBytes(primitive_columns[output_info.primitive_start], output_info.output_type))
+                    statistics_usable = false;
+                used_primitives.push_back(output_info.primitive_start);
+            }
+            if (statistics_usable)
+            {
+                join_runtime_filter_key_condition = *condition;
+                for (size_t primitive_idx : used_primitives)
+                    primitive_columns[primitive_idx].used_by_join_runtime_filter = true;
             }
         }
     }
@@ -1481,13 +1498,11 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 /// query's collation order, so a row group could be skipped while still holding
                 /// values that sort before the threshold under the collator. The per-row
                 /// `__topKFilter` (which does compare with the collator) stays.
-                /// Same for a `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
                 if (top_k_column_is_read
                     && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats
-                    && !(isFixedString(primitive_columns[output_info.primitive_start].decoded_type)
-                         && isString(removeNullable(removeLowCardinality(output_info.output_type)))))
+                    && !statisticsKeepStrippedZeroBytes(primitive_columns[output_info.primitive_start], output_info.output_type))
                     top_k_primitive_idx = output_info.primitive_start;
 
                 if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
@@ -1985,6 +2000,8 @@ void Reader::initializePrefetches()
         || (format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows && top_k_column_is_read)
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
+    /// The bytes of the column indexes registered below that `max_read_column_indexes_bytes` can keep.
+    size_t column_indexes_to_keep_bytes = 0;
 
     for (RowGroup & row_group : row_groups)
     {
@@ -2124,9 +2141,28 @@ void Reader::initializePrefetches()
                 && (column.offset_index_prefetch || !column.offset_index.page_locations.empty())
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
-                column.column_index_prefetch = prefetcher.registerRange(
-                    size_t(column.meta->column_index_offset),
-                    size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+            {
+                const size_t column_index_bytes = KeptOffsetIndexes::columnIndexEntryBytes(size_t(column.meta->column_index_length));
+                const bool can_keep = column_indexes_to_keep_bytes + column_index_bytes <= max_read_column_indexes_bytes;
+                column.kept_column_index = kept_offset_indexes
+                    ? kept_offset_indexes->getColumnIndex(row_group.row_group_idx, primitive_columns[column_idx].column_idx) : nullptr;
+                if (column.kept_column_index)
+                    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheColumnIndexHits);
+                /// With the offset index taken from the cache, this column index would be a read of its own on every read of the file.
+                else if (!can_keep && !column.offset_index_prefetch && !format_filter_info->join_runtime_filter_reads_uncached_column_index
+                         && std::ranges::all_of(
+                             primitive_columns[column_idx].column_index_conditions,
+                             &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter))
+                    column.use_column_index = false;
+                else
+                {
+                    if (can_keep)
+                        column_indexes_to_keep_bytes += column_index_bytes;
+                    column.column_index_prefetch = prefetcher.registerRange(
+                        size_t(column.meta->column_index_offset),
+                        size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+                }
+            }
 
             /// Data pages.
 
@@ -3196,7 +3232,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         chassert(column.use_column_index);
         chassert(!column_info.column_index_conditions.empty());
 
-        auto data = prefetcher.getRangeData(column.column_index_prefetch);
+        auto data = column.kept_column_index ? std::span<const char>(*column.kept_column_index)
+                                             : prefetcher.getRangeData(column.column_index_prefetch);
         parq::ColumnIndex column_index;
         deserializeThriftStruct(column_index, data.data(), data.size());
 
@@ -3207,6 +3244,20 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             (column_index.null_pages.size() != num_pages && !column_index.null_pages.empty()) ||
             (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
+
+        if (max_read_column_indexes_bytes && !column.kept_column_index)
+        {
+            size_t bytes = KeptOffsetIndexes::entryBytes(data);
+            std::lock_guard lock(read_offset_indexes_mutex);
+            if (read_column_indexes_bytes + bytes <= max_read_column_indexes_bytes)
+            {
+                read_offset_indexes.push_back(
+                    {.row_group_idx = row_group.row_group_idx,
+                     .column_idx = column_info.column_idx,
+                     .column_index = std::make_shared<const StringWithMemoryTracking>(data.data(), data.size())});
+                read_column_indexes_bytes += bytes;
+            }
+        }
 
         /// The Range must be in terms of the type that checkInHyperrectangle compares it
         /// against, which may differ from decoded_type - see cast_stats_to_output_type.

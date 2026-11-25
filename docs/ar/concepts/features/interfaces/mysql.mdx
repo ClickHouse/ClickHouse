@@ -16,7 +16,7 @@ doc_type: 'guide'
 إذا كنت تجرّب عملاء أو عمليات تكامل أخرى غير مختبرة، فضع في اعتبارك احتمال وجود القيود التالية:
 
 * قد لا يكون تنفيذ SSL متوافقًا بالكامل؛ وقد تظهر مشكلات محتملة في [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/).
-* قد تتطلب أداة معيّنة ميزات في لهجة MySQL (مثل دوال أو إعدادات خاصة بـ MySQL) لم تُنفَّذ بعد.
+* قد تتطلب أداة معيّنة ميزات في لهجة MySQL (مثل دوال أو إعدادات خاصة بـ MySQL) لم تُنفَّذ بعد.
 
 إذا كان هناك برنامج تشغيل أصلي متاح (مثل [DBeaver](/ar/integrations/connectors/sql-clients/dbeaver))، فمن الأفضل دائمًا استخدامه بدلًا من واجهة MySQL. بالإضافة إلى ذلك، رغم أن معظم مكتبات العملاء للغات البرمجة الخاصة بـ MySQL يُفترض أن تعمل جيدًا، فإن واجهة MySQL ليست مضمونة لتكون بديلًا مباشرًا لقاعدة شيفرة تحتوي على استعلامات MySQL حالية.
 
@@ -27,22 +27,16 @@ doc_type: 'guide'
   لا يمكن تعطيل هذا، وقد يؤدي في حالات نادرة إلى اختلاف في السلوك بين الاستعلامات المرسلة إلى واجهتَي الاستعلام العادية وMySQL في ClickHouse.
 </Note>
 
-<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
-  ## تمكين واجهة MySQL على ClickHouse Cloud
-</div>
+## تمكين واجهة MySQL على ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
 
 1. بعد إنشاء خدمة ClickHouse Cloud، انقر على الزر `Connect`.
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![شاشة بيانات الاعتماد - Prompt](/images/interfaces/mysql0.webp)
-
-</Frame>
-
+  <Frame>
+    ![شاشة بيانات الاعتماد - Prompt](/images/interfaces/mysql0.webp)
+  </Frame>
 </div>
 
 2. غيّر خيار `Connect with` من القائمة المنسدلة إلى `MySQL`.
@@ -50,13 +44,9 @@ doc_type: 'guide'
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![شاشة بيانات الاعتماد - تم تحديد MySQL](/images/interfaces/mysql1.webp)
-
-</Frame>
-
+  <Frame>
+    ![شاشة بيانات الاعتماد - تم تحديد MySQL](/images/interfaces/mysql1.webp)
+  </Frame>
 </div>
 
 3. فعّل زر التبديل لتمكين واجهة MySQL لهذه الخدمة تحديدًا. سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، وستظهر لك شاشة اتصال MySQL التي تتضمن اسم مستخدم MySQL الفريد الخاص بك. وستكون كلمة المرور هي نفسها كلمة مرور مستخدم الخدمة `default`.
@@ -64,29 +54,21 @@ doc_type: 'guide'
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![شاشة بيانات الاعتماد - تم تمكين MySQL](/images/interfaces/mysql2.webp)
-
-</Frame>
-
+  <Frame>
+    ![شاشة بيانات الاعتماد - تم تمكين MySQL](/images/interfaces/mysql2.webp)
+  </Frame>
 </div>
 
 انسخ سلسلة اتصال MySQL الظاهرة.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![شاشة بيانات الاعتماد - سلسلة الاتصال](/images/interfaces/mysql3.webp)
-
-</Frame>
-
+  <Frame>
+    ![شاشة بيانات الاعتماد - سلسلة الاتصال](/images/interfaces/mysql3.webp)
+  </Frame>
 </div>
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
-  ## إنشاء عدة مستخدمي MySQL في ClickHouse Cloud
+  ## إنشاء عدة مستخدمي MySQL في ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 بشكل افتراضي، يوجد مستخدم مضمّن باسم `mysql4<subdomain>`، ويستخدم كلمة المرور نفسها الخاصة بالمستخدم `default`. ويشير الجزء `<subdomain>` إلى المقطع الأول من اسم المضيف الخاص بك في ClickHouse Cloud. هذا التنسيق ضروري للعمل مع الأدوات التي تدعم الاتصال الآمن، لكنها لا توفّر [معلومات SNI ضمن مصافحة TLS الخاصة بها](https://www.cloudflare.com/learning/ssl/what-is-sni)، ما يجعل التوجيه الداخلي مستحيلًا من دون تلميح إضافي في اسم المستخدم (ويُعد عميل MySQL console أحد هذه الأدوات).
@@ -130,7 +112,7 @@ doc_type: 'guide'
 4. استخدم المستخدم الذي أنشأته للاتصال بخدمة ClickHouse Cloud الخاصة بك عبر واجهة MySQL.
 
 <div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
-  ### Troubleshooting تعدد مستخدمي MySQL في ClickHouse Cloud
+  ### Troubleshooting تعدد مستخدمي MySQL في ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
 </div>
 
 إذا أنشأت مستخدم MySQL جديدًا وظهر لك الخطأ التالي أثناء الاتصال عبر عميل MySQL CLI:
@@ -142,7 +124,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 في هذه الحالة، تأكد من أن اسم المستخدم يتبع صيغة `mysql4<subdomain>_<username>`، كما هو موضح ([أعلاه](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
 <div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
-  ## تمكين واجهة MySQL في ClickHouse المُدار ذاتيًا
+  ## تمكين واجهة MySQL في ClickHouse المُدار ذاتيًا {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 </div>
 
 أضِف الإعداد [mysql&#95;port](/ar/reference/settings/server-settings/settings/mysql#mysql_port) إلى ملف إعدادات الخادم. على سبيل المثال، يمكنك تحديد المنفذ في ملف XML جديد داخل المجلد `config.d/` [folder](/ar/concepts/features/configuration/server-config/configuration-files):
@@ -160,7 +142,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 ```
 
 <div id="connect-mysql-to-clickhouse">
-  ## ربط MySQL بـ ClickHouse
+  ## ربط MySQL بـ ClickHouse {#connect-mysql-to-clickhouse}
 </div>
 
 يوضح الأمر التالي كيفية ربط عميل MySQL ‏`mysql`‏ بـ ClickHouse:

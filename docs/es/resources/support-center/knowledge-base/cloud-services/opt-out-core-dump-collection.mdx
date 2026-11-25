@@ -2,11 +2,11 @@
 date: 2026-02-04
 title: 'Cómo desactivar la recopilación de informes de fallos'
 description: 'En este artículo se muestra cómo desactivar la recopilación de informes de fallos en ClickHouse Cloud'
-tags: ['Gestión de Cloud']
+tags: ['Managing Cloud']
 ---
 
 <div id="overview">
-  ## Descripción general
+  ## Descripción general {#overview}
 </div>
 
 A partir del **27 de febrero de 2026**, ClickHouse Cloud comenzará a recopilar informes de fallos cuando se produzcan cierres inesperados del servidor. Esto forma parte de nuestro compromiso de mejorar la fiabilidad del servicio para todos nuestros usuarios.
@@ -18,7 +18,7 @@ La recopilación de informes de fallos nos ayuda a:
 * Mejorar continuamente su experiencia con el servicio
 
 <div id="whats-collected">
-  ## Qué se recopila
+  ## Qué se recopila {#whats-collected}
 </div>
 
 Cuando se produce un fallo, los informes de fallos capturan una instantánea del estado del servidor en ese momento. Queremos ser transparentes: esto puede incluir información confidencial que estaba en memoria, como:
@@ -29,7 +29,7 @@ Cuando se produce un fallo, los informes de fallos capturan una instantánea del
 * Otros datos en memoria en el momento del fallo
 
 <div id="how-we-protect-your-data">
-  ### Cómo protegemos sus datos
+  ### Cómo protegemos sus datos {#how-we-protect-your-data}
 </div>
 
 Nos tomamos muy en serio la seguridad de estos datos:
@@ -39,7 +39,7 @@ Nos tomamos muy en serio la seguridad de estos datos:
 * **Retención limitada**: Los datos se conservan solo el tiempo necesario para la depuración y después se eliminan de forma segura
 
 <div id="services-automatically-excluded">
-  ## Servicios excluidos automáticamente
+  ## Servicios excluidos automáticamente {#services-automatically-excluded}
 </div>
 
 Algunos servicios se excluyen automáticamente de la recopilación de informes de fallos:
@@ -48,9 +48,7 @@ Algunos servicios se excluyen automáticamente de la recopilación de informes d
 * Servicios con requisitos de cumplimiento normativo de **PCI**
 * Servicios **BYOC** (Bring Your Own Cloud)
 
-<div id="how-to-opt-out">
-  ## Cómo excluirse
-</div>
+## Cómo excluirse {#how-to-opt-out}
 
 Si prefieres no participar en la recopilación de informes de fallos, puedes excluirte fácilmente:
 
@@ -61,13 +59,9 @@ Si prefieres no participar en la recopilación de informes de fallos, puedes exc
 5. Desactiva la opción para excluirte
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Dónde encontrar la opción para excluirse en la UI de Cloud](/images/crash-reports.png)
-
-</Frame>
-
+  <Frame>
+    ![Dónde encontrar la opción para excluirse en la UI de Cloud](/images/crash-reports.png)
+  </Frame>
 </div>
 
 <Note>
@@ -75,11 +69,7 @@ Si prefieres no participar en la recopilación de informes de fallos, puedes exc
 </Note>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Recopilación de informes de fallos](/images/cloud/crash-reports-collection.png)
-
-</Frame>
-
+  <Frame>
+    ![Recopilación de informes de fallos](/images/cloud/crash-reports-collection.png)
+  </Frame>
 </div>
