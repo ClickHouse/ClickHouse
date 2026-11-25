@@ -21,6 +21,13 @@ WHERE explain LIKE '%Filter column:%rand%' AND explain NOT LIKE '%a3%';
 SELECT count() FROM (EXPLAIN SELECT arrayJoin(A) AS a FROM t_aj_partial WHERE a = 'a3' AND rand() >= 0)
 WHERE explain LIKE '%Element filter column%';
 
+SELECT '-- a function that is not cheap but cannot throw goes into the step too';
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE startsWith(a, 'a3') AND rand() >= 0)
+WHERE explain LIKE '%Element filter column%';
+SELECT count() FROM (EXPLAIN SELECT a FROM t_aj_partial ARRAY JOIN A AS a WHERE rand() >= 0 AND endsWith(a, '3'))
+WHERE explain LIKE '%Element filter column%';
+SELECT groupArray(id) FROM (SELECT id FROM t_aj_partial ARRAY JOIN A AS a WHERE startsWith(a, 'a3') AND (rand() % 1 + id) % 2 = 0 ORDER BY id);
+
 SELECT '-- two arrays: each step gets its conjunct';
 SELECT count() FROM (EXPLAIN SELECT a, b FROM t_aj_partial ARRAY JOIN A AS a ARRAY JOIN B AS b WHERE a = 'a3' AND b = 'b1' AND rand() >= 0)
 WHERE explain LIKE '%Element filter column%';
