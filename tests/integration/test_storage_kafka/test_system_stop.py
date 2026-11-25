@@ -1130,13 +1130,14 @@ def test_refresh_survives_unready_dependencies(kafka_cluster):
 
 @pytest.mark.parametrize(
     "variant,refresh_while_stopped",
-    [("new", False), ("new", True), ("cascade", False), ("replace", False)],
-    ids=["streaming", "refresh", "cascade", "replace"],
+    [("new", False), ("new", True), ("cascade", False), ("replace", False), ("rename", False)],
+    ids=["streaming", "refresh", "cascade", "replace", "rename"],
 )
 @pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
 def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, variant, refresh_while_stopped):
-    # A view created while a streaming cycle waits (a new view on the table, a view on its target, or a view
-    # re-created under the same name) must get the messages that cycle polls, although its pipeline lacks it.
+    # A view created while a streaming cycle waits (a new view on the table, a view on its target, a view re-created
+    # under the same name, or one created under the name of a renamed view) must get the messages that cycle polls,
+    # although its pipeline lacks it.
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_new_view_{k.random_string(6)}"
     failpoint = "kafka_pause_after_building_insert_pipeline"
@@ -1165,7 +1166,9 @@ def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, var
             instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
             if variant == "replace":
                 instance.query(f"DROP TABLE test.{table}_mv")
-            view = f"{table}_mv" if variant == "replace" else f"{table}_mv2"
+            elif variant == "rename":
+                instance.query(f"RENAME TABLE test.{table}_mv TO test.{table}_mv_old")
+            view = f"{table}_mv" if variant in ("replace", "rename") else f"{table}_mv2"
             source = f"{table}_dst" if variant == "cascade" else table
             instance.query(
                 f"CREATE MATERIALIZED VIEW test.{view} TO test.{table}_dst2 AS "

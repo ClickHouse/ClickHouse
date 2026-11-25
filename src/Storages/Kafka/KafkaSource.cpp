@@ -211,7 +211,8 @@ Chunk KafkaSource::generateImpl()
             }
             consumed_any = true;
             /// Leave the batch to the next cycle, whose pipeline includes the views attached meanwhile.
-            if (new_batch && streaming_views && StorageKafkaUtils::viewsChanged(storage_id, context, *streaming_views))
+            if (new_batch && streaming_views
+                && StorageKafkaUtils::viewsChanged(storage_id, context->getGlobalContext(), *streaming_views))
             {
                 ended_on_views_change = true;
                 break;
