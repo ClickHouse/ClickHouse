@@ -25,9 +25,6 @@ using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 class StorageRabbitMQ final: public IStreamingStorage, WithContext
 {
 public:
-    /// SYSTEM STOP/PAUSE blocks future cycles; the source checks it to end an idle wait early.
-    bool isConsumeBlocked() const { return stream_control.isBlocked(); }
-
     StorageRabbitMQ(
             const StorageID & table_id_,
             ContextPtr context_,
@@ -175,6 +172,7 @@ private:
     /// started.
     std::mutex loop_mutex;
 
+    size_t read_attempts = 0;
     mutable bool drop_table = false;
 
     RabbitMQConsumerPtr createConsumer();
@@ -202,7 +200,6 @@ private:
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
-    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);

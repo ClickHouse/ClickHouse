@@ -46,7 +46,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isAggregationCall() || !isUniqFunction(function_node->getFunctionName()))
+        if (!function_node || !function_node->isAggregateFunction() || !isUniqFunction(function_node->getFunctionName()))
             return;
 
         bool replaced_argument = false;
@@ -56,7 +56,7 @@ public:
         auto remove_injective_function = [&replaced_argument](QueryTreeNodePtr & arg) -> bool
         {
             auto * arg_typed = arg->as<FunctionNode>();
-            if (!arg_typed || !arg_typed->isOrdinaryCall())
+            if (!arg_typed || !arg_typed->isOrdinaryFunction())
                 return false;
 
             /// Do not apply optimization if injective function contains multiple arguments

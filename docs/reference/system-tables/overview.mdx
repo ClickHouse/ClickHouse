@@ -111,7 +111,7 @@ WHERE `table` = 'pypi'
 1 row in set. Elapsed: 0.004 sec.
 ```
 
-Conversely, other system tables are node-specific e.g. in-memory or persisting their data using the MergeTree table engine. This is typical for data such as logs and metrics. This persistence ensures that historical data remains available for analysis. However, these node-specific tables are inherently unique to each node. Note that in ClickHouse Cloud the persisted tables keep their data in object storage, not on the node's local disk.
+Conversely, other system tables are node-specific e.g. in-memory or persisting their data using the MergeTree table engine. This is typical for data such as logs and metrics. This persistence ensures that historical data remains available for analysis. However, these node-specific tables are inherently unique to each node.
 
 In general, the following rules can be applied when determining if a system table is node-specific:
 
@@ -179,7 +179,7 @@ Peak memory usage: 28.45 MiB.
 While the numeric suffix on tables can suggest the order of data, it should never be relied upon. For this reason, always use the merge table function combined with a date filter when targeting specific date ranges.
 </Info>
 
-Importantly, these tables are still **specific to each node**.
+Importantly, these tables are still **local to each node**.
 
 ### Querying across nodes {#querying-across-nodes}
 

@@ -2,7 +2,6 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -17,9 +16,7 @@ private:
 public:
     explicit FieldVisitorScale(Int64 rhs_);
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void operator() (Int64 & x) const;
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void operator() (UInt64 & x) const;
     void operator() (Float64 & x) const;
     void operator() (Null &) const;
@@ -33,7 +30,6 @@ public:
     [[noreturn]] void operator() (IPv6 &) const;
     [[noreturn]] void operator() (AggregateFunctionStateData &) const;
     [[noreturn]] void operator() (CustomType &) const;
-    [[noreturn]] void operator() (NumberLiteral &) const;
     [[noreturn]] void operator() (bool &) const;
 
     template <typename T>

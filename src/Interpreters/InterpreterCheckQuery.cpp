@@ -36,8 +36,6 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Databases/IDatabase.h>
-#include <Processors/ISource.h>
 
 
 namespace DB
@@ -51,6 +49,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -151,12 +150,9 @@ public:
         }
         catch (const Exception & e)
         {
-            /// Rethrow transient errors instead of reporting a false "broken" row. That includes the
-            /// shutdown `ABORTED` this catch was originally added for: nothing was read, so reporting a
-            /// failed check would certify that the data is broken - which is what a monitoring query
-            /// reads out of `check_query_single_value_result = 1` - on a replica that merely lost its
-            /// Keeper session. `isRetryableException` treats `ABORTED` as retryable.
-            if (isRetryableException(std::current_exception()))
+            /// Rethrow transient errors instead of reporting a false "broken" row. Keep swallowing the shutdown
+            /// ABORTED (what this catch was added for) — `isRetryableException` treats ABORTED as retryable.
+            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
                 throw;
 
             is_finished = true;

@@ -14,18 +14,19 @@
 --    the consult side, because the cache is CSN-oblivious while the delete bitmap is not: a mark
 --    recorded as non-matching after a bitmap drop could be skipped by a reader pinned at an older
 --    snapshot whose rows are still live.
--- 2. No UNIQUE KEY part can carry a materialized `_row_exists` mask: `DELETE FROM` writes a delete
---    bitmap instead of running as an `UPDATE _row_exists`, and the other mutation-class commands
---    that would write one are rejected on such tables.
+-- 2. No UNIQUE KEY part can carry a materialized `_row_exists` mask, because mutation-class commands
+--    are rejected on such tables - `DELETE FROM` included, as it is executed as an
+--    `UPDATE _row_exists`.
 --
 -- Either one on its own is enough to keep such tables away from the materialized-mask handling in
 -- `appliesMutationsBeforePrewhere`. Re-enabling the cache for UNIQUE KEY reads (there is a TODO for
 -- a snapshot-aware cache) makes this test fail, which is the point: that work has to look at the
 -- mask and bitmap interaction rather than just flipping the flag.
 
-SET enable_unique_key = 1;
+SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
 SET use_query_condition_cache = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_uk;
 
@@ -36,8 +37,7 @@ SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_
 INSERT INTO t_qcc_uk SELECT number, number FROM numbers(100000);
 
 SELECT '--- a UNIQUE KEY part cannot carry a materialized _row_exists mask';
--- Red if a UNIQUE KEY `DELETE FROM` runs as `UPDATE _row_exists` instead of writing a delete bitmap.
-DELETE FROM t_qcc_uk WHERE id = 0;
+DELETE FROM t_qcc_uk WHERE id = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT sum(has_lightweight_delete) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_qcc_uk' AND active;
@@ -64,7 +64,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment IN ('04670_uk_prime', '04670_uk_reuse')
 ORDER BY event_time_microseconds;
 
--- Red if the DELETE is not applied: both counts then include id 0.
 SELECT '--- results are correct';
 SELECT count() FROM t_qcc_uk;
 SELECT count() FROM t_qcc_uk WHERE v < 10;

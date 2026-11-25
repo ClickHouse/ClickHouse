@@ -5,7 +5,6 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/NonblockingBoundedQueue.h>
@@ -59,8 +58,6 @@ public:
         = 0;
 
     virtual void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) = 0;
-    /// Changes the level of the text_log sink added with addTextLog (e.g. on configuration reload).
-    virtual void setTextLogLevel(int max_priority) = 0;
 
     virtual void setLevel(const std::string & name, int level) = 0;
 };
@@ -85,7 +82,6 @@ public:
         ChannelPtr channel, const std::string & name, int level, const ProfileEvents::Event &, const ProfileEvents::Event &) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
-    void setTextLogLevel(int max_priority) override;
 
     void setLevel(const std::string & name, int level) override;
 
@@ -133,7 +129,6 @@ public:
         const ProfileEvents::Event & event_on_dropped_message_) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
-    void setTextLogLevel(int max_priority) override;
     void setLevel(const std::string & name, int level) override;
 
     void flushTextLogs();
@@ -180,11 +175,6 @@ private:
     std::atomic<size_t> active_async_loggers = 0;
     const size_t async_queue_size;
 
-    /// Serializes channel registration (`addChannel`, `addTextLog`) with `getAsynchronousMetrics`. Keeper starts
-    /// the `AsynchronousMetrics` thread before it rebuilds the loggers, so that thread can run while channels are
-    /// being added and must not see `channels` already extended but `queues` not yet.
-    std::mutex registration_mutex;
-
     /// Each channel has a different queue, and each one a single thread handling it
     MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
     VectorWithMemoryTracking<OwnFormattingChannel *> channels;
@@ -216,11 +206,6 @@ private:
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
-    /// Set by the first `open` that starts the text_log consumer (the level was not `none` then) and never
-    /// cleared. Distinguishes an absent consumer from a running one whose level was later reloaded to `none`:
-    /// the latter must still serve flushes for messages accepted before the reload, and must be restarted
-    /// by `open` after `remapExecutable` so the level can be raised again on a later reload.
-    std::atomic<bool> text_log_has_consumer = false;
 };
 
 

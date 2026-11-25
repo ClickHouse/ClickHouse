@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel-replicas, no-msan
+# Tags: long, no-parallel-replicas
 
 set -e
 
@@ -26,7 +26,7 @@ $STREAMING_CLIENT -q "CREATE ROW POLICY rp_04545 ON t_streaming_rp FOR SELECT US
 # can only fail a correct run. A hang is still bounded by the test runner's own per-test timeout.
 for _ in {1..30}; do
     $STREAMING_CLIENT -q "
-        SELECT throwIf(max(b) >= 5000 OR count() = 0) FROM (SELECT b FROM t_streaming_rp STREAM BOUNDED LIMIT 400)
+        SELECT throwIf(max(b) >= 5000 OR count() = 0) FROM (SELECT b FROM t_streaming_rp STREAM LIMIT 400)
         SETTINGS query_plan_remove_unused_columns = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0
         FORMAT Null"
 done

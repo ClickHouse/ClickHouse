@@ -51,7 +51,7 @@ public:
         offset = other->offset;
     }
 
-    [[nodiscard]] int length() const { return static_cast<int>(bins.size()); }
+    int length() const { return static_cast<int>(bins.size()); }
 
     void add(int key, Float64 weight)
     {
@@ -248,7 +248,7 @@ private:
         return key - offset;
     }
 
-    [[nodiscard]] UInt32 getNewLength(int new_min_key, int new_max_key) const
+    UInt32 getNewLength(int new_min_key, int new_max_key) const
     {
         Int64 desired_length = static_cast<Int64>(new_max_key) - static_cast<Int64>(new_min_key) + 1;
         return static_cast<UInt32>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size));
@@ -310,7 +310,7 @@ private:
         shiftBins(offset - new_offset);
     }
 
-    [[nodiscard]] size_t estimatedFloatSize(Float64 value) const
+    size_t estimatedFloatSize(Float64 value) const
     {
         // Assuming IEEE 754 double-precision binary floating-point format: binary64
         return sizeof(value);

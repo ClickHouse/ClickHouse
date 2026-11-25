@@ -1,5 +1,4 @@
 #include <unordered_set>
-#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -148,10 +147,6 @@ protected:
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-            /// addQueryTreePasses does not run on this tree, so this pass has to be invoked
-            /// here: a correlated subquery must not be read with parallel replicas.
-            DisableParallelReplicasPass{}.run(expression, execution_context);
-
             GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
@@ -173,12 +168,9 @@ protected:
             {
                 auto query_tree = subquery->detachQueryTree();
                 createUniqueAliasesIfNecessary(query_tree, execution_context);
-                /// The `Planner` mutates the options it is given (see `Planner::markDistributedPlanContext`),
-                /// so each subquery gets its own copy and cannot affect the planning of its siblings.
-                SelectQueryOptions current_subquery_options = subquery_options;
                 Planner subquery_planner(
                     query_tree,
-                    current_subquery_options,
+                    subquery_options,
                     std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
                 subquery_planner.buildQueryPlanIfNeeded();
 
@@ -251,7 +243,7 @@ private:
 class ReadFromMergeTreeAnalyzeIndexes : public SourceStepWithFilter
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
+    std::string getName() const override { return "ReadFromMergeTreeAnalyzeIndexes"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeAnalyzeIndexes(

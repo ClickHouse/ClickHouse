@@ -135,30 +135,16 @@ class FunctionTimeWindow final : public IFunction
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// At the zero time, a hop window longer than its hop would start before the epoch.
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return type != HOP && type != HOP_START && type != HOP_END; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    /// No declarative signature yet. These variants (`tumble`, `tumbleStart`,
-    /// `tumbleEnd`, `hop`, `hopStart`, `hopEnd`) return either a `DateTime`
-    /// (for `*Start`/`*End`) or a `Tuple(DateTime, DateTime)` (for
-    /// `tumble` and `hop`). The DSL has no return-type union, so a documentation-only
-    /// `... -> DateTime | Tuple(...)` cannot be parsed — it raises `SYNTAX_ERROR` on the
-    /// types-only path. Keep it empty until return-type unions are supported; the
-    /// `getReturnTypeImpl(ColumnsWithTypeAndName)` override resolves the exact shape.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "";
-    }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
-
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
 };
 
 using FunctionTumble = FunctionTimeWindow<TUMBLE>;
@@ -398,36 +384,10 @@ struct TimeWindowImpl<HOP>
         }
     }
 
-    /// The longest duration of one unit of `kind`, in the units of the result: seconds for `DateTime`, days for `Date`.
-    template <IntervalKind::Kind kind>
-    static constexpr UInt64 maxUnitLength()
-    {
-        switch (kind)
-        {
-            case IntervalKind::Kind::Second: return 1;
-            case IntervalKind::Kind::Minute: return 60;
-            case IntervalKind::Kind::Hour: return 3600;
-            case IntervalKind::Kind::Day: return 86400;
-            case IntervalKind::Kind::Week: return 7;
-            case IntervalKind::Kind::Month: return 31;
-            case IntervalKind::Kind::Quarter: return 92;
-            case IntervalKind::Kind::Year: return 366;
-            default: return 1;
-        }
-    }
-
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
     executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
     {
-        /// A window longer than the range of `ToType` can wrap around by a multiple of that range and land
-        /// below its end, which the checks below would not notice. The hop is not longer than the window.
-        if (window_num_units > std::numeric_limits<ToType>::max() / maxUnitLength<kind>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}: the window interval is too large", name);
-
-        const Int64 negative_hop = -static_cast<Int64>(hop_num_units);
-        const Int64 negative_window = -static_cast<Int64>(window_num_units);
-
         const auto & time_data = time_column.getData();
         auto start = ColumnVector<ToType>::create();
         auto end = ColumnVector<ToType>::create();
@@ -440,7 +400,7 @@ struct TimeWindowImpl<HOP>
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
-            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, negative_window, time_zone));
+            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
             ToType wend_latest;
 
             /// Subtracting a whole positive window must make the time strictly smaller: equality
@@ -452,15 +412,16 @@ struct TimeWindowImpl<HOP>
             do
             {
                 wend_latest = wend;
-                wend = static_cast<ToType>(AddTime<kind>::execute(wend, negative_hop, time_zone));
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
 
-                /// Subtracting a positive hop must make the time strictly smaller, otherwise it wrapped around or saturated.
-                if (wend >= wend_latest)
+                /// The subtraction of the hop wrapped around zero: no further iteration would ever
+                /// get below time_data[i], and the loop would spin forever.
+                if (wend > wend_latest)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, negative_window, time_zone));
+            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, -window_num_units, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));

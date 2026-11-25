@@ -11,8 +11,6 @@ SET use_query_condition_cache = 1;
 DROP VIEW IF EXISTS v_tab;
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_topk;
-DROP TABLE IF EXISTS tab_widened;
-DROP TABLE IF EXISTS tab_merged;
 DROP TABLE IF EXISTS dim;
 
 CREATE TABLE tab (k Int32, val Int64) ENGINE = MergeTree ORDER BY k
@@ -168,54 +166,7 @@ SETTINGS use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 
 FORMAT Null;
 SELECT count() > 0 FROM system.query_condition_cache;
 
-SELECT '-- a filter widened after index analysis must not populate the cache';
--- On older versions (e.g. 26.9) push-down merges the self-join's always-false `ON` conjunct into the very
--- filter the read's `filter_actions_dag` was built from, so the granule that filter empties still holds the
--- 194 rows that `v > 5` matches. Newer versions keep that conjunct above the join, so the case may not reach a
--- widened filter, but the counts are correct either way. Another way to widen the filter, through the
--- push-down forced by join runtime filters, is tested in `05453_query_condition_cache_filter_merged_after_collection`.
-CREATE TABLE tab_widened (v Int64) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 8192;
-INSERT INTO tab_widened SELECT number FROM numbers(200);
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM tab_widened WHERE v > 5;
--- Returns 0 legitimately, and must keep doing so: the fix withholds a cache entry, it does not change
--- what the join computes.
-SELECT count() FROM tab_widened LOCAL RIGHT JOIN tab_widened AS a
-    ON and(equals(v, a.v), not(equals(v, a.v))) WHERE v > 5
-SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
-         join_runtime_filter_min_probe_rows = 0, query_plan_convert_outer_join_to_inner_join = 1;
--- Print both counts rather than a boolean, so a reference diff shows which way it broke.
-SELECT count() FROM tab_widened WHERE v > 5 SETTINGS use_query_condition_cache = 1;
-SELECT count() FROM tab_widened WHERE v > 5 SETTINGS use_query_condition_cache = 0;
-SELECT count() FROM system.query_condition_cache;
-
-SELECT '-- control: with no runtime filter the same join leaves the table readable';
--- The re-walk that re-annotates a rebuilt filter step runs only when runtime filters were added, so
--- this case reads 194 with or without the fix. That is what makes the case above an oracle rather than a
--- pair of constants.
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM tab_widened LOCAL RIGHT JOIN tab_widened AS a
-    ON and(equals(v, a.v), not(equals(v, a.v))) WHERE v > 5
-SETTINGS enable_join_runtime_filters = 0, query_plan_convert_outer_join_to_inner_join = 1;
-SELECT count() FROM tab_widened WHERE v > 5 SETTINGS use_query_condition_cache = 1;
-SELECT count() FROM system.query_condition_cache;
-
-SELECT '-- a filter merged after index analysis only from the conditions it was built from must populate the cache';
--- Predicate propagation copies `d.x > 3` onto `t.k`, above the filter `t.b = 3`, and the two filters are merged
--- into one `and` after index analysis. The granules where `b = 2` are then recorded.
-CREATE TABLE tab_merged (k UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
-INSERT INTO tab_merged SELECT number, if(number < 5000, 2, 3) FROM numbers(10000);
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM (SELECT number AS x FROM numbers(10000) WHERE x > 3) AS d JOIN tab_merged AS t ON d.x = t.k WHERE t.b = 3
-SETTINGS max_block_size = 100, query_plan_propagate_predicate_across_join = 1, query_plan_merge_filters = 1,
-         optimize_move_to_prewhere = 0, enable_join_runtime_filters = 0, query_plan_join_swap_table = 0,
-         query_plan_join_shard_by_pk_ranges = 0;
-SELECT count() FROM system.query_condition_cache;
-
 DROP VIEW v_tab;
 DROP TABLE dim;
 DROP TABLE tab_topk;
-DROP TABLE tab_widened;
-DROP TABLE tab_merged;
 DROP TABLE tab;

@@ -38,9 +38,9 @@ public:
 
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.
-    [[nodiscard]] const String & serialize() const { return raw_path; }
+    const String & serialize() const { return raw_path; }
 
-    [[nodiscard]] bool empty() const { return raw_path.empty(); }
+    bool empty() const { return raw_path.empty(); }
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
@@ -126,14 +126,11 @@ public:
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
-    [[nodiscard]] String resolve(const IcebergPathFromMetadata & metadata_path) const;
-
-    /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
-    [[nodiscard]] String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+    String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
     static String parseNamespace(std::string_view path);
 
-    [[nodiscard]] IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
         if (storage_path.size() > table_root.size()
             && storage_path.starts_with(table_root))
@@ -143,7 +140,7 @@ public:
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.
-    [[nodiscard]] String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
+    String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
         if (!catalog_filename.contains("://"))
@@ -151,11 +148,11 @@ public:
         return catalog_filename;
     }
 
-    [[nodiscard]] const String & getTableLocation() const { return table_location; }
-    [[nodiscard]] const String & getTableRoot() const { return table_root; }
+    const String & getTableLocation() const { return table_location; }
+    const String & getTableRoot() const { return table_root; }
 
 private:
-    [[nodiscard]] bool isInForeignNamespace(const String & raw_path) const;
+    bool isInForeignNamespace(const String & raw_path) const;
 
     String table_location;
     String table_root;
