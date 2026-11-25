@@ -2879,6 +2879,11 @@ static BlockIO executeQueryImpl(
                     if (auto thread_group = CurrentThread::getGroup(); thread_group && settings[Setting::max_memory_usage])
                         thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
 
+                    /// And the memory is charged to the user, under `max_memory_usage_for_user`, which is otherwise done
+                    /// when the query is put to the process list as well: a table that the program does not use is
+                    /// analyzed and freed before that.
+                    context->getProcessList().chargeCurrentThreadGroupToUser(context);
+
                     out_ast = compileQProgram(*q_query, context);
                 }
             }
