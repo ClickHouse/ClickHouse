@@ -41,7 +41,7 @@ run_and_report() {
 
     echo "--- $type: $predicate"
     local out
-    out=$($CLICKHOUSE_LOCAL --print-profile-events --input_format_parquet_filter_push_down 1 -q "
+    out=$($CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 --input_format_parquet_filter_push_down 1 -q "
         SELECT count(), min(t), max(t) FROM file('$file', Parquet, 't $type') WHERE $predicate
     " 2>&1)
     # The query result, then the row group counters (the profile events are logged with a

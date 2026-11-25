@@ -15,12 +15,12 @@ doc_type: 'reference'
 ```sql
 cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
 
-기본값이면서 필수인 윈도우 프레임 정의는 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`입니다.
+이 함수는 항상 전체 파티션을 읽으며, 윈도우 프레임을 지정하더라도 무시됩니다.
 
 윈도 함수 구문에 대한 자세한 내용은 다음을 참조하십시오: [윈도우 함수 - 구문](/ko/reference/functions/window-functions/index#syntax).
 

@@ -12,29 +12,25 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="check_delay_period">
-  ## check_delay_period
-</div>
+## check_delay_period {#check_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
 Paramètre obsolète, sans effet
 
-<div id="check_sample_column_is_correct">
-  ## check_sample_column_is_correct
-</div>
+## check_sample_column_is_correct {#check_sample_column_is_correct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Active la vérification, lors de la création de la table, que le type de données d’une colonne d’échantillonnage ou d’une expression d’échantillonnage est correct. Le type de données doit être l’un des [types entiers](/fr/reference/data-types/int-uint) non signés : `UInt8`, `UInt16`,
+Active la vérification, lors de la création de la table, que le type de données d’une colonne d’échantillonnage ou d’une expression d’échantillonnage est correct. Le type de données doit être l’un des [types entiers](/fr/reference/data-types/int-uint) non signés : `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * `true`  — La vérification est activée.
 * `false` — La vérification est désactivée lors de la création de la table.
 
-Valeur par défaut : `true`.
+Valeur par défaut : `true`.
 
 Par défaut, le serveur ClickHouse vérifie, lors de la création de la table, le type de données d’une colonne d’échantillonnage ou d’une expression d’échantillonnage. Si vous avez déjà des tables avec une expression d’échantillonnage incorrecte et que vous ne voulez pas que le serveur lève une exception au démarrage, définissez `check_sample_column_is_correct` sur `false`.
 

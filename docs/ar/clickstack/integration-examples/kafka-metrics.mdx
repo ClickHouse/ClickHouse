@@ -7,18 +7,16 @@ doc_type: 'guide'
 keywords: ['Kafka', 'المقاييس', 'OTEL', 'ClickStack', 'JMX']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **باختصار**
 
-  راقب مقاييس أداء Apache Kafka في ClickStack باستخدام OTel JMX Metric Gatherer. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+  راقب مقاييس أداء Apache Kafka في ClickStack باستخدام OTel JMX Metric Gatherer. يتضمن مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
 </Info>
 
 <div id="existing-kafka">
-  ## التكامل مع نشر Kafka حالي
+  ## التكامل مع نشر Kafka حالي {#existing-kafka}
 </div>
 
 راقب نشر Kafka الحالي لديك من خلال تشغيل حاوية OpenTelemetry JMX Metric Gatherer لجمع المقاييس وإرسالها إلى ClickStack عبر OTLP.
@@ -26,7 +24,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا كنت تريد اختبار هذا التكامل أولًا من دون تعديل إعداداتك الحالية، فانتقل إلى [قسم مجموعة البيانات التجريبية](#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات الأساسية
+  ##### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -35,15 +33,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * ملف JAR الخاص بـ OpenTelemetry JMX Metric Gatherer (تعليمات التنزيل أدناه)
 
 <Steps>
-  <Step title="الحصول على مفتاح API لـ ClickStack" id="get-api-key">
+  <Step title="الحصول على مفتاح واجهة برمجة تطبيقات لـ ClickStack" id="get-api-key">
     يرسل JMX Metric Gatherer البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
 
-    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
+    1. افتح واجهة مستخدم ClickStack على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
     2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
     3. انتقل إلى **إعدادات الفريق → مفاتيح API**
     4. انسخ **مفتاح API للإدخال** الخاص بك
 
-    <Image img="/images/clickstack/api-key.webp" alt="مفتاح API لـ ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
+    </div>
 
     5. عيّنه كمتغير بيئة:
 
@@ -168,8 +170,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * `10000` - الفاصل الزمني للتجميع بالمللي ثانية (10 ثوانٍ)
   </Step>
 
-  <Step title="تحقّق من المقاييس في HyperDX" id="verify-metrics">
-    سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تصل بشكل صحيح:
+  <Step title="تحقّق من المقاييس في واجهة مستخدم ClickStack" id="verify-metrics">
+    سجّل الدخول إلى واجهة مستخدم ClickStack وتأكد من أن المقاييس تصل بشكل صحيح:
 
     1. انتقل إلى Chart Explorer
     2. ابحث عن `kafka.message.count` أو `kafka.partition.count`
@@ -200,14 +202,14 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
+  ## مجموعة البيانات التجريبية {#demo-dataset}
 </div>
 
-للمستخدمين الذين يريدون اختبار تكامل مقاييس Kafka قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس Kafka.
+للمستخدمين الذين يريدون اختبار تكامل مقاييس Kafka قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس Kafka.
 
 <Steps>
   <Step title="نزّل مجموعة بيانات المقاييس النموذجية" id="download-sample">
-    نزّل ملفات المقاييس المُولَّدة مسبقًا (29 ساعة من مقاييس Kafka بأنماط واقعية):
+    نزّل ملفات المقاييس المُولَّدة مسبقًا (29 ساعة من مقاييس Kafka بأنماط واقعية):
 
     ```bash
     # نزّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الاستجابة، وتأخر المستهلك)
@@ -252,22 +254,20 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تحقّق من المقاييس في HyperDX" id="verify-demo-metrics">
-    بعد التحميل، أسرع طريقة لرؤية مقاييسك هي عبر لوحة المعلومات المُعَدّة مسبقًا.
+  <Step title="تحقّق من المقاييس في واجهة مستخدم ClickStack" id="verify-demo-metrics">
+    بعد التحميل، أسرع طريقة لرؤية مقاييسك هي عبر لوحة المعلومات الجاهزة مسبقًا.
 
-    انتقل إلى قسم [لوحات المعلومات والتصور](#dashboards) لاستيراد لوحة المعلومات وعرض جميع مقاييس Kafka دفعةً واحدة.
+    انتقل إلى قسم [لوحات المعلومات والتصور المرئي](#dashboards) لاستيراد لوحة المعلومات وعرض جميع مقاييس Kafka دفعةً واحدة.
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-04 16:00:00 - 2025-11-07 16:00:00** لضمان ظهور المقاييس التجريبية مهما كان موقعك. وبعد رؤية المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-04 16:00:00 - 2025-11-07 16:00:00** لضمان ظهور المقاييس التجريبية مهما كان موقعك. وبعد رؤية المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصور المرئي {#dashboards}
 
 لمساعدتك على بدء مراقبة Kafka باستخدام ClickStack، نوفر تصورات أساسية لمقاييس Kafka.
 
@@ -277,20 +277,32 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="استورد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
-    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. ارفع ملف `kafka-metrics-dashboard.json` وانقر على **Finish Import**
+    3. ارفع ملف `kafka-metrics-dashboard.json` وانقر على **إكمال الاستيراد**
 
-    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![مربع حوار إنهاء الاستيراد](/images/clickstack/kafka/import-kafka-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
 
-    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="لوحة معلومات مقاييس Kafka" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات مقاييس Kafka](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا تلقائيًا.
@@ -299,12 +311,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
-<div id="no-metrics">
-  ### عدم ظهور أي مقاييس في HyperDX
-</div>
+### عدم ظهور أي مقاييس في واجهة مستخدم ClickStack {#no-metrics}
 
 **تحقق من ضبط مفتاح API وتمريره إلى الحاوية:**
 
@@ -350,13 +360,11 @@ docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-
 echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
 ```
 
-<div id="auth-errors">
-  ### أخطاء المصادقة
-</div>
+### أخطاء المصادقة {#auth-errors}
 
 إذا رأيت `Authorization failed` أو `401 Unauthorized`:
 
-1. تحقّق من مفتاح API في واجهة مستخدم HyperDX (الإعدادات → مفاتيح API → مفتاح API للإدخال)
+1. تحقّق من مفتاح API في واجهة مستخدم ClickStack (الإعدادات → مفاتيح API → مفتاح API للإدخال)
 2. أعِد التصدير ثم أعِد التشغيل:
 
 ```bash
@@ -366,7 +374,7 @@ docker compose up -d
 ```
 
 <div id="port-conflicts">
-  ### تعارضات المنافذ مع أوامر عميل Kafka
+  ### تعارضات المنافذ مع أوامر عميل Kafka {#port-conflicts}
 </div>
 
 عند تشغيل أوامر Kafka من داخل حاوية Kafka، قد يظهر لك:
@@ -382,7 +390,7 @@ docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-ser
 ```
 
 <div id="network-issues">
-  ### مشكلات الاتصال بالشبكة
+  ### مشكلات الاتصال بالشبكة {#network-issues}
 </div>
 
 إذا كانت سجلات JMX exporter تعرض `Connection refused`:
@@ -402,16 +410,14 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 ```
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) للمقاييس الحرجة (التقسيمات غير المكررة بما يكفي، وزيادة تأخر المستهلك، والارتفاعات المفاجئة في زمن استجابة الطلبات)
 * أنشئ لوحات معلومات إضافية لحالات استخدام محددة (معدل النقل لكل topic، ومراقبة consumer group)
 * راقب عدة وسطاء Kafka عبر إضافة مثيلات إضافية من JMX Metric Gatherer مع resource attributes فريدة لـ `kafka.broker.id`
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو ما يناسب الاختبار وعمليات النشر الصغيرة.
 

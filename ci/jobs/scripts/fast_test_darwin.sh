@@ -30,6 +30,7 @@ print_host_state() {
     echo "$deleted" | awk -v rc="$lsof_rc" 'NF {d++} NF && !seen[$6 " " $9]++ {n++; s += $7} END {printf "open but deleted files: %d (%d descriptors), %.1f GiB (lsof exit status %d)\n", n, d, s / 2^30, rc}'
     echo "$deleted" | sort -k7,7 -rn | awk '!seen[$6 " " $9]++' | head -n 5 | cut -c1-200
     ps -axm -o pid,ppid,user,etime,rss,command | head -n 11 | cut -c1-200
+    ps -o pid,etime,time,%cpu,command -p "$(pgrep -x WirelessRadioManagerd)"
     if [ "$1" = start ] && [ "$(df -P /System/Volumes/Data | awk 'NR == 2 {print $5 + 0}')" -ge 60 ]; then
         timeout 120 sudo -n du -xk -d 4 /System/Volumes/Data 2>/dev/null | awk '$1 >= 2^20' | sort -rn | head -n 30
         echo "du exit status ${PIPESTATUS[0]}"
@@ -37,6 +38,9 @@ print_host_state() {
 }
 
 print_host_state start
+
+# SIP blocks disabling `bluetoothd`, whose restart loop makes `WirelessRadioManagerd` grow to 1-1.5 cores; it ignores SIGTERM.
+sudo killall -9 WirelessRadioManagerd
 
 for i in $(seq 2 21); do
     ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1

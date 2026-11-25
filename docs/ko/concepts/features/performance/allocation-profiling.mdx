@@ -186,7 +186,7 @@ ORDER BY per_trace_sum ASC
 
 ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계를 확인할 수 있는 내장 웹 UI를 제공합니다.
 이 UI는 allocated, active, resident, mapped 메모리를 비롯한 실시간 메모리 메트릭을 차트로 표시하며, arena별 및 빈(bin)별 통계도 제공합니다.
-또한 UI에서 전역 및 쿼리별 힙 프로파일을 직접 가져올 수 있습니다.
+또한 UI에서 전역 및 쿼리별 힙 프로필을 직접 가져올 수 있습니다.
 
 <Tabs>
   <Tab title="ClickHouse">
@@ -214,7 +214,7 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
     </clickhouse>
     ```
 
-    활성화되면 UI는 system tables에 대한 SQL 액세스가 필요한 Query Profiler 및 단편화 탭을 제외하고, Summary, Allocations, Arenas, Operations, Global Profiler, Raw Output 등 서버와 동일한 시각화를 제공합니다.
+    활성화되면 UI는 시스템 테이블에 대한 SQL 액세스가 필요한 Query Profiler 및 단편화 탭을 제외하고, Summary, Allocations, Arenas, Operations, Global Profiler, Raw Output 등 서버와 동일한 시각화를 제공합니다.
 
     <Warning>
       **보안**
@@ -227,8 +227,8 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
     Keeper는 프로그래밍 방식으로 접근할 수 있도록 REST API 엔드포인트도 제공합니다:
 
     * `GET /jemalloc/stats` — 원시 `malloc_stats_print` 출력
-    * `GET /jemalloc/status` — JSON 형식의 profiling 상태 (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — 힙 프로파일을 플러시하고 서버 측 심볼화를 수행하며, 플레임 그래프 렌더링에 적합한 collapsed stacks(기본값) 또는 원시 jemalloc dump를 반환합니다
+    * `GET /jemalloc/status` — JSON 형식의 프로파일링 상태 (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
+    * `GET /jemalloc/profile?format={collapsed|raw}` — 힙 프로필을 플러시하고 서버 측 심볼화를 수행하며, 플레임 그래프 렌더링에 적합한 collapsed stacks(기본값) 또는 `system.jemalloc_profile_text`의 `raw` 포맷과 동일한 형식의 힙 프로필을 반환합니다
   </Tab>
 </Tabs>
 
@@ -256,7 +256,7 @@ SELECT * FROM system.jemalloc_profile_text
 
 출력 형식은 `jemalloc_profile_text_output_format` 설정으로 제어되며, 이 설정은 다음 3가지 값을 지원합니다.
 
-* `raw` — jemalloc이 생성한 원시 힙 프로파일입니다.
+* `raw` — jemalloc이 생성한 힙 프로필이지만, 런타임 주소는 노출되지 않습니다. ClickHouse 바이너리 내부의 스택 주소는 해당 바이너리 내 오프셋으로 대체되고, 그 밖의 주소(공유 라이브러리, JIT 코드)는 `0`으로 대체되며, 메모리 맵(`MAPPED_LIBRARIES`)은 제거됩니다. `jeprof`로 분석할 때는 ClickHouse 바이너리를 함께 지정합니다. 예: `jeprof /path/to/clickhouse profile.heap`.
 * `symbolized` — 함수 심볼이 내장된 jeprof 호환 형식입니다. 심볼이 이미 내장되어 있으므로 `jeprof`는 ClickHouse 바이너리 없이도 출력을 분석할 수 있습니다.
 * `collapsed` (기본값) — 바이트 수와 함께 한 줄에 하나의 스택이 기록되는 플레임 그래프 호환 collapsed stacks 형식입니다.
 
@@ -267,7 +267,7 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'raw'
 ```
 
-심볼이 해석된 결과를 얻으려면:
+심볼화된 결과를 얻으려면:
 
 ```sql
 SELECT * FROM system.jemalloc_profile_text
@@ -344,13 +344,13 @@ SETTINGS allow_introspection_functions=1
 
 ### 예시: 단편화 플레임 그래프 생성 {#example-fragmentation-flamegraph}
 
-동일한 쿼리로 각 크기 클래스의 낭비량을 오래된 할당 수에 비례하여 백트레이스별로 나누고, 그 결과를 `flamegraph.pl`용 `collapsed` 포맷으로 출력할 수 있습니다. 낭비는 있지만 충분히 오래된 샘플이 없는 크기 클래스는 `[unattributed]` 프레임에 포함되므로, 플레임 그래프의 총합은 전체 낭비량과 같습니다. `system.jemalloc_sampled_allocations`는 쿼리당 한 번만 읽으십시오. 읽을 때마다 새로운 profile이 플러시되므로 서브쿼리를 두 개 사용하면 서로 다른 데이터를 보게 됩니다.
+동일한 쿼리로 각 크기 클래스의 낭비량을 오래된 할당 수에 비례하여 백트레이스별로 나누고, 그 결과를 `flamegraph.pl`용 `collapsed` 포맷으로 출력할 수 있습니다. 낭비는 있지만 충분히 오래된 샘플이 없는 크기 클래스는 `[unattributed]` 프레임에 포함되므로, 플레임 그래프의 총합은 전체 낭비량과 같습니다. jemalloc이 스택을 언와인드(unwind)하지 못한 샘플은 `trace`가 비어 있으며 `[unknown]` 아래에 포함됩니다. `system.jemalloc_sampled_allocations`는 쿼리당 한 번만 읽으십시오. 읽을 때마다 새로운 프로필이 플러시되므로 서브쿼리를 두 개 사용하면 서로 다른 데이터를 보게 됩니다.
 
 ```sql
 WITH 60e9 AS min_age_ns
 SELECT format('{} {}',
     if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
-    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), toFloat64(b.waste)))))
 FROM system.jemalloc_arena_bins AS b
 LEFT JOIN
 (
@@ -358,7 +358,7 @@ LEFT JOIN
         arena,
         size_class,
         sum(weight) AS est_old_objects,
-        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+        if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace

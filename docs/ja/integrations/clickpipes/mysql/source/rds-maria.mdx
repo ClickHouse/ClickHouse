@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 これは、MySQL ClickPipe 経由でデータをレプリケーションするために、RDS MariaDB インスタンスを設定する手順をまとめたガイドです。
@@ -21,9 +20,7 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   [こちら](/ja/integrations/clickpipes/mysql/faq)の MySQL に関するよくある質問にも、あわせて目を通すことをお勧めします。よくある質問ページは随時更新されています。
 </Info>
 
-<div id="enable-binlog-retention-rds">
-  ## バイナリログの保持を有効にする
-</div>
+## バイナリログの保持を有効にする {#enable-binlog-retention-rds}
 
 バイナリログは、MySQL server インスタンスで行われたデータ変更に関する情報を含むログファイルの集合です。バイナリログファイルはレプリケーションに必要です。以下の両方の手順を実行する必要があります。
 
@@ -31,7 +28,11 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging-rds">
     自動バックアップ機能によって、MySQL のバイナリログを有効にするかどうかが決まります。これは AWS コンソールで設定できます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![RDS で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+      </Frame>
+    </div>
 
     レプリケーションのユースケースに応じて、バックアップ保持期間を十分長く設定することをお勧めします。
   </Step>
@@ -39,39 +40,57 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="binlog の保持時間" id="binlog-retention-hours-rds">
     Amazon RDS for MariaDB では、binlog の保持期間 (変更内容を含む binlog ファイルを保持しておく時間) の設定方法が異なります。binlog ファイルが削除される前に一部の変更が読み取られないと、レプリケーションを継続できなくなります。binlog retention hours のデフォルト値は NULL で、これはバイナリログが保持されないことを意味します。
 
-    DB インスタンスでバイナリログを保持する時間数を指定するには、レプリケーションに十分な長さの binlog の保持期間を指定して、mysql.rds&#95;set&#95;configuration 関数を使用します。推奨される最小値は `24 hours` です。
+    DB インスタンスでバイナリログを保持する時間数を指定するには、レプリケーションに十分な長さの binlog の保持期間を指定して、`mysql.rds_set_configuration` プロシージャを使用します。ClickPipes では少なくとも **72 時間** が必要です。保持期間を超えて遅延したパイプは再同期が必要になります。
 
     ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
     ```
   </Step>
 </Steps>
 
-<div id="binlog-parameter-group-rds">
-  ## パラメータグループで binlog 設定を構成する
-</div>
+## パラメータグループで binlog 設定を構成する {#binlog-parameter-group-rds}
 
 パラメータグループは、RDS Console で MariaDB インスタンスをクリックし、`Configurations` タブに移動すると確認できます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="RDS でパラメータグループを確認する場所" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+  </Frame>
+</div>
 
 パラメータグループのリンクをクリックすると、パラメータグループのページに移動します。右上に `Edit` ボタンがあります。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="パラメータグループを編集" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![パラメータグループを編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+  </Frame>
+</div>
 
 `binlog_format`、`binlog_row_metadata`、`binlog_row_image` は次のように設定する必要があります。
 
 1. `binlog_format` を `ROW` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format を ROW に設定" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Binlog format を ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+  </Frame>
+</div>
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata を FULL に設定" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Binlog row metadata を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+  </Frame>
+</div>
 
 3. `binlog_row_image` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image を FULL に設定" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Binlog row image を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+  </Frame>
+</div>
 
 次に、右上の `Save Changes` をクリックします。変更を反映するには、インスタンスの再起動が必要になる場合があります。RDS インスタンスの `Configurations` タブで、パラメータグループのリンクの横に `Pending reboot` と表示されている場合は、インスタンスの再起動が必要である可能性が高いことを示しています。
 
@@ -82,13 +101,13 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 </Tip>
 
 <div id="gtid-mode-rds">
-  ## GTID モードを有効にする
+  ## GTID モードを有効にする {#gtid-mode-rds}
 </div>
 
 Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされた各トランザクションに割り当てられる一意の ID です。これにより、binlog レプリケーションが簡素化され、トラブルシューティングも容易になります。MariaDB ではデフォルトで GTID モードが有効になっているため、利用するためにユーザー側で追加の操作を行う必要はありません。
 
 <div id="configure-database-user-rds">
-  ## データベースユーザーを設定する
+  ## データベースユーザーを設定する {#configure-database-user-rds}
 </div>
 
 管理者ユーザーとして RDS MariaDB インスタンスに接続し、次のコマンドを実行します。
@@ -96,24 +115,31 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
 1. ClickPipes 専用のユーザーを作成します。
 
    ```sql
-   CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
    ```
 
-2. スキーマに対する権限を付与します。次の例では、`mysql` データベースに対する権限を示しています。レプリケーション対象とする各データベースおよびホストについて、これらのコマンドを繰り返してください。
+2. スキーマに対する権限を付与します。次の例では、`clickpipes` データベースに対する権限を示しています。レプリケーション対象とする各データベースおよびホストについて、これらのコマンドを繰り返してください。
 
    ```sql
-   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'host';
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. ユーザーにレプリケーション権限を付与します。
+3. ユーザーにレプリケーション権限を付与します。MariaDB 10.5.9 以降では、`SLAVE MONITOR` も必要です。
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+4. ClickPipes が binlog の保持期間の設定を読み取れるようにします。
+
+   ```sql
+   GRANT SELECT ON `mysql`.`rds_configuration` TO 'clickpipes_user'@'%';
    ```
 
 <div id="iam-authentication">
-  ### IAM認証を使用する (任意)
+  ### IAM認証を使用する (任意) {#iam-authentication}
 </div>
 
 <Note>
@@ -123,21 +149,25 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
 <IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
-  ## ネットワークアクセスを設定する
+  ## ネットワークアクセスを設定する {#configure-network-access}
 </div>
 
-<div id="ip-based-access-control">
-  ### IP ベースのアクセス制御
-</div>
+### IP ベースのアクセス制御 {#ip-based-access-control}
 
 RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS でセキュリティグループはどこにありますか？" size="lg" border />
-
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="上記のセキュリティグループのインバウンドルールを編集" size="lg" border />
-
-<div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink 経由のプライベートアクセス
+<div className="ch-image-lg">
+  <Frame>
+    ![RDS のセキュリティグループの場所](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
+  </Frame>
 </div>
+
+<div className="ch-image-lg">
+  <Frame>
+    ![上記のセキュリティグループのインバウンドルールを編集する](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+  </Frame>
+</div>
+
+### AWS PrivateLink 経由のプライベートアクセス {#private-access-via-aws-privatelink}
 
 プライベートネットワーク経由で RDS インスタンスに接続するには、AWS PrivateLink を使用できます。接続を設定するには、[ClickPipes 向け AWS PrivateLink セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)に従ってください。

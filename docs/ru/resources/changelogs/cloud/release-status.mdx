@@ -36,68 +36,98 @@ ClickHouse Cloud предлагает разные каналы релизов, 
 <Warning>
   **Как понимать даты релизов**
 
-  Указанные ниже даты показывают, когда ClickHouse **начинает поэтапное развертывание** в каждом канале релизов, а не когда будет обновлён именно ваш сервис.
+  Указанные ниже даты начала показывают, когда ClickHouse **начинает поэтапное развёртывание** новой версии базы данных в каждом канале релизов, а не когда будет обновлён именно ваш сервис.
 
-  * Развертывание выполняется автоматически и происходит постепенно в течение нескольких недель
-  * Сервисы с настроенными запланированными окнами обновления обновляются в своё окно на неделе после завершения развертывания в канале (начиная с понедельника, 00:00 UTC)
-  * Завершение развертывания может быть отложено из-за приостановки развертывания (например, на время праздников) или по результатам мониторинга состояния
+  * Поэтапное развёртывание выполняется автоматически и происходит постепенно в течение нескольких недель
+  * Сервисы с настроенными запланированными окнами обновления обновляются в своё окно на неделе после завершения поэтапного развёртывания в канале (начиная с понедельника, 10:00 UTC)
+  * Завершение поэтапного развёртывания может быть отложено из-за приостановки поэтапного развёртывания (например, на время праздников) или по результатам мониторинга состояния
+  * [Дата EOL](https://clickhouse.com/legal/support-services-policy) наступает не ранее чем через 60 дней после завершения поэтапного развёртывания в канале Slow. Для релизов, у которых дата завершения в канале Slow ещё не запланирована, дата EOL указывается как `TBD`.
 
   Чтобы заранее протестировать обновления перед их применением в production, используйте канал Fast или Regular для непродуктивных сервисов, а канал Slow — для production-сервисов.
 </Warning>
 
 <ReleaseSchedule
   releases={[
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
- version: '26.6',
- fast_start_date: '2026-09-07',
- fast_end_date: 'Будет уточнено',
- regular_start_date: 'Будет уточнено',
- regular_end_date: 'Будет уточнено',
- slow_start_date: 'Будет уточнено',
- slow_end_date: 'Будет уточнено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
- version: '26.4',
- fast_start_date: '2026-06-22',
- fast_end_date: '2026-07-16',
- regular_start_date: '2026-08-03',
- regular_end_date: 'Будет уточнено',
- slow_start_date: 'Будет уточнено',
- slow_end_date: 'Будет уточнено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
- version: '26.2',
- fast_start_date: 'Завершено',
- fast_end_date: 'Завершено',
- regular_start_date: 'Завершено',
- regular_end_date: 'Завершено',
- slow_start_date: 'Завершено',
- slow_end_date: 'Завершено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
- version: '25.12',
- fast_start_date: 'Завершено',
- fast_end_date: 'Завершено',
- regular_start_date: 'Завершено',
- regular_end_date: 'Завершено',
- slow_start_date: 'Завершено',
- slow_end_date: 'Завершено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-]}
+  {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
+  version: '26.8',
+  fast_start_date: '2026-10-19',
+  fast_end_date: '2026-10-23',
+  regular_start_date: '2026-11-16',
+  regular_end_date: 'Будет уточнено',
+  slow_start_date: 'Будет уточнено',
+  slow_end_date: 'Будет уточнено',
+  eol_date: 'Будет уточнено',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+  },
+  {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+  version: '26.6',
+  fast_start_date: '2026-09-07',
+  fast_end_date: '2026-09-14',
+  regular_start_date: '2026-09-28',
+  regular_end_date: '2026-10-23',
+  slow_start_date: '2026-11-10',
+  slow_end_date: 'Будет уточнено',
+  eol_date: 'Будет уточнено',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+  },
+  {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+  version: '26.4',
+  fast_start_date: 'Завершено',
+  fast_end_date: 'Завершено',
+  regular_start_date: 'Завершено',
+  regular_end_date: 'Завершено',
+  slow_start_date: 'Завершено',
+  slow_end_date: 'Завершено',
+  eol_date: '2026-11-27 (ориентировочно)',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+  },
+  {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+  version: '26.2',
+  fast_start_date: 'Завершено',
+  fast_end_date: 'Завершено',
+  regular_start_date: 'Завершено',
+  regular_end_date: 'Завершено',
+  slow_start_date: 'Завершено',
+  slow_end_date: 'Завершено',
+  eol_date: '2026-10-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+  },
+  ]}
 />
+
+<Note>
+  **Предстоящие периоды заморозки релизов**
+
+  Во время заморозки релизов ClickHouse приостанавливает поэтапное развёртывание и не обновляет сервисы, даже если для сервиса настроено запланированное окно обновления. Исключение составляют критические патчи безопасности и исправления проблем, которые могут привести к повреждению или потере данных.
+
+  Запланированные периоды заморозки (даты указаны в UTC, включительно):
+
+  * **Чёрная пятница и Киберпонедельник:** с 2026-11-24 по 2026-12-01
+  * **Рождество и Новый год:** с 2026-12-23 по 2027-01-03
+
+  Если вы готовитесь к повышенной нагрузке в эти периоды, см. раздел [Подготовка к пиковым нагрузкам](/ru/products/cloud/features/scaling/preparing-for-traffic-spikes).
+</Note>
+
+## Даты end-of-life для ClickHouse Private и ClickHouse Government {#private-and-government-eol}
+
+В таблице ниже приведены даты end-of-life (EOL) для мажорных версий ClickHouse, поставляемых в составе ClickHouse Private и ClickHouse Government.
+
+| Версия | Дата выпуска | Дата EOL                    | Статус               |
+| ------ | ------------ | --------------------------- | -------------------- |
+| 26.4   | 2026-10-09   | 2026-11-27 (ориентировочно) | Поддерживается       |
+| 26.2   | 2026-08-07   | 2026-10-04                  | Поддержка прекращена |
+
+Более старые версии больше не поддерживаются. Ориентировочные даты EOL могут измениться.
+Подробнее о поддержке версий и политиках end-of-life см. в документе [ClickHouse Support Services Policy](https://clickhouse.com/legal/support-services-policy).

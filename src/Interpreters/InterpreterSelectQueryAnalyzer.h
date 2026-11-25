@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
 #include <Planner/Planner.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -83,6 +85,8 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
+    void setPlanLogCapture(QueryPlanLogCapturePtr log_capture) override { plan_log_capture = std::move(log_capture); }
+
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -95,7 +99,11 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
-    const std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> & getQueryPlanWithParallelReplicasBuilder() const
+    /// The origins of the result columns, collected before the query tree optimizations.
+    /// Empty if the interpreter is constructed from an already built query tree.
+    const ResultColumnOrigins & getResultColumnOrigins() const { return result_column_origins; }
+
+    const QueryPlanWithParallelReplicasBuilder & getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
     }
@@ -104,12 +112,19 @@ private:
     ASTPtr query;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    /// Must be declared before `query_tree`: it is filled while building the query tree.
+    ResultColumnOrigins result_column_origins;
     QueryTreeNodePtr query_tree;
     Planner planner;
+    QueryPlanLogCapturePtr plan_log_capture;
 
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
+
+/// The view source of `context` if the analysis reads it (`reads_view_source`), else nullptr.
+/// The inner query of an ordinary view always reads the table itself.
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source);
 
 }

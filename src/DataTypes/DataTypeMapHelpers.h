@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <base/types.h>
 
+#include <functional>
 #include <optional>
 #include <utility>
 

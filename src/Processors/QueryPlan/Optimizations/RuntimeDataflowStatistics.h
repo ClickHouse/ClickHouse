@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -11,9 +12,12 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <atomic>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -61,16 +65,65 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , undecided_query_cache(std::make_shared<UndecidedQueryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
-    std::optional<Entry> getStats(size_t key) const;
+    [[nodiscard]] std::optional<Entry> getStats(size_t key) const;
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
+    /// the read below it that parallel replicas coordinate, both found by an earlier execution, so that a later one
+    /// can find its statistics without building a replicas plan to match against.
+    struct Boundary
+    {
+        UInt64 boundary_hash = 0;
+        UInt64 coordinated_read_hash = 0;
+    };
+
+    /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
+    /// without changing that plan.
+    [[nodiscard]] std::optional<Boundary> getBoundary(UInt64 root_key) const;
+
+    void setBoundary(UInt64 root_key, Boundary boundary);
+
+    /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
+    /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
+    /// executions skip, and the one after them builds again.
+    struct UndecidedQuery
+    {
+        /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
+        /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
+        /// statistics (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        ProfileEvents::Event outcome_event{};
+        /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
+        /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
+        mutable std::atomic<UInt64> executions{0};
+        /// No earlier entry was replaced: this is the first time building the plan for this key ended without a
+        /// decision. Then the turn of the first execution after it comes at once. The first execution of a join is
+        /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
+        /// orders both plans alike.
+        bool first = false;
+    };
+
+    /// Under the same key as the boundary.
+    [[nodiscard]] std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
+
+    void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
+
+    void forgetUndecided(UInt64 root_key);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
+
+    using UndecidedQueryCache = DB::CacheBase<UInt64, UndecidedQuery>;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
+    std::shared_ptr<UndecidedQueryCache> undecided_query_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -129,9 +182,12 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    /// `undecided_query_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// step cannot collect, or when the collection measures nothing.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_query_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , undecided_query_key(undecided_query_key_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -144,6 +200,7 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const UInt64 undecided_query_key = 0;
 
     std::atomic_bool unsupported_case{false};
 
@@ -154,7 +211,7 @@ struct RuntimeDataflowStatisticsBlock
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- mirrors `IMergeTreeDataPart::ColumnSizeByName`, which the callers pass directly
     using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
     using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
@@ -167,6 +224,16 @@ public:
         , duplicated(duplicated_)
     {
     }
+
+    /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
+    /// block that is actually sampled, since building it costs a sort of the block's key columns.
+    using KeyOrderProvider = std::function<IColumn::Permutation()>;
+
+    /// Sort the sample by the group by keys before pricing it. Call this when the replicas' partial
+    /// aggregation uses memory-bound merging, and so sorts its output that way before sending it, while
+    /// the plan the sample is taken from does not. Left in hash table order such a sample compresses
+    /// several times worse than what it is meant to price.
+    void setReplicasSendOutputInKeyOrder() { replicas_send_output_in_key_order = true; }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
@@ -223,7 +290,17 @@ private:
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
     static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        std::optional<size_t> full_bytes = {},
+        const KeyOrderProvider & key_order = {});
+
+    [[nodiscard]] KeyOrderProvider keyOrderProviderFor(
+        const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
+
+    bool replicas_send_output_in_key_order = false;
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;

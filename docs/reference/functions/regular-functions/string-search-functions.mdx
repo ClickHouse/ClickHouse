@@ -178,7 +178,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 **Returned value**
 
-Returns the number of occurrences of the neddle in the haystack. [`UInt64`](/reference/data-types/int-uint)
+Returns the number of occurrences of the needle in the haystack. [`UInt64`](/reference/data-types/int-uint)
 
 **Examples**
 
@@ -374,7 +374,7 @@ extractAllGroupsHorizontal(s, regexp)
 **Arguments**
 
 - `s` — Input string to extract from. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `regexp` — Regular expression to match by. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
+- `regexp` — Regular expression to match by. Must contain between 1 and 127 capturing groups. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
 
 **Returned value**
 
@@ -413,7 +413,7 @@ extractGroups(s, regexp)
 **Arguments**
 
 - `s` — Input string to extract from. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `regexp` — Regular expression. Must contain at least one capturing group. Constant. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
+- `regexp` — Regular expression. Must contain between 1 and 127 capturing groups. Constant. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
 
 **Returned value**
 
@@ -434,6 +434,69 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ```response title=Response
 ['Server','nginx']
+```
+
+## fullMatch {#fullMatch}
+
+Introduced in: v26.11.0
+
+Checks if a provided string matches the provided regular expression pattern as a whole.
+
+Unlike [`match`](#match), which searches for a match anywhere in the string, this function
+returns `1` only if the pattern matches the entire string, as if the pattern was anchored at
+both ends with `^` and `$`. This corresponds to `RE2::FullMatch` of the RE2 library, to
+`re.fullmatch` in Python, and to `regexp_full_match` in DuckDB.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Matching works under UTF-8 assumptions, e.g. `¥` uses two bytes internally but matching treats it as a single codepoint.
+The regular expression must not contain NULL bytes.
+If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
+
+Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
+    
+
+**Syntax**
+
+```sql
+fullMatch(haystack, pattern)
+```
+
+**Aliases**: `regexp_full_match`
+
+**Arguments**
+
+- `haystack` — String in which the pattern is searched. [`String`](/reference/data-types/string)
+- `pattern` — Regular expression pattern. Can be a constant or come from a column. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns `1` if the pattern matches the whole string, `0` otherwise. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Matching the whole string**
+
+```sql title=Query
+SELECT fullMatch('abcde', 'a.*e'), fullMatch('abcde', 'b.*d'), match('abcde', 'b.*d')
+```
+
+```response title=Response
+┌─fullMatch('abcde', 'a.*e')─┬─fullMatch('abcde', 'b.*d')─┬─match('abcde', 'b.*d')─┐
+│                          1 │                          0 │                      1 │
+└────────────────────────────┴────────────────────────────┴────────────────────────┘
+```
+
+**Pattern with a top-level alternation**
+
+```sql title=Query
+SELECT fullMatch('gold-1', 'zzz|gold.*'), fullMatch('app-gold-1', 'zzz|gold.*')
+```
+
+```response title=Response
+┌─fullMatch('gold-1', 'zzz|gold.*')─┬─fullMatch('app-gold-1', 'zzz|gold.*')─┐
+│                                 1 │                                     0 │
+└───────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 ## hasAllTokens {#hasAllTokens}
@@ -461,8 +524,7 @@ For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['Cli
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
+The preprocessor is part of the index definition, so it is applied wherever the function is evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 </Note>
     
 
@@ -703,8 +765,7 @@ For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](/reference/data-types/string), to `needles` before tokenization. When `needles` is an [Array(String)](/reference/data-types/array), its elements are passed through as-is and the preprocessor is not applied to them.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
+The preprocessor is part of the index definition, so it is applied wherever the function is evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 </Note>
     
 
@@ -929,8 +990,7 @@ including duplicates. Empty phrase elements are ignored, because no tokenizer pr
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
-This inconsistency is tolerated to improve the usability of full-text search.
+The preprocessor is part of the index definition, so it is applied wherever the function is evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 </Note>
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
@@ -1552,7 +1612,7 @@ If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
 
 Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
-The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`.
+The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`, or use the [`fullMatch`](#fullMatch) function.
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 
@@ -1565,7 +1625,7 @@ Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (
 match(haystack, pattern)
 ```
 
-**Aliases**: `REGEXP_MATCHES`
+**Aliases**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **Arguments**
 

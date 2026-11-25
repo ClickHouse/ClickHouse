@@ -1,0 +1,19 @@
+NOT IN (NULL)
+77
+77
+NOT IN (empty subquery)
+77
+77
+OR on the prefix, NOT over IN
+79
+79
+LowCardinality(Nullable(String))
+72
+72
+partition-bounded key column after the unloaded one
+85
+85
+a range condition on the unloaded column keeps the exact count
+1
+94
+94
