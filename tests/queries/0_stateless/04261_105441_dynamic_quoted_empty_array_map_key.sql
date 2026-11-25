@@ -8,8 +8,6 @@
 -- embedded single quote and silently truncated the stored value. The fix uses
 -- `writeQuotedString` so inner single quotes and backslashes are escaped properly.
 
-SET allow_experimental_dynamic_type = 1;
-
 SELECT '-- empty array as map key (raw text 11 chars, must round-trip intact)';
 SELECT length(d::String), d::String, dynamicType(d)
 FROM format(Values, 'd Dynamic', $$({[]:'came'})$$)
