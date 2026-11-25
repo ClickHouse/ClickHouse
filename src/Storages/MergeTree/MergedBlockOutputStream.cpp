@@ -362,8 +362,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto serialization_infos = new_part->getSerializationInfos();
 
         serialization_infos.replaceData(new_serialization_infos);
+        auto columns_substreams = ColumnsSubstreams::merge(writer->getColumnsSubstreams(), gathered_data.columns_substreams, part_columns.getNames());
         files_to_remove_after_sync
-            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
+            = removeEmptyColumnsFromPart(new_part, part_columns, columns_substreams, new_part->expired_columns, serialization_infos, checksums);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }

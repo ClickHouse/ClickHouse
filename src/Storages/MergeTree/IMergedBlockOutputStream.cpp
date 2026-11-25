@@ -45,9 +45,42 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
 }
 
+namespace
+{
+
+/// Names of the streams of `column` present in `checksums`. The recorded substreams list them exactly. The
+/// serialization is enumerated only without them: without the data it misses the streams of `Dynamic` and `JSON`.
+std::vector<String> getColumnStreams(
+    const NameAndTypePair & column,
+    const ColumnsSubstreams & columns_substreams,
+    const IMergeTreeDataPart & data_part,
+    const MergeTreeDataPartChecksums & checksums)
+{
+    std::vector<String> streams;
+    if (const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name))
+    {
+        for (const auto & substream : *substreams)
+        {
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", checksums))
+                streams.push_back(std::move(*stream_name));
+        }
+        return streams;
+    }
+
+    data_part.getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part.storage.getSettings()))
+            streams.push_back(std::move(*stream_name));
+    });
+    return streams;
+}
+
+}
+
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    const ColumnsSubstreams & columns_substreams,
     const NameSet & empty_columns,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
@@ -73,32 +106,11 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     for (const auto & column : columns_to_remove)
         LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
-    /// Without the column data `enumerateStreams` lists only the streams fixed by the type: for `Dynamic`
-    /// and `JSON` it misses the streams of the types and paths they hold. Add the streams the writer recorded.
-    const ColumnsSubstreams * written_substreams = writer ? &writer->getColumnsSubstreams() : nullptr;
-    auto get_column_streams = [&](const NameAndTypePair & column, const SerializationPtr & serialization)
-    {
-        NameSet streams;
-        serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-        {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings()))
-                streams.insert(*stream_name);
-        });
-
-        if (const auto * substreams = written_substreams ? written_substreams->tryGetColumnSubstreams(column.name) : nullptr)
-        {
-            for (const auto & substream : *substreams)
-                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", checksums))
-                    streams.insert(*stream_name);
-        }
-        return streams;
-    };
-
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        for (const auto & stream_name : get_column_streams(column, data_part->getSerialization(column.name)))
+        for (const auto & stream_name : getColumnStreams(column, columns_substreams, *data_part, checksums))
             ++stream_counts[stream_name];
     }
 
@@ -117,15 +129,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (column_it == columns.end())
             continue;
 
-        auto info_it = serialization_infos.find(column_name);
-        auto serialization = info_it == serialization_infos.end()
-            ? IDataType::getSerialization(*column_it, serialization_infos.getSettings())
-            : IDataType::getSerialization(*column_it, *info_it->second);
-
-        if (!serialization)
-            continue;
-
-        for (const auto & stream_name : get_column_streams(*column_it, serialization))
+        for (const auto & stream_name : getColumnStreams(*column_it, columns_substreams, *data_part, checksums))
         {
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)

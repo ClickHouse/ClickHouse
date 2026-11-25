@@ -1,11 +1,22 @@
 t_ttl_dynamic	['id','ts']
 t_ttl_dynamic_future	['id','ts','c']
 t_ttl_json	['id','ts']
+t_ttl_merge_dynamic	['id','ts']
+t_ttl_merge_json	['id','ts']
+t_ttl_merge_string	['id','ts']
 t_ttl_string	['id','ts']
 t_ttl_dynamic	1
 t_ttl_json	1
+t_ttl_merge_dynamic	1
+t_ttl_merge_json	1
 1	2020-01-01 00:00:00	\N
 1	2020-01-01 00:00:00	{}
 1	2020-01-01 00:00:00	hello
+1	2020-01-01 00:00:00	\N
+2	2020-01-01 00:00:00	\N
+1	2020-01-01 00:00:00	{}
+2	2020-01-01 00:00:00	{}
+1
+1
 1
 1
