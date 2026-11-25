@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user_${CLICKHOUSE_DATABASE}"
 ENGINE="QueryRunner SETTINGS cluster = 'test_shard_localhost', mode = 'synchronous'"
 db_engine=$(${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.databases WHERE name = currentDatabase()")
+# `ON CLUSTER` is not allowed in a `Replicated` database, where a plain `CREATE` is replicated DDL itself.
+on_cluster="ON CLUSTER test_shard_localhost"
+[ "${db_engine}" = "Replicated" ] && on_cluster=""
 uuid_clause() { [ "${db_engine}" = "Ordinary" ] || echo "UUID '$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")'"; }
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
@@ -42,9 +45,9 @@ ${CLIENT_AS_USER} -q "CREATE TABLE runner_c (query String) ENGINE = ${ENGINE}"
 ${CLIENT_AS_USER} --send_logs_level=error -q "ATTACH TABLE runner_a $(uuid_clause) (query String) ENGINE = ${ENGINE}"
 ${CLIENT_AS_USER} -q "CREATE TABLE runner_r (query String) ENGINE = ${REPEATED}"
 ${CLIENT_AS_USER} -q "CREATE TABLE runner_copy AS runner_src"
-${CLIENT_AS_USER} --distributed_ddl_output_mode=none -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_oc_c ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}"
-${CLIENT_AS_USER} --distributed_ddl_output_mode=none --send_logs_level=error -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.runner_oc_a $(uuid_clause) ON CLUSTER test_shard_localhost (query String) ENGINE = ${ENGINE}"
-${CLIENT_AS_USER} --distributed_ddl_output_mode=none -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_oc_copy ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.runner_src"
+${CLIENT_AS_USER} --distributed_ddl_output_mode=none -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_oc_c ${on_cluster} (query String) ENGINE = ${ENGINE}"
+${CLIENT_AS_USER} --distributed_ddl_output_mode=none --send_logs_level=error -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.runner_oc_a $(uuid_clause) ${on_cluster} (query String) ENGINE = ${ENGINE}"
+${CLIENT_AS_USER} --distributed_ddl_output_mode=none -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.runner_oc_copy ${on_cluster} AS ${CLICKHOUSE_DATABASE}.runner_src"
 ${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = currentDatabase() AND name != 'runner_src' ORDER BY name"
 ${CLIENT_AS_USER} -q "DROP TABLE runner_c"
 ${CLIENT_AS_USER} -q "DROP TABLE runner_a"
