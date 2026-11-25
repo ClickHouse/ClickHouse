@@ -275,3 +275,44 @@ def test_legacy_basic_configuration_remains_accepted():
     finally:
         basic_only.replace_config(config_path, original)
         basic_only.query("SYSTEM RELOAD CONFIG")
+
+
+def test_interserver_client_certificate_file_watcher():
+    for replica in (certificate_only, mixed):
+        replica.query(
+            f"CREATE TABLE watched_parts (id UInt64) "
+            f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/interserver_mtls/watched_parts', '{replica.name}') "
+            "ORDER BY id SETTINGS max_postpone_time_for_failed_replicated_fetches_ms = 0"
+        )
+
+    config_dir = "/etc/clickhouse-server/config.d"
+    active_cert = f"{config_dir}/valid-a-cert.pem"
+    active_key = f"{config_dir}/valid-a-key.pem"
+    backup_dir = f"{config_dir}/tmp"
+    certificate_only.exec_in_container(["mkdir", "-p", backup_dir], user="root")
+    certificate_only.exec_in_container(["cp", active_cert, f"{backup_dir}/valid-a-cert.pem"], user="root")
+    certificate_only.exec_in_container(["cp", active_key, f"{backup_dir}/valid-a-key.pem"], user="root")
+
+    mixed_config_path = f"{config_dir}/mixed.xml"
+    mixed_original = (Path(__file__).parent / "configs/mixed.xml").read_text()
+    mixed_rotated = mixed_original.replace("replica-a", "wrong").replace("replica-b", "wrong")
+
+    certificate_only.query("SYSTEM STOP FETCHES watched_parts")
+    try:
+        mixed.replace_config(mixed_config_path, mixed_rotated)
+        mixed.query("SYSTEM RELOAD CONFIG")
+        assert_rejected(mixed, "requires HTTP Basic authentication", cert_name="valid-a")
+        assert_accepted(mixed, cert_name="wrong-san")
+
+        mixed.query("INSERT INTO watched_parts VALUES (1)")
+        certificate_only.exec_in_container(["cp", f"{config_dir}/wrong-san-cert.pem", active_cert], user="root")
+        certificate_only.exec_in_container(["cp", f"{config_dir}/wrong-san-key.pem", active_key], user="root")
+        certificate_only.query("SYSTEM START FETCHES watched_parts")
+        assert_eq_with_retry(certificate_only, "SELECT id FROM watched_parts", "1", retry_count=60)
+    finally:
+        mixed.replace_config(mixed_config_path, mixed_original)
+        mixed.query("SYSTEM RELOAD CONFIG")
+        certificate_only.exec_in_container(["cp", f"{backup_dir}/valid-a-cert.pem", active_cert], user="root")
+        certificate_only.exec_in_container(["cp", f"{backup_dir}/valid-a-key.pem", active_key], user="root")
+        certificate_only.query("SYSTEM RELOAD CONFIG")
+        certificate_only.query("SYSTEM START FETCHES watched_parts")
