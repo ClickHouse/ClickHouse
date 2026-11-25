@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-systems">
-  ## التكامل مع الأنظمة الحالية
+  ## التكامل مع الأنظمة الحالية {#existing-systems}
 </div>
 
 راقب سجلات `journald` في نظام Linux الحالي لديك عبر تشغيل OpenTelemetry Collector باستخدام journald receiver لجمع سجلات النظام وإرسالها إلى ClickStack عبر OTLP.
@@ -24,7 +24,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا أردت اختبار هذا التكامل أولًا من دون تعديل إعدادك الحالي، فانتقل إلى [قسم مجموعة البيانات التجريبية](#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات الأساسية
+  ##### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -35,19 +35,15 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="احصل على مفتاح API لـ ClickStack" id="get-api-key">
     يرسل OpenTelemetry Collector البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
 
-    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack لديك (على سبيل المثال: http://localhost:8080)
+    1. افتح واجهة مستخدم ClickStack على عنوان URL الخاص بـ ClickStack لديك (على سبيل المثال: http://localhost:8080)
     2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
     3. انتقل إلى **Team Settings → API Keys**
     4. انسخ **مفتاح API للاستيعاب** الخاص بك
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     5. اضبطه كمتغير بيئة:
@@ -61,13 +57,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     تأكد من أن نظامك يستخدم systemd وأن سجلات journal متوفرة:
 
     ```bash
-    # تحقق من إصدار systemd
+    # Check systemd version
     systemctl --version
 
-    # اعرض أحدث إدخالات journal
+    # View recent journal entries
     journalctl -n 20
 
-    # تحقق من استخدام journal للقرص
+    # Check journal disk usage
     journalctl --disk-usage
     ```
 
@@ -183,41 +179,31 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تحقّق من السجلات في HyperDX" id="verifying-logs">
-    بعد اكتمال الإعداد، سجّل الدخول إلى HyperDX وتأكد من أن السجلات تتدفق:
+  <Step title="تحقّق من السجلات في واجهة مستخدم ClickStack" id="verifying-logs">
+    بعد اكتمال الإعداد، سجّل الدخول إلى واجهة مستخدم ClickStack وتأكد من أن السجلات تتدفق:
 
     1. انتقل إلى Search view
     2. اضبط source على Logs
-    3. صفِّ حسب `service.name:systemd-logs`
-    4. يجب أن ترى إدخالات سجلات منظَّمة تتضمن حقولًا مثل `unit` و`priority` و`MESSAGE` و`_HOSTNAME`
+    3. صفِّ حسب `service.name:systemd-logs`
+    4. يجب أن ترى إدخالات سجلات منظَّمة تتضمن حقولًا مثل `unit` و`priority` و`MESSAGE` و`_HOSTNAME`
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
-</div>
+## مجموعة البيانات التجريبية {#demo-dataset}
 
-للمستخدمين الذين يريدون اختبار تكامل سجلات systemd قبل تهيئة أنظمتهم في بيئة الإنتاج، نوفر مجموعة بيانات تجريبية تحتوي على سجلات systemd مُنشأة مسبقًا بأنماط واقعية.
+للمستخدمين الذين يريدون اختبار تكامل سجلات systemd قبل تهيئة أنظمتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية تحتوي على سجلات systemd مُنشأة مسبقًا بأنماط واقعية.
 
 <Steps>
   <Step title="تنزيل مجموعة البيانات النموذجية" id="download-sample">
@@ -228,7 +214,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="إنشاء إعدادات collector التجريبية" id="demo-config">
+  <Step title="إنشاء إعدادات جامع البيانات التجريبية" id="demo-config">
     أنشئ ملف إعدادات للعرض التجريبي:
 
     ```bash
@@ -281,44 +267,34 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="التحقق من السجلات في HyperDX" id="verify-demo-logs">
+  <Step title="التحقق من السجلات في واجهة مستخدم ClickStack" id="verify-demo-logs">
     بعد تشغيل ClickStack:
 
-    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك
+    1. افتح [واجهة مستخدم ClickStack](http://localhost:8080/) وسجّل الدخول إلى حسابك
     2. انتقل إلى Search view واضبط source على `Logs`
     3. اضبط النطاق الزمني على **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفق المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. ويضمن هذا النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفق المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. ويضمن هذا النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصورات {#dashboards}
 
 لمساعدتك على البدء في مراقبة سجلات systemd باستخدام ClickStack، نوفر تصورات أساسية لبيانات systemd journal.
 
@@ -328,29 +304,21 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="استيراد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
-    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. ارفع الملف `systemd-logs-dashboard.json` وانقر على **Finish Import**
+    3. ارفع الملف `systemd-logs-dashboard.json` وانقر على **إكمال الاستيراد**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![إنهاء الاستيراد](/images/clickstack/systemd/finish-import-systemd.webp)
-
-    </Frame>
-
+      <Frame>
+        ![إنهاء الاستيراد](/images/clickstack/systemd/finish-import-systemd.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -364,13 +332,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * معدلات الأخطاء
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![مثال على لوحة المعلومات](/images/clickstack/systemd/systemd-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مثال على لوحة المعلومات](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -380,12 +344,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### عدم ظهور السجلات في HyperDX
-</div>
+### عدم ظهور السجلات في واجهة مستخدم ClickStack {#no-logs}
 
 تحقّق مما إذا كانت السجلات تصل إلى ClickHouse:
 
@@ -397,14 +359,14 @@ WHERE ServiceName = 'systemd-logs'
 "
 ```
 
-إذا لم تظهر أي نتائج، فتحقّق من سجلات الـcollector:
+إذا لم تظهر أي نتائج، فتحقّق من سجلات جامع البيانات:
 
 ```bash
 docker logs otel-collector | grep -i "error\|journald" | tail -20
 ```
 
 <div id="journalctl-not-found">
-  ### خطأ عدم العثور على `journalctl`
+  ### خطأ عدم العثور على `journalctl` {#journalctl-not-found}
 </div>
 
 إذا ظهر لك `exec: "journalctl": executable file not found in $PATH`:
@@ -423,16 +385,14 @@ otelcol-contrib --config=otel-config.yaml
 2. **استخدم نهج التصدير النصي** (كما في العرض التوضيحي) مع receiver `filelog` لقراءة ملفات تصدير journald
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) لأحداث النظام الحرجة (تعطل الخدمة، فشل المصادقة، وعمليات الإنهاء بسبب نفاد الذاكرة OOM)
 * أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (مراقبة أمان SSH، وصحة الخدمة)
 * قم بالتصفية حسب وحدات systemd محددة لتقليل الضجيج والتركيز على الخدمات المهمة
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يستخدم هذا الدليل OpenTelemetry Collector منفصلًا لقراءة سجلات systemd وإرسالها إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهذا هو النهج الموصى به في بيئات الإنتاج.
 

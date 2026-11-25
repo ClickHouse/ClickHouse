@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Core/Joins.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,6 +35,9 @@ class AggregatingStep;
 class SortingStep;
 class LimitStep;
 class DistinctStep;
+class RollupStep;
+class CubeStep;
+class UnionStep;
 
 /// The count of the distinct values that the `uniqExact` states of an aggregation hold, and the bytes of
 /// these values in the hash sets of the states. A function with a combinator (`uniqExactIf`) is not
@@ -60,17 +64,14 @@ private:
     ExpressionStatistics deriveReadStatistics(const ReadFromMergeTree & read_step);
     ExpressionStatistics deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
-    /// The result of an aggregation by the keys. A merge of aggregation states has the same result.
-    ExpressionStatistics deriveAggregatingStatistics(const Names & keys, const Block & output_header, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveRollupStatistics(const RollupStep & rollup_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveCubeStatistics(const CubeStep & cube_step, const ExpressionStatistics & input_statistics);
+    ExpressionStatistics deriveUnionStatistics(const UnionStep & union_step, const VectorWithMemoryTracking<const ExpressionStatistics *> & inputs_statistics);
     /// A final `DISTINCT` directly over a preliminary one on the same columns.
     static bool isOverPreliminaryDistinct(const DistinctStep & distinct_step, const Group & input_group);
-
-    /// Estimate bytes per row of a read: table-level hint if present, otherwise the sum of the
-    /// per-column widths already filled into `statistics`.
-    Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics);
 
     /// Fill per-column average value sizes of the read (storage-derived, hint overrides).
     void fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name);

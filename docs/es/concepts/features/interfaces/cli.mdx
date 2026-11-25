@@ -16,7 +16,7 @@ Con `clickhousectl` puede:
 * Crear, configurar, escalar, hacer copias de seguridad y consultar servicios de ClickHouse Cloud
 * Crear, supervisar, configurar y restaurar servicios de [ClickHouse Managed Postgres](/es/products/managed-postgres/overview)
 * Crear y operar ClickPipes desde almacenamiento de objetos, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB y BigQuery
-* Administrar fuentes, dashboards, alertas, webhooks, búsquedas guardadas y roles en un servicio de [Managed ClickStack](/es/clickstack/deployment/managed)
+* Administrar fuentes, dashboards, alertas, webhooks, búsquedas guardadas y roles en un servicio de [Self-managed ClickHouse Observability](/es/clickstack/self-configured/deployment/managed)
 * Desarrollar UDF ejecutables localmente y desplegarlas en ClickHouse Cloud
 * Administrar miembros de la organización, invitaciones, claves de API y roles
 * Instalar las ClickHouse agent skills oficiales en agentes de programación
@@ -430,7 +430,7 @@ Las canalizaciones CDC deben estar en estado `Paused` antes de ejecutar `update`
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` administra fuentes, dashboards, alertas, webhooks, búsquedas guardadas y roles en un servicio de [Managed ClickStack](/es/clickstack/deployment/managed) existente. Los recursos se definen como archivos JSON (`--file`, o `-` para stdin). Las operaciones de lectura admiten OAuth; las de escritura requieren una clave de API.
+`cloud clickstack` administra fuentes, dashboards, alertas, webhooks, búsquedas guardadas y roles en un servicio de [Self-managed ClickHouse Observability](/es/clickstack/self-configured/deployment/managed) existente. Los recursos se definen como archivos JSON (`--file`, o `-` para stdin). Las operaciones de lectura admiten OAuth; las de escritura requieren una clave de API.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

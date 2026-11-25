@@ -4,7 +4,7 @@ title: '深度链接'
 sidebarTitle: '深度链接'
 description: '使用 URL 查询参数直接链接到 ClickStack 页面'
 doc_type: 'reference'
-keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久链接', 'HyperDX']
+keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久链接', 'ClickStack 用户界面']
 ---
 
 您可以通过 URL 查询参数使用深度链接打开 ClickStack 页面，从外部系统 (如告警通知、运行手册、CI 作业或聊天消息) 直接跳转到特定搜索、仪表盘或面板。
@@ -27,9 +27,7 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
   ```
 </Info>
 
-<div id="search">
-  ## 搜索 — `/search`
-</div>
+## 搜索 — `/search` {#search}
 
 主要的日志/trace 搜索视图。有关搜索语法的详细信息，请参阅[搜索](/zh/clickstack/features/search)。
 
@@ -48,25 +46,19 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 
 也可通过 `/search/<savedSearchId>` 直接打开已保存的搜索。
 
-<div id="example-search-errors">
-  ### 示例：在指定时间范围内搜索 `Logs` 源中 `checkout` 服务的错误
-</div>
+### 示例：在指定时间范围内搜索 `Logs` 源中 `checkout` 服务的错误 {#example-search-errors}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
 ```
 
-<div id="example-search-trace">
-  ### 示例：直接跳转到 trace 的瀑布视图
-</div>
+### 示例：直接跳转到 trace 的瀑布视图 {#example-search-trace}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
 ```
 
-<div id="saved-searches">
-  ## 已保存的搜索 — `/search/list`
-</div>
+## 已保存的搜索 — `/search/list` {#saved-searches}
 
 已保存搜索的列表。
 
@@ -74,17 +66,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | ----- | ------ | --------------- |
 | `tag` | string | 仅显示带有此标签的已保存搜索。 |
 
-<div id="example-saved-searches-tag">
-  ### 示例：列出带有 `production` 标签的已保存搜索
-</div>
+### 示例：列出带有 `production` 标签的已保存搜索 {#example-saved-searches-tag}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search/list?tag=production
 ```
 
-<div id="dashboards">
-  ## 仪表盘 — `/dashboards/<dashboardId>`
-</div>
+## 仪表盘 — `/dashboards/<dashboardId>` {#dashboards}
 
 已保存的仪表盘。省略 `<dashboardId>` (`/dashboards`) 可打开一个临时的未保存仪表盘。有关创建仪表盘的详细信息，请参阅[仪表盘](/zh/clickstack/features/dashboards/overview)。
 
@@ -97,9 +85,7 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的分桶大小。`auto` 会根据所选时间范围选择分桶大小。            |
 | `highlightedTileId` | 字符串                                                                                                                                 | 滚动到并突出显示指定卡片——从告警跳转时非常有用。                 |
 
-<div id="example-dashboard-highlight">
-  ### 示例：打开指定时间范围的仪表盘，并高亮显示某个卡片
-</div>
+### 示例：打开指定时间范围的仪表盘，并高亮显示某个卡片 {#example-dashboard-highlight}
 
 适用于从告警通知直接跳转到触发该告警的卡片。
 
@@ -107,25 +93,19 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
 ```
 
-<div id="dashboards-list">
-  ## 仪表盘列表 — `/dashboards/list`
-</div>
+## 仪表盘列表 — `/dashboards/list` {#dashboards-list}
 
 | 参数    | 格式     | 描述          |
 | ----- | ------ | ----------- |
 | `tag` | string | 按标签筛选仪表盘列表。 |
 
-<div id="example-dashboards-list-tag">
-  ### 示例：列出标有 `infra` 标签的仪表盘
-</div>
+### 示例：列出标有 `infra` 标签的仪表盘 {#example-dashboards-list-tag}
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
 ```
 
-<div id="chart-explorer">
-  ## Chart Explorer — `/chart`
-</div>
+## Chart Explorer — `/chart` {#chart-explorer}
 
 用于临时创建和共享图表的构建器。
 
@@ -134,17 +114,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `config`     | JSON | 完整的图表配置 (source、select、where、图表类型等) 。通常由应用内的“共享”链接生成，而非手动编写。 |
 | `from`, `to` | 纪元毫秒 | 时间范围。省略时，默认使用最近 15 分钟。                                       |
 
-<div id="example-chart-config">
-  ### 示例：打开指定时间范围内的 p99 延迟图表配置
-</div>
+### 示例：打开指定时间范围内的 p99 延迟图表配置 {#example-chart-config}
 
 ```text
 <YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
 ```
 
-<div id="alerts">
-  ## 告警 — `/alerts`
-</div>
+## 告警 — `/alerts` {#alerts}
 
 有关创建和管理告警的详细信息，请参阅[告警](/zh/clickstack/features/alerts)。
 
@@ -154,17 +130,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `tag`     | string | 按标签过滤。          |
 | `creator` | string | 按告警创建者名称过滤。     |
 
-<div id="example-alerts-filter">
-  ### 示例：列出带有 `on-call` 标签的告警
-</div>
+### 示例：列出带有 `on-call` 标签的告警 {#example-alerts-filter}
 
 ```text
 <YOUR_CLICKSTACK_URL>/alerts?tag=on-call
 ```
 
-<div id="session-replay">
-  ## 会话回放 — `/sessions`
-</div>
+## 会话回放 — `/sessions` {#session-replay}
 
 浏览和播放会话回放。有关功能详情，请参阅[会话回放](/zh/clickstack/features/session-replay)。
 
@@ -177,25 +149,19 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `sid`           | string           | 通过 ID 打开指定会话。               |
 | `sfrom`, `sto`  | 纪元毫秒             | 已打开会话的时间窗口 (与 `sid` 配合使用) 。 |
 
-<div id="example-sessions-time-range">
-  ### 示例：在指定时间范围内浏览会话回放
-</div>
+### 示例：在指定时间范围内浏览会话回放 {#example-sessions-time-range}
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
 ```
 
-<div id="example-sessions-open">
-  ### 示例：在录制时段打开指定的会话回放
-</div>
+### 示例：在录制时段打开指定的会话回放 {#example-sessions-open}
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
 ```
 
-<div id="service-map">
-  ## 服务地图 — `/service-map`
-</div>
+## 服务地图 — `/service-map` {#service-map}
 
 功能详情请参阅[服务地图](/zh/clickstack/service-maps)。
 
@@ -205,17 +171,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `samplingFactor` | integer | 链路追踪采样除数 (`1` = 100% 的链路追踪，`2` = 50%，`4` = 25%，等等) 。 |
 | `from`, `to`     | 纪元毫秒    | 时间范围。省略时默认为最近 15 分钟。                                 |
 
-<div id="example-service-map">
-  ### 示例：查看指定时间范围内的服务地图
-</div>
+### 示例：查看指定时间范围内的服务地图 {#example-service-map}
 
 ```text
 <YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
 ```
 
-<div id="services">
-  ## 服务 — `/services`
-</div>
+## 服务 — `/services` {#services}
 
 按服务查看 HTTP、数据库和错误仪表盘。
 
@@ -229,25 +191,19 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | 仪表盘过滤栏配置值。                      |
 | `from`, `to`    | 纪元毫秒                                                                       | 时间范围。如未指定，默认为最近 15 分钟。          |
 
-<div id="example-services-database">
-  ### 示例：查看服务在指定时间范围内的数据库仪表板
-</div>
+### 示例：查看服务在指定时间范围内的数据库仪表板 {#example-services-database}
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
 ```
 
-<div id="example-services-errors">
-  ### 示例：查看服务的错误仪表板
-</div>
+### 示例：查看服务的错误仪表板 {#example-services-errors}
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
 ```
 
-<div id="kubernetes">
-  ## Kubernetes — `/kubernetes`
-</div>
+## Kubernetes — `/kubernetes` {#kubernetes}
 
 | 参数                                     | 格式                             | 描述                                  |
 | -------------------------------------- | ------------------------------ | ----------------------------------- |
@@ -257,17 +213,13 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
 | `podName`, `nodeName`, `namespaceName` | string                         | 打开特定 pod (容器组) 、节点或命名空间的详情面板。       |
 | `from`, `to`                           | 纪元毫秒                           | 时间范围。省略时，默认为最近 15 分钟。               |
 
-<div id="example-kubernetes-pod">
-  ### 示例：打开特定 pod (容器组) 的详情面板
-</div>
+### 示例：打开特定 pod (容器组) 的详情面板 {#example-kubernetes-pod}
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
 ```
 
-<div id="notebooks">
-  ## 笔记本 — `/notebook/<notebookId>`
-</div>
+## 笔记本 — `/notebook/<notebookId>` {#notebooks}
 
 <Info>
   **仅适用于托管 ClickStack**
@@ -275,9 +227,7 @@ keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久�
   笔记本仅在托管 ClickStack 部署中可用。有关该功能的详细信息，请参阅 [AI Notebooks](/zh/clickstack/notebooks)。
 </Info>
 
-<div id="example-notebook-open">
-  ### 示例：在指定的 Cloud 服务中打开特定 notebook
-</div>
+### 示例：在指定的 Cloud 服务中打开特定 notebook {#example-notebook-open}
 
 ```text
 <YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123

@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -77,7 +76,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default`、`https://reader:secret@ch.example.com:8443/analytics`) 。
     `https://` の URL を指定すると TLS が有効になります。
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="ClickHouse が選択され、ホスト、ポート 8123、ユーザー名、データベースが入力され、接続テストに成功した LibreDB Studio の New Connection ダイアログ" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![ClickHouse が選択され、ホスト、ポート 8123、ユーザー名、データベースが入力され、接続テストに成功した LibreDB Studio の New Connection ダイアログ](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="クエリを実行する" id="run-a-query">
@@ -100,7 +103,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="uk_price_paid クエリと、宣言された ClickHouse のカラム型を含む結果グリッドを表示している LibreDB Studio の SQL エディタ" />
+    <div className="ch-image-md">
+      <Frame>
+        ![uk_price_paid クエリと、宣言された ClickHouse のカラム型を含む結果グリッドを表示している LibreDB Studio の SQL エディタ](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -122,7 +129,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
 
 LibreDB Studio では、テーブルに対する `OPTIMIZE TABLE ... FINAL` の実行、テーブルまたはデータベース単位での `system.parts` の概要表示、`KILL QUERY ... SYNC` による実行中クエリの停止も行えます。これらの操作には、それぞれに対応する権限が必要です。
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="ClickHouse 接続に対する LibreDB Studio の監視概要。サーバーバージョン、連続稼働時間、接続数、ストレージサイズ、キャッシュヒット率、テーブル数が表示されている" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse 接続に対する LibreDB Studio の監視概要。サーバーバージョン、連続稼働時間、接続数、ストレージサイズ、キャッシュヒット率、テーブル数が表示されている](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## トラブルシューティング {#troubleshooting}
 

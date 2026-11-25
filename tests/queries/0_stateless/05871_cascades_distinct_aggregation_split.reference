@@ -168,8 +168,8 @@ Expression ((Project names + Projection))
           JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.t_distinct_split)
-            Expression ((Change column names to column identifiers + (Project names + Projection)))
-              BroadcastExchange
+            BroadcastExchange
+              Expression ((Change column names to column identifiers + (Project names + Projection)))
                 Rollup
                   GatherExchange
                     Aggregating

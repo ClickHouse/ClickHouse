@@ -19,20 +19,17 @@ ClickHouse 支持与多个目录 (如 Unity、Glue、Polaris 等) 集成。本�
   `SET allow_database_iceberg = 1;`
 </Note>
 
-<div id="prerequisites">
-  ## 前置条件
-</div>
+## 前置条件 {#prerequisites}
 
-在创建从 ClickHouse 到 Lakehouse 运行时目录 (BigLake Metastore) 的 connection 之前，请确保你已具备以下条件：
+在创建从 ClickHouse 到 Lakehouse 运行时目录 (BigLake Metastore) 的连接之前，请确保你已具备以下条件：
 
 * 一个已启用 Lakehouse 运行时目录的 **Google Cloud 项目**
-* 某个应用的 **应用默认凭据** (OAuth client ID 和 client secret) ，通过 [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc) 创建
-* 通过完成具有适当作用域的 OAuth 流程获取的 **刷新令牌** (例如 `https://www.googleapis.com/auth/bigquery` 以及适用于 GCS 的存储作用域)
+* 凭证，以下任选其一：
+  * **服务账号密钥**：服务账号的 JSON 密钥文件，该服务账号需有权访问目录和 GCS 存储桶，可通过 [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete) 创建。服务器场景推荐使用此方式，因为它不依赖用户会话。
+  * 某个应用的 **应用默认凭证** (OAuth client ID 和 client secret) ，通过 [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc) 创建，以及通过完成具有适当作用域的 OAuth 流程获取的 **刷新令牌** (例如 `https://www.googleapis.com/auth/bigquery` 以及适用于 GCS 的存储作用域)
 * **仓库** 路径：存储表的 GCS 存储桶 (以及可选前缀) ，例如 `gs://your-bucket` 或 `gs://your-bucket/prefix`
 
-<div id="creating-a-connection">
-  ## 在 Lakehouse 运行时目录与 ClickHouse 之间建立连接
-</div>
+## 在 Lakehouse 运行时目录与 ClickHouse 之间建立连接 {#creating-a-connection}
 
 完成 OAuth 凭证配置后，在 ClickHouse 中创建一个使用 [DataLakeCatalog](/zh/reference/engines/database-engines/datalake) 数据库引擎的数据库：
 
@@ -50,9 +47,21 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-<div id="querying-lakehouse-runtime-tables">
-  ## 使用 ClickHouse 查询 Lakehouse 运行时目录中的表
-</div>
+如需改用服务账号密钥进行身份验证，请在 `google_service_account_key` 中传入 JSON 密钥文件的内容，并在 `google_project_id` 中传入项目 ID。ClickHouse 会使用该密钥签署 JWT，用其换取访问令牌，并自动续期。从 GCS 读取数据文件时也使用同一令牌。该密钥在 `SHOW CREATE DATABASE` 的输出和日志中均会被屏蔽。
+
+```sql
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
+    google_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+`google_service_account_key` 与 `google_adc_*` 设置互斥，且二者均不能与 `disk` 设置同时使用，因为基于磁盘的表在读取数据文件时使用的是该磁盘的凭证，而非目录的凭证。
+
+## 使用 ClickHouse 查询 Lakehouse 运行时目录中的表 {#querying-lakehouse-runtime-tables}
 
 创建连接后，您可以查询已注册到 Lakehouse 运行时目录中的表。
 
@@ -86,9 +95,7 @@ SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
 SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
 ```
 
-<div id="loading-data-into-clickhouse">
-  ## 将 Lakehouse 中的数据加载到 ClickHouse
-</div>
+## 将 Lakehouse 中的数据加载到 ClickHouse {#loading-data-into-clickhouse}
 
 要将 Lakehouse 运行时目录表中的数据加载到本地 ClickHouse 表，以加快重复查询的速度，请创建一个 MergeTree 表，并从该目录插入数据：
 

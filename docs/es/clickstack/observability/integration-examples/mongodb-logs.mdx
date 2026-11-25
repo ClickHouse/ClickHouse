@@ -1,0 +1,348 @@
+---
+slug: /clickstack/observability/integration-examples/mongodb-logs
+title: 'Monitorización de logs de MongoDB con ClickHouse Observability'
+sidebarTitle: 'Logs de MongoDB'
+description: 'Recopile los logs del servidor de MongoDB en formato JSON con OpenTelemetry y envíelos a ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['MongoDB', 'logs', 'OTEL', 'ClickHouse Observability', 'monitorización de bases de datos', 'consulta lenta']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Recopile los logs del servidor MongoDB con el receptor `filelog` de OpenTelemetry y envíelos a ClickHouse Observability. Use el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de desplegar MongoDB.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Docker y `curl`
+* Para sus propios logs, una implementación autogestionada de MongoDB 4.4 o posterior con acceso a sus archivos de registro JSON
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en fase beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copy connection details** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Para los ejemplos de exportador OTLP que aparecen a continuación, defina estas variables en el terminal donde vaya a ejecutar el recolector:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Reemplace los marcadores de posición por el endpoint exacto de su servicio, incluido el puerto, y por su clave de API. Use el endpoint HTTP base sin el sufijo `/v1/logs`; el exportador añade al final la ruta de cada señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use el endpoint OTLP HTTP accesible de su recolector (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y sus ajustes de autenticación. Si su recolector no requiere autenticación, omita el bloque `headers` del exportador en las configuraciones siguientes. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+El endpoint debe ser accesible desde el contenedor del recolector. Si el recolector de destino se ejecuta en este mismo equipo, use `http://host.docker.internal:4318`. Los comandos de Docker siguientes ya incluyen la correspondencia del host.
+
+## Integración con una instancia de MongoDB existente {#existing-mongodb}
+
+<Steps>
+  <Step title="Verificar la configuración de registro de MongoDB" id="verify-mongodb">
+    MongoDB 4.4 y versiones posteriores utilizan logs de servidor estructurados en JSON. Compruebe la sección `systemLog` en su archivo de configuración de MongoDB. Una ruta de log habitual en Linux es `/var/log/mongodb/mongod.log`.
+
+    Si MongoDB solo escribe logs en stdout, configure el registro en archivo en `mongod.conf`:
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    Cree el directorio con permisos que permitan a MongoDB escribir en él y al recolector leerlo. En implementaciones en contenedores, comparta el directorio de logs con el recolector y asegúrese de que MongoDB cargue el archivo de configuración.
+
+    Reinicie MongoDB según su proceso de implementación, por ejemplo:
+
+    ```bash
+    sudo systemctl restart mongod
+    # O, para Docker:
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step title="Configurar el recolector" id="configure-collector">
+    Guarde lo siguiente como `mongodb-monitoring.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: end
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-service"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    El analizador lee los campos de marca de tiempo y gravedad de MongoDB, mueve `msg` al cuerpo del log y conserva campos como `c`, `ctx`, `id` y `attr` como atributos del log. Mantenga `$$date` tal cual: el recolector interpreta el signo de dólar escapado como el campo `$date` de MongoDB. Con `start_at: end`, el receptor en vivo solo lee las entradas nuevas.
+  </Step>
+
+  <Step title="Ejecutar el recolector" id="run-collector">
+    Defina las [variables de conexión](#connection-details) y ejecute el siguiente comando desde el directorio de configuración. Ajuste la ruta de logs del host si es necesario. Si los archivos son legibles por grupo, añada `--group-add LOG_GROUP_ID` con el ID numérico de grupo que muestra `ls -ln /var/log/mongodb`.
+
+    ```bash
+    docker run --rm --name mongodb-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/mongodb:/var/log/mongodb:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Deje la terminal abierta y genere actividad en el servidor para que se escriban nuevas entradas de log. Cuando termine las pruebas, deténgalo con **Ctrl+C**.
+  </Step>
+
+  <Step title="Verificar los logs" id="verify-logs">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:mongodb-service` y seleccione **Last 15 minutes**. Debería ver los mensajes del servidor con la marca de tiempo y la gravedad ya analizadas.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+La muestra contiene 6,956 entradas de log del servidor MongoDB que abarcan aproximadamente 24 horas. El recolector actualiza sus marcas de tiempo y conserva los mensajes y los atributos estructurados.
+
+<Steps>
+  <Step title="Descargar la muestra" id="download-sample">
+    ```bash
+    curl -fL -o mongod.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step title="Configurar el recolector de demostración" id="configure-demo">
+    Guarde lo siguiente como `mongodb-demo.yaml`:
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000Z07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/mongodb:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:52.193Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors: [memory_limiter, transform/mongodb, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+  </Step>
+
+  <Step title="Ejecutar el recolector de demostración" id="run-demo">
+    Defina las [variables de conexión](#connection-details) y, a continuación, ejecute el siguiente comando desde el directorio que contiene ambos archivos:
+
+    ```bash
+    docker run --rm --name mongodb-logs-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/var/log/mongodb/mongod.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Mantenga la terminal abierta mientras verifica la ingesta. Cuando termine, deténgalo con **Ctrl+C**. Si vuelve a ejecutar la demostración, la muestra se ingestará de nuevo con marcas de tiempo actualizadas.
+  </Step>
+
+  <Step title="Verificar los logs de demostración" id="verify-demo">
+    Abra **Búsqueda**, seleccione **Logs**, filtre por `ServiceName:mongodb-demo` y seleccione **Last 2 days**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Logs de demostración de MongoDB con mensajes analizados y gravedad en la Búsqueda de ClickHouse Observability](/images/clickstack/observability-mongodb-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Paneles y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json" download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Descargue la configuración del panel de control</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Importe el panel de control" id="import-dashboard">
+    1. Abra **Dashboards** y haga clic en **Import** en la esquina superior derecha.
+    2. Cargue el archivo `mongodb-logs-dashboard.json`.
+    3. Asigne los gráficos a su fuente **Logs** y haga clic en **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón para importar el panel de control](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Visualice el panel de control" id="view-dashboard">
+    Si utiliza los datos de muestra, puede filtrar opcionalmente por `ServiceName:mongodb-demo` y seleccionar **Last 2 days**. Para sus propios log, utilice `ServiceName:mongodb-service` y un intervalo de tiempo que abarque sus registros.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de log de MongoDB en ClickHouse Observability que muestra el volumen de registros, la gravedad, los componentes, las consultas lentas y los eventos de conexión](/images/clickstack/observability-mongodb-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### No aparecen logs {#no-logs}
+
+Revise la salida del recolector en busca de errores de permisos de archivo, de análisis, de autenticación o de exportación. Compruebe que su servidor escribe en el directorio montado y que los nombres de archivo coinciden con la lista `include` del receptor. La configuración en ejecución solo lee las entradas nuevas.
+
+### Los logs no se analizan correctamente {#parsing-errors}
+
+Verifique que el archivo contenga un objeto JSON por línea:
+
+```bash
+tail -n 1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+El analizador espera logs JSON de MongoDB 4.4+. Los logs de texto heredados requieren un analizador distinto. Conserve el escape de `$$date` en la configuración del recopilador.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) para errores o consultas lentas.
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales para monitorizar el conjunto de réplicas o hacer seguimiento de las conexiones.
+* Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener orientación sobre la implementación.

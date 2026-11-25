@@ -16,6 +16,7 @@ namespace DB
 
 class WriteBuffer;
 class IDataType;
+class ActionsDAG;
 
 struct ExpressionStatistics
 {
@@ -80,8 +81,9 @@ class ReadFromMergeTree;
 /// of the data); otherwise type-based estimates scaled to match the measured row width.
 UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
 
-/// Column widths for a read whose table-level row width is hinted: type-based estimates scaled so
-/// their sum over the table's columns matches the hinted row width, ignoring the parts' sizes.
+/// Column widths for a read whose row width is hinted: type-based estimates scaled so that the columns
+/// that the read emits sum to the hinted row width, ignoring the parts' sizes. The hint is the width of
+/// the rows that a read of the table emits, whatever its columns.
 UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
 
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
@@ -95,6 +97,12 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 /// Estimate average bytes per row of the header, preferring the columns' known average sizes
 /// over the type-based estimate.
 Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics);
+
+/// Changes the column statistics of the input of a step that runs `actions` into those of its output, which has
+/// `output_header`. The outputs of `actions` get their statistics as in `QueryPlanOptimizations::remapColumnStats`.
+/// The step also emits the input columns that `actions` do not read; these keep their statistics.
+void remapColumnStatisticsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, const ActionsDAG & actions, const Block & output_header);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 
