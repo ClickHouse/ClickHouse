@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -468,6 +469,41 @@ bool ReadFromFormatInfo::formatReturnsColumnUnchanged(const String & name, const
 
     /// A column with a default expression is recomputed above the format for the values the reader reported as missing.
     return !columns_description.hasDefault(name);
+}
+
+bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
+{
+    if (columns_description.hasDefault(name))
+        return true;
+    for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+        if (columns_description.hasDefault(name.substr(0, pos)))
+            return true;
+    return false;
+}
+
+bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) const
+{
+    if (!columns_description.hasDefaults())
+        return false;
+
+    const auto physical_columns = columns_description.getAllPhysical();
+    for (const auto & column : columns_description)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        Block available;
+        for (const auto & physical_column : physical_columns)
+            if (physical_column.name != column.name)
+                available.insert({physical_column.type->createColumn(), physical_column.type, physical_column.name});
+        if (!available.columns())
+            available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+        auto dag = evaluateMissingDefaults(available, {{column.name, column.type}}, columns_description, context, false);
+        if (dag && dag->hasNonDeterministicOrStatefulFunctions())
+            return true;
+    }
+    return false;
 }
 
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const

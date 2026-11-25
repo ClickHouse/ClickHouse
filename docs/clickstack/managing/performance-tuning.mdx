@@ -73,6 +73,33 @@ You're recommended to review the following ClickHouse documentation before under
 
 All optimizations described below can be applied directly to the underlying tables using standard ClickHouse SQL, either through the [ClickHouse Cloud SQL console](/integrations/connectors/sql-clients/sql-console) or via the [ClickHouse client](/concepts/features/interfaces/client).
 
+## Find what drives query load {#query-attribution}
+
+Before optimizing, find out which dashboards, alerts, and other features cause the most work. ClickStack tags every query it sends to ClickHouse, so a query in [`system.query_log`](/reference/system-tables/query_log) or [`system.processes`](/reference/system-tables/processes) can be traced back to what issued it:
+
+- Its `query_id` starts with `hdx-` and the name of the surface that issued it, for example `hdx-alert-<uuid>` or `hdx-mcp-<uuid>`. Use it to find a running query in `system.processes`, which has no `log_comment` column; there, the comment is in `Settings['log_comment']`.
+- Its `log_comment` is a small JSON object. `surface` names what issued the query, for example `dashboard`, `search`, `chart-explorer`, `alert`, `mcp`, or `api`. Depending on the surface, it also has the IDs of the `dashboard` and `tile`, the saved `search`, the `alert`, and the `source`, and a `label`, such as the MCP tool name, the API route, or the name of a built-in dashboard. For example, `{"v":1,"surface":"mcp","label":"clickstack_service_health"}`.
+
+The comment records what was asked for, not who asked: no user or team identifiers are written. (To record the user's email in query logs, use the connection's **Query Log Setting Prefix**; see [Connections](/clickstack/managing/config#connection-settings).) A few internal queries, such as the version check, have an `hdx-` query ID and an empty `log_comment`. PromQL queries carry the same attribution.
+
+The following query shows where the read load comes from, by surface and dashboard:
+
+```sql
+SELECT
+    JSONExtractString(log_comment, 'surface') AS surface,
+    JSONExtractString(log_comment, 'dashboard') AS dashboard,
+    count() AS queries,
+    formatReadableSize(sum(read_bytes)) AS read
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND startsWith(query_id, 'hdx-')
+GROUP BY
+    surface,
+    dashboard
+ORDER BY sum(read_bytes) DESC
+```
+
+On ClickHouse Cloud, `system.query_log` and `system.processes` are local to each replica. To include every replica of the service, read from `clusterAllReplicas(default, system.query_log)` or `clusterAllReplicas(default, system.processes)` instead. On a single server without a `default` cluster, such as the all-in-one image, query the tables directly.
+
 ## Optimization 1. Materialize frequently queried attributes {#materialize-frequently-queried-attributes}
 
 The first and simplest optimization for ClickStack users is to identify commonly queried attributes in `LogAttributes`, `ScopeAttributes`, and `ResourceAttributes`, and promote them to top-level columns using materialized columns.
