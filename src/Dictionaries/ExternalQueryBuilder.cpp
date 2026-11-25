@@ -9,6 +9,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -432,7 +434,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 
 
 void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out,
-                                               size_t beg, size_t end) const
+                                               size_t beg, size_t end, bool handle_nan) const
 {
     auto first = true;
     for (size_t i = beg; i < end; ++i)
@@ -443,6 +445,14 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
         first = false;
 
         const auto & key_description = (*dict_struct.key)[i];
+
+        if (handle_nan && key_description.type->isFloat() && std::isnan(key_columns[i]->getFloat64(row)))
+        {
+            writeString("isNaN(", out);
+            writeQuoted(key_description.name, out);
+            writeChar(')', out);
+            continue;
+        }
 
         /// key_i=value_i
         writeQuoted(key_description.name, out);
@@ -540,7 +550,7 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
 {
     bool first = true;
 
-    if (method == AND_OR_CHAIN)
+    if (method == AND_OR_CHAIN || method == CLICKHOUSE_AND_OR_CHAIN)
     {
         first = true;
         for (const auto row : requested_rows)
@@ -551,7 +561,7 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
             first = false;
 
             writeString("(", out);
-            composeKeyCondition(key_columns, row, out, 0, key_columns.size());
+            composeKeyCondition(key_columns, row, out, 0, key_columns.size(), method == CLICKHOUSE_AND_OR_CHAIN);
             writeString(")", out);
         }
     }

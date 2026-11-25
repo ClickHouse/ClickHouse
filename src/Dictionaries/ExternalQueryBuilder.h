@@ -60,6 +60,8 @@ struct ExternalQueryBuilder
     enum LoadKeysMethod
     {
         AND_OR_CHAIN,
+        /// Select NaN source keys in ClickHouse; the dictionary filters SQL-equal overfetch by serialized key.
+        CLICKHOUSE_AND_OR_CHAIN,
         IN_WITH_TUPLES,
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };
@@ -75,7 +77,7 @@ protected:
     /// In the following methods `beg` and `end` specifies which columns to write in expression
 
     /// Expression in form (x = c1 AND y = c2 ...)
-    void composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
+    void composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end, bool handle_nan = false) const;
 
     /// Expression in form (x, y, ...) IN ((c1, c2, ...), ...)
     void composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end) const;

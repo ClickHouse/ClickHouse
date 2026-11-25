@@ -4061,6 +4061,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const auto type = removeNullable(removeLowCardinality(element->getResultType()));
                         return isDynamic(type) || isVariant(type);
                     });
+                    const bool has_enum_source = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
+                    {
+                        return isEnum(removeNullable(removeLowCardinality(element->getResultType())));
+                    });
                     const bool has_temporal_source = std::any_of(source_elements.begin(), source_elements.end(), [](const auto & element)
                     {
                         return isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(
@@ -4072,7 +4076,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return element->getResultType()->onlyNull() || isStringOrFixedString(type) || isDynamic(type) || isVariant(type);
                     });
                     if (use_standard_null_semantics
-                        && ((numeric_left && (has_numeric_carrier || has_temporal_source || (has_numeric_source
+                        && ((numeric_left && (has_numeric_carrier || has_enum_source || has_temporal_source || (has_numeric_source
                                 && (isBool(left_value_type)
                                     || !getLeastSupertypeForInArrayElements(source_elements, in_first_argument, false)))))
                             || (temporal_left && has_numeric_carrier) || identifier_sources
@@ -4107,7 +4111,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             const auto source_type = removeNullable(removeLowCardinality(element->getResultType()));
                             const bool carrier_element = isDynamic(source_type) || isVariant(source_type);
                             QueryTreeNodePtr comparison;
-                            if (carrier_element)
+                            if (carrier_element || (numeric_left && isEnum(source_type)))
                             {
                                 auto carrier_match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
                                 carrier_match->getArguments().getNodes() = {

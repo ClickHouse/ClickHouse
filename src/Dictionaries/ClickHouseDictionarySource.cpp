@@ -151,7 +151,7 @@ BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const 
     /// Keep the dictionary's setting for user-authored source SQL. Equality
     /// predicates retain the internal key lookup semantics in the opt-in mode.
     const auto method = context->getSettingsRef()[Setting::in_null_as_unknown]
-        ? ExternalQueryBuilder::AND_OR_CHAIN : ExternalQueryBuilder::IN_WITH_TUPLES;
+        ? ExternalQueryBuilder::CLICKHOUSE_AND_OR_CHAIN : ExternalQueryBuilder::IN_WITH_TUPLES;
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, method);
     return createStreamForQuery(query);
 }
