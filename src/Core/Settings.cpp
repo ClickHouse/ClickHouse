@@ -464,6 +464,12 @@ The fair share is taken once per query, when its plan is built, so that all part
 It only applies if `max_threads` is `auto` (not set explicitly) and `use_concurrency_control` is enabled.
 )", 0, \
         {"26.10", false, true, "New setting to choose the parallelism of a query from the fair share of CPU slots of the concurrency control"}) \
+    DECLARE(Bool, use_concurrency_control_for_indexes, true, R"(
+Take CPU slots of the server's concurrency control, or of the workload scheduler if a CPU resource is defined, for the threads that analyze the indexes of `MergeTree` tables (see `max_threads_for_indexes`). A thread is started only for a granted CPU slot, so the analysis uses fewer threads when the server is overloaded. If disabled, the analysis always uses all its threads.
+
+It only applies if `use_concurrency_control` is enabled.
+)", 0, \
+        {"26.12", false, true, "New setting to take CPU slots for the threads that analyze indexes. Keep the default regardless of `compatibility`.", CompatibilitySetting::Ignore}) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
 The maximum number of threads to download data (e.g. for URL engine).
 )", 0) \

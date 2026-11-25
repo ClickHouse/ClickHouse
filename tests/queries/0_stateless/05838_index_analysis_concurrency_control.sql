@@ -16,13 +16,16 @@ INSERT INTO t_index_analysis_cc SELECT number, number FROM numbers(300, 100);
 -- `EXPLAIN` analyzes indexes without executing the read, so only the analysis and the pipeline of `EXPLAIN` itself take slots.
 SET max_threads = 4;
 
-SET max_threads_for_indexes = 1, use_concurrency_control = 1, log_comment = 'serial';
+SET max_threads_for_indexes = 1, use_concurrency_control = 1, use_concurrency_control_for_indexes = 1, log_comment = 'serial';
 EXPLAIN indexes = 1 SELECT value FROM t_index_analysis_cc WHERE key > 10 AND value < 390 FORMAT Null;
 
 SET max_threads_for_indexes = 4, use_concurrency_control = 1, log_comment = 'parallel';
 EXPLAIN indexes = 1 SELECT value FROM t_index_analysis_cc WHERE key > 10 AND value < 390 FORMAT Null;
 
 SET max_threads_for_indexes = 4, use_concurrency_control = 0, log_comment = 'parallel without concurrency control';
+EXPLAIN indexes = 1 SELECT value FROM t_index_analysis_cc WHERE key > 10 AND value < 390 FORMAT Null;
+
+SET max_threads_for_indexes = 4, use_concurrency_control = 1, use_concurrency_control_for_indexes = 0, log_comment = 'parallel without concurrency control for indexes';
 EXPLAIN indexes = 1 SELECT value FROM t_index_analysis_cc WHERE key > 10 AND value < 390 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -35,6 +38,8 @@ WITH (
 SELECT
     -- The parallel analysis takes at least the slot of its calling thread, the serial analysis takes none.
     arrayFirst(x -> x.1 = 'parallel', slots).2 > arrayFirst(x -> x.1 = 'serial', slots).2,
-    arrayFirst(x -> x.1 = 'parallel without concurrency control', slots).2;
+    arrayFirst(x -> x.1 = 'parallel without concurrency control', slots).2,
+    -- Without the slots of the analysis only the pipeline of `EXPLAIN` takes slots.
+    arrayFirst(x -> x.1 = 'parallel without concurrency control for indexes', slots).2 = arrayFirst(x -> x.1 = 'serial', slots).2;
 
 DROP TABLE t_index_analysis_cc;

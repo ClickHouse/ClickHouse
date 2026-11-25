@@ -144,6 +144,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_concurrency_control_for_indexes;
 }
 
 namespace FailPoints
@@ -385,7 +386,7 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     std::vector<size_t> part_marks(parts.size());
     std::vector<std::exception_ptr> part_exceptions(parts.size());
     std::atomic<size_t> marks_analyzed = 0;
-    processPartsInParallel(parts.size(), num_threads, settings[Setting::use_concurrency_control], [&](size_t part_index)
+    processPartsInParallel(parts.size(), num_threads, settings[Setting::use_concurrency_control] && settings[Setting::use_concurrency_control_for_indexes], [&](size_t part_index)
     {
         try
         {
@@ -1888,7 +1889,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
-        processPartsInParallel(parts_with_ranges.size(), num_threads, settings[Setting::use_concurrency_control], [&](size_t part_index)
+        processPartsInParallel(parts_with_ranges.size(), num_threads, settings[Setting::use_concurrency_control] && settings[Setting::use_concurrency_control_for_indexes], [&](size_t part_index)
         {
             process_part(part_index);
             return true;
