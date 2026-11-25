@@ -247,7 +247,7 @@ public:
       */
     virtual void insertDefaultInto(IColumn & column) const;
 
-    void insertManyDefaultsInto(IColumn & column, size_t n) const;
+    virtual void insertManyDefaultsInto(IColumn & column, size_t n) const;
 
     /// Returns true if insertDefaultInto simply calls column.insertDefault()
     /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).

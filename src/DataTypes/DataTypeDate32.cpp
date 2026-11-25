@@ -1,7 +1,9 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationDate32.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUT.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -18,6 +20,26 @@ SerializationPtr DataTypeDate32::doGetSerialization(const SerializationInfoSetti
 Field DataTypeDate32::getDefault() const
 {
     return -static_cast<Int64>(getDayNumOffsetEpoch());
+}
+
+/// The default is 1900-01-01, not the column zero.
+void DataTypeDate32::insertDefaultInto(IColumn & column) const
+{
+    if (auto * column_int32 = typeid_cast<ColumnInt32 *>(&column))
+        column_int32->getData().push_back(-static_cast<Int32>(getDayNumOffsetEpoch()));
+    else
+        column.insert(getDefault());
+}
+
+void DataTypeDate32::insertManyDefaultsInto(IColumn & column, size_t n) const
+{
+    if (auto * column_int32 = typeid_cast<ColumnInt32 *>(&column))
+    {
+        auto & data = column_int32->getData();
+        data.resize_fill(data.size() + n, -static_cast<Int32>(getDayNumOffsetEpoch()));
+    }
+    else
+        IDataType::insertManyDefaultsInto(column, n);
 }
 
 void registerDataTypeDate32(DataTypeFactory & factory)

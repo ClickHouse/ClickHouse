@@ -15,6 +15,9 @@ public:
     const char * getFamilyName() const override { return family_name; }
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
+    void insertManyDefaultsInto(IColumn & column, size_t n) const override;
+    bool isDefaultInsertTrivial() const override { return false; }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

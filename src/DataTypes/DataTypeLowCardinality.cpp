@@ -141,6 +141,27 @@ Field DataTypeLowCardinality::getDefault() const
     return dictionary_type->getDefault();
 }
 
+void DataTypeLowCardinality::insertDefaultInto(IColumn & column) const
+{
+    if (dictionary_type->isDefaultInsertTrivial())
+        column.insertDefault();
+    else
+        column.insert(dictionary_type->getDefault());
+}
+
+void DataTypeLowCardinality::insertManyDefaultsInto(IColumn & column, size_t n) const
+{
+    if (dictionary_type->isDefaultInsertTrivial())
+    {
+        column.insertManyDefaults(n);
+        return;
+    }
+
+    auto row = column.cloneEmpty();
+    insertDefaultInto(*row);
+    column.insertManyFrom(*row, 0, n);
+}
+
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))

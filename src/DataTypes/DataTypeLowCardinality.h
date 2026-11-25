@@ -29,6 +29,9 @@ public:
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
+    void insertManyDefaultsInto(IColumn & column, size_t n) const override;
+    bool isDefaultInsertTrivial() const override { return dictionary_type->isDefaultInsertTrivial(); }
 
     bool equals(const IDataType & rhs) const override;
 
