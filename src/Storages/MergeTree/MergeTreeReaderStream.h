@@ -33,11 +33,11 @@ public:
     /// The counted ranges of a file. The readers of several threads count the same file.
     class ReadRanges
     {
-        friend class ReadRangesRegistry;
-
+    public:
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
         size_t add(CompressedBlockRanges & ranges);
 
+    private:
         std::mutex mutex;
         /// Merged, by their begin.
         MapWithMemoryTracking<size_t, size_t> united_ranges TSA_GUARDED_BY(mutex);
