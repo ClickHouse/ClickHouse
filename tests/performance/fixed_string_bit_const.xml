@@ -30,8 +30,9 @@
             toFixedString(substring(source, 1, 64), 64)
         FROM numbers(1048576)
     </fill_query>
-    <query>SELECT bitAnd(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
-    <query>SELECT bitOr(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
-    <query>SELECT bitXor(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <!-- Iceberg stores `FixedString` columns as `String`; the cast is an identity for the original column type. -->
+    <query>SELECT bitAnd(CAST(value{width} AS FixedString({width})), toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <query>SELECT bitOr(CAST(value{width} AS FixedString({width})), toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <query>SELECT bitXor(CAST(value{width} AS FixedString({width})), toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
     <drop_query>DROP TABLE fixed_string_bit_const</drop_query>
 </test>
