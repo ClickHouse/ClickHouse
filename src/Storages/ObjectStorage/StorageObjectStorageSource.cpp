@@ -869,19 +869,33 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
                 result += "#headers=" + headers_hash;
 
             /// The web object storage parses the URL of each request with `enable_url_encoding` of the
-            /// current query context (`WebObjectStorage::getRequestContext`), so the same path can name
+            /// request context (`WebObjectStorage::getRequestContext`), so the same path can name
             /// different resources in one query and the next, for a persistent table as well. The identity
             /// therefore reads the effective mode the same way, rather than a mode recorded when the
             /// arguments were parsed: a stored definition would pin the mode of its creating session
-            /// while its requests still follow the mode of the reading query.
-            if (CurrentThread::isInitialized())
+            /// while its requests still follow the mode of the reading query. It also resolves the context
+            /// the same way - the current query context, falling back to the global one - so a reader
+            /// built on a thread without a query context carries the global mode in its identity instead
+            /// of omitting the field, which would fragment the cache against the identical read of a
+            /// query thread whose mode equals the global default.
             {
-                if (auto query_context = CurrentThread::tryGetQueryContext())
+                ContextPtr request_context;
+                if (CurrentThread::isInitialized())
+                    request_context = CurrentThread::tryGetQueryContext();
+                if (!request_context)
+                    request_context = Context::getGlobalContextInstance();
+                if (request_context)
                 {
-                    const bool enable_url_encoding = query_context->getSettingsRef()[Setting::enable_url_encoding];
+                    const bool enable_url_encoding = request_context->getSettingsRef()[Setting::enable_url_encoding];
                     result += fmt::format("#url_encoding={}", enable_url_encoding);
                 }
             }
+
+            /// The same source text is read as an archive by one configuration and kept literal by another
+            /// (the interpretation is a session-setting decision), and the object path of a member read
+            /// spells like the literal key it namesakes: `<archive>::<member>`. Without this marker the
+            /// two namesakes would share one identity and answer each other from the caches.
+            result += web_configuration->isArchive() ? "#split=archive" : "#split=literal";
         }
     }
 

@@ -118,6 +118,11 @@ StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_ca
 
 std::string StorageWebConfiguration::getHeadersHash() const
 {
+    /// No headers: no suffix. The hash of nothing would still be a constant that separates headerless
+    /// identities from headered ones, but the "no headers - no suffix" guard at the call site is only
+    /// honest when the empty case returns nothing to append.
+    if (headers_from_ast.empty())
+        return {};
     SipHash header_hash;
     for (const auto & [name, value] : headers_from_ast)
     {
