@@ -2198,18 +2198,11 @@ TEST(PromQLParser, NodeStartPositions)
 
 TEST(PromQLParser, ScalingWithManyScalarPositions)
 {
-    /// Regression: node positions used to be converted from code points to byte offsets by scanning the
-    /// query from the beginning for every node, so a long comment prefix made parsing quadratic in the
-    /// query length for a balanced scalar expression. Parsing must stay fast in the query length: the
-    /// comment is scanned once to build the code-point to byte-offset mapping, and every node position
-    /// is looked up in it.
-    ///
-    /// The bound is generous: this parses in tens of milliseconds, while the quadratic version had to
-    /// rescan the 16 MiB comment for each of the 8192 scalar literals and operators (over a hundred
-    /// gigabytes of walking) and took minutes.
-    String query = "# ";
-    query.append(16 * 1024 * 1024, 'a');
-    query.push_back('\n');
+    /// A long comment followed by many nodes must parse about as fast as the two parts parsed apart
+    /// (finding the byte offset of each node position used to rescan the comment).
+    String comment = "# ";
+    comment.append(1024 * 1024, 'a');
+    comment.push_back('\n');
 
     /// A balanced sum of 2^13 scalar literals.
     std::function<String(size_t)> balanced = [&](size_t depth) -> String
@@ -2218,13 +2211,19 @@ TEST(PromQLParser, ScalingWithManyScalarPositions)
             return "1";
         return "(" + balanced(depth - 1) + "+" + balanced(depth - 1) + ")";
     };
-    query += balanced(13);
+    String expression = balanced(13);
 
-    auto begin = std::chrono::steady_clock::now();
-    PrometheusQueryTree tree{query};
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin);
+    auto parse_ms = [](const String & query)
+    {
+        auto begin = std::chrono::steady_clock::now();
+        PrometheusQueryTree tree{query};
+        std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - begin;
+        EXPECT_NE(tree.getRoot(), nullptr);
+        return elapsed.count();
+    };
 
-    ASSERT_NE(tree.getRoot(), nullptr);
-    EXPECT_LT(elapsed.count(), 10000) << "parsing a query of " << query.size()
-        << " bytes took " << elapsed.count() << " ms";
+    double separately = parse_ms(expression) + parse_ms(comment + "1");
+    double together = parse_ms(comment + expression);
+    EXPECT_LT(together, 4 * separately) << "parsing the comment and the expression together took " << together
+        << " ms, separately " << separately << " ms";
 }
