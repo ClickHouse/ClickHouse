@@ -10,7 +10,7 @@ doc_type: 'guide'
 В этой статье мы разберем, как организовать стриминг данных из SQL Server в ClickHouse. ClickHouse — отличный выбор, если вам нужна сверхбыстрая аналитика для внутренней панели мониторинга или клиентских панелей мониторинга. Мы пошагово покажем, как настроить обе базы данных, как соединить их между собой и, наконец, как использовать [Streamkap](https://streamkap.com) для стриминга данных. Если SQL Server обеспечивает ваши повседневные операции, а для аналитики вам нужны скорость и возможности ClickHouse, вы попали по адресу.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
-  ## Почему стоит передавать данные из SQL Server в ClickHouse?
+  ## Почему стоит передавать данные из SQL Server в ClickHouse? {#why-stream-data-from-sql-server-to-clickhouse}
 </div>
 
 Если вы читаете это, то, скорее всего, уже сталкивались с этой проблемой: SQL Server отлично справляется с транзакциями, но для тяжёлых аналитических запросов в реальном времени он просто не предназначен.
@@ -24,13 +24,13 @@ doc_type: 'guide'
 * Стриминг событий, например чтобы журналы активности пользователей всегда оставались актуальными для аналитики
 
 <div id="what-youll-need-to-get-started">
-  ## Что нужно для начала
+  ## Что нужно для начала {#what-youll-need-to-get-started}
 </div>
 
 Прежде чем переходить к деталям, подготовьте следующее:
 
 <div id="prerequisites">
-  ### Предварительные требования
+  ### Предварительные требования {#prerequisites}
 </div>
 
 * Работающий экземпляр SQL Server
@@ -46,7 +46,7 @@ doc_type: 'guide'
 * Этот инструмент станет основой вашего конвейера потоковой передачи данных.
 
 <div id="connection-info">
-  ### Параметры подключения
+  ### Параметры подключения {#connection-info}
 </div>
 
 Убедитесь, что у вас есть:
@@ -78,25 +78,17 @@ doc_type: 'guide'
     * Имя базы данных
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
+      </Frame>
     </div>
 
-    #### Что происходит в фоновом режиме
+#### Что происходит в фоновом режиме {#whats-happening-behind-the-scenes}
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
+      </Frame>
     </div>
 
     После настройки Streamkap подключится к вашему SQL Server и обнаружит таблицы. Для этой демонстрации мы выберем таблицу, в которую уже поступают данные, например events или transactions.
@@ -109,7 +101,7 @@ doc_type: 'guide'
 
     Как и в случае с источником, мы создадим пункт назначения, используя сведения о подключении ClickHouse.
 
-    #### Шаги:
+#### Шаги: {#steps}
 
     1. Перейдите в раздел пунктов назначения в Streamkap.
     2. Добавьте новый пункт назначения — выберите ClickHouse в качестве типа пункта назначения.
@@ -122,13 +114,13 @@ doc_type: 'guide'
 
     Пример снимка экрана: добавление нового пункта назначения ClickHouse в панели мониторинга Streamkap.
 
-    ### Режим upsert: что это?
+### Режим upsert: что это? {#upsert-mode-what-is-that}
 
     Это важный шаг: нам нужно использовать режим ClickHouse «upsert», который «под капотом» использует движок ReplacingMergeTree в ClickHouse. Это позволяет эффективно объединять входящие записи и обрабатывать обновления после приёма, используя то, что ClickHouse называет «слиянием частей».
 
     * Это гарантирует, что ваша целевая таблица не будет заполняться дубликатами при изменениях на стороне SQL Server.
 
-    ### Обработка изменения схемы
+### Обработка изменения схемы {#handling-schema-evolution}
 
     В ClickHouse и SQL Server набор столбцов иногда различается — особенно когда приложение уже работает, а разработчики продолжают добавлять новые столбцы на лету.
 
@@ -142,17 +134,17 @@ doc_type: 'guide'
 
     Когда источник и пункт назначения заданы, пора перейти к самой интересной части — стримингу данных!
 
-    #### Настройка конвейера
+#### Настройка конвейера {#pipeline-setup}
 
     1. Перейдите на вкладку Pipelines в Streamkap.
 
     2. Создайте новый конвейер.
 
-    3. Выберите источник SQL Server (`sqlserver-demo-source`).
+    3. Выберите источник SQL Server (sqlserver-demo-source).
 
-    4. Выберите пункт назначения ClickHouse (`clickhouse-tutorial-destination`).
+    4. Выберите пункт назначения ClickHouse (clickhouse-tutorial-destination).
 
-    5. Выберите таблицу, которую хотите передавать в стриминге, — допустим, это `events`.
+    5. Выберите таблицу, которую хотите передавать в стриминге, — допустим, это events.
 
     6. Настройте CDC (фиксация изменений данных).
 
@@ -160,16 +152,12 @@ doc_type: 'guide'
 
     Снимок экрана с настройками конвейера: выбор источника, пункта назначения и таблицы.
 
-    #### Нужна ли вам дозагрузка?
+#### Нужна ли вам дозагрузка? {#should-you-backfill}
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
+      </Frame>
     </div>
 
     У вас может возникнуть вопрос: нужно ли дозагружать старые данные?
@@ -204,7 +192,7 @@ doc_type: 'guide'
 </Steps>
 
 <div id="under-the-hood-whats-streamkap-actually-doing">
-  ## Что происходит «под капотом»: что на самом деле делает Streamkap?
+  ## Что происходит «под капотом»: что на самом деле делает Streamkap? {#under-the-hood-whats-streamkap-actually-doing}
 </div>
 
 Чтобы вы лучше понимали, как это работает:
@@ -216,11 +204,11 @@ doc_type: 'guide'
 Это не просто ETL — это полноценный CDC (фиксация изменений данных) в реальном времени.
 
 <div id="advanced-options">
-  ## Расширенные возможности
+  ## Расширенные возможности {#advanced-options}
 </div>
 
 <div id="upsert-vs-insert-modes">
-  ### Режимы Upsert и Insert
+  ### Режимы Upsert и Insert {#upsert-vs-insert-modes}
 </div>
 
 Чем отличается простая вставка каждой строки (режим Insert) от режима, в котором также учитываются обновления и удаления (режим Upsert)?
@@ -229,7 +217,7 @@ doc_type: 'guide'
 * Режим Upsert: Обновления существующих строк перезаписывают текущие данные — такой режим гораздо лучше поддерживает актуальность и чистоту аналитики.
 
 <div id="handling-schema-evolution">
-  ### Обработка изменений схемы
+  ### Обработка изменений схемы {#handling-schema-changes}
 </div>
 
 Приложения меняются — и схемы тоже. С этим конвейером:
@@ -240,11 +228,11 @@ doc_type: 'guide'
   В зависимости от настроек может потребоваться миграция, но в большинстве случаев новые столбцы добавляются без проблем.
 
 <div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
-  ## Практический мониторинг: как следить за конвейером
+  ## Практический мониторинг: как следить за конвейером {#real-world-monitoring-keeping-tabs-on-the-pipeline}
 </div>
 
 <div id="checking-pipeline-health">
-  ### Проверка состояния конвейера
+  ### Проверка состояния конвейера {#checking-pipeline-health}
 </div>
 
 Streamkap предоставляет панель мониторинга, где вы можете:
@@ -256,7 +244,7 @@ Streamkap предоставляет панель мониторинга, где
 Пример панели мониторинга: график задержки, количество строк и индикаторы состояния.
 
 <div id="common-metrics-to-watch">
-  ### Основные метрики, за которыми стоит следить
+  ### Основные метрики, за которыми стоит следить {#common-metrics-to-watch}
 </div>
 
 * Отставание: насколько ClickHouse отстаёт от SQL Server?
@@ -264,7 +252,7 @@ Streamkap предоставляет панель мониторинга, где
 * Частота ошибок: должна быть близка к нулю
 
 <div id="going-live-querying-clickhouse">
-  ## Переходим к делу: запросы к ClickHouse
+  ## Переходим к делу: запросы к ClickHouse {#going-live-querying-clickhouse}
 </div>
 
 Теперь, когда данные уже в ClickHouse, вы можете выполнять запросы с помощью всех этих быстрых аналитических инструментов. Вот простой пример:
@@ -277,7 +265,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 Используйте ClickHouse вместе с такими инструментами для создания панелей мониторинга, как Grafana, Superset и Redash, чтобы создавать полнофункциональные отчёты.
 
 <div id="next-steps-and-deep-dives">
-  ## Следующие шаги и материалы для углублённого изучения
+  ## Следующие шаги и материалы для углублённого изучения {#next-steps-and-deep-dives}
 </div>
 
 Это руководство лишь в общих чертах показывает, что можно сделать. Освоив основы, дальше можно изучить следующее:
@@ -291,7 +279,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 Следите за [блогом Streamkap](https://streamkap.com/blog), где публикуются более подробные руководства.
 
 <div id="faq-and-troubleshooting">
-  ## FAQ и устранение неполадок
+  ## FAQ и устранение неполадок {#faq-and-troubleshooting}
 </div>
 
 В: Это работает с облачными базами данных?
@@ -304,7 +292,7 @@ SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= no
 О: Безусловно. В режиме upsert удаления тоже помечаются и обрабатываются в ClickHouse.
 
 <div id="wrapping-up">
-  ## Подводя итоги
+  ## Подводя итоги {#wrapping-up}
 </div>
 
 Итак, мы рассмотрели, как организовать потоковую передачу данных из SQL Server в ClickHouse с помощью Streamkap. Это быстро, гибко и отлично подходит для команд, которым нужна аналитика с минимальной задержкой, не перегружая рабочие базы данных.
