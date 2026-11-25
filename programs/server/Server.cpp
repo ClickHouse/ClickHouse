@@ -2779,6 +2779,10 @@ try
                     reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
             }
 
+            /// An invalid ZooKeeper host (or another error in its arguments) must reject the reload before `config().replace`:
+            /// after it, `system.server_settings`, which builds the arguments from the live config, would fail until the file is fixed.
+            zkutil::validateZooKeeperConfig(*reload_config);
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;

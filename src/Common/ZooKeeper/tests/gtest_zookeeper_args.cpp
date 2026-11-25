@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/isLocalAddress.h>
 
@@ -10,6 +11,11 @@
 
 #include <fmt/format.h>
 
+
+namespace DB::ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
 
 namespace
 {
@@ -138,4 +144,80 @@ TEST(ZooKeeperArgs, SecureSchemeStrippedForKeeperServerSection)
     EXPECT_EQ(
         args.get_priority_load_balancing.hostname_longest_common_suffix[1],
         DB::getHostNameLongestCommonSuffix(local_hostname, "keeper2"));
+}
+
+namespace
+{
+    std::string zookeeperConfigWithHost(const std::string & host)
+    {
+        return fmt::format("<clickhouse><zookeeper><node><host>{}</host><port>2181</port></node></zookeeper></clickhouse>", host);
+    }
+
+    /// The message of the exception that building the arguments throws, or an empty string when it does not throw.
+    std::string zookeeperArgsError(const std::string & xml, const std::string & config_name)
+    {
+        auto config = configFromXML(xml);
+        try
+        {
+            zkutil::ZooKeeperArgs args(*config, config_name);
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_CONFIG_PARAMETER) << e.message();
+            return e.message();
+        }
+        return {};
+    }
+}
+
+/// A host value that cannot be a host fails when the arguments are built, with an error that names the key
+/// and the value, instead of a DNS error on first use (issue #46918).
+TEST(ZooKeeperArgs, RejectsInvalidHost)
+{
+    for (const std::string host : {" 127.0.0.1", "127.0.0.1 ", " localhost", "localhost ", "", "local\thost", "127.0.0.256", "1.2.3.4.5"})
+    {
+        auto message = zookeeperArgsError(zookeeperConfigWithHost(host), "zookeeper");
+        EXPECT_NE(message.find("zookeeper.node.host"), std::string::npos) << "host [" << host << "]: " << message;
+        EXPECT_NE(message.find("'" + host + "'"), std::string::npos) << "host [" << host << "]: " << message;
+    }
+}
+
+/// `ZooKeeperArgs` appends `:<port>` itself, so a bare IPv6 address or a `host:port` cannot work.
+TEST(ZooKeeperArgs, RejectsColonOutsideBrackets)
+{
+    for (const std::string host : {"::1", "zoo1:2181", "[::1"})
+    {
+        auto message = zookeeperArgsError(zookeeperConfigWithHost(host), "zookeeper");
+        EXPECT_NE(message.find("square brackets"), std::string::npos) << "host [" << host << "]: " << message;
+    }
+}
+
+/// Every form that works today keeps working: names with `_` or a leading digit, an absolute name,
+/// a bracketed IPv6 address and the short IPv4 forms that `inet_aton` accepts.
+TEST(ZooKeeperArgs, AcceptsValidHosts)
+{
+    for (const std::string host : {"127.0.0.1", "localhost", "keeper_1", "1node.example", "localhost.", "zoo-1.example.com", "[::1]", "127.1"})
+    {
+        auto config = configFromXML(zookeeperConfigWithHost(host));
+        zkutil::ZooKeeperArgs args(*config, "zookeeper");
+        ASSERT_EQ(args.hosts.size(), 1u);
+        EXPECT_EQ(args.hosts[0], host + ":2181");
+    }
+}
+
+TEST(ZooKeeperArgs, RejectsInvalidKeeperServerHostname)
+{
+    auto message = zookeeperArgsError(
+        R"(<clickhouse><keeper_server><tcp_port>9181</tcp_port><raft_configuration>
+            <server><id>1</id><hostname> localhost</hostname></server>
+        </raft_configuration></keeper_server></clickhouse>)",
+        "keeper_server");
+    EXPECT_NE(message.find("keeper_server.raft_configuration.server.hostname"), std::string::npos) << message;
+}
+
+/// The server builds the arguments at startup, so a load balancing without nodes must be an error, not a division by zero.
+TEST(ZooKeeperArgs, LoadBalancingWithoutNodes)
+{
+    auto config = configFromXML("<clickhouse><zookeeper><zookeeper_load_balancing>random</zookeeper_load_balancing></zookeeper></clickhouse>");
+    EXPECT_THROW(zkutil::ZooKeeperArgs(*config, "zookeeper"), DB::Exception);
 }

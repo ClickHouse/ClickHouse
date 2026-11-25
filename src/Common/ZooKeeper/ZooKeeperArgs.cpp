@@ -11,6 +11,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
 #include <Common/thread_local_rng.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -21,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 }
 
@@ -137,7 +139,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         if (startsWith(key, "server"))
         {
             hosts.push_back(
-                (secure ? "secure://" : "") + config.getString(raft_configuration_key + "." + key + ".hostname") + ":" + tcp_port);
+                (secure ? "secure://" : "") + DB::getHostFromConfig(config, raft_configuration_key + "." + key + ".hostname") + ":" + tcp_port);
             availability_zones.push_back(config.getString(raft_configuration_key + "." + key + ".availability_zone", ""));
         }
     }
@@ -158,6 +160,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
+            if (hosts.empty())
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No servers in {}.raft_configuration", config_name);
             get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
             break;
         }
@@ -182,9 +186,19 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     {
         if (key.starts_with("node"))
         {
+            const String host_key = config_name + "." + key + ".host";
+            const String host = DB::getHostFromConfig(config, host_key);
+            /// The port is appended here, so a `:` can only be part of an IPv6 address in brackets.
+            if (host.contains(':') && !(host.starts_with('[') && host.ends_with(']')))
+                throw DB::Exception(
+                    DB::ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Invalid host '{}' in config key '{}': it contains ':' outside square brackets. "
+                    "Set the port in <port>, and write an IPv6 address in square brackets, such as [::1]",
+                    host,
+                    host_key);
             hosts.push_back(
                 (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "")
-                + config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+                + host + ":" + config.getString(config_name + "." + key + ".port", "2181"));
             availability_zones.push_back(config.getString(config_name + "." + key + ".availability_zone", ""));
         }
         else if (key == "session_timeout_ms")
@@ -345,7 +359,11 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     }
 
     if (load_balancing)
+    {
+        if (hosts.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No nodes in {}, but a load balancing is set", config_name);
         get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
+    }
 
     if (prefer_local_availability_zone)
         client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();

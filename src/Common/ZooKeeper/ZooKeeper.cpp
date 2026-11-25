@@ -2257,6 +2257,13 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("zookeeper") && config.has("keeper"))
         throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
+
+    /// The client is created on first use. Build its arguments now, so that an invalid host
+    /// (or any other error in them) stops the server at startup instead of failing its first query.
+    if (hasZooKeeperConfig(config))
+    {
+        [[maybe_unused]] ZooKeeperArgs args(config, getZooKeeperConfigName(config));
+    }
 }
 
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
