@@ -2009,14 +2009,14 @@ def test_function_timestamp():
         "timestamp(1)",
         135,
         "expected type instant vector",
-        "Function 'timestamp' expects an argument of type",
+        "Function 'timestamp' expects argument #1 of type",
     )
 
     do_query_test_expect_error(
         "timestamp(test[5m])",
         135,
         "expected type instant vector",
-        "Function 'timestamp' expects an argument of type",
+        "Function 'timestamp' expects argument #1 of type",
     )
 
     # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
@@ -6187,7 +6187,7 @@ def test_histogram_quantile():
         "histogram_quantile(0.9, 1)",
         300,
         "expected type instant vector",
-        "expects second argument of type",
+        "expects argument #2 of type",
     )
 
     # Type validation: first argument must be a scalar.
@@ -6195,7 +6195,7 @@ def test_histogram_quantile():
         "histogram_quantile(http_request_duration_seconds_bucket, http_request_duration_seconds_bucket)",
         300,
         "expected type scalar",
-        "expects first argument of type",
+        "expects argument #1 of type",
     )
 
 
@@ -6280,7 +6280,7 @@ def test_label_manipulation_functions():
         'label_replace(up, "x", "y")',
         1753176757.89,
         'expected 5 argument(s) in call to "label_replace", got 3',
-        "Function 'label_replace' expects 5 arguments, but was called with 3 arguments",
+        "Function 'label_replace' expects 5 argument(s), but was called with 3",
     )
 
     # Invalid regular expression.
@@ -6353,7 +6353,7 @@ def test_label_manipulation_functions():
         'label_join(up, "x")',
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
-        "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+        "Function 'label_join' expects 3 or more argument(s), but was called with 2",
     )
 
 
