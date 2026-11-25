@@ -398,6 +398,9 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 
         composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
 
+        if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
+            writeString(")", out);
+
         writeString(";", out);
 
         return out.str();
@@ -422,7 +425,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
     const auto & condition_value = condition_value_buffer.str();
 
     auto query_copy = query;
-    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), "(" + condition_value + ")");
 
     return query_copy;
 }
@@ -572,10 +575,6 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
             composeInWithTuples(key_columns, requested_rows, out, partition_key_prefix, key_columns.size());
     }
 
-    if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
-    {
-        writeString(")", out);
-    }
 }
 
 }
