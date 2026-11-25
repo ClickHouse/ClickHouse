@@ -87,12 +87,16 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTableWithAccess(const ContextPtr & context, AccessType access_type) const
 {
-    /// The rows are those of the target, reached through the TimeSeries table, so both need the grant.
     context->checkAccess(access_type, time_series_storage_id);
-    auto target_table = getTargetTable(context);
-    context->checkAccess(access_type, target_table->getStorageID());
-    /// An external target can be an `Alias`, whose metadata is that of the table it points to.
-    checkSourceStorageAccess(context, target_table, target_table->getStorageID(), access_type);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    auto target_table = time_series_storage->getTargetTable(target_kind, context);
+    /// An inner target belongs to the TimeSeries table, like the inner table of a materialized view. An external target
+    /// is a table of its own and needs the grant too, and an `Alias` one also on the table it points to.
+    if (!time_series_storage->isInnerTable(target_kind))
+    {
+        context->checkAccess(access_type, target_table->getStorageID());
+        checkSourceStorageAccess(context, target_table, target_table->getStorageID(), access_type);
+    }
     return target_table;
 }
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
 # The functions timeSeriesSamples, timeSeriesTags, timeSeriesTimeRanges and timeSeriesMetricFamilies return a target table
-# of a TimeSeries table, so they need the grant on both tables: SHOW COLUMNS for the structure, SELECT to read, INSERT to write.
-# Nothing about the source, not even its engine or existence, is revealed without the grant, and an `Alias` target needs
-# the grant on the table it points to.
+# of a TimeSeries table, so they need the grant on the TimeSeries table: SHOW COLUMNS for the structure, SELECT to read, INSERT
+# to write. An inner target needs nothing more, like the inner table of a materialized view, an external one needs the grant too,
+# and an `Alias` one also on the table it points to. Nothing about the source, not even its engine or existence, is revealed
+# without the grant.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -68,8 +69,10 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 -q "
     CREATE TABLE ${db}.mf_alias ENGINE = Alias('${db}', 'mf_private');
     CREATE TABLE ${db}.ts_alias ENGINE = TimeSeries SETTINGS version = 9 METRIC FAMILIES ${db}.mf_alias;
     GRANT SHOW COLUMNS ON ${db}.ts_alias TO ${user};
-    GRANT SHOW COLUMNS ON ${db}.mf_alias TO ${user};
 "
+echo "describe without the grant on the target: $(run "DESCRIBE TABLE timeSeriesMetricFamilies(${db}.ts_alias)")"
+echo "describe an inner target: $(run "DESCRIBE TABLE timeSeriesSamples(${db}.ts_alias)")"
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON ${db}.mf_alias TO ${user}"
 echo "describe: $(run "DESCRIBE TABLE timeSeriesMetricFamilies(${db}.ts_alias)")"
 echo "describe metrics: $(run "DESCRIBE TABLE timeSeriesMetrics(${db}.ts_alias)")"
 echo "describe alias: $(run "DESCRIBE TABLE ${db}.mf_alias")"
