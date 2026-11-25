@@ -627,7 +627,8 @@ enum class QJoinKind : uint8_t
 };
 
 /// Joins two tables on the key columns. The columns of the right table that are also in the left one replace them where the rows match.
-QValue joinTables(Call & call, QJoinKind kind, const QTable & left, const QTable & right, const Names & keys)
+/// `asof_key_from_right`: the last key of an as-of join is taken from the matched row of the right table as well (`aj0`).
+QValue joinTables(Call & call, QJoinKind kind, const QTable & left, const QTable & right, const Names & keys, bool asof_key_from_right = false)
 {
     if (keys.empty())
         call.fail(ErrorCodes::BAD_ARGUMENTS, "the right table must be a keyed table");
@@ -683,7 +684,11 @@ QValue joinTables(Call & call, QJoinKind kind, const QTable & left, const QTable
     ASTPtr matched = fn("equals", qualified(right_alias, match), one());
     for (const auto & column : left.columns)
     {
-        if (!key_set.contains(column.name) && hasColumn(right, column.name))
+        /// The keys are equal in the matched rows, except the last key of an as-of join: the matched row of the right
+        /// table is the last one that is not after the row of the left table. `aj` keeps the value of the left table,
+        /// and `aj0` takes the one of the matched row.
+        bool from_left = key_set.contains(column.name) && !(asof_key_from_right && column.name == keys.back());
+        if (!from_left && hasColumn(right, column.name))
             builder.select.push_back(withAlias(fn("if", matched, qualified(right_alias, column.name), qualified(left_alias, column.name)), column.name));
         else
             builder.select.push_back(withAlias(qualified(left_alias, column.name), column.name));
@@ -1240,6 +1245,17 @@ std::optional<QValue> clockArithmetic(Call & call, const String & function)
         },
         result_type);
     return result;
+}
+
+/// `aj[keys; t1; t2]` and `aj0[keys; t1; t2]`: for each row of `t1`, the last row of `t2` with the same keys
+/// that is not after it by the last key.
+QValue asOfJoin(Call & call, bool key_from_right)
+{
+    call.expectArgs(3);
+    auto keys = constantSymbols(call.arg(0));
+    if (!keys)
+        call.fail(ErrorCodes::TYPE_MISMATCH, "the first argument must be the symbols of the key columns");
+    return joinTables(call, QJoinKind::AsOf, call.tableArg(1), call.tableArg(2), Names(keys->begin(), keys->end()), key_from_right);
 }
 
 const std::unordered_map<String, Handler> & handlers()
@@ -2119,15 +2135,8 @@ const std::unordered_map<String, Handler> & handlers()
                 c.fail(ErrorCodes::TYPE_MISMATCH, "the first argument must be the symbols of the key columns");
             return joinTables(c, QJoinKind::Equi, c.tableArg(1), c.tableArg(2), Names(keys->begin(), keys->end()));
         };
-        h["aj"] = [](Call & c)
-        {
-            c.expectArgs(3);
-            auto keys = constantSymbols(c.arg(0));
-            if (!keys)
-                c.fail(ErrorCodes::TYPE_MISMATCH, "the first argument must be the symbols of the key columns");
-            return joinTables(c, QJoinKind::AsOf, c.tableArg(1), c.tableArg(2), Names(keys->begin(), keys->end()));
-        };
-        h["aj0"] = h["aj"];
+        h["aj"] = [](Call & c) { return asOfJoin(c, false); };
+        h["aj0"] = [](Call & c) { return asOfJoin(c, true); };
         h["uj"] = [](Call & c)
         {
             c.expectArgs(2);
