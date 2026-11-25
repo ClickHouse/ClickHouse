@@ -109,6 +109,8 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
     std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> running_replications;
     try
     {
+        /// A job the pool accepted must be tracked, so the handles cannot be allocated after scheduling.
+        running_replications.reserve(blobs_to_replicate.size());
         for (const auto & [blob, from_location, to_location] : blobs_to_replicate)
             running_replications.push_back(replication_tasks_runner.enqueueAndGiveOwnership([&blob, &from_location, &to_location, &object_storages, &read_settings, &write_settings, &log]()
             {
