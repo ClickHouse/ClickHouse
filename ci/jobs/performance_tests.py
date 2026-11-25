@@ -1714,6 +1714,29 @@ def write_thread_stack_alignment(servers, path):
             f.write("\t".join(row) + "\n")
 
 
+def reference_timeout_warnings(workdir):
+    """A warning for each SQL query that only reads and ran out of its time limit on the reference server only.
+
+    `perf.py` measures such a query on the tested server, as a `partial` query that the report does not compare,
+    and writes a `reference-timeout` line (query index, `prewarm` or `run`, limit in seconds) to the raw output of
+    the test. A time limit exceeded on the tested server is an error of the test instead.
+    """
+    warnings = []
+    for path in sorted(Path(workdir).glob("*-raw.tsv")):
+        test = path.name.removesuffix("-raw.tsv")
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                fields = line.rstrip("\n").split("\t")
+                if fields[0] != "reference-timeout" or len(fields) < 4:
+                    continue
+                run = "the prewarm run" if fields[2] == "prewarm" else "a measured run"
+                warnings.append(
+                    f"Query {fields[1]} of test '{test}' ran out of its time limit ({fields[3]} s) on the reference "
+                    f"server in {run}: it is measured on the tested server only and is not compared"
+                )
+    return warnings
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
     parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
@@ -3872,6 +3895,8 @@ def main():
         def run_tests():
             last_flush = time.monotonic()
             for test in test_files:
+                # Both servers store their data under perf_wd.
+                print(f"Free disk space before {test}: {shutil.disk_usage(perf_wd).free / 2**30:.1f} GiB")
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
                     max_queries=0 if nightly or test in all_query_tests else 10,
@@ -3941,7 +3966,8 @@ def main():
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
         with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
-            warnings.write(reference_warning + "\n" if reference_warning else "")
+            for warning in ([reference_warning] if reference_warning else []) + reference_timeout_warnings(perf_wd):
+                warnings.write(warning + "\n")
         right_commit = f"echo tested binary commit {tested_sha}" if nightly else "git log -1 HEAD"
         Shell.check(f"{right_commit} > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (

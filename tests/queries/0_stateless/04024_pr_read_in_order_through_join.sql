@@ -26,6 +26,7 @@ SET optimize_aggregation_in_order = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = false;
+SET query_plan_remove_unused_joins = 0; -- Reading through the join is what is tested, and two of the queries do not read `payloads`
 
 -- Without parallel replicas: read_in_order_through_join should apply (InOrder for events table).
 -- We sort the ReadType strings so the test is robust to plan reordering: `query_plan_top_k_through_join`

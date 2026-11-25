@@ -1,0 +1,228 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-07
+title: '演示日 - 2026-08-07'
+sidebarTitle: '2026-08-07'
+description: 'ClickStack 演示日 - 2026-08-07'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 带评估历史记录的告警详情页 {#alert-detail-page-with-evaluation-history}
+
+*演示者 [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/ZMdWe3-Oc7c" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+目前的告警页面包含一个历史条和一个错误按钮。乍看之下很有用，但真想靠它回答任何问题时，就会发现无从下手。
+
+错误信息存储在告警文档本身，因此页面显示的只是最新状态，而非真正的历史记录。你无法判断告警是否已触发、之前是否失败过，也无法判断它是否跟得上评估调度计划。这一问题是在优化告警性能时暴露出来的：现有视图不只是信息稀疏，甚至还会误导用户。
+
+新的详情页会将每次评估都记录为一个事件。借助时间戳范围，你可以查看任意时间窗口内的历史记录，其中触发和恢复分开显示，并带有清晰标记。
+
+表中单独列出了分组信息。如果告警使用了 `GROUP BY`，你可以打开某次评估，准确查看哪些分组触发了、哪些没有。当结果中只有部分数据超过阈值时，这种区分尤为重要。错误也会记录到对应的历史记录条目上，因此你可以看到哪里失败、何时失败，包括原始的 ClickHouse 查询错误。
+
+计时列可以说明告警是否跟得上进度。查询耗时记录执行 ClickHouse 查询所花费的时间。如果告警每分钟调度一次，而查询却需要三分钟，那么延迟就是必然的，并非无从解释。Webhook 耗时显示将结果发送到目标端所花费的时间。
+
+已跳过的桶让由此产生的积压一目了然。值为 7 表示错过了 7 个已调度的评估窗口，这些窗口随后才得到处理。
+
+**相关 PR：** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 告警评估读取模型及 GET /alerts/:id/evaluations，[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) 在 AlertHistory 中持久化告警评估错误和数据分析信息，[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 带评估历史记录的告警详情页
+
+## 使用评估衡量 MCP 中指标工具的采用情况 {#measuring-metric-tool-adoption-in-the-mcp-with-evals}
+
+*演示者 [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/1_8MyDALMY8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这是评估框架的第三个指标场景，可能也是最后一个。它被有意设计为介于另外两个场景之间。
+
+现有的 `metric-saturation` 场景考察的是 agent 在被强制要求时能否使用指标工具。新的 `deploy-regression` 场景考察的则是它是否会主动选择这些工具。`checkout-api` 的一次分阶段滚动发布在六个 Pod (容器组) 中的三个完成更新后暂停。新构建版本在处理固定金额促销码时会抛出 `TypeError`，导致约 7–8% 的结账请求返回 500，但这只发生在已更新的 Pod (容器组) 上，且仅限于这类促销码。
+
+这些信息都不会向 agent 明确标出。最有力的线索是按 Pod 名称对失败的结账请求做交叉分析，再将这些 Pod 与滚动发布的事件日志进行比对。预置的指标可以确认故障开始的时间，但无法揭示 Pod 之间的拆分情况，也无法暴露底层缺陷。agent 完全不使用指标也能解决该场景。正因如此，任何对指标的使用都是自发的，而非被迫的。
+
+场景中还设置了几个陷阱，以免排查路径过于顺畅。一次无关的滚动发布恰好在故障开始前几分钟上线，同时一大批无害的弃用警告与真实错误在相同的时间边界上激增。
+
+构建该场景的过程中还发现，MCP 在向智能体展示可用的指标种类和名称方面仍有改进空间。相应的改动让两者都更容易被发现。
+
+这一改进幅度不大，对比结果也如实反映了这一点。即使没有这些改动，智能体的得分也已经很高。不过加入改动后，在多次运行中它们找到有用指标的速度明显更快。对于 Fable，差距有所缩小，因为它本身就是这里能力更强的模型。
+
+有一项结果却呈相反趋势。在几次运行中，Opus 在加入指标改动后得分略有下降。在下结论之前，还需要更多数据。
+
+评估框架首次量化了 MCP 在指标呈现方式上的改进。我们不再只能凭感觉判断某项改动是否更好。
+
+接下来，我们将进行足够多的运行来弄清 Opus 的结果，随后再整理相关代码。
+
+**相关 PR：** [#2730](https://github.com/hyperdxio/hyperdx/pull/2730) 新增 deploy-regression 场景 (衡量自发的指标工具采用情况) ，[#2717](https://github.com/hyperdxio/hyperdx/pull/2717) 强化 metric-saturation 场景，[#2694](https://github.com/hyperdxio/hyperdx/pull/2694) 对指标工具采用情况进行评分和报告，[#2855](https://github.com/hyperdxio/hyperdx/pull/2855) 通过 MCP 暴露 summary 指标
+
+## 分布式表、直方图与更快的 trace 查找 {#distributed-tables-histograms-and-faster-trace-lookups}
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VQKNOb45pcs" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+这次是一批较小的修复，其中有几项源于 ClickHouse 团队的反馈。最简单的一项是：其他过滤器分区都已有清除按钮，唯独某一个分区缺失，现已补上。顶层的“全部清除”功能仍在待办清单中。
+
+分布式表的情况则更为复杂。某些底层目标表并未声明分布式表所暴露的全部列。ClickStack 在加载完整行详情时会执行 `SELECT *`，在这种配置下会直接失败。行侧边面板此前已会显示错误，但展开的行不会，而且两者都没有解释 ClickStack 为何要执行 `SELECT *`。现在两个视图都会显示该错误，并附带足够的上下文，让相关指引真正发挥作用。
+
+指标方面存在两个独立的问题。第一，指数直方图表从未在指标 source 上持久化。在最近加入指数直方图支持之前，这并无影响。用户打开一个已有但不完整的 source 时，会看到该字段已由 schema 推断自动填充，自然以为无需修改，也就一直没有保存。
+
+现在，仅打开已有 source 不再触发 schema 推断。schema 推断只会在创建指标 source 或更改其数据库时运行，从而明确提示推断出的表仍需保存。
+
+此外，聚合下拉菜单还为直方图指标提供了平均值、最小值、最大值等函数，而直方图并不支持其中任何一种。选择这些选项后，查询运行或卡片保存时都会失败。现在，直方图指标和指数直方图指标已不再显示这些选项。对于已持久化的卡片，MCP 的 `query_tile` 路径同样会拒绝这些选项，与 UI 保持一致，而不是另辟蹊径地出错。
+
+数据系列上限的修复则更为微妙。当 `GROUP BY` 生成多个数据系列时，可以设置一个上限，用于保留最大值排在前 N 位的数据系列。在比率模式下，排名此前仅基于分子。这会偏向分子较大的数据系列，而非比率真正较高的数据系列，导致分子和分母同样很大的数据系列挤掉比率实际更高的数据系列。现在排名改为基于实际绘制的比率。
+
+搜索页面的默认 source 选择也有所调整。此前它会选中第一个已配置的 source，即使该 source 包含的是指标或会话。用户可能因为一个并非自己做出的选择而遇到 source 不兼容的错误。现在，搜索页面默认选择第一个已启用且实际可用的 source。
+
+从日志侧边面板中选择 trace 时，背后还隐藏着一次代价高昂的查找。HyperDX 此前仅按跨度 ID 和 trace ID 进行搜索，忽略了时间戳分区和主键。在数据量较大的部署中，这会变得很慢。现在，该查找会限定在从 source 推断出的日期范围内，并在时间窗口未命中时有意回退到不限范围的查询。例如，当某条日志关联的跨度早在数小时前就已开始时，这种回退就至关重要。
+
+基于 source 名称的深度链接已于前一周上线，随之而来的是一个非常合理的问题：用户该如何发现它们？各页面接受的 URL 参数早已被视为一种约定，因此现在也将其作为约定正式写入文档。唯一未记录的是 source 过滤器，因为它们目前仍仅适用于 ClickHouse。另一轮文档更新补充了跨度链接等 source 配置字段，既涵盖了近期新增的内容，也补全了此前遗漏的一些项目。
+
+**相关 PRs：** [#2771](https://github.com/hyperdxio/hyperdx/pull/2771) 改进分布式表 SELECT * 的错误状态，并将其扩展至展开的行；[#2817](https://github.com/hyperdxio/hyperdx/pull/2817) 仅在所选数据库发生变化时自动检测指标表；[#2794](https://github.com/hyperdxio/hyperdx/pull/2794) 不再为已配置表的数据源推断指标表 (未合并) ；[#2793](https://github.com/hyperdxio/hyperdx/pull/2793) 隐藏直方图指标不支持的聚合函数；[#2796](https://github.com/hyperdxio/hyperdx/pull/2796) 在 query&#95;tile 中拒绝使用了不支持的 aggFns 的已持久化直方图卡片 (未合并) ；[#2759](https://github.com/hyperdxio/hyperdx/pull/2759) 在比率模式下按比率值对数据系列上限进行排名；[#2769](https://github.com/hyperdxio/hyperdx/pull/2769) 防止搜索页面默认选中类型不兼容的 source；[#2816](https://github.com/hyperdxio/hyperdx/pull/2816) 点击“查看链路追踪”后，将侧边面板的行查找限定在一个时间窗口内；[#2836](https://github.com/hyperdxio/hyperdx/pull/2836) 新增过滤器变量配置
+
+## 来自贡献者的热力图百分位数与 Lucene 搜索改进 {#heatmap-percentiles-and-lucene-search-from-contributors}
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lCNozJs2Jlw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+本周共收到外部贡献者提交的约十个拉取请求，其中有两个值得特别一提。
+
+第一个来自 [@niladrix719](https://github.com/niladrix719)，它在热力图的悬停工具提示中加入了百分位数上下文。现在无需再凭肉眼将某个单元格与热力图其余部分逐一比较，只需将鼠标悬停其上即可看到相应信息，例如 26 毫秒的桶处于当前所展示耗时的第 85 百分位。
+
+第二个是 [@shuvamk](https://github.com/shuvamk) 带来的一系列 Lucene 搜索改进。
+
+无界范围现已能够正常工作。`Duration:[* TO 500]` 会被转换为 `<= 500` 谓词，而不再让 ClickHouse 尝试将字符串 `*` 转换为 `UInt64`——结果可想而知。此外，现在还支持用花括号表示 exclusive 范围边界。
+
+转义相关的修复则更为关键，因为这些缺陷不会报错，而是直接返回错误的结果。Lucene 字段搜索词会被直接放入 `ILIKE` 模式中，而在该模式里，下划线表示任意单个字符，百分号表示任意字符序列。因此，搜索 `ServiceName:user_service` 时，`user-service` 和 `user.service` 等值也会被匹配到。现在，这些元字符会在查询发送到 ClickHouse 之前完成转义。
+
+另一项修复解决了数值和布尔类型搜索中 Map 下标被重复转义的问题。此前，生成的谓词会把整个表达式当作一个标识符，而没有执行 Map 查找。
+
+Lucene 语言切换器对应的应用内示例也已同步更新，涵盖了新的范围形式。
+
+**相关 PR：** [#2789](https://github.com/hyperdxio/hyperdx/pull/2789) 在热力图悬停工具提示中显示百分位数上下文，[#2779](https://github.com/hyperdxio/hyperdx/pull/2779) 支持开放、exclusive 及非数值的范围边界，[#2774](https://github.com/hyperdxio/hyperdx/pull/2774) 转义搜索词中的 LIKE 元字符，[#2841](https://github.com/hyperdxio/hyperdx/pull/2841) 在数值和 Bool 搜索中仅对 Map 下标转义一次，[#2837](https://github.com/hyperdxio/hyperdx/pull/2837) 为新的 Lucene 语法添加示例
+
+## trace 搜索中的 RED 指标 {#red-metrics-on-trace-search}
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/qbb7MJmUFf8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**这是一项探索性工作，不承诺最终会发布。**
+
+目前，trace 搜索与日志搜索使用同一种单一计数直方图，并按日志级别着色。它能告诉你正在查看多少条 trace，却几乎无法反映它们的性能状况。
+
+拟议的结果视图会针对 trace source，将该直方图替换为 RED 指标。吞吐量以条形图呈现，统计 span 数量。错误可在两种显示方式之间切换：以折线图显示百分比速率，或以条形图显示原始数量。耗时则直接基于 source 的原始 duration 列，绘制平均值、p95 和 p99。
+
+热力图则是更值得关注的视图。在演示中，耗时持续上升的服务几乎一眼就能被发现。热力图还能展示延迟分布的形态，而仅看百分位趋势可能会掩盖这一点。
+
+成本问题仍有待解决。trace 搜索每次搜索本就会触发大量查询，如果再叠加多个聚合，必须先完成性能优化，才能进一步推进。
+
+欢迎就这一功能提供反馈。
+
+**相关 PRs：** [#2826](https://github.com/hyperdxio/hyperdx/pull/2826) 在 trace 搜索结果视图中显示 RED 指标 (开放中，探索性)
+
+## ClickHouse Grafana 插件中的自定义日志列 {#custom-log-columns-in-the-clickhouse-grafana-plugin}
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/lp4aPioDlsQ" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+几周前，有几位客户反映了同一个问题：Grafana 插件的紧凑日志视图让日志中的其他列和字段难以查看。
+
+此次更新在数据源配置的日志部分新增了 Columns 设置。该设置作用于数据源级别，而非单个查询，因此所做的选择会对所有使用该 source 的用户持久生效，无需每次重新设置。
+
+您可以选择表中的任意列。插件会将这些列以其真实名称并入日志标签，使其在整个 Grafana 中均可使用。它们会显示在左侧的 Fields 列表和日志行详情中：在日志行详情里，新的 Fields 分组与 Resource attributes 和 Log attributes 并列，并提供相同的筛选包含 (filter-for) 和筛选排除 (filter-out) 操作。在表视图中，它们可作为真正的列筛选条件使用。
+
+所有这些都由同一个查询驱动。如果没有此配置，这些字段在上述任何位置都不会显示，而这正是客户提出该需求的痛点所在。
+
+这些反馈涵盖了 schema 使用的两种情况。一些客户使用 OpenTelemetry，但添加了自己的列；另一些客户则使用完全自定义的 schema，并出于自身考虑将字段存放在真实的列中，而不是资源属性或日志属性中。这两类客户都完全无法在 Grafana 中看到这些值。
+
+演示时，该变更仍在评审中，计划纳入下一周的插件构建版本。更多背景信息请参阅 [ClickHouse Grafana 插件 4.20 博文](https://clickhouse.com/blog/clickhouse-grafana-plugin-4-20)。
+
+**相关 PR：** [grafana/clickhouse-datasource#2108](https://github.com/grafana/clickhouse-datasource/pull/2108) 按任意日志表列浏览和筛选 (演示时尚未合并)
+
+## 在源头限制高基数数据系列 {#capping-high-cardinality-series-at-the-source}
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/AKjuQuLKEaI" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+高基数响应可能会一次性向图表传入数十万行数据。在绘制任何内容之前，客户端必须先将每一行转换为 JSON。在负载较重的仪表盘上，这一转换的开销甚至超过查询本身。此外，不加限制的 `GROUP BY` 还可能在结果到达浏览器之前就耗尽服务器内存。
+
+新方案让大部分行根本不会离开 ClickHouse。现在，查询会附带最大行数和最大已分组行数设置，二者目前的上限均为 5,000。坦白说，这个数值只是对合理上限的估计。当响应表明已超出限制时，图表会提示该查询返回的数据过多。
+
+这一机制建立在先前的一项前端优化之上，该优化将渲染上限设为 250 个数据系列。此前，为了绘制大约一百条线而在内存中保留数万个数据系列，会导致浏览器选项卡占用数 GB 内存，悬停和平移操作也随之变得迟缓。
+
+这两项上限会同时生效。现在，一个极端的 `GROUP BY` 会拉取约 5,000 行，并渲染其中的 250 个数据系列。如果确实需要全部数据，仍可通过显式的“全部加载”入口绕过限制。
+
+对于频繁触及任一上限的图表，根本的解决办法仍是优化 SQL：添加行数限制，或让 `GROUP BY` 的分组更有针对性。
+
+**相关 PR：** [#2802](https://github.com/hyperdxio/hyperdx/pull/2802) 为高基数时间图表数据系列设置上限，并提供“全部加载”入口；[#2856](https://github.com/hyperdxio/hyperdx/pull/2856) 通过服务端行数/基数限制，在源头控制原始 SQL 卡片的开销 (未合并)
+
+## Exemplars：从指标图表直达 trace {#exemplars-from-a-metric-chart-to-the-trace}
+
+*演示者：[@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/SC_Bo2hqw8c" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Exemplar 将已聚合的指标与单个事件 (通常是一个 trace) 关联起来。如果延迟直方图显示第 99 百分位跃升至 2.4 秒，exemplar 就可以指向一个耗时 2.4 秒的真实请求，并打开其 trace。
+
+当应用程序在活动跨度内记录测量值时，OpenTelemetry 会将其纳入常规聚合。exemplar 过滤器先判断该测量值是否符合条件，再由一个小型蓄水池保留少量样例，随已聚合的指标数据点一同导出。每个 exemplar 都携带其原始值和时间戳、trace 与 span ID，以及在已聚合数据流中被丢弃的所有属性。
+
+借助这个小型蓄水池，您既无需导出每一个原始测量值，也无需为每个指标数据系列附加 `trace_id` 等 high-cardinality 值，就能获得具体的上下文。不过，exemplar 终究只是一个样例，它不一定是最慢的请求，也不一定具有统计代表性。其链接能否成功解析，还取决于导出器、所涉及的后端，以及所引用的 trace 是否仍被保留。
+
+该演示借助前一天刚合并的 `query_exemplars` proxy 端点来使用 Prometheus 后端。如果请求的时间窗口过长，该端点会自动缩小窗口，而不是直接拒绝查询。
+
+测试数据来自一个生成 span 指标的 OpenTelemetry 收集器。采集器在处理 span 时，会将其转换为带有 exemplar 的指标，并关联到对应的追踪 ID。这些 exemplar 随后以标记的形式显示在指标图表上。鼠标悬停时，会显示 exemplar 的值、时间戳及其链路追踪元数据，并提供一个可直接打开该 trace 的按钮。目前该功能运行良好，速度也相当快。
+
+配置以卡片为单位：先在图表上启用 exemplar，再选择用于解析链接的链路追踪数据源。该功能目前仅支持单数据系列指标；除了每个图表的开关外，整个功能还受部署级别的标志控制。
+
+测试中发现了几个小 bug，其中一些已有其他人独立发现，但 Prometheus 路径已基本就绪。下一步是 ClickHouse。该路径将直接从指标表中查询 exemplar，让基于链路追踪数据构建指标的团队同样能够回溯到单个 trace。
+
+**相关 PR：** [#2805](https://github.com/hyperdxio/hyperdx/pull/2805) 从 span 派生带有 trace exemplar 的请求指标 (未合并) ，[#2806](https://github.com/hyperdxio/hyperdx/pull/2806) 添加 /v1/prometheus/query&#95;exemplars 并加固 proxy，[#2807](https://github.com/hyperdxio/hyperdx/pull/2807) 将两个最大的图表文件拆分为目录，[#2808](https://github.com/hyperdxio/hyperdx/pull/2808) 为指标和 PromQL 时间图表添加 exemplar 覆盖层 (未合并) ，[#2809](https://github.com/hyperdxio/hyperdx/pull/2809) 支持在通过 API 和 agent 创建的卡片上设置 exemplar (未合并)
+
+## Terraform 导入辅助函数与批量导出 {#terraform-import-helpers-and-batch-export}
+
+*演示者：[@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/fTJHMqBIU44" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘、保存的搜索以及基于已保存搜索的告警现已提供 Export to Terraform 按钮。借助该按钮，团队可以通过 ClickHouse 提供商将现有资源纳入 Terraform 管理，无需手动编写 import 块，也不必猜测资源类型名称和 ID 格式。
+
+演示中最受关注的设计决策在于输出内容本身：该按钮只生成 `import` 块，完整的资源定义则交由 Terraform 生成。仅添加 resource 块并不能接管现有资源，反而可能会尝试另建一个资源，或覆盖已有资源。Terraform 较新的导入工作流能够妥善处理这一差异。
+
+将生成的 import 块粘贴到您的配置中，然后运行 `terraform plan`，并通过 `-generate-config-out` 指定输出文件，例如 `generated.tf`。Terraform 会读取现有资源，并写出对应的 resource 块。导入完成后，该资源即纳入 Terraform 状态，后续执行 apply 时将对其进行管理，而不会尝试在 ClickStack 中重新创建它。
+
+团队设置中还提供批量导出功能，可一次性下载包含所有已支持资源的单个文件。在演示中，该文件包含 70 个仪表盘、约 40 个告警和 55 个保存的搜索。Webhook 和数据源同样支持导出。
+
+V2 API 有意不返回机密信息。`GET` 请求仅返回 UI 中已公开的内容，因此连接信息包含主机和用户名，但不包含密码。在实际使用生成的配置时，您需要自行补充缺失的机密信息。
+
+**相关 PR：** [#2741](https://github.com/hyperdxio/hyperdx/pull/2741) 为 ClickStack 资源添加 Terraform 导入辅助函数
+
+## 共享图表组件、视觉优化与草稿提案 {#shared-chart-components-visual-polish-and-a-drafts-proposal}
+
+*演示：[@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GsKnLckFfBE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+自定义仪表盘中的卡片与预设中的卡片在视觉上逐渐出现了差异，这自然引出一个问题：它们当初为什么没有使用同一个组件？现在它们已经统一了。共享的 ChartCard 使用与仪表板面板相同的基础组件来包裹独立图表，让边框、内边距以及通栏标题分隔线自动保持一致，无需我们再手动对齐。把两条路径迁移到同一个组件上比预想的更费工夫，但现在它们在内部渲染的已是完全相同的内容。右侧没有控件的卡片仍需保持一致的高度，这部分还有一些后续工作要做。
+
+此外还有一系列较小的改进，其中几项专门针对 ClickStack 在截图和演示视频中的呈现效果。分段控件之前把列表线渲染成一个零高度盒子的边框，导致上下两条边叠在一起，看起来像一条 2px 的线。现在它已是真正的 1px 边。出于同样的原因，按钮颜色也重新做了调整。
+
+浅色模式下的开源 logo 也已修复。我们之前通过一个会反转所有颜色 (包括 logo) 的 CSS 滤镜来切换主题，导致浅色模式下显示的品牌颜色不正确。事实证明，同一个 logo 在两种主题下都适用，因此不再需要按主题分别处理。
+
+在搜索中点击行的行为也已恢复正常。旧的行为其实是有意设计的，但用起来并不像。抽屉面板可能会在你点击的行上方打开，让你看到的屏幕区域看似毫无变化。现在，在抽屉面板区域内点击会更新其内容，在区域外点击则会将其关闭。
+
+除 danger 外，我们还新增了用于 warning 和 success 状态的语义 Alert 组件。新的 agent skills 会引导所有想直接使用原始红色或警告文本的地方改用 Alert，而不是硬编码 Mantine 调色板颜色。
+
+最后一部分仅为设计探索。这些只是设计稿，非常欢迎大家提出反馈。
+
+这项工作起源于面板编辑器中的一个具体问题：一个弹窗打开了一个抽屉面板，抽屉面板又打开了另一个弹窗，而按一次 Escape 就会关闭整个层叠，而不是返回上一级。由此，这项工作逐步扩展为对仪表盘的全面审视。
+
+该提案用草稿取代了已保存仪表盘与临时仪表盘之分。点击“New dashboard”会创建一个仅你可见的私有草稿。准备就绪后，你可以将其保存到团队。你也可以将团队仪表盘移回草稿，或直接丢弃。这涵盖了临时仪表盘目前的全部功能，又无需你事先做出选择。两个概念，合而为一。
+
+收藏夹将在卡片视图之外新增列表视图，因为满屏的大卡片可能会把你要找的内容挤到页面上意想不到的靠下位置。模板将收拢为单行显示。标签筛选将支持多个标签，并可按名称或最近查看时间排序，而不再只能靠选中单个标签来组织内容。
+
+面板编辑器将把设置面板停靠在右侧，不再打开抽屉面板。它还会把目前进入设置的两条路径合并为一条清晰可预期的路径。
+
+**相关 PR：** [#2829](https://github.com/hyperdxio/hyperdx/pull/2829) 新增共享 ChartCard 组件并迁移 ChartBox 的用法，[#2814](https://github.com/hyperdxio/hyperdx/pull/2814) 优化 Mantine 主题 (选项卡、代码背景、分段控件) ，[#2704](https://github.com/hyperdxio/hyperdx/pull/2704) 符合 AA 标准的语义颜色令牌及 Alert/Text 变体，[#2714](https://github.com/hyperdxio/hyperdx/pull/2714) 为语义 Alert/Text/danger 变体编写文档，[#2682](https://github.com/hyperdxio/hyperdx/pull/2682) 点击外部区域时关闭搜索和会话抽屉面板，[#2721](https://github.com/hyperdxio/hyperdx/pull/2721) 将面板编辑器迁移到带停靠设置面板的抽屉面板中 (尚未合并) 。草稿和收藏夹的重新设计暂无 PR，目前仅为设计稿。

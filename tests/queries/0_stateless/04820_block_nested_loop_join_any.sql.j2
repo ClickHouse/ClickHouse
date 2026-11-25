@@ -7,6 +7,7 @@
 -- so what is asserted is the count, the fact that every joined pair satisfies the condition, and
 -- that a row is padded exactly when nothing matches it.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
 SET join_use_nulls = 0;
