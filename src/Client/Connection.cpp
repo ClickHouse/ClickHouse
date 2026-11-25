@@ -59,6 +59,8 @@
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <openssl/x509v3.h>
 #endif
 
 namespace CurrentMetrics
@@ -1003,6 +1005,26 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+#if USE_SSL
+static bool hasVerifiedShardCertificate(const Poco::Net::StreamSocket & socket, const String & host_name)
+{
+    const auto * impl = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+    auto * ssl = impl ? impl->ssl() : nullptr;
+    if (!ssl || !(SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER) || SSL_get_verify_result(ssl) != X509_V_OK)
+        return false;
+
+    /// Poco permits hostname checks to be disabled or relaxed for loopback connections.
+    /// Delegation requires the certificate to identify the configured shard in both cases.
+    auto * certificate = SSL_get0_peer_certificate(ssl);
+    if (!certificate)
+        return false;
+    Poco::Net::IPAddress ip;
+    if (Poco::Net::IPAddress::tryParse(host_name, ip))
+        return X509_check_ip_asc(certificate, host_name.c_str(), 0) == 1;
+    return X509_check_host(certificate, host_name.data(), host_name.size(), 0, nullptr) == 1;
+}
+#endif
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1084,6 +1106,29 @@ void Connection::sendQuery(
             client_info->initial_user, client_info->current_user);
     }
 
+    if (client_info && !client_info->interserver_view_definer.empty())
+    {
+        if (cluster_secret.empty() || server_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_VIEW_DEFINER)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot read a SQL SECURITY DEFINER view on {}: forwarding the definer requires a cluster secret and protocol revision {} or later",
+                getDescription(), DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_VIEW_DEFINER);
+
+#if USE_SSL
+        if (!hasVerifiedShardCertificate(*socket, tls_sni_override.empty() ? host : tls_sni_override))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Forwarding a view definer to {} requires TLS with a verified shard certificate", getDescription());
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Forwarding a view definer requires TLS support");
+#endif
+
+        /// Session authentication supplies current_address. A client can submit a secondary
+        /// query, so its initial_address alone cannot authorize a delegated read.
+        if (client_info->has_unverified_interserver_address || client_info->initial_user.empty() || client_info->current_user.empty()
+            || !client_info->initial_address || !client_info->current_address
+            || client_info->initial_address->host() != client_info->current_address->host())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "A delegated view read requires the authenticated caller and original address");
+    }
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -1151,6 +1196,9 @@ void Connection::sendQuery(
         writeStringBinary(external_roles_str, *out);
     }
 
+    if (!cluster_secret.empty() && server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_VIEW_DEFINER)
+        writeStringBinary(client_info ? std::string_view(client_info->interserver_view_definer) : std::string_view{}, *out);
+
     /// Interserver secret
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
@@ -1163,27 +1211,8 @@ void Connection::sendQuery(
                     "Server {} with protocol revision {} is too old for interserver secret, the minimum is {}",
                     getDescription(), server_revision, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
 
-            std::string data(salt);
-            data += std::to_string(nonce.value());
-            data += cluster_secret;
-            data += query;
-            data += query_id;
-            data += client_info->initial_user;
-            // Also for backwards compatibility
-            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
-                data += external_roles_str;
-            /// Cover current roles in the auth hash too, matching the receiver.
-            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info->current_roles.has_value())
-            {
-                String current_roles_str;
-                WriteBufferFromString buffer(current_roles_str);
-                writeVectorBinary(*client_info->current_roles, buffer);
-                buffer.finalize();
-                data += current_roles_str;
-            }
-            /// TODO: add source/target host/ip-address
-
-            std::string hash = encodeSHA256(data);
+            const auto hash = client_info->getInterserverQueryHash(
+                *socket, cluster_secret, salt, *nonce, query, query_id, external_roles_str, server_revision);
             writeStringBinary(hash, *out);
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

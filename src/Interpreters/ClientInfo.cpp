@@ -2,18 +2,27 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/sanitizer_defs.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/StringUtils.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
+
+#if USE_SSL
+#    include <Poco/Net/StreamSocket.h>
+#    include <Poco/Net/SecureStreamSocketImpl.h>
+#    include <openssl/ssl.h>
+#endif
 
 #include <boost/algorithm/string/trim.hpp>
 #include <fmt/format.h>
@@ -34,6 +43,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 namespace
@@ -219,6 +229,57 @@ String ClientInfo::getLastForwardedForHost() const
     return addr ? addr->host().toString() : "";
 }
 
+
+#if USE_SSL
+String ClientInfo::getInterserverQueryHash(const Poco::Net::StreamSocket & socket, std::string_view secret, std::string_view salt, UInt64 nonce, std::string_view query,
+    std::string_view query_id, std::string_view external_roles, UInt64 protocol_revision) const
+{
+    if (!interserver_view_definer.empty())
+    {
+        /// Delegated reads use a separate MAC with framed fields. A proof for an ordinary
+        /// query cannot authorize a definer, and removing the definer invalidates the proof.
+        const auto * impl = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+        auto * ssl = impl ? impl->ssl() : nullptr;
+        std::array<unsigned char, 32> binding;
+        constexpr std::string_view label = "EXPORTER-ClickHouse-view-definer";
+        if (!ssl || SSL_export_keying_material(ssl, binding.data(), binding.size(), label.data(), label.size(), nullptr, 0, 0) != 1)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "A view definer requires an end-to-end TLS connection");
+
+        WriteBufferFromOwnString message;
+        writeStringBinary("ClickHouse interserver view definer", message);
+        message.write(reinterpret_cast<const char *>(binding.data()), binding.size());
+        writeStringBinary(salt, message);
+        writeBinaryLittleEndian(nonce, message);
+        writeStringBinary(encodeSHA256(query), message);
+        writeStringBinary(query_id, message);
+        writeStringBinary(initial_user, message);
+        writeStringBinary(initial_address->toString(), message);
+        writeStringBinary(interserver_view_definer, message);
+        writeStringBinary(external_roles, message);
+        writeBinary(UInt8(current_roles.has_value()), message);
+        if (current_roles)
+            writeVectorBinary(*current_roles, message);
+        auto mac = hmacSHA256({reinterpret_cast<const UInt8 *>(secret.data()), secret.size()}, message.str());
+        return String(reinterpret_cast<const char *>(mac.data()), mac.size());
+    }
+
+    /// Charge the duplicate of the query text to the memory tracker on the receiving server.
+    StringWithMemoryTracking data(salt);
+    data += std::to_string(nonce);
+    data += secret;
+    data += query;
+    data += query_id;
+    data += initial_user;
+    data += external_roles;
+    if (protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && current_roles)
+    {
+        WriteBufferFromOwnString roles;
+        writeVectorBinary(*current_roles, roles);
+        data += roles.str();
+    }
+    return encodeSHA256(data);
+}
+#endif
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields) const
 {

@@ -166,12 +166,17 @@ void dropParallelReplicasCustomKey(Context & body_context)
 
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
-    if (!sql_security_type)
+    if (!sql_security_type || sql_security_type == SQLSecurityType::INVOKER)
         return Context::createCopy(context);
 
-    if (sql_security_type == SQLSecurityType::INVOKER)
-        return Context::createCopy(context);
+    std::optional<UUID> definer_id;
+    if (sql_security_type == SQLSecurityType::DEFINER)
+        definer_id = getDefinerID(context);
+    return makeSQLSecurityOverriddenContext(context, definer_id, client_info);
+}
 
+ContextMutablePtr makeSQLSecurityOverriddenContext(ContextPtr context, std::optional<UUID> definer_id, const ClientInfo * client_info)
+{
     auto new_context = Context::createCopy(context->getGlobalContext());
     if (client_info)
         new_context->setClientInfo(*client_info);
@@ -232,7 +237,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// Drop the invoker's key even if only the definer's profile activates it.
     const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
 
-    if (sql_security_type == SQLSecurityType::NONE)
+    if (!definer_id)
     {
         new_context->applySettingsChanges(changed_settings);
         if (drop_custom_key)
@@ -240,7 +245,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     }
     else
     {
-        new_context->setUser(getDefinerID(context));
+        new_context->setUser(*definer_id);
 
         /// `Context::setUser` only sets the access-control identity (`user_id`); it does not touch the
         /// user names in `ClientInfo`. That is harmless when there is an invoker whose names were copied

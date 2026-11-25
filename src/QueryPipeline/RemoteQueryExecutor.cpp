@@ -716,7 +716,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         && context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         received_roles_of_initial_user = modified_client_info.current_roles;
 
-    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+    /// A delegated view read uses the definer's default roles on each shard. Sending
+    /// its roles as the caller's current roles would attribute them to the wrong account.
+    const bool push_roles = context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.interserver_view_definer.empty();
     modified_client_info.current_roles.reset();
     if (push_roles && received_roles_of_initial_user)
     {
@@ -768,7 +771,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     // Collect all roles granted on this node and pass those to the remote node
     Strings local_granted_roles;
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+    if (push_roles)
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;

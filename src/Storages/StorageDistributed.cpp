@@ -2811,6 +2811,16 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
+When an ordinary `SQL SECURITY DEFINER` view reads a `Distributed` table on a cluster with a secret,
+the initiator can forward the definer only over native TLS (`<secure>1</secure>`).
+The initiator must verify the shard certificate against a trusted CA and the configured shard name.
+Both servers must support native protocol revision 54498 or later.
+The shard authenticates the original caller and checks the caller's allowed hosts.
+It reads the source table with the definer's privileges and default roles.
+Both accounts must exist on the shard. The definer can have `HOST NONE`.
+Delegated reads require end-to-end TLS. Plain TCP, TLS termination at a proxy, and older shards are unsupported.
+A shard that receives an ordinary interserver query cannot start delegation because it cannot verify the original client address.
+
 Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml

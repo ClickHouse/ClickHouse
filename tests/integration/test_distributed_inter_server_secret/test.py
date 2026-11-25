@@ -15,7 +15,13 @@ cluster = ClickHouseCluster(__file__)
 
 def make_instance(name, *args, **kwargs):
     main_configs = kwargs.pop("main_configs", [])
-    main_configs.append("configs/remote_servers.xml")
+    main_configs.extend([
+        "configs/remote_servers.xml",
+        "configs/view_tls.xml",
+        "../test_ssl_cert_authentication/certs/ca-cert.pem",
+        "../test_ssl_cert_authentication/certs/server-cert.pem",
+        "../test_ssl_cert_authentication/certs/server-key.pem",
+    ])
     user_configs = kwargs.pop("user_configs", [])
     user_configs.append("configs/users.xml")
     return cluster.add_instance(
@@ -35,7 +41,11 @@ n1 = make_instance(
     main_configs=["configs/remote_servers_n1.xml"],
     user_configs=["configs/users.d/new_user.xml"],
 )
-n2 = make_instance("n2", main_configs=["configs/remote_servers_n2.xml"])
+n2 = make_instance(
+    "n2",
+    hostname="integration-tests.clickhouse.com",
+    main_configs=["configs/remote_servers_n2.xml"],
+)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -228,6 +238,80 @@ def test_insecure_insert_sync():
 
 def test_secure():
     n1.query("SELECT * FROM dist_secure")
+
+
+def test_secure_distributed_read_through_definer_view():
+    try:
+        for node in (n1, n2):
+            node.query("CREATE USER view_reader")
+            node.query("CREATE USER view_owner HOST NONE")
+            node.query("CREATE TABLE view_source (key Int32) ENGINE = Memory")
+            node.query("GRANT SELECT ON default.view_source TO view_owner")
+
+        n1.query(
+            "CREATE TABLE view_dist AS view_source "
+            "ENGINE = Distributed(view_tls, default, view_source)"
+        )
+        n1.query("GRANT SELECT ON default.view_dist TO view_owner")
+        n1.query(
+            "CREATE VIEW definer_view DEFINER = view_owner SQL SECURITY DEFINER "
+            "AS SELECT key FROM view_dist"
+        )
+        n1.query("GRANT SELECT ON default.definer_view TO view_reader")
+        n2.query("INSERT INTO view_source VALUES (42)")
+        reader_address = n1.query(
+            "SELECT toString(address) FROM system.processes WHERE query_id = currentQueryID()"
+        ).strip()
+        n2.query(f"ALTER USER view_reader HOST IP '{reader_address}'")
+        settings = {
+            "prefer_localhost_replica": 0,
+            "push_external_roles_in_interserver_queries": 1,
+        }
+        assert n1.query(
+            "SELECT key FROM definer_view",
+            user="view_reader",
+            settings=settings,
+        ) == "42\n"
+        assert "ACCESS_DENIED" in n2.query_and_get_error(
+            "SELECT key FROM view_source", user="view_reader"
+        )
+
+        for destination in ("secure", "view_tls_wrong_name"):
+            n1.query(
+                "CREATE TABLE rejected_dist AS view_source "
+                f"ENGINE = Distributed({destination}, default, view_source)"
+            )
+            try:
+                n1.query("GRANT SELECT ON default.rejected_dist TO view_owner")
+                n1.query(
+                    "CREATE VIEW rejected_view DEFINER = view_owner SQL SECURITY DEFINER "
+                    "AS SELECT key FROM rejected_dist"
+                )
+                n1.query("GRANT SELECT ON default.rejected_view TO view_reader")
+                error = n1.query_and_get_error(
+                    "SELECT key FROM rejected_view", user="view_reader", settings=settings
+                )
+                assert "requires TLS with a verified shard certificate" in error
+            finally:
+                n1.query("DROP VIEW IF EXISTS rejected_view")
+                n1.query("DROP TABLE rejected_dist")
+
+        n2.query("REVOKE SELECT ON default.view_source FROM view_owner")
+        assert "ACCESS_DENIED" in n1.query_and_get_error(
+            "SELECT key FROM definer_view", user="view_reader", settings=settings
+        )
+        n2.query("GRANT SELECT ON default.view_source TO view_owner")
+        n2.query("ALTER USER view_reader HOST NONE")
+        assert "AUTHENTICATION_FAILED" in n1.query_and_get_error(
+            "SELECT key FROM definer_view", user="view_reader", settings=settings
+        )
+    finally:
+        n1.query("DROP VIEW IF EXISTS definer_view")
+        n1.query("DROP TABLE IF EXISTS view_dist")
+        for node in (n1, n2):
+            node.query("DROP TABLE IF EXISTS view_source")
+            node.query("DROP USER IF EXISTS view_reader")
+            node.query("DROP USER IF EXISTS view_owner")
 
 
 def test_secure_insert_async():

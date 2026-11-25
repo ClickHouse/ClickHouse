@@ -4,8 +4,10 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Access/User.h>
 #include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -38,6 +40,7 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
@@ -2827,6 +2830,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         readStringBinary(received_extra_roles, *in, MAX_EXTRA_ROLES_SIZE);
     }
 
+    if (is_interserver_mode && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_VIEW_DEFINER)
+        readStringBinary(client_info.interserver_view_definer, *in, MAX_HELLO_STRING_SIZE);
+
     /// Interserver secret.
     std::string received_hash;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
@@ -2892,29 +2898,8 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        /// `StringWithMemoryTracking` so the duplicate of the (potentially
-        /// large) query body that the hash needs goes through the throwing
-        /// memory-tracker path. With a plain `std::string` the append below
-        /// would allocate through `allocNoThrow` and could push the server
-        /// past `max_server_memory_usage` without throwing.
-        StringWithMemoryTracking data(salt);
-        data += std::to_string(nonce.value());
-        data += cluster_secret;
-        data += state->query;
-        data += state->query_id;
-        data += client_info.initial_user;
-        data += received_extra_roles;
-        /// Cover current roles in the auth hash too, mirroring the sender.
-        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info.current_roles.has_value())
-        {
-            String current_roles_str;
-            WriteBufferFromString buffer(current_roles_str);
-            writeVectorBinary(*client_info.current_roles, buffer);
-            buffer.finalize();
-            data += current_roles_str;
-        }
-
-        std::string calculated_hash = encodeSHA256(data);
+        const auto calculated_hash = client_info.getInterserverQueryHash(
+            socket(), cluster_secret, salt, *nonce, state->query, state->query_id, received_extra_roles, client_tcp_protocol_version);
         chassert(calculated_hash.size() == 32);
 
         /// TODO maybe also check that peer address actually belongs to the cluster?
@@ -2924,6 +2909,10 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             session->onAuthenticationFailure(/* user_name */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
+
+        if (!client_info.interserver_view_definer.empty()
+            && (client_info.initial_user.empty() || client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "A view definer requires an authenticated secondary query with an initial user");
 
         /// NOTE Usually we get some fields of client_info (including initial_address and initial_user) from user input,
         /// so we should not rely on that. However, in this particular case we got client_info from other clickhouse-server, so it's ok.
@@ -2975,9 +2964,23 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         ? passed_settings[Setting::run_query_in_background].value
         : session->sessionOrGlobalContext()->getSettingsRef()[Setting::run_query_in_background].value;
 
+    /// Consume the authenticated field before copying ClientInfo into the query context.
+    /// Each outgoing shard read derives its own definer from the context of that read.
+    const String view_definer = std::exchange(client_info.interserver_view_definer, {});
+    client_info.has_unverified_interserver_address = is_interserver_mode && view_definer.empty();
+
     state->query_context = state->run_query_in_background
         ? session->makeDetachedQueryContext(client_info)
         : session->makeQueryContext(client_info);
+
+    if (!view_definer.empty())
+    {
+        /// The session belongs to the caller. Only the query sent for the stored view body
+        /// uses the definer's access and default roles, as on the initiator.
+        auto & context = state->query_context;
+        context = makeSQLSecurityOverriddenContext(context, context->getAccessControl().getID<User>(view_definer));
+        context->setIsViewInnerQuery(true);
+    }
 
     std::weak_ptr<QueryState> state_wptr = state;
 
@@ -3044,6 +3047,8 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+    if (!view_definer.empty())
+        state->query_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 
     /// The clamp above may drop or change a value that the initiator passed for a setting that chooses the
     /// method of an aggregation key (see `markAggregationMethodSettingsChanged`). This server would then
