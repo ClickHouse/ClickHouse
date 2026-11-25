@@ -5,16 +5,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <unordered_map>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -22,32 +17,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for a one-argument aggregation operator.
-    void checkArgumentTypes(
-        const PrometheusQueryTree::AggregationOperator * operator_node,
-        const std::vector<SQLQueryPiece> & arguments,
-        const ConverterContext & context)
-    {
-        const auto & operator_name = operator_node->operator_name;
-
-        if (arguments.size() != 1)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Aggregation operator '{}' expects {} argument, but was called with {} arguments",
-                            operator_name, 1, arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-
-        if (argument.type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Aggregation operator '{}' expects an argument of type {}, but expression {} has type {}",
-                            operator_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
     struct ImplInfo
     {
         OneArgumentAggregationTransform transform_ast;
@@ -301,7 +270,8 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     const auto * impl_info = getImplInfo(operator_name);
     chassert(impl_info);
 
-    checkArgumentTypes(operator_node, arguments, context);
+    checkNumberOfArguments(operator_node, arguments, 1);
+    checkArgumentType(operator_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
 
     auto & argument = arguments[0];
 

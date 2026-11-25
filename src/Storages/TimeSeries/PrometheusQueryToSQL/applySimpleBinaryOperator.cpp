@@ -229,8 +229,8 @@ namespace
             && ((left_argument.type != ResultType::INSTANT_VECTOR) || (right_argument.type != ResultType::INSTANT_VECTOR)))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Binary operator '{}' with vector matching expects two arguments of type {}, got {} and {}",
-                            operator_node->operator_name, ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
+                            "{} with vector matching expects two arguments of type {}, got {} and {}",
+                            operator_node->getTypeAndName(), ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
         }
     }
 
