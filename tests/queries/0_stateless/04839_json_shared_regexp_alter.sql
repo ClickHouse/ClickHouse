@@ -228,3 +228,20 @@ DROP TABLE lambda_04839;
 CREATE TABLE lambda_04839 (id UInt64, d Date, j JSON, xs Array(UInt64)) ENGINE = MergeTree ORDER BY id TTL d + toIntervalDay(arraySum(arrayMap(x -> length(toString(j)), xs)));
 ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE lambda_04839;
+-- The same for a projection: a lambda parameter named like the column is not a read of it, a lambda body still reads it.
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), PROJECTION p (SELECT id, arrayMap(j -> j + 1, xs) ORDER BY id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lambda_04839 VALUES (1, '{"x":1}', [1, 2]);
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$');
+SELECT 'lambda projection', toTypeName(j), arrayMap(j -> j + 1, xs) FROM lambda_04839;
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), PROJECTION p (SELECT id, sum(arraySum(arrayMap(x -> arrayCount(j -> j > x, xs), xs))) GROUP BY id)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lambda_04839 VALUES (1, '{"x":1}', [1, 2]);
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$');
+SELECT 'lambda aggregate projection', toTypeName(j), id FROM lambda_04839;
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), PROJECTION p (SELECT id, arrayMap(x -> toTypeName(j), xs) ORDER BY id)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE lambda_04839;
+CREATE TABLE lambda_04839 (id UInt64, j JSON, xs Array(UInt64), PROJECTION p (SELECT id, arrayMap(j -> length(j), JSONSharedDataPaths(j)) ORDER BY id)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE lambda_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE lambda_04839;

@@ -100,6 +100,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -6247,6 +6248,11 @@ bool usesColumnInExpression(const IAST & ast, const String & column, bool in_fun
 {
     if (const auto * identifier = ast.as<ASTIdentifier>())
         return identifier->name() == column && (in_function || !identifier->tryGetAlias().empty());
+
+    /// A lambda with a parameter named like the column reads that parameter, not the column.
+    if (const auto * function = ast.as<ASTFunction>(); function && isASTLambdaFunction(*function)
+        && std::ranges::contains(RequiredSourceColumnsMatcher::extractNamesFromLambda(*function), column))
+        return false;
 
     in_function = in_function || ast.as<ASTFunction>();
     return std::ranges::any_of(ast.children, [&](const auto & child) { return usesColumnInExpression(*child, column, in_function); });

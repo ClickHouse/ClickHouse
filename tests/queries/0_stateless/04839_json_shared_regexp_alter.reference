@@ -26,3 +26,5 @@ subcolumn ttl	24
 lambda materialized	JSON(SHARED REGEXP \'^x$\')	[2,3]
 lambda index	JSON(SHARED REGEXP \'^x$\')	1
 lambda ttl	JSON(SHARED REGEXP \'^x$\')	1
+lambda projection	JSON(SHARED REGEXP \'^x$\')	[2,3]
+lambda aggregate projection	JSON(SHARED REGEXP \'^x$\')	1
