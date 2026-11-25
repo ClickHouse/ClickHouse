@@ -735,6 +735,25 @@ void checkSettingsOfDefinition(const ASTStorage & engine_define, const NamedColl
     }
 }
 
+/// Replaces a computed key of an override of the named collection, such as `if(currentUser() = '...', 'schema', 'host')`, with the
+/// key that it is checked as, in a definition that a user gives. Otherwise the stored or dispatched definition would have the
+/// expression, which could become another key with another context: on the workers of `ON CLUSTER`, at the startup of the
+/// server, or on a short `ATTACH DATABASE` by another user.
+void replaceComputedOverrideKeys(ASTs & engine_args, const ContextPtr & context)
+{
+    if (engine_args.empty() || !engine_args[0]->as<ASTIdentifier>())
+        return;
+    for (size_t i = 1; i < engine_args.size(); ++i)
+    {
+        auto * function = engine_args[i]->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            continue;
+        auto & key = function->arguments->children[0];
+        if (!key->as<ASTIdentifier>() && !key->as<ASTLiteral>())
+            key = evaluateConstantExpressionOrIdentifierAsLiteral(key, context);
+    }
+}
+
 /// The checks of a definition that need the user, before `CREATE DATABASE ... ON CLUSTER` is dispatched: the access to the named
 /// collection, the override of its keys by the engine arguments and by the `SETTINGS` clause (`NOT OVERRIDABLE`,
 /// `SHOW NAMED COLLECTIONS SECRETS`), and the constraints. A definition without a `SETTINGS` clause is checked too, as the
@@ -744,22 +763,7 @@ void checkDefinition(ASTStorage & engine_define, const ContextPtr & context)
     if (!engine_define.engine || !engine_define.engine->arguments)
         return;
     auto & engine_args = engine_define.engine->arguments->children;
-
-    /// The workers evaluate the key of an override of the named collection again, with their own context, so a computed key,
-    /// such as `if(currentUser() = '...', 'schema', 'host')`, could override another key there than the one checked here. The
-    /// definition that is dispatched has the key that is checked instead.
-    if (!engine_args.empty() && engine_args[0]->as<ASTIdentifier>())
-    {
-        for (size_t i = 1; i < engine_args.size(); ++i)
-        {
-            auto * function = engine_args[i]->as<ASTFunction>();
-            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
-                continue;
-            auto & key = function->arguments->children[0];
-            if (!key->as<ASTIdentifier>() && !key->as<ASTLiteral>())
-                key = evaluateConstantExpressionOrIdentifierAsLiteral(key, context);
-        }
-    }
+    replaceComputedOverrideKeys(engine_args, context);
 
     const auto named_collection = tryGetNamedCollectionWithOverrides(
         engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
@@ -795,6 +799,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// A definition the user gives is held to the user's constraints, not one the server stored itself.
         const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
             || args.create_query.attach_short_syntax;
+
+        if (!is_stored_definition)
+            replaceComputedOverrideKeys(engine_args, args.context);
 
         /// The SETTINGS clause overrides the collection like its key-value arguments do, so it is checked the same way, when
         /// the definition is given: a stored definition was checked when it was written, and a key that the collection marks
