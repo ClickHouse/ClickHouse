@@ -1,0 +1,24 @@
+MergeTree
+['Compact','Compact','Compact']
+['Wide']
+1	3000	1
+3000
+ReplacingMergeTree
+['Compact','Compact','Compact']
+['Wide']
+1	2000	1
+2000
+TTL
+['Compact','Compact','Compact']
+['Wide']
+1	1500
+Text index
+['Compact','Compact','Compact']
+['Wide']
+1	3000
+0
+3000
+Nullable with allow_sparse
+['Compact','Compact','Compact']
+['Wide']
+1	3000	0

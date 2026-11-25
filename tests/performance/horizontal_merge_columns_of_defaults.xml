@@ -1,0 +1,144 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: it times MergeTree horizontal merges. -->
+    <!--
+        Times a horizontal merge of ten Compact parts with interleaving keys into one Wide part, in `MergeTree` and
+        `ReplacingMergeTree`. 60 of the 70 columns are never inserted, so every source part has only defaults in them.
+        The fixture is re-attached for every run, and `max_bytes_to_merge_at_*_space_in_pool = 1` keeps background
+        merges away from it.
+    -->
+    <create_query>
+        CREATE TABLE hmcd_src
+        (
+            k UInt64,
+            ts DateTime,
+            v1 UInt64,
+            v2 UInt64,
+            v3 UInt64,
+            v4 UInt32,
+            v5 UInt32,
+            v6 UInt8,
+            s1 String,
+            s2 String,
+            e_u64_1 UInt64,
+            e_u64_2 UInt64,
+            e_u64_3 UInt64,
+            e_u64_4 UInt64,
+            e_u64_5 UInt64,
+            e_u64_6 UInt64,
+            e_u64_7 UInt64,
+            e_u64_8 UInt64,
+            e_u64_9 UInt64,
+            e_u64_10 UInt64,
+            e_u64_11 UInt64,
+            e_u64_12 UInt64,
+            e_u64_13 UInt64,
+            e_u64_14 UInt64,
+            e_u64_15 UInt64,
+            e_u64_16 UInt64,
+            e_u64_17 UInt64,
+            e_u64_18 UInt64,
+            e_u64_19 UInt64,
+            e_u64_20 UInt64,
+            e_u32_1 UInt32,
+            e_u32_2 UInt32,
+            e_u32_3 UInt32,
+            e_u32_4 UInt32,
+            e_u32_5 UInt32,
+            e_u32_6 UInt32,
+            e_u32_7 UInt32,
+            e_u32_8 UInt32,
+            e_u32_9 UInt32,
+            e_u32_10 UInt32,
+            e_u32_11 UInt32,
+            e_u32_12 UInt32,
+            e_u32_13 UInt32,
+            e_u32_14 UInt32,
+            e_u32_15 UInt32,
+            e_u8_1 UInt8,
+            e_u8_2 UInt8,
+            e_u8_3 UInt8,
+            e_u8_4 UInt8,
+            e_u8_5 UInt8,
+            e_u8_6 UInt8,
+            e_u8_7 UInt8,
+            e_u8_8 UInt8,
+            e_u8_9 UInt8,
+            e_u8_10 UInt8,
+            e_f64_1 Float64,
+            e_f64_2 Float64,
+            e_f64_3 Float64,
+            e_f64_4 Float64,
+            e_f64_5 Float64,
+            e_f64_6 Float64,
+            e_f64_7 Float64,
+            e_f64_8 Float64,
+            e_f64_9 Float64,
+            e_f64_10 Float64,
+            e_s_1 String,
+            e_s_2 String,
+            e_s_3 String,
+            e_s_4 String,
+            e_s_5 String
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 100000, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE hmcd AS hmcd_src
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 100000, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1, enable_vertical_merge_algorithm = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE hmcd_replacing_src AS hmcd_src
+        ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 100000, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE hmcd_replacing AS hmcd_src
+        ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 100000, max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1, enable_vertical_merge_algorithm = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO hmcd_src (k, ts, v1, v2, v3, v4, v5, v6, s1, s2)
+        SELECT cityHash64(number), toDateTime('2026-01-01 00:00:00') + intDiv(number, 50), number, number * 3, cityHash64(number, 1),
+               toUInt32(cityHash64(number, 2) % 1000), toUInt32(cityHash64(number, 3) % 100000), toUInt8(number % 7),
+               toString(number % 1000), concat('s', toString(cityHash64(number, 4) % 10000))
+        FROM numbers(120000)
+        SETTINGS max_block_size = 12000, max_insert_block_size = 12000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>
+        INSERT INTO hmcd_replacing_src SELECT * FROM hmcd_src
+        SETTINGS max_block_size = 12000, max_insert_block_size = 12000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+            max_threads = 1, preferred_block_size_bytes = 0
+    </fill_query>
+    <fill_query>SELECT throwIf((SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('hmcd_src', 'hmcd_replacing_src') AND active AND part_type = 'Compact') != 20)</fill_query>
+
+    <fill_query>ALTER TABLE hmcd ATTACH PARTITION tuple() FROM hmcd_src</fill_query>
+    <fill_query>OPTIMIZE TABLE hmcd FINAL</fill_query>
+    <fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM hmcd) != (SELECT (count(), sum(cityHash64(*))) FROM hmcd_src))</fill_query>
+    <fill_query>ALTER TABLE hmcd_replacing ATTACH PARTITION tuple() FROM hmcd_replacing_src</fill_query>
+    <fill_query>OPTIMIZE TABLE hmcd_replacing FINAL</fill_query>
+    <fill_query>SELECT throwIf((SELECT (count(), sum(cityHash64(*))) FROM hmcd_replacing) != (SELECT (count(), sum(cityHash64(*))) FROM hmcd_src))</fill_query>
+    <fill_query>SELECT throwIf((SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table IN ('hmcd', 'hmcd_replacing') AND active) != ['Wide', 'Wide'])</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE hmcd;
+            ALTER TABLE hmcd ATTACH PARTITION tuple() FROM hmcd_src;
+            OPTIMIZE TABLE hmcd FINAL;
+        "
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE hmcd_replacing;
+            ALTER TABLE hmcd_replacing ATTACH PARTITION tuple() FROM hmcd_replacing_src;
+            OPTIMIZE TABLE hmcd_replacing FINAL;
+        "
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS hmcd</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hmcd_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hmcd_replacing</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hmcd_replacing_src</drop_query>
+</test>
