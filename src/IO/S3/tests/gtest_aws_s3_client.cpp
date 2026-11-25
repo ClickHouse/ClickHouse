@@ -3007,7 +3007,7 @@ TEST(IOTestAwsS3Client, ContainerCredentialsInConcurrentFibers)
 
     /// As `S3CredentialsProviderChain` creates it for `AWS_CONTAINER_CREDENTIALS_FULL_URI`.
     auto provider = std::make_shared<DB::S3::GeneralHTTPCredentialsProvider>(
-        /* relative_uri = */ "", ecs.getLoopbackUrl() + "/v2/credentials", /* token = */ "ecs_token", /* token_path = */ "");
+        /* relative_uri = */ "", Aws::String(ecs.getLoopbackUrl() + "/v2/credentials"), /* token = */ "ecs_token", /* token_path = */ "");
 
     const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     std::vector<Aws::String> access_keys(fiber_count);
