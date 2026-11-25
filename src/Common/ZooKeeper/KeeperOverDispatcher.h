@@ -139,11 +139,22 @@ private:
     /// finishSession (which may destroy this object).
     struct CallbackState
     {
+        struct PendingRequest
+        {
+            ZooKeeperRequestPtr request;
+            ResponseCallback callback;
+        };
+
         std::atomic<bool> expired{false};
         /// Progress tracker: microseconds since `steady_clock` epoch of the last received data.
         std::atomic<Int64> last_received_timestamp_us{0};
+        /// Held while a user callback runs, so callbacks are sequential. Taken before `callbacks_mutex`.
+        std::mutex invoke_mutex;
         std::mutex callbacks_mutex;
-        std::unordered_map<XID, ResponseCallback> callbacks;
+        std::unordered_map<XID, PendingRequest> callbacks;
+
+        /// Marks the session expired and answers every pending request with ZSESSIONEXPIRED.
+        void expire();
     };
 
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;

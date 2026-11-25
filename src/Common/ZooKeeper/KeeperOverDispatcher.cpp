@@ -5,6 +5,7 @@
 #if USE_NURAFT
 
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
@@ -20,6 +21,38 @@ namespace DB::ErrorCodes
 
 namespace Coordination
 {
+
+void KeeperOverDispatcher::CallbackState::expire()
+{
+    std::lock_guard invoke_lock(invoke_mutex);
+
+    std::unordered_map<XID, PendingRequest> pending;
+    {
+        /// `pushRequest` checks `expired` under the same mutex, so nothing is registered after this swap.
+        std::lock_guard lock(callbacks_mutex);
+        expired = true;
+        pending.swap(callbacks);
+    }
+
+    for (auto & [xid, pending_request] : pending)
+    {
+        try
+        {
+            ZooKeeperResponsePtr response;
+            {
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+                response = pending_request.request->makeResponse();
+            }
+            response->xid = xid;
+            response->error = Error::ZSESSIONEXPIRED;
+            pending_request.callback(response);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("KeeperOverDispatcher");
+        }
+    }
+}
 
 KeeperOverDispatcher::KeeperOverDispatcher(
     const std::shared_ptr<KeeperDispatcher> & keeper_dispatcher_,
@@ -39,7 +72,7 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     {
         if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
         {
-            state->expired = true;
+            state->expire();
             return false;
         }
 
@@ -49,13 +82,14 @@ KeeperOverDispatcher::KeeperOverDispatcher(
                 std::chrono::steady_clock::now().time_since_epoch()).count(),
             std::memory_order_relaxed);
 
+        std::lock_guard invoke_lock(state->invoke_mutex);
         ResponseCallback callback;
         {
             std::lock_guard lock(state->callbacks_mutex);
             auto it = state->callbacks.find(response->xid);
             if (it != state->callbacks.end())
             {
-                callback = std::move(it->second);
+                callback = std::move(it->second.callback);
                 state->callbacks.erase(it);
             }
         }
@@ -81,7 +115,7 @@ KeeperOverDispatcher::~KeeperOverDispatcher()
 
 void KeeperOverDispatcher::finalize(const String & /* reason */)
 {
-    callback_state->expired = true;
+    callback_state->expire();
 }
 
 silk::FiberEvent & KeeperOverDispatcher::getExpiredEvent()
@@ -96,14 +130,36 @@ bool KeeperOverDispatcher::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) 
 
 void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
 {
-    request->xid = next_xid++;
+    const XID xid = next_xid++;
+    request->xid = xid;
 
     {
         std::lock_guard lock(callback_state->callbacks_mutex);
-        callback_state->callbacks[request->xid] = std::move(callback);
+        if (callback_state->expired)
+            throw Coordination::Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
+        callback_state->callbacks.emplace(xid, CallbackState::PendingRequest{request, std::move(callback)});
     }
 
-    if (!keeper_dispatcher->putRequest(request, session_id, false))
+    /// False when `expire` has already answered the request: its callback reported the failure, so do not throw.
+    auto erase_pending = [&]
+    {
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        return callback_state->callbacks.erase(xid) > 0;
+    };
+
+    bool pushed = false;
+    try
+    {
+        pushed = keeper_dispatcher->putRequest(request, session_id, false);
+    }
+    catch (...)
+    {
+        if (erase_pending())
+            throw;
+        return;
+    }
+
+    if (!pushed && erase_pending())
         throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session was disconnected");
 }
 
@@ -197,19 +253,9 @@ void KeeperOverDispatcher::listRecursive(
     uint32_t get_children_recursive_nodes_limit,
     ListRecursiveCallback callback)
 {
-
     const auto request = std::make_shared<ZooKeeperListRecursiveRequest>();
     request->path = path;
     request->children_nodes_limit = get_children_recursive_nodes_limit;
-    request->xid = next_xid++;
-
-    {
-        std::lock_guard lock(callback_state->callbacks_mutex);
-        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const ListRecursiveResponse &>(*response));
-        };
-    }
 
     pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
