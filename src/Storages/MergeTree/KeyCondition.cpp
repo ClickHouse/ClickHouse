@@ -7499,18 +7499,44 @@ BoolMask KeyCondition::checkInRange(
         });
 }
 
-/// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
-/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
-/// monotonic (value fits in the target type), the Field value doesn't change.
-/// Similarly for Int8/16/32/64 (all stored as Int64).
-/// `DateTime` is a number of seconds stored as UInt32 (UInt64 in Field), so `toUnixTimestamp(DateTime)`
-/// and casts between `DateTime` and unsigned integers don't change the Field value either.
-/// In such cases we can skip the expensive function application (which creates columns and executes
-/// the function via the full column execution machinery) and just keep the original Field value.
+/// A type conversion between native integers of the same signedness, applied to a Field directly, without executing the function.
+/// UInt8/16/32/64 are all stored as UInt64 in Field, Int8/16/32/64 as Int64. `DateTime` is a number of seconds stored as UInt32
+/// (UInt64 in Field), so `toUnixTimestamp(DateTime)` and casts between `DateTime` and unsigned integers convert it the same way.
+/// A conversion to a type at least as wide as the source keeps the Field value; a narrower one wraps it around, keeping the
+/// low `result_size` bytes, as the conversion of a column does.
+struct IntegerCastOnField
+{
+    size_t from_size = 0;
+    size_t result_size = 0;
+    bool is_signed = false;
+
+    bool keepsValue() const { return result_size >= from_size; }
+
+    /// Whether `apply` handles the Field: a narrowing conversion needs the representation of its family.
+    bool canApply(const Field & value) const
+    {
+        return keepsValue() || value.getType() == (is_signed ? Field::Types::Int64 : Field::Types::UInt64);
+    }
+
+    Field apply(const Field & value) const
+    {
+        if (keepsValue())
+            return value;
+
+        const size_t shift = 64 - result_size * 8;
+        if (is_signed)
+            return Field(static_cast<Int64>(static_cast<UInt64>(value.safeGet<Int64>()) << shift) >> shift);
+        return Field(value.safeGet<UInt64>() << shift >> shift);
+    }
+};
+
+/// Check if a type conversion function can be applied to the Field value directly (see `IntegerCastOnField`).
+/// In such cases we can skip the expensive function application (which creates columns and executes the function via the full
+/// column execution machinery for every range, e.g. for every granule of a skip index).
 ///
-/// IMPORTANT: This must only return true for pure type conversion functions (see `is_cast`),
+/// IMPORTANT: This must only return a value for pure type conversion functions (see `is_cast`),
 /// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
-static bool functionIsCastPreservingFieldRepresentation(
+static std::optional<IntegerCastOnField> getIntegerCastOnField(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     /// Only type conversion functions preserve Field values across integer type boundaries.
@@ -7522,15 +7548,15 @@ static bool functionIsCastPreservingFieldRepresentation(
         || name == "toDateTime" || name == "toUnixTimestamp");
 
     if (!is_cast)
-        return false;
+        return {};
 
     /// Nullable types don't have a fixed size in memory; this optimization only applies to plain integer types.
     if (from_type->isNullable() || to_type->isNullable())
-        return false;
+        return {};
 
     /// `Bool` and `SimpleAggregateFunction(f, Bool)` are stored as `UInt8`, yet a cast into them maps every nonzero value to 1.
     if (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type))
-        return false;
+        return {};
 
     WhichDataType from(from_type);
     WhichDataType to(to_type);
@@ -7541,16 +7567,18 @@ static bool functionIsCastPreservingFieldRepresentation(
 
     /// Check that both types are in the same family before calling
     /// getSizeOfValueInMemory, which throws for variable-length types like String.
-    bool same_family = (is_uint_or_datetime(from) && is_uint_or_datetime(to))
-        || (from.isNativeInt() && to.isNativeInt());
+    const bool is_signed = from.isNativeInt() && to.isNativeInt();
+    if (!is_signed && !(is_uint_or_datetime(from) && is_uint_or_datetime(to)))
+        return {};
 
-    if (!same_family)
-        return false;
+    IntegerCastOnField cast{
+        .from_size = from_type->getSizeOfValueInMemory(), .result_size = to_type->getSizeOfValueInMemory(), .is_signed = is_signed};
 
-    /// We can only skip the function application when the target type is at least as wide
-    /// as the source type (widening or same-size cast). For narrowing casts (e.g. UInt32 -> UInt16),
-    /// truncation changes the actual value even though both use UInt64 in the Field representation.
-    return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
+    /// A conversion of a wider integer to `DateTime` does not wrap around: it is not a plain truncation.
+    if (!cast.keepsValue() && to.isDateTime())
+        return {};
+
+    return cast;
 }
 
 namespace
@@ -7616,16 +7644,20 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             auto result_type = func->getResultType();
 
             /// For functions like CAST between integer types that share the same Field representation
-            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
-            /// on the given range, the Field values are guaranteed to be unchanged.
+            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), the result is computed on the Field
+            /// directly: the value is kept, or wrapped around for a narrowing conversion.
             /// We can skip the expensive function application that creates columns and executes the function.
-            /// The monotonicity check already verified that the values fit in the target type.
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
-            bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
+            std::optional<IntegerCastOnField> integer_cast;
+            if (key_range.left.isExplicit() && key_range.right.isExplicit())
+                integer_cast = getIntegerCastOnField(func, current_type, result_type);
+            if (integer_cast
+                && ((!key_range.left.isNull() && !integer_cast->canApply(key_range.left))
+                    || (!key_range.right.isNull() && !integer_cast->canApply(key_range.right))))
+                integer_cast.reset();
 
-            if (!skip_apply)
+            if (!integer_cast)
             {
                 /// If we apply function to open interval, we can get empty intervals in result.
                 /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
@@ -7661,9 +7693,15 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// Even though we skip the function application, we still need to make bounds included
                 /// (the function could map open bounds to the same point).
                 if (!key_range.left.isNull())
+                {
+                    key_range.left = integer_cast->apply(key_range.left);
                     key_range.left_included = true;
+                }
                 if (!key_range.right.isNull())
+                {
+                    key_range.right = integer_cast->apply(key_range.right);
                     key_range.right_included = true;
+                }
             }
 
             current_type = result_type;
