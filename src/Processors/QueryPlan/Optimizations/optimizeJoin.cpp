@@ -1678,9 +1678,11 @@ static void estimateJoinGraphRelations(
 
         std::optional<size_t> num_rows_from_cache = context.statistics_context.getCachedHint(node);
         if (context.join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-            && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
+            && (!stats.estimated_rows || stats.source == RowEstimateSource::AssumedSelectivity
+                || num_rows_from_cache.value() < stats.estimated_rows.value()))
         {
             /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+            /// An assumed row count is not an upper bound, so a measured one replaces it also when it is larger.
             stats.estimated_rows = num_rows_from_cache;
             stats.imprecise_estimate = false;
             stats.source = RowEstimateSource::HashTableCache;

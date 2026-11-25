@@ -18,6 +18,10 @@ a relation without a row count comes first: every join is as written
 Join: u[no_stats~?] ⋈ nation[no_stats~4] ⋈ customer[no_stats~10000] ⋈ orders[no_stats~100000]
 Join: u[no_stats~?] ⋈ nation[no_stats~4] ⋈ customer[no_stats~10000]
 Join: u[no_stats~?] ⋈ nation[no_stats~4]
+a measured row count replaces an assumed one, also when it is larger
+Join: customer[no_stats~10000] ⋈ orders[no_stats~?]
+45000
+Join: orders[cache~90000] ⋈ customer[no_stats~10000]
 the result does not depend on the join order
 33335
 33335

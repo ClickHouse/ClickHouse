@@ -54,6 +54,19 @@ SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     JOIN nation ON u.k = n_nationkey JOIN customer ON c_nationkey = n_nationkey JOIN orders ON o_custkey = c_custkey)
 WHERE explain LIKE '%Join: %';
 
+-- The filter keeps 90000 of 100000 rows, and the first execution measures that in the hash table of `orders`.
+SELECT 'a measured row count replaces an assumed one, also when it is larger';
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey WHERE o_orderkey % 10 != 0
+    SETTINGS join_algorithm = 'hash', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1)
+WHERE explain LIKE '%Join: %';
+SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey WHERE o_orderkey % 10 != 0
+SETTINGS join_algorithm = 'hash', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey WHERE o_orderkey % 10 != 0
+    SETTINGS join_algorithm = 'hash', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1)
+WHERE explain LIKE '%Join: %';
+
 SELECT 'the result does not depend on the join order';
 SELECT count() FROM nation JOIN customer ON c_nationkey = n_nationkey JOIN orders ON o_custkey = c_custkey
     JOIN (SELECT arrayJoin([5, 6, 7]) AS k WHERE k != 6) AS u ON u.k = n_nationkey
