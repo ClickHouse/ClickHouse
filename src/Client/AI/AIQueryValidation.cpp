@@ -12,10 +12,12 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -269,24 +271,33 @@ void checkNoProtectedSettingChanges(const IAST & ast)
 /// a SELECT to the current server schema: `file`, `url`, `s3`, `remote`, `executable`, `mysql`,
 /// `cluster` and similar can read external resources, so they require the run_query tool with
 /// the user's confirmation. The check is a conservative allowlist: an unknown table function
-/// is rejected. The names are compared case-insensitively: some of the dangerous functions
-/// are registered with case-insensitive names.
+/// is rejected.
+///
+/// A name is compared the way `TableFunctionFactory` resolves it, because a spelling the factory
+/// does not resolve is not the builtin: the server then looks for a parameterized view of that
+/// name (`CREATE VIEW NUMBERS AS SELECT file({p:String})` is read by `FROM NUMBERS(p = '...')`),
+/// which is neither collected as a named table nor a function `system.functions` knows. Most of
+/// the allowed functions are registered with a case-sensitive name, so only their exact spelling
+/// is accepted; `values` and `format` are registered case-insensitively.
 bool isAllowedTableFunction(const String & name)
 {
-    static const std::unordered_set<String> allowed
+    static const std::unordered_set<String> allowed_case_sensitive
     {
         "numbers",
         "numbers_mt",
         "zeros",
         "zeros_mt",
-        "generateseries",
+        "generateSeries",
         "generate_series",
-        "generaterandom",
-        "values",
-        "format",
+        "generateRandom",
         "null",
     };
-    return allowed.contains(Poco::toLower(name));
+    static const std::unordered_set<String> allowed_case_insensitive
+    {
+        "values",
+        "format",
+    };
+    return allowed_case_sensitive.contains(name) || allowed_case_insensitive.contains(Poco::toLower(name));
 }
 
 /// The allowed table functions that take the structure of the table they generate as a string:
@@ -543,6 +554,21 @@ void checkNoExternalAccess(const IAST & ast)
         if (const auto * set_expression = getSetExpressionOfInOperator(*function))
             checkNoTableAccessInSetExpression(*set_expression, /*allow_system_tables=*/ true);
     }
+    else if (ast.as<ASTColumnsApplyTransformer>())
+    {
+        /// `* APPLY(f)` and `* APPLY(x -> f(x))` keep what they apply - the name of the function
+        /// with its parameters, or the lambda - in members that are not children, so no traversal
+        /// of this validation sees them, and the server builds a call of that function for every
+        /// column: `SELECT * APPLY(file) FROM (SELECT 'fixture.txt' AS path)` reads the file. The
+        /// transformer is refused as a whole rather than having each of its members checked here
+        /// and in the passes that collect the tables and the functions: writing the call out is
+        /// always possible, and then all of them see it.
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `APPLY` column transformer is not allowed for the read-only tool, because the function it applies "
+            "is not a part of the query the tool can check. Write the calls of the function on the columns "
+            "explicitly, or use the run_query tool for this query");
+    }
 
     for (const auto & child : ast.children)
         checkNoExternalAccess(*child);
@@ -794,6 +820,13 @@ std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast
     std::vector<AIQueryTableReference> result;
     collectNamedTables(ast, result);
     return result;
+}
+
+bool readsImplicitOneTableForAIAgent(const IAST & ast)
+{
+    if (const auto * select = ast.as<ASTSelectQuery>(); select && !select->tables())
+        return true;
+    return std::ranges::any_of(ast.children, [](const auto & child) { return readsImplicitOneTableForAIAgent(*child); });
 }
 
 Strings collectFunctionNamesForAIAgent(const IAST & ast)
@@ -1096,12 +1129,14 @@ Strings validateStoredExpressionForAIAgent(const String & expression, std::strin
     }
 
     /// A subquery of the expression reads a table this validation has not resolved; resolving it
-    /// would take another round of the same check, for an expression that rarely needs one.
-    if (!collectNamedTablesForAIAgent(*ast).empty())
+    /// would take another round of the same check, for an expression that rarely needs one. A
+    /// subquery without a `FROM` is one of them: it reads `system.one`, whose row policies were
+    /// not looked up for this expression.
+    if (!collectNamedTablesForAIAgent(*ast).empty() || readsImplicitOneTableForAIAgent(*ast))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The {} reads other tables, which the server does when the table is read, so it is not allowed for the "
-            "read-only tool. Use the run_query tool for this query",
+            "The {} reads other tables, which the server does when the table is read (a subquery without `FROM` "
+            "reads `system.one`), so it is not allowed for the read-only tool. Use the run_query tool for this query",
             origin);
 
     return collectFunctionNamesForAIAgent(*ast);

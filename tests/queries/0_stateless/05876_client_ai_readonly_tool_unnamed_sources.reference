@@ -1,0 +1,6 @@
+select_without_from: OK
+scalar_subquery_without_from: OK
+select_from_table_function: OK
+parameterized_view_in_another_case: OK
+apply_of_a_function: OK
+apply_of_a_lambda: OK

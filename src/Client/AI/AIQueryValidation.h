@@ -92,6 +92,12 @@ struct AIQueryTableReference
 /// here. Both are collected; a name that does not resolve to a table is simply not checked.
 std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast);
 
+/// Whether the statement has a `SELECT` without a `FROM`, at any depth. The server reads such a
+/// `SELECT` from `system.one` - a real table, whose row policies it applies like those of any
+/// other - although the statement names no table for `collectNamedTablesForAIAgent` to return.
+/// The caller looks up the row policies of `system.one` when this is the case.
+bool readsImplicitOneTableForAIAgent(const IAST & ast);
+
 /// The names of the functions called in the statement, deduplicated and sorted.
 /// `validateReadOnlyQueryForAIAgent` accepts a function when the client knows it as a builtin, but
 /// the server resolves the name on its own: a server that predates a builtin of this client can

@@ -35,7 +35,10 @@ TURNS = [
     (
         "first question",
         [
-            ("warm_up", "run_readonly_query", {"query": "SELECT 1"}, lambda r: succeeded(r)),
+            # Not a `SELECT 1`: without a `FROM` it is read from `system.one`, the table of the
+            # row policy below, and is refused like the last call - see
+            # `05876_client_ai_readonly_tool_unnamed_sources`.
+            ("warm_up", "run_readonly_query", {"query": "SELECT count() FROM numbers(2)"}, lambda r: succeeded(r)),
             # A parameterized view named like an allowed table function: `DESCRIBE` resolves the
             # view before the table function, unlike `SELECT`, so the name is not the builtin.
             (
@@ -57,7 +60,9 @@ TURNS = [
                 "policy_of_predefined_system_table",
                 "run_readonly_query",
                 {"query": "SELECT dummy FROM system.one"},
-                lambda r: not succeeded(r) and "file" in r,
+                # Refused by the client, which names the row policy and the `run_query` tool; an
+                # error of the server evaluating the policy would name neither.
+                lambda r: not succeeded(r) and "file" in r and "row policy" in r and "run_query" in r,
             ),
         ],
     ),

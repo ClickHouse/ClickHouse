@@ -5079,8 +5079,11 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
 
         /// The static validation judges what is written in the query; the tables it only collects,
         /// because a name says nothing about what reading it does. Resolve them and check their
-        /// engines - this is a round trip, so it is skipped when the query names no tables.
-        checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast), allow_schema_access);
+        /// engines - this is a round trip, so it is skipped when the query reads no tables. A
+        /// `SELECT` without a `FROM` does read one, although it names none: `system.one`, whose
+        /// row policies the server applies like those of any other table.
+        checkNamedTablesForAIReadOnlyTool(
+            collectNamedTablesForAIAgent(*ast), allow_schema_access, readsImplicitOneTableForAIAgent(*ast));
 
         /// The static validation accepts a function that the client knows as a builtin, but the
         /// server resolves the name itself, and expands a user-defined function of that name first.
@@ -5700,9 +5703,10 @@ void ClientBase::checkFunctionsForAIReadOnlyTool(const Strings & functions)
         result.getByPosition(0).column->getDataAt(0));
 }
 
-void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access)
+void ClientBase::checkNamedTablesForAIReadOnlyTool(
+    const std::vector<AIQueryTableReference> & tables, bool allow_schema_access, bool reads_implicit_one_table)
 {
-    if (tables.empty())
+    if (tables.empty() && !reads_implicit_one_table)
         return;
 
     /// What this check is, and is not. It keeps the model from choosing, on its own, a query that
@@ -5791,10 +5795,22 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
             database_expressions.push_back(database_expression);
     }
 
-    branches.push_back(fmt::format(
-        "SELECT 'database', name, '', engine FROM system.databases WHERE name IN ({})",
-        fmt::join(database_expressions, ", ")));
-    branches.emplace_back("SELECT 'current', currentDatabase(), '', ''");
+    /// A `SELECT` without a `FROM` (`SELECT 1`, a scalar subquery `(SELECT 1)`) is read from
+    /// `system.one`, which the query does not name. Nothing about the table itself is in question,
+    /// but the server applies its row policies to that read, so they are looked up like those of
+    /// a table that was named.
+    if (reads_implicit_one_table)
+        add_row_policy_lookup("'system'", "'one'");
+
+    if (!database_expressions.empty())
+        branches.push_back(fmt::format(
+            "SELECT 'database', name, '', engine FROM system.databases WHERE name IN ({})",
+            fmt::join(database_expressions, ", ")));
+    /// The current database takes a `SELECT` of one row. It is given a `FROM` - a subquery that
+    /// always returns one row, over a table this lookup reads anyway - because without one the
+    /// server would read it from `system.one`, and evaluate the row policies of that table while
+    /// answering the very question whether they may be evaluated.
+    branches.emplace_back("SELECT 'current', currentDatabase(), '', '' FROM (SELECT count() FROM system.databases)");
 
     const String query = fmt::to_string(fmt::join(branches, " UNION ALL "));
 
@@ -5838,7 +5854,7 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     /// the server like those of the query, so they are collected for the same check of
     /// `checkFunctionsForAIReadOnlyTool`.
     std::set<String> stored_expression_functions;
-    const auto check_stored_expressions = [&](const String & database, const String & table)
+    const auto check_stored_expressions = [&](const String & database, const String & table, std::string_view how_it_is_read = {})
     {
         const auto [begin, end] = column_expressions.equal_range({database, table});
         for (auto it = begin; it != end; ++it)
@@ -5849,9 +5865,14 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
         for (const auto & [policy_database, policy_table, filter] : row_policy_filters)
             if ((policy_database.empty() || policy_database == database) && (policy_table.empty() || policy_table == table))
                 for (auto & function : validateStoredExpressionForAIAgent(
-                         filter, fmt::format("the filter of a row policy of the table `{}.{}`", database, table), allow_schema_access))
+                         filter,
+                         fmt::format("the filter of a row policy of the table `{}.{}`{}", database, table, how_it_is_read),
+                         allow_schema_access))
                     stored_expression_functions.insert(std::move(function));
     };
+
+    if (reads_implicit_one_table)
+        check_stored_expressions("system", "one", " (which a `SELECT` without `FROM` reads)");
 
     for (const auto & reference : tables)
     {
@@ -6514,6 +6535,16 @@ Block ClientBase::fetchInternalQueryResult(
     settings_to_send->set("limit", Float64(0));
     settings_to_send->set("offset", Float64(0));
     settings_to_send->set("page", Float64(0));
+    /// The query result cache of the session (`use_query_cache = 1`, together with
+    /// `query_cache_system_table_handling = 'save'`) would answer an internal query with the result
+    /// of an earlier one: the key of the cache is the query, not the state it reads, and DDL does
+    /// not invalidate it. A safety probe would then judge a table by the engine it had before it
+    /// was replaced by a view. No internal query is to be answered from the cache or stored there,
+    /// so the cache is switched off, like the settings above: a no-op unless the session turned it
+    /// on, and a session that turned it on and cannot turn it off fails the query. With the default
+    /// `query_cache_system_table_handling = 'throw'` such a session failed every internal query
+    /// that reads a `system` table anyway.
+    settings_to_send->set("use_query_cache", false);
     /// A limit of the session with an overflow mode other than `throw` (`max_result_rows = 1,
     /// result_overflow_mode = 'break'`, `max_execution_time` with `timeout_overflow_mode = 'break'`,
     /// `group_by_overflow_mode = 'any'`, ...) makes the server stop early and still finish the

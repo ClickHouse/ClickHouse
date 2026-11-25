@@ -42,8 +42,11 @@ DATABASE = os.environ["CLICKHOUSE_DATABASE"]
 # One tool call per case: the tool, its arguments, and whether it should be accepted.
 CASES = [
     # The unconfirmed read-only tool: its query is sent on the connection of the user, so without
-    # the pin the server parses `SELECT 1` as KQL and the tool comes back with a syntax error.
-    ("readonly_query", "run_readonly_query", {"query": "SELECT 1"}, True),
+    # the pin the server parses it as KQL and the tool comes back with a syntax error. The query
+    # has a `FROM`, and a table function for it: a `SELECT` without one is read from `system.one`,
+    # whose row policies the tool then has to look up, and the user of this test has no grant to
+    # read `system.row_policies`.
+    ("readonly_query", "run_readonly_query", {"query": "SELECT 1 FROM numbers(1)"}, True),
     # An internal query of the agent, which also carries the pin - and, being the tool whose result
     # the user never sees, the masking of the secrets of a table definition on top of it.
     ("show_create", "show_create_table", {"database": DATABASE, "table": "plain"}, True),

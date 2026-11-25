@@ -34,7 +34,13 @@ client_gone = False
 
 FINAL_ANSWER = "MOCK-DONE"
 
-QUERY = "SELECT getSetting('max_execution_time'), getSetting('max_execution_time_leaf'), getSetting('max_memory_usage')"
+# The query has a `FROM`, and a table function for it: a `SELECT` without one is read from
+# `system.one`, whose row policies the read-only tool then has to look up, and the user of this test
+# has no grant to read `system.row_policies` - such a query would need a confirmation instead.
+QUERY = (
+    "SELECT getSetting('max_execution_time'), getSetting('max_execution_time_leaf'), getSetting('max_memory_usage') "
+    "FROM numbers(1)"
+)
 
 # One tool call per case: the tool, its arguments, and the values its result must show.
 CASES = [

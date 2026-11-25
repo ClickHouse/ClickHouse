@@ -687,6 +687,84 @@ TEST(AIQueryValidation, ChecksTableNamesOnTheRightHandSideOfIn)
     EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN (1, 2, 3)"));
 }
 
+TEST(AIQueryValidation, MatchesTableFunctionNamesLikeTheFactory)
+{
+    /// A spelling that the table-function factory does not resolve is not the builtin: the server
+    /// then looks for a parameterized view of that name (`CREATE VIEW NUMBERS AS SELECT
+    /// file({p:String})`), which nothing here has checked. Most of the allowed functions are
+    /// registered with a case-sensitive name.
+    EXPECT_FALSE(isAllowed("SELECT * FROM NUMBERS(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM NUMBERS(p = 'fixture.txt')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM Numbers(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM Numbers_MT(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM ZEROS(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM generateseries(1, 3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM GENERATE_SERIES(1, 3)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM generaterandom('x UInt8') LIMIT 1"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN NUMBERS(3)"));
+
+    /// The registered spellings.
+    EXPECT_TRUE(isAllowed("SELECT * FROM numbers(3)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM zeros_mt(3)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generateSeries(1, 3)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generate_series(1, 3)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generateRandom('x UInt8') LIMIT 1"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM null('x UInt8')"));
+
+    /// `values` and `format` are registered case-insensitively, so every spelling is the builtin.
+    EXPECT_TRUE(isAllowed("SELECT * FROM VALUES('x UInt8', 1, 2)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM Values('x UInt8', 1, 2)"));
+    EXPECT_TRUE(isAllowed(R"(SELECT * FROM FORMAT(JSONEachRow, '{"x":1}'))"));
+}
+
+TEST(AIQueryValidation, RejectsApplyTransformers)
+{
+    /// `APPLY` keeps the function it applies outside of the children of the AST, so the function
+    /// is not seen by the checks, and the server calls it on every column.
+    EXPECT_FALSE(isAllowed("SELECT * APPLY(file) FROM (SELECT 'fixture.txt' AS path)"));
+    EXPECT_FALSE(isAllowed("SELECT * APPLY(x -> file(x)) FROM (SELECT 'fixture.txt' AS path)"));
+    EXPECT_FALSE(isAllowed("SELECT * APPLY(x -> (SELECT count() FROM url('http://x', 'CSV', 'x String'))) FROM numbers(1)"));
+    /// With every kind of column matcher, and nested in a subquery.
+    EXPECT_FALSE(isAllowed("SELECT t.* APPLY(file) FROM (SELECT 'fixture.txt' AS path) AS t"));
+    EXPECT_FALSE(isAllowed("SELECT COLUMNS('path') APPLY(file) FROM (SELECT 'fixture.txt' AS path)"));
+    EXPECT_FALSE(isAllowed("SELECT COLUMNS(path) APPLY(file) FROM (SELECT 'fixture.txt' AS path)"));
+    EXPECT_FALSE(isAllowed("SELECT * EXCEPT (other) APPLY(file) FROM (SELECT 'fixture.txt' AS path, 1 AS other)"));
+    EXPECT_FALSE(isAllowed("SELECT count() FROM (SELECT * APPLY(file) FROM (SELECT 'fixture.txt' AS path))"));
+    /// It is refused as a whole, a harmless function included: the call can be written out.
+    EXPECT_FALSE(isAllowed("SELECT * APPLY(sum) FROM numbers(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * APPLY(x -> x + 1) FROM numbers(3)"));
+
+    /// The other transformers keep their expressions among the children, where the checks see them.
+    EXPECT_TRUE(isAllowed("SELECT * EXCEPT (number) FROM numbers(3)"));
+    EXPECT_TRUE(isAllowed("SELECT * REPLACE (number + 1 AS number) FROM numbers(3)"));
+    EXPECT_FALSE(isAllowed("SELECT * REPLACE (file('fixture.txt') AS number) FROM numbers(3)"));
+}
+
+TEST(AIQueryValidation, DetectsSelectWithoutFrom)
+{
+    /// A `SELECT` without a `FROM` is read from `system.one`, whose row policies the server applies,
+    /// although the query names no table.
+    const auto reads_one = [](const String & query) { return readsImplicitOneTableForAIAgent(*parse(query)); };
+
+    EXPECT_TRUE(reads_one("SELECT 1"));
+    EXPECT_TRUE(reads_one("SELECT version(), now()"));
+    EXPECT_TRUE(reads_one("EXPLAIN SELECT 1"));
+    EXPECT_TRUE(reads_one("DESCRIBE (SELECT 1)"));
+    /// At any depth: a scalar subquery, the set of an `IN`, a derived table, a branch of a `UNION`.
+    EXPECT_TRUE(reads_one("SELECT number, (SELECT 1) FROM numbers(3)"));
+    EXPECT_TRUE(reads_one("SELECT number FROM numbers(3) WHERE number IN (SELECT 1)"));
+    EXPECT_TRUE(reads_one("SELECT x FROM (SELECT 1 AS x)"));
+    EXPECT_TRUE(reads_one("SELECT x FROM db.t UNION ALL SELECT 1"));
+    EXPECT_TRUE(reads_one("WITH (SELECT 1) AS one SELECT number + one FROM numbers(3)"));
+
+    EXPECT_FALSE(reads_one("SELECT number FROM numbers(3)"));
+    EXPECT_FALSE(reads_one("SELECT x FROM db.t WHERE x IN (SELECT y FROM db.u)"));
+    EXPECT_FALSE(reads_one("SELECT dummy FROM system.one"));
+    EXPECT_FALSE(reads_one("SHOW TABLES"));
+    EXPECT_FALSE(reads_one("SHOW CREATE TABLE db.t"));
+    EXPECT_FALSE(reads_one("EXISTS TABLE db.t"));
+}
+
 TEST(AIQueryValidation, RejectsUnknownFunctions)
 {
     /// The validation sees the raw AST before the server expands SQL user-defined functions,
