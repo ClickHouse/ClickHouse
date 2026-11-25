@@ -10,12 +10,8 @@
 -- query with the feature off and on, so the expected output is a column of 1s regardless of the
 -- randomly generated table content.
 
-SET max_threads = 4;
 SET max_block_size = 8192;
 SET adaptive_aggregator_freeze_threshold = 128;
--- The adaptive gate requires two-level aggregation to be permitted.
-SET group_by_two_level_threshold = 100000;
-SET group_by_two_level_threshold_bytes = 50000000;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
@@ -237,11 +233,16 @@ SELECT
     =
     (SELECT sum(s1), sum(s2), count() FROM (SELECT a, sum(b) AS s1, max(b) AS s2 FROM test GROUP BY a SETTINGS enable_adaptive_aggregator = 1));
 
+-- The aggregation under `WITH TOTALS` is partial, and the adaptive aggregator takes a partial aggregation
+-- only with two-level aggregation on. That needs non-zero thresholds and, without external aggregation,
+-- several streams, so the cell pins the thresholds and four threads.
 SELECT 'WITH TOTALS';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS
+        SETTINGS enable_adaptive_aggregator = 0, max_threads = 4, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000))
     =
-    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test GROUP BY a WITH TOTALS
+        SETTINGS enable_adaptive_aggregator = 1, max_threads = 4, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000));
 
 SELECT 'count(non_nullable_column)';
 SELECT

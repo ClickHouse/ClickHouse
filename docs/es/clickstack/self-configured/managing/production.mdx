@@ -1,0 +1,80 @@
+---
+slug: /clickstack/self-configured/managing/production
+title: 'Paso a producción'
+sidebarTitle: 'Producción'
+description: 'Paso a producción con Self-managed ClickHouse Observability'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickHouse Observability', 'producción', 'implementación', 'buenas prácticas', 'operaciones']
+---
+
+import ResourceEstimation from '/snippets/es/_resource_estimation.mdx';
+
+<Note>
+  Esta página trata sobre **Self-managed ClickHouse Observability**. Para la experiencia totalmente gestionada recomendada, consulte la documentación [aquí](/es/clickstack/observability/overview).
+</Note>
+
+Al utilizar Self-managed ClickHouse Observability en producción, tenga en cuenta las siguientes prácticas de seguridad, estabilidad y configuración.
+
+[Self-managed ClickHouse Observability](/es/clickstack/self-configured/getting-started/managed) aplica de forma predeterminada [prácticas de seguridad](/es/products/cloud/features/security) estándar del sector (entre ellas, cifrado, autenticación y conectividad mejorados, y controles de acceso gestionados), además de ofrecer las siguientes ventajas:
+
+* Escalado automático de la capacidad de cómputo con independencia del almacenamiento
+* Retención de bajo coste y prácticamente ilimitada gracias al almacenamiento de objetos
+* La posibilidad de [aislar de forma independiente los workload de lectura y escritura](/es/clickstack/self-configured/managing/isolating-read-write) mediante almacenes.
+* Autenticación integrada
+* [Copias de seguridad](/es/products/cloud/features/backups/overview) automatizadas
+* Actualizaciones sin interrupciones
+
+**Siga estas [buenas prácticas](/es/products/cloud/guides/production-readiness) de ClickHouse Cloud al utilizar Self-managed ClickHouse Observability.**
+
+## Ingestión segura {#secure-ingestion-managed}
+
+De forma predeterminada, el Recopilador de OpenTelemetry de ClickStack no está protegido cuando se despliega fuera de las distribuciones de Código Abierto, y no requiere autenticación en sus puertos OTLP.
+
+Para proteger la ingestión, especifique un token de autenticación al desplegar el recolector mediante la variable de entorno `OTLP_AUTH_TOKEN`. Consulte [«Protección del recolector»](/es/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) para obtener más información.
+
+### Crear un usuario de ingestión {#create-a-database-ingestion-user-managed}
+
+Se recomienda crear un usuario dedicado para que el OTel collector realice la ingestión en ClickHouse Cloud y garantizar así que los datos ingestados se envíen a una base de datos específica, p. ej., `otel`. Consulte [«Crear un usuario de ingestión»](/es/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured) para obtener más información.
+
+## Configurar el Time To Live (TTL) {#configure-ttl-managed}
+
+Asegúrese de que el [Time To Live (TTL)](/es/clickstack/self-configured/managing/ttl) esté [configurado adecuadamente](/es/clickstack/self-configured/managing/ttl#modifying-ttl) para su implementación de Self-managed ClickHouse Observability. Este parámetro determina durante cuánto tiempo se conservan los datos; es posible que deba ajustar el valor predeterminado de 30 días.
+
+## Estimación de recursos {#estimating-resources}
+
+<ResourceEstimation />
+
+Para obtener más información sobre cómo ajustar los supuestos de dimensionamiento a su entorno, consulte [«Ajuste de los supuestos de dimensionamiento para su entorno»](/es/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions).
+
+### Aislamiento de workloads de observabilidad {#isolating-workloads}
+
+Si va a añadir Self-managed ClickHouse Observability a un **servicio de ClickHouse Cloud existente** que ya admite otros workloads, como la analítica de aplicaciones en real-time, se recomienda encarecidamente aislar el tráfico de observabilidad.
+
+Utilice [**Managed Warehouses**](/es/products/cloud/features/infrastructure/warehouses) para crear un **servicio hijo** dedicado a la observabilidad. Esto le permite:
+
+* Aislar la carga de ingestar y de consultas de las aplicaciones existentes
+* Escalar los workloads de observabilidad de forma independiente
+* Evitar que las consultas de observabilidad afecten a la analítica de producción
+* Compartir los mismos conjuntos de datos subyacentes entre servicios cuando sea necesario
+
+Este enfoque garantiza que sus workloads existentes no se vean afectados y, al mismo tiempo, permite que los workloads de observabilidad escalen de forma independiente a medida que aumenta el volumen de datos de observabilidad.
+
+### Aislamiento de workloads de lectura y escritura {#isolating-read-write}
+
+Los almacenes también permiten separar los workloads de ingestar y de consulta en capacidad de cómputo dedicada: la ingestión se dirige a un servicio de lectura y escritura y la interfaz de usuario de observabilidad se ejecuta en un servicio de solo lectura. Esta es la topología de producción recomendada para implementaciones de mayor tamaño. Consulte [&quot;Aislamiento de workloads de lectura y escritura&quot;](/es/clickstack/self-configured/managing/isolating-read-write).
+
+Para implementaciones de mayor tamaño o recomendaciones de dimensionamiento personalizadas, póngase en contacto con el soporte técnico para obtener una estimación más precisa.
+
+## Permisos del usuario de consultas {#user-permissions}
+
+Un usuario de ClickHouse utilizado por un cliente de consultas externo debe tener `readonly = 2`. La interfaz de usuario establece sus propios ajustes, como `date_time_output_format`, en cada consulta, y los gráficos de SQL directo también establecen `readonly = 2`, por lo que estas consultas fallan para un usuario con `readonly = 1` con el error `Cannot modify '...' setting in readonly mode`. Con `readonly = 2`, la interfaz de usuario también puede establecer `max_rows_to_read`, `read_overflow_mode` y `cancel_http_readonly_queries_on_client_close`; si limita `max_rows_to_read`, permita al menos 1 millón. `wait_end_of_query` es un parámetro de la interfaz HTTP y no un parámetro de configuración, por lo que no requiere ningún permiso.
+
+Por ejemplo:
+
+```sql
+CREATE USER clickstack_ui IDENTIFIED BY '<password>' SETTINGS readonly = 2;
+GRANT SELECT ON default.* TO clickstack_ui;
+```
+
+De forma predeterminada, el usuario `default` de ClickHouse Cloud tiene estos permisos, pero recomendamos crear un usuario específico.
