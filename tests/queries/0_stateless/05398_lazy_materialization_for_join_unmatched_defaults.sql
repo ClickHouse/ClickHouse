@@ -1,6 +1,6 @@
 -- Lazy materialization over joins at the rows an outer join leaves unmatched: a column read lazily, and a value
 -- recomputed under the mask of the join, have the default the join stands there, the one of the type. For an `Enum`
--- that is its first element, and for a `Date32` the epoch, unlike the default of the column. Every query is followed
+-- that is its first element, and for a `Date32` 1900-01-01, unlike the zero of the column. Every query is followed
 -- by the number of lazy reads in its plan, and the results are compared with the optimization disabled.
 
 SET query_plan_optimize_lazy_materialization = 1;

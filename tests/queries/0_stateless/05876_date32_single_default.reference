@@ -1,0 +1,26 @@
+omitted column	1900-01-01
+DEFAULT in VALUES	1900-01-01
+JSONEachRow missing field	1900-01-01
+JSONEachRow null	1900-01-01
+CSV \\N	1900-01-01
+defaultValueOfTypeName	1900-01-01
+assumeNotNull of NULL	1900-01-01
+LEFT JOIN, hash	1900-01-01
+LEFT JOIN, full_sorting_merge	1900-01-01
+LEFT JOIN, inequality	1900-01-01
+ROLLUP	['1900-01-01','2000-01-01']
+WITH FILL	['2000-01-01','1900-01-01','2000-01-03']
+lagInFrame	1900-01-01
+anyOrDefault of no rows	1900-01-01
+arrayResize	['2000-01-01','1900-01-01']
+JSONExtract of a missing key	1900-01-01
+JSON typed path, missing	1900-01-01
+JSON typed path, null	1900-01-01
+LowCardinality and Tuple, DEFAULT in VALUES	1900-01-01	('1900-01-01')
+LowCardinality, arrayResize	['2000-01-01','1900-01-01']
+Tuple, arrayResize	[('2000-01-01'),('1900-01-01')]
+firstNonDefault, 1970-01-01 is not the default	1970-01-01
+firstNonDefault, 1900-01-01 is the default	2000-01-01
+firstNonDefault, one argument	1900-01-01
+firstNonDefault, only defaults	1900-01-01
+firstNonDefault, LowCardinality	2000-01-01

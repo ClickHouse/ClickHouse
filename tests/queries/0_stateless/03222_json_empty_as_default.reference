@@ -3,7 +3,7 @@
 SELECT x FROM format(JSONEachRow, 'x Date', '{"x":""}');
 1970-01-01
 SELECT x FROM format(JSONEachRow, 'x Date32', '{"x":""}');
-1970-01-01
+1900-01-01
 SELECT toTimeZone(x, 'UTC') FROM format(JSONEachRow, 'x DateTime', '{"x":""}');
 1970-01-01 00:00:00
 SELECT toTimeZone(x, 'UTC') FROM format(JSONEachRow, 'x DateTime64', '{"x":""}');

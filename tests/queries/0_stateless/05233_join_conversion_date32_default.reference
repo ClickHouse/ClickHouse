@@ -1,17 +1,17 @@
-ground truth, conversion disabled	2
-LEFT JOIN, toDateTime	2
-RIGHT JOIN, toDate	2
-FULL JOIN, toDateTime	2
-ANY LEFT JOIN, toDateTime	2
-LEFT JOIN, no wrapper	2
-conversion preserved, rows	0
-conversion preserved, plan	1
-LowCardinality(Date32)	2
-LowCardinality(Date32), conversion preserved, plan	1
-Tuple(Date32)	2
-Tuple(Date32), conversion preserved, plan	1
-Tuple(Date32, Enum8), whole tuple in the filter	2
-Tuple(Date32, Enum8), subcolumn extraction off	2
+ground truth, conversion disabled	0
+LEFT JOIN, toDateTime	0
+RIGHT JOIN, toDate	0
+FULL JOIN, toDateTime	0
+ANY LEFT JOIN, toDateTime	0
+LEFT JOIN, no wrapper	0
+conversion skipped, rows	0
+conversion skipped, plan	0
+LowCardinality(Date32)	0
+LowCardinality(Date32), conversion skipped, plan	0
+Tuple(Date32)	0
+Tuple(Date32), conversion skipped, plan	0
+Tuple(Date32, Enum8), whole tuple in the filter	0
+Tuple(Date32, Enum8), subcolumn extraction off	0
 Enum8 over inequality, conversion disabled	0
 Enum8 over inequality	0
 Date is unaffected, rows	2

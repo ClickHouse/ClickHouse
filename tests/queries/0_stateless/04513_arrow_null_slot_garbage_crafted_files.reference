@@ -68,7 +68,7 @@ x
 (0)
 (42)
 === struct_date32_garbage_under_null as Tuple(d Date32)
-('1970-01-01')
+('1900-01-01')
 ('1970-02-12')
 === struct_ipv6_binary_garbage_under_null as Tuple(v IPv6)
 ('::')
