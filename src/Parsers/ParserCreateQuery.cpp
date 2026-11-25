@@ -236,8 +236,8 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    /// Used by `DROP`, `CLEAR` and `MATERIALIZE STATISTICS`, where column names may be query parameters.
+    ParserList columns_p(std::make_unique<ParserIdentifier>(/* allow_query_parameter_ = */ true), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
 
@@ -3045,11 +3045,12 @@ ENGINE = MergeTree ORDER BY tuple();
 
 <ExperimentalBadge/>
 
-`Quantized(method, dimensions[, ...])` — A specialized codec to support approximate vector search on columns of type `Array(Float32)`, `Array(Float64)` or `Array(BFloat16)`.
+`Quantized(method, dimensions[, ...])` — A specialized codec to support approximate vector search on columns of type `Array(Float32)`, `Array(Float64)`, `Array(BFloat16)`, `Array(Int8)` or `Array(UInt8)`.
 It stores the original, full-precision vectors, as well as a compact *quantized code* per vector alongside.
 On `MergeTree`-family tables, vector search queries with setting [`vector_search_use_quantized_codes`](/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) will scan the quantized codes to build a shortlist and subsequently rescore the results against the full-precision vectors.
 This two-stage search reads fewer bytes than a normal full-precision scan at the cost of lower recall.
 `dimensions` is the vector length; supported `method` values are `rabitq`, `turboquant`, `int8`, `prefix` and `product`, each a different size / accuracy / distance-function trade-off.
+For `Array(Int8)` and `Array(UInt8)` columns, the `int8` method and the `prefix` method with format `int8` are not supported.
 
 The codec can only be set in `CREATE TABLE`, it cannot be added, removed, or changed through `ALTER TABLE`, including with `ADD COLUMN ... CODEC(Quantized(...))`.
 It cannot be chained with any other codec (not even an encryption codec such as `AES_128_GCM_SIV`).
@@ -3614,6 +3615,7 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `refresh_coordination_jitter_ms` - If refreshes are coordinated across replicas, each replica waits a random delay of up to this long before starting a due refresh, so that refreshes are spread across replicas even without `RANDOMIZE FOR`. The delay is not reflected in `next_refresh_time`. 0 disables the delay. Default: 1000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
