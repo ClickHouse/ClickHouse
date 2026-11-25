@@ -255,8 +255,9 @@ size_t SpillingHashJoin::freeMemoryByHalving(size_t at_least_bytes)
     if (!halving_frees)
         return 0;
 
-    /// The memory spill scheduler asks for all the bytes of the join, and asks while the memory of the query plus the reserve
-    /// of the join, which is all its bytes too, reaches the hard limit. Halving is enough if they would stay under it.
+    /// `MemorySpillScheduler` asks for all the bytes of the join while the query memory plus the largest reserve of any processor
+    /// reaches the hard limit. The reserve of the join is all its bytes, so halving is also enough if the query memory plus
+    /// that reserve, both after halving, stay under the limit.
     const auto hard_limit = getCurrentQueryHardLimit();
     const size_t join_bytes = hash_join->getTotalByteCount();
     const Int64 memory_after = getCurrentQueryMemoryUsage() - static_cast<Int64>(halving_frees);

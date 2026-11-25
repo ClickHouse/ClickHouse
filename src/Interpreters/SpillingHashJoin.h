@@ -148,7 +148,8 @@ private:
     /// Unless `enable_robin_hood_hash_for_joins` is set, the hash tables of `hash_join` can be halved instead of spilling.
     /// Returns whether the join can go on in memory: `too_many_bytes` is false for its bytes, after halving if needed.
     bool stayInMemoryByHalving(absl::FunctionRef<bool(size_t)> too_many_bytes);
-    /// Halves them if that frees at least `at_least_bytes`. Returns the bytes freed, 0 if it did not halve.
+    /// Halves them if that frees at least `at_least_bytes`, or if the query memory plus the reserve of the join would then stay
+    /// under the hard limit. Returns the bytes freed, 0 if it did not halve.
     size_t freeMemoryByHalving(size_t at_least_bytes);
     /// Every insert into the external join funnels through here: MergeJoin inserts are
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts

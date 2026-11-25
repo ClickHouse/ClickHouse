@@ -61,7 +61,6 @@ namespace ProfileEvents
 {
     extern const Event HashJoinBuiltWithParallelLayout;
     extern const Event HashJoinBuiltWithSerialLayout;
-    extern const Event JoinRobinHoodSwitchesOnMemoryPressure;
     extern const Event JoinRobinHoodHalvedBuckets;
 }
 
@@ -453,7 +452,7 @@ HashJoin::HashJoin(
                 strictness,
                 maps_kind,
                 build_layout,
-                table_join->robinHoodMode(),
+                table_join->enableRobinHoodHashForJoins() ? RobinHoodMode::Always : RobinHoodMode::OnMemoryPressure,
                 &data->growth_budget));
     chassert(std::ranges::all_of(data->tables, [&](const auto & table) { return table->type() == keyType(); }));
 
@@ -484,7 +483,6 @@ HashJoin::HashJoin(
             expected_right_rows = hint->source_rows;
         }
     }
-    /// The buckets first ask the budget at the first insert, so it can be configured here.
     data->growth_budget.configure(
         data->total_bytes,
         data->allocated_size,
@@ -1675,7 +1673,7 @@ HashJoin::RightTableData::~RightTableData()
 
 size_t HashJoin::bytesFreedByHalvingHashTables() const
 {
-    if (table_join->robinHoodMode() != RobinHoodMode::OnMemoryPressure)
+    if (table_join->enableRobinHoodHashForJoins())
         return 0;
     size_t bytes = 0;
     for (const auto & table : data->tables)
@@ -2484,8 +2482,6 @@ void HashJoin::onBuildPhaseFinish()
     /// The plan prints `HashJoin` for both layouts, so record which one this join built on.
     ProfileEvents::increment(
         build_layout.two_level ? ProfileEvents::HashJoinBuiltWithParallelLayout : ProfileEvents::HashJoinBuiltWithSerialLayout);
-    if (const size_t switches = data->growth_budget.switches())
-        ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure, switches);
 
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot

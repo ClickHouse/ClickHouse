@@ -221,7 +221,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = query_settings[Setting::enable_join_key_only_hash_tables];
-    robin_hood_mode = getRobinHoodMode(query_settings[Setting::enable_robin_hood_hash_for_joins]);
+    enable_robin_hood_hash_for_joins = query_settings[Setting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
     enable_packed_string_keys_in_hash_join = query_settings[Setting::enable_packed_string_keys_in_hash_join];
     min_rows_for_packed_string_keys_in_hash_join = query_settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
@@ -291,7 +291,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
-    robin_hood_mode = getRobinHoodMode(settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins]);
+    enable_robin_hood_hash_for_joins = settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
     enable_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join];
     min_rows_for_packed_string_keys_in_hash_join = settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join];
@@ -551,7 +551,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
-    settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins] = robin_hood_mode == RobinHoodMode::Always;
+    settings[QueryPlanSerializationSetting::enable_robin_hood_hash_for_joins] = enable_robin_hood_hash_for_joins;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_hash_join] = enable_packed_string_keys_in_hash_join;
     settings[QueryPlanSerializationSetting::min_rows_for_packed_string_keys_in_hash_join] = min_rows_for_packed_string_keys_in_hash_join;

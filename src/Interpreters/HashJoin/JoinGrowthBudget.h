@@ -8,8 +8,9 @@
 namespace DB
 {
 
-/// `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach `1 / SPILL_THRESHOLD_DIVISOR` of
-/// `max_bytes_before_external_join`, so that a hash table buffer, which holds 3X while it grows from X to 2X, still fits.
+/// Before it adds a block, `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach
+/// `1 / SPILL_THRESHOLD_DIVISOR` of `max_bytes_before_external_join`, so that a hash table buffer, which holds 3X while it
+/// grows from X to 2X, still fits. After the last block it switches only at the full threshold.
 inline constexpr size_t SPILL_THRESHOLD_DIVISOR = 2;
 
 [[nodiscard]] inline bool reachesSpillThreshold(size_t join_bytes, size_t max_bytes_before_external_join)
@@ -22,11 +23,11 @@ inline constexpr size_t SPILL_THRESHOLD_DIVISOR = 2;
   *
   * The buckets fill at about the same rate, so they overflow at about the same time. A bucket therefore judges the growth
   * of all the buckets that have not grown from its size yet, and a yes is kept: every later bucket of the build also takes
-  * the smaller table. The buckets that already grew are not counted again, because their growth is in the byte counts.
+  * the smaller table. The buckets that already grew are not counted again: their growth joins the byte counts when their
+  * insert ends.
   *
   * The step is judged against two limits:
-  *  - the spill threshold: `SpillingHashJoin` switches to `GraceHashJoin` once the bytes of the join reach
-  *    `1 / SPILL_THRESHOLD_DIVISOR` of `max_bytes_before_external_join`;
+  *  - the spill threshold, see `SPILL_THRESHOLD_DIVISOR`;
   *  - the memory that the query can still allocate. `realloc` charges the new buffer before it releases the old one,
   *    and one bucket per build slot can be in it at once, so the check also covers that.
   */
@@ -39,7 +40,7 @@ public:
     ///
     /// `expected_rows` is the number of right rows that the hash table statistics of an earlier run give, 0 if unknown.
     /// Such a join sizes its hash tables at the first insert, when most of the right blocks are still to come. The spill check
-    /// adds their bytes, which it can know from the blocks stored so far. The memory check does not add them: blocks that share
+    /// adds their bytes, which it estimates from the bytes per row of the blocks stored so far. The memory check does not add them: blocks that share
     /// their columns with their source are not allocated by the query.
     ///
     /// Call it before the first insert.
@@ -57,11 +58,8 @@ public:
 
     bool preferSmallerTable(size_t growth_cells, size_t bucket_cells) override;
 
-    /// Answer yes from now on, as after the first yes of `preferSmallerTable`. Called once the hash tables were halved.
+    /// Answer yes from now on, as after the first yes of `preferSmallerTable`.
     void latch() { latched.store(true, std::memory_order_relaxed); }
-
-    /// How many times a bucket took the smaller table, or was sized for it.
-    [[nodiscard]] size_t switches() const { return switch_count.load(std::memory_order_relaxed); }
 
 private:
     [[nodiscard]] size_t futureStoredBytes() const;
@@ -76,8 +74,7 @@ private:
     size_t max_bytes_before_external_join = 0;
 
     std::atomic<bool> latched = false;
-    std::atomic<size_t> switch_count = 0;
-    /// How many buckets were told to grow from each size, indexed by the power of two of its cells.
+    /// How many buckets were told to grow from each size, indexed by log2 of their cells.
     std::array<std::atomic<size_t>, 64> grown_from_size{};
 };
 

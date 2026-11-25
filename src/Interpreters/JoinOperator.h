@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/HashTable/HashTableGrowthBudget.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType_fwd.h>
@@ -133,8 +132,7 @@ struct JoinSettings
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
-    /// `enable_robin_hood_hash_for_joins`: 1 is `Always`, 0 is `OnMemoryPressure`.
-    RobinHoodMode robin_hood_mode;
+    bool enable_robin_hood_hash_for_joins;
     bool join_runtime_filter_from_fixed_hash_table;
     /// A deserialized plan without these names compares `String` keys exactly.
     bool enable_packed_string_keys_in_hash_join;
@@ -171,11 +169,6 @@ struct JoinSettings
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
-
-    static RobinHoodMode getRobinHoodMode(bool enable_robin_hood_hash_for_joins)
-    {
-        return enable_robin_hood_hash_for_joins ? RobinHoodMode::Always : RobinHoodMode::OnMemoryPressure;
-    }
 
     /// Whether `grace_hash` in `join_algorithms` is an algorithm the join pickers run on every node rather than
     /// pass over for the next entry of the preference list: in legacy mode, with an absolute spill threshold, or

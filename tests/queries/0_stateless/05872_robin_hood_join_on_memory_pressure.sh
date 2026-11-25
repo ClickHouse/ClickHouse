@@ -56,7 +56,7 @@ mode_setting()
     echo "enable_robin_hood_hash_for_joins=$1"
 }
 
-# Prints the expression for the query of `run` with that label, from the query log. Call `flush_logs` first.
+# Prints the value of the expression `$2` for the query of `run` with that label, from the query log. Call `flush_logs` first.
 logged()
 {
     $CLICKHOUSE_CLIENT --query "SELECT $2 FROM system.query_log WHERE current_database = currentDatabase()

@@ -346,7 +346,8 @@ static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_S
   * so a lookup of a missing key can stop early instead of walking to the end of the chain.
   *
   * In the mode `RobinHoodMode::OnMemoryPressure` the hash table stays out of the Robin Hood mode until a `HashTableGrowthBudget`
-  * says that the next growth would cost too much memory. Then it switches in place, at any size.
+  * says that the next growth would cost too much memory. Then it switches in place, at any size where that mode holds more
+  * elements. `halveInRobinHoodMode` also moves it into the mode.
   *
   * The memory layout is the same in both modes, and switching happens in place, without growing the buffer.
   * Hash tables check the mode only if the grower has the `isRobinHood` method (see `GrowerWithRobinHood`),
@@ -369,15 +370,19 @@ class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculationAndRobinH
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
     HashTableGrowthBudget * budget = nullptr;
 
+    static constexpr size_t maxFill(UInt8 size_degree_, bool robin_hood_)
+    {
+        const size_t cells = 1ULL << size_degree_;
+        return robin_hood_ ? cells / 100 * robin_hood_max_load_factor_percent + cells % 100 * robin_hood_max_load_factor_percent / 100
+                           : cells / 2;
+    }
+
     void setSizeDegree(UInt8 size_degree_, bool robin_hood_)
     {
         size_degree = size_degree_;
         robin_hood = robin_hood_;
         precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = robin_hood
-            ? (1ULL << size_degree) / 100 * robin_hood_max_load_factor_percent
-                + (1ULL << size_degree) % 100 * robin_hood_max_load_factor_percent / 100
-            : 1ULL << (size_degree - 1);
+        precalculated_max_fill = maxFill(size_degree, robin_hood);
     }
 
     /// Whether a hash table that grows past `robin_hood_size_degree` switches to the Robin Hood mode.
@@ -387,11 +392,10 @@ public:
     [[nodiscard]] UInt8 sizeDegree() const { return size_degree; }
     [[nodiscard]] bool isRobinHood() const { return robin_hood; }
 
-    /// When the hash table may switch to the Robin Hood mode. `Never` can be set only before the switch.
+    /// When the hash table switches to the Robin Hood mode.
     /// The mode `OnMemoryPressure` needs a `budget`, which must outlive every growth of the hash table.
     void setRobinHoodMode(RobinHoodMode mode, HashTableGrowthBudget * budget_ = nullptr)
     {
-        chassert(mode != RobinHoodMode::Never || !robin_hood);
         chassert(mode != RobinHoodMode::OnMemoryPressure || budget_);
         robin_hood_mode = mode;
         budget = budget_;
@@ -435,7 +439,7 @@ public:
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
-    /// In the mode `OnMemoryPressure` the budget decides, so this is for a hash table that really grows.
+    /// In the mode `OnMemoryPressure` it asks the budget, which records the answer, so call it only when the hash table grows.
     void increaseSize()
     {
         const UInt8 step = (robin_hood || size_degree >= max_size_degree_quadratic) ? 1 : 2;
@@ -445,7 +449,8 @@ public:
         {
             if (robin_hood_mode == RobinHoodMode::Always)
                 in_place = size_degree >= robin_hood_size_degree;
-            else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure)
+            /// The smallest hash tables hold no more elements in the Robin Hood mode, so they grow.
+            else if (robin_hood_mode == RobinHoodMode::OnMemoryPressure && maxFill(size_degree, true) > maxFill(size_degree, false))
                 in_place = budget->preferSmallerTable(bufSize() * ((1ULL << step) - 1), bufSize());
         }
 

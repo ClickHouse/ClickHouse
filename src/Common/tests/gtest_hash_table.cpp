@@ -955,18 +955,12 @@ TEST(HashTableRobinHood, GrowerOnMemoryPressure)
     ASSERT_TRUE(robin_hood_sized.isRobinHood());
     ASSERT_FALSE(robin_hood_sized.overflow(600));
 
-    /// The modes without a budget never ask, and behave as before.
+    /// The mode `Always` needs no budget.
     Grower always;
     always.setRobinHoodMode(RobinHoodMode::Always);
-    Grower never;
-    never.setRobinHoodMode(RobinHoodMode::Never);
     for (size_t i = 0; i < 10; ++i)
-    {
         always.increaseSize();
-        never.increaseSize();
-    }
     ASSERT_TRUE(always.isRobinHood());
-    ASSERT_FALSE(never.isRobinHood());
 }
 
 TEST(HashTableRobinHood, OnMemoryPressureKeepsTheInvariants)
@@ -976,8 +970,7 @@ TEST(HashTableRobinHood, OnMemoryPressureKeepsTheInvariants)
         void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
     };
 
-    /// The hash table switches at different sizes, in the middle of a growing and a shrinking sequence of operations,
-    /// or never.
+    /// The hash table switches at different sizes in the middle of random inserts and erases, or never.
     for (size_t latch_at_cells : {size_t(16), size_t(64), size_t(1024), size_t(1) << 40})
     {
         LatchingBudget budget(latch_at_cells);
@@ -1023,7 +1016,7 @@ TEST(HashTableRobinHood, HalveInRobinHoodMode)
     constexpr size_t cell_bytes = sizeof(Map::cell_type);
     LatchingBudget never_latches(size_t(1) << 40);
 
-    /// 300 keys grow the hash table to 1024 cells. Half of them hold up to 460 keys in the Robin Hood mode.
+    /// 300 keys grow the hash table to 1024 cells. Half the cells hold up to 460 keys in the Robin Hood mode.
     Map map;
     map.setMode(RobinHoodMode::OnMemoryPressure, &never_latches);
     for (UInt64 key = 0; key < 300; ++key)

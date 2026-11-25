@@ -509,7 +509,7 @@ public:
         std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
         std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
-        /// Only a two-level map has a Robin Hood mode, and only the mode `OnMemoryPressure` uses `growth_budget`.
+        /// Only a two-level map has a Robin Hood mode.
         void create(Type which, RobinHoodMode robin_hood_mode, HashTableGrowthBudget * growth_budget)
         {
             visit(
@@ -868,7 +868,6 @@ public:
     /// `join_algorithm` says nothing about what was instantiated.
     void keepRightBlocksForAnotherAlgorithm() { right_blocks_may_be_taken = true; }
 
-    /// Called by `SpillingHashJoin` before the first insert, see `JoinGrowthBudget::setSpillThreshold`.
     void setSpillThreshold(size_t max_bytes_before_external_join) { data->growth_budget.setSpillThreshold(max_bytes_before_external_join); }
 
     /// The bytes that `halveHashTables` would free now, 0 with `enable_robin_hood_hash_for_joins = 1`.
@@ -876,8 +875,8 @@ public:
     size_t bytesFreedByHalvingHashTables() const;
 
     /// Rebuilds in the Robin Hood mode, in half their cells, the buckets whose keys fit there, on up to `getMaxBuildThreads`
-    /// threads, and returns the bytes freed. Every later growth then switches a bucket in place instead of doubling it.
-    /// Call it while no build thread inserts: `SpillingHashJoin` holds its switch lock.
+    /// threads, and returns the bytes freed. A halved bucket doubles at its next growth, and every other bucket switches in place.
+    /// Call it while no build thread inserts.
     size_t halveHashTables();
 
     /// Called once that algorithm can no longer take them - it has settled on this join. A join that

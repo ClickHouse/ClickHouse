@@ -4,8 +4,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# By default a hash join that reaches the spill threshold, or that the memory spill scheduler asks to free memory, first
-# rebuilds its hash tables in the Robin Hood mode in half their cells. When that is enough, the join stays in memory.
+# By default a hash join that reaches the spill threshold, or that the memory spill scheduler asks to free memory, rebuilds
+# its hash tables in the Robin Hood mode in half their cells when that is enough to stay in memory.
 # `enable_robin_hood_hash_for_joins = 1` does not halve, and switches only hash tables much larger than these, so a join
 # with `1` spills as a join that never switches does.
 
@@ -37,7 +37,8 @@ echo "result: $EXPECTED"
 FULL=$($CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = 1,
     max_bytes_before_external_join = 100000000000, send_logs_level = 'debug'" 2>&1 \
     | grep -oE 'All blocks fit in memory \([0-9]+ bytes' | grep -oE '[0-9]+' | head -n 1)
-# The join spills once its bytes reach half of the threshold, here 0.93 of the bytes it ends with. Halving saves more.
+# Before a block, the join spills once its bytes reach half of the threshold, here 0.93 of the bytes it ends with.
+# Halving frees more than the remaining 7%.
 THRESHOLD=$((FULL * 2 * 93 / 100))
 for mode in 1 0
 do
@@ -68,8 +69,8 @@ do
 done
 
 echo "--- the same with four build streams, which halve the buckets in parallel"
-# The memory goes on growing after the halving, so the scheduler may still switch the join to `GraceHashJoin`, which then
-# takes over the halved hash tables. Every right row has a match, so a lost row changes the result.
+# The memory goes on growing after the halving, so the scheduler may still switch the join to `GraceHashJoin`. The switch frees
+# the halved hash tables and replays the stored right blocks. Every right row has a match, so a lost row changes the result.
 parallel_settings=(
     --join_algorithm=parallel_hash --max_threads=4 --max_block_size=65536
     --max_bytes_before_external_join=100Gi --max_bytes_ratio_before_external_join=0

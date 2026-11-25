@@ -1,11 +1,17 @@
 #include <Interpreters/HashJoin/JoinGrowthBudget.h>
 
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <bit>
+
+namespace ProfileEvents
+{
+    extern const Event JoinRobinHoodSwitchesOnMemoryPressure;
+}
 
 namespace DB
 {
@@ -40,15 +46,13 @@ bool JoinGrowthBudget::preferSmallerTable(size_t growth_cells, size_t bucket_cel
 {
     if (latched.load(std::memory_order_relaxed))
     {
-        switch_count.fetch_add(1, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure);
         return true;
     }
 
     /// `bucket_cells` is a power of two, so its bit width minus one is below 64.
     auto & grown = grown_from_size[std::bit_width(bucket_cells) - 1];
-    /// Every bucket that has not grown from this size is about to take the same step. Those that did are in the counts already.
     const size_t step_bytes = growth_cells * cell_size * (buckets - std::min(buckets, grown.load(std::memory_order_relaxed)));
-    /// The old buffers stay charged while the new ones are allocated.
     const size_t transient_bytes = bucket_cells * cell_size * num_slots;
 
     const size_t join_bytes = total_bytes->load(std::memory_order_relaxed);
@@ -65,14 +69,16 @@ bool JoinGrowthBudget::preferSmallerTable(size_t growth_cells, size_t bucket_cel
     }
 
     latched.store(true, std::memory_order_relaxed);
-    switch_count.fetch_add(1, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure);
     LOG_DEBUG(
         getLogger("JoinGrowthBudget"),
-        "Hash tables stay smaller: a growth step of {} would take the join, now {}, over {}",
+        "Hash tables stay smaller: a growth step of {} would take {}",
         ReadableSize(step_bytes),
-        ReadableSize(join_bytes),
-        crosses_spill_threshold ? fmt::format("the spill threshold of {}", ReadableSize(max_bytes_before_external_join))
-                                : fmt::format("the memory limit, {} available", ReadableSize(*available_memory)));
+        crosses_spill_threshold ? fmt::format(
+                                      "the join, now {}, to half of its spill threshold of {}",
+                                      ReadableSize(join_bytes),
+                                      ReadableSize(max_bytes_before_external_join))
+                                : fmt::format("the query over its memory limit, {} available", ReadableSize(*available_memory)));
     return true;
 }
 
