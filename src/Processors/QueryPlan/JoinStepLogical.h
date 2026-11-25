@@ -214,10 +214,10 @@ public:
 
     [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
-    /// The physical join finds its columns by name. Where a side has several columns named as an input a join
-    /// condition reads, it takes the first of them, whichever one the condition reads, so what the join makes of
-    /// them is not what its expressions say. These are the positions of the columns it outputs of such inputs.
-    [[nodiscard]] VectorWithMemoryTracking<size_t> getOutputPositionsReadingRepeatedNames() const;
+    /// The positions of the outputs with a name clash: computed from an input whose name a join condition reads and
+    /// the header of its side has more than once. The physical join finds its keys by name and cannot tell such
+    /// columns apart, so they are not touched: the join never removes them, and lazy materialization leaves them.
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getOutputPositionsWithNameClash() const;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join

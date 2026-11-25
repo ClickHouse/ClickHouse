@@ -274,7 +274,7 @@ void uniteRightSide(Built & built, Built & right)
     built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_outputs.merge(right.dag.step_outputs);
-    built.dag.opaque_outputs.insert(right.dag.opaque_outputs.begin(), right.dag.opaque_outputs.end());
+    built.dag.name_clash_outputs.insert(right.dag.name_clash_outputs.begin(), right.dag.name_clash_outputs.end());
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 }
 
@@ -508,14 +508,14 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
         return {};
     dag_outputs.resize(step_dag.getOutputs().size());
 
-    /// See `MergedPlanDAG::opaque_outputs`. A join above can pad such a value as any other of this subtree.
-    for (size_t position : join_step->getOutputPositionsReadingRepeatedNames())
+    /// An output with a name clash is not touched: it becomes a value of its own that only this join computes.
+    for (size_t position : join_step->getOutputPositionsWithNameClash())
     {
-        const auto * opaque = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
-        dag_outputs[position] = opaque;
-        built.dag.origins.emplace(opaque, MergedPlanDAG::Origin{&node, nullptr});
-        built.dag.opaque_outputs.insert(opaque);
-        built.ungated_nodes.push_back(opaque);
+        const auto * output = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
+        dag_outputs[position] = output;
+        built.dag.origins.emplace(output, MergedPlanDAG::Origin{&node, nullptr});
+        built.dag.name_clash_outputs.insert(output);
+        built.ungated_nodes.push_back(output);
     }
 
     collectJoinConditions(built, join_operator, clone_mapping);
