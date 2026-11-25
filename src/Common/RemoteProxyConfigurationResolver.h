@@ -54,6 +54,7 @@ private:
     std::string no_proxy_hosts;
     std::shared_ptr<RemoteProxyHostFetcher> fetcher;
 
+    /// Held across the fetch, so that concurrent misses wait for a single fetch.
     std::mutex cache_mutex;
     bool cache_valid = false;
     std::chrono::time_point<std::chrono::system_clock> cache_timestamp;

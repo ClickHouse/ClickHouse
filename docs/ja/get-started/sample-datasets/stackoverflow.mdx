@@ -15,19 +15,15 @@ doc_type: 'guide'
 次の図は、Parquet フォーマットで利用することを前提とした利用可能なテーブルのスキーマを示しています。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Stack Overflow スキーマ](/images/getting-started/example-datasets/stackoverflow.webp)
-
-</Frame>
-
+  <Frame>
+    ![Stack Overflow スキーマ](/images/getting-started/example-datasets/stackoverflow.webp)
+  </Frame>
 </div>
 
 このデータのスキーマの説明は [こちら](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede) を参照してください。
 
 <div id="pre-prepared-data">
-  ## あらかじめ用意されたデータ
+  ## あらかじめ用意されたデータ {#pre-prepared-data}
 </div>
 
 このデータのコピーを、2024年4月時点の内容に基づく Parquet フォーマットで提供しています。行数 (投稿 6,000 万件) という点では ClickHouse にとって小規模ですが、このデータセットには大量のテキストとサイズの大きい String カラムが含まれています。
@@ -38,29 +34,27 @@ CREATE DATABASE stackoverflow
 
 以下は、`eu-west-2` に配置された 96 GiB・24 vCPU の ClickHouse Cloud クラスターでの所要時間です。データセットは `eu-west-3` にあります。
 
-<div id="posts">
-  ### Posts
-</div>
+### Posts {#posts}
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `Id` Int32 CODEC(Delta, Default),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `ViewCount` UInt32 CODEC(Delta, Default),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `AnswerCount` UInt16 CODEC(Delta, Default),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -70,7 +64,7 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
 
 INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
@@ -81,9 +75,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 
 Posts は年ごとのファイルとしても利用できます (例: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet))
 
-<div id="votes">
-  ### Votes
-</div>
+### Votes {#votes}
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -96,7 +88,7 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
 
 INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
@@ -107,9 +99,7 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 
 Votes は年別データも利用できます。例: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
-<div id="comments">
-  ### Comments
-</div>
+### Comments {#comments}
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -123,7 +113,7 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate
+ORDER BY CreationDate;
 
 INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
 ```
@@ -134,16 +124,14 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 Comments は年ごとのファイルでも利用できます (例: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet))
 
-<div id="users">
-  ### Users
-</div>
+### Users {#users}
 
 ```sql
 CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -155,7 +143,7 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate)
+ORDER BY (Id, CreationDate);
 
 INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
@@ -164,9 +152,7 @@ INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-<div id="badges">
-  ### Badges
-</div>
+### Badges {#badges}
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -179,7 +165,7 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
 INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
@@ -188,9 +174,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-<div id="postlinks">
-  ### PostLinks
-</div>
+### PostLinks {#postlinks}
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -202,7 +186,7 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
 INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
@@ -211,9 +195,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-<div id="posthistory">
-  ### PostHistory
-</div>
+### PostHistory {#posthistory}
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -230,7 +212,7 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId)
+ORDER BY (CreationDate, PostId);
 
 INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
 ```
@@ -240,13 +222,13 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 ```
 
 <div id="original-dataset">
-  ## 元のデータセット
+  ## 元のデータセット {#original-dataset}
 </div>
 
 元のデータセットは、圧縮済みの (7zip) XML フォーマットで [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange) から入手できます。該当するのは、プレフィックス `stackoverflow.com*` のファイルです。
 
 <div id="download">
-  ### ダウンロード
+  ### ダウンロード {#download}
 </div>
 
 ```bash
@@ -262,7 +244,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 これらのファイルは最大35GBあり、インターネット接続によってはダウンロードに約30分かかることがあります。ダウンロードサーバー側で約20MB/秒に速度制限されています。
 
 <div id="convert-to-json">
-  ### JSON に変換する
+  ### JSON に変換する {#convert-to-json}
 </div>
 
 執筆時点では、ClickHouse は入力フォーマットとして XML をネイティブではサポートしていません。データを ClickHouse に読み込むには、まず NDJSON に変換します。
@@ -310,13 +292,13 @@ clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int3
 ```
 
 <div id="example-queries">
-  ## クエリ例
+  ## クエリ例 {#example-queries}
 </div>
 
 まずは、簡単なクエリをいくつか紹介します。
 
 <div id="most-popular-tags-on-stack-overflow">
-  ### Stack Overflowで人気の高いタグ
+  ### Stack Overflowで人気の高いタグ {#most-popular-tags-on-stack-overflow}
 </div>
 
 ```sql
@@ -348,7 +330,7 @@ Peak memory usage: 224.03 MiB.
 ```
 
 <div id="user-with-the-most-answers-active-accounts">
-  ### 回答数が最も多いユーザー (アクティブなアカウント)
+  ### 回答数が最も多いユーザー (アクティブなアカウント) {#user-with-the-most-answers-active-accounts}
 </div>
 
 アカウントには `UserId` が必要です。
@@ -378,7 +360,7 @@ Peak memory usage: 206.45 MiB.
 ```
 
 <div id="clickhouse-related-posts-with-the-most-views">
-  ### ClickHouse関連で最も閲覧数の多い投稿
+  ### ClickHouse関連で最も閲覧数の多い投稿 {#clickhouse-related-posts-with-the-most-views}
 </div>
 
 ```sql
@@ -412,7 +394,7 @@ Peak memory usage: 240.01 MiB.
 ```
 
 <div id="most-controversial-posts">
-  ### 最も物議を醸した投稿
+  ### 最も物議を醸した投稿 {#most-controversial-posts}
 </div>
 
 ```sql
@@ -450,7 +432,7 @@ Peak memory usage: 6.05 GiB.
 ```
 
 <div id="attribution">
-  ## 帰属表示
+  ## 帰属表示 {#attribution}
 </div>
 
 このデータを `cc-by-sa 4.0` ライセンスのもとで提供してくださった Stack Overflow に感謝するとともに、その尽力と、[https://archive.org/details/stackexchange](https://archive.org/details/stackexchange) にあるデータの元の出典に敬意を表します。

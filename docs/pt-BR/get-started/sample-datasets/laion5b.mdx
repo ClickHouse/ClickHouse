@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 <div id="introduction">
-  ## Introdução
+  ## Introdução {#introduction}
 </div>
 
 O [conjunto de dados LAION 5b](https://laion.ai/blog/laion-5b/) contém 5,85 bilhões de embeddings de imagem-texto e
@@ -19,7 +19,7 @@ Esse conjunto de dados pode ser usado para modelar aspectos de projeto, dimensio
 busca vetorial em grande escala. Ele pode ser usado tanto para buscas de texto para imagem quanto de imagem para imagem.
 
 <div id="dataset-details">
-  ## Detalhes do conjunto de dados
+  ## Detalhes do conjunto de dados {#dataset-details}
 </div>
 
 O conjunto de dados completo pode ser baixado usando [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
@@ -30,7 +30,7 @@ O subconjunto é armazenado em um arquivo `Parquet`.
 Recomendamos que os usuários façam primeiro uma análise de dimensionamento para estimar os requisitos de armazenamento e memória desse conjunto de dados consultando a [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
 
 <div id="steps">
-  ## Etapas
+  ## Etapas {#steps}
 </div>
 
 <Steps>
@@ -165,13 +165,9 @@ Recomendamos que os usuários façam primeiro uma análise de dimensionamento pa
     O resultado da busca acima é exibido abaixo:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Resultados da Busca por Similaridade Vetorial](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Resultados da Busca por Similaridade Vetorial](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

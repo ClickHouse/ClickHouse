@@ -32,7 +32,7 @@ import HyperDX from '@hyperdx/browser';
 
 HyperDX.init({
   url: 'http://your-otel-collector:4318',
-  apiKey: 'YOUR_INGESTION_API_KEY', // omit for Managed ClickStack
+  apiKey: 'YOUR_INGESTION_API_KEY',
   service: 'my-frontend-app',
   tracePropagationTargets: [/api.myapp.domain/i],
   consoleCapture: true,
@@ -52,7 +52,7 @@ import HyperDX from '@hyperdx/browser';
 
 HyperDX.init({
   url: 'http://your-otel-collector:4318',
-  apiKey: 'YOUR_INGESTION_API_KEY', // omit for Managed ClickStack
+  apiKey: 'YOUR_INGESTION_API_KEY',
   service: 'my-frontend-app',
   tracePropagationTargets: [/api.myapp.domain/i],
   consoleCapture: true,
@@ -70,7 +70,7 @@ For applications not using a bundler, include the SDK directly via a script tag.
 <script>
   window.HyperDX.init({
     url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', // omit for Managed ClickStack
+    apiKey: 'YOUR_INGESTION_API_KEY',
     service: 'my-frontend-app',
     tracePropagationTargets: [/api.myapp.domain/i],
     consoleCapture: true,

@@ -16,7 +16,7 @@ doc_type: 'reference'
 * إنشاء خدمات ClickHouse Cloud وتهيئتها وتوسيع نطاقها ونسخها احتياطيًا والاستعلام منها
 * إنشاء خدمات [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) ومراقبتها وتهيئتها واستعادتها
 * إنشاء ClickPipes وتشغيلها لاستيعاب البيانات من التخزين الكائني وKafka وKinesis وPub/Sub وPostgres وMySQL وMongoDB وBigQuery
-* إدارة المصادر ولوحات المعلومات والتنبيهات وخطافات الويب وعمليات البحث المحفوظة والأدوار على خدمة [Managed ClickStack](/ar/clickstack/deployment/managed)
+* إدارة المصادر ولوحات المعلومات والتنبيهات وخطافات الويب وعمليات البحث المحفوظة والأدوار على خدمة [Self-managed ClickHouse Observability](/ar/clickstack/self-configured/deployment/managed)
 * تطوير الدوال المعرّفة من قِبل المستخدم القابلة للتنفيذ محليًا ونشرها على ClickHouse Cloud
 * إدارة أعضاء المؤسسة والدعوات ومفاتيح API والأدوار
 * تثبيت حزمة ClickHouse agent skills الرسمية في وكلاء البرمجة
@@ -430,7 +430,7 @@ clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # Postgres an
 
 ### ClickStack {#clickstack}
 
-يتولّى الأمر `cloud clickstack` إدارة المصادر ولوحات المعلومات والتنبيهات وخطافات الويب وعمليات البحث المحفوظة والأدوار ضمن خدمة [Managed ClickStack](/ar/clickstack/deployment/managed) موجودة. تُعرَّف الموارد في صورة ملفات JSON (عبر `--file`، أو `-` للقراءة من stdin). تدعم عمليات القراءة المصادقة عبر OAuth، في حين تتطلب عمليات الكتابة مفتاح API.
+يتولّى الأمر `cloud clickstack` إدارة المصادر ولوحات المعلومات والتنبيهات وخطافات الويب وعمليات البحث المحفوظة والأدوار ضمن خدمة [Self-managed ClickHouse Observability](/ar/clickstack/self-configured/deployment/managed) موجودة. تُعرَّف الموارد في صورة ملفات JSON (عبر `--file`، أو `-` للقراءة من stdin). تدعم عمليات القراءة المصادقة عبر OAuth، في حين تتطلب عمليات الكتابة مفتاح API.
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

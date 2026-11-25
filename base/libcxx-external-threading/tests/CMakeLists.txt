@@ -33,7 +33,7 @@ set(LIBCXX_THREAD_TESTS_FAILING_IN_FIBERS
     thread.stoptoken/stopcallback/cons.rvalue.token.pass.cpp
     thread.stoptoken/stopcallback/dtor.pass.cpp)
 
-add_library(libcxx_thread_tests_silk_thread_impl OBJECT silk_thread_impl.cpp)
+add_library(libcxx_thread_tests_silk_thread_impl OBJECT silk_thread_impl.cpp "${ClickHouse_SOURCE_DIR}/contrib/silk/src/util/logger.cpp")
 target_compile_options(libcxx_thread_tests_silk_thread_impl PRIVATE -Wno-reserved-identifier)
 target_link_libraries(libcxx_thread_tests_silk_thread_impl PRIVATE ch_contrib::silk_fibers)
 

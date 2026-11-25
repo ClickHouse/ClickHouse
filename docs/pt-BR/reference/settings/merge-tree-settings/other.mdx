@@ -15,6 +15,22 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Estas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
+## adaptive_codec_selection_period {#adaptive_codec_selection_period}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Nova configuração"}]}]} />
+
+Precificar um bloco significa comprimi-lo com cada codec candidato e manter a menor saída. Com `enable_adaptive_codec_selection`, o stream de uma coluna é dividido em janelas com essa quantidade de blocos. Em cada janela, um bloco serve de amostra: ele é precificado, e os demais blocos reutilizam o codec vencedor.
+Um bloco que reutiliza o vencedor é reprecificado quando o vencedor grava mais por byte de origem do que o segundo colocado gravou no bloco precificado. Quando nenhum codec reduziu o bloco precificado, não há vencedor, e o próximo bloco é precificado.
+Um bloco precificado nunca fica maior do que ficaria com o codec padrão; já um bloco que reutiliza o vencedor pode ficar.
+O valor `1` precifica todos os blocos. Partes compactas sempre precificam todos os blocos.
+Os eventos de criação de perfil `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` e `AdaptiveCodecBlocksReused` contam os blocos de cada tipo por mesclagem ou mutação em `system.part_log`.
+`AdaptiveCodecBytesDefault` e `AdaptiveCodecBytesWritten` somam, respectivamente, o tamanho com o codec padrão e o tamanho gravado dos blocos de amostra; assim, a razão entre eles indica a economia obtida com a seleção adaptativa, sendo exata com período `1`.
+Streams cujos únicos candidatos são o codec padrão e `NONE` não são contabilizados.
+
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
@@ -85,6 +101,16 @@ O tipo de estatística `minmax` está obsoleto: ele é um subconjunto de `basic`
 
 Tempo alvo para a execução de um passo de mesclagem ou mutation. Pode ser excedido se
 um passo demorar mais
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração experimental."}]}]} />
+
+As leituras de mesclagens em segundo plano e de mutações usam o cache do sistema de arquivos como buffer temporário: em caso de cache miss, o dado é lido para o cache e servido a partir dele, e o cache o remove quando ninguém mais o estiver retendo, a menos que um leitor ou gravador fora deste modo o tenha usado. Somente o `ReaderExecutor` experimental oferece suporte a esse modo; os demais leitores ignoram o cache. `force_read_through_cache_for_merges` tem precedência.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 
@@ -166,7 +192,11 @@ Ordem de seleção do codec de compressão para uma coluna:
 1. Codec de compressão definido para a coluna na declaração da tabela
 2. Codec de compressão definido em `default_compression_codec` (esta configuração)
 3. Codec de compressão padrão definido nas configurações de `compression`
-   Valor padrão: uma string vazia (não definido).
+
+O combinador de codecs `FirstApplicable` seleciona um codec para o tipo de dado de cada coluna (e de cada um de seus streams),
+por exemplo, `FirstApplicable(PCO, ZSTD(3))` comprime números com `PCO` e os demais dados com `ZSTD(3)`. Pelo menos uma de suas
+alternativas deve ser aplicável a qualquer tipo de dado, e codecs com perda não são permitidos entre elas.
+Valor default: uma string vazia (não definido).
 
 ## disco {#disk}
 
@@ -185,6 +215,17 @@ Possíveis valores:
 * `v1`
 * `v2`
 * `v3`
+
+## empty_parts_lifetime {#empty_parts_lifetime}
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Idade mínima, em segundos, que uma parte vazia deve ter antes de ser removida por `remove_empty_parts`. A idade é contada a partir do
+`modification_time` da parte; portanto, uma mesclagem ou mutação que produza uma nova parte vazia reinicia a contagem. Essa configuração não atrasa
+outras formas de substituição da parte: uma mesclagem que a inclua, ou um `TRUNCATE` ou `DROP` que a abranja, a torna desatualizada,
+como acontece com qualquer outra parte. Com o valor 0, as partes vazias são removidas sem espera.
 
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
@@ -225,6 +266,26 @@ todos eles.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Controla como as leituras de mesclagens e mutações em segundo plano tratam as falhas de cache (cache misses). Quando desabilitado, os intervalos já armazenados em cache são utilizados, mas os intervalos ausentes são lidos diretamente do armazenamento subjacente, sem preencher o cache. Quando habilitado, os intervalos ausentes são lidos por meio do cache e armazenados no cache do sistema de arquivos e também no distributed cache, se este estiver habilitado. Isso pode aquecer os dados para leituras posteriores, mas também consome capacidade do cache.
+
+## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "Nova configuração"}]}]} />
+
+Tem efeito em conjunto com `fsync_after_insert`, se a tabela estiver armazenada em discos locais.
+Um `INSERT` que grava muitas partes não aguarda o fsync após cada parte: as partes
+são confirmadas logo após serem gravadas, e os arquivos de todas as partes passam por fsync
+em conjunto antes de o `INSERT` terminar (as partes confirmadas há mais de 30 segundos passam
+por fsync mais cedo). Enquanto isso, o SO grava os dados em segundo plano.
+As partes podem ficar visíveis para consultas antes de se tornarem duráveis, mas o `INSERT`
+só é confirmado depois disso.
+
+Se desabilitada, cada parte passa por fsync logo após ser gravada, antes de ser confirmada.
+
+O valor default `auto` habilita essa configuração apenas para tabelas não replicadas. Em tabelas replicadas,
+outra réplica pode deduplicar um `INSERT` com base em uma parte que já foi confirmada, mas que ainda não
+passou por fsync nesta réplica, e confirmá-lo antes que os dados se tornem duráveis.
 
 ## initialization_retry_period {#initialization_retry_period}
 
@@ -354,6 +415,18 @@ Valores possíveis:
 
 Somente a versão `v3` oferece suporte à alteração da versão de serialização dos dados compartilhados.
 
+## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
+
+<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "Nova configuração"}]}]} />
+
+Versão de serialização dos dados compartilhados tipados dentro do tipo de dados JSON: a estrutura que armazena em conjunto, em um número constante de arquivos, os caminhos tipados declarados como `SHARED` em uma parte, em vez de usar um conjunto separado de arquivos para cada caminho.
+
+Valores possíveis:
+
+* `v1` - para cada granule, os dados de todos os caminhos `SHARED` na ordem dos caminhos, com o início dos dados de cada caminho registrado em um stream de marcas, de modo que a leitura de alguns caminhos decodifique somente esses caminhos.
+
 ## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
@@ -392,7 +465,7 @@ que uma nova parte seja gravada em disco.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Controla se a ordem das linhas deve ser otimizada durante inserções para melhorar a
+Controla se a ordem das linhas deve ser otimizada durante inserts para melhorar a
 compressibilidade da parte da tabela recém-inserida.
 
 Só tem efeito em tabelas comuns com o motor MergeTree. Não tem efeito em
@@ -424,7 +497,7 @@ ainda assim melhora as taxas de compressão em relação à ordem original das l
   para a tabela. No ClickHouse, uma chave primária `C1, C2, ..., CN` impõe que
   as linhas da tabela sejam ordenadas pelas colunas `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
   Como resultado, as linhas só podem ser reordenadas dentro de &quot;classes de equivalência&quot; de linhas,
-  isto é, linhas que têm os mesmos valores em suas colunas de chave primária.
+  isto é, linhas que têm os mesmos valores em suas colunas da chave primária.
   A intuição é que chaves primárias de alta cardinalidade, por exemplo, chaves primárias
   que envolvem uma coluna de timestamp `DateTime64`, levam a muitas classes de equivalência
   pequenas. Da mesma forma, tabelas com uma chave primária de baixa cardinalidade criam poucas
