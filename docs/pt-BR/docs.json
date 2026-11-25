@@ -48,6 +48,12 @@
           ]
         },
         {
+          "item": "Private",
+          "pages": [
+            "pt-BR/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
+          ]
+        },
+        {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
           "item": "Applications"
