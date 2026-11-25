@@ -1,0 +1,64 @@
+---
+title: 'Data encryption (BYOC)'
+sidebarTitle: 'Data encryption'
+keywords: ['BYOC', 'encryption', 'TDE', 'transparent data encryption', 'CMEK', 'customer-managed encryption keys', 'KMS']
+description: 'How BYOC encrypts data at rest, and how to use Transparent Data Encryption (TDE) and customer-managed encryption keys (CMEK) with keys in your own cloud account'
+doc_type: 'reference'
+---
+
+BYOC encrypts data at rest at two levels. Storage-level encryption is always on. Transparent Data Encryption (TDE) adds database-level encryption on top, and you can replace its key with your own (CMEK). The keys and the encrypted data stay in your cloud account.
+
+## Storage-level encryption {#storage-encryption}
+
+The buckets that hold table data and backups are encrypted at rest with cloud provider-managed AES-256 keys: S3 server-side encryption on AWS, Google default encryption on GCP, and Azure Storage service-side encryption on Azure. Nothing needs to be configured.
+
+## Transparent Data Encryption (TDE) {#tde}
+
+TDE is available on AWS, GCP, and Azure. Each TDE service has its own data encryption key (DEK). ClickHouse encrypts table data with the DEK, using `AES_256_CTR`, before writing it to storage (see [performance](/products/cloud/guides/security/cmek#performance)). The DEK is stored only in wrapped form, encrypted by a key encryption key (KEK) in your cloud account. The ClickHouse server unwraps the DEK at startup and keeps it only in memory.
+
+When TDE is turned on for your BYOC infrastructure, ClickHouse creates a default KEK and an identity that can use it, the TDE delegate, in your account:
+
+| | AWS | GCP | Azure |
+|---|---|---|---|
+| Default KEK | A KMS key | Key `tde-default-kek` in the Cloud KMS key ring `<infra>-tde` | Key `tde-default-kek` in the Key Vault `<infra>-tde` |
+| TDE delegate | IAM role `<infra>-<region>-tde-delegate` | Service account `<infra>-tde-delegate` | Managed identity `<infra>-tde-delegate` |
+
+The ClickHouse server and the ClickHouse management service use the KEK only through the TDE delegate. The KEK itself never leaves your key management service.
+
+TDE encrypts table data and the backups taken from it. Database metadata, such as table definitions, and ClickHouse Keeper state are not covered by TDE.
+
+### Enable TDE {#enable-tde}
+
+1. **Turn on TDE for your BYOC infrastructure.** Contact ClickHouse support. Your onboarding stack must include the TDE permissions: set `include_tde_permissions` in the Terraform module, or `IncludeTDEPermissions` in the AWS CloudFormation template. If your infrastructure is already onboarded, update the stack with this setting first. ClickHouse then creates the default KEK and the TDE delegate.
+2. **Create the service with TDE.** In the ClickHouse Cloud console, open **Enterprise features** during service creation and turn on **Enable Transparent Data Encryption (TDE)**. With the Cloud API, set `hasTransparentDataEncryption` to `true` when you create the service.
+
+On AWS, TDE requires ClickHouse 26.7 or later. Until the regular release channel provides it, create TDE services on AWS through the Cloud API with `releaseChannel` set to `fast`.
+
+TDE can only be turned on when a service is created, and it can't be turned off. To encrypt the data of an existing service, create a new service with TDE and copy the data into it.
+
+## Customer-managed encryption keys (CMEK) {#cmek}
+
+A new TDE service uses the default KEK of its infrastructure. To use your own key instead:
+
+1. **Create a key** in the AWS account, GCP project, or Azure tenant of your BYOC infrastructure. On GCP, use the key itself, not a key version. On Azure, use an RSA key.
+2. **Give the TDE delegate access to the key:**
+   - AWS: add a key policy statement that allows the principal `arn:aws:iam::<account-id>:role/<infra>-<region>-tde-delegate` the actions `kms:Encrypt`, `kms:Decrypt`, `kms:ReEncrypt*`, and `kms:DescribeKey`.
+   - GCP: grant `<infra>-tde-delegate@<project-id>.iam.gserviceaccount.com` the roles **Cloud KMS CryptoKey Encrypter/Decrypter** and **Cloud KMS Viewer** on the key.
+   - Azure: assign the managed identity `<infra>-tde-delegate` the role **Key Vault Crypto User** on the key.
+3. **Set the key on the service.** In the console, open the service **Settings**. In the **Transparent Data Encryption** section, enter the key ARN (AWS), the key resource path (GCP), or the key name, Key Vault URI, and tenant ID (Azure), and save. On AWS and GCP, you can also set `transparentDataEncryptionKeyId` with the Cloud API.
+
+The service restarts to apply the key. During the change, the current key unwraps the DEK and your key wraps it again. The data itself is not re-encrypted.
+
+To rotate the key, repeat these steps with a new key. Keep the previous key enabled for a while before you delete it.
+
+<Warning>
+Permanently deleting the key makes the service data and its backups unrecoverable. Each key management service keeps a deleted key recoverable for a waiting period. See [KMS key poller](/products/cloud/guides/security/cmek#kms-key-poller) for the waiting periods and how to recover a key.
+</Warning>
+
+## Key access checks {#key-access-checks}
+
+Every 10 minutes, ClickHouse checks that the TDE delegate can still use the key. If the key is disabled or deleted, or the delegate's access to it is removed, ClickHouse stops the service. The service and its data are kept. To resume, restore access to the key, then restart the service.
+
+## Backup and restore {#backup-and-restore}
+
+Backups of a TDE service stay encrypted. Restoring one creates a TDE service that uses the same key, and you can [change the key](#cmek) afterwards.

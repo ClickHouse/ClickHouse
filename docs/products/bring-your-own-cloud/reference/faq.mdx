@@ -151,7 +151,7 @@ Some platform components legitimately require elevated privileges or host filesy
 </Accordion>
 
 <Accordion title="Do you support customer-managed encryption keys (CMEK)?">
-Not currently for BYOC. Data at rest is encrypted with cloud-provider-managed keys. See the [overview](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) for the current list of planned features.
+Yes. BYOC supports Transparent Data Encryption (TDE) on AWS, GCP, and Azure, and you can replace its default key with a key you manage (CMEK). All keys stay in your cloud account. TDE is turned on when a service is created. Without TDE, data at rest is encrypted with cloud provider-managed keys. See [data encryption](/products/bring-your-own-cloud/reference/encryption).
 </Accordion>
 
 ### Upgrades and maintenance {#upgrades-and-maintenance}

@@ -24,6 +24,10 @@ Data at rest is encrypted by default using cloud provider-managed AES 256 keys. 
 
 Enhanced encryption is currently available in AWS and GCP services. Azure is coming soon.
 
+<Note>
+For BYOC, the keys and the TDE identity live in your own cloud account, and TDE is available on AWS, GCP, and Azure. See [BYOC data encryption](/products/bring-your-own-cloud/reference/encryption).
+</Note>
+
 ### Transparent Data Encryption (TDE) {#transparent-data-encryption-tde}
 
 TDE must be enabled on service creation. Existing services can't be encrypted after creation. Once TDE is enabled, it can't be disabled. All data in the service will remain encrypted. If you want to disable TDE after it has been enabled, you must create a new service and migrate your data there.
