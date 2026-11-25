@@ -32,7 +32,6 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISource.h>
 #include <Core/Streaming/Settings.h>
@@ -513,7 +512,7 @@ public:
         setStepDescription("Read from Memory STREAM");
     }
 
-    String getName() const override { return "ReadFromMemoryStream"; }
+    [[nodiscard]] String getName() const override { return "ReadFromMemoryStream"; }
 
     /// `optimizePrewhere` can move the conditions of `WHERE` to `PREWHERE`.
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override
