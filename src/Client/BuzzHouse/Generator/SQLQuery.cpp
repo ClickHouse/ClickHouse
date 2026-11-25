@@ -2581,8 +2581,7 @@ void StatementGenerator::generateTopSelect(
     /// A nested top query, e.g. of a `CREATE TABLE ... AS SELECT` in a query, is decided by the outer one
     const bool outer_shapes = this->distributed_shapes;
 
-    /// TODO: every top query while the reach of the rules is measured in CI, lower before merging
-    this->distributed_shapes = !outer_shapes && !fc.parallel_replicas_clusters.empty();
+    this->distributed_shapes = !outer_shapes && !fc.parallel_replicas_clusters.empty() && rg.nextMediumNumber() < 21;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();

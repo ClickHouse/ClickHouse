@@ -461,8 +461,6 @@ private:
 
 public:
     void loadServerConfigurations();
-    /// TODO: temporary, while the reach of `distributed_shapes` is measured in CI
-    void logDistributedShapesReach();
 
     String getConnectionHostAndPort(bool secure) const;
 

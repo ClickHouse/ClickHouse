@@ -1255,7 +1255,7 @@ bool Client::buzzHouse()
                          fuzz_config->validateClickHouseHealth();
                      }},
                     /// Queries over `MergeTree` tables in the shapes that run differently on parallel replicas
-                    {400 * static_cast<uint32_t>(!fuzz_config->parallel_replicas_clusters.empty()),
+                    {50 * static_cast<uint32_t>(!fuzz_config->parallel_replicas_clusters.empty()),
                      [&]()
                      {
                          const DB::Strings statements = gen.generateShapedQueries(rg);
@@ -1297,10 +1297,6 @@ bool Client::buzzHouse()
     if (!server_up)
     {
         LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
-    }
-    else if (fuzz_config->distributed_shapes)
-    {
-        fuzz_config->logDistributedShapesReach();
     }
     if (!no_timeout || !no_eof)
     {

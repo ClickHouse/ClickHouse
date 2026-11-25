@@ -152,13 +152,6 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
     add("parallel_replicas_for_queries_with_multiple_tables", "1");
     /// Parallel replicas do not read with `FINAL`, and turn themselves off for it
     add("final", "0");
-    /// TODO: temporary, so that the reach of these queries can be measured in `system.query_log`
-    add("log_queries", "1");
-    add("log_profile_events", "1");
-    add("log_queries_min_query_duration_ms", "0");
-    add("log_queries_min_type", "'QUERY_START'");
-    add("log_queries_probability", "1");
-    add("log_query_settings", "1");
     add("parallel_replicas_allow_in_with_subquery", "1");
     /// Set either way: an inherited mode 2 only collects statistics, which keeps a query off the replicas
     add("automatic_parallel_replicas_mode", automatic ? "1" : "0");
@@ -289,7 +282,7 @@ struct ShapeTable
     /// Known for the tables the shapes create themselves
     String sorting_key;
 
-    String name() const { return "`" + database + "`.`" + table + "`"; }
+    [[nodiscard]] String name() const { return "`" + database + "`.`" + table + "`"; }
 };
 
 /// Builds the text of a shaped query. Every key is `cityHash64(<column>) % M`, so both sides of a comparison have one

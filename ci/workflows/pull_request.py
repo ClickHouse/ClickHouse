@@ -89,26 +89,194 @@ PLAIN_INTEGRATION_TEST_JOB = [
     j for j in INTEGRATION_TARGETED_JOBS if "(amd_tsan, targeted)" in j.name
 ][0]
 
-# The builds the La Casa del Dolor jobs need
-DOLOR_BUILD_NAMES = [
-    "Build (amd_debug)",
-    "Build (arm_asan_ubsan)",
-    "Build (amd_tsan)",
-    "Build (amd_msan)",
-]
-
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     engine=Workflow.Engine.GH_ACTIONS,
-    # TODO: revert before merging. Trimmed to the La Casa del Dolor jobs and their builds, to
-    # iterate on the BuzzHouse distributed shapes quickly
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.code_review.set_run_after([JobNames.STYLE_CHECK]),
-        *[job for job in JobConfigs.build_jobs if job.name in DOLOR_BUILD_NAMES],
-        *JobConfigs.lacasadeldolor_jobs,
+        JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
+        JobConfigs.docs_job_mintlify,
+        JobConfigs.fast_test,
+        *JobConfigs.darwin_fast_test_jobs,
+        *JobConfigs.tidy_build_arm_jobs,
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_jobs_with_examples
+        ],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.extra_validation_build_jobs
+        ],
+        *[
+            job.set_run_after(REGULAR_BUILD_NAMES)
+            for job in JobConfigs.release_build_jobs
+        ],
+        # The other cross-compiled builds run in the merge queue, see `MERGE_QUEUE_SPECIAL_BUILD_TYPES`.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.special_build_pr_jobs
+        ],
+        # Gated like the regular builds rather than like the special ones: it is the only job
+        # that compiles the standalone parser at all, and it needs no build artifact, so there
+        # is nothing to gain by deferring it behind the functional tests.
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.wasm_parser_build_jobs
+        ],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_llvm_coverage_job
+        ],
+        # TODO: stabilize new jobs and remove set_allow_failure
+        JobConfigs.lightweight_functional_tests_job,
+        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
+        *[
+            job.set_run_after(
+                CORE_BLOCKING_JOB_NAMES
+                if job.name not in UNGATED_INTEGRATION_JOB_NAMES
+                else []
+            )
+            for job in INTEGRATION_TARGETED_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_contrib_tsan_pr_jobs
+        ],
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
+        *JobConfigs.stateless_tests_flaky_pr_jobs,
+        # The non-sanitizer (`amd_binary`) flaky check, so a test that is only
+        # too slow (or only flaky) without a sanitizer is reported in the PR.
+        *JobConfigs.stateless_tests_flaky_amd_binary_jobs,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
+        # Per-arch Bugfix Validation Checks (functional + integration tests on
+        # both amd64 and aarch64). Each per-arch variant has
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
+        # the aggregate decision (validate iff at least one arch passed) lives
+        # in the `new_tests_check.py` workflow post-hook below.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.bugfix_validation_ft_pr_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.bugfix_validation_it_jobs
+        ],
+        # Unit-test (gtest) bugfix validation: a single ARM-only job (allow_failure)
+        # that builds a merge-base "before" binary and runs the touched suite against it.
+        # It is not part of the per-arch FT/IT aggregation; instead new_tests_check.py
+        # blocks the unit case iff this job reported a definitive FAIL (failed to
+        # reproduce) — a reproduction or an inconclusive ERROR does not block.
+        # Like the sibling FT/IT jobs, it is deferred behind the core blocking jobs.
+        JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        *[
+            j.set_run_after(
+                CORE_BLOCKING_JOB_NAMES if j.name not in CORE_BLOCKING_JOB_NAMES else []
+            )
+            for j in FUNCTIONAL_TESTS_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_azure_targeted_pr_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in INTEGRATION_COVERAGE_REPLACEMENT_JOBS
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_test_llvm_coverage_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_test_excluded_from_llvm_job
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_llvm_coverage_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_excluded_from_llvm_job
+        ],
+        *JobConfigs.unittest_jobs,
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.unittest_llvm_coverage_job
+        ],
+        JobConfigs.docker_server.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.docker_keeper.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.install_check_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.compatibility_test_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.stress_test_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.upgrade_test_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.ast_fuzzer_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.lacasadeldolor_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.performance_comparison_pr_jobs
+        ],
+        # Only when the Iceberg code changes, see `_has_iceberg_performance_changes` in `filter_job.py`.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.performance_comparison_iceberg_jobs
+        ],
+        JobConfigs.parser_memory_check_job,
+        JobConfigs.storage_memory_check_job,
+        # ClickBench runs on PRs only when files in its digest change
+        # (see `clickbench_jobs.digest_config`), so the cost is bounded.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.clickbench_jobs
+        ],
+        JobConfigs.llvm_coverage_job,
+        # Waits for the integration jobs of this workflow, which upload the compliance results.
+        # The full `arm_binary` run (or, with `ci-coverage`, the LLVM coverage run) is the one that
+        # always runs the compliance suite.
+        JobConfigs.promql_compliance_job.set_run_after(
+            INTEGRATION_TARGETED_JOBS
+            + INTEGRATION_COVERAGE_REPLACEMENT_JOBS
+            + JobConfigs.integration_test_llvm_coverage_jobs
+            + JobConfigs.integration_test_excluded_from_llvm_job,
+            reset=True,
+        ),
+        # TODO: stabilize and remove set_allow_failure
+        JobConfigs.build_profile_diff_job.set_allow_failure(),
+        JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
+        # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
+        JobConfigs.keeper_stress_job.set_name("Keeper Stress Tests (PR)").set_timeout(
+            3 * 3600
+        ),
+        *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -187,10 +355,9 @@ _SINGLE_ARCH_SKIPPED_ARTIFACTS = {
 assert len(UNGATED_INTEGRATION_JOB_NAMES) == 1, (
     "the ASan targeted integration job is not found by its name"
 )
-# TODO: restore with the full job list, the trimmed one has none of these builds
-# assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
-#     "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
-# )
+assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
+    "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
+)
 _SINGLE_ARCH_SKIPPED_ARTIFACT_USERS = [
     job.name
     for job in workflow.jobs
