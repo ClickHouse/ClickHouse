@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
 DROP TABLE IF EXISTS j;
 DROP TABLE IF EXISTS d;
+DROP TABLE IF EXISTS mut;
 
 CREATE TABLE l (k UInt64, a UInt64, s String, flag UInt8, heavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
 CREATE TABLE r (k UInt64, b UInt64, rs String, rheavy String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
@@ -111,7 +112,25 @@ SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
     SELECT d.k, d.c, d.heavy, r.rheavy FROM d JOIN r ON d.k = r.k WHERE toUInt64(d.c) % 2 = 0 ORDER BY d.a DESC, d.k LIMIT 5)
 WHERE explain LIKE '%Lazily read columns%';
 
+SELECT '-- a column a data mutation applied on the fly computes again crosses the LIMIT';
+DROP TABLE IF EXISTS mut;
+CREATE TABLE mut (k UInt64, a UInt64, x UInt64, m String MATERIALIZED toString(x + rand64()), heavy String)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+INSERT INTO mut (k, a, x, heavy) SELECT number, number % 100, number, repeat('x', 100) FROM numbers(10000);
+-- The mutation stays pending, and each read computes `m` again from the new `x`.
+SYSTEM STOP MERGES mut;
+ALTER TABLE mut UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+-- The filter and the result see the same values of `m`.
+SELECT count(), countIf(toUInt64(m) % 2 = 0) FROM (
+    SELECT mut.k, mut.m AS m, r.rheavy FROM mut JOIN r ON mut.k = r.k WHERE toUInt64(mut.m) % 2 = 0 ORDER BY mut.a DESC, mut.k LIMIT 10)
+SETTINGS apply_mutations_on_fly = 1;
+SELECT extract(explain, 'Lazily read columns: .*') FROM (EXPLAIN actions = 1
+    SELECT mut.k, mut.m, mut.heavy, r.rheavy FROM mut JOIN r ON mut.k = r.k WHERE toUInt64(mut.m) % 2 = 0 ORDER BY mut.a DESC, mut.k LIMIT 10
+    SETTINGS apply_mutations_on_fly = 1)
+WHERE explain LIKE '%Lazily read columns%';
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE j;
 DROP TABLE d;
+DROP TABLE mut;

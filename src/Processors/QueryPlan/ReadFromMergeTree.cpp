@@ -7659,15 +7659,24 @@ ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadableP
             return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
         }, context);
 
+    /// A data mutation applied on the fly computes again the columns it changes, and the `MATERIALIZED` columns computed from
+    /// them, in each read: with a non-deterministic expression, a second read of a column the main read reads as well would
+    /// return other values than the main read has. Such a column stays in the main read.
+    const bool can_read_twice = !mutations_snapshot || !mutations_snapshot->hasDataMutations();
+
     LazilyReadablePositions readable;
     for (size_t i = 0; i < positions.size(); ++i)
     {
         if (non_deterministic.contains(column_names[i]))
             continue;
 
-        readable.positions.push_back(positions[i]);
         const auto storage_position = *pruning.storage_position_of_output[positions[i]];
-        if (!std::ranges::binary_search(pruning.dropped_storage_positions, storage_position))
+        const bool read_by_main = !std::ranges::binary_search(pruning.dropped_storage_positions, storage_position);
+        if (read_by_main && !can_read_twice)
+            continue;
+
+        readable.positions.push_back(positions[i]);
+        if (read_by_main)
             readable.read_twice.push_back(positions[i]);
     }
     return readable;
