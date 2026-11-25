@@ -568,6 +568,11 @@ void StatelessTaskExecutor::cancelQuery(const String & unique_query_id)
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
+    return forgetTaskLocked(task_id);
+}
+
+StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTaskLocked(const String & task_id)
+{
     auto it = tasks.find(task_id);
     if (it == tasks.end())
         return Result::UnknownTaskId;
@@ -600,7 +605,7 @@ void StatelessTaskExecutor::forgetTasks(const Strings & task_ids)
 {
     std::lock_guard lock(tasks_mutex);
     for (const auto & task_id : task_ids)
-        eraseTaskLocked(task_id);
+        forgetTaskLocked(task_id);
 }
 
 bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)

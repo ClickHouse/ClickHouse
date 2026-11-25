@@ -180,6 +180,7 @@ private:
     bool tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state) TSA_REQUIRES(tasks_mutex);
     /// Removes a task from `tasks`; false for an unknown one.
     bool eraseTaskLocked(const String & unique_task_id) TSA_REQUIRES(tasks_mutex);
+    Result forgetTaskLocked(const String & task_id) TSA_REQUIRES(tasks_mutex);
     /// Removes the task if it was forgotten while running; called by its thread after its promise is set.
     void onTaskEnded(const String & unique_task_id) noexcept;
 
