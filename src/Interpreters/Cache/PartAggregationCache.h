@@ -55,7 +55,7 @@ public:
         /// reflects the real footprint.
         size_t state_arena_bytes = 0;
 
-        size_t sizeInBytes() const;
+        [[nodiscard]] size_t sizeInBytes() const;
     };
 
     using EntryPtr = std::shared_ptr<const Entry>;
