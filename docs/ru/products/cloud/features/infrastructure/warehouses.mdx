@@ -21,13 +21,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * папку в объектном хранилище, где сервис хранит все данные и часть метаданных:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Один сервис в ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Один сервис в ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
+  </Frame>
 </div>
 
 <br />
@@ -43,22 +39,16 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Разделение вычислительных ресурсов также позволяет отделить операции чтения от операций записи, чтобы они не мешали друг другу:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Разделение вычислительных ресурсов в ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
-
-</Frame>
-
+  <Frame>
+    ![Разделение вычислительных ресурсов в ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
+  </Frame>
 </div>
 
 <br />
 
 *Рис. 2 — Разделение вычислительных ресурсов в ClickHouse Cloud*
 
-<div id="what-is-a-warehouse">
-  ## Что такое хранилище?
-</div>
+## Что такое хранилище? {#what-is-a-warehouse}
 
 В ClickHouse Cloud *хранилище* — это набор **сервисов**, которые работают с одними и теми же данными.
 У каждого хранилища есть основной сервис (сервис, созданный первым) и один или несколько вторичных сервисов.
@@ -68,13 +58,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * Вторичный сервис `DWH Prod Subservice`
 
 <div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![Пример хранилища с основным и вторичным сервисами](/images/cloud/reference/compute-compute-8.webp)
-
-</Frame>
-
+  <Frame>
+    ![Пример хранилища с основным и вторичным сервисами](/images/cloud/reference/compute-compute-8.webp)
+  </Frame>
 </div>
 
 <br />
@@ -91,28 +77,24 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Хранилища объединяют долгоживущие сервисы ClickHouse Cloud, которые работают с общими данными, при этом у каждого сервиса есть выделенные вычислительные ресурсы и своя конечная точка. [On-Demand Compute](/ru/products/cloud/features/infrastructure/on-demand-compute) временно выделяет воркеров из управляемого пула для поддерживаемых рабочих нагрузок через существующий сервис и его конечную точку.
 
 <div id="access-controls">
-  ## Управление доступом
+  ## Управление доступом {#access-controls}
 </div>
 
 ### Учетные данные базы данных {#database-credentials}
 
 Поскольку все сервисы в хранилище используют один и тот же набор таблиц, для них также действует общее управление доступом.
-Это означает, что все пользователи базы данных, созданные в Service 1, смогут использовать и Service 2 с теми же разрешениями (привилегиями для таблиц, представлений и т. д.), и наоборот.
+Это означает, что все пользователи базы данных, созданные в сервисе 1, смогут использовать и сервис 2 с теми же разрешениями (привилегиями для таблиц, представлений и т. д.), и наоборот.
 Для каждого сервиса используется отдельная конечная точка, но одни и те же имя пользователя и пароль действуют во всех сервисах. Иными словами, **пользователи являются общими для сервисов, работающих с одним и тем же хранилищем**, как показано на рисунке ниже:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Доступ пользователей между сервисами, использующими одни и те же данные](/images/cloud/reference/compute-compute-3.webp)
-
-</Frame>
-
+  <Frame>
+    ![Доступ пользователей между сервисами, использующими одни и те же данные](/images/cloud/reference/compute-compute-3.webp)
+  </Frame>
 </div>
 
 <br />
 
-*Рис. 4 — пользователь Alice создан в Service 1, но может использовать те же учетные данные для доступа ко всем сервисам, использующим одни и те же данные*
+*Рис. 4 — пользователь Alice создан в сервисе 1, но может использовать те же учетные данные для доступа ко всем сервисам, использующим одни и те же данные*
 
 ### Управление сетевым доступом {#network-access-control}
 
@@ -125,13 +107,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 В примере ниже Alice не имеет доступа к сервису 2 в хранилище:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Параметры управления сетевым доступом](/images/cloud/reference/compute-compute-4.webp)
-
-</Frame>
-
+  <Frame>
+    ![Параметры управления сетевым доступом](/images/cloud/reference/compute-compute-4.webp)
+  </Frame>
 </div>
 
 <br />
@@ -158,13 +136,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Это можно сделать для второго сервиса и любых дополнительных сервисов, которые вы создадите; однако первый сервис всегда будет с возможностью чтения и записи, как показано на рисунке ниже:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Сервисы с возможностью чтения и записи и только для чтения в хранилище](/images/cloud/reference/compute-compute-5.webp)
-
-</Frame>
-
+  <Frame>
+    ![Сервисы с возможностью чтения и записи и только для чтения в хранилище](/images/cloud/reference/compute-compute-5.webp)
+  </Frame>
 </div>
 
 <br />
@@ -200,7 +174,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
 <div id="limitations">
-  ## Ограничения
+  ## Ограничения {#limitations}
 </div>
 
 ### Ограничения изоляции рабочих нагрузок {#workload-isolation-limitations}
@@ -233,7 +207,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * **Переход основного сервиса в режим простоя**: автоматический переход основного сервиса в режим простоя включен по умолчанию.
 
 <div id="pricing">
-  ## Цены
+  ## Цены {#pricing}
 </div>
 
 Стоимость вычислительных ресурсов одинакова для всех сервисов в хранилище (основного и вторичных). Плата за хранение данных взимается только один раз — она включена в первый (исходный) сервис.
@@ -241,14 +215,14 @@ SETTINGS distributed_ddl_task_timeout=0
 Воспользуйтесь калькулятором цен на странице [pricing](https://clickhouse.com/pricing), чтобы оценить стоимость с учетом размера вашей рабочей нагрузки и выбранного уровня. В таблице Usage Breakdown будет показана разбивка затрат на вычислительные ресурсы по сервисам.
 
 <div id="backups">
-  ## Резервные копии
+  ## Резервные копии {#backups}
 </div>
 
 * Поскольку все сервисы в одном хранилище используют общее хранилище данных, резервные копии создаются только на основном (исходном) сервисе. Таким образом выполняется резервное копирование данных всех сервисов в этом хранилище.
 * Если вы восстановите резервную копию с основного сервиса хранилища, она будет восстановлена в совершенно новом сервисе, не связанном с существующим хранилищем. Затем, сразу после завершения восстановления, вы сможете добавить к нему дополнительные сервисы.
 
 <div id="setup-warehouses">
-  ## Как настроить хранилище
+  ## Как настроить хранилище {#setup-warehouses}
 </div>
 
 ### Создание хранилища {#creating-a-warehouse}
@@ -256,13 +230,9 @@ SETTINGS distributed_ddl_task_timeout=0
 Чтобы создать хранилище, нужно создать второй сервис, который будет использовать общие данные с существующим сервисом. Для этого нажмите значок плюса на любом из существующих сервисов:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Создание нового сервиса в хранилище](/images/cloud/reference/compute-compute-7.webp)
-
-</Frame>
-
+  <Frame>
+    ![Создание нового сервиса в хранилище](/images/cloud/reference/compute-compute-7.webp)
+  </Frame>
 </div>
 
 <br />
@@ -272,7 +242,7 @@ SETTINGS distributed_ddl_task_timeout=0
 На экране создания сервиса в раскрывающемся списке в качестве источника данных для нового сервиса будет выбран исходный сервис. После создания эти два сервиса образуют хранилище.
 
 <div id="renaming-a-warehouse">
-  ### Переименование хранилища
+  ### Переименование хранилища {#renaming-a-warehouse}
 </div>
 
 Переименовать хранилище можно двумя способами:
@@ -281,7 +251,7 @@ SETTINGS distributed_ddl_task_timeout=0
 * Нажмите название хранилища в любом из сервисов и переименуйте его там
 
 <div id="deleting-a-warehouse">
-  ### Удаление хранилища
+  ### Удаление хранилища {#deleting-a-warehouse}
 </div>
 
 Удаление хранилища означает удаление всех вычислительных сервисов и данных (таблиц, представлений, пользователей и т. д.). Это действие нельзя отменить.
