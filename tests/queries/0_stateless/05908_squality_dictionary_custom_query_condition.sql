@@ -21,7 +21,8 @@ CREATE DICTIONARY squality_dict_custom_condition
 )
 PRIMARY KEY k1, k2
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB currentDatabase()
-    QUERY $$SELECT k1, k2, v FROM squality_dict_custom_source WHERE allowed = 1 AND {condition}$$))
+    QUERY concat('SELECT k1, k2, v FROM ', currentDatabase(),
+        '.squality_dict_custom_source WHERE allowed = 1 AND {condition}')))
 LAYOUT(COMPLEX_KEY_DIRECT())
 SETTINGS(in_null_as_unknown = 1);
 
