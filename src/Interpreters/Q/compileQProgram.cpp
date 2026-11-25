@@ -2026,8 +2026,9 @@ QValue QCompiler::compileSQL(const QSQLTemplate & sql, QEnvironment & env, QScop
     switch (sql.kind)
     {
         case QSQLTemplate::Kind::Select:
-        case QSQLTemplate::Kind::Exec:
             return compileSelect(sql, *from.table, env);
+        case QSQLTemplate::Kind::Exec:
+            return compileExec(sql, *from.table, env, offset);
         case QSQLTemplate::Kind::Update:
             return compileUpdate(sql, *from.table, env);
         case QSQLTemplate::Kind::Delete:
@@ -2036,7 +2037,51 @@ QValue QCompiler::compileSQL(const QSQLTemplate & sql, QEnvironment & env, QScop
     throwQError(ErrorCodes::SYNTAX_ERROR, offset, "Unknown q-sql template");
 }
 
-QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source, QEnvironment & env)
+QValue QCompiler::compileExec(const QSQLTemplate & sql, const QTable & source, QEnvironment & env, size_t offset)
+{
+    /// `exec` returns a value instead of a table:
+    /// - for one phrase without a name, the value of the phrase: the list of a column, or an atom for an aggregate;
+    /// - with the by phrase as well, a dictionary from the keys to those values;
+    /// - for several phrases, a named phrase, or none, q returns a dictionary from the names of the columns to their
+    ///   values. The lists of a dictionary are of one type here, so this form stays a table.
+    bool single_atom = false;
+    QValue table = compileSelect(sql, source, env, &single_atom);
+    if (sql.columns.size() != 1 || !sql.columns.front().name.empty())
+        return table;
+
+    auto column_as_list = [&](const NameAndTypePair & column)
+    {
+        QSelectBuilder builder;
+        builder.from = table.table->table_expression;
+        builder.select.push_back(makeIdentifier(column.name));
+        return toScalar(makeTable(builder.build(), {}, table.table->qtypes), offset);
+    };
+
+    if (sql.has_by)
+    {
+        if (table.table->keys.size() != 1 || table.table->columns.size() != 2)
+            throwQError(ErrorCodes::NOT_IMPLEMENTED, offset, "'exec' with several keys in the by phrase is not supported (use 'select')");
+        QValue result;
+        result.kind = QValueKind::Dictionary;
+        result.dictionary = std::make_shared<std::pair<QValue, QValue>>(
+            column_as_list(table.table->columns.front()), column_as_list(table.table->columns.back()));
+        return result;
+    }
+
+    const auto & column = table.table->columns.front();
+    if (!single_atom)
+        return column_as_list(column);
+
+    /// One row of one atom: a scalar subquery.
+    QValue result = scalar(make_intrusive<ASTSubquery>(selectAll(*table.table)));
+    QValue as_column = columnValue(column, table.table->qtypes);
+    result.depth = as_column.depth;
+    result.is_string = as_column.is_string;
+    result.qtype = as_column.qtype;
+    return result;
+}
+
+QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source, QEnvironment & env, bool * single_atom)
 {
     QTable filtered = applyWhere(source, sql.where, env);
 
@@ -2162,6 +2207,8 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             aggregate_mode = false;
             outer.array_join.clear();
         }
+        if (single_atom)
+            *single_atom = aggregate_mode && values.size() == 1 && values.front().depth == 0 && values.front().aggregated;
     }
     else
     {

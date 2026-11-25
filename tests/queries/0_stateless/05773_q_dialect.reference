@@ -66,8 +66,7 @@ a	1.5
 b	0
 a	3.5
 b	0
-1.5
-3.5
+[1.5,3.5]
 a	1.5
 a	3.5
 s	s		
@@ -120,8 +119,7 @@ IBM	60
 MSFT	15
 5
 ['time','sym','price','size']
-IBM
-MSFT
+['IBM','MSFT']
 time	p		
 sym	s		
 price	f		

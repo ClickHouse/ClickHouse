@@ -245,7 +245,9 @@ private:
     QValue compileLambdaCall(const QNode & lambda, QValues args, QEnvironment & env, QScope * scope);
     QValue compileSQL(const QSQLTemplate & sql, QEnvironment & env, QScope * scope, size_t offset);
 
-    QValue compileSelect(const QSQLTemplate & sql, const QTable & source, QEnvironment & env);
+    /// `single_atom`: set if the result is one row of one atom, like for `select sum x from t`.
+    QValue compileSelect(const QSQLTemplate & sql, const QTable & source, QEnvironment & env, bool * single_atom = nullptr);
+    QValue compileExec(const QSQLTemplate & sql, const QTable & source, QEnvironment & env, size_t offset);
     QValue compileUpdate(const QSQLTemplate & sql, const QTable & source, QEnvironment & env);
     QValue compileDelete(const QSQLTemplate & sql, const QTable & source, QEnvironment & env);
 
