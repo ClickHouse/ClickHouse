@@ -1,0 +1,14 @@
+--- the rows after the last growth take the join over the spill threshold
+right_halved: the same result, spilled 0, switched 0, halved 1
+full_halved: the same result, spilled 0, switched 0, halved 1
+anti_halved: the same result, spilled 0, switched 0, halved 1
+packed_string_halved: the same result, spilled 0, switched 0, halved 1
+string_halved: the same result, spilled 0, switched 0, halved 1
+--- a growth step would take the join over the spill threshold
+right_switched: the same result, spilled 0, switched 1, halved 0
+full_switched: the same result, spilled 0, switched 1, halved 0
+anti_switched: the same result, spilled 0, switched 1, halved 0
+packed_string_switched: the same result, spilled 0, switched 1, halved 0
+string_switched: the same result, spilled 0, switched 1, halved 0
+--- two disjuncts, so two hash tables, at a memory limit of 0.75 of the peak memory
+or: the same result, spilled 0, switched 1, halved 0
