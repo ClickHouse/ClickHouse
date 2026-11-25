@@ -30,12 +30,16 @@ ORDER BY x.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 1;
 SELECT x.k, x.c, l.payload FROM (SELECT k, count() AS c FROM r GROUP BY k WITH TOTALS) AS x JOIN l ON x.k = l.k
 ORDER BY x.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 0;
 
--- `remote` reads the local replica locally where it can, so whether the plan has a remote read depends on the settings.
+-- `remote` reads the local replica locally where it can, so `prefer_localhost_replica` is pinned for the plan to have a
+-- remote read.
 SELECT '-- a remote read';
 SELECT l.k, l.payload, x.c FROM l LEFT JOIN (SELECT k, count() AS c FROM remote('127.0.0.1', currentDatabase(), r) GROUP BY k WITH TOTALS) AS x
-ON l.k = x.k ORDER BY l.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 1;
+ON l.k = x.k ORDER BY l.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 1, prefer_localhost_replica = 0;
 SELECT l.k, l.payload, x.c FROM l LEFT JOIN (SELECT k, count() AS c FROM remote('127.0.0.1', currentDatabase(), r) GROUP BY k WITH TOTALS) AS x
-ON l.k = x.k ORDER BY l.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 0;
+ON l.k = x.k ORDER BY l.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 0, prefer_localhost_replica = 0;
+SELECT countIf(explain LIKE '%ReadFromRemote%') > 0, countIf(explain LIKE '%LazilyRead%') FROM (
+    EXPLAIN SELECT l.k, l.payload, x.c FROM l LEFT JOIN (SELECT k, count() AS c FROM remote('127.0.0.1', currentDatabase(), r) GROUP BY k WITH TOTALS) AS x
+    ON l.k = x.k ORDER BY l.k LIMIT 2 SETTINGS query_plan_lazy_materialization_for_join = 1, prefer_localhost_replica = 0);
 
 SELECT '-- nothing is read lazily';
 SELECT countIf(explain LIKE '%LazilyRead%') FROM (
