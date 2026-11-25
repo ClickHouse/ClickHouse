@@ -15,20 +15,17 @@
 # the real server as a shard of `remote`. It is pinned to revision 54482, so the set of exchanged,
 # revision-gated fields is fixed and does not drift.
 
+import functools
 import os
 import shlex
 import socket
 import struct
 import subprocess
-import sys
 import threading
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "helpers"))
-
-from cityhash128 import checksum
 
 CLICKHOUSE_CLIENT_BINARY = shlex.split(os.environ["CLICKHOUSE_CLIENT_BINARY"])
 CLICKHOUSE_CLIENT = shlex.split(os.environ["CLICKHOUSE_CLIENT"])
+CLICKHOUSE_COMPRESSOR = shlex.split(os.environ["CLICKHOUSE_COMPRESSOR"])
 
 REVISION = 54482
 
@@ -42,8 +39,6 @@ SERVER_END_OF_STREAM = 5
 SERVER_TOTALS = 7
 
 KIND_STACK_DETACHED = 2
-
-METHOD_NONE = 0x02
 
 
 def writeVarUInt(x, ba):
@@ -63,10 +58,11 @@ def writeStringBinary(s, ba):
     ba.extend(b)
 
 
+@functools.lru_cache(maxsize=None)
 def compressedFrame(data):
     """`data` as one block of the `NONE` codec, preceded by its checksum."""
-    block = bytes([METHOD_NONE]) + struct.pack("<II", 9 + len(data), len(data)) + data
-    return checksum(block) + block
+    command = CLICKHOUSE_COMPRESSOR + ["--codec", "NONE"]
+    return subprocess.run(command, input=data, capture_output=True, check=True).stdout
 
 
 def serializeBlockInfo(ba):
