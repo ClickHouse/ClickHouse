@@ -135,7 +135,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
-    ParserCompoundIdentifier parser_name;
+    ParserCompoundIdentifier parser_name(/* table_name_with_optional_uuid = */ false, /* allow_query_parameter = */ true);
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
@@ -3189,8 +3189,6 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
     documentation["ALTER TABLE ... STATISTICS"] =
     {
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge/>
 
 The following operations are available:

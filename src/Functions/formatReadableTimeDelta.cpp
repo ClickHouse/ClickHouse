@@ -135,6 +135,11 @@ public:
             }
             else
             {
+                /// Turn `-0.` into `0.`: it is not less than zero, but `std::modf` keeps its sign and `getFractionalString`
+                /// would return `.000000000` for it, so the sub-second units would be computed from the '.' character.
+                if (value == 0)
+                    value = 0;
+
                 bool is_negative = value < 0;
                 if (is_negative)
                 {
@@ -151,37 +156,37 @@ public:
                 switch (max_unit) /// A kind of Duff Device.
                 {
                     case Years:
-                        processUnit(365 * 24 * 3600, 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
+                        processUnit(secondsPerUnit(Years), 0, " year", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Years);
                         if (min_unit == Years)
                             break;
                         [[fallthrough]];
 
                     case Months:
-                        processUnit(static_cast<UInt64>(30.5 * 24 * 3600), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
+                        processUnit(secondsPerUnit(Months), 0, " month", 6, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Months);
                         if (min_unit == Months)
                             break;
                         [[fallthrough]];
 
                     case Days:
-                        processUnit(24 * 3600, 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
+                        processUnit(secondsPerUnit(Days), 0, " day", 4, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Days);
                         if (min_unit == Days)
                             break;
                         [[fallthrough]];
 
                     case Hours:
-                        processUnit(3600, 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
+                        processUnit(secondsPerUnit(Hours), 0, " hour", 5, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Hours);
                         if (min_unit == Hours)
                             break;
                         [[fallthrough]];
 
                     case Minutes:
-                        processUnit(60, 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
+                        processUnit(secondsPerUnit(Minutes), 0, " minute", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Minutes);
                         if (min_unit == Minutes)
                             break;
                         [[fallthrough]];
 
                     case Seconds:
-                        processUnit(1, 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
+                        processUnit(secondsPerUnit(Seconds), 0, " second", 7, whole_part, fractional_str, buf_to, has_output, min_unit, min_unit == Seconds);
                         if (min_unit == Seconds)
                             break;
                         [[fallthrough]];
@@ -214,7 +219,9 @@ public:
         UInt64 unit_multiplier, UInt32 unit_scale, const char * unit_name, size_t unit_name_size, Float64 & whole_part,
         String & fractional_str, WriteBuffer & buf_to, bool & has_output,  Unit min_unit, bool is_minimum_unit)
     {
-        if (unlikely(whole_part + 1.0 == whole_part))
+        /// The number of sub-second units is accumulated in `UInt64`, so it must stay below 2^64 together with the fractional part.
+        if (unlikely(whole_part + 1.0 == whole_part
+            || (unit_scale && (whole_part + 1.0) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale)) >= 0x1p64)))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
             writeText(
@@ -237,7 +244,7 @@ public:
             {
                 /// Zero units, no need to print. But if it's seconds and no other unit is printed, print "0 seconds" nevertheless.
                 if (unit_multiplier != 1 || has_output
-                    || fractional_str.substr(0, (4 - min_unit) * 3) != std::string((4 - min_unit) * 3, '0'))
+                    || fractional_str.substr(0, subSecondDigits(min_unit)) != std::string(subSecondDigits(min_unit), '0'))
                     return;
             }
 
@@ -270,7 +277,7 @@ public:
         if (has_output)
         {
             /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
-            if (is_minimum_unit || (whole_part < 1 && fractional_str.substr(0, (4 - min_unit) * 3) == std::string((4 - min_unit) * 3, '0')))
+            if (is_minimum_unit || isLastPrintedUnit(whole_part, fractional_str, min_unit))
                 writeCString(" and ", buf_to);
             else
                 writeCString(", ", buf_to);
@@ -288,6 +295,43 @@ public:
     }
 
 private:
+    /// Number of seconds in one unit. Sub-second units return 1, as their `processUnit` calls take whole seconds.
+    static constexpr UInt64 secondsPerUnit(Unit unit)
+    {
+        switch (unit)
+        {
+            case Years: return 365 * 24 * 3600;
+            case Months: return static_cast<UInt64>(30.5 * 24 * 3600);
+            case Days: return 24 * 3600;
+            case Hours: return 3600;
+            case Minutes: return 60;
+            default: return 1;
+        }
+    }
+
+    /// Number of fractional digits shown down to `min_unit`: three per unit below seconds, 0 from seconds up.
+    static size_t subSecondDigits(Unit min_unit)
+    {
+        if (min_unit >= Seconds)
+            return 0;
+        return static_cast<size_t>(Seconds - min_unit) * 3;
+    }
+
+    /// Whether the current unit is the last one that will be printed, i.e. the value remaining after it
+    /// is smaller than one `min_unit`, so nothing below the current unit will be shown. This decides
+    /// whether the delimiter before the current unit is " and " (last) or ", " (more to come).
+    static bool isLastPrintedUnit(Float64 whole_part, const String & fractional_str, Unit min_unit)
+    {
+        if (min_unit >= Seconds)
+            /// Sub-second digits are never shown, so only remaining whole seconds can produce more output.
+            return whole_part < static_cast<Float64>(secondsPerUnit(min_unit));
+
+        /// A sub-second minimum unit: there is more to show if there are whole seconds left,
+        /// or any of the shown fractional digits is non-zero.
+        const size_t digits = subSecondDigits(min_unit);
+        return whole_part < 1 && fractional_str.substr(0, digits) == std::string(digits, '0');
+    }
+
     static std::string getFractionalString(const Float64 & fractional_part)
     {
         DB::DoubleConverter<true>::BufferType buffer;

@@ -955,6 +955,8 @@
          with an empty user name). Set to an empty value to reject such connections.
          Never applied to interserver connections.
          Can be overridden per endpoint in the <protocols> section with the same tag.
+
+         The substituted user is authenticated as usual (password, <networks>, ...).
     -->
     <!-- <default_session_user>default</default_session_user> -->
 
@@ -1000,9 +1002,11 @@
 
     <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
          namespace where only the paths it needs according to this configuration are visible - its data, logs,
-         configuration, certificates, a few system files - and nothing else, in particular no shell.
+         configuration, certificates, the credentials of the clouds (as the tokens of the service accounts of Kubernetes),
+         a few system files - and nothing else, in particular no shell. With CAP_SYS_ADMIN it runs in a new PID namespace
+         too, and the original process stays outside as a supervisor, with the PID of the pid file.
          With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
-         runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+         runs without any isolation; with "enforce", it does not start then. "disabled" (the default without this
          line) turns it off.
          Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
          list them in "filesystem_isolation_paths", or disable the isolation.
@@ -1994,7 +1998,7 @@
         </rule>
         <rule>
             <name>hide sensitive HTTP query-string parameters</name>
-            <regexp>([?&][^&=]*(?:secret|password|passwd|token|credential|signature|key)[^&=]*=)[^&\s]*</regexp>
+            <regexp>([?&amp;][^&amp;=]*(?:secret|password|passwd|token|credential|signature|key)[^&amp;=]*=)[^&amp;\s]*</regexp>
             <replace>\1[HIDDEN]</replace>
         </rule>
     </query_masking_rules> -->
