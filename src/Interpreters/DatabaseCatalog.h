@@ -202,8 +202,9 @@ public:
     /// View dependencies between a source table and its view.
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
-    /// Changes whenever a view dependency is added, removed or renamed.
+    /// Changes whenever a view dependency is added, removed or renamed, and after a view is altered.
     UInt64 getViewDependenciesVersion() const;
+    void bumpViewDependenciesVersion();
 
     /// Detach all source-side view-dependency edges of a source table (the table is the source of one
     /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`

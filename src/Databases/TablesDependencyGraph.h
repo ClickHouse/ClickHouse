@@ -52,6 +52,9 @@ public:
     /// Incremented by every change of this graph.
     UInt64 getVersion() const { return version; }
 
+    /// Changes the version without changing the graph.
+    void bumpVersion() { ++version; }
+
     /// Adds a single dependency "table_id" on "dependency".
     void addDependency(const StorageID & table_id, const StorageID & dependency);
 

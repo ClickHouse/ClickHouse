@@ -1200,6 +1200,12 @@ UInt64 DatabaseCatalog::getViewDependenciesVersion() const
     return view_dependencies.getVersion();
 }
 
+void DatabaseCatalog::bumpViewDependenciesVersion()
+{
+    std::lock_guard lock{databases_mutex};
+    view_dependencies.bumpVersion();
+}
+
 std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
 {
     std::lock_guard lock{databases_mutex};
