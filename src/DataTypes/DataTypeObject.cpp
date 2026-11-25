@@ -642,7 +642,6 @@ SerializationPtr createSharedTypedPathSerialization(
         nested, *shared_it, shared_it - all_shared_typed_paths.begin(), all_shared_typed_paths.size(), path_subcolumn);
 }
 
-/// The type of the sub-object at `prefix`: the typed paths under it with the prefix stripped.
 /// Skip rules are not inherited: they act only while parsing input, and they refer to paths of the root object.
 DataTypePtr createSubObjectType(
     const String & prefix,
