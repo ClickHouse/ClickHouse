@@ -19,9 +19,9 @@ public:
         chassert(buffer_size > 0);
     }
 
-    [[nodiscard]] size_t getBufferNumber() const override { return buffer_number; }
+    size_t getBufferNumber() const override { return buffer_number; }
 
-    [[nodiscard]] size_t getBufferSize() const override
+    size_t getBufferSize() const override
     {
         chassert(buffer_number > 0);
         return buffer_size;
@@ -48,7 +48,7 @@ class ExpBufferAllocationPolicy : public DB::BufferAllocationPolicy
 
 public:
     explicit ExpBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
-        : first_size(std::clamp(settings_.max_single_size, settings_.min_size, settings_.max_size))
+        : first_size(std::max(settings_.max_single_size, settings_.min_size))
         , second_size(settings_.min_size)
         , multiply_factor(settings_.multiply_factor)
         , multiply_threshold(settings_.multiply_parts_count_threshold)
@@ -61,9 +61,9 @@ public:
         chassert(max_size > 0);
     }
 
-    [[nodiscard]] size_t getBufferNumber() const override { return buffer_number; }
+    size_t getBufferNumber() const override { return buffer_number; }
 
-    [[nodiscard]] size_t getBufferSize() const override
+    size_t getBufferSize() const override
     {
         chassert(buffer_number > 0);
         return current_size;

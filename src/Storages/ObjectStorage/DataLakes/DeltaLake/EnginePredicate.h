@@ -5,7 +5,6 @@
 #if USE_DELTA_KERNEL_RS
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include <Formats/FormatFactory.h>
 
 #include <delta_kernel_ffi.hpp>
 
@@ -19,27 +18,26 @@ using ContextPtr = std::shared_ptr<const Context>;
 namespace DeltaLake
 {
 
-/// EnginePredicate used in ::scan.
+/// EnginePredicate used in ffi::scan.
 /// A predicate which allows to implement internal delta-kernel-rs filtering
 /// based on statistics and partitions pruning.
-class EnginePredicate : public ::EnginePredicate
+class EnginePredicate : public ffi::EnginePredicate
 {
     friend struct EngineIteratorData;
 public:
-    explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    explicit EnginePredicate(
         const DB::ActionsDAG & filter_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_)
         : filter(filter_)
         , exception(exception_)
         , context(context_)
-        , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
     {
         predicate = this;
         visitor = &visitPredicate;
     }
 
-    [[nodiscard]] bool hasException() const { return exception != nullptr; }
+    bool hasException() const { return exception != nullptr; }
 
     void setException(std::exception_ptr exception_)
     {
@@ -48,9 +46,8 @@ public:
             exception = exception_;
     }
 
-    [[nodiscard]] const DB::ActionsDAG & getFilterDAG() const { return filter; }
-    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
-    [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
+    const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    DB::ContextPtr getContext() const { return context; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
@@ -63,9 +60,8 @@ private:
     std::exception_ptr & exception;
     /// Context for accessing settings
     DB::ContextPtr context;
-    const DB::FormatSettings format_settings;
 
-    static uintptr_t visitPredicate(void * data, ::KernelExpressionVisitorState * state);
+    static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(

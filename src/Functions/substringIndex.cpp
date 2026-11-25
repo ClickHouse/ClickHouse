@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-    class FunctionSubstringIndex final : public IFunction
+    class FunctionSubstringIndex : public IFunction
     {
     public:
         FunctionSubstringIndex(const char * name_, bool is_utf8_)
@@ -35,33 +35,34 @@ namespace
             return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
         }
 
-        [[nodiscard]] String getName() const override { return function_name; }
+        String getName() const override { return function_name; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+        size_t getNumberOfArguments() const override { return 3; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+        bool useDefaultImplementationForConstants() const override { return true; }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
-        /// does not fit Int64, and `executeImpl` would throw for it
-        [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return !uint64ArgumentMayHoldUnusedValues(arguments);
+            FunctionArgumentDescriptors mandatory_args{
+                {"s", &isString, nullptr, "String"},
+                {"delim", &isString, nullptr, "String"},
+                {"count", &isNativeInteger, nullptr, "UInt or Int"}
+            };
+
+            validateFunctionArguments(*this, arguments, mandatory_args);
+
+            return std::make_shared<DataTypeString>();
         }
 
-        [[nodiscard]] String getSignatureString() const override
-        {
-            return "(String, const String, NativeInteger) -> String";
-        }
-
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
@@ -82,10 +83,6 @@ namespace
                 if (UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()) != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single UTF-8 character", getName());
             }
-
-            /// The count is read with IColumn::getInt() below, so a UInt64 value that does not fit
-            /// Int64 must be rejected here rather than read as a negative count.
-            checkIntegerArgumentFitsInt64(*column_count, getName(), "count");
 
             auto column_res = ColumnString::create();
             ColumnString::Chars & vec_res = column_res->getChars();
@@ -127,11 +124,10 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
 
-            bool is_actually_utf8 = is_utf8
-                && !(isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
+            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
+                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -139,10 +135,12 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if (is_actually_utf8)
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
-                else
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
+                else if (all_ascii)
+                    res_ref = substringIndex(str_ref, delim[0], count);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
@@ -159,21 +157,22 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
 
-            bool is_actually_utf8 = is_utf8
-                && !(isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
+            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
+                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view str_ref = str_column->getDataAt(i);
 
                 std::string_view res_ref;
-                if (is_actually_utf8)
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
-                else
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
+                else if (all_ascii)
+                    res_ref = substringIndex(str_ref, delim[0], count);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
@@ -190,11 +189,10 @@ namespace
             res_data.reserve(str.size() * rows / 2);
             res_offsets.reserve(rows);
 
-            bool is_actually_utf8 = is_utf8
-                && !(isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
-                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
+                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
+                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             std::string_view str_ref{str};
             for (size_t i = 0; i < rows; ++i)
@@ -202,10 +200,12 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if (is_actually_utf8)
-                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
-                else
+                if (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
+                else if (all_ascii)
+                    res_ref = substringIndex(str_ref, delim[0], count);
+                else
+                    res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
                 appendToResultColumn<false>(res_ref, res_data, res_offsets);
             }

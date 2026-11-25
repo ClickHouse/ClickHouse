@@ -1,10 +1,14 @@
 #!/usr/bin/python3
 
 import argparse
+import ast
+import collections
 import csv
 import itertools
+import json
 import os
 import os.path
+import pprint
 import sys
 import traceback
 
@@ -28,9 +32,7 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-# The Iceberg TPC-H twins run the same SF10 queries as tpch.xml and need the
-# same per-query budget, whether their dataset is local or on job-local S3.
-benchmarks = {"clickbench", "tpch", "tpcds", "iceberg_suite_local_tpch", "iceberg_suite_s3_tpch"}
+benchmarks = {"clickbench", "tpch"}  # already fast enough, here for consistency
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds
@@ -361,9 +363,6 @@ def add_errors_explained():
 if args.report == "main":
     print((header_template.format()))
 
-    if os.path.exists("run-warnings.tsv"):
-        addSimpleTable("Warnings", ["Warning"], tsvRows("run-warnings.tsv"))
-
     add_tested_commits()
 
     def print_status(status, message):
@@ -397,8 +396,7 @@ if args.report == "main":
         exit(0)
 
     run_error_rows = tsvRows("run-errors.tsv")
-    # row[0] is the test name, and one failing test can produce several rows.
-    error_tests += len({row[0] for row in run_error_rows if row})
+    error_tests += len(run_error_rows)
     addSimpleTable("Run Errors", ["Test", "Error"], run_error_rows)
     if run_error_rows:
         errors_explained.append(
@@ -460,24 +458,19 @@ if args.report == "main":
             "Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)",  # 2
             "Relative difference (new&nbsp;&minus;&nbsp;old) / old",  # 3
             "p&nbsp;<&nbsp;0.01 threshold",  # 4
-            # Hardware counters of the profile runs, empty when the query was not profiled.
-            "Instructions ratio new&nbsp;/&nbsp;old",  # 5
-            "Cycles ratio new&nbsp;/&nbsp;old",  # 6
-            "IPC old",  # 7
-            "IPC new",  # 8
-            "",  # Failed                                           # 9
-            "Test",  # 10
-            "#",  # 11
-            "Query",  # 12
+            "",  # Failed                                           # 5
+            "Test",  # 6
+            "#",  # 7
+            "Query",  # 8
         ]
         attrs = ["" for c in columns]
-        attrs[9] = None
+        attrs[5] = None
 
         text += tableHeader(columns, attrs)
 
         for row in rows:
-            anchor = f"{currentTableAnchor()}.{row[10]}.{row[11]}"
-            if int(row[9]):
+            anchor = f"{currentTableAnchor()}.{row[6]}.{row[7]}"
+            if int(row[5]):
                 if float(row[3]) < 0.0:
                     faster_queries += 1
                     attrs[2] = attrs[3] = f'style="background: {color_good}"'
@@ -486,7 +479,7 @@ if args.report == "main":
                     attrs[2] = attrs[3] = f'style="background: {color_bad}"'
                     errors_explained.append(
                         [
-                            f"<a href=\"#{anchor}\">The query no. {row[11]} of test '{row[10]}' has slowed down</a>"
+                            f"<a href=\"#{anchor}\">The query no. {row[7]} of test '{row[6]}' has slowed down</a>"
                         ]
                     )
             else:
@@ -498,45 +491,6 @@ if args.report == "main":
         tables.append(text)
 
     add_changes()
-
-    def add_unconfirmed_changes():
-        # Queries flagged as changed on the main run whose difference did not
-        # reproduce when rerun after a server restart (compare.sh's
-        # confirm_changes). They do not fail the check, but are kept visible
-        # with both the original and the rerun statistics.
-        #
-        # The confirmation step is optional and fail-open, so a missing file
-        # is normal and must not become a report error (which would fail the
-        # check) -- only read it if it exists.
-        if not os.path.exists("report/unconfirmed-changes.tsv"):
-            return
-        rows = tsvRows("report/unconfirmed-changes.tsv")
-        if not rows:
-            return
-
-        global tables
-        text = tableStart("Unconfirmed Changes")
-        columns = [
-            "Old,&nbsp;s",  # 0
-            "New,&nbsp;s",  # 1
-            "Relative difference (new&nbsp;&minus;&nbsp;old) / old",  # 2
-            "p&nbsp;<&nbsp;0.01 threshold",  # 3
-            "Rerun relative difference",  # 4
-            "Rerun threshold",  # 5
-            "Test",  # 6
-            "#",  # 7
-            "Query",  # 8
-        ]
-        text += tableHeader(columns)
-
-        for row in rows:
-            anchor = f"{currentTableAnchor()}.{row[6]}.{row[7]}"
-            text += tableRow(row, anchor=anchor)
-
-        text += tableEnd()
-        tables.append(text)
-
-    add_unconfirmed_changes()
 
     def add_unstable_queries():
         global unstable_queries, very_unstable_queries, tables
@@ -584,24 +538,8 @@ if args.report == "main":
 
     add_unstable_queries()
 
-    # Written by performance_tests.py only, not by the standalone compare.sh flows.
-    if os.path.exists("thread-stack-alignment.tsv"):
-        addSimpleTable(
-            "Thread Stack Alignment",
-            ["Server", "Threads in futex wait", "Threads by sp mod 64, or error"],
-            tsvRows("thread-stack-alignment.tsv"),
-        )
-
     skipped_tests_rows = tsvRows("analyze/skipped-tests.tsv")
     addSimpleTable("Skipped Tests", ["Test", "Reason"], skipped_tests_rows)
-
-    # perf.py compares the prewarm results of the servers (`result_digest`).
-    # Not an error: a pull request that fixes a result changes it.
-    addSimpleTable(
-        "Queries with Different Results",
-        ["Test", "#", "Rows on the old server", "Rows on the new server"],
-        tsvRows("analyze/result-mismatches.tsv"),
-    )
 
     addSimpleTable(
         "Test Performance Changes",
@@ -630,7 +568,7 @@ if args.report == "main":
             "Longest query, total for measured runs,&nbsp;s",  # 4
             "Average query wall clock time,&nbsp;s",  # 5
             "Shortest query, total for measured runs,&nbsp;s",  # 6
-            "",  # Runs (average per query)                          #7
+            "",  # Runs                                               #7
         ]
         attrs = ["" for c in columns]
         attrs[7] = None
@@ -638,25 +576,10 @@ if args.report == "main":
         text = tableStart("Test Times")
         text += tableHeader(columns, attrs)
 
-        # Worst per-single-run wall time per test, written by compare.sh:
-        # each query is judged against its own adaptive run count, so a mixed
-        # test cannot hide a slow query behind a high average count. Absent in
-        # older workspaces - the legacy per-test approximation applies then
-        # (the existence check keeps tsvRows from recording a report error).
-        max_single_run_times = {}
-        if os.path.exists("report/max-single-run-times.tsv"):
-            max_single_run_times = {
-                r[0]: float(r[1])
-                for r in tsvRows("report/max-single-run-times.tsv")
-            }
-
         allowed_average_run_time = 3.75  # 60 seconds per test at (7 + 1) * 2 runs
         for r in rows:
             anchor = f"{currentTableAnchor()}.{r[0]}"
-            # Run counts are adaptive per query; r[7] is the per-test average
-            # (ceil), which keeps this budget proportional to the actual total
-            # number of runs of the test instead of a median proxy.
-            total_runs = (float(r[7]) + 1) * 2  # one prewarm run, two servers
+            total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
             if r[0] != "Total" and float(r[5]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
@@ -669,15 +592,10 @@ if args.report == "main":
             else:
                 attrs[5] = ""
 
-            if r[0] in max_single_run_times:
-                query_too_slow = max_single_run_times[
-                    r[0]
-                ] > get_allowed_single_run_time(r[0])
-            else:
-                query_too_slow = float(r[4]) > get_allowed_single_run_time(
-                    r[0]
-                ) * total_runs
-            if r[0] != "Total" and query_too_slow:
+            if (
+                r[0] != "Total"
+                and float(r[4]) > get_allowed_single_run_time(r[0]) * total_runs
+            ):
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append(
@@ -737,23 +655,9 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        # Only fail the whole check when a large number of distinct queries
-        # regress at once. A handful of "slower" queries is dominated by CI
-        # noise: a single bad shard run (noisy neighbour, frequency scaling) or
-        # code-layout artifacts can push several unrelated micro benchmarks over
-        # the threshold simultaneously. A genuine, targeted regression shows up
-        # as a small cluster of related queries with large magnitudes that the
-        # per-query thresholds catch on their own. The false positive rate
-        # should be kept < 1%.
-        #
-        # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
-        # in ci/jobs/performance_tests.py: that script discards the status
-        # embedded here and recomputes the final Praktika status. In
-        # `master_head` mode the performance dashboard's per-query verdict is
-        # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode and for a `master_head` shard the
-        # dashboard could not judge, so the effective gate lives there.
-        if slower_queries > 10:
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
+        # False positives rate should be < 1%: https://shorturl.at/CDEK8
+        if slower_queries > 5:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
