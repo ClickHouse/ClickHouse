@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <base/defines.h>
 #include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -117,8 +119,9 @@ struct TopKAggregationHeapBase
     void exchangeSharedBoundary();
 
     /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
-    /// anything the numeric dispatch rejects), hence inline.
-    [[nodiscard]] bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
+    /// anything the numeric dispatch rejects), hence inline. The libc++ hardening checks make it too big for the
+    /// inliner, so it is forced.
+    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!frozen);
         chassert(hasBoundary());
@@ -202,8 +205,8 @@ protected:
         size_t heap_key_count,
         size_t total_group_by_keys,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs,
         UInt64 observation_rows);
 
     void freezeBase();
@@ -367,8 +370,8 @@ private:
     void init(
         const ColumnRawPtrs & source_columns,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs);
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs);
 
     void findLowCardinalityColumns();
 
@@ -434,8 +437,8 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t heap_key_count,
         size_t total_group_by_keys,
         size_t query_k,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
+        const VectorWithMemoryTracking<int> & dirs,
+        const VectorWithMemoryTracking<int> & null_dirs,
         UInt64 observation_rows,
         SharedTopKBoundary * shared,
         TopKThresholdTrackerPtr tracker)
