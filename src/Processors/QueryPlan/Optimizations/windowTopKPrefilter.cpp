@@ -10,9 +10,9 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
-#include <Poco/String.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
-#include <unordered_set>
+#include <Poco/String.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -82,7 +82,7 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
 /// A row the prefilter removes must be a row the filter above removes anyway, so nothing the filter computes
 /// may depend on it. `and`/`or`/`not` over native numbers have no value-dependent failure mode, but over a
 /// `Dynamic` or `Variant` argument they are dispatched per row under the same name; every other function is refused.
-bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const ActionsDAG::Node *> & bound_atoms)
+bool computesOnlyTheBound(const ActionsDAG & dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & bound_atoms)
 {
     static const NameSet connectives = {"and", "or", "not"};
 
@@ -188,7 +188,7 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
         return;
 
     UInt64 top_k = 0;
-    std::unordered_set<const ActionsDAG::Node *> bound_atoms;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> bound_atoms;
     const auto & predicate = filter_dag.findInOutputs(filter_step->getFilterColumnName());
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(&predicate))
     {

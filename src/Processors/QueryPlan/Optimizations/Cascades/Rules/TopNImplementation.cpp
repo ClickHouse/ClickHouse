@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -25,23 +26,23 @@ namespace DB
 class TopNImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TopN"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] String getName() const override { return "TopN"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return isTopNSort(*expression->getQueryPlanStep());
     }
-    Promise getPromise() const override { return 5000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 5000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     const SortDescription sort_desc = sorting_step->getSortDescription();
-    std::vector<GroupExpressionPtr> result;
+    GroupExpressions result;
 
     auto make_variant = [&](size_t node_count)
     {

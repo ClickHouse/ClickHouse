@@ -1,16 +1,16 @@
 ---
-description: 'Documentación de la interfaz del cliente de línea de comandos de ClickHouse'
-sidebarTitle: 'Cliente de ClickHouse'
+description: 'Documentación de la interfaz del Client de línea de comandos de ClickHouse'
+sidebarTitle: 'Client de ClickHouse'
 slug: /interfaces/client
-title: 'Cliente de ClickHouse'
+title: 'Client de ClickHouse'
 doc_type: 'reference'
 ---
 
-ClickHouse proporciona un cliente nativo de línea de comandos para ejecutar consultas SQL directamente contra un servidor de ClickHouse.
+ClickHouse proporciona un Client nativo de línea de comandos para ejecutar consultas SQL directamente contra un servidor de ClickHouse.
 Admite tanto el modo interactivo (para ejecutar consultas en tiempo real) como el modo por lotes (para scripts y automatización).
 Los resultados de las consultas pueden mostrarse en la terminal o exportarse a un archivo, con compatibilidad con todos los [formatos](/es/reference/formats/index) de salida de ClickHouse, como Pretty, CSV, JSON y más.
 
-El cliente ofrece información en tiempo real sobre la ejecución de las consultas mediante una barra de progreso, el número de filas leídas, los bytes procesados y el tiempo de ejecución de la consulta.
+El Client ofrece información en tiempo real sobre la ejecución de las consultas mediante una barra de progreso, el número de filas leídas, los bytes procesados y el tiempo de ejecución de la consulta.
 Admite tanto [opciones de línea de comandos](#command-line-options) como [archivos de configuración](#configuration_files).
 
 ## Instalar {#install}
@@ -67,13 +67,9 @@ Para ver la lista completa de opciones de la línea de comandos, consulte [Comma
 Los detalles de tu servicio de ClickHouse Cloud están disponibles en la consola de ClickHouse Cloud. Selecciona el servicio al que quieres conectarte y haz clic en **Connect**:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Botón Connect del servicio de ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
-
-</Frame>
-
+  <Frame>
+    ![Botón Connect del servicio de ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
 </div>
 
 <br />
@@ -83,18 +79,14 @@ Los detalles de tu servicio de ClickHouse Cloud están disponibles en la consola
 Elige **Native** y se mostrarán los detalles junto con un comando de ejemplo de `clickhouse-client`:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Detalles de la conexión TCP Native de ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
-
-</Frame>
-
+  <Frame>
+    ![Datos de conexión TCP nativa de ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
+  </Frame>
 </div>
 
-### Guardar conexiones en un archivo de configuración {#connection-credentials}
+### Almacenamiento de conexiones en un archivo de configuración {#connection-credentials}
 
-Puede guardar los datos de conexión de uno o más servidores de ClickHouse en un [archivo de configuración](#configuration_files).
+Puede almacenar los datos de conexión de uno o varios servidores ClickHouse en un [archivo de configuración](#configuration_files).
 
 El formato es el siguiente:
 
@@ -117,10 +109,10 @@ El formato es el siguiente:
 </config>
 ```
 
-Consulta la [sección sobre archivos de configuración](#configuration_files) para obtener más información.
+Consulte la [sección sobre archivos de configuración](#configuration_files) para obtener más información.
 
 <Note>
-  Para centrarse en la sintaxis de la consulta, en el resto de los ejemplos se omiten los detalles de conexión (`--host`, `--port`, etc.). Recuerda añadirlos cuando uses los comandos.
+  Para centrarnos en la sintaxis de consulta, en el resto de los ejemplos se omiten los datos de conexión (`--host`, `--port`, etc.). Recuerde añadirlos cuando ejecute los comandos.
 </Note>
 
 ## Modo interactivo {#interactive-mode}
@@ -268,6 +260,14 @@ La lista completa de todos los atajos de teclado disponibles está en [replxx](h
 
   iTerm2: Ve a Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key y haz clic en Esc+
 </Tip>
+
+### Modo Vim {#vim-mode}
+
+Inicie el Client con el parámetro `--vim` para editar consultas con combinaciones de teclas similares a las de `vim`.
+La entrada comienza en modo de inserción; `Esc` cambia al modo normal, donde están disponibles los movimientos (`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `f`, `t`, `%`, `gg`, `G`, ...), los operadores (`d`, `c`) con recuentos y objetos de texto (`iw`, `aw`, `i(`, `a(`, ...), y comandos como `x`, `r`, `s`, `o`, `A`, `I`, `D`, `C`.
+En modo vim, `Enter` inserta una nueva línea en modo de inserción y pasa a la línea siguiente en modo normal; pulse `Ctrl + j` para enviar la consulta.
+En modo normal, `v` abre la consulta actual en el editor (no disponible en el Client integrado).
+Los atajos de búsqueda en el historial (`Ctrl + r`, `Ctrl + s`, `Ctrl + t`, `Alt + r`) y `Alt + #` también funcionan en modo normal.
 
 ## Modo por lotes {#batch-mode}
 
@@ -883,6 +883,7 @@ Todas las opciones de la línea de comandos pueden especificarse directamente en
 | `--history_max_entries`                             | Número máximo de entradas en el archivo de historial.                                                                                                                            | `1000000` (1 millón)           |
 | `--prompt <prompt>`                                 | Especifica un prompt personalizado.                                                                                                                                              | El `display_name` del servidor |
 | `--verbose`                                         | Aumenta el nivel de detalle de la salida.                                                                                                                                        | -                              |
+| `--vim`                                             | Emula el modo de edición de `vim` en el modo interactivo. Consulte [Modo Vim](#vim-mode).                                                                                        | -                              |
 | `-V [ --version ]`                                  | Muestra la versión y sale.                                                                                                                                                       | -                              |
 
 ### Opciones de conexión {#command-line-options-connection}

@@ -28,13 +28,9 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 Agora que temos alguns dados no ClickHouse, queremos executar algumas consultas e entender como elas são executadas. A execução de uma consulta é dividida em várias etapas. Cada etapa da execução da consulta pode ser analisada e ter problemas investigados usando a consulta `EXPLAIN` correspondente. Essas etapas estão resumidas no gráfico abaixo:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Etapas da consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
-
-</Frame>
-
+  <Frame>
+    ![Etapas da consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
+  </Frame>
 </div>
 
 Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar algumas consultas e depois examiná-las com a instrução `EXPLAIN`.
@@ -147,7 +143,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 Entre as duas execuções, é possível observar a resolução dos aliases e das projeções.
 
 <div id="planner">
-  ## Planejador
+  ## Planejador {#planner}
 </div>
 
 O planejador recebe uma árvore de consulta e, a partir dela, gera um plano de consulta. A árvore de consulta nos diz o que queremos fazer com uma consulta específica, e o plano de consulta nos diz como isso será feito. Otimizações adicionais também são aplicadas como parte do plano de consulta. Você pode usar `EXPLAIN PLAN` ou `EXPLAIN` para ver o plano de consulta (`EXPLAIN` executa `EXPLAIN PLAN`).
@@ -266,9 +262,7 @@ GROUP BY type
 
 Agora você pode ver todas as entradas, funções, aliases e tipos de dados em uso. Você pode ver algumas das otimizações que o planejador vai aplicar [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h).
 
-<div id="query-pipeline">
-  ## Pipeline de consulta
-</div>
+## Pipeline de consulta {#query-pipeline}
 
 Um pipeline de consulta é gerado a partir do plano de consulta. O pipeline de consulta é muito semelhante ao plano de consulta, com a diferença de que não é uma árvore, mas um grafo. Ele mostra como o ClickHouse executará uma consulta e quais recursos serão utilizados. Analisar o pipeline de consulta é muito útil para identificar onde está o gargalo em termos de entradas/saídas. Vamos usar nossa consulta anterior e observar a execução do pipeline de consulta:
 
@@ -301,7 +295,7 @@ GROUP BY type;
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Dentro dos parênteses está o passo do plano de consulta e, ao lado, o processor. São informações muito úteis, mas como se trata de um grafo, seria interessante visualizá-lo como tal. Temos uma configuração `graph` que podemos definir como 1 e especificar o formato de saída como TSV:
+Dentro dos parênteses está a etapa do plano de consulta e, ao lado, o processor. São informações muito úteis, mas como se trata de um grafo, seria interessante visualizá-lo como tal. Temos uma configuração `graph` que podemos definir como 1 e especificar o formato de saída como TSV:
 
 ```sql
 EXPLAIN PIPELINE graph=1 WITH
@@ -365,13 +359,9 @@ digraph
 Em seguida, você pode copiar essa saída e colá-la [aqui](https://dreampuf.github.io/GraphvizOnline) para gerar o seguinte grafo:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Saída do grafo](/images/guides/developer/analyzer3.webp)
-
-</Frame>
-
+  <Frame>
+    ![Saída do grafo](/images/guides/developer/analyzer3.webp)
+  </Frame>
 </div>
 
 Um retângulo branco corresponde a um nó do pipeline, o retângulo cinza corresponde às etapas do plano de consulta, e o `x` seguido de um número corresponde à quantidade de entradas/saídas em uso. Caso não queira visualizá-los no formato compacto, você sempre pode adicionar `compact=0`:
@@ -413,13 +403,9 @@ digraph
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Saída compacta do grafo](/images/guides/developer/analyzer4.webp)
-
-</Frame>
-
+  <Frame>
+    ![Saída compacta do grafo](/images/guides/developer/analyzer4.webp)
+  </Frame>
 </div>
 
 Por que o ClickHouse não lê os dados da tabela usando várias threads? Vamos tentar adicionar mais dados à nossa tabela:
@@ -480,19 +466,15 @@ digraph
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Saída do grafo em paralelo](/images/guides/developer/analyzer5.webp)
-
-</Frame>
-
+  <Frame>
+    ![Saída do grafo em paralelo](/images/guides/developer/analyzer5.webp)
+  </Frame>
 </div>
 
 Assim, o executor decidiu não paralelizar as operações porque o volume de dados não era grande o suficiente. Ao adicionar mais linhas, o executor passou a usar várias threads, como mostrado no grafo.
 
 <div id="executor">
-  ## Executor
+  ## Executor {#executor}
 </div>
 
 Por fim, a última etapa da execução da consulta é realizada pelo executor. Ele recebe o pipeline da consulta e o executa. Há diferentes tipos de executores, dependendo de você estar fazendo um `SELECT`, um `INSERT` ou um `INSERT SELECT`.

@@ -236,6 +236,15 @@ function fuzz
         sleep 1
     done
     server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
+    # With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID of its supervisor, whose child is the
+    # init of the PID namespace, whose child is the watchdog or the server.
+    if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == clickhouse-isol ]]; then
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        if [[ "$(cat "/proc/$server_pid/comm" 2>/dev/null)" == ClickHouseWatch ]]; then
+            server_pid=$(cut -d' ' -f1 "/proc/$server_pid/task/$server_pid/children")
+        fi
+    fi
 
     kill -0 $server_pid
 
@@ -248,8 +257,9 @@ function fuzz
         # and clickhouse-server can do fork-exec, for example, to run some bridge.
         # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
         # explicitly ignore non-fatal signals that are used by server.
-        # Number of SIGRTMIN can be determined only in runtime.
-        RTMIN=$(kill -l SIGRTMIN)
+        # The server uses SIGRTMIN for system.stack_trace. Its number is a property of the libc
+        # the server is linked with, not of this shell: 34 with glibc, 35 with musl (which
+        # reserves 34 for itself), so handle both.
         echo "
     set follow-fork-mode parent
     handle SIGHUP nostop noprint pass
@@ -259,7 +269,8 @@ function fuzz
     handle SIGTERM nostop noprint pass
     handle SIGUSR1 nostop noprint pass
     handle SIGUSR2 nostop noprint pass
-    handle SIG$RTMIN nostop noprint pass
+    handle SIG34 nostop noprint pass
+    handle SIG35 nostop noprint pass
     info signals
     continue
     backtrace full

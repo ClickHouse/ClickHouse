@@ -24,15 +24,11 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 Spark 的默认目录是 `spark_catalog`，表通过 `{catalog name}.{database}.{table}` 标识。借助这一新的
 目录功能，现在可以在单个 Spark 应用中添加并使用多个目录。
 
-<div id="choosing-between-apis">
-  ## 在 Catalog API 和 TableProvider API 之间进行选择
-</div>
+## 在 Catalog API 和 TableProvider API 之间进行选择 {#choosing-between-apis}
 
 ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **TableProvider API** (基于 format 的访问) 。了解它们之间的差异，有助于你根据具体用例选择更合适的方式。
 
-<div id="catalog-vs-tableprovider-comparison">
-  ### Catalog API 与 TableProvider API 对比
-</div>
+### Catalog API 与 TableProvider API 对比 {#catalog-vs-tableprovider-comparison}
 
 | 特性               | Catalog API                         | TableProvider API |
 | ---------------- | ----------------------------------- | ----------------- |
@@ -42,17 +38,13 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
 | **Spark SQL 集成** | 原生支持 (`clickhouse.database.table`)  | 需要指定格式            |
 | **使用场景**         | 适用于采用集中配置的长期稳定连接                    | 适用于按需、动态或临时访问     |
 
-<div id="requirements">
-  ## 要求
-</div>
+## 要求 {#requirements}
 
 * Java 8 或 17 (Spark 4.0 需要 Java 17 及以上版本) 
 * Scala 2.12 或 2.13 (Spark 4.0 仅支持 Scala 2.13) 
 * Apache Spark 3.3、3.4、3.5 或 4.0
 
-<div id="compatibility-matrix">
-  ## 兼容性矩阵
-</div>
+## 兼容性矩阵 {#compatibility-matrix}
 
 | 版本     | 兼容的 Spark 版本             | ClickHouse JDBC 版本 |
 | ------ | ------------------------ | ------------------ |
@@ -68,9 +60,7 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
 | 0.2.1  | Spark 3.2                | 不依赖                |
 | 0.1.2  | Spark 3.2                | 不依赖                |
 
-<div id="installation--setup">
-  ## 安装与设置
-</div>
+## 安装与设置 {#installation--setup}
 
 要将 ClickHouse 与 Spark 集成，可根据不同的项目配置选择多种安装方式。
 您可以将 ClickHouse Spark connector 直接作为依赖项添加到项目的构建文件中 (例如 Maven 的 `pom.xml`
@@ -79,9 +69,7 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
 使用 `--jars` 参数将其直接作为 Spark 选项传入。
 这两种方式都能确保 ClickHouse 连接器在您的 Spark 环境中可用。
 
-<div id="import-as-a-dependency">
-  ### 作为依赖导入
-</div>
+### 作为依赖导入 {#import-as-a-dependency}
 
 <Tabs>
   <Tab title="Maven">
@@ -145,9 +133,7 @@ ClickHouse Spark connector 支持两种访问方式：**Catalog API** 和 **Tabl
   </Tab>
 </Tabs>
 
-<div id="download-the-library">
-  ### 下载库
-</div>
+### 下载库 {#download-the-library}
 
 二进制 JAR 的命名格式如下：
 
@@ -172,9 +158,7 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
   [兼容性矩阵](#compatibility-matrix)保持一致。
 </Warning>
 
-<div id="register-the-catalog-required">
-  ## 注册 目录 (必需)
-</div>
+## 注册 目录 (必需) {#register-the-catalog-required}
 
 要访问您的 ClickHouse 表，必须使用以下配置新增一个 Spark 目录：
 
@@ -222,15 +206,11 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
   这样，您就可以在 Spark SQL 中通过 `clickhouse1.<ck_db>.<ck_table>` 访问 clickhouse1 的表 `<ck_db>.<ck_table>`，并通过 `clickhouse2.<ck_db>.<ck_table>` 访问 clickhouse2 的表 `<ck_db>.<ck_table>`。
 </Warning>
 
-<div id="using-the-tableprovider-api">
-  ## 使用 TableProvider API (基于格式的访问)
-</div>
+## 使用 TableProvider API (基于格式的访问) {#using-the-tableprovider-api} 
 
 除了基于 目录 的方法外，ClickHouse Spark connector 还支持通过 TableProvider API 进行**基于格式的访问**。
 
-<div id="format-based-read">
-  ### 基于格式的读取示例
-</div>
+### 基于格式的读取示例 {#format-based-read}
 
 <Tabs>
   <Tab title="Python">
@@ -293,9 +273,7 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
   </Tab>
 </Tabs>
 
-<div id="format-based-write">
-  ### 基于格式的写入示例
-</div>
+### 基于格式的写入示例 {#format-based-write}
 
 <Tabs>
   <Tab title="Python">
@@ -351,15 +329,11 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
   </Tab>
 </Tabs>
 
-<div id="tableprovider-features">
-  ### TableProvider 功能
-</div>
+### TableProvider 功能 {#tableprovider-features}
 
 TableProvider API 具备多项强大功能：
 
-<div id="automatic-table-creation">
-  #### 自动创建表
-</div>
+#### 自动创建表 {#automatic-table-creation}
 
 当写入一个不存在的表时，连接器会自动使用合适的 schema 创建该表。连接器提供了以下智能默认值：
 
@@ -453,15 +427,11 @@ TableProvider API 具备多项强大功能：
   **Engine 选择**：默认引擎是 `MergeTree()`，但你可以使用 `engine` 选项指定任何 ClickHouse 表引擎 (例如 `ReplacingMergeTree()`、`SummingMergeTree()`、`AggregatingMergeTree()` 等) 。
 </Warning>
 
-<div id="tableprovider-connection-options">
-  ### TableProvider 连接选项
-</div>
+### TableProvider 连接选项 {#tableprovider-connection-options}
 
 使用基于格式的 API 时，可用以下连接选项：
 
-<div id="connection-options">
-  #### 连接选项
-</div>
+#### 连接选项 {#connection-options}
 
 | 选项          | 说明                          | 默认值         | 必填 |
 | ----------- | --------------------------- | ----------- | -- |
@@ -476,9 +446,7 @@ TableProvider API 具备多项强大功能：
 | `ssl_mode`  | SSL 模式 (`NONE`、`STRICT` 等)  | `STRICT`    | 否  |
 | `timezone`  | 用于日期/时间操作的时区                | `server`    | 否  |
 
-<div id="table-creation-options">
-  #### 表创建选项
-</div>
+#### 表创建选项 {#table-creation-options}
 
 当表不存在且需要创建时，可使用以下选项：
 
@@ -498,9 +466,7 @@ TableProvider API 具备多项强大功能：
   **最佳实践**：对于 ClickHouse Cloud，如果 ORDER BY 列可能为 Nullable，请显式设置 `settings.allow_nullable_key=1`，因为 ClickHouse Cloud 要求启用此设置。
 </Tip>
 
-<div id="writing-modes">
-  #### 写入模式
-</div>
+#### 写入模式 {#writing-modes}
 
 Spark 连接器 (包括 TableProvider API 和 Catalog API) 支持以下 Spark 写入模式：
 
@@ -552,17 +518,13 @@ Spark 连接器 (包括 TableProvider API 和 Catalog API) 支持以下 Spark �
   </Tab>
 </Tabs>
 
-<div id="configuring-clickhouse-options">
-  ## 配置 ClickHouse 选项
-</div>
+## 配置 ClickHouse 选项 {#configuring-clickhouse-options}
 
 Catalog API 和 TableProvider API 都支持配置 ClickHouse 专用选项 (而不是连接器选项) 。创建表或执行查询时，这些选项会传递给 ClickHouse。
 
 通过 ClickHouse 选项，你可以配置 ClickHouse 特有的设置，例如 `allow_nullable_key`、`index_granularity` 以及其他表级或查询级设置。这些不同于连接器选项 (如 `host`、`database`、`table`) ；后者用于控制连接器如何连接到 ClickHouse。
 
-<div id="using-tableprovider-api-options">
-  ### 使用 TableProvider API
-</div>
+### 使用 TableProvider API {#using-tableprovider-api-options}
 
 使用 TableProvider API 时，请采用 `settings.<key>` 选项格式：
 
@@ -613,9 +575,7 @@ Catalog API 和 TableProvider API 都支持配置 ClickHouse 专用选项 (而�
   </Tab>
 </Tabs>
 
-<div id="using-catalog-api-options">
-  ### 使用 Catalog API
-</div>
+### 使用 Catalog API {#using-catalog-api-options}
 
 使用 Catalog API 时，请在 Spark 配置中采用 `spark.sql.catalog.<catalog_name>.option.<key>` 格式：
 
@@ -639,9 +599,7 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="clickhouse-cloud-settings">
-  ## ClickHouse Cloud 设置
-</div>
+## ClickHouse Cloud 设置 {#clickhouse-cloud-settings}
 
 连接到 [ClickHouse Cloud](https://clickhouse.com) 时，请确保已启用 SSL，并设置合适的 SSL 模式。例如：
 
@@ -650,9 +608,7 @@ spark.sql.catalog.clickhouse.option.ssl        true
 spark.sql.catalog.clickhouse.option.ssl_mode   NONE
 ```
 
-<div id="read-data">
-  ## 读取数据
-</div>
+## 读取数据 {#read-data}
 
 <Tabs>
   <Tab title="Java">
@@ -754,9 +710,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="write-data">
-  ## 写入数据
-</div>
+## 写入数据 {#write-data}
 
 <Warning>
   **暂不支持分区覆盖**：Catalog API 目前不支持分区级覆盖操作 (例如使用 `partitionBy` 的 `overwrite` 模式) 。该功能正在开发中。有关此功能的进展，请参见 [GitHub issue #34](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34)。
@@ -886,9 +840,7 @@ spark.sql.catalog.clickhouse.option.ssl_mode   NONE
   </Tab>
 </Tabs>
 
-<div id="ddl-operations">
-  ## DDL 操作
-</div>
+## DDL 操作 {#ddl-operations}
 
 你可以使用 Spark SQL 在你的 ClickHouse 实例上执行 DDL 操作，所有更改都会立即持久化到
 ClickHouse。
@@ -922,12 +874,10 @@ TBLPROPERTIES (
 上述示例展示了 Spark SQL 查询，你可以在应用程序中使用任意 API——Java、Scala、
 PySpark 或 shell——运行这些查询。
 
-<div id="working-with-varianttype">
-  ## 使用 VariantType
-</div>
+## 使用 VariantType {#working-with-varianttype}
 
 <Note>
-  Spark 4.0+ 已支持 VariantType，且需要使用 ClickHouse 25.3+ 并启用 Experimental JSON/Variant 类型。
+  Spark 4.0+ 已支持 VariantType，且需要使用 ClickHouse 25.3+；自该版本起，`JSON` 和 `Variant` 类型已可用于生产环境，并默认启用。
 </Note>
 
 该连接器 支持 Spark 的 `VariantType`，可用于处理半结构化数据。VariantType 会映射到 ClickHouse 的 `JSON` 和 `Variant` 类型，让您能够高效存储和查询 schema 灵活的数据。
@@ -936,18 +886,14 @@ PySpark 或 shell——运行这些查询。
   本节主要介绍 VariantType 的映射和用法。有关所有支持的数据类型的完整概览，请参阅[支持的数据类型](#supported-data-types)部分。
 </Note>
 
-<div id="clickhouse-type-mapping">
-  ### ClickHouse 类型映射
-</div>
+### ClickHouse 类型映射 {#clickhouse-type-mapping}
 
 | ClickHouse 类型          | Spark 类型      | 描述                        |
 | ---------------------- | ------------- | ------------------------- |
 | `JSON`                 | `VariantType` | 仅存储 JSON 对象 (必须以 `{` 起始)  |
 | `Variant(T1, T2, ...)` | `VariantType` | 可存储多种类型，包括基本类型、数组和 JSON   |
 
-<div id="reading-varianttype-data">
-  ### 读取 VariantType 数据
-</div>
+### 读取 VariantType 数据 {#reading-varianttype-data}
 
 从 ClickHouse 读取数据时，`JSON` 和 `Variant` 列会自动映射到 Spark 的 `VariantType`：
 
@@ -1004,9 +950,7 @@ PySpark 或 shell——运行这些查询。
   </Tab>
 </Tabs>
 
-<div id="writing-varianttype-data">
-  ### 写入 VariantType 数据
-</div>
+### 写入 VariantType 数据 {#writing-varianttype-data}
 
 你可以使用 JSON 或 Variant 列类型将 VariantType 数据写入 ClickHouse：
 
@@ -1121,9 +1065,7 @@ PySpark 或 shell——运行这些查询。
   </Tab>
 </Tabs>
 
-<div id="creating-varianttype-tables-spark-sql">
-  ### 使用 Spark SQL DDL 创建 VariantType 表
-</div>
+### 使用 Spark SQL DDL 创建 VariantType 表 {#creating-varianttype-tables-spark-sql}
 
 你可以使用 Spark SQL DDL 来创建 VariantType 表：
 
@@ -1152,15 +1094,11 @@ TBLPROPERTIES (
 )
 ```
 
-<div id="configuring-variant-types">
-  ### 配置 Variant 类型
-</div>
+### 配置 Variant 类型 {#configuring-variant-types}
 
 在创建包含 VariantType 列的表时，可以指定使用哪些 ClickHouse 类型：
 
-<div id="json-type-default">
-  #### JSON 类型 (默认)
-</div>
+#### JSON 类型 (默认) {#json-type-default} 
 
 如果未指定 `variant_types` 属性，该列默认使用 ClickHouse 的 `JSON` 类型，而这种类型仅接受 JSON 对象：
 
@@ -1181,9 +1119,7 @@ TBLPROPERTIES (
 CREATE TABLE json_table (id Int32, data JSON) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="variant-type-multiple-types">
-  #### 含多种类型的 Variant 类型
-</div>
+#### 含多种类型的 Variant 类型 {#variant-type-multiple-types}
 
 要支持基本类型、数组和 JSON 对象，请在 `variant_types` 属性中指定相应类型：
 
@@ -1208,9 +1144,7 @@ CREATE TABLE flexible_data (
 ) ENGINE = MergeTree() ORDER BY id
 ```
 
-<div id="supported-variant-types">
-  ### 支持的 Variant 类型
-</div>
+### 支持的 Variant 类型 {#supported-variant-types}
 
 以下 ClickHouse 类型可用于 `Variant()`：
 
@@ -1218,9 +1152,7 @@ CREATE TABLE flexible_data (
 * **数组**：`Array(T)`，其中 T 可以是任何受支持的类型，包括嵌套数组
 * **JSON**：用于存储 JSON 对象的 `JSON`
 
-<div id="read-format-configuration">
-  ### 读取格式配置
-</div>
+### 读取格式配置 {#read-format-configuration}
 
 默认情况下，JSON 和 Variant 列会读取为 `VariantType`。你可以通过覆盖此行为，将它们读取为字符串：
 
@@ -1256,9 +1188,7 @@ CREATE TABLE flexible_data (
   </Tab>
 </Tabs>
 
-<div id="write-format-support">
-  ### 写入格式支持
-</div>
+### 写入格式支持 {#write-format-support}
 
 VariantType 的写入支持因格式而有所不同：
 
@@ -1277,30 +1207,22 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
   如果需要写入 ClickHouse `Variant` 类型，请使用 JSON 格式。Arrow 格式仅支持写入 `JSON` 类型。
 </Tip>
 
-<div id="varianttype-best-practices">
-  ### 最佳实践
-</div>
+### 最佳实践 {#varianttype-best-practices}
 
-1. **对纯 JSON 数据使用 JSON 类型**：如果你只存储 JSON 对象，请使用默认的 JSON 类型 (不要设置 `variant_types` 属性) 
+1. **对纯 JSON 数据使用 JSON 类型**：如果你只存储 JSON 对象，请使用默认的 JSON 类型 (不要设置 `variant_types` 属性)
 2. **显式指定类型**：使用 `Variant()` 时，明确列出你计划存储的所有类型
-3. **启用实验性功能**：确保 ClickHouse 已启用 `allow_experimental_json_type = 1`
-4. **写入时使用 JSON 格式**：对于 VariantType 数据，建议使用 JSON 格式以获得更好的兼容性
-5. **考虑查询模式**：JSON/Variant 类型支持 ClickHouse 的 JSON 路径查询，可实现高效过滤
-6. **使用列提示提升性能**：在 ClickHouse 中使用 JSON 字段时，添加列提示可以提升查询性能。目前，尚不支持通过 Spark 添加列提示。请参阅 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) 以跟踪该功能。
+3. **写入时使用 JSON 格式**：对于 VariantType 数据，建议使用 JSON 格式以获得更好的兼容性
+4. **考虑查询模式**：JSON/Variant 类型支持 ClickHouse 的 JSON 路径查询，可实现高效过滤
+5. **使用列提示提升性能**：在 ClickHouse 中使用 JSON 字段时，添加列提示可以提升查询性能。目前，尚不支持通过 Spark 添加列提示。请参阅 [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) 以跟踪该功能。
 
-<div id="varianttype-example-workflow">
-  ### 示例：完整流程
-</div>
+### 示例：完整流程 {#varianttype-example-workflow}
 
 <Tabs>
   <Tab title="Scala">
     ```scala
     import org.apache.spark.sql.functions._
 
-    // 在 ClickHouse 中启用实验性 JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    // 创建包含 Variant 列的表
+    // Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1314,14 +1236,14 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
       )
     """)
 
-    // 准备混合类型数据
+    // Prepare data with mixed types
     val events = Seq(
       (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
       (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
       (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
     ).toDF("event_id", "event_time", "json_data")
 
-    // 转换为 VariantType 并写入
+    // Convert to VariantType and write
     val variantEvents = events.select(
       col("event_id"),
       to_timestamp(col("event_time")).as("event_time"),
@@ -1330,7 +1252,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variantEvents.writeTo("clickhouse.default.events").append()
 
-    // 读取并查询
+    // Read and query
     val result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1346,10 +1268,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ```python
     from pyspark.sql.functions import parse_json, to_timestamp
 
-    # 在 ClickHouse 中启用 Experimental JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1")
-
-    # 创建包含 Variant 列的表
+    # Create table with Variant column
     spark.sql("""
       CREATE TABLE clickhouse.default.events (
         event_id BIGINT,
@@ -1363,7 +1282,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
       )
     """)
 
-    # 准备混合类型数据
+    # Prepare data with mixed types
     events = [
         (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
         (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
@@ -1371,7 +1290,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ]
     df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
 
-    # 转换为 VariantType 并写入
+    # Convert to VariantType and write
     variant_events = df.select(
         "event_id",
         to_timestamp("event_time").alias("event_time"),
@@ -1380,7 +1299,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variant_events.writeTo("clickhouse.default.events").append()
 
-    # 读取并查询
+    # Read and query
     result = spark.sql("""
       SELECT event_id, event_time, event_data
       FROM clickhouse.default.events
@@ -1396,10 +1315,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     ```java
     import static org.apache.spark.sql.functions.*;
 
-    // 在 ClickHouse 中启用 Experimental JSON 类型
-    spark.sql("SET allow_experimental_json_type = 1");
-
-    // 创建包含 Variant 列的表
+    // Create table with Variant column
     spark.sql("CREATE TABLE clickhouse.default.events (" +
         "event_id BIGINT, " +
         "event_time TIMESTAMP, " +
@@ -1411,7 +1327,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
         "'order_by' = 'event_time'" +
         ")");
 
-    // 准备混合类型数据
+    // Prepare data with mixed types
     List<Row> events = Arrays.asList(
         RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
         RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
@@ -1424,7 +1340,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
     });
     Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
 
-    // 转换为 VariantType 并写入
+    // Convert to VariantType and write
     Dataset<Row> variantEvents = eventsDF.select(
         col("event_id"),
         to_timestamp(col("event_time")).as("event_time"),
@@ -1433,7 +1349,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 
     variantEvents.writeTo("clickhouse.default.events").append();
 
-    // 读取并查询
+    // Read and query
     Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
         "FROM clickhouse.default.events " +
         "WHERE event_time >= '2024-01-01' " +
@@ -1444,9 +1360,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
   </Tab>
 </Tabs>
 
-<div id="configurations">
-  ## 配置
-</div>
+## 配置 {#configurations}
 
 以下是该连接器中可调整的配置项。
 
@@ -1502,16 +1416,12 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 | spark.clickhouse.write.retryInterval                                     | 10s                                              | 两次写入重试之间的间隔时间 (以秒为单位) 。                                                                                                                                                                                                                                                                                                             | 0.1.0  |
 | spark.clickhouse.write.retryableErrorCodes                               | 241                                              | 写入失败时 ClickHouse server 返回的可重试 error 代码。                                                                                                                                                                                                                                                                                            | 0.1.0  |
 
-<div id="supported-data-types">
-  ## 支持的数据类型
-</div>
+## 支持的数据类型 {#supported-data-types}
 
 本节介绍 Spark 与 ClickHouse 之间的数据类型映射。下表提供了速查参考，
 说明从 ClickHouse 将数据读入 Spark 时，以及将数据从 Spark 插入 ClickHouse 时，数据类型应如何转换。
 
-<div id="reading-data-from-clickhouse-into-spark">
-  ### 将数据从 ClickHouse 读取到 Spark
-</div>
+### 将数据从 ClickHouse 读取到 Spark {#reading-data-from-clickhouse-into-spark}
 
 | ClickHouse 数据类型                                                   | Spark 数据类型                     | 支持 | 是否为基本类型 | 说明                                                                                           |
 | ----------------------------------------------------------------- | ------------------------------ | -- | ------- | -------------------------------------------------------------------------------------------- |
@@ -1551,9 +1461,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 | `AggregateFunction`                                               |                                | ❌  |         |                                                                                              |
 | `SimpleAggregateFunction`                                         |                                | ❌  |         |                                                                                              |
 
-<div id="inserting-data-from-spark-into-clickhouse">
-  ### 将数据从 Spark 插入到 ClickHouse
-</div>
+### 将数据从 Spark 插入到 ClickHouse {#inserting-data-from-spark-into-clickhouse}
 
 | Spark 数据类型                          | ClickHouse 数据类型     | 支持 | 是否为基本类型 | 说明                                                                                                                  |
 | ----------------------------------- | ------------------- | -- | ------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -1577,9 +1485,7 @@ spark.conf.set("spark.clickhouse.write.format", "json")  // 推荐用于 Variant
 | `Object`                            |                     | ❌  |         |                                                                                                                     |
 | `Nested`                            |                     | ❌  |         |                                                                                                                     |
 
-<div id="contributing-and-support">
-  ## 贡献与支持
-</div>
+## 贡献与支持 {#contributing-and-support}
 
 如果您想为该项目作出贡献或报告问题，欢迎向我们反馈！
 请访问我们的 [GitHub 代码仓库](https://github.com/ClickHouse/spark-clickhouse-connector) 创建 issue、提出改进建议，
