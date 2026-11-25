@@ -2060,11 +2060,12 @@ void AggregatingTransform::initGenerate()
                     table_memory += variant->memoryUsage();
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            /// A merge of the tables takes at most one thread per table; the adaptive bucket merge, which is not bound
-            /// by the tables, takes as many as its work keeps busy, up to the merge threads of the step. The merge by cell
-            /// index is not bound by the tables either: its workers claim the partitions of the indexes one by one (see
-            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the step, up
-            /// to one per partition.
+            /// A merge of the tables takes at most one thread per table, and each producer filled one. The
+            /// adaptive bucket merge is not bound by the tables: it takes as many threads as its work keeps
+            /// busy, up to the merge threads of the step. The merge by cell index is not bound by the tables either: its
+            /// workers claim the partitions of the indexes one by one (see
+            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the
+            /// step, up to one per partition.
             size_t merge_threads = many_data->num_producers;
             if (bucket_merge)
                 merge_threads = adaptiveBucketMergeWorkers(params->aggregator, *session, table_memory, max_threads);
