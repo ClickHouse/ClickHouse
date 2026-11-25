@@ -6,7 +6,6 @@ tags: ['Errors and Exceptions']
 keywords: ['Developer Verification', 'MacOS']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 ## Fix the developer verification error in macOS {#fix-the-developer-verification-error-in-macos}
 
@@ -24,7 +23,15 @@ The binary installed with `curl https://clickhouse.com/ | sh` is not signed, but
 
 When attempting to run a quarantined `clickhouse` binary, you may see this error:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS developer verification error dialog" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![MacOS developer verification error dialog](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</Frame>
+
+</div>
 
 If you can't switch to a signed build, remove the binary from the quarantine, either in System Settings or in the terminal.
 
@@ -34,12 +41,28 @@ If you can't switch to a signed build, remove the binary from the quarantine, ei
 1. Open **System Settings**.
 1. Navigate to **Privacy & Security**:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security settings default view" border />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![MacOS Privacy & Security settings default view](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+    </Frame>
+
+    </div>
 
 1. Scroll down to the **Security** section to find a message saying that _"clickhouse-macos-aarch64" was blocked from use because it is not from an identified developer_.
 1. Click **Allow Anyway** (**Open Anyway** in recent macOS versions).
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS Privacy & Security settings showing Allow Anyway button" border />
+    <div className="ch-image-md">
+
+    <Frame>
+
+    ![MacOS Privacy & Security settings showing Allow Anyway button](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+    </Frame>
+
+    </div>
 
 1. Enter your macOS user password.
 

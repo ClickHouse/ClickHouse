@@ -1,12 +1,12 @@
 #pragma once
 
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
+
+#include <Interpreters/WindowDescription.h>
+
 #include <Core/Field.h>
 #include <Core/IResolvedFunction.h>
-#include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/Common/WindowFunctionRequirements.h>
-
-#include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -20,17 +20,15 @@ class IGeneralWindowFunction : public IResolvedFunction
 public:
     IGeneralWindowFunction(String name_, DataTypes argument_types_, Array parameters_, DataTypePtr result_type_);
 
-    const String & getName() const;
-    const DataTypes & getArgumentTypes() const override;
-    const Array & getParameters() const override;
-    const DataTypePtr & getResultType() const override;
+    [[nodiscard]] const String & getName() const;
+    [[nodiscard]] const DataTypes & getArgumentTypes() const override;
+    [[nodiscard]] const Array & getParameters() const override;
+    [[nodiscard]] const DataTypePtr & getResultType() const override;
 
-    virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const = 0;
-    virtual std::optional<WindowFrame> getDefaultFrame() const;
-    virtual void checkWindowFrameType(const WindowDescription & window) const;
+    [[nodiscard]] virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const = 0;
 
-    virtual size_t sizeOfState() const;
-    virtual size_t alignOfState() const;
+    [[nodiscard]] virtual size_t sizeOfState() const;
+    [[nodiscard]] virtual size_t alignOfState() const;
     virtual void createState(char * place) const;
     virtual void destroyState(char * place) const noexcept;
     virtual void resetPartition(char * place) const;
@@ -42,7 +40,5 @@ protected:
     const Array parameters;
     const DataTypePtr result_type;
 };
-
-using GeneralWindowFunctionPtr = std::shared_ptr<const IGeneralWindowFunction>;
 
 }

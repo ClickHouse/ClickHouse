@@ -4,8 +4,10 @@
 
 #if USE_AVRO
 
+#include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
@@ -32,6 +34,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct FormatSettings;
 }
 
 namespace DataLake
@@ -41,6 +44,10 @@ class ICatalog;
 
 namespace DB::Iceberg
 {
+
+/// The Iceberg timestamps are UTC instants: the reference implementation reads and writes ORC with `useUTCTimestamp`,
+/// so the ORC time zones of the query do not apply.
+void useUTCForORCTimestamps(FormatSettings & settings);
 
 void writeMessageToFile(
     const String & data,
@@ -81,6 +88,55 @@ bool writeMetadataFileAndVersionHint(
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
     bool try_write_version_hint);
+
+/// Removes the metadata file written by `writeMetadataFileAndVersionHint` after the catalog definitively rejected
+/// the commit pointing to it, so that the next attempt, which takes the version from the catalog, can reuse its name.
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
+/// Whether `metadata` has the snapshot `snapshot_id`.
+bool hasSnapshot(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id);
+
+/// The fail points of `commitMetadataFile`, so that every writer that uses it has its own. Null means none.
+struct MetadataCommitFailPoints
+{
+    /// The write of the metadata file is not sent, but reported as not confirmed.
+    const char * lose_request = nullptr;
+    /// The write of the metadata file lands, but is reported as not confirmed.
+    const char * lose_response = nullptr;
+    /// Pauses before checking whether an unconfirmed commit landed.
+    const char * pause_before_reconciliation = nullptr;
+};
+
+/// One attempt to commit `metadata`, which adds the snapshot `new_snapshot`, on top of the base it was built on.
+/// Returns true if the commit succeeded, and false if a concurrent commit won, so that nothing references the files of
+/// the attempt, and the caller may remove them and retry on top of the new base.
+///
+/// A failed write of the metadata file or a failed update of the catalog does not mean that it did not happen.
+/// `commit_outcome_unknown` is set while the files of the attempt may be referenced, and the caller must not remove them
+/// while it is set, including when this function throws. It throws when the outcome stays unknown.
+///
+/// `read_latest_metadata` reads the latest metadata through the catalog, to check whether an unconfirmed update landed.
+/// `operation` names the writer in the messages, e.g. `insert` or `compaction`.
+bool commitMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Object::Ptr & new_snapshot,
+    const String & base_catalog_metadata_location,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const DB::StorageID & table_id,
+    bool create_version_hint,
+    const std::function<Poco::JSON::Object::Ptr()> & read_latest_metadata,
+    const MetadataCommitFailPoints & fail_points,
+    std::string_view operation,
+    bool & commit_outcome_unknown,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    LoggerPtr log);
 
 struct TransformAndArgument
 {
@@ -126,6 +182,8 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+bool isIcebergVariantType(const DataTypePtr & type);
+void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, Int64 format_version, const String & column_name);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
@@ -163,7 +221,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_metadata_pointer_overrides = false);
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+struct CatalogMetadataFilePath
+{
+    /// Exactly as the catalog returned it, for a commit to check that the catalog still points to it.
+    String location;
+    /// `location` relative to the table location, for reading the file.
+    String path;
+};
+
+CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
@@ -197,9 +263,14 @@ enum class FileCategory : uint8_t
 
 FileCategory inspectFileCategory(const String & relative_path);
 
+/// The fields of the table's default sort order; null if it has none.
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
-    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
+/// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 
 void forEachAvroEntry(
     const String & filename,

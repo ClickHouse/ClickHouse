@@ -1,14 +1,22 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include <filesystem>
+#include <Common/Exception.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/format.h>
+
+#include <filesystem>
 
 #if USE_AVRO
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::string toIcebergMetadataCompressionExtension(CompressionMethod method)
 {
@@ -39,9 +47,9 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
     table_location = other.table_location;
     data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
-    metadata_naming = other.metadata_naming;
 }
 
 FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
@@ -53,28 +61,22 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     table_location = other.table_location;
     data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
+    base_metadata_file_name = other.base_metadata_file_name;
     compression_method = other.compression_method;
     format_name = other.format_name;
-    metadata_naming = other.metadata_naming;
 
     return *this;
 }
 
-void FileNamesGenerator::continueMetadataChain(const String & current_metadata_path, Int32 current_version)
+void FileNamesGenerator::setBaseMetadataFile(Int32 base_version, const String & base_metadata_path)
 {
-    initial_version = current_version + 1;
-    const String name = std::filesystem::path(current_metadata_path).filename();
-    if (Iceberg::isVersionNumberedCommitScheme(name))
-        metadata_naming = MetadataNaming::Version;
-    else if (name.starts_with('v'))
-        metadata_naming = MetadataNaming::VersionWithUuid;
-    else
-        metadata_naming = MetadataNaming::NumberWithUuid;
+    initial_version = base_version + 1;
+    base_metadata_file_name = std::filesystem::path(base_metadata_path).filename();
 }
 
 String FileNamesGenerator::uuidMetadataFileName(Int32 version, bool version_prefixed, CompressionMethod compression_method)
 {
-    /// The file name is the commit's compare-and-set, so every writer of a version must aim at the same one.
+    /// Not random and not derived from the base: every writer of a version must aim at the same name, see the class comment.
     auto uuid_str = Poco::UUIDGenerator::defaultGenerator().createFromName(Poco::UUID::uri(), fmt::format("metadata/{}", version)).toString();
     auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
@@ -97,6 +99,12 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestEntryName()
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}.avro", table_location, uuid_str));
 }
 
+Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateStatisticsFileName(Int64 snapshot_id)
+{
+    auto uuid_str = uuid_generator.createRandom().toString();
+    return Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}-{}.stats", table_location, snapshot_id, uuid_str));
+}
+
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateManifestListName(Int64 snapshot_id, Int32 format_version)
 {
     auto uuid_str = uuid_generator.createRandom().toString();
@@ -111,7 +119,7 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
     auto used_version = initial_version++;
     if (!use_uuid_in_metadata)
     {
-        if (metadata_naming == MetadataNaming::Version)
+        if (base_metadata_file_name.empty() || Iceberg::isVersionNumberedCommitScheme(base_metadata_file_name))
         {
             return GeneratedMetadataFileWithInfo{
                 .path = Iceberg::IcebergPathFromMetadata(
@@ -120,7 +128,7 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
                 .compression_method = compression_method};
         }
 
-        auto file_name = uuidMetadataFileName(used_version, metadata_naming == MetadataNaming::VersionWithUuid, compression_method);
+        auto file_name = uuidMetadataFileName(used_version, base_metadata_file_name.starts_with('v'), compression_method);
         return GeneratedMetadataFileWithInfo{
             .path = Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}", table_location, file_name)),
             .version = used_version,
@@ -128,10 +136,14 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
     }
     else
     {
-        auto uuid_str = uuid_generator.createRandom().toString();
+        if (base_metadata_file_name.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The base metadata file is not set for a metadata file name with a UUID");
+
+        /// Not random: writers that commit on top of the same base must collide on the name, see the class comment.
+        auto uuid_str = uuid_generator.createFromName(Poco::UUID::oid(), fmt::format("{}/{}", base_metadata_file_name, used_version)).toString();
         return GeneratedMetadataFileWithInfo{
             .path = Iceberg::IcebergPathFromMetadata(
-                fmt::format("{}metadata/v{}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
+                fmt::format("{}metadata/{:05d}-{}{}.metadata.json", table_location, used_version, uuid_str, compression_suffix)),
             .version = used_version,
             .compression_method = compression_method};
     }
