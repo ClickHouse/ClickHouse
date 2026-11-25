@@ -595,6 +595,12 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 
     if (argumnet_nodes.size() == 2)
     {
+        /// MongoDB's `$in` and `$nin` do not implement the nullable membership policy.
+        /// Declining the whole predicate also prevents pushing down an unsafe sort/limit.
+        if (context->getSettingsRef()[Setting::in_null_as_unknown]
+            && (func->getFunctionName() == "in" || func->getFunctionName() == "notIn"))
+            return {};
+
         const auto * left_column = getColumnNode(func->getArguments().getNodes().at(0), join_node, getStorageID());
         const auto * right_const = func->getArguments().getNodes().at(1)->as<ConstantNode>();
 

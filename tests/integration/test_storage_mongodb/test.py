@@ -998,6 +998,27 @@ def test_where(started_cluster):
         node.query("SELECT * FROM where_table WHERE equals(keyInt, keyFloat)")
 
     node.query("DROP TABLE where_table")
+
+
+def test_in_null_as_unknown_does_not_push_mongodb_filter_and_limit(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "nullable_membership")
+    db["nullable_membership"].insert_many([{"key": 2}, {"key": 3}])
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE TABLE nullable_membership (key UInt64) ENGINE = MongoDB('mongo1:27017', 'test', 'nullable_membership', 'root', '{mongo_pass}')"
+    )
+    assert node.query(
+        "SELECT key FROM nullable_membership "
+        "WHERE key NOT IN (1, NULL) OR key = 2 "
+        "ORDER BY key DESC LIMIT 1 "
+        "SETTINGS in_null_as_unknown = 1, mongodb_throw_on_unsupported_query = 0"
+    ) == "2\n"
+    node.query("DROP TABLE nullable_membership")
     where_mongo_table.drop()
 
 

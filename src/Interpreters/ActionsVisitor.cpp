@@ -593,6 +593,8 @@ bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type, const 
         const auto right_bare = removeNullable(removeLowCardinality(right_nested));
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !left_bare->equals(*right_bare))
+            || (isEnum(left_bare) && isNumber(right_bare))
+            || (isNumber(left_bare) && isEnum(right_bare))
             || (isFloat(left_bare) && isFloat(right_bare) && !left_nested->equals(*right_nested))
             || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare) && isNumber(right_bare))
             || (isNumber(left_bare) && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare))
@@ -731,6 +733,17 @@ ASTPtr makeExactCompoundValueInComparison(
         auto exact = makeASTFunction("equals", right->clone(), std::move(round_trip));
         auto candidate = makeASTFunction("if", std::move(exact), std::move(cast_value), make_intrusive<ASTLiteral>(Field{}));
         equal = makeASTFunction("equals", left->clone(), std::move(candidate));
+    }
+    else if ((isEnum(removeNullable(removeLowCardinality(left_type)))
+                && isNumber(removeNullable(removeLowCardinality(right_type))))
+        || (isNumber(removeNullable(removeLowCardinality(left_type)))
+                && isEnum(removeNullable(removeLowCardinality(right_type)))))
+    {
+        auto numeric_left = isEnum(removeNullable(removeLowCardinality(left_type)))
+            ? makeASTFunction("toInt16", left->clone()) : left->clone();
+        auto numeric_right = isEnum(removeNullable(removeLowCardinality(right_type)))
+            ? makeASTFunction("toInt16", right->clone()) : right->clone();
+        equal = makeASTFunction("equals", std::move(numeric_left), std::move(numeric_right));
     }
     else if (isNumber(removeNullable(removeLowCardinality(left_type)))
         && isNumber(removeNullable(removeLowCardinality(right_type))))

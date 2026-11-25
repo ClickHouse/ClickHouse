@@ -1531,6 +1531,8 @@ static bool needsExactCompoundNumericInComparison(const DataTypePtr & left_type,
         const bool temporal_right = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(right_bare);
         return (isNumber(left_bare) && isNumber(right_bare)
                 && !left_bare->equals(*right_bare))
+            || (isEnum(left_bare) && isNumber(right_bare))
+            || (isNumber(left_bare) && isEnum(right_bare))
             || (isFloat(left_bare) && isFloat(right_bare) && !left_nested->equals(*right_nested))
             || (temporal_left && isNumber(right_bare))
             || (isNumber(left_bare) && temporal_right)
@@ -1592,6 +1594,29 @@ static QueryTreeNodePtr buildExactCompoundValueInComparison(
     {
         auto equals = std::make_shared<FunctionNode>("equals");
         equals->getArguments().getNodes() = {left, makeExactInCast(right, right_type, left_type)};
+        equal = std::move(equals);
+    }
+    else if ((isEnum(removeNullable(removeLowCardinality(left_type)))
+                && isNumber(removeNullable(removeLowCardinality(right_type))))
+        || (isNumber(removeNullable(removeLowCardinality(left_type)))
+                && isEnum(removeNullable(removeLowCardinality(right_type)))))
+    {
+        auto numeric_left = left;
+        auto numeric_right = right;
+        if (isEnum(removeNullable(removeLowCardinality(left_type))))
+        {
+            auto conversion = std::make_shared<FunctionNode>("toInt16");
+            conversion->getArguments().getNodes().push_back(left);
+            numeric_left = std::move(conversion);
+        }
+        if (isEnum(removeNullable(removeLowCardinality(right_type))))
+        {
+            auto conversion = std::make_shared<FunctionNode>("toInt16");
+            conversion->getArguments().getNodes().push_back(right);
+            numeric_right = std::move(conversion);
+        }
+        auto equals = std::make_shared<FunctionNode>("equals");
+        equals->getArguments().getNodes() = {std::move(numeric_left), std::move(numeric_right)};
         equal = std::move(equals);
     }
     else if (isNumber(removeNullable(removeLowCardinality(left_type)))
