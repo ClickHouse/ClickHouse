@@ -464,13 +464,13 @@ size_t ReadRangesRegistry::ReadRanges::mergeLocked() noexcept
     return added;
 }
 
-void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+size_t ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
 {
     /// A file looked up once the counting stopped keeps nothing.
     if (ranges.empty() || &file_ranges == &not_registered)
     {
         ranges.clear();
-        return;
+        return 0;
     }
 
     if (stopped())
@@ -479,23 +479,24 @@ void ReadRangesRegistry::registerRanges(Batch & batch, ReadRanges & file_ranges,
         /// Also what was added to the file after the others were freed.
         file_ranges.release();
         releaseAll();
-        return;
+        return 0;
     }
 
     size_t grown = 0;
-    batch.bytes += file_ranges.add(ranges, grown);
+    const size_t bytes = file_ranges.add(ranges, grown);
     /// Charged by the memory the ranges hold, which merging does not give back.
     if (grown && !reserve(grown))
     {
         file_ranges.release();
         releaseAll();
     }
+    return bytes;
 }
 
-void ReadRangesRegistry::commit(const Batch & batch)
+void ReadRangesRegistry::commit(size_t bytes)
 {
-    if (batch.bytes)
-        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
+    if (bytes)
+        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
 }
 
 void ReadRangesRegistry::ReadRanges::release() noexcept

@@ -63,16 +63,11 @@ public:
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     ReadRanges & getReadRanges(const String & path);
 
-    /// What a reader counted from its files since the last `registerReadRanges`, added to the statistics at once.
-    struct Batch
-    {
-        size_t bytes = 0;
-    };
-
-    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
+    /// Returns the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet.
     /// Clears `ranges`.
-    void registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges);
-    void commit(const Batch & batch);
+    size_t registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    /// Adds to the statistics at once the bytes a reader counted from its files since the last `registerReadRanges`.
+    void commit(size_t bytes);
 
     /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
     [[nodiscard]] bool stopped() const;

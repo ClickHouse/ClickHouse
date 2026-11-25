@@ -1188,7 +1188,7 @@ void MergeTreeReaderWide::registerReadRanges()
 
     ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
     {
-        ReadRangesRegistry::Batch batch;
+        size_t bytes = 0;
         std::lock_guard lock(ranges_read_mutex);
         for (auto & [stream_name, stream_ranges] : ranges_read)
         {
@@ -1197,9 +1197,9 @@ void MergeTreeReaderWide::registerReadRanges()
             if (!stream_ranges.read_ranges)
                 stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
                     data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-            read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
+            bytes += read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
         }
-        read_ranges_registry->commit(batch);
+        read_ranges_registry->commit(bytes);
     }
 
     if (read_ranges_registry->stopped())
