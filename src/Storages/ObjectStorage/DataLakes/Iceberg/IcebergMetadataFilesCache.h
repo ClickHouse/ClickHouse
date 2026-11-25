@@ -82,6 +82,7 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - parsed metadata.json [file_path --> Poco::JSON::Object::Ptr]
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
+    /// A cached parsed metadata.json is shared by all readers and is never modified: writers modify a `deepCopy` of it.
     std::variant<Poco::JSON::Object::Ptr, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
     size_t memory_bytes;
     /// Set once the parsed metadata.json has passed the check of getOrSetTableMetadata's `validate_fn`.

@@ -107,6 +107,8 @@ extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
 extern const Event IcebergGetTableStateMicroseconds;
+extern const Event IcebergMetadataJSONSchemaRegistrations;
+extern const Event IcebergMetadataJSONSchemaRegistrationSkips;
 }
 
 namespace DB
@@ -461,6 +463,21 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
+    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+
+    if (schema_processor->isMetadataObjectRegistered(metadata_object))
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONSchemaRegistrationSkips);
+        for (size_t i = snapshots->size(); i > 0; --i)
+        {
+            auto snapshot = snapshots->getObject(static_cast<UInt32>(i - 1));
+            if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+                return snapshot;
+        }
+        return nullptr;
+    }
+
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONSchemaRegistrations);
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -468,18 +485,18 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
         schema_processor->addIcebergTableSchema(schema);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
-    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
         schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
-        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+        if (current_snapshot_id == snapshot_id)
         {
             current_snapshot = snapshot;
         }
     }
+    schema_processor->markMetadataObjectRegistered(metadata_object);
     return current_snapshot;
 }
 

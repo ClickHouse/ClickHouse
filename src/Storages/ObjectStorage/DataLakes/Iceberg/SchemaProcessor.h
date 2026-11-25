@@ -161,6 +161,11 @@ public:
     static std::unordered_map<String, ColumnMapper::IcebergInitialDefault> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
+
+    /// Whether all `schemas` and `snapshots` of this metadata.json object were registered. The object must not be modified
+    /// after it is marked: objects from `getMetadataJSONObject` are not (see `IcebergMetadataFilesCacheCell::cached_element`).
+    bool isMetadataObjectRegistered(const Poco::JSON::Object::Ptr & metadata_object) const;
+    void markMetadataObjectRegistered(Poco::JSON::Object::Ptr metadata_object);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
 
@@ -179,6 +184,7 @@ private:
     /// schema-id to a different schema, and two manifest headers disagreeing on such a schema-id is
     /// an error, because no authoritative copy is left to decide between them.
     std::unordered_set<Int32> manifest_sourced_schema_ids TSA_GUARDED_BY(mutex);
+    Poco::JSON::Object::Ptr registered_metadata_object TSA_GUARDED_BY(mutex);
 
     /// Forget the schema registered for `schema_id` together with everything derived from it: the
     /// per-field lookups and the cached schema transformation DAGs in either direction. They are

@@ -1,0 +1,40 @@
+-- cached_1
+1	\N	\N
+2	20	\N
+3	30	x
+4	40	y
+-- cached_2
+1	\N	\N
+2	20	\N
+3	30	x
+4	40	y
+-- time_travel_1
+1
+-- time_travel_2
+1
+-- evolved
+1	\N	\N	\N
+2	20	\N	\N
+3	30	x	\N
+4	40	y	\N
+5	50	z	0.5
+-- no_cache_1
+1	\N	\N	\N
+2	20	\N	\N
+3	30	x	\N
+4	40	y	\N
+5	50	z	0.5
+-- no_cache_2
+1	\N	\N	\N
+2	20	\N	\N
+3	30	x	\N
+4	40	y	\N
+5	50	z	0.5
+-- profile events
+cached_1	1	1
+cached_2	0	1
+time_travel_1	0	1
+time_travel_2	0	1
+evolved	1	1
+no_cache_1	1	0
+no_cache_2	1	0
