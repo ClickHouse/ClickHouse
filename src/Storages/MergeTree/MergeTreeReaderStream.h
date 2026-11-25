@@ -40,13 +40,17 @@ public:
     /// 16 bytes a range.
     class ReadRanges
     {
-        friend class ReadRangesRegistry;
-
+    public:
         /// The bytes of the ranges not counted yet that become counted: those merged, and those extending the last
-        /// merged range. Clears the ranges.
-        size_t add(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
-        /// Merges the appended ranges into the merged ones and returns the bytes they add. Never throws.
-        size_t merge() TSA_REQUIRES(mutex);
+        /// merged range. Clears the ranges. `capacity_grown` is how many ranges the memory kept for them grew by.
+        size_t add(CompressedBlockRanges & ranges, size_t & capacity_grown);
+        /// Merges the appended ranges into the merged ones and returns the bytes they add.
+        size_t merge() noexcept;
+        /// Frees the ranges, once the counting stopped.
+        void release() noexcept;
+
+    private:
+        size_t mergeLocked() noexcept TSA_REQUIRES(mutex);
 
         std::mutex mutex;
         /// Up to `merged`: sorted by their begin, neither overlapping nor touching. After it: appended since the last merge.
@@ -59,28 +63,23 @@ public:
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     ReadRanges & getReadRanges(const String & path);
 
-    /// What a reader counted from its files since the last `registerReadRanges`, added to the statistics at once.
-    struct Batch
-    {
-        size_t bytes = 0;
-    };
-
-    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
+    /// Returns the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet.
     /// Clears `ranges`.
-    void registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges);
-    void commit(const Batch & batch);
+    size_t registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    /// Adds to the statistics at once the bytes a reader counted from its files since the last `registerReadRanges`.
+    void commit(size_t bytes);
 
     /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
     [[nodiscard]] bool stopped() const;
 
 private:
     /// A file takes about as much memory as 8 ranges: its `ReadRanges`, its slot in the map and the `unique_ptr`.
+    /// Charged against the limit when a new file entry is created.
     static constexpr size_t units_per_file = 8;
 
     /// Reserves `units` of the limit; past it, stops the counting instead.
     bool reserve(size_t units);
 
-    static void release(ReadRanges & read_ranges);
     /// Frees the ranges of all the files, once the counting stopped. The files stay, as the readers refer to them.
     void releaseAll();
 
