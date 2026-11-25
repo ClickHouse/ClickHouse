@@ -1,0 +1,14 @@
+loading: running
+SYSTEM STOP RELOAD DICTIONARIES: denied
+SYSTEM STOP RELOAD DICTIONARIES ON CLUSTER test_shard_localhost: denied
+loading: running
+loading: stopped
+SYSTEM START RELOAD DICTIONARIES: denied
+SYSTEM START RELOAD DICTIONARIES ON CLUSTER test_shard_localhost: denied
+loading: stopped
+SYSTEM START RELOAD DICTIONARIES: done
+loading: running
+SYSTEM STOP RELOAD DICTIONARIES ON CLUSTER test_shard_localhost: done
+loading: stopped
+SYSTEM START RELOAD DICTIONARIES ON CLUSTER test_shard_localhost: done
+loading: running
