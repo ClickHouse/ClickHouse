@@ -3224,8 +3224,10 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 
         if (need_sort)
         {
-            /// `WindowTransform` finds partitions with `compareAt`, so a key type the scatter cannot hash
-            /// in agreement with it sorts in a single merged stream.
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
             SortDescription scatter_partition_by = window.partition_by;
             const auto & sort_input_header = query_plan.getCurrentHeader();
             for (const auto & partition_column : window.partition_by)

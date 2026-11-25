@@ -15,7 +15,6 @@ class QueryPipelineBuilder;
 /// `scattered_stream_transform` works like the getter of `addSimpleTransform`: it is applied to every
 /// scattered stream before the streams of a partition are merged into one, so its work runs on all
 /// streams in parallel. It may return nullptr for no transform.
-/// `canonicalize_float_keys`: see `ScatterByPartitionTransform`.
 void scatterByPartition(
     QueryPipelineBuilder & pipeline,
     size_t num_partitions,

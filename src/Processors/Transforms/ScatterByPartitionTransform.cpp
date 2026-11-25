@@ -30,8 +30,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// `-0.` and `0.`, and all NaNs, compare equal (`compareAt`, which a window uses to find its partitions) but have
-/// different bits, so the hash is computed over a copy holding one representation of each.
+/// `-0.` and `0.`, and all NaNs, are equal for `compareAt` (which a window uses to find its partitions) but differ in bits.
 template <typename T>
 ColumnPtr canonicalizeFloats(const ColumnPtr & column)
 {

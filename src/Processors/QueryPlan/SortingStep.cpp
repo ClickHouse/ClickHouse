@@ -825,7 +825,6 @@ void SortingStep::serialize(Serialization & ctx) const
 
     serializeSortDescription(result_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
-    /// An older peer would scatter a float partition key by its bits, so it gets the window sorting without partition keys.
     if (is_window_sorting && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FLOAT_KEY_SCATTER
         && partitionKeysNeedOwnScatter())
         serializeSortDescription(SortDescription{}, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);

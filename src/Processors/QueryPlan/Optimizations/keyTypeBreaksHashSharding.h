@@ -21,8 +21,7 @@ namespace QueryPlanOptimizations
 /// Detected at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`/`Variant`.
 bool keyTypeBreaksHashSharding(const IDataType & type);
 
-/// The same for the scatter of a window sorting, which hashes the keys of `ScatterByPartitionTransform::canonicalizesKeyType`
-/// in one representation of their equal values.
+/// The same for a window sorting: its scatter hashes `ScatterByPartitionTransform::canonicalizesKeyType` keys canonically.
 bool keyTypeBreaksWindowScatter(const IDataType & type);
 
 }
