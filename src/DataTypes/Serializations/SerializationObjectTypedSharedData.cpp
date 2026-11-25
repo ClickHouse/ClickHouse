@@ -1581,9 +1581,15 @@ std::optional<ISerialization::SubstreamPath> getRegionPath(
     region_path[prefix_size].view = path_state.region_views.at(static_cast<size_t>(region - regions.begin()));
     /// A hint of the path's serialization is its bytes of a part of the substream, with only the uncompressed ones
     /// known inside a region: the compressed ones are scaled by the region's ratio.
+    /// The part of the substream lies in the region, which bounds the scaled bytes by the region's.
     auto & size_hint = region_path.back().size_hint;
     if (!size_hint)
         size_hint = region->size;
+    else if (size_hint->uncompressed > region->size.uncompressed)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Path {} of the typed shared data of Object has {} uncompressed bytes of substream '{}' in its region of {}",
+            path_state.name, size_hint->uncompressed, name, region->size.uncompressed);
     else if (region->size.uncompressed == 0)
         size_hint->compressed = 0;
     else
