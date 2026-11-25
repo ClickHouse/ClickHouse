@@ -67,6 +67,10 @@ struct DarwinDirectoryWatchState
     /// would slip through as a modification.
     std::set<std::string> deleted_files;
 
+    /// Inodes of watched files that lost a link while another one was left (`NOTE_DELETE`), e.g. outside the directory.
+    /// Kept across retried scans like `deleted_files`.
+    std::set<UInt64> unlinked_inodes;
+
     /// An entry of the directory was added, removed or renamed since the last reset. `scanFilesAndUpdateWatches`
     /// uses it to learn whether the directory changed while it was being scanned, then the listing can not be trusted.
     bool directory_changed = false;
