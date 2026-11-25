@@ -213,6 +213,31 @@ QValue unary(Call & call, const String & function, std::optional<QType> qtype = 
     return result;
 }
 
+bool isNumberType(QType type);
+
+/// The type of the result of arithmetic on two numbers of different types, as q promotes them: a float, else a real,
+/// else a long, and the smaller integers make an int.
+QType promoteNumbers(QType left, QType right)
+{
+    auto rank = [](QType type)
+    {
+        switch (type)
+        {
+            case QType::Float: return 4;
+            case QType::Real: return 3;
+            case QType::Long: return 2;
+            default: return 1;
+        }
+    };
+    switch (std::max(rank(left), rank(right)))
+    {
+        case 4: return QType::Float;
+        case 3: return QType::Real;
+        case 2: return QType::Long;
+        default: return QType::Int;
+    }
+}
+
 /// An atomic function of two arguments.
 QValue binary(Call & call, const std::function<ASTPtr(ASTPtr, ASTPtr)> & make, std::optional<QType> qtype = std::nullopt)
 {
@@ -225,6 +250,9 @@ QValue binary(Call & call, const std::function<ASTPtr(ASTPtr, ASTPtr)> & make, s
         result.qtype = qtype;
     else if (left.qtype == right.qtype)
         result.qtype = left.qtype;
+    else if (left.qtype && right.qtype && !left.is_string && !right.is_string && isNumberType(*left.qtype) && isNumberType(*right.qtype))
+        /// The result is known to be a number, which the arithmetic of a temporal value and a number looks at.
+        result.qtype = promoteNumbers(*left.qtype, *right.qtype);
     else
         result.qtype = std::nullopt;
     return result;
@@ -1491,6 +1519,19 @@ std::optional<QValue> clockArithmetic(Call & call, const String & function)
                 return numberToTemporal(std::move(sum), temporal_type, call);
             },
             temporal_type);
+    }
+
+    /// The difference of two months is a number of months, and of two dates a number of days.
+    /// (`minus` of ClickHouse does not take two dates, and a month is a date there.)
+    if (function == "minus" && left && left == right && (*left == QType::Month || *left == QType::Date))
+    {
+        QType temporal_type = *left;
+        return binary(call,
+            [&](ASTPtr a, ASTPtr b)
+            {
+                return fn("minus", temporalToNumber(std::move(a), temporal_type, call), temporalToNumber(std::move(b), temporal_type, call));
+            },
+            QType::Int);
     }
 
     std::optional<QType> result_type;
