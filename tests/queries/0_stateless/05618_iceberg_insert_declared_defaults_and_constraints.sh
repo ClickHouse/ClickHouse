@@ -56,8 +56,15 @@ ${CLIENT} --query "ALTER TABLE ${T} DROP COLUMN c" 2>&1 | grep -o -m1 ILLEGAL_CO
 ${CLIENT} --iceberg_snapshot_id="${S1}" --query "ALTER TABLE ${T} ADD COLUMN g Nullable(Int32)" 2>&1 | grep -o -m1 NOT_IMPLEMENTED
 ${CLIENT} --iceberg_snapshot_id="${S1}" --query "ALTER TABLE ${T} MODIFY SETTING iceberg_metadata_async_prefetch_period_ms = 2000" 2>&1 | grep -o -m1 NOT_IMPLEMENTED
 ${CLIENT} --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '${T}' AND name = 'g'"
+${CLIENT} --query "ALTER TABLE ${T} ADD COLUMN z Nullable(Int32)"
+${CLIENT} --query "INSERT INTO ${T} (k, z) VALUES (5, 5)"
+S2=$(${CLIENT} --query "SELECT snapshot_id FROM system.iceberg_history WHERE database = currentDatabase() AND table = '${T}' ORDER BY made_current_at DESC LIMIT 1")
+${CLIENT} --query "ALTER TABLE ${T} DROP COLUMN z"
+${CLIENT} --query "SELECT count() FROM ${T} SETTINGS iceberg_snapshot_id = ${S2} FORMAT Null"
+${CLIENT} --query "ALTER TABLE ${T} MODIFY SETTING iceberg_metadata_async_prefetch_period_ms = 3000"
 ${CLIENT} --query "DETACH TABLE ${T}"
 ${CLIENT} --query "ATTACH TABLE ${T}"
+${CLIENT} --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '${T}' AND name = 'z'"
 ${CLIENT} --query "INSERT INTO ${T} (k) VALUES (4)"
 ${CLIENT} --query "INSERT INTO ${T} (k) VALUES (-4)" 2>&1 | grep -o -m1 VIOLATED_CONSTRAINT
 ${CLIENT} --query "SELECT * FROM ${T} WHERE k = 4"

@@ -179,6 +179,8 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    /// Called by `ALTER` before it validates the commands against the in-memory metadata.
+    void updateExternalDynamicMetadataForAlter(ContextPtr context);
 
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 

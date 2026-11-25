@@ -53,6 +53,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -494,9 +495,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// then all repopulate from the metadata committed as of holding the lock.
             if (auto metadata_cache = context->getQueryMetadataCache())
                 metadata_cache->clear();
-            /// The commands are validated against the current schema of a table whose schema is external (a data lake).
-            if (table->isDataLake())
-                table->updateExternalDynamicMetadataIfExists(context);
+            if (auto object_storage = castStorage<StorageObjectStorage>(table, DeferredTable::Skip))
+                object_storage->updateExternalDynamicMetadataForAlter(context);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 

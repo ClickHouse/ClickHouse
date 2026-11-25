@@ -760,6 +760,18 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     setInMemoryMetadata(metadata_with_virtuals);
 }
 
+void StorageObjectStorage::updateExternalDynamicMetadataForAlter(ContextPtr context)
+{
+    if (!configuration->isDataLakeConfiguration())
+        return;
+
+    /// A query pinned to an older snapshot publishes the schema of that snapshot instead of the declared columns.
+    const auto metadata = getInMemoryMetadataPtr(context, false);
+    const auto declared = declared_metadata.get();
+    if (!std::ranges::equal(metadata->getColumns().getAllPhysical(), declared->getColumns().getAllPhysical()))
+        updateExternalDynamicMetadataIfExists(context);
+}
+
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
