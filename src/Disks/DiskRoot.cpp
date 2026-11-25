@@ -59,12 +59,12 @@ std::optional<DiskRoot> getDiskRoot(const DiskPtr & disk)
                 case MetadataStorageType::PlainRewritable:
                 {
                     const auto object_storage = disk->getObjectStorage();
-                    const String path = normalizeRootPath(object_storage->getCommonKeyPrefix() / getPathAddedByLayers(disk));
+                    const auto path = std::filesystem::path(object_storage->getCommonKeyPrefix()) / getPathAddedByLayers(disk);
 
                     if (description.object_storage_type == ObjectStorageType::Local)
-                        return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = path};
+                        return DiskRoot{.filesystem = LOCAL_FILESYSTEM, .path = normalizeRootPath(path)};
                     else
-                        return DiskRoot{.filesystem = object_storage->getDescription() + "/" + object_storage->getObjectsNamespace(), .path = path};
+                        return DiskRoot{.filesystem = object_storage->getDescription() + "/" + object_storage->getObjectsNamespace(), .path = (path / "").string()};
                 }
 
                 case MetadataStorageType::Keeper:
