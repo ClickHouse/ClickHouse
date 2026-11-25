@@ -14,6 +14,7 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 0;

@@ -28,6 +28,8 @@ run_pair()
 
 settings=(
     --max_threads=1
+    # The adaptive aggregator also takes one thread and records no table sizes in the statistics.
+    --enable_adaptive_aggregator=0
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
     # Spilling the aggregation to disk stops the hash-table-stats collection for the query, so a
@@ -52,6 +54,8 @@ run_pair "$local_prefix" small "$small_query" "${settings[@]}" &
 # query rows (is_initial_query = 0). process_query_plan_packet is enabled in the test server config.
 dist_settings=(
     --max_threads=1
+    # Same as in `settings` above: the adaptive aggregator records no table sizes.
+    --enable_adaptive_aggregator=0
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
     --serialize_query_plan=1

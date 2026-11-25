@@ -237,6 +237,8 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     non_final_reading->disableQueryConditionCache();
     /// The parts keep their numbering, so the lazy read of the columns the read leaves out reads these rows as well.
     non_final_reading->shareLazyReadOf(*reading_step);
+    /// The JOIN runtime filters were attached to the read before this optimization, see `collectAppliedJoinRuntimeFilters`.
+    non_final_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
     /// Preserve the read-in-order safeguard flags. `non_final_query_info` carries
     /// `input_order_info`, so this reconstructed step still reads in order, but the
@@ -682,6 +684,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
+        /// A granule that a JOIN runtime filter skips holds no row the join needs, so the set loses no key of such a row.
+        set_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
         /// Preserve the read-in-order safeguard flags for the same reason as `non_final_reading`
         /// above: `set_query_info` keeps `input_order_info`, so this step reads in order and must

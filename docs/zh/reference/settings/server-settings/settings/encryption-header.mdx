@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 ## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />加密头缓存淘汰策略名称。可选值：`LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />ReaderExecutor 读取路径所用加密头缓存的淘汰策略。可选值：`LRU`、`SLRU`、`SIEVE`。缓存容量请参见 [`encryption_header_cache_size`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size)，SLRU 策略中受保护队列的大小请参见 [`encryption_header_cache_size_ratio`](/zh/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio)。
 
 ## encryption_header_cache_size {#encryption_header_cache_size}
 

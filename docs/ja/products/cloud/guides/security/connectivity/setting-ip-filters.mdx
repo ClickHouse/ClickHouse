@@ -8,7 +8,7 @@ keywords: ['IP フィルタ', 'IP Access List']
 ---
 
 <div id="setting-ip-filters">
-  ## IP フィルタの設定
+  ## IP フィルタの設定 {#setting-ip-filters}
 </div>
 
 IP Access List は、接続を許可する送信元アドレスを指定して、ClickHouse サービスまたは API キーへのトラフィックをフィルタリングします。これらのリストは、サービスごと、および API キーごとに設定できます。リストは、サービスまたは API キーの作成時にも、作成後にも設定できます。
@@ -20,7 +20,7 @@ IP Access List は、接続を許可する送信元アドレスを指定して�
 </Warning>
 
 <div id="prepare">
-  ## 準備
+  ## 準備 {#prepare}
 </div>
 
 始める前に、アクセスリストに追加する必要がある IP アドレスまたは IP 範囲を洗い出してください。リモートワーカー、オンコール対応を行う拠点、VPN なども考慮に入れます。IP Access List のユーザーインターフェイスでは、個別のアドレスと CIDR 表記を指定できます。
@@ -28,7 +28,7 @@ IP Access List は、接続を許可する送信元アドレスを指定して�
 Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラス A、B、C (8、6、または 24) のサブネットマスクサイズよりも小さい IP アドレス範囲を指定できます。[ARIN](https://account.arin.net/public/cidrCalculator) などの組織では、必要に応じて使える CIDR 計算ツールを提供しています。CIDR 表記の詳細については、[Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html) RFC を参照してください。
 
 <div id="create-or-modify-an-ip-access-list">
-  ## IP Access List を作成または変更する
+  ## IP Access List を作成または変更する {#create-or-modify-an-ip-access-list}
 </div>
 
 <Info>
@@ -53,7 +53,7 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
 <Accordion title="API キー の IP Access List">
   API キー を作成すると、IP allow list のデフォルト設定は「Allow from anywhere」です。
 
-  API キー の一覧で、**Actions** カラムの API キー の横にある 3 点メニューをクリックし、**Edit** を選択します。画面下部に IP Access List と、その設定オプションがあります。
+  API キー の一覧で、**Actions** カラムの API キー の横にある 3 点メニューをクリックし、**編集** を選択します。画面下部に IP Access List と、その設定オプションがあります。
 
   * すべての場所から サービス への受信トラフィックを許可する
   * 特定の場所から サービス へのアクセスを許可する
@@ -63,31 +63,21 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
 このスクリーンショットは、「NY Office range」と記載された IP アドレス範囲からのトラフィックを許可する アクセスリスト を示しています。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud の既存の アクセスリスト](/images/cloud/security/ip-filtering-after-provisioning.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud の既存のアクセスリスト](/images/cloud/security/ip-filtering-after-provisioning.webp)
+  </Frame>
 </div>
 
-<div id="possible-actions">
-  ### 実行できる操作
-</div>
+### 実行できる操作 {#possible-actions}
 
 1. エントリを追加するには、**+ Add new IP** を使用します
 
 この例では、`London server` という説明を付けて 1 つの IP アドレスを追加しています。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud のアクセスリストに 1 つの IP を追加する](/images/cloud/security/ip-filter-add-single-ip.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud のアクセスリストに 1 つの IP を追加する](/images/cloud/security/ip-filter-add-single-ip.webp)
+  </Frame>
 </div>
 
 2. 既存のエントリを削除する
@@ -105,7 +95,7 @@ Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラ
 変更を反映するには、**Save** をクリックする必要があります。
 
 <div id="verification">
-  ## 検証
+  ## 検証 {#verification}
 </div>
 
 フィルタを作成したら、その範囲内からサービスに接続できること、および許可された範囲外からの接続が拒否されることを確認してください。確認には、簡単な `curl` コマンドを使用できます。
@@ -133,7 +123,7 @@ Ok.
 ```
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 * 現在、IP Access List は IPv4 のみをサポートしています
