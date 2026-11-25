@@ -365,9 +365,8 @@ T parseInt(std::string_view str)
 }
 
 /// Parses all of [pos, end) as one decimal integer: an optional sign ('-' only for a signed `T`) and at least one digit.
-/// Accepts exactly the ranges that `readIntTextInBaseImpl<10, T, bool, check_overflow>` on a buffer holding the range
-/// accepts and consumes whole; with `CHECK_OVERFLOW` the value must fit in `T`, otherwise it wraps around as in `readIntText`.
-/// Returns false, leaving `x` unchanged, otherwise.
+/// Same acceptance and value as `readIntTextInBaseImpl<10, T, bool, check_overflow>` consuming the whole range: with
+/// `CHECK_OVERFLOW` the value must fit in `T`, otherwise it wraps. Returns false and leaves `x` unchanged on rejection.
 template <ReadIntTextCheckOverflow check_overflow, typename T>
 requires (std::is_integral_v<T> && !std::is_same_v<T, bool>)
 bool NO_SANITIZE_UNSIGNED_OVERFLOW tryParseWholeDecimalInteger(T & x, const char * pos, const char * end)

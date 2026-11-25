@@ -1641,8 +1641,7 @@ struct ConvertThroughParsing
             if constexpr (std::is_same_v<FromDataType, DataTypeString> && IsDataTypeNumber<ToDataType>
                 && std::is_integral_v<typename ToDataType::FieldType>)
             {
-                /// Same verdict and value as the generic path below, without a read buffer per row;
-                /// a rejected row goes there only in `Throw` mode, for the message.
+                /// Same verdict and value as the generic path below, which a rejected row reaches only in `Throw` mode.
                 constexpr auto check_overflow
                     = (exception_mode != ConvertFromStringExceptionMode::Throw || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                     ? ReadIntTextCheckOverflow::CHECK_OVERFLOW
