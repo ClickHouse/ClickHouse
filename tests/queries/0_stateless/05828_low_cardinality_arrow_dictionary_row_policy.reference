@@ -1,0 +1,6 @@
+Arrow: SELECT k FROM policy_keys: allowed 1, hidden 0
+ArrowStream: SELECT k FROM policy_keys: allowed 1, hidden 0
+Arrow: SELECT k, sum(v) FROM policy_keys GROUP BY k: allowed 1, hidden 0
+ArrowStream: SELECT k, sum(v) FROM policy_keys GROUP BY k: allowed 1, hidden 0
+Arrow: SELECT [k] AS a FROM policy_keys: allowed 1, hidden 0
+ArrowStream: SELECT [k] AS a FROM policy_keys: allowed 1, hidden 0

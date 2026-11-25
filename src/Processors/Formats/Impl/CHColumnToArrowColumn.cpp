@@ -1041,7 +1041,13 @@ namespace DB
         const CHColumnToArrowColumn::Settings & settings,
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & dictionary_values)
     {
-        const auto * column_lc = assert_cast<const ColumnLowCardinality *>(column.get());
+        /// Export only the dictionary values that the rows of the range reference. A dictionary can hold values of
+        /// rows that were filtered out, e.g. by a row policy: a `MergeTree` part dictionary that the reader shares
+        /// with the column, or a dictionary that `filter` left unchanged. Arrow writes the whole dictionary, so
+        /// these values would otherwise be disclosed to the reader of the output.
+        const auto compacted_column = assert_cast<const ColumnLowCardinality &>(*column).cutAndCompact(start, end - start);
+        const auto * column_lc = compacted_column.get();
+        const size_t compacted_end = end - start;
         arrow::DictionaryBuilder<ValueType> * builder = assert_cast<arrow::DictionaryBuilder<ValueType> *>(array_builder);
         auto & dict_values = dictionary_values[column_name];
         bool is_nullable = column_type->isLowCardinalityNullable();
@@ -1087,17 +1093,17 @@ namespace DB
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
         PaddedPODArray<Int64> indexes;
-        indexes.reserve(end - start);
+        indexes.reserve(compacted_end);
         if (mapping)
-            indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, start, end, is_nullable);
+            indexes = extractIndexesWithRemapping(column_lc->getIndexesPtr(), mapping, 0, compacted_end, is_nullable);
         else
-            indexes = extractIndexes(column_lc->getIndexesPtr(), start, end, is_nullable);
+            indexes = extractIndexes(column_lc->getIndexesPtr(), 0, compacted_end, is_nullable);
         const uint8_t * arrow_null_bytemap_raw_ptr = nullptr;
         PaddedPODArray<uint8_t> arrow_null_bytemap;
         if (column_type->isLowCardinalityNullable())
         {
-            arrow_null_bytemap.reserve(end - start);
-            for (size_t i = start; i < end; ++i)
+            arrow_null_bytemap.reserve(compacted_end);
+            for (size_t i = 0; i < compacted_end; ++i)
                 arrow_null_bytemap.emplace_back(!column_lc->isNullAt(i));
 
             arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();

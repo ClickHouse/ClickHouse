@@ -1,0 +1,8 @@
+cancel between normalization batches, two-level threshold 0
+cancelled without processing another batch
+ordinary completion, two-level threshold 0
+64	128	8256	8256
+cancel between normalization batches, two-level threshold 1
+cancelled without processing another batch
+ordinary completion, two-level threshold 1
+64	128	8256	8256
