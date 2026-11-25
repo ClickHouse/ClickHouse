@@ -53,9 +53,6 @@ struct PrewhereExprStep
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 
-    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
-    bool query_condition_cache_attribution_boundary = false;
-
     /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
     /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
     /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
@@ -303,7 +300,7 @@ private:
         void toNextMark();
         [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
         [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
-            size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
+            size_t rows_num, size_t stripe_marks, size_t max_stripe_block_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
         [[nodiscard]] size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
@@ -317,9 +314,6 @@ public:
 
         /// All read marks.
         MarkRanges read_mark_ranges;
-
-        /// Marks emptied by the steps up to the query condition cache attribution boundary.
-        MarkRanges query_condition_cache_attributable_marks;
 
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
@@ -532,12 +526,12 @@ public:
         LoggerPtr log;
     };
 
-    /// `max_block_size_rows` is the limit of rows in a block (`max_block_size`, lowered by a `LIMIT`), which `max_rows`
-    /// can be below of to keep to `preferred_block_size_bytes`. 0 if not known.
+    /// A block that is a whole stripe of the columns cache can have more rows than `max_rows`, but at most twice
+    /// `max_stripe_block_rows`. 0 if blocks are not extended to whole stripes.
     /// `columns_cache_readers` are the readers of the chain that read columns, which decide together how its blocks
     /// are aligned with the stripes of the columns cache; only this reader if empty.
     ReadResult startReadingChain(
-        size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
+        size_t max_rows, MarkRanges & ranges, size_t max_stripe_block_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
     const Block & getSampleBlock() const { return result_sample_block; }

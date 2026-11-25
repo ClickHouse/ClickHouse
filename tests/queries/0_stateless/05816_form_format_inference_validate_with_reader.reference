@@ -1,0 +1,9 @@
+a	Nullable(String)					
+b	Nullable(String)					
+text	[\'2026\\x2D11\\x2D17\']
+a	Nullable(String)					
+b	Array(Nullable(Date))					
+text	['2026-11-17']
+Nullable(Tuple(Nullable(Int64)))	(1)
+Nullable(Tuple(Nullable(Int64), Nullable(Int64)))	(1,2)
+Nullable(Tuple(Nullable(Int64)))	(1)

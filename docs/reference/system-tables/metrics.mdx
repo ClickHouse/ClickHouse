@@ -114,6 +114,10 @@ Active dictionaries.
 
 Active replicated tables.
 
+### AttachedSharedTable {#attachedsharedtable}
+
+Active SharedMergeTree tables.
+
 ### AttachedTable {#attachedtable}
 
 Active tables.
@@ -614,6 +618,10 @@ Number of distributed cache registered servers
 
 Number of distributed cache registered servers in current az
 
+### DistrCacheServerClientsSlowingDown {#distrcacheserverclientsslowingdown}
+
+Number of distributed cache clients whose slow-down window is open, as of the last stuck-request scan
+
 ### DistrCacheServerCommittedTemporaryFiles {#distrcacheservercommittedtemporaryfiles}
 
 Number of committed temporary files owned by this distributed cache server process
@@ -628,11 +636,15 @@ Number of open connections to ClickHouse server from Distributed Cache
 
 ### DistrCacheServerRegistryConnections {#distrcacheserverregistryconnections}
 
-Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)
+Number of client connections listed in the distributed cache server's registry, the ones marked for closing included
 
 ### DistrCacheServerS3CachedClients {#distrcacheservers3cachedclients}
 
 Number of distributed cache S3 cached clients
+
+### DistrCacheServerStuckRequests {#distrcacheserverstuckrequests}
+
+Number of in-flight distributed cache server requests that made no progress for at least `distributed_cache_stuck_request_no_progress_timeout_ms`, or ran past `distributed_cache_max_request_processing_time_ms` without ending itself within one scan interval, as of the last stuck-request scan
 
 ### DistrCacheSharedLimitCount {#distrcachesharedlimitcount}
 
@@ -956,7 +968,7 @@ Number of queued or active jobs in the IcebergCatalog thread pool.
 
 ### IcebergCompactionCleanupTasks {#icebergcompactioncleanuptasks}
 
-Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.
+Number of Iceberg tables with the background task that expires their outdated snapshots and removes the files only these snapshots reference, enabled by `enable_cleanup_old_data_files_compaction`.
 
 ### IcebergCompactionMerge {#icebergcompactionmerge}
 
@@ -1973,6 +1985,10 @@ The minimum number of replicas registered in Keeper across all tables. Note it m
 ### SharedMergeTreeOutdatedPartsInKeeper {#sharedmergetreeoutdatedpartsinkeeper}
 
 How many outdated part records stored in keeper
+
+### SharedMergeTreePartsUpdateLeaderLocksHeld {#sharedmergetreepartsupdateleaderlocksheld}
+
+Parts update leader locks held or being acquired by this replica, one per SharedMergeTree table where it is the leader
 
 ### SharedMergeTreeThreads {#sharedmergetreethreads}
 

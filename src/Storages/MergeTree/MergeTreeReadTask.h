@@ -204,7 +204,6 @@ public:
         /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
         /// because it captures individual filtered-out granules even in partially-passing batches.
         MarkRanges unmatched_mark_ranges;
-        MarkRanges query_condition_cache_attributable_marks;
         /// Pairs of (mark, number of its rows that passed PREWHERE) for the granules read completely.
         std::vector<std::pair<size_t, size_t>> mark_match_counts;
         size_t row_count = 0;
@@ -239,9 +238,6 @@ public:
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
-
-    void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
-    const MarkRanges & getQueryConditionCacheAttributableMarks() const { return query_condition_cache_attributable_marks; }
 
     void addPrewhereMarkMatchCounts(const std::vector<std::pair<size_t, size_t>> & mark_match_counts_);
     const std::vector<std::pair<size_t, size_t>> & getPrewhereMarkMatchCounts() const { return prewhere_mark_match_counts; }
@@ -307,7 +303,6 @@ private:
 
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
-    MarkRanges query_condition_cache_attributable_marks;
     std::vector<std::pair<size_t, size_t>> prewhere_mark_match_counts;
 
     BlockSizeParams block_size_params;
