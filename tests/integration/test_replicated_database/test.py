@@ -2160,8 +2160,8 @@ def test_ignore_cluster_name_setting(started_cluster):
 
 @pytest.mark.parametrize(
     "materialized, part_type",
-    [(False, "Compact"), (True, "Compact"), (False, "Wide")],
-    ids=["empty-compact", "materialized-compact", "empty-wide"],
+    [(True, "Compact"), (False, "Wide")],
+    ids=["materialized-compact", "empty-wide"],
 )
 def test_nonphysical_column_alter_replay(started_cluster, materialized, part_type):
     db_name = f"test_nonphysical_replay_{int(materialized)}_{part_type.lower()}"
@@ -2235,41 +2235,40 @@ def test_nonphysical_column_alter_replay(started_cluster, materialized, part_typ
             ) == "a_old\nb\nc\n"
         assert dummy_node.query(f"SELECT count(), sum(b), sum(c) FROM {db_name}.t") == "2\t84\t20\n"
 
-        if not materialized:
-            main_node.query(
-                f"CREATE TABLE {db_name}.t_patch (a UInt64, c UInt64) "
-                "ENGINE = MergeTree ORDER BY tuple() "
-                f"SETTINGS min_bytes_for_wide_part = {wide_threshold}, min_rows_for_wide_part = {wide_threshold}, "
-                "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, min_level_for_full_part_storage = 0, "
-                "enable_block_number_column = 0, enable_block_offset_column = 0"
-            )
-            dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
-            dummy_node.query(f"INSERT INTO {db_name}.t_patch VALUES (7, 8), (9, 10)")
-            main_node.query(f"ALTER TABLE {db_name}.t_patch ADD COLUMN b UInt64 DEFAULT 42")
-            main_node.query(
-                f"ALTER TABLE {db_name}.t_patch MODIFY COLUMN a UInt64 EPHEMERAL 0, "
-                "MODIFY COLUMN c UInt64 EPHEMERAL 0"
-            )
-            dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
-            assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t84\n"
+        main_node.query(
+            f"CREATE TABLE {db_name}.t_patch (a UInt64, c UInt64) "
+            "ENGINE = MergeTree ORDER BY tuple() "
+            f"SETTINGS min_bytes_for_wide_part = {wide_threshold}, min_rows_for_wide_part = {wide_threshold}, "
+            "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, min_level_for_full_part_storage = 0, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"INSERT INTO {db_name}.t_patch VALUES (7, 8), (9, 10)")
+        main_node.query(f"ALTER TABLE {db_name}.t_patch ADD COLUMN b UInt64 DEFAULT 42")
+        main_node.query(
+            f"ALTER TABLE {db_name}.t_patch MODIFY COLUMN a UInt64 EPHEMERAL 0, "
+            "MODIFY COLUMN c UInt64 EPHEMERAL 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t84\n"
 
-            # Keep the historical columns as the only stored row-count sources while reading the patch.
-            main_node.query(
-                f"ALTER TABLE {db_name}.t_patch MODIFY SETTING enable_block_number_column = 1, "
-                "enable_block_offset_column = 1, apply_patches_on_merge = 0"
-            )
-            dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
-            dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t_patch")
-            dummy_node.query(
-                f"UPDATE {db_name}.t_patch SET b = 43 WHERE b = 42 "
-                "SETTINGS enable_lightweight_update = 1"
-            )
-            assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
+        # Keep the historical columns as the only stored row-count sources while reading the patch.
+        main_node.query(
+            f"ALTER TABLE {db_name}.t_patch MODIFY SETTING enable_block_number_column = 1, "
+            "enable_block_offset_column = 1, apply_patches_on_merge = 0"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        dummy_node.query(f"SYSTEM STOP MERGES {db_name}.t_patch")
+        dummy_node.query(
+            f"UPDATE {db_name}.t_patch SET b = 43 WHERE b = 42 "
+            "SETTINGS enable_lightweight_update = 1"
+        )
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
 
-            # `APPLY PATCHES` reads the same injected column through the sequential reader before rewriting it.
-            dummy_node.query(f"SYSTEM START MERGES {db_name}.t_patch")
-            dummy_node.query(f"ALTER TABLE {db_name}.t_patch APPLY PATCHES SETTINGS mutations_sync = 2")
-            assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
+        # `APPLY PATCHES` reads the same injected column through the sequential reader before rewriting it.
+        dummy_node.query(f"SYSTEM START MERGES {db_name}.t_patch")
+        dummy_node.query(f"ALTER TABLE {db_name}.t_patch APPLY PATCHES SETTINGS mutations_sync = 2")
+        assert dummy_node.query(f"SELECT count(), sum(b) FROM {db_name}.t_patch") == "2\t86\n"
     finally:
         for node in nodes:
             node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

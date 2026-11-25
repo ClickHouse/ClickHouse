@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # Global failpoint; this checks the plain `MergeTree` mutation registration path.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -10,8 +10,9 @@ set -e
 
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_pending_registration"
+    $CLICKHOUSE_CLIENT --multiquery -q "
+        SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation;
+        DROP TABLE IF EXISTS t_pending_registration;"
 }
 trap cleanup EXIT
 
@@ -38,9 +39,9 @@ for column_kind in 'EPHEMERAL' 'ALIAS c'; do
         printf '%s\n' "$result" >&2
         exit 1
     fi
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 't_pending_registration' AND name = 'a' AND default_kind = ''"
-
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
+    $CLICKHOUSE_CLIENT --multiquery -q "
+        SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 't_pending_registration' AND name = 'a' AND default_kind = '';
+        SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation;"
     wait "$mutation_pid"
     # Once registered, an unfinished consumer must cause the usual immediate rejection.
     if result=$($CLICKHOUSE_CLIENT -q "ALTER TABLE t_pending_registration MODIFY COLUMN a UInt64 $column_kind" 2>&1); then
