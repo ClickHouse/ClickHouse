@@ -248,14 +248,14 @@ private:
             FunctionResult res;
             {
                 ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                /// Also when it throws: what it captured is the query's.
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 res = callback();
-                callback = {};
             }
             promise.set_value(std::move(res));
         }
         catch (...)
         {
-            callback = {};
             promise.set_exception(std::current_exception());
         }
     }
@@ -270,14 +270,14 @@ private:
         {
             {
                 ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                /// Also when it throws: what it captured is the query's.
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 callback();
-                callback = {};
             }
             promise.set_value();
         }
         catch (...)
         {
-            callback = {};
             promise.set_exception(std::current_exception());
         }
     }

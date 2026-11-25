@@ -234,6 +234,32 @@ TEST(ThreadPoolCallbackRunner, LocalRunnerStateIsNotChargedToQuery)
     t.join();
 }
 
+/// What a throwing callback captured is the query's, so it must be released before the pool thread detaches.
+TEST(ThreadPoolCallbackRunner, LocalRunnerReleasesThrowingCallbackInQuery)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto pool = makeSingleThreadPool();
+
+        auto group = std::make_shared<ThreadGroup>(context, 0);
+
+        CurrentThread::attachToGroupIfDetached(group);
+        {
+            ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            runner.enqueueAndKeepTrack([buffer = std::vector<char>(8 << 20, 'x')] { throw std::runtime_error("callback failed"); });
+            EXPECT_THROW(runner.waitForAllToFinishAndRethrowFirstError(), std::runtime_error);
+        }
+        pool->wait();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        const Int64 charged = group->memory_tracker.get();
+        EXPECT_LT(std::abs(charged), 1 << 20) << "the query is left charged " << charged << " bytes";
+    });
+    t.join();
+}
+
 /// The use-after-free regression: async work enqueued from a borrowed `ThreadGroup` scope
 /// (materialized views, async-insert flushes, `EXPLAIN ANALYZE`) may outlive the parent query.
 /// The capture must keep the accounting chain alive, allocations must still charge the owning
