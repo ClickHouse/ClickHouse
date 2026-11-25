@@ -51,7 +51,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
 - Lambdas (`{x*y}`, `{[a;b] a+b}`), which are inlined where they are applied, and projections (`f[;2]`).
 - Adverbs: each (`'`, `each`), each-left (`\:`), each-right (`/:`), each-prior (`':`, `prior`), over (`/`, `over`), and scan (`\`, `scan`).
 - The q-sql templates `select`, `exec`, `update`, and `delete`, with the `by` and `where` phrases,
-  `select[n]`, `select[>col]`, and `select distinct`.
+  `select[n]`, `select[>col]`, and `select distinct`. `exec` with one phrase without a name returns its value: the list
+  of a column, an atom for an aggregate, and a dictionary from the keys to the values with the `by` phrase.
 - Aggregates (`sum`, `avg`, `count`, `first`, `last`, `med`, `dev`, `var`, `wavg`, `wsum`, `cor`, ...),
   uniform functions (`sums`, `deltas`, `prev`, `next`, `fills`, `mavg`, `msum`, `xprev`, ...),
   `fby`, `xbar`, `within`, `in`, `like`, casts with `$`.
@@ -89,7 +90,15 @@ and the keys of the joins.
 A cast with `$` converts like q: a number is rounded when it becomes an integer (`` `int$3.7 `` is `4`), and
 a number that becomes a temporal value counts the units of the type since 2000.01.01: `"p"$42` is 42
 nanoseconds after 2000.01.01, `"d"$42` is 42 days, `"t"$42` is 42 milliseconds, `"u"$42` is 42 minutes.
-The cast of a temporal value to a number is the reverse.
+The cast of a temporal value to a number is the reverse, and the name of a type (`` `date$42 ``) casts a number like
+its letter does. The arithmetic of a temporal value and a number counts the same units: `2024.01m+1` is the next
+month, and a timestamp plus one is the next nanosecond.
+
+A month and a minute have no types of their own in ClickHouse: a month is the `Date32` of its first day, and a minute
+is a `Time`. Inside of a program, the columns of the tables that the program makes keep these q types, so a column
+of months is cast and added to as months. A column of a ClickHouse table has the q type that its type tells: a `Date32`
+is a date, a `Time` is a second, a `DateTime64` with up to three digits of the fraction is a datetime, and with more
+digits it is a timestamp.
 
 ## Differences from q {#differences-from-q}
 
@@ -101,6 +110,7 @@ The cast of a temporal value to a number is the reverse.
 - The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
   system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
 - General lists must consist of items of the same shape; dictionaries are supported in simple forms.
+  `exec` with several phrases or with a named phrase, which is a dictionary of the columns in q, returns a table.
 - A temporal literal must be in the range of its type in q: the dates within the years 0001..9999, the minutes, seconds,
   and times within 32 bits, and the timestamps and timespans within 64 bits of nanoseconds (`106751D23:47:16.854775807`
   is the longest timespan). A literal out of range is a syntax error. The values that ClickHouse stores are limited by
@@ -110,9 +120,10 @@ The cast of a temporal value to a number is the reverse.
 - The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
   function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
   the setting `max_expanded_ast_elements`.
-- A program is compiled when the query is already in the process list, so the compilation is under the limits of
-  the query, such as `max_memory_usage`: a table literal of ten million items takes its memory even if the program
-  does not use the table.
+- The compilation of a program is under the memory limit of the query (`max_memory_usage`): a table literal of
+  ten million items takes its memory even if the program does not use the table.
+- The compiled query is logged like any other query. When a program cannot be compiled, its text is logged, with
+  the queries embedded by `.ch.sql` written without their secrets, such as the password of `remote` or the keys of `s3`.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant
