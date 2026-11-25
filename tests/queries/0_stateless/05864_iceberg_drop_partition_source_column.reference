@@ -1,5 +1,5 @@
 partition source p: (BAD_ARGUMENTS)
-sort source s: (BAD_ARGUMENTS)
+sort source s: (UNKNOWN_IDENTIFIER)
 unchanged: 1
 other column id: dropped
 a	(1,'x')

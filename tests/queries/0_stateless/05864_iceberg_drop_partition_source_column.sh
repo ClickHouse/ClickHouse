@@ -36,7 +36,7 @@ metadata_files()
 
 query "CREATE TABLE t (id Int32, p String, s Tuple(a Int32, b String)) ENGINE = IcebergLocal('$BASE/t/') PARTITION BY p ORDER BY s.a SETTINGS iceberg_format_version = 2"
 query "INSERT INTO t VALUES (1, 'a', (1, 'x'))"
-# Opened on the directory, without its own PARTITION BY and ORDER BY. No read before the ALTERs: it loads the sort order.
+# Opened on the directory, without its own PARTITION BY and ORDER BY. The ALTER loads the sort order, whose key refuses dropping `s`.
 query "CREATE TABLE t2 ENGINE = IcebergLocal('$BASE/t/')"
 before=$(metadata_files "$BASE/t")
 echo "partition source p: $(drop t2 p)"
