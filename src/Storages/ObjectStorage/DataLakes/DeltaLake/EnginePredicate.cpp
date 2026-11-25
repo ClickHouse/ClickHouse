@@ -194,7 +194,7 @@ bool EnginePredicate::canReferenceColumn(const std::string & name) const
         if (name == column.name)
         {
             /// The kernel would split the name of such a column into a path.
-            return name.find('.') == std::string::npos;
+            return !name.contains('.');
         }
 
         if (!name.starts_with(column.name) || name.size() <= column.name.size() || name[column.name.size()] != '.')
