@@ -22,6 +22,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -34,6 +35,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -44,6 +46,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
@@ -293,6 +296,46 @@ public:
                     if (col_const)
                         return ColumnConst::create(std::move(present), input_rows_count);
                     return present;
+                }
+
+                /// The parser returns a `String` value, or an integer of a type that holds it exactly, as it is stored.
+                constexpr std::string_view name = TName::name;
+                if constexpr (name == "JSONExtract" || name == "JSONExtractString" || name == "JSONExtractInt" || name == "JSONExtractUInt")
+                {
+                    const auto from_type = removeNullable(value_type);
+                    const auto to_type = removeNullable(result_type);
+                    DataTypePtr supertype;
+                    if (isNativeInteger(from_type) && isNativeInteger(to_type) && !isBool(from_type) && !isBool(to_type))
+                        supertype = tryGetLeastSupertype(DataTypes{from_type, to_type});
+                    if ((isString(from_type) && isString(to_type)) || (supertype && supertype->equals(*to_type)))
+                    {
+                        ColumnPtr values = castColumn({removeNullable(value), from_type, ""}, to_type);
+                        auto null_map = ColumnUInt8::create(num_rows);
+                        auto & null_data = null_map->getData();
+                        for (size_t i = 0; i < num_rows; ++i)
+                            null_data[i] = !present_data[i] || value->isNullAt(i);
+
+                        if (!memoryIsZero(null_data.data(), 0, num_rows))
+                        {
+                            auto with_defaults = to_type->createColumn();
+                            with_defaults->reserve(num_rows);
+                            for (size_t i = 0; i < num_rows; ++i)
+                            {
+                                if (null_data[i])
+                                    with_defaults->insertDefault();
+                                else
+                                    with_defaults->insertFrom(*values, i);
+                            }
+                            values = std::move(with_defaults);
+                        }
+
+                        ColumnPtr result = values;
+                        if (result_type->isNullable())
+                            result = ColumnNullable::create(values, std::move(null_map));
+                        if (col_const)
+                            return ColumnConst::create(result, input_rows_count);
+                        return result;
+                    }
                 }
 
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*text_column, num_rows);
