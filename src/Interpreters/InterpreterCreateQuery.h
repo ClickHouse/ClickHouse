@@ -96,9 +96,13 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
-    /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
-    /// engine has a source. A definition that cannot be a table is refused.
-    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// The grant needed to create a table from the table function, besides `CREATE TABLE`: `TABLE ENGINE` on its engine
+    /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
+    /// A definition that cannot be a table is refused. `is_replayed_definition` is passed on to
+    /// `ITableFunction::setReplayedDefinition`: a definition the server stored itself has to load under the rules it was
+    /// accepted by.
+    static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(
+        const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
@@ -138,6 +142,12 @@ private:
     /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
     void checkExportAccess(const ASTCreateQuery & create) const;
+
+    /// A `Dictionary` table, including the inner table of a materialized view and a table created `AS dictionary(...)`,
+    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`. Checked here, while the
+    /// query still runs as the user: `Replicated` and `ON CLUSTER` replays run with full access, and so does the deferred
+    /// creation of a table function with an explicit column list. Replaces the dictionary name argument with the evaluated name.
+    void checkDictionaryEngineAccess(ASTCreateQuery & create) const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);

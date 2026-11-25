@@ -19,6 +19,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Exception.h>
+#include <Databases/IDatabase.h>
 
 namespace DB
 {

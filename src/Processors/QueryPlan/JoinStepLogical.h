@@ -153,6 +153,12 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+    void setRuntimeFilterKeepsMatchingRows() { runtime_filter_keeps_matching_rows = true; }
+
+    /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
+    /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
+    [[nodiscard]] bool hasRuntimeFilters() const { return has_runtime_filters; }
+    void setHasRuntimeFilters() { has_runtime_filters = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -227,6 +233,15 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
+    struct PlannedMergeOrder
+    {
+        String column;
+        bool sharded = false;
+    };
+    [[nodiscard]] const std::optional<PlannedMergeOrder> & getPlannedMergeOrder() const { return planned_merge_order; }
+    void setPlannedMergeOrder(PlannedMergeOrder order) { planned_merge_order = std::move(order); }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -236,6 +251,8 @@ public:
     static constexpr JoinTableSide getProbeSide() { return JoinTableSide::Left; }
     /// The index of the input of `side`, which is also its index in the children of the plan node.
     static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
+
+    static bool isDummyResultColumn(const ActionsDAG::Node & node);
 
     [[nodiscard]] UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
@@ -296,6 +313,18 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
+    /// The runtime filter pass of this host added a filter that passes mostly the rows which match.
+    /// Not serialized: a host adds its own.
+    bool runtime_filter_keeps_matching_rows = false;
+
+    /// The sender estimated the right side below `min_rows_for_packed_string_keys_in_hash_join`. Set only on a step taken
+    /// over the wire, which has no row estimate. A host with no row estimate of its own follows it.
+    bool sender_estimated_small_right_side = false;
+
+    /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
+    /// the physical step built from a copy also knows that its plan carries runtime filter identities.
+    bool has_runtime_filters = false;
+
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
@@ -324,9 +353,14 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    std::optional<PlannedMergeOrder> planned_merge_order;
 };
 
 
+/// Intentionally does not implement `clone` (unlike `JoinStep`): it owns `prepared_join_storage`,
+/// a live handle into `StorageJoin` or an `IKeyValueEntity`, whose sharing semantics between two
+/// executing plans are not defined, and its own `child_plan`. `IN`-subquery plans with this step
+/// take the destructive fallback in `FutureSetFromSubquery::buildOrderedSetInplace`.
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
@@ -353,13 +387,13 @@ private:
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 
-/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// Whether the InequalityJoin algorithm is preferred for this join: `inequality` is listed first in
 /// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
 /// For optimization passes that would otherwise claim the join for a hash-family algorithm
 /// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
-/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// physical step applies, so `true` means InequalityJoin takes the join unless the right side is a
 /// prepared `Join` storage (which those passes exclude on their own).
-bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
+bool isInequalityJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

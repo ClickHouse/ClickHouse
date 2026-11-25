@@ -21,8 +21,8 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
     {
         /// `column_name.x` (written as a compound identifier, or as one part as the key expressions built from the metadata
         /// of a data lake are written) is a subcolumn unless the table has a physical column with this name, such as
-        /// `MergeTree` with `share_nested_offsets = 0`.
-        if (columns && columns->has(*identifier_column_name))
+        /// `MergeTree` with `share_nested_offsets = 0`, or a subcolumn of such a column.
+        if (columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::All, *identifier_column_name))
             return;
 
         if (identifier.compound())

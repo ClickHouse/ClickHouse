@@ -149,7 +149,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       *
-      * The result is not cached: every call traverses the whole subtree, so the cost is
+      * The result is not cached (except for a tree rooted at a `ConstantNode`): every call traverses the whole subtree, so the cost is
       * proportional to the subtree size. Nodes referenced through weak pointers are hashed too:
       * for example, hashing a `ColumnNode` also hashes its column source (a `TableNode` or
       * `QueryNode` with all its columns). Because of that, computing the hash per node — e.g.

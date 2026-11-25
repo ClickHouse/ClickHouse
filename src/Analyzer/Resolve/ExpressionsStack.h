@@ -154,11 +154,11 @@ private:
     static bool isAggregateOrGroupingFunction(const FunctionNode & function)
     {
         /// A window function is evaluated after aggregation: its arguments and window specification see GROUP BY keys
-        /// already converted to Nullable. `isWindowFunction` tests only the window child, so it holds before resolution.
+        /// already converted to Nullable. `isWindowCall` tests only the window child, so it holds before resolution.
         /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
         /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
         return (AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
-                && !function.isWindowFunction())
+                && !function.isWindowCall())
             || function.getFunctionName() == "grouping";
     }
 

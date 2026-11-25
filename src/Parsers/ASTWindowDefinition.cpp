@@ -1,4 +1,5 @@
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTFormatting.h>
 
 #include <Common/SipHash.h>
 #include <Parsers/ASTExpressionList.h>
@@ -89,6 +90,28 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     format_frame.expression_list_prepend_whitespace = false;
     bool need_space = false;
 
+    /// If the definition does not fit on the current line, every clause starts on a new line
+    /// and the closing bracket is on its own line, as for function arguments (see ASTFormatting.h).
+    const bool wrap = shouldWrapAST(ostr, state, format_frame, [&]
+    {
+        return formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        {
+            formatImpl(out, settings, flat_state, format_frame);
+        });
+    });
+    if (wrap)
+        ++format_frame.indent;
+    const auto write_space = [&]
+    {
+        if (wrap)
+            writeASTNewLine(ostr, format_frame.indent);
+        else
+            ostr << " ";
+    };
+
+    if (wrap)
+        writeASTNewLine(ostr, format_frame.indent);
+
     if (!parent_window_name.empty())
     {
         ostr << backQuoteIfNeed(parent_window_name);
@@ -99,9 +122,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (partition_by)
     {
         if (need_space)
-        {
-            ostr << " ";
-        }
+            write_space();
 
         ostr << "PARTITION BY ";
         partition_by->format(ostr, settings, state, format_frame);
@@ -112,9 +133,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (order_by)
     {
         if (need_space)
-        {
-            ostr << " ";
-        }
+            write_space();
 
         ostr << "ORDER BY ";
         order_by->format(ostr, settings, state, format_frame);
@@ -125,7 +144,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (!frame_is_default)
     {
         if (need_space)
-            ostr << " ";
+            write_space();
 
         /// The frame offset grammar requires the offset to be wrapped in parentheses
         /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
@@ -166,6 +185,9 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }
     }
+
+    if (wrap)
+        writeASTNewLine(ostr, format_frame.indent - 1);
 }
 
 std::string ASTWindowDefinition::getDefaultWindowName() const

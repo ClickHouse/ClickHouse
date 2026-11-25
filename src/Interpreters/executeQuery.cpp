@@ -497,6 +497,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.used_data_skipping_indices.insert(access_info.data_skipping_indices.begin(), access_info.data_skipping_indices.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
         element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
     }
@@ -561,7 +562,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
 static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
-    return url.substr(0, url.find_first_of("?#"));
+    return String(stripQueryAndFragment(url));
 }
 
 String formatQueryForLogging(const String & query, const Settings & settings)
@@ -644,6 +645,7 @@ QueryLogElement logQueryStart(
             elem.query_columns = info.columns;
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
+            elem.used_data_skipping_indices = info.data_skipping_indices;
             elem.query_views = info.views;
             elem.used_row_policies = info.row_policies;
         }
@@ -918,8 +920,13 @@ static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStat
 static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
 
 /// A row whose plan could not be written says why, in place of the plan.
-static void writeQueryPlanError(String & query_plan, const String & reason)
+static void writeQueryPlanError(String & query_plan, String reason)
 {
+    /// The reason can be the message of any exception thrown while rendering the plan, which may
+    /// quote what it was rendering.
+    if (auto masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(reason);
+
     query_plan.clear();
     try
     {
@@ -981,6 +988,57 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
     }
 }
+
+/// Writes the bodies registered by `Context::addSQLSecurityOverriddenBody` as child rows of `elem`, without metrics.
+static void logSQLSecurityOverriddenBodies(
+    QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
+{
+    std::vector<std::shared_ptr<const Context::SQLSecurityOverriddenBody>> bodies;
+    {
+        std::lock_guard lock(access_info.mutex);
+        bodies.swap(access_info.sql_security_overridden_bodies);
+    }
+
+    for (const auto & body : bodies)
+    {
+        QueryLogElement row;
+        row.type = elem.type;
+        row.event_time = elem.event_time;
+        row.event_time_microseconds = elem.event_time_microseconds;
+        row.query_start_time = elem.query_start_time;
+        row.query_start_time_microseconds = elem.query_start_time_microseconds;
+        row.log_comment = elem.log_comment;
+        row.is_internal = elem.is_internal;
+        row.exception_code = elem.exception_code;
+        row.exception = elem.exception;
+
+        row.current_database = body->current_database;
+        row.query = body->query->formatForLogging(max_query_length);
+        row.normalized_query_hash = normalizedQueryHash(row.query, false);
+        row.query_kind = body->query->getQueryKind();
+
+        row.client_info = elem.client_info;
+        row.client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        row.client_info.current_query_id = toString(UUIDHelpers::generateV4());
+        row.client_info.current_user = body->user;
+
+        {
+            const auto & body_access_info = *body->access_info;
+            std::lock_guard lock(body_access_info.mutex);
+            row.query_databases = body_access_info.databases;
+            row.query_tables = body_access_info.tables;
+            row.query_columns = body_access_info.columns;
+            row.query_partitions = body_access_info.partitions;
+            row.query_projections = body_access_info.projections;
+            row.query_views = body_access_info.views;
+            row.used_row_policies = body_access_info.row_policies;
+        }
+
+        query_log.add([&](QueryLogElement & e) { e = row; });
+        logSQLSecurityOverriddenBodies(query_log, elem, *body->access_info, max_query_length);
+    }
+}
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -1065,6 +1123,7 @@ static void logQueryFinishImpl(
             {
                 attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+                logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
             }
         }
 
@@ -1245,6 +1304,7 @@ void logQueryException(
 
         attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
+        logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
     }
 
     if (query_span)
@@ -1414,6 +1474,7 @@ void logExceptionBeforeStart(
 
             attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
+            logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
         }
         else if (!settings[Setting::log_queries])
         {
@@ -3630,7 +3691,7 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, query, internal))
                     context->enablePlanLogCapture();
 
                 if (out_ast)
@@ -4381,6 +4442,45 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
+/// Returns the AST fuzzer run for a query, or nothing when the fuzzer is off for it.
+static std::function<void()> makeASTFuzzerRunner(const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
+        return {};
+
+    Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+    if (!(ast_fuzzer_runs_value > 0))
+        return {};
+
+    bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+    return [ast, context, ast_fuzzer_runs_value, any_query]()
+    {
+        try
+        {
+            executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — propagate so CI sees it
+            tryLogCurrentException("ASTFuzzer");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ASTFuzzer");
+        }
+    };
+}
+
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks, so its `query_log` entry
+/// does not include the fuzzing.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (auto run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags))
+        io.finish_callbacks.emplace_back(
+            [run = std::move(run_ast_fuzzer)](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point) { run(); });
+}
+
 
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
@@ -4463,29 +4563,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         });
     }
 
-    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-    if (!flags.internal && !is_shared_catalog_internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                            throw; /// Oracle mismatch — propagate to abort the server
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
-    }
+    addASTFuzzerFinishCallback(res, ast, context, flags);
 
     return std::make_pair(std::move(ast), std::move(res));
 }
@@ -4830,7 +4908,9 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        /// One byte more than the limit detects a too long query; the limit may be the maximum of `size_t` already.
+        const size_t read_no_more = max_query_size == std::numeric_limits<size_t>::max() ? max_query_size : max_query_size + 1;
+        LimitReadBuffer limit(*istr, {.read_no_more = read_no_more});
         copyData(limit, out);
         out.finalize();
 
@@ -5088,6 +5168,9 @@ void executeQuery(
         return true;
     };
 
+    /// Run after `query_finish_callback`, which sends the HTTP response and releases the session, on both paths below.
+    std::function<void()> run_ast_fuzzer;
+
     try
     {
         if (pipeline.pushing())
@@ -5205,30 +5288,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-        if (!flags.internal && !is_shared_catalog_internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                        throw; /// Oracle mismatch — propagate so CI sees it
-                    tryLogCurrentException("ASTFuzzer");
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
-        }
-
+        run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags);
     }
     catch (...)
     {
@@ -5371,6 +5431,9 @@ void executeQuery(
 
         finishExecutedQuery(streams, finish_callback);
     }
+
+    if (run_ast_fuzzer)
+        run_ast_fuzzer();
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

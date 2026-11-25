@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -594,6 +595,48 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     nested_need_parens.list_element_index = 0;
     nested_dont_need_parens.list_element_index = 0;
 
+    /// Whether the function does not fit on the current line, so its arguments start on new lines (see ASTFormatting.h).
+    /// The NULLS modifier and the window clause after the arguments are not taken into account. Neither are the enclosing parentheses,
+    /// so the decision is the same whether they are added here or written around a parenthesized expression.
+    /// The text written by `written_prefix` (the name and the parameters) is already on the line, so it is not counted.
+    auto should_wrap = [&](const std::function<void(WriteBuffer &, FormatState &)> & written_prefix = {})
+    {
+        return shouldWrapAST(ostr, state, frame, [&]
+        {
+            FormatStateStacked flat_frame = frame;
+            flat_frame.need_parens = false;
+            String text = formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+            {
+                formatImplWithoutAlias(out, settings, flat_state, flat_frame);
+            });
+            if (isWindowFunction())
+                text.resize(text.size() - formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+                {
+                    finishFormatWithWindow(out, settings, flat_state, flat_frame);
+                }).size());
+            /// The alias is written right after the arguments, so it has to fit on the line too.
+            else if (!alias.empty())
+                text += formatASTWithoutWrapping([&](WriteBuffer & out, FormatState &)
+                {
+                    out << " AS ";
+                    settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+                });
+            if (written_prefix)
+                text.erase(0, formatASTWithoutWrapping(written_prefix).size());
+            return text;
+        });
+    };
+    /// A list item with its separator, for packing (see writeASTListSpace).
+    auto format_without_wrapping = [&](const ASTPtr & argument, const FormatStateStacked & argument_frame, bool with_separator)
+    {
+        return formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
+        {
+            argument->format(out, settings, flat_state, argument_frame);
+            if (with_separator)
+                out.write(',');
+        });
+    };
+
     if (auto * query = tryGetQueryArgument())
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
@@ -1032,13 +1075,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             {
                 if (frame.need_parens)
                     ostr << '(';
+                /// A wrapped chain starts every next operand on a new line: `a\n    AND b`.
+                /// It is indented deeper than the enclosing chain, even if it starts on the same line.
+                const bool wrap = should_wrap();
+                FormatStateStacked operand_frame = nested_need_parens;
+                if (wrap)
+                    ++operand_frame.indent;
                 for (size_t i = 0; i < arguments->children.size(); ++i)
                 {
-                    if (i != 0)
+                    if (i != 0 && wrap)
+                    {
+                        writeASTNewLine(ostr, operand_frame.indent);
+                        ostr << it->operator_name.substr(1);
+                    }
+                    else if (i != 0)
                         ostr << it->operator_name;
                     if (arguments->children[i]->as<ASTSetQuery>())
                         ostr << "SETTINGS ";
-                    arguments->children[i]->format(ostr, settings, state, nested_need_parens);
+                    arguments->children[i]->format(ostr, settings, state, operand_frame);
                 }
                 if (frame.need_parens)
                     ostr << ')';
@@ -1046,19 +1100,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
+        /// Writes the elements of an array, tuple or map, each on a new line if they do not fit on the current one.
+        const auto format_elements = [&](std::string_view open, char close)
+        {
+            const bool wrap = !arguments->children.empty() && should_wrap();
+            formatASTList(*arguments, open, close, wrap, ostr, settings, state, nested_dont_need_parens);
+        };
+
         if (!written && name == "array"sv && isOperator())
         {
-            ostr << '[';
-            for (size_t i = 0; i < arguments->children.size(); ++i)
-            {
-                if (i != 0)
-                    ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
-            }
-            ostr << ']';
+            format_elements("[", ']');
             written = true;
         }
 
@@ -1067,34 +1118,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         /// before calling `formatImplWithoutAlias`.
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator())
         {
-            ostr << '(';
-
-            for (size_t i = 0; i < arguments->children.size(); ++i)
-            {
-                if (i != 0)
-                    ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
-            }
-            ostr << ')';
+            format_elements("(", ')');
             written = true;
         }
 
         if (!written && name == "map"sv)
         {
-            ostr << "map(";
-            for (size_t i = 0; i < arguments->children.size(); ++i)
-            {
-                if (i != 0)
-                    ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
-            }
-            ostr << ')';
+            format_elements("map(", ')');
             written = true;
         }
     }
@@ -1114,28 +1144,33 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (plain_not_call_needs_parens)
         ostr << '(';
 
-    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (is_plain_not_call)
-        ostr << name;
-    else if (!name.empty())
-        writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
-
     SecretArgumentsResult secret_arguments;
     if (arguments && !settings.show_secrets)
         secret_arguments = findSecretArguments(*this);
 
-    if (parameters)
+    const auto write_name_and_parameters = [&](WriteBuffer & out, FormatState & out_state)
     {
-        ostr << '(';
+        /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
+        if (is_plain_not_call)
+            out << name;
+        else if (!name.empty())
+            writeFunctionName(out, settings, name, isCompoundName(), arguments);
+
+        if (!parameters)
+            return;
         if (secret_arguments.hide_parameters)
         {
+            out << '(';
             for (size_t i = 0; i < parameters->children.size(); ++i)
-                ostr << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
+                out << (i == 0 ? "" : ", ") << HIDDEN_SECRET_LITERAL;
+            out << ')';
         }
         else
-            parameters->format(ostr, settings, state, nested_dont_need_parens);
-        ostr << ')';
-    }
+            formatASTListInParentheses(*parameters, out, settings, out_state, nested_dont_need_parens);
+    };
+    write_name_and_parameters(ostr, state);
+    /// The arguments are wrapped if they do not fit after the parameters, which are wrapped on their own.
+    const bool wrap_arguments = arguments && !arguments->children.empty() && should_wrap(write_name_and_parameters);
 
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
     /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
@@ -1151,10 +1186,23 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     if (arguments)
     {
+        /// The sizes of hidden secrets must not affect the layout, so their arguments are not packed.
+        const bool pack_arguments = wrap_arguments && arePlainValuesAST(arguments->children)
+            && (settings.show_secrets || !secret_arguments.hasSecrets());
+        if (wrap_arguments)
+        {
+            ++nested_dont_need_parens.indent;
+            writeASTNewLine(ostr, nested_dont_need_parens.indent);
+        }
+
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
-                ostr << ", ";
+            {
+                ostr << ',';
+                writeASTListSpace(ostr, state, nested_dont_need_parens.indent, wrap_arguments,
+                    pack_arguments ? format_without_wrapping(arguments->children[i], nested_dont_need_parens, i + 1 < size) : "");
+            }
 
             const auto & argument = arguments->children[i];
             if (argument->as<ASTSetQuery>())
@@ -1267,6 +1315,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     }
 
+    if (wrap_arguments)
+        writeASTNewLine(ostr, frame.indent);
     if (need_parens)
         ostr << ')';
 

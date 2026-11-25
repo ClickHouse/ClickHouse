@@ -143,7 +143,7 @@
 #include <delta_kernel_ffi.hpp>
 namespace DB
 {
-    void tracingCallback(struct ffi::Event event);
+    void tracingCallback(struct ::Event event);
 }
 #endif
 
@@ -631,8 +631,17 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (table_id.empty())
+            {
+                /// Clearing the whole cache evicts the entries of every table, so it requires the privilege on all tables.
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+                system_context->clearVectorSimilarityIndexCache();
+            }
+            else
+            {
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+                getContext()->clearVectorSimilarityIndexCache(table_id);
+            }
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
@@ -962,23 +971,23 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
             const auto & level_str = query.delta_kernel_tracing_level;
-            ffi::Level level = {};
+            ::Level level = {};
 
             if (level_str == "ERROR")
-                level = ffi::Level::ERROR;
+                level = ::Level::ERROR;
             else if (level_str == "WARN")
-                level = ffi::Level::WARN;
+                level = ::Level::WARN;
             else if (level_str == "INFO")
-                level = ffi::Level::INFO;
+                level = ::Level::INFO;
             else if (level_str == "DEBUG")
-                level = ffi::Level::DEBUG;
+                level = ::Level::DEBUG;
             else if (level_str == "TRACE")
-                level = ffi::Level::TRACE;
+                level = ::Level::TRACE;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
 
             /// Reload tracing with the new level (can be called multiple times)
-            bool success = ffi::enable_event_tracing(tracingCallback, level);
+            bool success = ::enable_event_tracing(tracingCallback, level);
 
             if (success)
                 LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
@@ -1560,7 +1569,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
     std::optional<Exception> exception;
     auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
-    ASTPtr create_ast;
 
     if (!table)
     {
@@ -1597,6 +1605,24 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
+    /// Analyze the stored definition while the table is still attached and working, so that a failure
+    /// (e.g. a constraint's subquery reads a missing table) aborts the restart instead of losing the table.
+    /// Not under the exclusive lock below: such a subquery may need to lock a table that is being restarted.
+    /// The DDL guard held above keeps the definition from changing until the detach.
+    ASTPtr create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
+
+    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
+    auto & create = create_ast->as<ASTCreateQuery &>();
+    create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
+
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
+    auto data_path = database->getTableDataPath(create);
+
     SCOPE_EXIT({
         if (table)
             table->is_being_restarted = false;
@@ -1620,32 +1646,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
-
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
-    {
-        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-        database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
-        {
-            if (query_status)
-                query_status->throwIfKilled();
-        });
-    }
-
-    /// Attach actions
-    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-    auto & create = create_ast->as<ASTCreateQuery &>();
-    create.attach = true;
-    /// The definition comes from metadata stored on this server, not from a user, so it must load the
-    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
-    /// that only a freshly introduced definition needs.
-    create.attach_short_syntax = true;
-
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
-    auto data_path = database->getTableDataPath(create);
 
     /// After the table is detached, we must re-create and re-attach it.
     /// If table creation fails (e.g. due to memory allocation failure from fault injection),
@@ -1659,6 +1662,15 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     StoragePtr new_table;
     try
     {
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
+
         size_t non_zk_retries = 0;
         constexpr size_t max_non_zk_retries = 10;
         while (true)
@@ -3163,8 +3175,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
+        }
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             break;
