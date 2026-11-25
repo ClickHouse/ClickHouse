@@ -1042,12 +1042,15 @@ private:
                 if (filter && !filter(name))
                     continue;
 
-                auto reload_blocked = reload_blocker.isCancelled();
+                /// As in the overload for a single object: a blocked attempt is final while reloads are stopped,
+                /// and `startLoading` would clear `blocked` and schedule another attempt on every wake-up.
+                if (reload_blocker.isCancelled() && info.blocked)
+                    continue;
 
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
 
-                all_ready &= ((reload_blocked && info.blocked) || info.state_id >= min_id);
+                all_ready &= (info.state_id >= min_id);
             }
             return all_ready;
         };
