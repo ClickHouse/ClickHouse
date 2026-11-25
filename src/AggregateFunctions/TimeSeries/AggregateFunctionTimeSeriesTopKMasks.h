@@ -59,8 +59,8 @@ struct AggregateFunctionTimeSeriesTopKMasksData
     /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series.
     struct Entry
     {
-        RankType rank;
-        KeyType key;
+        RankType rank{};
+        KeyType key{};
     };
 
     /// A binary heap of at most k entries with the worst kept entry at the front (see `better()` in the aggregate function).
