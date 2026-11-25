@@ -310,6 +310,7 @@ private:
 
         renderDetails(node, statistics, detail_prefix);
         renderIndexes(node, detail_prefix);
+        renderProjections(node, detail_prefix);
         if (statistics)
             renderStatistics(*statistics, detail_prefix);
 
@@ -404,6 +405,42 @@ private:
                             out << prefix << indent << indent << indent << key << ": " << stringOrEmpty(*replica, key) << "\n";
                 }
             }
+        }
+    }
+
+    /// Mirrors `ReadFromMergeTree::describeProjections`, which `EXPLAIN ANALYZE` prints with
+    /// `projections = 1`. The document always holds them, so they are always printed.
+    void renderProjections(const Poco::JSON::Object & node, const String & prefix)
+    {
+        JSONArrayPtr projections = node.getArray("Projections");
+        if (!projections || projections->size() == 0)
+            return;
+
+        const String indent = "  ";
+        out << prefix << "Projections:\n";
+
+        for (size_t i = 0; i < projections->size(); ++i)
+        {
+            JSONObjectPtr projection = projections->getObject(static_cast<unsigned>(i));
+            if (!projection)
+                continue;
+
+            out << prefix << indent << "Name: " << stringOrEmpty(*projection, "Name") << "\n";
+
+            for (const char * key : {"Description", "Condition", "Search Algorithm"})
+                if (String value = stringOrEmpty(*projection, key); !value.empty())
+                    out << prefix << indent << indent << key << ": " << value << "\n";
+
+            const std::array<std::pair<const char *, const char *>, 5> counts = {{
+                {"Parts", "Selected Parts"},
+                {"Marks", "Selected Marks"},
+                {"Ranges", "Selected Ranges"},
+                {"Rows", "Selected Rows"},
+                {"Filtered Parts", "Filtered Parts"},
+            }};
+            for (const auto & [title, key] : counts)
+                if (projection->has(key))
+                    out << prefix << indent << indent << title << ": " << stringOrEmpty(*projection, key) << "\n";
         }
     }
 
@@ -727,9 +764,9 @@ REGISTER_FUNCTION(PlanToASCII)
     FunctionDocumentation::Description description = R"(
 Renders a query plan, as written to the `query_plan` column of [`system.query_log`](/reference/system-tables/query_log) when the [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) setting is enabled, as the text tree that `EXPLAIN ANALYZE` prints.
 
-The rendering is best effort: it shows the steps, their details, indexes and per-step statistics that the plan holds. The query summary that `EXPLAIN ANALYZE` prints above the tree is not shown, because the planning time, the rows and bytes read and the peak memory usage are not part of the plan. They are in other columns of `system.query_log`.
+The rendering is best effort: it shows the steps, their details, indexes, projections and per-step statistics that the plan holds. Projections are always shown, as `EXPLAIN ANALYZE projections = 1` does. The query summary that `EXPLAIN ANALYZE` prints above the tree is not shown, because the planning time, the rows and bytes read and the peak memory usage are not part of the plan. They are in other columns of `system.query_log`.
 
-An empty plan, such as the one of a `QueryStart` row, renders as an empty string.
+An empty plan, such as the one of a `QueryStart` row, renders as an empty string. A plan that could not be logged renders as `Error: ` followed by the reason.
     )";
     FunctionDocumentation::Syntax syntax = "planToASCII(query_plan)";
     FunctionDocumentation::Arguments arguments = {
@@ -778,7 +815,7 @@ Expression ((Project names + Projection))
             )DOCS_MD"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

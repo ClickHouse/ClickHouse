@@ -4,7 +4,7 @@
 -- `EXPLAIN ANALYZE`. The plans below are written by hand, so the output does not depend on timings.
 
 -- Every kind of line: details, a detail that a statistics group replaces (`Cost:` and `Left:`),
--- indexes, metric groups whose keys are out of order (a `JSON` column sorts them), metrics that
+-- indexes, projections, metric groups whose keys are out of order (a `JSON` column sorts them), metrics that
 -- were not collected (null), a group this function does not know, the time and concurrency
 -- groups, labelled and unlabelled stages, inline stage metrics, and a stage that did no work.
 SELECT planToASCII('{
@@ -39,6 +39,10 @@ SELECT planToASCII('{
             {"Type": "MinMax", "Keys": ["d"], "Condition": "true", "Selected Parts": 2, "Selected Granules": 10},
             {"Type": "PrimaryKey", "Keys": ["k", "d"], "Condition": "(k in [1, +Inf))", "Initial Parts": 2, "Selected Parts": 1,
              "Initial Granules": 10, "Selected Granules": 3, "Search Algorithm": "binary search"}],
+         "Projections": [
+            {"Selected Rows": 8192, "Selected Ranges": 1, "Selected Parts": 1, "Selected Marks": 1, "Name": "p_by_d",
+             "Filtered Parts": 1, "Description": "Projection has been analyzed and is used for part-level filtering",
+             "Condition": "(d in [1, 1])", "Search Algorithm": "binary search"}],
          "Statistics": {"IO": {"InputRows": 0, "OutputRows": 5000, "InputBytes": 0, "OutputBytes": 80000}, "Stages": []}},
         {"NodeType": "ReadFromSystemNumbers", "NodeId": "ReadFromSystemNumbers_1", "Details": [], "Children": [],
          "Statistics": {"IO": {"InputRows": 0, "OutputRows": 40, "InputBytes": 0, "OutputBytes": 640},
@@ -105,3 +109,19 @@ SELECT
     anyLast(position(planToASCII(query_plan), 'I/O: rows ') > 0)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position(query, '05327_logged') > 0;
+
+-- A plan logged by a read that analysed a projection shows it.
+DROP TABLE IF EXISTS t_05327_projection;
+CREATE TABLE t_05327_projection (k UInt64, d UInt64, PROJECTION p_by_d (SELECT * ORDER BY d)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_05327_projection SELECT number, number % 10 FROM numbers(1000);
+SELECT count() FROM t_05327_projection WHERE d = 3 AND '05327_projection_read' != '' SETTINGS log_query_plans = 1, optimize_use_projections = 1, optimize_use_projection_filtering = 1 FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    count(),
+    anyLast(position(planToASCII(query_plan), 'Projections:\n') > 0),
+    anyLast(position(planToASCII(query_plan), 'Name: p_by_d\n') > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND position(query, '05327_projection_read') > 0;
+
+DROP TABLE t_05327_projection;
