@@ -177,6 +177,13 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
 ConstraintsExpressions ConstraintsDescription::getExpressions(
     const ContextPtr context, const NamesAndTypesList & source_columns_, const StorageID & table_id) const
 {
+    auto is_check = [](const ASTPtr & constraint)
+    {
+        return constraint->as<const ASTConstraintDeclaration &>().type == ASTConstraintDeclaration::Type::CHECK;
+    };
+    if (std::ranges::none_of(constraints, is_check))
+        return {};
+
     /// Only top-level columns are in the checked block; subcolumns are extracted from them.
     Block available_columns;
     ColumnsDescription fake_columns;
@@ -207,7 +214,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
         QueryAnalyzer analyzer(/*only_analyze_=*/ false);
         analyzer.resolve(expression, fake_table_expression, execution_context);
 
-        /// A matcher can expand to several expressions.
+        /// A guard: no SQL path is known to give several expressions here.
         if (expression->as<ListNode &>().getNodes().size() != 1)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Constraint {} for table {} must be a single expression. Expression: ({})",
@@ -261,7 +268,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
         auto extract_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, constraint_dag.getRequiredColumnsNames(), execution_context);
         constraint_dag = ActionsDAG::merge(std::move(extract_subcolumns_dag), std::move(constraint_dag));
 
-        /// E.g. a virtual column of the fake table.
+        /// A guard: every input must be a header column, not e.g. a virtual column of the `StorageDummy`.
         NameSet required_columns;
         for (const auto * input : constraint_dag.getInputs())
         {
