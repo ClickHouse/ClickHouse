@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 22 of the 56 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 23 of the 59 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -149,6 +149,13 @@ SELECT 'bool-raw-byte-into-alternative', count() FROM (SELECT materialize(true::
 SELECT 'bool-raw-byte-into-nested-alternative', count() FROM (SELECT materialize([true]::Array(Variant(Bool, String))) AS a) WHERE a IN ([reinterpret(toUInt8(2), 'Bool')]);
 SELECT 'bool-raw-byte-in-variant-constant', count() FROM (SELECT materialize(true::Variant(Bool, String)) AS v) WHERE v IN (CAST(reinterpret(toUInt8(2), 'Bool'), 'Variant(Bool, String)'));
 SELECT 'bool-variant-constant-other-alternative', count() FROM (SELECT materialize(1::UInt64::Variant(Bool, UInt64)) AS v) WHERE v IN (1::UInt64::Variant(Bool, UInt64));
+-- The same under `LowCardinality`, including two dictionary keys that clamp to the same value.
+SELECT 'bool-raw-byte-under-low-cardinality', count() FROM (SELECT materialize(CAST([tuple(1::UInt64, true)], 'Array(Tuple(Variant(String, UInt64), LowCardinality(Bool)))')) AS x)
+WHERE x IN ([tuple(1::UInt64::Variant(String, UInt64), toLowCardinality(reinterpret(toUInt8(2), 'Bool')))]) SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT 'bool-low-cardinality-keys-coincide', count() FROM (SELECT materialize(CAST([tuple(1::UInt64, true), tuple(2::UInt64, true)], 'Array(Tuple(Variant(String, UInt64), LowCardinality(Bool)))')) AS x)
+WHERE x IN ([tuple(1::UInt64::Variant(String, UInt64), toLowCardinality(reinterpret(toUInt8(2), 'Bool'))), tuple(2::UInt64::Variant(String, UInt64), toLowCardinality(true))]) SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT 'bool-low-cardinality-alternative-kept', count() FROM (SELECT materialize(CAST([tuple(1::UInt64, true)], 'Array(Tuple(Variant(Date, UInt64), LowCardinality(Bool)))')) AS x)
+WHERE x IN ([tuple(1::UInt64, toLowCardinality(true))]) SETTINGS allow_suspicious_low_cardinality_types = 1;
 
 -- Nothing outside a `Variant` changes: an identity conversion still goes through the `Field` path, which
 -- clamps a raw byte a column can hold outside its type's domain.

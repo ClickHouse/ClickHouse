@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -484,6 +485,15 @@ void clampBoolBytes(IColumn & column, const DataTypePtr & type)
     }
     else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
         clampBoolBytes(assert_cast<ColumnNullable &>(column).getNestedColumn(), nullable->getNestedType());
+    else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        /// Clamped keys can coincide, so the values are re-inserted instead of edited in the dictionary.
+        auto & low_cardinality_column = assert_cast<ColumnLowCardinality &>(column);
+        auto values = IColumn::mutate(low_cardinality_column.convertToFullColumn());
+        clampBoolBytes(*values, low_cardinality->getDictionaryType());
+        low_cardinality_column.popBack(low_cardinality_column.size());
+        low_cardinality_column.insertRangeFromFullColumn(*values, 0, values->size());
+    }
     else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
         clampBoolBytes(assert_cast<ColumnArray &>(column).getData(), array->getNestedType());
     else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))

@@ -52,5 +52,8 @@ bool-raw-byte-into-alternative	1
 bool-raw-byte-into-nested-alternative	1
 bool-raw-byte-in-variant-constant	1
 bool-variant-constant-other-alternative	1
+bool-raw-byte-under-low-cardinality	1
+bool-low-cardinality-keys-coincide	1
+bool-low-cardinality-alternative-kept	1
 bool-raw-byte-still-clamped	1	1
 plain-type-still-rewritten	1
