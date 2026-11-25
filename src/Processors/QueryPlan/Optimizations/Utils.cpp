@@ -10,15 +10,22 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Storages/StorageMerge.h>
 
@@ -563,6 +570,122 @@ const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
         node = node->children.front();
     }
     return nullptr;
+}
+
+bool isPreparedJoinStorage(const QueryPlan::Node & side_node)
+{
+    /// Earlier passes, such as filter push-down, can put single-child steps above the lookup.
+    for (const auto * node = &side_node;; node = node->children.front())
+    {
+        if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
+            return static_cast<bool>(lookup->getPreparedJoinStorage());
+        if (node->children.size() != 1)
+            return false;
+    }
+}
+
+/// Adds the inputs that the value of `node` determines: those it is an alias or an injective function of.
+static void collectDeterminedInputs(const ActionsDAG::Node * node, NameSet & inputs)
+{
+    ActionsDAG::NodeRawConstPtrs stack{node};
+    while (!stack.empty())
+    {
+        node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            inputs.insert(node->result_name);
+        else if (node->type == ActionsDAG::ActionType::ALIAS
+            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->isInjective(getFunctionArgumentColumns(*node))))
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+}
+
+bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
+{
+    const auto has_all = [&](const Names & names)
+    {
+        return std::ranges::all_of(names, [&](const auto & name) { return columns.contains(name); });
+    };
+
+    for (const auto * node = &root;; node = node->children.front())
+    {
+        const auto * step = node->step.get();
+
+        /// An aggregation outputs one row per value of its keys, unless it is to be finished by another step:
+        /// by the initiator of a distributed query, or by `ROLLUP`, `CUBE` and `WITH TOTALS`.
+        if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
+            return aggregating->isFinal() && !aggregating->isGroupingSets() && has_all(aggregating->getParams().keys);
+
+        /// The other steps looked through only drop or reorder rows, some leaving them unique on the way.
+        const ActionsDAG * expression = nullptr;
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(step))
+        {
+            if (!distinct->isPreliminary() && has_all(distinct->getColumnNames()))
+                return true;
+        }
+        else if (const auto * limit_by = typeid_cast<const LimitByStep *>(step))
+        {
+            if (limit_by->getGroupLength() <= 1 && has_all(limit_by->getColumns()))
+                return true;
+        }
+        else if (const auto * limit = typeid_cast<const LimitStep *>(step))
+        {
+            if (limit->getLimit() <= 1 && !limit->withTies())
+                return true;
+        }
+        else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+            expression = &expression_step->getExpression();
+        else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+            expression = &filter_step->getExpression();
+        else if (!typeid_cast<const SortingStep *>(step) && !typeid_cast<const OffsetStep *>(step))
+            return false;
+
+        if (!expression)
+            continue;
+
+        if (expression->hasArrayJoin())
+            return false;
+
+        /// Rows that differ in the inputs determined by `columns` differ in `columns`. A column that is not
+        /// an output of the expression passes through it.
+        NameSet determined_inputs;
+        for (const auto * output : expression->getOutputs())
+            if (columns.erase(output->result_name))
+                collectDeterminedInputs(output, determined_inputs);
+        determined_inputs.merge(columns);
+        columns = std::move(determined_inputs);
+    }
+}
+
+bool matchesAtMostOneRow(const JoinStepLogical & join, const QueryPlan::Node & side_node, JoinTableSide side)
+{
+    const auto is_from = [](const JoinActionRef & operand, JoinTableSide operand_side)
+    {
+        return operand_side == JoinTableSide::Left ? operand.fromLeft() : operand.fromRight();
+    };
+    const auto other_side = side == JoinTableSide::Left ? JoinTableSide::Right : JoinTableSide::Left;
+
+    /// Any other condition only rejects a match.
+    NameSet key_columns;
+    for (const auto & predicate : join.getJoinOperator().expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        if (is_from(rhs, side))
+            std::swap(lhs, rhs);
+        if (!is_from(lhs, side) || !is_from(rhs, other_side))
+            continue;
+
+        /// A key that the join does not compare exactly, such as a `FixedString` with a `String`, matches
+        /// several values that the side tells apart (`'a'` and `'a\0\0'`).
+        if (JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
+            collectDeterminedInputs(lhs.getNode(), key_columns);
+    }
+
+    return isUniqueByColumns(side_node, std::move(key_columns));
 }
 
 bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
