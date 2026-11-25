@@ -161,6 +161,7 @@ public:
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
+        StorageMetadataPtr metadata_snapshot,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr /*configuration*/,
@@ -240,7 +241,7 @@ public:
         bool ignore_metadata_pointer_overrides = false) const;
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
-        const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
+        const ContextPtr & context, const Iceberg::MetadataFileWithInfo & metadata_file) const;
 
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {

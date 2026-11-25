@@ -13,7 +13,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 #include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -607,21 +606,21 @@ struct PartFromSample
         }
     }
 
-    size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
-    size_t firstPartRow(size_t sample_row) const
+    [[nodiscard]] size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
+    [[nodiscard]] size_t firstPartRow(size_t sample_row) const
     {
         return static_cast<size_t>((UInt128(sample_row) * rows + sample.rows - 1) / sample.rows);
     }
     /// the first sample row whose part rows start at or after `part_row`
-    size_t firstSampleRowFrom(size_t part_row) const { return part_row == 0 ? 0 : sampleRow(part_row - 1) + 1; }
+    [[nodiscard]] size_t firstSampleRowFrom(size_t part_row) const { return part_row == 0 ? 0 : sampleRow(part_row - 1) + 1; }
 
-    size_t sampleRowBytes(size_t sample_row) const
+    [[nodiscard]] size_t sampleRowBytes(size_t sample_row) const
     {
         const bool per_row = sample.row_bytes.size() == sample.rows;
         return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
     }
 
-    UInt64 bytesBefore(size_t part_row) const
+    [[nodiscard]] UInt64 bytesBefore(size_t part_row) const
     {
         const size_t sample_row = sampleRow(part_row);
         if (sample_row == sample.rows)
@@ -629,8 +628,8 @@ struct PartFromSample
         return bytes_before_sample_row[sample_row] + sampleRowBytes(sample_row) * (part_row - firstPartRow(sample_row));
     }
 
-    UInt64 bytes() const { return bytes_before_sample_row.back(); }
-    UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
+    [[nodiscard]] UInt64 bytes() const { return bytes_before_sample_row.back(); }
+    [[nodiscard]] UInt64 formatBytes() const { return static_cast<UInt64>(UInt128(sample.format_bytes) * rows / sample.rows); }
 };
 
 /// end of the block a writer gets at `row`: at most `rows_limit` rows and `bytes_limit` bytes, but at least one row
@@ -1306,39 +1305,38 @@ bool tryEstimateProjection(
 }
 
 std::optional<ProjectionDescription> refreshHypotheticalProjection(
-    const ProjectionDescription & stored,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata,
     const ContextPtr & context,
     String & reason)
 {
-    if (!stored.required_columns.empty())
+    if (!hypothetical.projection.required_columns.empty())
         context->checkAccess(
-            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
+            AccessType::SELECT,
+            data.getStorageID(),
+            metadata->getColumns().getColumnNamesForSelectAccessCheck(hypothetical.projection.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
-    std::optional<ProjectionDescription> fresh;
-    try
+    /// the binding does not cover names, and the parts of a real projection would be read with this definition
+    if (metadata->projections.has(hypothetical.projection.name))
     {
-        checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
-        fresh = ProjectionDescription::getProjectionFromAST(
-            stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
-    }
-    catch (const Exception &)
-    {
-        reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
+        reason = "Hypothetical projection can no longer be added to this table: projection with this name already exists. "
+                 "Drop the real projection or use another name";
         return std::nullopt;
     }
 
-    /// an ALTER may retarget an ALIAS, so check the columns actually read
-    if (!fresh->required_columns.empty())
-        context->checkAccess(
-            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
-    return fresh;
+    const auto change = hypothetical.binding.changeIn(*metadata, context, data.getStorageID());
+    if (!change.empty())
+    {
+        reason = "Hypothetical projection no longer matches the table: " + change + ". Run CREATE HYPOTHETICAL PROJECTION again";
+        return std::nullopt;
+    }
+    return hypothetical.projection.clone();
 }
 
 WhatIfCandidateResult evaluateProjection(
-    const ProjectionDescription & stored_projection,
+    const HypotheticalObjectStore::ProjectionEntry & hypothetical,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
@@ -1350,8 +1348,8 @@ WhatIfCandidateResult evaluateProjection(
 
     WhatIfCandidateResult result;
     result.kind = WhatIfCandidateResult::Projection;
-    result.name = stored_projection.name;
-    result.type = stored_projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
+    result.name = hypothetical.projection.name;
+    result.type = hypothetical.projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
     result.status = WhatIfCandidateResult::NotApplicable;
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
@@ -1365,7 +1363,7 @@ WhatIfCandidateResult evaluateProjection(
     }
 
     auto metadata = read_step->getStorageMetadata();
-    auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
+    auto projection = refreshHypotheticalProjection(hypothetical, data, metadata, context, result.not_applicable_reason);
     if (!projection)
         return result;
     const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;

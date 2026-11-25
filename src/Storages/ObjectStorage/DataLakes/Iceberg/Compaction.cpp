@@ -18,12 +18,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -38,6 +40,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorDump.h>
@@ -65,6 +68,7 @@ namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
+    extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -559,6 +563,7 @@ CommitOutcome commitCompactedMetadata(
     const IcebergPathResolver & path_resolver,
     const PersistentTableComponents & persistent_table_components,
     const String & planned_metadata_file_path,
+    const String & base_catalog_metadata_location,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const DataLakeStorageSettings & data_lake_settings,
@@ -614,7 +619,7 @@ CommitOutcome commitCompactedMetadata(
     {
         auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata_object))
         {
             if (!catalog_writes_metadata_file)
                 return CommitOutcome::Unknown;
@@ -743,6 +748,7 @@ static bool writeConsolidatedManifestFile(
     int metadata_version,
     const String & metadata_file_path,
     Poco::JSON::Object::Ptr metadata_object,
+    const String & base_catalog_metadata_location,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage, ContextPtr context,
     SharedHeader sample_block_,
@@ -871,7 +877,7 @@ static bool writeConsolidatedManifestFile(
         write_format);
     generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
     // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
@@ -890,12 +896,26 @@ static bool writeConsolidatedManifestFile(
     /// Parallel to consolidated_manifest_paths: each manifest's manifest-list `partitions` summary.
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
+    std::optional<String> statistics_file_path;
+
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
     std::vector<IcebergPathFromMetadata> written_paths;
     auto cleanup = [&]()
     {
         written_paths.push_back(new_snapshot.manifest_list_path);
         removeObjectsIfExist(written_paths, path_resolver, object_storage, log);
+        if (statistics_file_path)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove orphaned statistics file during cleanup");
+            }
+        }
     };
 
     try
@@ -951,6 +971,12 @@ static bool writeConsolidatedManifestFile(
             /* entry_partition_spec_ids */ entry_partition_spec_ids,
             /* entry_partition_summaries */ entry_partition_summaries);
         buffer_manifest_list->finalize();
+
+        /// A manifest-only rewrite keeps every row.
+        if (write_statistics)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, metadata_object, new_snapshot.snapshot, generator,
+                path_resolver, object_storage, context);
     }
     catch (...)
     {
@@ -969,6 +995,7 @@ static bool writeConsolidatedManifestFile(
             path_resolver,
             persistent_table_components,
             metadata_file_path,
+            base_catalog_metadata_location,
             object_storage,
             context,
             data_lake_settings,
@@ -1028,7 +1055,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        const auto [metadata_version, metadata_file_path, _, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage_,
             catalog,
             table_id.getTableName(),
@@ -1075,6 +1102,7 @@ void compactIcebergManifests(
                 metadata_version,
                 metadata_file_path,
                 metadata_object,
+                base_catalog_metadata_location,
                 persistent_table_components,
                 object_storage_,
                 context_,
@@ -1137,6 +1165,7 @@ RewrittenDataFile rewriteDataFile(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     const String & write_format,
+    IcebergColumnSketches * column_sketches,
     LoggerPtr log)
 {
     auto & schema_processor = *persistent_table_components.schema_processor;
@@ -1151,9 +1180,14 @@ RewrittenDataFile rewriteDataFile(
     if (auto dag = buildIdentityPartitionColumnsDag(source_header, source->info.identity_partition_columns))
         identity_partition_actions = std::make_shared<ExpressionActions>(std::move(*dag));
 
+    /// The Iceberg timestamps are UTC instants, also in ORC files.
+    FormatSettings iceberg_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    Iceberg::useUTCForORCTimestamps(iceberg_format_settings);
+    const bool write_orc = Poco::toUpper(write_format) == "ORC";
+
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/1);
     auto delete_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
-        shared_source_header, source, object_storage, format_settings, parser_shared_resources, context);
+        shared_source_header, source, object_storage, iceberg_format_settings, parser_shared_resources, context);
 
     ExpressionActionsPtr schema_actions;
     if (source_schema_id != current_schema_id)
@@ -1166,7 +1200,7 @@ RewrittenDataFile rewriteDataFile(
     read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(source_format, context);
     auto read_buffer = createReadBuffer(relative_path, object_storage, context, log, read_settings);
 
-    FormatSettings read_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    FormatSettings read_format_settings = iceberg_format_settings;
     /// The output keeps the source's row order, so its `sort_order_id` stays true.
     read_format_settings.parquet.preserve_order = true;
     auto input_format_filter_info
@@ -1181,15 +1215,18 @@ RewrittenDataFile rewriteDataFile(
         read_format_settings,
         parser_shared_resources,
         input_format_filter_info,
-        true /* is_remote_fs */,
+        object_storage->isRemote(),
         chooseCompressionMethod(source->getPath(), "auto"),
         false);
 
+    /// Declared before `writer`, which refers to it.
+    DataFileUploads data_file_uploads(/*max_files_in_upload_=*/ 0);
     MultipleFileWriter writer(
         std::numeric_limits<UInt64>::max(),
         std::numeric_limits<UInt64>::max(),
         current_schema_fields,
         generator,
+        data_file_uploads,
         persistent_table_components.path_resolver,
         object_storage,
         context,
@@ -1209,6 +1246,11 @@ RewrittenDataFile rewriteDataFile(
                 applyActions(*schema_actions, chunk, source_header, *current_header);
             if (chunk.getNumRows() == 0)
                 continue;
+            /// The bounds must describe the stored values.
+            if (write_orc)
+                ORC::replaceTimestampsStoredAsEpoch(chunk);
+            if (column_sketches)
+                column_sketches->update(chunk.getColumns());
             writer.consume(chunk);
             result.rows += chunk.getNumRows();
         }
@@ -1217,6 +1259,7 @@ RewrittenDataFile rewriteDataFile(
             return result;
 
         writer.finalize();
+        data_file_uploads.finalize();
         writer.release();
 
         result.path = writer.getDataFiles().front();
@@ -1229,6 +1272,7 @@ RewrittenDataFile rewriteDataFile(
     catch (...)
     {
         writer.cancel();
+        data_file_uploads.cancel();
         try
         {
             writer.clearAllDataFiles();
@@ -1263,7 +1307,24 @@ void compactIcebergTable(
     std::map<RewriteKey, RewrittenDataFile> rewritten_files;
     /// The manifests and the manifest list of the current attempt.
     std::vector<IcebergPathFromMetadata> attempt_files;
+    /// The statistics file of the current attempt, a storage path.
+    std::optional<String> statistics_file_path;
     bool commit_status_unknown = false;
+
+    auto remove_statistics_file = [&]()
+    {
+        if (!statistics_file_path)
+            return;
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove orphaned statistics file during cleanup");
+        }
+        statistics_file_path.reset();
+    };
 
     auto remove_rewritten_files = [&](const std::set<RewriteKey> & keep_keys)
     {
@@ -1287,7 +1348,8 @@ void compactIcebergTable(
             if (attempt > 0)
                 LOG_INFO(log, "Retrying data compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-            const auto [metadata_version, metadata_file_path, metadata_compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+            const auto [metadata_version, metadata_file_path, metadata_compression_method, base_catalog_metadata_location]
+                = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
                 catalog,
                 table_id.getTableName(),
@@ -1401,6 +1463,16 @@ void compactIcebergTable(
                     {
                         if (!positionDeleteMayReferenceDataFile(*position_delete->parsed_entry, data_file_path))
                             continue;
+                        /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
+                        const auto & data_file_format = data_file->parsed_entry->file_format;
+                        const auto & delete_file_format = position_delete->parsed_entry->file_format;
+                        if (Poco::toUpper(data_file_format) != "PARQUET" || Poco::toUpper(delete_file_format) != "PARQUET")
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Compaction of Iceberg tables with position deletes is supported only for data and delete files of Parquet format, "
+                                "but got a data file of format {} with a delete file of format {}",
+                                data_file_format,
+                                delete_file_format);
                         if (!source)
                             source = std::make_shared<IcebergDataObjectInfo>(
                                 data_file,
@@ -1438,6 +1510,8 @@ void compactIcebergTable(
                 planned_reuse_keys.insert(reuse_key);
             remove_rewritten_files(planned_reuse_keys);
 
+            const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
+
             FileNamesGenerator generator(
                 path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
             generator.setBaseMetadataFile(metadata_version, metadata_file_path);
@@ -1473,10 +1547,18 @@ void compactIcebergTable(
             for (const auto & position_delete : position_deletes)
                 update.removed_files_size += static_cast<UInt64>(position_delete->parsed_entry->file_size_in_bytes);
 
+            /// Exact sketches need the rows of every live data file, so only an attempt that rewrites all of them builds them.
+            std::optional<IcebergColumnSketches> column_sketches;
+            if (write_statistics && sources.size() == totals.data_files)
+                column_sketches.emplace(*current_header, current_schema->getArray(Iceberg::f_fields));
+
             for (const auto & [source_path, source] : sources)
             {
                 const auto & reuse_key = source_reuse_keys.at(source_path);
-                if (!rewritten_files.contains(reuse_key))
+                /// A file rewritten by an earlier attempt is not read again.
+                if (rewritten_files.contains(reuse_key))
+                    column_sketches.reset();
+                else
                 {
                     auto rewritten = rewriteDataFile(
                         source,
@@ -1489,6 +1571,7 @@ void compactIcebergTable(
                         format_settings,
                         context,
                         write_format,
+                        column_sketches ? &*column_sketches : nullptr,
                         log);
                     rewritten_files.emplace(reuse_key, std::move(rewritten));
                 }
@@ -1521,7 +1604,7 @@ void compactIcebergTable(
             }
             SnapshotSummary summary(update, totals, std::move(extra_fields));
 
-            MetadataGenerator metadata_generator(metadata_object);
+            MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
             auto metadata_info = generator.generateMetadataPathWithInfo();
             auto new_snapshot = metadata_generator.generateNextMetadata(
                 generator,
@@ -1642,6 +1725,12 @@ void compactIcebergTable(
                 buffer_manifest_list->finalize();
             }
 
+            /// Without the sketches of every row, the parent's sketches are kept, as for a DELETE: applying position deletes only removes rows.
+            if (write_statistics)
+                statistics_file_path = writeIcebergTableStatisticsNdv(
+                    column_sketches ? &*column_sketches : nullptr, /*union_with_parent=*/ !column_sketches, metadata_object,
+                    new_snapshot.snapshot, generator, path_resolver, object_storage, context);
+
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_compaction_pause_before_metadata_commit);
 
             CommitOutcome outcome = CommitOutcome::Unknown;
@@ -1655,6 +1744,7 @@ void compactIcebergTable(
                     path_resolver,
                     persistent_table_components,
                     metadata_file_path,
+                    base_catalog_metadata_location,
                     object_storage,
                     context,
                     data_lake_settings,
@@ -1690,6 +1780,7 @@ void compactIcebergTable(
                 case CommitOutcome::Conflict:
                     removeObjectsIfExist(attempt_files, path_resolver, object_storage, log);
                     attempt_files.clear();
+                    remove_statistics_file();
                     continue;
                 case CommitOutcome::Unknown:
                     commit_status_unknown = true;
@@ -1704,6 +1795,7 @@ void compactIcebergTable(
         if (!commit_status_unknown)
         {
             removeObjectsIfExist(attempt_files, path_resolver, object_storage, log);
+            remove_statistics_file();
             remove_rewritten_files({});
         }
         throw;
