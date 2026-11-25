@@ -46,6 +46,7 @@ SELECT o.number IN
      FROM numbers(3)
      ORDER BY 1 DESC LIMIT 1)
 FROM numbers(3) AS o
+ORDER BY o.number
 SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1,
     transform_null_in = 0, enable_add_distinct_to_in_subqueries = 0,
     enable_positional_arguments = 1;
