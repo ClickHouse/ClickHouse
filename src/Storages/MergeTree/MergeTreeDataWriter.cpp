@@ -475,8 +475,13 @@ void MergeTreeTemporaryPart::finalize()
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().precommitTransaction();
 
+        /// The sync is explicit: the guard's destructor only logs a failure, and the part must not
+        /// be committed when its projection is not durable.
         if (fsync_projection_directory)
-            { SyncGuardPtr projection_sync_guard = projection->getDataPartStorage().getDirectorySyncGuard(); }
+        {
+            if (SyncGuardPtr projection_sync_guard = projection->getDataPartStorage().getDirectorySyncGuard())
+                projection_sync_guard->sync();
+        }
     }
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the

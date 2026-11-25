@@ -2823,8 +2823,13 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         auto part = task->takeResultPart();
         part->getDataPartStorage().commitTransaction();
 
+        /// The sync is explicit: the guard's destructor only logs a failure, and the merge must not
+        /// complete when its projection is not durable.
         if (fsync_projection_directory)
-            { SyncGuardPtr projection_sync_guard = part->getDataPartStorage().getDirectorySyncGuard(); }
+        {
+            if (SyncGuardPtr projection_sync_guard = part->getDataPartStorage().getDirectorySyncGuard())
+                projection_sync_guard->sync();
+        }
 
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
