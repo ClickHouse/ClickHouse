@@ -1,0 +1,145 @@
+-- A non-recursive CTE that aggregates and is referenced more than once is materialized automatically:
+-- it is executed once, so both references see the same result of a non-deterministic subquery.
+
+SET enable_analyzer = 1;
+SET enable_materialized_cte = 0;
+
+SELECT '-- aggregation, referenced twice: materialized';
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c;
+
+SELECT '-- the same with the setting disabled: inlined';
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c
+SETTINGS enable_automatic_cte_materialization = 0;
+
+SELECT '-- NOT MATERIALIZED: inlined';
+WITH t AS NOT MATERIALIZED (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.c = b.c;
+
+SELECT '-- no aggregation: inlined';
+WITH t AS (SELECT rand64() AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- aggregate function without GROUP BY';
+WITH t AS (SELECT max(rand64()) AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- DISTINCT';
+WITH t AS (SELECT DISTINCT rand64() AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- window function';
+WITH t AS (SELECT rand64() + 0 * row_number() OVER () AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- IN and JOIN references';
+WITH t AS (SELECT rand64() AS r FROM numbers(10) GROUP BY number)
+SELECT count() FROM t WHERE r IN (SELECT r FROM t);
+
+SELECT '-- UNION ALL of references';
+WITH t AS (SELECT sum(rand64() % 1000) AS r FROM numbers(1000))
+SELECT uniqExact(r) FROM (SELECT r FROM t UNION ALL SELECT r FROM t UNION ALL SELECT r FROM t);
+
+SELECT '-- referenced from a nested CTE';
+WITH t AS (SELECT rand64() AS r FROM numbers(10) GROUP BY number, r), u AS (SELECT r FROM t)
+SELECT count() FROM u AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- the CTE body resolves differently at the two references: the results are kept';
+WITH y AS (SELECT 1 AS x), t AS (SELECT x, count() AS c FROM y GROUP BY x)
+SELECT * FROM t, (WITH y AS (SELECT 2 AS x) SELECT x AS x2, c AS c2 FROM t) AS s;
+
+SELECT '-- correlated CTE: inlined, the result is kept';
+SELECT number, (WITH t AS (SELECT count() AS c FROM numbers(10) WHERE number < n.number) SELECT sum(c) FROM (SELECT c FROM t UNION ALL SELECT c FROM t))
+FROM numbers(3) AS n ORDER BY number
+SETTINGS allow_experimental_correlated_subqueries = 1;
+
+SELECT '-- recursive WITH: not materialized, the result is kept';
+WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 5), s AS (SELECT sum(n) AS total FROM r)
+SELECT a.total, b.total FROM s AS a, s AS b;
+
+SELECT '-- results are the same as without materialization';
+DROP TABLE IF EXISTS t_auto_cte;
+CREATE TABLE t_auto_cte (id UInt64, page String, referer String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_auto_cte SELECT number, toString(number % 7), toString(number % 5) FROM numbers(1000);
+
+WITH top_pages AS (SELECT page, count() AS c FROM t_auto_cte GROUP BY page ORDER BY c DESC, page LIMIT 3)
+SELECT tp.page, tp.c, o.n
+FROM top_pages AS tp
+LEFT JOIN (SELECT referer, count() AS n FROM t_auto_cte WHERE referer IN (SELECT page FROM top_pages) GROUP BY referer) AS o
+    ON o.referer = tp.page
+ORDER BY tp.c DESC, tp.page;
+
+WITH top_pages AS (SELECT page, count() AS c FROM t_auto_cte GROUP BY page ORDER BY c DESC, page LIMIT 3)
+SELECT tp.page, tp.c, o.n
+FROM top_pages AS tp
+LEFT JOIN (SELECT referer, count() AS n FROM t_auto_cte WHERE referer IN (SELECT page FROM top_pages) GROUP BY referer) AS o
+    ON o.referer = tp.page
+ORDER BY tp.c DESC, tp.page
+SETTINGS enable_automatic_cte_materialization = 0;
+
+SELECT '-- the table is read twice instead of three times';
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN
+WITH top_pages AS (SELECT page, count() AS c FROM t_auto_cte GROUP BY page ORDER BY c DESC, page LIMIT 3)
+SELECT tp.page, tp.c, o.n
+FROM top_pages AS tp
+LEFT JOIN (SELECT referer, count() AS n FROM t_auto_cte WHERE referer IN (SELECT page FROM top_pages) GROUP BY referer) AS o
+    ON o.referer = tp.page);
+
+SELECT countIf(explain LIKE '%ReadFromMergeTree%') FROM (EXPLAIN
+WITH top_pages AS NOT MATERIALIZED (SELECT page, count() AS c FROM t_auto_cte GROUP BY page ORDER BY c DESC, page LIMIT 3)
+SELECT tp.page, tp.c, o.n
+FROM top_pages AS tp
+LEFT JOIN (SELECT referer, count() AS n FROM t_auto_cte WHERE referer IN (SELECT page FROM top_pages) GROUP BY referer) AS o
+    ON o.referer = tp.page);
+
+DROP TABLE t_auto_cte;
+
+SELECT '-- formatting';
+SELECT formatQuerySingleLine('WITH t AS NOT MATERIALIZED (SELECT 1) SELECT * FROM t');
+SELECT formatQuerySingleLine('WITH t AS MATERIALIZED (SELECT 1) SELECT * FROM t');
+
+SELECT '-- columns with the same name: inlined';
+WITH b AS (SELECT 1 AS d), a AS (SELECT g, d, max(if(m = 'A', g, NULL)) AS g FROM (SELECT 'g' AS g, 1 AS d, 'A' AS m) GROUP BY ALL)
+SELECT b.*, a.g FROM b LEFT JOIN a USING d;
+WITH a AS (SELECT g, max(g) AS g FROM (SELECT 'g' AS g) GROUP BY ALL)
+SELECT * FROM a AS x, a AS y;
+
+SELECT '-- a CTE referenced once from the subquery of another CTE referenced once: both inlined';
+SELECT countIf(explain LIKE '%Materializ%') FROM (EXPLAIN
+WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b AS (SELECT c, count() AS n FROM a GROUP BY c)
+SELECT * FROM b);
+WITH a AS (SELECT number % 3 AS x, count() AS c FROM numbers(10) GROUP BY x), b AS (SELECT c, count() AS n FROM a GROUP BY c)
+SELECT * FROM b ORDER BY c;
+
+SELECT '-- totals of a nested query: inlined, the totals are kept';
+WITH t AS (SELECT DISTINCT * FROM (SELECT number % 2 AS n, count() AS c FROM numbers(4) GROUP BY n WITH TOTALS))
+SELECT a.n, a.c, b.n, b.c FROM t AS a LEFT JOIN t AS b ON a.n = b.n ORDER BY a.n;
+
+SELECT '-- a reference is filtered by a key of GROUP BY: inlined, so the filter is pushed down below the aggregation';
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE a.n < 100;
+WITH t AS (SELECT number AS n, count() AS c FROM numbers(10000000) GROUP BY n)
+SELECT * FROM t WHERE n = 1 UNION ALL SELECT * FROM t WHERE n = 2
+ORDER BY n
+SETTINGS max_memory_usage = '256M', max_threads = 4;
+
+SELECT '-- a reference is filtered by a column of SELECT DISTINCT: inlined';
+WITH t AS (SELECT DISTINCT number AS n, rand64() AS r FROM numbers(10))
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE b.n < 100;
+
+SELECT '-- a reference is filtered by a column that is not a key, or the filter cannot be pushed down below LIMIT: materialized';
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r AND a.n = b.n WHERE a.r != 0;
+WITH t AS (SELECT number AS n, rand64() AS r FROM numbers(10) GROUP BY n ORDER BY n LIMIT 5)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r WHERE a.n < 100 AND b.n < 100;
+
+SELECT '-- a column is not used by any reference: inlined, the column is not calculated';
+WITH t AS (SELECT number, sum(toUInt64(concat(toString(number), 'x'))) AS unused FROM numbers(3) GROUP BY number)
+SELECT a.number FROM t AS a INNER JOIN t AS b USING (number) ORDER BY a.number;
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM t AS a INNER JOIN t AS b ON a.r = b.r;
+
+SELECT '-- every column is used by some reference: materialized';
+WITH t AS (SELECT rand64() AS r, count() AS c FROM numbers(10) GROUP BY number)
+SELECT count() FROM (SELECT r FROM t) AS a INNER JOIN (SELECT r, c FROM t) AS b ON a.r = b.r;
