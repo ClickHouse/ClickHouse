@@ -6148,8 +6148,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// (which may skip index analysis).
     if (result.parts_with_ranges.empty())
         announceEmptyReadRangesToCoordinatorIfInitiator();
-    /// A read in order coordinates only its split streams, while a replica that planned this table differently reads it
-    /// as one Default stream: register that stream empty.
+    /// A replica that plans this table without the projection reads it as one Default stream: register that stream empty.
     else if (query_info.input_order_info && result.readFromProjection())
         announceEmptyReadRangesToCoordinatorIfInitiator(CoordinationMode::Default);
 
@@ -7099,7 +7098,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator(std::opt
             ? CoordinationMode::WithOrder
             : CoordinationMode::ReverseOrder;
     };
-    // The announcement has no parts to read, so the parameter values don't really matter
+    // The announcement has no parts to read, so only the coordination mode matters
     std::ignore = extension.sendInitialRequest(
         mode.value_or(get_coordination_mode()), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1, /*wants_analyzed_ranges=*/false);
     return true;
