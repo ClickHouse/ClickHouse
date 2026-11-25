@@ -12,6 +12,14 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらはClickHouseサーバーの設定であり、ClickHouseのソースコードから自動生成されています。
 
+## gpu_expression_kernel_cache_elements_size {#gpu_expression_kernel_cache_elements_size}
+
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />GPU エンジンが式に対してコンパイルしたカーネルを保持するキャッシュの、最大カーネル数です。変更は再起動なしで反映されます。
+
+## gpu_expression_kernel_cache_size {#gpu_expression_kernel_cache_size}
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="No" />GPU エンジンが式向けにコンパイルするカーネルのキャッシュの最大サイズ (PTX のバイト数) です。上限を超えたカーネルはデバイスからアンロードされます。変更は再起動せずに反映されます。
+
 ## gpu_memory_pool_release_threshold {#gpu_memory_pool_release_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" changeable_without_restart="No" />GPU のデフォルトのメモリ pool が、解放済みのデバイスメモリをドライバーに返却せずに保持しておく量です。デフォルト値のままでは、pool はクエリのピーク使用量まで拡大し、サーバーがシャットダウンするまでそのサイズを維持します。
