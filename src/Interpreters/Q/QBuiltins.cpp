@@ -772,6 +772,18 @@ QValue firstOrLast(Call & call, bool first)
     return result;
 }
 
+/// The values of a column as a list: a column of a q-sql template is a list (one per group).
+/// It takes the column itself, not the arguments of the call, so that it suits the functions of two arguments as well.
+QValue columnToList(Call & call, const QValue & column)
+{
+    if (column.depth > 0)
+        call.unsupported("This function of a column of lists");
+    QValue result = QCompiler::scalar(fn("groupArray", call.compiler.columnForAggregation(column, call.scope)), 1);
+    result.aggregated = true;
+    result.qtype = column.qtype;
+    return result;
+}
+
 /// The list functions that make a list per group from a column (`distinct`, `asc`, ...).
 QValue listFunction(Call & call, const std::function<ASTPtr(ASTPtr)> & over_list)
 {
@@ -779,11 +791,8 @@ QValue listFunction(Call & call, const std::function<ASTPtr(ASTPtr)> & over_list
     QValue value = call.scalarArg(0);
     if (value.kind == QValueKind::Column)
     {
-        if (value.depth > 0)
-            call.unsupported("This function of a column of lists");
-        QValue result = QCompiler::scalar(over_list(fn("groupArray", call.compiler.columnForAggregation(value, call.scope))), 1);
-        result.aggregated = true;
-        result.qtype = value.qtype;
+        QValue result = columnToList(call, value);
+        result.ast = over_list(result.ast);
         return result;
     }
     if (value.depth == 0)
@@ -876,7 +885,8 @@ QValue takeValue(Call & call)
 
     if (value.kind == QValueKind::Column)
     {
-        QValue list = listFunction(call, [](ASTPtr items) { return items; });
+        /// `2#x`: the items are taken from the list of the column.
+        QValue list = columnToList(call, value);
         call.args = {count, list};
         return takeValue(call);
     }
@@ -1531,7 +1541,9 @@ const std::unordered_map<String, Handler> & handlers()
             QValue left = c.scalarArg(0);
             QValue right = c.scalarArg(1);
             if (left.kind == QValueKind::Column)
-                left = listFunction(c, [](ASTPtr items) { return items; });
+                left = columnToList(c, left);
+            if (right.kind == QValueKind::Column)
+                right = columnToList(c, right);
             if (right.depth == 0)
                 right = QCompiler::scalar(fn("array", right.ast), 1);
             String item = c.compiler.newLambdaParameter();
@@ -1546,7 +1558,9 @@ const std::unordered_map<String, Handler> & handlers()
             QValue left = c.scalarArg(0);
             QValue right = c.scalarArg(1);
             if (left.kind == QValueKind::Column)
-                left = listFunction(c, [](ASTPtr items) { return items; });
+                left = columnToList(c, left);
+            if (right.kind == QValueKind::Column)
+                right = columnToList(c, right);
             String item = c.compiler.newLambdaParameter();
             QValue result = left;
             result.ast = fn("arrayFilter", makeLambda({item}, fn("has", right.ast, ident(item))), left.ast);
