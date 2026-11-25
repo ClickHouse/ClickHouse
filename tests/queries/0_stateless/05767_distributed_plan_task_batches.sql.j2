@@ -1,0 +1,65 @@
+-- With `distributed_plan_task_dispatch_batching = 1` the coordinator sends each worker's tasks in `start_tasks` batches, each
+-- stage's plan once per batch, and with 0 one task per batch; the results must equal local execution, with streaming and
+-- persisted exchanges, whether the batches go to one worker after another (1 thread) or to all workers at once (0), and whether
+-- they are handed over after every stage (`distributed_plan_task_dispatch_stages_per_flush = 1`).
+
+SET enable_analyzer = 1;
+SET max_rows_to_group_by = 0;
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET enable_cascades_optimizer = 0;
+SET distributed_plan_fallback_to_local_execution = 0;
+SET distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
+-- Each arm changes one of these; its `log_comment` is `arm <shape> <exchange kind> <arm>`.
+SET distributed_plan_task_dispatch_batching = 1, distributed_plan_task_dispatch_threads = 0, distributed_plan_task_dispatch_stages_per_flush = 0;
+
+DROP TABLE IF EXISTS t_task_batches;
+CREATE TABLE t_task_batches (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_task_batches SELECT number % 1000, number FROM numbers(100000);
+
+{% set shapes = [
+    ('aggregation', 'SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM t_task_batches GROUP BY k)', ', distributed_plan_force_shuffle_aggregation = 1'),
+    ('join', 'SELECT count(), sum(a.k) FROM t_task_batches AS a INNER JOIN t_task_batches AS b ON a.v = b.v', ', distributed_plan_max_rows_to_broadcast = 0'),
+    ('set', 'SELECT count() FROM t_task_batches WHERE v IN (SELECT number * 2 FROM numbers(50000))', ''),
+] %}
+{% set arms = [
+    ('one_task_per_batch', ', distributed_plan_task_dispatch_batching = 0'),
+    ('one_sender', ', distributed_plan_task_dispatch_threads = 1'),
+    ('default', ''),
+    ('flush_per_stage', ', distributed_plan_task_dispatch_stages_per_flush = 1'),
+] %}
+SELECT 'local';
+{% for shape, query, shape_settings in shapes %}
+{{ query }};
+{% endfor %}
+{% for kind in ['Streaming', 'Persisted'] %}
+{% for shape, query, shape_settings in shapes if kind == 'Streaming' or shape != 'set' %}
+SELECT '{{ shape }} {{ kind }}';
+{% for arm, arm_settings in arms %}
+{{ query }}
+SETTINGS make_distributed_plan = 1, distributed_plan_force_exchange_kind = '{{ kind }}'{{ shape_settings }}{{ arm_settings }}, log_comment = 'arm {{ shape }} {{ kind }} {{ arm }}';
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+-- The same remote tasks in every arm; with batching fewer batches than tasks, since a worker's tasks share one, else one each.
+-- A flush after every stage gives more batches than one flush with streaming exchanges; persisted exchanges already flush before
+-- each wait, so only producers started together (the two sides of a join) split.
+SYSTEM FLUSH LOGS query_log;
+SELECT shape, kind, arm,
+    remote_tasks > 0 AS ran_remote_tasks,
+    remote_tasks = max(remote_tasks) OVER (PARTITION BY shape, kind) AS same_tasks_in_every_arm,
+    if(arm = 'one_task_per_batch', batches = remote_tasks, batches < remote_tasks) AS batch_count,
+    if(arm = 'flush_per_stage', if(kind = 'Streaming', batches > default_batches, batches >= default_batches), 1) AS flush_count
+FROM
+(
+    SELECT splitByChar(' ', log_comment) AS parts, parts[2] AS shape, parts[3] AS kind, parts[4] AS arm,
+        ProfileEvents['DistributedPlanRemoteTasks'] AS remote_tasks, ProfileEvents['DistributedPlanTaskBatches'] AS batches,
+        maxIf(batches, arm = 'default') OVER (PARTITION BY shape, kind) AS default_batches
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
+        AND query_id = initial_query_id AND log_comment LIKE 'arm %'
+)
+ORDER BY ALL
+FORMAT TSVWithNames;
+
+DROP TABLE t_task_batches;
