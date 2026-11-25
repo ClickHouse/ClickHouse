@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #include <cmath>
 
@@ -82,9 +83,10 @@ struct AggregateFunctionVarianceData
             return;
         }
 
-        UInt64 total_count = count + source.count;
+        /// The count is a modular `UInt64` sum of the partial counts, as for `count`.
+        UInt64 total_count = common::addIgnoreOverflow(count, source.count);
 
-        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
+        Float64 factor = static_cast<Float64>(count) * static_cast<Float64>(source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
 
         if (areComparable(count, source.count))
@@ -332,9 +334,9 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
             return;
         }
 
-        UInt64 total_count = count + source.count;
+        UInt64 total_count = common::addIgnoreOverflow(count, source.count);
 
-        Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
+        Float64 factor = static_cast<Float64>(count) * static_cast<Float64>(source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
         Float64 right_delta = right_mean - source.right_mean;
 
