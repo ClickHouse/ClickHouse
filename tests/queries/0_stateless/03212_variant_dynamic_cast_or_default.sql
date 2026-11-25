@@ -1,3 +1,5 @@
+-- Tags: long
+
 set use_variant_as_common_type = 1;
 set allow_suspicious_low_cardinality_types = 1;
 set session_timezone = 'UTC';
