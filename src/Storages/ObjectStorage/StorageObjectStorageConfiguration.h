@@ -290,6 +290,9 @@ public:
     bool partition_columns_in_data_file = true;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
+
 protected:
     void checkFormat() const;
 
