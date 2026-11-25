@@ -763,7 +763,10 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     if (length == 1)
     {
         const T value = src_vec.data[start];
-        data.push_back(value);
+        /// Preserve the growth policy of the general range insertion.
+        const size_t old_size = data.size();
+        data.resize(old_size + 1);
+        data[old_size] = value;
         return;
     }
 
