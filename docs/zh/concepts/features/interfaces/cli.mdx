@@ -16,7 +16,7 @@ doc_type: 'reference'
 * 创建、配置、扩缩容、备份和查询 ClickHouse Cloud 服务
 * 创建、监控、配置和恢复 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务
 * 创建并运维以对象存储、Kafka、Kinesis、Pub/Sub、Postgres、MySQL、MongoDB 和 BigQuery 为数据源的 ClickPipes
-* 管理 [托管 ClickStack](/zh/clickstack/deployment/managed) 服务上的数据源、仪表盘、告警、Webhook、保存的搜索和角色
+* 管理 [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/deployment/managed) 服务上的数据源、仪表盘、告警、Webhook、保存的搜索和角色
 * 在本地开发可执行用户定义函数，并将其部署到 ClickHouse Cloud
 * 管理组织成员、邀请、API 密钥和角色
 * 将官方 ClickHouse agent skills 安装到编程智能体中
@@ -430,7 +430,7 @@ CDC 管道必须先处于 `Paused` 状态，才能执行 `update`：先停止管
 
 ### ClickStack {#clickstack}
 
-`cloud clickstack` 用于管理现有[托管 ClickStack](/zh/clickstack/deployment/managed) 服务中的数据源、仪表盘、告警、Webhook、保存的搜索和角色。资源以 JSON 文件形式提供 (通过 `--file` 指定，或使用 `-` 从 stdin 读取) 。读取操作支持 OAuth 认证，写入操作则需要 API key。
+`cloud clickstack` 用于管理现有 [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/deployment/managed) 服务中的数据源、仪表盘、告警、Webhook、保存的搜索和角色。资源以 JSON 文件形式提供 (通过 `--file` 指定，或使用 `-` 从 stdin 读取) 。读取操作支持 OAuth 认证，写入操作则需要 API key。
 
 ```bash
 clickhousectl cloud clickstack source list <service-id>

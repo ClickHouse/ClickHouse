@@ -138,6 +138,7 @@
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(ParquetMetadataCacheOffsetIndexHits, "Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
+    M(ParquetMetadataCacheColumnIndexHits, "Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
@@ -627,6 +628,9 @@
     M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaFallback, "Number of times distributed index analysis failed on one of replicas with fallback to local replica", ValueType::Number) \
     M(DistributedIndexAnalysisMissingParts, "Number of missing parts during distributed index analysis that will be resolved locally", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersTasks, "Number of tasks sent to stateless workers for index analysis (on the coordinator)", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersParts, "Number of parts sent to stateless workers for index analysis (on the coordinator)", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersAnalyzedParts, "Number of parts a stateless worker analyzed for index analysis", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
@@ -1284,6 +1288,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
+    M(KeeperLogStoreAppend, "Number of entries appended to the Keeper log store", ValueType::Number) \
+    M(KeeperLogStoreAppendMicroseconds, "Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)", ValueType::Microseconds) \
+    M(KeeperSnapshotWriteMicroseconds, "Time spent writing a Keeper snapshot file (serialization, compression and sync)", ValueType::Microseconds) \
+    M(KeeperSnapshotApplyMicroseconds, "Time spent applying a Keeper snapshot to the Keeper state machine", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of batches that hit max_requests_batch_bytes_size limit", ValueType::Number) \
     M(KeeperBatchMaxReadCount, "Number of batches that hit max_read_batch_size limit", ValueType::Number) \
@@ -1438,6 +1446,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReadErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
     M(DistrCacheReadErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during read requests", ValueType::Number) \
     M(DistrCacheReadRequestRetriesExhausted, "Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit", ValueType::Number) \
+    M(DistrCacheReadsSkippedRegistryNotReady, "Distributed Cache client event. Number of read buffers of object storage disks that asked for the distributed cache but were created without it because the distributed cache registry was not ready (e.g. no cache server was registered)", ValueType::Number) \
     M(DistrCacheWriteErrors, "Distributed Cache client event. Total number of distributed cache errors during write requests (equals DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). A server-initiated write-through cache `Stop` is flow control, not an error, and is not counted", ValueType::Number) \
     M(DistrCacheWriteErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during write requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
     M(DistrCacheWriteErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during write requests", ValueType::Number) \

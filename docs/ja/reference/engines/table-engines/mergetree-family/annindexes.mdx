@@ -149,8 +149,8 @@ ORDER BY [...]
 次のHNSW固有のパラメーターを使用できます。
 
 * `<quantization>` は、近傍グラフ内のベクトルの量子化を制御します。設定可能な値は `f64`、`f32`、`f16`、`bf16`、`i8`、`b1` です。デフォルト値は `bf16` です。なお、このパラメーターは、基になるカラム内でのベクトル表現には影響しません。
-* `<hnsw_max_connections_per_layer>` は、グラフの各ノードの近傍数 (HNSW ハイパーパラメーター `M` とも呼ばれます) を制御します。デフォルト値は `32` です。値 `0` はデフォルト値を使用することを意味します。
-* `<hnsw_candidate_list_size_for_construction>` は、HNSW グラフの構築時に使用される動的候補リストのサイズ (HNSW ハイパーパラメーター `ef_construction` とも呼ばれます) を制御します。デフォルト値は `128` です。値 `0` はデフォルト値を使用することを意味します。
+* `<hnsw_max_connections_per_layer>` は、グラフの各ノードの近傍数 (HNSW ハイパーパラメーター `M` とも呼ばれます) を制御します。デフォルト値は `32` です。値 `0` はデフォルト値を使用することを意味します。最大値は `512` です。
+* `<hnsw_candidate_list_size_for_construction>` は、HNSW グラフの構築時に使用される動的候補リストのサイズ (HNSW ハイパーパラメーター `ef_construction` とも呼ばれます) を制御します。デフォルト値は `128` です。値 `0` はデフォルト値を使用することを意味します。最大値は `3200` です。
 
 HNSW 固有パラメーターのデフォルト値は、ほとんどのユースケースで十分良好に機能します。
 そのため、HNSW 固有パラメーターをカスタマイズすることは推奨していません。
@@ -162,20 +162,21 @@ HNSW 固有パラメーターのデフォルト値は、ほとんどのユース
 * ベクトル類似度索引は計算式 (例: `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) に対して作成することもできますが、そのような索引は後で近似近傍探索には使用できません。
 * ベクトル類似度索引では、基になるカラム内のすべての配列が `<dimension>` 個の要素を持っている必要があります。これは索引作成時に検査されます。この要件への違反をできるだけ早く検出するために、ユーザーはベクトルカラムに [制約](/ja/reference/statements/create/table#constraints) を追加できます。たとえば `CONSTRAINT same_length CHECK length(vectors) = 256` です。
 * 同様に、基になるカラム内の配列値は空 (`[]`) であってはならず、デフォルト値 (これも `[]`) であってもなりません。
+* ベクトル類似度索引は、エンジンが `MergeTree` または `ReplicatedMergeTree` のテーブルにのみ作成できます。同じファミリーの他のエンジン (例: `ReplacingMergeTree` や `CollapsingMergeTree`) では、索引を使用すると `SELECT ... FINAL` が誤った結果を返す可能性があるため、作成は拒否されます。ただし、MergeTree 設定 `allow_vector_similarity_index_in_specialized_merge_tree` を有効にすると作成できます。
 
 **ストレージ使用量とメモリ使用量の見積もり**
 
 一般的な AI モデル (例: Large Language Model、[LLMs](https://en.wikipedia.org/wiki/Large_language_model)) で使用するために生成されるベクトルは、数百から数千の浮動小数点値で構成されます。
 そのため、1 つのベクトル値であっても、複数キロバイトのメモリを消費することがあります。
-テーブル内の基になるベクトルカラムに必要なストレージ量と、ベクトル類似度索引に必要なメインメモリ量を見積もりたい場合は、以下の 2 つの式を使用できます。
+テーブル内の基になるベクトルカラムに必要なストレージ量と、ベクトル類似度索引に必要な主記憶量を見積もりたい場合は、以下の 2 つの式を使用できます。
 
 テーブル内のベクトルカラムのストレージ使用量 (非圧縮) :
 
 ```text
-ストレージ消費量 = ベクトル数 * 次元数 * カラムデータ型のサイズ
+Storage consumption = Number of vectors * Dimension * Size of column data type
 ```
 
-[dbpedia データセット](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)の例：
+[dbpedia データセット](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)の例:
 
 ```text
 Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
@@ -187,19 +188,19 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 ベクトル索引の読み込みに必要なメモリ使用量:
 
 ```text
-インデックス内のベクトルのメモリ (mv) = ベクトル数 * 次元数 * 量子化データ型のサイズ
-インメモリグラフのメモリ (mg) = ベクトル数 * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
-メモリ消費量: mv + mg
+Memory consumption: mv + mg
 ```
 
 [dbpedia データセット](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)の例:
 
 ```text
-インデックス内のベクトルのメモリ (mv) = 100万 * 1536 * 2 (BFloat16の場合) = 3072 MB
-インメモリグラフのメモリ (mg) = 100万 * 64 * 2 * 4 = 512 MB
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 
-メモリ消費量 = 3072 + 512 = 3584 MB
+Memory consumption = 3072 + 512 = 3584 MB
 ```
 
 上記の式では、事前割り当てバッファやcacheなどの実行時データ構造をベクトル類似度索引が確保するために必要な追加メモリは考慮されていません。
@@ -276,13 +277,13 @@ LIMIT 10;
 スキップできるグラニュールが多いほど、索引の使用効率が向上します。
 
 <Tip>
-  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indices](/ja/reference/settings/session-settings/force#force_data_skipping_indices) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
+  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indices](/ja/reference/settings/session-settings/force#force_data_skipping_indexes) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
 </Tip>
 
-**ポストフィルタリングとプレフィルタリング**
+**ポストフィルタリングと事前フィルタリング**
 
 ユーザーはオプションで、SELECT クエリに追加のフィルタ条件を含む `WHERE` 句を指定できます。
-ClickHouse はこれらのフィルタ条件を、ポストフィルタリングまたはプリフィルタリングの戦略で評価します。
+ClickHouse はこれらのフィルタ条件を、ポストフィルタリングまたは事前フィルタリングの戦略で評価します。
 どちらの戦略も、フィルタが評価される順序を決定するものです。
 
 * ポストフィルタリングとは、まずベクトル類似度索引を評価し、その後で ClickHouse が `WHERE` 句で指定された追加のフィルタを評価することを意味します。

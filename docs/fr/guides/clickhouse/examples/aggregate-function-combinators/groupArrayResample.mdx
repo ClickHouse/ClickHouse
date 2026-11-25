@@ -7,9 +7,7 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Le [`Resample`](/fr/reference/functions/aggregate-functions/combinators#-resample)
 combinator peut être appliqué à la fonction d’agrégation [`groupArray`](/fr/reference/functions/aggregate-functions/sum) afin de
@@ -18,12 +16,10 @@ et de construire le tableau résultant en sélectionnant une valeur représentat
 (correspondant à la clé minimale) parmi les points de données appartenant à chaque intervalle.
 Il crée une vue sous-échantillonnée des données au lieu de collecter toutes les valeurs.
 
-<div id="example-usage">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#example-usage}
 
 Examinons un exemple. Nous allons créer une table contenant `name`, `age` et
-`wage` des employés, puis y insérer quelques données :
+`wage` des employés, puis y insérer quelques données :
 
 ```sql
 CREATE TABLE employee_data 
@@ -32,7 +28,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -50,7 +46,7 @@ intervalles `[30, 59]` et `[60,74]`.
 Pour regrouper les noms dans un tableau, nous utilisons la fonction d&#39;agrégation `groupArray`.
 Elle prend un argument. Dans notre cas, il s&#39;agit de la colonne `name`. La fonction `groupArrayResample`
 doit utiliser la colonne `age` pour regrouper les noms par âge. Pour définir les
-intervalles requis, nous passons `30`, `75`, `30` comme arguments à la fonction `groupArrayResample` :
+intervalles requis, nous passons `30`, `75`, `30` comme arguments à la fonction `groupArrayResample` :
 
 ```sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
@@ -62,9 +58,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [`groupArray`](/fr/reference/functions/aggregate-functions/groupArray)
 * [`Resample combinator`](/fr/reference/functions/aggregate-functions/combinators#-resample)

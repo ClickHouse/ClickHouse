@@ -2,7 +2,7 @@
 slug: /data-compression/compression-modes
 title: 'Modos de compresión'
 description: 'Modos de compresión de columnas en ClickHouse'
-keywords: ['compresión', 'codec', 'codificación', 'modos']
+keywords: ['compresión', 'códec', 'codificación', 'modos']
 doc_type: 'reference'
 ---
 
@@ -15,7 +15,7 @@ Use `LZ4` si no está seguro de qué modo elegir.
 </Tip>
 
 <div id="modes">
-  ## Modos
+  ## Modos {#modes}
 </div>
 
 | valor  | nombre                | descripción                                     |
@@ -33,7 +33,7 @@ Según los [benchmarks de Facebook](https://facebook.github.io/zstd/#benchmarks)
 | **lz4** 1.9.2     | 2.1   | 740 MB/s   | 4530 MB/s     |
 
 <div id="block">
-  ## Bloque
+  ## Bloque {#block}
 </div>
 
 | campo               | tipo    | descripción                                                                                       |
@@ -45,13 +45,9 @@ Según los [benchmarks de Facebook](https://facebook.github.io/zstd/#benchmarks)
 | compressed&#95;data | binary  | Bloque de datos comprimidos                                                                       |
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Diagrama que ilustra la estructura del bloque de compresión de ClickHouse](/images/data-compression/ch_compression_block.webp)
-
-</Frame>
-
+  <Frame>
+    ![Diagrama que ilustra la estructura del bloque de compresión de ClickHouse](/images/data-compression/ch_compression_block.webp)
+  </Frame>
 </div>
 
 El encabezado es (raw&#95;size + data&#95;size + mode); el tamaño bruto consiste en len(header + compressed&#95;data).
@@ -59,7 +55,7 @@ El encabezado es (raw&#95;size + data&#95;size + mode); el tamaño bruto consist
 La suma de comprobación es `hash(header + compressed_data)`, mediante [ClickHouse CityHash](/es/resources/develop-contribute/native-protocol/hash).
 
 <div id="none-mode">
-  ## Modo None
+  ## Modo None {#none-mode}
 </div>
 
 Si se usa el modo *None*, `compressed_data` es igual a los datos originales.
