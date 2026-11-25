@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -21,25 +22,29 @@ public:
         return std::make_shared<FunctionNaturalSortKey>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T : String) -> T";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+
+        return arguments[0];
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(
+    ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & /*result_type*/,
         size_t input_rows_count) const override
@@ -202,9 +207,8 @@ private:
 
             res_data.push_back(static_cast<UInt8>('0' + digits_len % 10)); // Encode 'length(to_string(digits))' as a single digit
 
-            while (digits_len > 0)
+            while (digits_len-- > 0)
             {
-                --digits_len;
                 res_data.push_back(static_cast<UInt8>('0' + (digits / digits_power10) % 10));
                 digits_power10 /= 10;
             }
@@ -223,12 +227,7 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        R"(
-CREATE TABLE t (s String) ENGINE = Memory;
-INSERT INTO t VALUES ('a1'), ('a02');
-
-SELECT s FROM t ORDER BY naturalSortKey(s);
-        )",
+        "SELECT s FROM t ORDER BY naturalSortKey(s)",
         R"(
 ┌─s───┐
 │ a1  │

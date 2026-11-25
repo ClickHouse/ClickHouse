@@ -340,7 +340,7 @@ public:
                 const auto & array_path = assert_cast<const ColumnArray &>(path_data);
                 auto & dest_array = assert_cast<ColumnArray &>(dest);
 
-                size_t offset = index == 0 ? 0 : array_path.getOffsets()[static_cast<ssize_t>(index) - 1];
+                size_t offset = index == 0 ? 0 : array_path.getOffsets()[index - 1];
                 size_t array_size = array_path.getOffsets()[index] - offset;
 
                 PlanNode node;
@@ -486,51 +486,26 @@ public:
     }
 
     static constexpr auto name = Name::name;
-    [[nodiscard]] String getName() const override { return Name::name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return Name::name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Documentation-only — `JSON_*` functions take a JSON `String` plus a
-    /// const-`String` JSONPath; the result-type varies by `Impl` (delegated
-    /// to `Impl::signature`).
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (requires { Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature; })
-            return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::signature;
-        else
-            return {};
-    }
-
-    /// The declarative signature above is documentation-only: the multi-path result type
-    /// (a tuple/array of paths mirrored into the result) is not expressible in the DSL, so
-    /// the `ColumnsWithTypeAndName` override below is authoritative. Route the types-only
-    /// path to it as well, so the base `IFunction::getReturnTypeImpl(DataTypes)` never
-    /// applies the documentation string.
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnType(
             Name::name, arguments, function_json_value_return_type_allow_nullable);
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override
     {
         return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnTypeForDynamic(
             arguments, function_json_value_return_type_allow_nullable);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
         /// 1. Lexer(path) -> Tokens
@@ -575,9 +550,6 @@ class JSONExistsImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Documentation-only — `JSON_EXISTS(json, jsonpath, [jsonpath, ...])`.
-    static constexpr auto signature = "(String, const String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {
@@ -648,11 +620,6 @@ class JSONValueImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Documentation-only — extracts a scalar at the JSON path as `String`
-    /// (or `Nullable(String)` when `function_json_value_return_type_allow_nullable`
-    /// is set; when multiple paths are passed the result becomes a tuple).
-    static constexpr auto signature = "(String, const String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool function_json_value_return_type_allow_nullable)
     {
@@ -768,10 +735,6 @@ class JSONQueryImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Documentation-only — returns the serialised JSON value(s) at the
-    /// JSON path as `String`.
-    static constexpr auto signature = "(String, const String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName & arguments, bool)
     {

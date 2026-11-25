@@ -1,5 +1,3 @@
-import uuid
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -52,7 +50,6 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
     )
     # Make sure the surviving replica holds a full local copy of the data.
     node2.query(f"SYSTEM SYNC REPLICA {db}.tt")
-    node3.query(f"SYSTEM SYNC REPLICA {db}.tt")
 
     # All three replicas are registered and active.
     assert_eq_with_retry(
@@ -78,16 +75,12 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         # online so that the coordinator is sized by what is actually available. Use a data-reading query
         # (not a trivial `count()`, which `optimize_trivial_count_query` answers from metadata and thus never
         # engages parallel replicas, so the coordinator would not be created at all).
-        query_id = f"inactive_{uuid.uuid4().hex}"
         result = node1.query(
             f"SELECT sum(key) FROM {db}.tt",
-            query_id=query_id,
             settings={
                 "enable_parallel_replicas": 1,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": db,
-                # Read the data: do not answer `sum` from the per-part statistics.
-                "use_statistics_for_sum_avg_aggregation": 0,
             },
         )
         assert result == "4999950000\n"
@@ -99,29 +92,5 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         assert not node1.contains_in_log(
             "Creating parallel replicas coordinator with replicas_count=3"
         )
-        # The mark segment size heuristic must count the same 2 replicas.
-        assert node1.contains_in_log(f"{{{query_id}}}.*number_of_replicas=2,")
     finally:
         node3.start_clickhouse()
-
-    # With all 3 replicas active, `max_parallel_replicas` caps the coordinator, and the heuristic, at 2.
-    assert_eq_with_retry(
-        node1,
-        f"SELECT count() FROM system.clusters WHERE cluster = '{db}' AND is_active = 1",
-        "3\n",
-        retry_count=60,
-        sleep_time=1,
-    )
-    query_id = f"capped_{uuid.uuid4().hex}"
-    result = node1.query(
-        f"SELECT sum(key) FROM {db}.tt",
-        query_id=query_id,
-        settings={
-            "enable_parallel_replicas": 1,
-            "max_parallel_replicas": 2,
-            "cluster_for_parallel_replicas": db,
-            "use_statistics_for_sum_avg_aggregation": 0,
-        },
-    )
-    assert result == "4999950000\n"
-    assert node1.contains_in_log(f"{{{query_id}}}.*number_of_replicas=2,")

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
@@ -30,12 +29,12 @@ public:
         std::optional<size_t> max_dynamic_subcolumns_,
         bool allow_tuple_element_aggregation_);
 
-    [[nodiscard]] const char * getName() const override { return "AggregatingSortedAlgorithm"; }
+    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    [[nodiscard]] MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
@@ -97,8 +96,8 @@ public:
 
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
-        VectorWithMemoryTracking<AggregateDescription> columns_to_aggregate;
-        VectorWithMemoryTracking<SimpleAggregateDescription> columns_to_simple_aggregate;
+        std::vector<AggregateDescription> columns_to_aggregate;
+        std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
@@ -132,7 +131,7 @@ private:
         void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
-        [[nodiscard]] bool isGroupStarted() const { return is_group_started; }
+        bool isGroupStarted() const { return is_group_started; }
         void addRow(SortCursor & cursor); /// Possible only when group was started.
 
         Chunk pull(); /// Possible only if group was finished.

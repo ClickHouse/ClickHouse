@@ -1,7 +1,6 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -32,13 +31,9 @@ public:
     bool & is_stateful;
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
-        if (WindowFunctionFactory::instance().isWindowFunctionName(ast_function.name))
-        {
-            is_stateful = true;
-            return;
-        }
+        auto aggregate_function_properties
+            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.getNullsAction());
 
-        const auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.getNullsAction());
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
             is_stateful = true;
@@ -46,6 +41,7 @@ public:
         }
 
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, context);
+
         if (function && function->isStateful())
         {
             is_stateful = true;
@@ -73,9 +69,7 @@ void DuplicateOrderByFromSubqueriesData::visit(ASTSelectQuery & select_query, AS
             || select_query.limitByOffset()
             || select_query.limitByLength()
             || select_query.limitLength()
-            || select_query.limitOffset()
-            || select_query.limitAfter()
-            || select_query.limitUntil())
+            || select_query.limitOffset())
         {
             return;
         }

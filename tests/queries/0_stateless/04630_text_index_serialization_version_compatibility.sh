@@ -43,9 +43,7 @@ SELECT count() FROM tab WHERE hasPhrase(str, 'qux quux');
 
 echo '-- the part merged under the pin contains the positions substream'
 part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'tab' AND active")
-# The file name is hashed on case-insensitive file systems.
-hashed_name=$($CLICKHOUSE_LOCAL -q "SELECT lower(hex(reverse(sipHash128('skp_idx_text_idx.pos'))))")
-if [ -f "${part_path}skp_idx_text_idx.pos.idx" ] || [ -f "${part_path}${hashed_name}.idx" ]; then
+if [ -f "${part_path}skp_idx_text_idx.pos.idx" ]; then
     echo 'positions file exists'
 else
     echo "no positions file in $part_path:"
@@ -57,18 +55,6 @@ $CLICKHOUSE_LOCAL --path "$data_path" -m -q "
 INSERT INTO tab SELECT number + 1536, 'corge grault' FROM numbers(512);
 OPTIMIZE TABLE tab FINAL;
 SELECT count() FROM tab WHERE hasPhrase(str, 'corge grault');
-"
-
-echo '-- a pfor index is writable and readable under the pin'
-# The codec is recorded per part, independently of the version, so the pin neither selects nor blocks it.
-$CLICKHOUSE_LOCAL --path "$data_path" --compatibility '26.5' -m -q "
-CREATE TABLE tab_pfor (id UInt32, str String, INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'pfor'))
-ENGINE = MergeTree ORDER BY id;
-INSERT INTO tab_pfor SELECT number, 'foo bar' FROM numbers(512);
-INSERT INTO tab_pfor SELECT number + 512, 'foo baz' FROM numbers(512);
-OPTIMIZE TABLE tab_pfor FINAL;
-SELECT count() FROM tab_pfor WHERE hasToken(str, 'foo');
-SELECT count() FROM tab_pfor WHERE hasToken(str, 'bar');
 "
 
 rm -rf "${data_path:?}"

@@ -101,13 +101,13 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
         return nested_function->getName();
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -156,17 +156,17 @@ public:
         nested_function->destroyUpToState(nestedPlace(place));
     }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return prefix_size + nested_function->sizeOfData();
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return nested_function->alignOfData();
     }
@@ -180,20 +180,8 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
-    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
-    {
-        return nested_function->getEstimatedMergeWork(nestedPlace(place));
-    }
-    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
-
-    [[nodiscard]] bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        return nested_function->isLargeMergePair(nestedPlace(place), nestedPlace(rhs));
-    }
-    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
-    [[nodiscard]] bool ignoresRepeatedValues() const override { return nested_function->ignoresRepeatedValues(); }
+    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
@@ -237,23 +225,6 @@ public:
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf, version);
-    }
-
-    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        bool flag = getFlag(place);
-        if constexpr (serialize_flag)
-            writeBinary(flag, dst);
-        if (flag)
-            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
@@ -343,52 +314,36 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override
+    bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    [[nodiscard]] bool isState() const override
+    bool isState() const override
     {
         return nested_function->isState();
     }
 
-    [[nodiscard]] bool isVersioned() const override
+    bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    [[nodiscard]] size_t getDefaultVersion() const override
+    size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    [[nodiscard]] DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_function);
-    }
-
-    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
-
-    /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
-    /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
-    /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
-    /// nullable result is excluded because its NULLs do not take part in the nested comparison.
-    [[nodiscard]] MergedValueBound getMergedValueBound() const override
-    {
-        if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
-            return MergedValueBound::Subadditive;
-        return MergedValueBound::Unknown;
-    }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
 #if USE_EMBEDDED_COMPILER
 
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         return this->nested_function->isCompilable();
     }
@@ -492,7 +447,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation
@@ -659,7 +614,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation
@@ -712,8 +667,7 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            final_flags = std::make_unique<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -766,18 +720,12 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+                final_flags = std::make_unique<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
-            if (nullable_filters[0] != final_flags_ptr)
-            {
-                for (size_t i = row_begin; i < row_end; i++)
-                    final_flags[i] = nullable_filters[0][i];
-            }
-
-            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
+            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
+            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

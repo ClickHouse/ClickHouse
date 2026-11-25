@@ -6,6 +6,8 @@ keywords: ['マージ']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <div id="what-are-part-merges-in-clickhouse">
   ## ClickHouse におけるパーツマージとは何ですか？
 </div>
@@ -24,15 +26,7 @@ ClickHouse が[高速](/ja/get-started/about/why-clickhouse-is-so-fast)なのは
 
 次の図は、このバックグラウンドマージのプロセスを概略的に示したものです。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_01.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
@@ -75,15 +69,7 @@ ORDER BY name ASC;
 
 ClickHouse 24.10 では、新しい[マージダッシュボード](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)が組み込みの[監視ダッシュボード](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)に追加されました。これは OSS と Cloud の両方で `/merges` HTTP ハンドラー経由で利用でき、この例のテーブルで発生するすべてのパーツマージを可視化できます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
@@ -101,33 +87,19 @@ ClickHouse 24.10 では、新しい[マージダッシュボード](https://pres
 
 1 台の ClickHouse サーバーは、複数のバックグラウンド[マージスレッド](/ja/reference/settings/server-settings/settings/background#background_pool_size)を使用して、パーツの同時マージを実行します。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_02.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
 各マージスレッドは、次のループを実行します。
 
-<Steps>
-  <Step title="パーツをメモリに読み込む">
-    次にマージするパーツを決定し、それらのパーツをメモリに読み込みます。
-  </Step>
+① 次にマージするパーツを決定し、それらのパーツをメモリに読み込みます。
 
-  <Step title="パーツをマージする">
-    メモリ内でパーツをより大きなパーツにマージします。
-  </Step>
+② メモリ内でパーツをより大きなパーツにマージします。
 
-  <Step title="ディスクに書き込む">
-    マージされたパーツをディスクに書き込み、ステップ 1 に戻ります。
-  </Step>
-</Steps>
+③ マージされたパーツをディスクに書き込みます。
+
+① に戻る
 
 CPU コア数と RAM 容量を増やすことで、バックグラウンドマージのスループットを向上させることができます。
 
@@ -143,41 +115,23 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 以下の図は、ClickHouse における単一のバックグラウンド[マージスレッド](/ja/concepts/core-concepts/merges#concurrent-merges)が、パーツをどのようにマージするかを示しています (デフォルトでは、[垂直マージ](/ja/concepts/core-concepts/merges#memory-optimized-merges)は使用しません) ：
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_03.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
 パーツマージは、いくつかのステップで実行されます：
 
-<Steps>
-  <Step title="解凍と読み込み">
-    マージ対象のパーツに含まれる[圧縮済みバイナリカラムファイル](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)を解凍し、メモリに読み込みます。
-  </Step>
+**① 解凍と読み込み**：マージ対象のパーツに含まれる[圧縮済みバイナリカラムファイル](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)を解凍し、メモリに読み込みます。
 
-  <Step title="マージ">
-    データを、より大きなカラムファイルへマージします。
-  </Step>
+**② マージ**：データを、より大きなカラムファイルへマージします。
 
-  <Step title="索引作成">
-    マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
-  </Step>
+**③ 索引作成**：マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
 
-  <Step title="圧縮と保存">
-    新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table/codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
-  </Step>
-</Steps>
+**④ 圧縮と保存**：新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table/codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
 
-また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[データパーツ内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
+また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[data parts 内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
 
-マージステップの仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な insert**を実現できます。
+ステップ②の仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な insert**を実現できます。
 
 次に、MergeTree family に属する各エンジンのマージの仕組みを簡単に見ていきます。
 
@@ -187,15 +141,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 以下の図は、標準的な[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)テーブルでパーツがどのようにマージされるかを示しています。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_04.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
@@ -209,15 +155,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルのパーツマージは、[標準的なマージ](/ja/concepts/core-concepts/merges#standard-merges) と同様に動作しますが、各行については最新バージョンのみが保持され、古いバージョンは破棄されます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_05.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
@@ -235,15 +173,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 数値データは、[SummingMergeTree](/ja/reference/engines/table-engines/mergetree-family/summingmergetree) テーブルのパーツのマージ時に自動的に集計されます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_06.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="パーツマージ" />
 
 <br />
 
@@ -257,15 +187,7 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 前述の `SummingMergeTree` テーブルの例は、[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) テーブルの特化版であり、パートのマージ時に [90+](/ja/reference/functions/aggregate-functions/reference-index) の任意の集計関数を適用することで、[データの自動インクリメンタル変換](https://www.youtube.com/watch?v=QDAJTKZT8y4) を可能にします。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![パーツマージ](/images/managing-data/core-concepts/merges_07.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="パーツマージ" />
 
 <br />
 

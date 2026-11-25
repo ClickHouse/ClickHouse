@@ -25,14 +25,14 @@ struct VersionNumber
     /// There might be negative version code which differs from default comparison.
     auto operator<=>(const VersionNumber & rhs) const { return compare(rhs); }
 
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
 
 private:
     Int64 version_major = 0;
     Int64 version_minor = 0;
     Int64 version_patch = 0;
 
-    [[nodiscard]] int compare(const VersionNumber & rhs) const;
+    int compare(const VersionNumber & rhs) const;
 };
 
 }

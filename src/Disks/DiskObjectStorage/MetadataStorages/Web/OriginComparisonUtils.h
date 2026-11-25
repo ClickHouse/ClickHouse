@@ -136,7 +136,7 @@ inline String getRelativePathWithQueryAndFragment(const Poco::URI & candidate, c
     String relative = candidate.getPath().substr(base.getPath().size());
 
     if (!candidate.getRawQuery().empty())
-        relative.append("?").append(candidate.getRawQuery());
+        relative += "?" + candidate.getRawQuery();
     if (!candidate.getFragment().empty())
         relative += "#" + candidate.getFragment();
 
