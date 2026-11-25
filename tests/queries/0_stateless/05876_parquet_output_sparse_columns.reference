@@ -1,0 +1,8 @@
+kinds	1
+sparse kept	1	sparse converted by the setting	1
+parallel	1
+single thread	1
+max_threads 1	1
+split	1
+row group bytes	1
+array join	1

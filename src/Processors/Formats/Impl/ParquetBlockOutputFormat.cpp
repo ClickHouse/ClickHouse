@@ -3,8 +3,11 @@
 #if USE_PARQUET
 
 #include <Common/CurrentThread.h>
+#include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/SharedThreadPools.h>
@@ -23,6 +26,46 @@ namespace ErrorCodes
 }
 
 using namespace Parquet;
+
+/// Size of the column once `recursiveRemoveSparse` converts it; row groups are closed by it.
+static size_t allocatedBytesOfFullColumn(const IColumn & column)
+{
+    if (const auto * sparse = typeid_cast<const ColumnSparse *>(&column))
+    {
+        /// Value 0 is the default one, which fills the rows without an offset.
+        const auto & values = sparse->getValuesColumn();
+        return values.allocatedBytes() + sparse->getNumberOfDefaultRows() * values.byteSizeAt(0);
+    }
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        size_t res = 0;
+        for (const auto & element : tuple->getColumns())
+            res += allocatedBytesOfFullColumn(*element);
+        return res;
+    }
+    return column.allocatedBytes();
+}
+
+/// Keeps sparse columns, shrinking their mostly empty arrays, and converts the other special columns
+/// (whose full size the compact column does not tell) as `MaterializingTransform` did.
+static void prepareChunkForStaging(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+    {
+        column = column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated();
+        const auto * sparse = typeid_cast<const ColumnSparse *>(column.get());
+        if (!sparse || sparse->allocatedBytes() <= 2 * sparse->byteSize())
+            continue;
+        auto mutable_column = IColumn::mutate(std::move(column));
+        auto & mutable_sparse = assert_cast<ColumnSparse &>(*mutable_column);
+        mutable_sparse.getValuesColumn().shrinkToFit();
+        mutable_sparse.getOffsetsColumn().shrinkToFit();
+        column = std::move(mutable_column);
+    }
+    chunk.setColumns(std::move(columns), num_rows);
+}
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
@@ -135,8 +178,10 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     /// convenient to do the squashing here. It's also parallelized here.
     if (chunk.getNumRows() != 0)
     {
+        prepareChunkForStaging(chunk);
         staging_rows += chunk.getNumRows();
-        staging_bytes += chunk.allocatedBytes();
+        for (const auto & column : chunk.getColumns())
+            staging_bytes += allocatedBytesOfFullColumn(*column);
         staging_chunks.push_back(std::move(chunk));
     }
 
@@ -153,6 +198,10 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         /// Increase row group size slightly (by < 2x) to avoid a small row group at the end.
         size_t num_row_groups = std::max(static_cast<size_t>(1), staging_rows / target_rows);
         size_t row_group_size = (staging_rows - 1) / num_row_groups + 1; // round up
+
+        /// `Chunk::append` needs one representation per column.
+        for (auto & staged : staging_chunks)
+            convertToFullIfSparse(staged);
 
         Chunk concatenated = std::move(staging_chunks[0]);
         for (size_t i = 1; i < staging_chunks.size(); ++i)
@@ -315,6 +364,7 @@ void ParquetBlockOutputFormat::writeRowGroup(Chunks chunks)
         Chunk concatenated;
         for (auto & chunk : chunks)
         {
+            convertToFullIfSparse(chunk);
             if (concatenated.empty())
             {
                 concatenated.swap(chunk);
@@ -385,7 +435,7 @@ void ParquetBlockOutputFormat::writeRowGroupInParallel(Chunks chunks)
         for (size_t j = 0; j < chunks.size(); ++j)
         {
             auto & col = columnses[j][i];
-            bytes += col->allocatedBytes();
+            bytes += allocatedBytesOfFullColumn(*col);
             t.column_pieces.push_back(std::move(col));
         }
         t.mem.set(bytes);
@@ -497,12 +547,14 @@ void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
         {
             lock.unlock();
 
-            IColumn::MutablePtr concatenated = IColumn::mutate(std::move(task.column_pieces[0]));
+            ColumnPtr first = std::move(task.column_pieces[0]);
+            first = recursiveRemoveSparse(first);
+            IColumn::MutablePtr concatenated = IColumn::mutate(std::move(first));
             for (size_t i = 1; i < task.column_pieces.size(); ++i)
             {
-                auto & c = task.column_pieces[i];
+                ColumnPtr c = std::move(task.column_pieces[i]);
+                c = recursiveRemoveSparse(c);
                 concatenated->insertRangeFrom(*c, 0, c->size());
-                c.reset();
             }
             task.column_pieces.clear();
 
@@ -518,7 +570,8 @@ void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
                 task.row_group->column_chunks[task.column_idx].emplace_back(this);
                 task.row_group->tasks_in_flight += 1;
 
-                auto & t = task_queue.emplace_back(task.row_group, task.column_idx, this);
+                /// Encode a prepared column before preparing more: each one holds its full data until encoded.
+                auto & t = task_queue.emplace_front(task.row_group, task.column_idx, this);
                 t.subcolumn_idx = i;
                 t.state = std::move(subcolumns[i]);
                 t.mem.set(t.state.allocatedBytes());

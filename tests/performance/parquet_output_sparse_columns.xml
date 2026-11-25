@@ -1,0 +1,62 @@
+<test>
+    <!-- Parquet export of a table stored with sparse columns.
+         Shell queries: the SQL queries of this harness use the native protocol, where the server does not run the Parquet writer. -->
+    <create_query>
+        CREATE TABLE parquet_sparse_export
+        (
+            id UInt64,
+            s1 String, s2 String, s3 String, s4 String, s5 String, s6 String, s7 String, s8 String, s9 String, s10 String,
+            u1 UInt64, u2 UInt64, u3 UInt64, u4 UInt64, u5 UInt64, u6 UInt64, u7 UInt64, u8 UInt64, u9 UInt64, u10 UInt64,
+            f1 Float64, f2 Float64, f3 Float64, f4 Float64, f5 Float64, f6 Float64, f7 Float64, f8 Float64, f9 Float64, f10 Float64
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
+    </create_query>
+
+    <fill_query>
+        INSERT INTO parquet_sparse_export
+        SELECT
+            (number * 7919) % 10000000,
+            if(cityHash64(number, 1) % 50 = 0, toString(cityHash64(number, 101)), ''),
+            if(cityHash64(number, 2) % 50 = 0, toString(cityHash64(number, 102)), ''),
+            if(cityHash64(number, 3) % 50 = 0, toString(cityHash64(number, 103)), ''),
+            if(cityHash64(number, 4) % 50 = 0, toString(cityHash64(number, 104)), ''),
+            if(cityHash64(number, 5) % 50 = 0, toString(cityHash64(number, 105)), ''),
+            if(cityHash64(number, 6) % 50 = 0, toString(cityHash64(number, 106)), ''),
+            if(cityHash64(number, 7) % 50 = 0, toString(cityHash64(number, 107)), ''),
+            if(cityHash64(number, 8) % 50 = 0, toString(cityHash64(number, 108)), ''),
+            if(cityHash64(number, 9) % 50 = 0, toString(cityHash64(number, 109)), ''),
+            if(cityHash64(number, 10) % 50 = 0, toString(cityHash64(number, 110)), ''),
+            if(cityHash64(number, 11) % 50 = 0, cityHash64(number, 201), 0),
+            if(cityHash64(number, 12) % 50 = 0, cityHash64(number, 202), 0),
+            if(cityHash64(number, 13) % 50 = 0, cityHash64(number, 203), 0),
+            if(cityHash64(number, 14) % 50 = 0, cityHash64(number, 204), 0),
+            if(cityHash64(number, 15) % 50 = 0, cityHash64(number, 205), 0),
+            if(cityHash64(number, 16) % 50 = 0, cityHash64(number, 206), 0),
+            if(cityHash64(number, 17) % 50 = 0, cityHash64(number, 207), 0),
+            if(cityHash64(number, 18) % 50 = 0, cityHash64(number, 208), 0),
+            if(cityHash64(number, 19) % 50 = 0, cityHash64(number, 209), 0),
+            if(cityHash64(number, 20) % 50 = 0, cityHash64(number, 210), 0),
+            if(cityHash64(number, 21) % 50 = 0, (cityHash64(number, 301) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 22) % 50 = 0, (cityHash64(number, 302) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 23) % 50 = 0, (cityHash64(number, 303) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 24) % 50 = 0, (cityHash64(number, 304) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 25) % 50 = 0, (cityHash64(number, 305) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 26) % 50 = 0, (cityHash64(number, 306) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 27) % 50 = 0, (cityHash64(number, 307) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 28) % 50 = 0, (cityHash64(number, 308) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 29) % 50 = 0, (cityHash64(number, 309) % 1000000) / 7.0, 0),
+            if(cityHash64(number, 30) % 50 = 0, (cityHash64(number, 310) % 1000000) / 7.0, 0)
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE parquet_sparse_export FINAL</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM parquet_sparse_export WHERE id < 1000000 FORMAT Parquet" -o /dev/null
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" --data-binary "SELECT * FROM parquet_sparse_export FORMAT Parquet" -o /dev/null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS parquet_sparse_export</drop_query>
+</test>
