@@ -9,6 +9,7 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
@@ -31,11 +32,13 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -2235,6 +2238,62 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     return false;
 }
 
+namespace
+{
+
+/// Whether the exact count of defaults in the serialization info of the part covers all rows of the column.
+bool partHasOnlyDefaultsInColumn(const MergeTreeData::DataPartPtr & part, const NameAndTypePair & column)
+{
+    if (part->info.isPatch())
+        return false;
+
+    const auto column_in_part = part->tryGetColumn(column.name);
+    if (!column_in_part || !column_in_part->type->equals(*column.type))
+        return false;
+
+    const auto info = part->getSerializationInfos().tryGet(column.name);
+    if (!info)
+        return false;
+
+    const auto & data = info->getData();
+    return data.exact_num_defaults && data.num_rows == part->rows_count && data.num_defaults == data.num_rows;
+}
+
+/// Sparse blocks of defaults: what the gatherer produces from source parts that hold only defaults.
+class ColumnOfDefaultsSource final : public ISource
+{
+public:
+    ColumnOfDefaultsSource(SharedHeader header_, size_t rows_, size_t block_size_)
+        : ISource(std::move(header_)), rows_left(rows_), block_size(std::max<size_t>(block_size_, 1))
+    {
+    }
+
+    String getName() const override { return "ColumnOfDefaultsSource"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (rows_left == 0)
+            return {};
+
+        const size_t rows = std::min(rows_left, block_size);
+        rows_left -= rows;
+
+        auto column = ColumnSparse::create(getPort().getHeader().getByPosition(0).type->createColumn());
+        column->insertManyDefaults(rows);
+
+        Columns columns;
+        columns.emplace_back(std::move(column));
+        return Chunk(std::move(columns), rows);
+    }
+
+private:
+    size_t rows_left;
+    const size_t block_size;
+};
+
+}
+
 /// Gathers values from all parts for one column using rows sources temporary file
 class ColumnGathererStep : public ITransformingStep
 {
@@ -2310,87 +2369,98 @@ private:
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
-    /// Read from all parts
-    QueryPlanPtrs plans;
-    size_t part_starting_offset = 0;
-    /// Do not apply mask for lightweight delete in vertical merge, because `rows_sources` skips the deleted rows
-    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
+    QueryPlan merge_column_query_plan;
     /// Collect statistics transforms for this column separately.
     BuildStatisticsTransformMap column_build_statistics_transforms;
 
-    const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
-
-    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
+    if (const auto column_of_defaults = tryGetColumnOfDefaultsInAllParts(column_name))
     {
-        auto plan_for_part = std::make_unique<QueryPlan>();
+        auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(column_of_defaults->type->createColumn(), column_of_defaults->type, column_of_defaults->name)});
+        auto source = std::make_shared<ColumnOfDefaultsSource>(std::move(header), global_ctx->rows_written, (*global_ctx->data_settings)[MergeTreeSetting::merge_max_block_size]);
+        auto read_step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        read_step->setStepDescription("Column of defaults");
+        merge_column_query_plan.addStep(std::move(read_step));
+    }
+    else
+    {
+        /// Read from all parts
+        QueryPlanPtrs plans;
+        size_t part_starting_offset = 0;
+        /// Do not apply mask for lightweight delete in vertical merge, because `rows_sources` skips the deleted rows
+        bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
 
-        createReadFromPartStep(
-            MergeTreeSequentialSourceType::Merge,
-            *plan_for_part,
-            *global_ctx->data,
-            global_ctx->storage_snapshot,
-            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
-            global_ctx->alter_conversions[part_num],
-            global_ctx->merged_part_offsets,
-            Names{column_name},
-            global_ctx->input_rows_filtered,
-            apply_deleted_mask,
-            /*filter=*/ std::nullopt,
-            ctx->read_with_direct_io,
-            allow_remote_fs_prefetch,
-            global_ctx->context,
-            getLogger("VerticalMergeStage"));
+        const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
 
-
-        /// Add step for building missed text indexes and statistics for single parts.
-        /// If merge may reduce rows, we will rebuild index and statistics
-        /// for the resulting part in the end of the pipeline.
-        if (!global_ctx->rebuild_text_indexes)
-            addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
-
-        if (!global_ctx->merge_may_reduce_rows)
+        for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
         {
-            if (auto transform = addBuildStatisticsStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx))
-                column_build_statistics_transforms.emplace(global_ctx->future_part->parts[part_num]->name, std::move(transform));
+            auto plan_for_part = std::make_unique<QueryPlan>();
+
+            createReadFromPartStep(
+                MergeTreeSequentialSourceType::Merge,
+                *plan_for_part,
+                *global_ctx->data,
+                global_ctx->storage_snapshot,
+                RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
+                global_ctx->alter_conversions[part_num],
+                global_ctx->merged_part_offsets,
+                Names{column_name},
+                global_ctx->input_rows_filtered,
+                apply_deleted_mask,
+                /*filter=*/ std::nullopt,
+                ctx->read_with_direct_io,
+                allow_remote_fs_prefetch,
+                global_ctx->context,
+                getLogger("VerticalMergeStage"));
+
+
+            /// Add step for building missed text indexes and statistics for single parts.
+            /// If merge may reduce rows, we will rebuild index and statistics
+            /// for the resulting part in the end of the pipeline.
+            if (!global_ctx->rebuild_text_indexes)
+                addBuildTextIndexesStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx);
+
+            if (!global_ctx->merge_may_reduce_rows)
+            {
+                if (auto transform = addBuildStatisticsStep(*plan_for_part, *global_ctx->future_part->parts[part_num], global_ctx))
+                    column_build_statistics_transforms.emplace(global_ctx->future_part->parts[part_num]->name, std::move(transform));
+            }
+
+            plans.emplace_back(std::move(plan_for_part));
+            part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
         }
 
-        plans.emplace_back(std::move(plan_for_part));
-        part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
-    }
+        /// Union of all parts streams
+        {
+            SharedHeaders input_headers;
+            input_headers.reserve(plans.size());
+            for (auto & plan : plans)
+                input_headers.emplace_back(plan->getCurrentHeader());
 
-    QueryPlan merge_column_query_plan;
+            auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+            merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
+        }
 
-    /// Union of all parts streams
-    {
-        SharedHeaders input_headers;
-        input_headers.reserve(plans.size());
-        for (auto & plan : plans)
-            input_headers.emplace_back(plan->getCurrentHeader());
+        /// Add column gatherer step
+        {
+            const auto & merge_tree_settings = global_ctx->data_settings;
+            std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
+            if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
+                max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+            else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+                max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
-        merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
-    }
+            bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
+            auto merge_step = std::make_unique<ColumnGathererStep>(
+                merge_column_query_plan.getCurrentHeader(),
+                RowsSourcesTemporaryFile::FILE_ID,
+                (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
+                (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+                max_dynamic_subcolumns,
+                is_result_sparse);
 
-    /// Add column gatherer step
-    {
-        const auto & merge_tree_settings = global_ctx->data_settings;
-        std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
-        if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
-        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
-            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
-
-        bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
-        auto merge_step = std::make_unique<ColumnGathererStep>(
-            merge_column_query_plan.getCurrentHeader(),
-            RowsSourcesTemporaryFile::FILE_ID,
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
-            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            max_dynamic_subcolumns,
-            is_result_sparse);
-
-        merge_step->setStepDescription("Gather column");
-        merge_column_query_plan.addStep(std::move(merge_step));
+            merge_step->setStepDescription("Gather column");
+            merge_column_query_plan.addStep(std::move(merge_step));
+        }
     }
 
     /// Add expression step for indexes
@@ -2419,6 +2489,58 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc), std::move(column_build_statistics_transforms)};
+}
+
+std::optional<NameAndTypePair> MergeTask::VerticalMergeStage::tryGetColumnOfDefaultsInAllParts(const String & column_name) const
+{
+    auto column = global_ctx->gathering_columns.tryGetByName(column_name);
+    if (!column || global_ctx->new_data_part->info.isPatch())
+        return {};
+
+    if (!ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE))
+        return {};
+
+    /// Text indexes and statistics that a source part lacks are built from the data read from it.
+    if (!global_ctx->text_indexes_to_merge.empty())
+    {
+        const auto storage_columns = global_ctx->storage_columns.getNameSet();
+        const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+        for (const auto & index : global_ctx->text_indexes_to_merge)
+        {
+            for (const auto & index_column : index.expression->getRequiredColumns())
+            {
+                if (getColumnNameInStorage(index_column, storage_columns, virtual_columns) == column_name)
+                    return {};
+            }
+        }
+    }
+
+    if (!global_ctx->merge_may_reduce_rows)
+    {
+        for (const auto & [_, statistics] : global_ctx->statistics_to_build_by_part)
+        {
+            if (statistics.contains(column_name))
+                return {};
+        }
+    }
+
+    const auto & parts = global_ctx->future_part->parts;
+    for (size_t part_num = 0; part_num < parts.size(); ++part_num)
+    {
+        if (parts[part_num]->rows_count == 0)
+            continue;
+
+        /// Mutations and patches applied on reading may change the values of the column.
+        const auto & alter_conversions = global_ctx->alter_conversions[part_num];
+        if (alter_conversions->hasMutations() || alter_conversions->hasPatches()
+            || alter_conversions->columnHasNewName(column_name) || alter_conversions->isColumnRenamed(column_name))
+            return {};
+
+        if (!partHasOnlyDefaultsInColumn(parts[part_num], *column))
+            return {};
+    }
+
+    return column;
 }
 
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
