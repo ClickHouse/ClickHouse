@@ -793,7 +793,7 @@ namespace
             }
         }
 
-        /// Whether the path of a key with dots passes through a typed path, whose text form is ambiguous.
+        /// Whether the path of a key with dots passes through a typed path that can hold an object, whose text form is ambiguous.
         [[nodiscard]] bool crossesTypedPath(const String & parent, bool is_root, std::string_view key) const
         {
             String full = parent;
@@ -803,7 +803,8 @@ namespace
             return std::ranges::any_of(typed_paths, [&](const auto & typed_path)
             {
                 const auto & prefix = typed_path.first;
-                return prefix.size() < full.size() && full[prefix.size()] == '.' && full.starts_with(prefix);
+                return prefix.size() < full.size() && full[prefix.size()] == '.' && full.starts_with(prefix)
+                    && canHoldObject(typed_path.second);
             });
         }
 
