@@ -1,10 +1,10 @@
 """ClickHouse new-release-branch pipeline job.
 
-Cuts a new release branch off the given ref: pushes the release tag and the
-branch, then bumps the version (on the branch and on master, opening the master
-version-bump PR). Run by the `CreateReleaseBranch` workflow; the patch release is
-the separate `release_job.py` / `CreateRelease` workflow. Each flow is a single
-linear step sequence in its own file.
+Cuts a new release branch off the master tip: pushes the master version bump
+on the cut, then the release tag and the branch, then bumps the branch version
+and opens the release PR. Run by the `CreateReleaseBranch` workflow; the patch
+release is the separate `release_job.py` / `CreateRelease` workflow. Each flow
+is a single linear step sequence in its own file.
 
 INVARIANT: every run starts in a clean, empty GitHub Actions `_work` directory -
 the runner is ephemeral and the workspace is a fresh `actions/checkout` (a depth-1
@@ -15,7 +15,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import os
-import shlex
 from pathlib import Path
 
 from ci.praktika.info import Info
@@ -46,8 +45,6 @@ def main():
         value = Info.get_workflow_input_value(name)
         return "" if value is None else str(value)
 
-    ref = _wi("ref")
-    assert ref, "workflow input 'ref' must be set"
     dry_run = _wi("dry-run").lower() == "true"
     dry_run_flag = "--dry-run" if dry_run else ""
 
@@ -103,11 +100,17 @@ def main():
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(ref)} --release-type new"
+            " --ref master --release-type new"
             f" {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )
+
+    def _push_master_bump():
+        with ReleaseContextManager(
+            release_progress="push master bump"
+        ) as release_info:
+            release_info.push_master_bump(dry_run=dry_run)
 
     def _push_git_tag_for_release():
         with ReleaseContextManager(
@@ -128,6 +131,12 @@ def main():
             release_info.update_version_and_contributors_list(dry_run=dry_run)
 
     step(
+        name="Push Master Version Bump",
+        command=_push_master_bump,
+        workdir=REPO_PATH,
+    )
+
+    step(
         name="Push Git Tag for the Release",
         command=_push_git_tag_for_release,
         workdir=REPO_PATH,
@@ -139,8 +148,7 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Bumps the branch and master versions and opens the master version-bump PR
-    # in one call; idempotent, so a rerun self-skips a landed bump.
+    # Bumps the branch version and opens the release PR; a rerun skips a landed bump.
     step(
         name="Bump CH Version and Update Contributors' List",
         command=_bump_version,

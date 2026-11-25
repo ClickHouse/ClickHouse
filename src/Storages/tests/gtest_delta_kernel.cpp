@@ -47,8 +47,8 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * predicate = ffi::get_testing_kernel_predicate();
-    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
+    auto * predicate = ::get_testing_kernel_predicate();
+    SCOPE_EXIT(::free_kernel_predicate(predicate));
     try
     {
         auto dag = DeltaLake::visitExpression(
@@ -600,7 +600,8 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         expectAccessDenied([&]
         {
             return metadata->write(
-                std::make_shared<const DB::Block>(), table_id, object_storage, configuration, std::nullopt, restricted, nullptr);
+                std::make_shared<const DB::Block>(), /*metadata_snapshot=*/nullptr, table_id, object_storage, configuration, std::nullopt,
+                restricted, nullptr);
         });
         expectAccessDenied([&]
         {
