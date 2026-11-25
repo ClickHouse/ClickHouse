@@ -2,6 +2,8 @@
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
+#include <Parsers/IAST_fwd.h>
+
 #include <optional>
 
 
@@ -25,5 +27,16 @@ SQLQueryPiece applyFunctionOverRange(
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context,
     std::optional<bool> drop_metric_name = std::nullopt);
+
+/// Computes the aggregate `ch_function_name` over the range's window on the time grid, with `extra_aggregate_arguments`
+/// after the samples. `needs_cast_to_float64` casts the result to `Array(Nullable(Float64))`.
+SQLQueryPiece applyAggregateFunctionOverRange(
+    const Node * node,
+    std::string_view ch_function_name,
+    bool drop_metric_name,
+    bool needs_cast_to_float64,
+    SQLQueryPiece && argument,
+    ASTs extra_aggregate_arguments,
+    ConverterContext & context);
 
 }
