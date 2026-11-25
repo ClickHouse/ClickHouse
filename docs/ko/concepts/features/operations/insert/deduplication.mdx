@@ -7,22 +7,22 @@ keywords: ['중복 제거 전략', '데이터 중복 제거', '업서트', '업�
 doc_type: 'guide'
 ---
 
-**중복 제거**는 ***데이터셋에서 중복된 행을 제거하는*** 과정을 의미합니다. OLTP 데이터베이스에서는 각 행에 고유한 기본 키가 있으므로 이를 쉽게 수행할 수 있지만, 그 대가로 삽입 속도는 느려집니다. 삽입되는 모든 행은 먼저 기존에 있는지 확인해야 하며, 이미 있으면 대체해야 합니다.
+**중복 제거**는 ***데이터셋에서 중복된 행을 제거하는*** 과정을 의미합니다. OLTP 데이터베이스에서는 각 행에 고유한 프라이머리 키가 있으므로 이를 쉽게 수행할 수 있지만, 그 대가로 삽입 속도는 느려집니다. 삽입되는 모든 행은 먼저 기존에 있는지 확인해야 하며, 이미 있으면 대체해야 합니다.
 
-ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 저장 파일은 변경할 수 없으며, ClickHouse는 행을 삽입하기 전에 기존 기본 키를 확인하지 않으므로 중복 제거에 조금 더 많은 작업이 필요합니다. 이는 또한 중복 제거가 즉시 이루어지는 것이 아니라 **최종적으로** 이루어진다는 뜻이며, 이에 따라 몇 가지 부작용이 있습니다:
+ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 저장 파일은 변경할 수 없으며, ClickHouse는 행을 삽입하기 전에 기존 프라이머리 키를 확인하지 않으므로 중복 제거에 조금 더 많은 작업이 필요합니다. 이는 또한 중복 제거가 즉시 이루어지는 것이 아니라 **최종적으로** 이루어진다는 뜻이며, 이에 따라 몇 가지 부작용이 있습니다:
 
 * 어느 시점이든 테이블에 중복이 여전히 남아 있을 수 있습니다(동일한 정렬 키를 가진 행)
-* 중복된 행이 실제로 제거되는 시점은 파트 병합 중입니다
+* 중복된 행이 실제로 제거되는 시점은 파트 머지 중입니다
 * 쿼리는 중복이 있을 가능성을 고려할 수 있어야 합니다
 
 <div class="transparent-table">
-  |                                                                                       |                                                                                                                                                                                                                        |
-  | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <span className="ch-image-sm"><Frame>![중복 제거 로고](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)은 시작하기에 좋은 자료입니다. |
+  |                                                                                                               |                                                                                                                                                                                        |
+  | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <span className="ch-image-sm"><Frame>![중복 제거 로고](/images/guides/developer/de_duplication.webp)</Frame></span> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461)은 시작하기에 좋은 자료입니다. |
 </div>
 
 <div id="options-for-deduplication">
-  ## 중복 제거 옵션
+  ## 중복 제거 옵션 {#options-for-deduplication}
 </div>
 
 ClickHouse에서는 다음 테이블 엔진을 사용해 중복 제거를 구현할 수 있습니다.
@@ -31,10 +31,10 @@ ClickHouse에서는 다음 테이블 엔진을 사용해 중복 제거를 구현
 
 2. 행 축약: `CollapsingMergeTree` 및 `VersionedCollapsingMergeTree` 테이블 엔진은 기존 행을 &quot;취소&quot;하고 새 행을 삽입하는 방식으로 동작합니다. `ReplacingMergeTree`보다 구현은 더 복잡하지만, 데이터가 아직 머지되었는지 여부를 신경 쓰지 않고도 쿼리와 집계를 더 간단하게 작성할 수 있습니다. 이 두 테이블 엔진은 데이터를 자주 업데이트해야 할 때 유용합니다.
 
-아래에서 이 두 기법을 모두 살펴보겠습니다. 자세한 내용은 무료 온디맨드 [Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)을 확인하십시오.
+아래에서 이 두 기법을 모두 살펴보겠습니다. 자세한 내용은 무료 온디맨드 [Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461)을 확인하십시오.
 
 <div id="using-replacingmergetree-for-upserts">
-  ## 업서트를 위해 ReplacingMergeTree 사용
+  ## 업서트를 위해 ReplacingMergeTree 사용 {#using-replacingmergetree-for-upserts}
 </div>
 
 댓글이 조회된 횟수를 나타내는 `views` 컬럼이 있는 Hacker News 댓글 테이블의 간단한 예시를 살펴보겠습니다. 기사 게시 시 새 행을 삽입하고, 값이 증가하면 총 조회 수를 반영하여 하루에 한 번 새 행으로 업서트한다고 가정하겠습니다:
@@ -107,9 +107,7 @@ FINAL
   찾는 더 나은 방법을 살펴보겠습니다.
 </Note>
 
-<div id="avoiding-final">
-  ### FINAL 사용 피하기
-</div>
+### FINAL 사용 피하기 {#avoiding-final}
 
 이제 고유한 두 행 모두의 `views` 컬럼을 다시 업데이트해 보겠습니다:
 
@@ -162,10 +160,10 @@ GROUP BY (id, author, comment)
 
 위 쿼리에서 보인 것처럼 그룹화하는 방식은 실제로 `FINAL` 키워드를 사용하는 것보다 쿼리 성능 측면에서 더 효율적일 수 있습니다.
 
-[Deleting and Updating Data training module](<https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461>)에서는 이 예시를 더 자세히 설명하며, `ReplacingMergeTree`와 함께 `version` 컬럼을 사용하는 방법도 다룹니다.
+[Deleting and Updating Data training module](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461)에서는 이 예시를 더 자세히 설명하며, `ReplacingMergeTree`와 함께 `version` 컬럼을 사용하는 방법도 다룹니다.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
-  ## 컬럼을 자주 업데이트할 때 CollapsingMergeTree 사용하기
+  ## 컬럼을 자주 업데이트할 때 CollapsingMergeTree 사용하기 {#using-collapsingmergetree-for-updating-columns-frequently}
 </div>
 
 컬럼을 업데이트한다는 것은 기존 행을 삭제하고 새 값으로 대체하는 것을 의미합니다. 이미 살펴본 것처럼 ClickHouse에서 이런 유형의 mutation은 즉시 일어나지 않고, 머지 과정에서 *결국* 적용됩니다. 업데이트해야 할 행이 많다면 `ALTER TABLE..UPDATE`를 피하고, 기존 데이터와 함께 새 데이터를 그냥 삽입하는 편이 실제로 더 효율적일 수 있습니다. 데이터가 오래된 것인지 새로운 것인지를 나타내는 컬럼을 추가할 수도 있습니다. 그리고 이런 동작을 아주 잘 구현해 주는 테이블 엔진이 이미 있으며, 특히 오래된 데이터를 자동으로 삭제해 준다는 점에서 유용합니다. 어떻게 동작하는지 살펴보겠습니다.
@@ -251,7 +249,7 @@ FINAL
 </Note>
 
 <div id="real-time-updates-from-multiple-threads">
-  ## 여러 스레드에서 발생하는 실시간 업데이트
+  ## 여러 스레드에서 발생하는 실시간 업데이트 {#real-time-updates-from-multiple-threads}
 </div>
 
 `CollapsingMergeTree` 테이블에서는 sign 컬럼을 사용해 행들이 서로 상쇄되며, 행의 state는 마지막으로 삽입된 행으로 결정됩니다. 하지만 서로 다른 스레드에서 행을 삽입하면 행이 순서와 다르게 삽입될 수 있어 문제가 될 수 있습니다. 이런 상황에서는 &quot;마지막&quot; 행을 기준으로 삼는 방식이 제대로 동작하지 않습니다.
@@ -342,10 +340,8 @@ FROM hackernews_views_vcmt
 
 여러 클라이언트 및/또는 스레드에서 행을 삽입할 때 중복 제거를 구현하려는 경우 `VersionedCollapsingMergeTree` 테이블(table)이 매우 유용합니다.
 
-<div id="why-arent-my-rows-being-deduplicated">
-  ## 내 행이 중복 제거되지 않는 이유는 무엇인가요?
-</div>
+## 행이 중복 제거되지 않는 이유는 무엇입니까? {#why-arent-my-rows-being-deduplicated}
 
-삽입된 행이 중복 제거되지 않을 수 있는 한 가지 이유는 `INSERT` 문에서 비멱등 함수나 표현식을 사용하기 때문입니다. 예를 들어 `createdAt DateTime64(3) DEFAULT now()` 컬럼이 있는 행을 삽입하는 경우, 각 행의 `createdAt` 컬럼에는 고유한 기본값이 들어가므로 행은 반드시 고유해집니다. 따라서 MergeTree / ReplicatedMergeTree 테이블 엔진은 삽입된 각 행이 고유한 체크섬을 생성하므로 이를 중복 제거할 수 없습니다.
+삽입된 행이 중복 제거되지 않는 원인 중 하나는 `INSERT` SQL 문에서 멱등성이 없는(non-idempotent) 함수나 표현식을 사용하는 경우입니다. 예를 들어 `createdAt DateTime64(3) DEFAULT now()` 컬럼이 포함된 행을 삽입하면, 각 행의 `createdAt` 컬럼에 서로 다른 기본값이 지정되므로 모든 행은 항상 고유하게 됩니다. 삽입된 각 행이 서로 다른 체크섬을 생성하므로 MergeTree / ReplicatedMergeTree 테이블 엔진은 해당 행을 중복 제거해야 한다는 것을 인식하지 못합니다.
 
-이 경우 동일한 행 배치를 여러 번 삽입해도 같은 행이 다시 삽입되지 않도록 각 배치에 대해 `insert_deduplication_token`을 직접 지정할 수 있습니다. 이 설정의 사용 방법에 대한 자세한 내용은 [`insert_deduplication_token` 문서](/ko/reference/settings/session-settings/insert#insert_deduplication_token)를 참조하십시오.
+이 경우 각 행 배치마다 고유한 `insert_deduplication_token`을 지정하면, 동일한 배치를 여러 번 삽입하더라도 같은 행이 다시 삽입되지 않습니다. 이 설정의 사용 방법에 대한 자세한 내용은 [`insert_deduplication_token` 문서](/ko/reference/settings/session-settings/insert#insert_deduplication_token)를 참고하십시오.
