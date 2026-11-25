@@ -1545,7 +1545,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     Int64 version = 0;
     {
-        /// It's important to serialize order of mutations with `ALTER` queries because
+        /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
         /// Hold the lock through `prepareMutationEntry` and `startMutation` so that a later `ALTER`
         /// sees every preceding mutation registered, including when checking column dependencies.
@@ -1554,8 +1554,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) "
-                "is currently executing or another mutation is currently starting. "
+                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }

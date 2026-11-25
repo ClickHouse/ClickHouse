@@ -15173,47 +15173,6 @@ bool MergeTreeData::isColumnMadeNonPhysical(
         && !new_columns.hasPhysical(command.column_name);
 }
 
-namespace
-{
-UnorderedSetWithMemoryTracking<String> getMutationColumnDependencies(
-    const MutationCommand & command, const ColumnsDescription & columns, const ContextPtr & context)
-{
-    UnorderedSetWithMemoryTracking<String> dependencies;
-    auto add_column = [&](const String & name)
-    {
-        if (name.empty())
-            return;
-        dependencies.insert(name);
-        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
-            dependencies.insert(column->getNameInStorage());
-    };
-    auto add_expression = [&](ASTPtr expression)
-    {
-        /// Serialized mutation expressions have not had their set operations normalized yet.
-        normalizeSetOperations(expression, context);
-        for (const auto & name : collectIdentifiersFullNames(buildQueryTree(expression, context)))
-            add_column(name);
-    };
-
-    add_column(command.column_name);
-    if (auto alter = command.ast())
-    {
-        if (alter->predicate)
-            add_expression(alter->predicate);
-        if (alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-            {
-                const auto & assignment = child->as<ASTAssignment &>();
-                add_column(assignment.column_name);
-                add_expression(assignment.expression());
-            }
-        }
-    }
-    return dependencies;
-}
-}
-
 void MergeTreeData::checkAlterCommandDoesntAffectInProgressMutations(
     const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations,
     ContextPtr local_context, bool makes_column_nonphysical) const
@@ -15259,8 +15218,38 @@ void MergeTreeData::checkAlterCommandDoesntAffectInProgressMutations(
                 const std::string action = makes_column_nonphysical ? "make nonphysical"
                     : (command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename");
 
-                const auto dependencies = getMutationColumnDependencies(
-                    mutation_command, metadata->getColumns(), local_context);
+                UnorderedSetWithMemoryTracking<String> dependencies;
+                auto add_column = [&](const String & name)
+                {
+                    if (name.empty())
+                        return;
+                    dependencies.insert(name);
+                    if (auto column = metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                        dependencies.insert(column->getNameInStorage());
+                };
+                auto add_expression = [&](ASTPtr expression)
+                {
+                    /// Serialized mutation expressions have not had their set operations normalized yet.
+                    normalizeSetOperations(expression, local_context);
+                    for (const auto & name : collectIdentifiersFullNames(buildQueryTree(expression, local_context)))
+                        add_column(name);
+                };
+
+                add_column(mutation_command.column_name);
+                if (auto alter = mutation_command.ast())
+                {
+                    if (alter->predicate)
+                        add_expression(alter->predicate);
+                    if (alter->update_assignments)
+                    {
+                        for (const auto & child : alter->update_assignments->children)
+                        {
+                            const auto & assignment = child->as<ASTAssignment &>();
+                            add_column(assignment.column_name);
+                            add_expression(assignment.expression());
+                        }
+                    }
+                }
                 if (dependencies.contains(command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
             }
