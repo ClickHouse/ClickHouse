@@ -126,10 +126,10 @@ MergeTreeReadTask::MergeTreeReadTask(
         for (auto & reader : readers.prewhere)
             reader->setReadRangesRegistry(registry);
         /// A replica reading the same granules reads their patches too, so the patch is split between the replicas as the
-        /// read is, if its ranges follow those of the read. Otherwise every replica reads all of it.
+        /// read is if the reads of different ranges take different granules of it. Otherwise every replica reads it all.
         const auto data_part = info->data_part_info->getDataPart();
         for (auto & patch : readers.patches)
-            patch->getReader()->setReadRangesRegistry(patchRangesFollowReadRanges(data_part, patch->getPatchPart())
+            patch->getReader()->setReadRangesRegistry(patchSplitsWithRead(data_part, patch->getPatchPart())
                 ? registry : updater->getDuplicatedReadRangesRegistry());
     }
 }

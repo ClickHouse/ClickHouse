@@ -43,9 +43,11 @@ using MinMaxStats = std::vector<MinMaxStat>;
 using MaybeMinMaxStats = std::optional<MinMaxStats>;
 using PatchStatsMap = absl::node_hash_map<MarkRange, PatchStats, MarkRangeHash>;
 
-/// Whether the ranges read from the patch part follow the ranges read from the original part. Otherwise a read takes
-/// all of the patch, or all of the section of each of its source parts, whatever ranges of the original part it reads.
-bool patchRangesFollowReadRanges(const DataPartPtr & original_part, const PatchPartInfoForReader & patch);
+/// Whether the reads of different ranges of the original part take different granules of the patch part, so that the
+/// patch is split between the replicas as the read is. Not when they all take all of it, as for a patch of a table without
+/// a sorting key or in `Join` mode, nor when a run of equal sorting keys gives the same granules to the reads around it.
+/// Tells by the patch ranges of pieces of the part: those of a piece may share a granule with each neighbour.
+bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch);
 
 MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings);
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats);

@@ -170,15 +170,6 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
-/// Whether the sorting keys let `getRangesInPatchPartMergeOnKey` select the patch granules of the original ranges.
-bool canSelectRangesInPatchPartMergeOnKey(const DataPartPtr & original_part, const PatchPartInfoForReader & patch)
-{
-    auto main_index = original_part->getIndex();
-    auto patch_index = patch.part->getIndexPtr();
-    return main_index && !main_index->empty() && patch_index && !patch_index->empty() && patch.sorting_key
-        && std::min(main_index->size(), patch.sorting_key->column_names.size()) > 0;
-}
-
 MarkRanges getRangesInPatchPartMergeOnKey(
     const DataPartPtr & original_part,
     const PatchPartInfoForReader & patch,
@@ -200,16 +191,22 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     if (original_ranges.empty())
         return {};
 
-    if (!canSelectRangesInPatchPartMergeOnKey(original_part, patch))
-        return emit_all_patch_ranges();
-
     const size_t main_marks_count = original_part->index_granularity->getMarksCount();
     auto main_index = original_part->getIndex();
     auto patch_index = patch.part->getIndexPtr();
 
+    if (!main_index || main_index->empty() || !patch_index || patch_index->empty())
+        return emit_all_patch_ranges();
+
+    if (!patch.sorting_key)
+        return emit_all_patch_ranges();
+
     const auto & reverse_flags = patch.sorting_key->reverse_flags;
     const size_t patch_sorting_key_prefix_size = patch.sorting_key->column_names.size();
     const size_t common_prefix_size = std::min(main_index->size(), patch_sorting_key_prefix_size);
+
+    if (common_prefix_size == 0)
+        return emit_all_patch_ranges();
 
     Columns main_sorting_key_columns(common_prefix_size);
     Columns patch_sorting_key_columns(common_prefix_size);
@@ -307,17 +304,28 @@ std::vector<MarkRanges> getRangesInPatchParts(const DataPartPtr & original_part,
 
 }
 
-bool patchRangesFollowReadRanges(const DataPartPtr & original_part, const PatchPartInfoForReader & patch)
+bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch)
 {
-    switch (patch.mode)
+    constexpr size_t pieces = 4;
+    const size_t marks = original_part->index_granularity->getMarksCount();
+    if (marks < pieces)
+        return true;
+
+    MarkRanges patch_ranges;
+    size_t selected_marks = 0;
+    for (size_t i = 0; i < pieces; ++i)
     {
-        case PatchMode::Merge:
-            return true;
-        case PatchMode::Join:
-            return false;
-        case PatchMode::MergeOnKey:
-            return canSelectRangesInPatchPartMergeOnKey(original_part, patch);
+        const MarkRanges piece{MarkRange(marks * i / pieces, marks * (i + 1) / pieces)};
+        for (const auto & range : getRangesInPatchPart(original_part, patch, piece))
+        {
+            selected_marks += range.getNumberOfMarks();
+            patch_ranges.push_back(range);
+        }
     }
+
+    std::ranges::sort(patch_ranges, std::less{}, &MarkRange::begin);
+    const size_t distinct_marks = optimizeRanges(patch_ranges).getNumberOfMarks();
+    return selected_marks <= distinct_marks + 2 * (pieces - 1);
 }
 
 void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges)
