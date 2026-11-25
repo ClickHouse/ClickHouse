@@ -7,6 +7,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Core/Settings.h>
@@ -174,6 +175,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false),
+                .check_queries_are_select = created_from_ddl,
             });
 
             const auto & settings = global_context->getSettingsRef();
@@ -204,6 +206,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
+                .check_queries_are_select = created_from_ddl,
             });
 
             if (created_from_ddl)
@@ -464,6 +467,9 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 
 QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(query, "Query for MySQL dictionary", "Only SELECT query can be used as a dictionary source");
+
     return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
@@ -555,6 +561,9 @@ std::string MySQLDictionarySource::quoteForLike(const std::string & value)
 
 std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(request, "Invalidate query for MySQL dictionary", "Only SELECT query can be used as a dictionary invalidate query");
+
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));

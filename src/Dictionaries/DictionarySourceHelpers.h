@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -30,23 +29,15 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextP
 
 /// The query text comes from the dictionary definition (possibly a `CREATE DICTIONARY` written by a user
 /// who has no other privileges) and is executed with privileges that user may not have: as an `internal`
-/// query for a local ClickHouse source, or with the credentials of the configured account for an external
-/// database (possibly taken from a named collection). So only a `SELECT` is allowed. Returns the parsed query.
-ASTPtr checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
+/// query for a local ClickHouse source, or with the credentials of the source for an external database
+/// (possibly taken from a named collection). So only a `SELECT` is allowed.
+void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
 
-/// Whether the dictionary source of this type sends queries to an external database: MySQL, PostgreSQL, ODBC.
-bool isExternalDatabaseDictionarySource(const String & source_type);
-
-/// Checks the queries that a source of an external database (MySQL, PostgreSQL, ODBC) sends to it: the load query
-/// (`query`, or `table` with `where` and the attribute expressions), the update query (`update_field`) and `invalidate_query`.
-/// They must be `SELECT` without `INTO OUTFILE`, `FORMAT` and `SETTINGS` in the ClickHouse syntax, without comments, heredocs,
-/// typographic quotes and backslashes, which the database may read differently, and for ODBC, whose dialect is unknown,
-/// without square brackets and with every alias written with `AS`.
-/// Only the queries of the definition are checked, not the ones held by a named collection that the source refers to.
-/// `config_prefix` is the dictionary configuration ("dictionary"). Does nothing for other sources.
-/// It is used for a `CREATE DICTIONARY` query of a user and for `RESTORE`, whose definitions come from a backup: the configuration files
-/// and the definitions of existing dictionaries (`ATTACH` at startup, replicas) are not checked, so that they keep loading.
-void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+/// The same for a query sent to an external database (MySQL, PostgreSQL, ODBC, JDBC). It is parsed by ClickHouse,
+/// so what the database can read differently is rejected too: comments (MySQL executes `/*! ... */`), heredocs,
+/// typographic quotes, backslashes in quoted tokens (PostgreSQL and SQL Server read them literally), and `INTO OUTFILE`,
+/// `FORMAT` and `SETTINGS`, which are a part of a `SELECT` only for ClickHouse.
+void checkExternalDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *

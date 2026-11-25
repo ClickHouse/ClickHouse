@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
@@ -212,6 +213,10 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 
 QueryPipeline XDBCDictionarySource::loadFromQuery(const Block & required_sample_block, const std::string & query) const
 {
+    /// Also the invalidate query.
+    if (configuration.check_queries_are_select)
+        checkExternalDictionaryQueryIsSelect(query, "Query for ODBC dictionary", "Only SELECT query can be used as a dictionary source or invalidate query");
+
     bridge_helper->startBridgeSync();
 
     Poco::URI request_uri(bridge_url);
@@ -249,7 +254,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    Block & sample_block,
                                    ContextPtr global_context,
                                    const std::string & /* default_database */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
+                                   bool created_from_ddl) -> DictionarySourcePtr {
 
         if (global_context->getSettingsRef()[Setting::cloud_mode])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
@@ -272,7 +277,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1)
+            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+            .check_queries_are_select = created_from_ddl,
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);

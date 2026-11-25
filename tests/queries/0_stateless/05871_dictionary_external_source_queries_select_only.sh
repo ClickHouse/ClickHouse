@@ -2,122 +2,81 @@
 # Tags: zookeeper, no-fasttest
 # no-fasttest: the MySQL integration is not available in the fast test build.
 
-# The queries of an external database source (`query`, `where`, `update_field`, `invalidate_query`) are sent
-# to the database with the credentials of the source. These credentials can come from a named collection that
-# the author of the dictionary has no access to, because the dictionary is loaded with the global context.
-# So `CREATE DICTIONARY` requires the privilege `NAMED COLLECTION` on the collection it uses, and the queries
-# of its source must be `SELECT`. The checks of the queries themselves are in `05872_dictionary_external_source_queries_syntax`,
-# `READ ON ODBC` for an ODBC source in `05873_dictionary_odbc_source_read_on_odbc`; this test covers what needs
-# a user or a named collection. No database server is needed: the dictionaries are lazy and never loaded.
+# The queries of a MySQL, PostgreSQL or ODBC dictionary source are sent to the database with the credentials of the source,
+# which can come from a named collection that the author of the dictionary has no grant for: the dictionary is loaded
+# with the global context. So a dictionary created by `CREATE DICTIONARY` sends only `SELECT`, and `CREATE DICTIONARY`
+# requires `NAMED COLLECTION` on the collection of its source. The checks of the load query are in
+# `05872_dictionary_external_source_queries_syntax`.
+
+# The MySQL source connects to this server, and a failed self-connect attempt is reported at Warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_mysql"
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
-replicated_db="${CLICKHOUSE_DATABASE}_replicated"
-udf="${CLICKHOUSE_TEST_UNIQUE_NAME}_udf"
+backend_user="${CLICKHOUSE_TEST_UNIQUE_NAME}_backend"
+nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc"
 
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --multiquery --query "
-        DROP DICTIONARY IF EXISTS dict_select_only;
+        DROP DICTIONARY IF EXISTS dict_invalidate;
+        DROP DICTIONARY IF EXISTS dict_nc;
         DROP USER IF EXISTS $user;
-        DROP NAMED COLLECTION IF EXISTS $nc;
-        DROP NAMED COLLECTION IF EXISTS ${nc}_secret;
-        DROP FUNCTION IF EXISTS ${udf}_payload;
-        DROP FUNCTION IF EXISTS ${udf}_safe;
-        DROP DATABASE IF EXISTS ${replicated_db} SYNC;"
+        DROP USER IF EXISTS $backend_user;
+        DROP NAMED COLLECTION IF EXISTS $nc;"
 }
 trap cleanup EXIT
 cleanup
 
-$CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION $nc AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd'"
-
-# Prints the number of dictionaries `dict_select_only` in the test database and drops it, in one client.
-function exists_and_drop()
-{
-    $CLICKHOUSE_CLIENT --multiquery --query "
-        SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_select_only';
-        DROP DICTIONARY IF EXISTS dict_select_only;"
-}
-
-echo '--- The queries of a source with a named collection are checked'
-$CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME $nc TABLE 't' INVALIDATE_QUERY 'UPDATE t SET value = 1 WHERE id = 1'))
-        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-    | grep -q "Only SELECT query can be used as a dictionary invalidate query" && echo 1 || echo 0
-exists_and_drop
-
-MYSQL="MYSQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd'"
-
-echo '--- The source is evaluated once, so the stored query is the checked one'
-# `randConstant()` returns a new value at each evaluation. 20 dictionaries are created in one client, each with about one chance
-# in two to pass the check. Prints whether any was created, and how many store `DROP TABLE`.
-queries=""
-for i in {1..20}; do
-    queries+="CREATE DICTIONARY dict_random_query_$i (id UInt64, value String) PRIMARY KEY id
-        SOURCE($MYSQL QUERY if(randConstant() % 2 = 0, 'SELECT id, value FROM t', 'DROP TABLE victim')))
-        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);"
-done
-$CLICKHOUSE_CLIENT --ignore-error --multiquery --query "$queries" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0, countIf(create_table_query LIKE '%DROP TABLE victim%')
-    FROM system.tables WHERE database = currentDatabase() AND name LIKE 'dict_random_query_%'"
-
-echo '--- SQL UDFs in the attribute expressions are checked after the substitution'
-# The stored expression is the body of the UDF, whose string literal is written with a backslash: SQL Server would end it
-# at the quote after the backslash, and read the rest as SQL. Prints whether the dictionary is rejected for the backslash,
-# and whether a dictionary with a harmless UDF is created.
+echo '--- A non-SELECT invalidate query is not sent'
+# The source connects to this server over the MySQL protocol as a user that can create tables, so the canary table
+# would be created if the invalidate query were sent. The invalidate query runs when the lifetime expires: the failed
+# check is logged by the loader, and the dictionary is updated anyway.
 $CLICKHOUSE_CLIENT --multiquery --query "
-    CREATE FUNCTION ${udf}_payload AS x -> 'x'') ) AS value INTO dbo.created_by_dictionary; --';
-    CREATE FUNCTION ${udf}_safe AS x -> concat('a', x);"
-$CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY dict_select_only (id UInt64 EXPRESSION '1', value String EXPRESSION concat('z', ${udf}_payload(0))) PRIMARY KEY id
-        SOURCE(ODBC(CONNECTION_STRING 'DSN=none' SCHEMA 'dbo' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
-    | grep -q "cannot contain comments, heredocs, typographic quotes or backslashes" && echo 1 || echo 0
-exists_and_drop
-$CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY dict_select_only (id UInt64, value String EXPRESSION ${udf}_safe(value)) PRIMARY KEY id
-        SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
-exists_and_drop
+    CREATE USER $backend_user IDENTIFIED WITH plaintext_password BY 'p';
+    GRANT SELECT, CREATE TABLE ON ${CLICKHOUSE_DATABASE}.* TO $backend_user;
+    CREATE TABLE src (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO src VALUES (1, 'a');
+    CREATE DICTIONARY dict_invalidate (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(HOST '127.0.0.1' PORT ${CLICKHOUSE_PORT_MYSQL} USER '$backend_user' PASSWORD 'p' DB '${CLICKHOUSE_DATABASE}' TABLE 'src'
+            INVALIDATE_QUERY 'CREATE TABLE ${CLICKHOUSE_DATABASE}.canary (x UInt8) ENGINE = Memory'))
+        LAYOUT(FLAT()) LIFETIME(MIN 1 MAX 1);
+    SELECT dictGet(dict_invalidate, 'value', toUInt64(1));"
+
+for _ in {1..120}; do
+    rejected=$($CLICKHOUSE_CLIENT --multiquery --query "
+        SYSTEM FLUSH LOGS text_log;
+        SELECT count() > 0 FROM system.text_log
+        WHERE event_date >= yesterday()
+            AND message LIKE '%Could not check if dictionary%${CLICKHOUSE_DATABASE}.dict_invalidate%Only SELECT query can be used as a dictionary invalidate query%'")
+    [ "$rejected" = "1" ] && break
+    sleep 0.5
+done
+echo "rejected: $rejected"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'canary'"
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
-# The backup for `RESTORE` is made once, by `default`. Reading it requires `READ ON DISK`, which is a part of `SOURCES`.
-backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 $CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE NAMED COLLECTION $nc AS host = '127.0.0.1', port = 1, user = 'u', password = 'p', db = 'd';
     CREATE USER $user;
-    GRANT SOURCES, CLUSTER ON *.* TO $user;
     GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${CLICKHOUSE_DATABASE}.* TO $user;
-    CREATE DICTIONARY dict_select_only (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME $nc TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);
-    BACKUP DICTIONARY dict_select_only TO ${backup} FORMAT Null;
-    DROP DICTIONARY dict_select_only;"
+    GRANT CLUSTER ON *.* TO $user;"
 
 # Prints whether the `CREATE` was denied for the named collection, and whether the dictionary exists.
-# The dictionary is not loaded at `CREATE`, so nothing connects to the source.
 function create_as_user()
 {
     local on_cluster="$1"
     local name="$2"
-    $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --multiquery --query "
-        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ${on_cluster} (id UInt64, value String) PRIMARY KEY id
-            SOURCE(MYSQL(NAME ${name} TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);" 2>&1 \
+    $CLICKHOUSE_CLIENT --user "$user" --distributed_ddl_output_mode=none --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_nc ${on_cluster} (id UInt64, value String) PRIMARY KEY id
+            SOURCE(MYSQL(NAME ${name} TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
         | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}\`?\." && echo 1 || echo 0
-    exists_and_drop
-}
-
-# `RESTORE` creates the dictionary with an internal query, so it requires the privileges of the source itself.
-# Restores the backup as the user, `ON CLUSTER`. Prints whether the `RESTORE` was denied for the named collection,
-# and whether the dictionary exists.
-function restore_as_user()
-{
-    $CLICKHOUSE_CLIENT --user "$user" --query "
-        RESTORE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only ON CLUSTER test_shard_localhost FROM ${backup} FORMAT Null" 2>&1 \
-        | grep -qE "necessary to have the grant NAMED COLLECTION ON \`?${nc}\`?\." && echo 1 || echo 0
-    exists_and_drop
+    $CLICKHOUSE_CLIENT --multiquery --query "
+        SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'dict_nc';
+        DROP DICTIONARY IF EXISTS dict_nc;"
 }
 
 echo 'Without the grant: denied, not created'
@@ -126,32 +85,8 @@ echo 'Without the grant, ON CLUSTER: denied, not created'
 create_as_user "ON CLUSTER test_shard_localhost" "$nc"
 echo 'Without the grant, the name is an expression: denied, not created'
 create_as_user "" "concat('$nc', '')"
-echo 'Without the grant, RESTORE ON CLUSTER: denied, not restored'
-restore_as_user
 $CLICKHOUSE_CLIENT --query "GRANT NAMED COLLECTION ON $nc TO $user"
 echo 'With the grant: created'
 create_as_user "" "$nc"
-echo 'With the grant, RESTORE ON CLUSTER: restored'
-restore_as_user
-
-echo 'With the grant, the name is an expression: created'
-create_as_user "" "concat('$nc', '')"
-
-echo '--- The collection name is evaluated once, so the stored collection is the authorized one'
-# A `Replicated` database creates the dictionary with full access, so only the check of the query of the user applies.
-# The user has the grant on `$nc` only. Prints whether any dictionary was created, and how many store the other collection.
-$CLICKHOUSE_CLIENT --multiquery --query "
-    CREATE NAMED COLLECTION ${nc}_secret AS host = '127.0.0.1', port = 1, user = 'admin', password = 'secret', db = 'd';
-    CREATE DATABASE ${replicated_db} ENGINE = Replicated('/clickhouse/{database}/replicated_db', 'shard_1', 'replica_1');
-    GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${replicated_db}.* TO $user;"
-queries=""
-for i in {1..20}; do
-    queries+="CREATE DICTIONARY ${replicated_db}.dict_random_name_$i (id UInt64, value String) PRIMARY KEY id
-        SOURCE(MYSQL(NAME if(randConstant() % 2 = 0, '$nc', '${nc}_secret') TABLE 't'))
-        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);"
-done
-$CLICKHOUSE_CLIENT --user "$user" --ignore-error --multiquery --query "$queries" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0, countIf(create_table_query LIKE '%${nc}_secret%')
-    FROM system.tables WHERE database = '${replicated_db}' AND name LIKE 'dict_random_name_%'"
-
+echo 'With the grant, ON CLUSTER: created'
+create_as_user "ON CLUSTER test_shard_localhost" "$nc"
