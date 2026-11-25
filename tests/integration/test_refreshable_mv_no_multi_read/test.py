@@ -65,14 +65,12 @@ def assert_negotiated_session_timeout(expected_ms):
     deadline = time.monotonic() + 30
     while True:
         data = keeper_utils.send_4lw_cmd(cluster, node, cmd="cons")
-        # 'cons' answers on its own connection too, and that connection never completed a
-        # handshake: its session_id is the -1 initializer, which still passes the
-        # 'session_id != 0' guard in dumpStats, and session_timeout is never assigned for it, so
-        # it reports sid=0xffffffffffffffff with to=0. Skip it and read the real sessions.
+        # The server connects to its embedded Keeper over localhost; other clients (this 'cons'
+        # request, a Kazoo client another module left running) come from outside the container.
         timeouts = [
             int(m.group(1))
             for line in data.split("\n")
-            if line.strip() and "sid=0xffffffffffffffff" not in line
+            if line.strip().startswith("127.0.0.1:")
             for m in [re.search(r"\bto=(\d+)", line)]
             if m
         ]
