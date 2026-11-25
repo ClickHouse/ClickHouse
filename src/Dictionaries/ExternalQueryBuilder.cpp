@@ -569,6 +569,66 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
 
     bool first = true;
 
+    if (method == CLICKHOUSE_NULL_IN_WITH_TUPLES || method == CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL)
+    {
+        VectorWithMemoryTracking<size_t> regular_rows;
+        VectorWithMemoryTracking<size_t> special_float_rows;
+        for (const auto row : requested_rows)
+        {
+            bool has_null = false;
+            bool has_special_float = false;
+            for (size_t i = 0; i < key_columns.size(); ++i)
+            {
+                if (key_columns[i]->isNullAt(row))
+                {
+                    has_null = true;
+                    continue;
+                }
+                const auto & type = (*dict_struct.key)[i].type;
+                if (isFloat(removeNullable(removeLowCardinality(type))))
+                {
+                    const auto value = key_columns[i]->getFloat64(row);
+                    has_special_float |= std::isnan(value) || value == 0;
+                }
+            }
+            if (has_null && method == CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL)
+                continue;
+            (has_special_float ? special_float_rows : regular_rows).push_back(row);
+        }
+
+        if (regular_rows.empty() && special_float_rows.empty())
+        {
+            writeChar('0', out);
+            return;
+        }
+
+        if (!regular_rows.empty())
+        {
+            writeString("nullIn(", out);
+            composeKeyTupleDefinition(out, 0, key_columns.size());
+            writeString(", (", out);
+            for (size_t index = 0; index < regular_rows.size(); ++index)
+            {
+                if (index)
+                    writeString(", ", out);
+                composeKeyTuple(key_columns, regular_rows[index], out, 0, key_columns.size());
+            }
+            writeString("))", out);
+            first = false;
+        }
+
+        for (const auto row : special_float_rows)
+        {
+            if (!first)
+                writeString(" OR ", out);
+            first = false;
+            writeChar('(', out);
+            composeKeyCondition(key_columns, row, out, 0, key_columns.size(), true);
+            writeChar(')', out);
+        }
+        return;
+    }
+
     if (method == AND_OR_CHAIN || method == CLICKHOUSE_AND_OR_CHAIN)
     {
         first = true;

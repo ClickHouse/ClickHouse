@@ -62,6 +62,8 @@ struct ExternalQueryBuilder
         AND_OR_CHAIN,
         /// Select NaN source keys in ClickHouse; the dictionary filters SQL-equal overfetch by serialized key.
         CLICKHOUSE_AND_OR_CHAIN,
+        CLICKHOUSE_NULL_IN_WITH_TUPLES,
+        CLICKHOUSE_NULL_IN_WITH_TUPLES_SKIP_NULL,
         IN_WITH_TUPLES,
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };

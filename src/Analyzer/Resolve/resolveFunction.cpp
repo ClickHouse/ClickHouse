@@ -4112,7 +4112,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             const bool carrier_element = isDynamic(source_type) || isVariant(source_type);
                             QueryTreeNodePtr comparison;
                             if (carrier_element || (numeric_left && isEnum(source_type))
-                                || (isEnum(left_value_type) && isStringOrFixedString(source_type)))
+                                || (isEnum(left_value_type) && (isStringOrFixedString(source_type) || isNumber(source_type))))
                             {
                                 auto carrier_match = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
                                 carrier_match->getArguments().getNodes() = {

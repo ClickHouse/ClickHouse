@@ -1016,6 +1016,10 @@ The oldest supported serialization version is `21`. A sender does not serialize 
 
 Inside the plan stream, every step carries its settings as a settings list in the same encoding as the [Query packet's settings list](#setting) in the `STRINGS_WITH_FLAGS` form: zero or more `(String name, VarUInt flags, String value)` triples, terminated by an empty name. Only the settings that the step changed from their defaults are written. The writer sets only the `Important` flag (`0x01`), for a plan setting declared important. A receiver that does not know a setting name skips the entry with a warning if `Important` is not set, and rejects the plan with `UNKNOWN_SETTING` (code `115`) if it is set.
 
+Serialization version `22` extends the prepared-set records inside the plan stream. Each record starts with a set hash and a `VarUInt` kind. For kind `2` (`TupleValues`), three `VarUInt` booleans follow the kind, before the existing column count, row count, and column data: `source_is_empty`, `source_has_null`, and `transform_null_in`. The first two preserve the logical source state when conversion discards set keys. For kind `3` (`SubqueryPlan`), two `VarUInt` booleans precede the nested plan: `transform_null_in` and `in_null_as_unknown`. Kind `1` (`StorageSet`) is unchanged. A receiver rejects boolean values other than `0` or `1`, or `in_null_as_unknown = 1` with `transform_null_in = 0`, as `INCORRECT_DATA`.
+
+When sending to a version-`21` peer, the sender retains the older set layout only if the logical source-empty and source-NULL flags match the retained keys and a subquery set does not require SQL three-valued `IN` semantics. Otherwise serialization raises `SUPPORT_IS_DISABLED` (code `344`); the version-`22` fields cannot be represented by the version-`21` payload. Peers below version `21` are rejected earlier with `NOT_IMPLEMENTED` (code `48`).
+
 ## Configuration {#configuration}
 
 This section covers the tunables that shape native protocol connections:
