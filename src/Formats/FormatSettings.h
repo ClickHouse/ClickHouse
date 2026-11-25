@@ -113,6 +113,7 @@ struct JSONFormatSettings
   */
 struct FormatSettings : FormatSettingsEnums
 {
+    bool skip_duplicated_fields = false;
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;

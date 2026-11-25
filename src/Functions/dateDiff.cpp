@@ -17,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <base/find_symbols.h>
+#include <base/sanitizer_defs.h>
 
 #include <tuple>
 #include <type_traits>
@@ -173,7 +174,8 @@ public:
     }
 
     template <typename TransformX, typename TransformY, typename T1, typename T2>
-    [[nodiscard]] Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
+    Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
         auto res = static_cast<Int64>(
             static_cast<UInt64>(transform_y.execute(y, timezone_y))

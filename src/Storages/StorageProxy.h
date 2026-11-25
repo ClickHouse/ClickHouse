@@ -77,6 +77,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return getNested()->supportsOptimizationToMapKeysAndValuesSubcolumns(); }
+    bool supportsSubcolumnOptimizationWithFinal() const override { return getNested()->supportsSubcolumnOptimizationWithFinal(); }
     bool hasBucketedMapSerialization() const override { return getNested()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
     /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
