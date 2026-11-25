@@ -31,7 +31,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
     auto & window_node = node->as<WindowNode &>();
 
     WindowDescription window_description;
-    window_description.window_name = calculateWindowNodeActionName(func_node_, node, planner_context);
+    window_description.window_name = calculateWindowNodeActionName(node, planner_context);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
     {
@@ -48,9 +48,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
         window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
 
     /// WINDOW frame is validated during query analysis stage
-    auto window_frame = extractWindowFrame(func_node);
-    window_description.frame = window_frame ? *window_frame : window_node.getWindowFrame();
-    auto node_frame = window_node.getWindowFrame();
+    window_description.frame = window_node.getWindowFrame();
 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
@@ -97,9 +95,9 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
         auto & window_description = it->second;
 
         WindowFunctionDescription window_function;
-        window_function.function_node = nullptr;
         window_function.column_name = std::move(window_function_name);
         window_function.aggregate_function = window_function_node_typed.getAggregateFunction();
+        window_function.general_function = window_function_node_typed.getWindowFunction();
 
         const auto & parameters_nodes = window_function_node_typed.getParameters().getNodes();
         window_function.function_parameters.reserve(parameters_nodes.size());

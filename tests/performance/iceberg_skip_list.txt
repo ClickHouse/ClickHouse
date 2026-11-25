@@ -19,7 +19,9 @@ bigint_formatting.xml                                    # UInt128 widened to De
 bitmap_cardinality.xml                                   # AggregateFunction column
 bitmap_contains.xml                                      # AggregateFunction column
 codecs_t64_select.xml                                    # loop() over the table
+columns_cache_prewhere_gaps.xml                          # FINAL
 compact_part_subcolumns.xml                              # JSON column
+compress_per_substream_in_compact_parts.xml              # JSON column
 distinct_json_paths.xml                                  # JSON column
 dotProduct.xml                                           # type BFloat16 in CREATE ... AS SELECT
 dynamic_compact_read.xml                                 # Dynamic column
@@ -30,6 +32,7 @@ enum_to_low_cardinality_string.xml                       # type Enum16 in CREATE
 final_big_column.xml                                     # FINAL
 final_move_to_prewhere.xml                               # FINAL
 final_read_in_order_limit.xml                            # FINAL
+final_skip_index_exact_mode_partitions.xml               # FINAL, virtual column _part
 final_skip_index_exact_mode_scattered.xml                # virtual column _part
 final_with_lonely_parts.xml                              # FINAL
 group_array_moving_sum.xml                               # type UInt8 in CREATE ... AS SELECT
@@ -59,6 +62,7 @@ json_shared_typed_paths.xml                              # JSON column
 json_subcolumn_serialization_cache.xml                   # JSON column
 json_subcolumns_required_conversions.xml                 # JSON column
 json_to_string.xml                                       # JSON column
+json_type_conversion.xml                                 # JSON column
 json_type_skip_regexp.xml                                # JSON column
 json_typed_path_subcolumn_lookup.xml                     # JSON column
 json_typed_paths_insert.xml                              # JSON column

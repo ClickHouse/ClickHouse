@@ -1,0 +1,16 @@
+-- keeper-client, missing home
+help: 0
+1
+query: 0
+1
+tests-mode: 0
+line reader: 0
+v
+-- keeper-client, existing home
+after --help and --query: absent
+after line reader: present
+-- disks
+write: 0
+abc
+read: 0
+after --query: absent

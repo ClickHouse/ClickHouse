@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Common/randomSeed.h>
@@ -85,7 +86,7 @@ public:
 
     void add(const Row & partition_value);
 
-    const std::vector<FieldSummary> & getFields() const { return fields; }
+    [[nodiscard]] const std::vector<FieldSummary> & getFields() const { return fields; }
 
 private:
     std::vector<FieldSummary> fields;
@@ -179,7 +180,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::optional<Int32> planned_schema_id_);
 
     ~IcebergStorageSink() override;
 
@@ -194,35 +196,64 @@ public:
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
+    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
-    std::unordered_map<String, size_t> column_name_to_column_index;
+    /// The sorted chunks of a partition's next data file, merged when it is written.
+    struct SortedPendingFile
+    {
+        Chunks sorted_chunks;
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+    std::unordered_map<ChunkPartitioner::PartitionKey, SortedPendingFile, ChunkPartitioner::PartitionKeyHasher> sorted_pending_file_per_partition_key;
+    /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
+    size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
-    Int64 current_schema_id;
+    /// The schema the query planned the inserted columns with; unset if the query pinned no table state.
+    const std::optional<Int32> planned_schema_id;
+    /// The current schema of the first read, which the data files are written with. A later attempt requires it unchanged.
+    Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
+    /// The order data is sorted in, NULLs placed as the table's sort order says.
+    SortDescription sort_order_description;
+    /// The sample block with the key columns `sortBlockByKeyDescription` appends.
+    SharedHeader header_with_sort_columns;
+    /// Recorded in the manifest entries of the sorted data files; unset for a key ClickHouse orders differently from Iceberg.
+    std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
+    std::optional<IcebergColumnSketches> column_sketches;
 
+    MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
+    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    /// Reads the latest committed metadata: on the first chunk to write the data files with it,
+    /// after a commit lost to a concurrent commit to make it the base of the next attempt.
+    void readLatestMetadata();
+    /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
     bool initializeMetadata();
+    /// Waits `delay_ms` before the next commit attempt. Throws if the insert is cancelled or runs out of time meanwhile.
+    void waitBeforeCommitRetry(UInt64 delay_ms);
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
-    Int64 partition_spec_id;
+    Int64 partition_spec_id = 0;
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
+    /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
+    bool commit_outcome_unknown = false;
 
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
@@ -234,7 +265,9 @@ private:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
-    CompressionMethod metadata_compression_method;
+    CompressionMethod metadata_compression_method = CompressionMethod::None;
+    /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
+    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
