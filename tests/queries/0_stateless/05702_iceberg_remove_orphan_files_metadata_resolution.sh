@@ -301,4 +301,32 @@ expect_cleanup ""
 [ -f "${META}/${current}" ] && echo "current file kept" || echo "current file removed"
 data
 
+# A commit continues the `<N>-<uuid>.metadata.json` naming of a table pyiceberg or a catalog-based writer created,
+# so the table keeps a single scheme and later writes and maintenance still identify its current metadata file.
+for hint in false true; do
+    echo "--- commits continue the <N>-<uuid> naming, iceberg_use_version_hint = ${hint}"
+    populate local uuid_naming_${hint} 2 ", iceberg_use_version_hint = ${hint}"
+    newest=$(newest_version)
+    exists metadata/version-hint.text
+    rename_chain_to_uuid "${newest}"
+    [ "${hint}" = true ] && write_hint "${RENAMED[newest]}"
+    run_expect "" -q "INSERT INTO ${TABLE} VALUES (3)"
+    # A hint whose update failed still names the previous commit.
+    [ "${hint}" = true ] && write_hint "${RENAMED[newest]}"
+    run_expect "" -q "INSERT INTO ${TABLE} VALUES (4)"
+    run_expect "" --allow_experimental_expire_snapshots=1 \
+        -q "ALTER TABLE ${TABLE} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)" | grep -v 'deleted data files'
+    echo "v<N> metadata files: $(find "${META}" -maxdepth 1 -name 'v*.metadata.json' | wc -l)"
+    committed=$(files_with_version $((newest + 3)))
+    [ "$(wc -l <<<"${committed}")" = 1 ] && grep -qxE '[0-9]{5}-[0-9a-f-]{36}\.metadata\.json' <<<"${committed}" \
+        && echo "committed as <N>-<uuid>" || echo "committed: ${committed}"
+    if [ "${hint}" = true ]; then
+        [ "$(cat "${META}/version-hint.text")" = "${committed}" ] && echo "the hint names it" || echo "hint: $(cat "${META}/version-hint.text")"
+    fi
+    add_orphan data/orphan-uuid-naming.parquet
+    expect_cleanup ""
+    exists data/orphan-uuid-naming.parquet
+    data
+done
+
 $CH -q "DROP TABLE ${TABLE}"

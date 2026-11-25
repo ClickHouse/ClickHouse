@@ -88,3 +88,26 @@ deleted data files: 1
 ok
 current file kept
 [1,2,3,4]
+--- commits continue the <N>-<uuid> naming, iceberg_use_version_hint = false
+metadata/version-hint.text absent
+ok
+ok
+ok
+v<N> metadata files: 0
+committed as <N>-<uuid>
+deleted data files: 1
+ok
+data/orphan-uuid-naming.parquet absent
+[1,2,3,4]
+--- commits continue the <N>-<uuid> naming, iceberg_use_version_hint = true
+metadata/version-hint.text present
+ok
+ok
+ok
+v<N> metadata files: 0
+committed as <N>-<uuid>
+the hint names it
+deleted data files: 1
+ok
+data/orphan-uuid-naming.parquet absent
+[1,2,3,4]
