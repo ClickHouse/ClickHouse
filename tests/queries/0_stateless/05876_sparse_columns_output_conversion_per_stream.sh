@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
 # no-fasttest: Parquet
+# no-parallel-replicas: checks the initiator's pipeline; with parallel replicas even max_threads = 1 merges the replicas' streams with a resize
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
