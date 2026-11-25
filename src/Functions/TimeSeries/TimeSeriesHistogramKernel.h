@@ -341,6 +341,10 @@ inline void TimeSeriesFloatHistogram::validateDecodedLayout() const
     if (schema != HISTOGRAM_CUSTOM_BUCKETS_SCHEMA && (schema < HISTOGRAM_EXPONENTIAL_SCHEMA_MIN || schema > HISTOGRAM_EXPONENTIAL_SCHEMA_MAX))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has an invalid bucket schema: {}", schema);
 
+    /// A NaN zero threshold never compares equal, so `reconcileZeroBuckets` would not terminate.
+    if (std::isnan(zero_threshold))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has a NaN zero threshold");
+
     auto check_span_value_consistency = [](const std::vector<TimeSeriesHistogramSpan> & spans, const std::vector<Float64> & buckets) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         size_t covered = 0;
