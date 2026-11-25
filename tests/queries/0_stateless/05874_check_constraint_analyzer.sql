@@ -86,3 +86,18 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'order', extract(exception, 'Column values: (.*?)\\. \\(')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing' AND query LIKE 'INSERT INTO t_order%';
+
+-- The query tree passes run on an `IN` subquery: `final` is honoured and `grouping` is resolved.
+CREATE TABLE t_rmt (k Int32, v Int32) ENGINE = ReplacingMergeTree ORDER BY k;
+SYSTEM STOP MERGES t_rmt;
+INSERT INTO t_rmt SETTINGS async_insert = 0 VALUES (1, 10);
+INSERT INTO t_rmt SETTINGS async_insert = 0 VALUES (1, 20);
+CREATE TABLE t_final (x Int32, CONSTRAINT c CHECK x IN (SELECT v FROM t_rmt)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_final SETTINGS async_insert = 0, final = 1 VALUES (10); -- { serverError VIOLATED_CONSTRAINT }
+INSERT INTO t_final SETTINGS async_insert = 0, final = 1 VALUES (20);
+INSERT INTO t_final SETTINGS async_insert = 0, final = 0 VALUES (10);
+SELECT 'final', * FROM t_final ORDER BY x;
+CREATE TABLE t_grouping (x Int32, CONSTRAINT c CHECK x IN (SELECT k FROM t_rmt GROUP BY k WITH ROLLUP HAVING grouping(k) = 1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_grouping VALUES (0);
+INSERT INTO t_grouping VALUES (1); -- { serverError VIOLATED_CONSTRAINT }
+SELECT 'grouping', * FROM t_grouping;
