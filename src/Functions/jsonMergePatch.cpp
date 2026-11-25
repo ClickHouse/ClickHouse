@@ -694,64 +694,122 @@ namespace
             return isObject(nested_type) || isMap(nested_type) || isTuple(nested_type) || isDynamic(nested_type) || isVariant(nested_type);
         }
 
-        /// Merges a patch into the text form of a stored row as mergeObjects does, except for a value stored at both `x`
-        /// and `x.y`, which is two members named `x`, a literal and an object: the member of the other kind than the patch
-        /// value is dropped. The value of a typed path is merged by mergeObjects.
+        /// Merges a patch into the text form of a stored row as mergeObjects does, except that a key with a dot sets the
+        /// nested path, as the parser of the type reads it, and that a value stored at both `x` and `x.y` is two members
+        /// named `x`, a literal and an object: the member of the other kind than the patch value is dropped. The value of
+        /// a typed path is merged by mergeObjects.
         void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, String & path, bool is_root, TrackedPoolAllocator & allocator) const
         {
             for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
             {
-                const bool is_object = it->value.IsObject();
-
-                auto target = dest.MemberEnd();
-                for (auto member = dest.MemberBegin(); member != dest.MemberEnd(); ++member)
+                const size_t parent_size = path.size();
+                TrackedValue * level = &dest;
+                bool level_is_root = is_root;
+                std::string_view name = memberName(*it);
+                if (!escape_dots_in_keys && name.contains('.') && !crossesTypedPath(path, is_root, name))
                 {
-                    if (!(member->name == it->name))
-                        continue;
-                    if (member->value.IsObject() == is_object)
+                    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.'))
                     {
-                        target = member;
-                        break;
+                        if (!level_is_root)
+                            path += '.';
+                        path += name.substr(0, dot);
+                        level = &getObjectMember(*level, name.substr(0, dot), allocator);
+                        level_is_root = false;
+                        name.remove_prefix(dot + 1);
                     }
-                    if (target == dest.MemberEnd())
-                        target = member;
                 }
-
-                if (target == dest.MemberEnd())
-                {
-                    TrackedValue key(it->name, allocator);
-                    TrackedValue value(it->value, allocator);
-                    dest.AddMember(key, value, allocator);
-                    continue;
-                }
-
-                if (is_object && target->value.IsObject())
-                {
-                    const size_t parent_size = path.size();
-                    if (!is_root)
-                        path += '.';
-                    String key(it->name.GetString(), it->name.GetStringLength());
-                    path += escape_dots_in_keys ? escapeDotInJSONKey(key) : key;
-                    if (typed_paths.contains(path))
-                        mergeObjects(target->value, it->value, allocator);
-                    else
-                        mergeIntoStoredRow(target->value, it->value, path, false, allocator);
-                    path.resize(parent_size);
-                }
-                else
-                {
-                    TrackedValue value(it->value, allocator);
-                    target->value = value;
-                }
-
-                for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
-                {
-                    if (member->name == it->name && member->value.IsObject() != is_object)
-                        member = dest.EraseMember(member);
-                    else
-                        ++member;
-                }
+                mergeMember(*level, name, it->value, path, level_is_root, allocator);
+                path.resize(parent_size);
             }
+        }
+
+        /// Merges the patch member `name` into the object `dest`.
+        void mergeMember(TrackedValue & dest, std::string_view name, const TrackedValue & value, String & path, bool is_root, TrackedPoolAllocator & allocator) const
+        {
+            const bool is_object = value.IsObject();
+
+            auto target = dest.MemberEnd();
+            for (auto member = dest.MemberBegin(); member != dest.MemberEnd(); ++member)
+            {
+                if (memberName(*member) != name)
+                    continue;
+                if (member->value.IsObject() == is_object)
+                {
+                    target = member;
+                    break;
+                }
+                if (target == dest.MemberEnd())
+                    target = member;
+            }
+
+            if (target == dest.MemberEnd())
+            {
+                TrackedValue key(name.data(), static_cast<rapidjson::SizeType>(name.size()), allocator);
+                TrackedValue copy(value, allocator);
+                dest.AddMember(key, copy, allocator);
+                return;
+            }
+
+            if (is_object && target->value.IsObject())
+            {
+                const size_t parent_size = path.size();
+                if (!is_root)
+                    path += '.';
+                String key(name);
+                path += escape_dots_in_keys ? escapeDotInJSONKey(key) : key;
+                if (typed_paths.contains(path))
+                    mergeObjects(target->value, value, allocator);
+                else
+                    mergeIntoStoredRow(target->value, value, path, false, allocator);
+                path.resize(parent_size);
+            }
+            else
+            {
+                TrackedValue copy(value, allocator);
+                target->value = copy;
+            }
+
+            for (auto member = dest.MemberBegin(); member != dest.MemberEnd();)
+            {
+                if (memberName(*member) == name && member->value.IsObject() != is_object)
+                    member = dest.EraseMember(member);
+                else
+                    ++member;
+            }
+        }
+
+        /// Whether the path of a key with dots passes through a typed path, whose text form is ambiguous.
+        [[nodiscard]] bool crossesTypedPath(const String & parent, bool is_root, std::string_view key) const
+        {
+            String full = parent;
+            if (!is_root)
+                full += '.';
+            full += key;
+            return std::ranges::any_of(typed_paths, [&](const auto & typed_path)
+            {
+                const auto & prefix = typed_path.first;
+                return prefix.size() < full.size() && full[prefix.size()] == '.' && full.starts_with(prefix);
+            });
+        }
+
+        static std::string_view memberName(const TrackedValue::Member & member)
+        {
+            return {member.name.GetString(), member.name.GetStringLength()};
+        }
+
+        /// The object member named `name`, added if there is none.
+        static TrackedValue & getObjectMember(TrackedValue & object, std::string_view name, TrackedPoolAllocator & allocator)
+        {
+            for (auto member = object.MemberBegin(); member != object.MemberEnd(); ++member)
+            {
+                if (memberName(*member) == name && member->value.IsObject())
+                    return member->value;
+            }
+
+            TrackedValue key(name.data(), static_cast<rapidjson::SizeType>(name.size()), allocator);
+            TrackedValue value(rapidjson::kObjectType);
+            object.AddMember(key, value, allocator);
+            return (object.MemberEnd() - 1)->value;
         }
 
         template <typename GetOps>
@@ -788,6 +846,8 @@ namespace
                 TrackedDocument patch;
                 parseJSONDocument(patches.getDataAt(patch_is_const ? 0 : i), patch);
                 mergeIntoStoredRow(merged, patch, path, /* is_root = */ true, merged.GetAllocator());
+                /// Keys with dots add levels.
+                checkJSONDepth(merged);
                 writeJSONDocument(merged, *result);
             }
             return result;

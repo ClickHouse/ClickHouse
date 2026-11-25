@@ -557,6 +557,7 @@ FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_sett
     result.json.write_map_as_array_of_tuples = false;
     /// The round trip must not depend on the user's presentation settings, which would change the stored value.
     result.float_precision = 0;
+    result.trim_fixed_string = false;
     result.bool_true_representation = "true";
     result.bool_false_representation = "false";
     return result;

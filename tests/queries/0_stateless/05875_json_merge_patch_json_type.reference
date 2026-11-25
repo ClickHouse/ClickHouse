@@ -110,6 +110,9 @@ DateTime
 Float64
 Float64
 Float64
+7800
+7800
+7800
 stored types of untouched paths
 {"k":1,"k":2}	Date
 {"k":2}	String
@@ -130,6 +133,11 @@ parsing limit on dynamic paths
 1	3	{"a":1,"b":2,"c":3,"z":0}
 escaped dots in keys
 {"a.b":5,"a":{"b":2}}	1
+keys with dots in rows merged as text
+{"a":{"b":5},"m":{"x":1,"y":2}}	1
+{"a":{"b":5},"m":{"x":1,"y":2}}	1
+{"a":{"b":1,"c":{"d":1}},"m":{"x":1,"x.y":3}}	1
+{'a.b':'Int64','m':'Map(String, UInt8)','m.k':'Int64'}	1
 literal and nested object under the same key
 {"a":0,"a":{"b":"x"}}	{"a":5,"a":{"b":"y"},"c":1}	1
 {"k0":5}	{"k0":5}

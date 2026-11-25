@@ -99,6 +99,9 @@ SELECT JSONAllPathsWithTypes(r)['t'] FROM (SELECT JSONMergePatch(c, '{"m":{"y":2
 SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['a'] FROM (SELECT '{"a":0.5,"b":1}'::JSON AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_64bit_floats = 1;
 SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, CAST('{"k":1.5}', 'JSON(k Decimal(10, 2))')))['k'] SETTINGS output_format_json_quote_decimals = 1;
 SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['k'] FROM (SELECT CAST('{"k":1.5,"b":1}', 'JSON(k Decimal(10, 2))') AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_decimals = 1;
+SELECT hex(r.s) FROM (SELECT JSONMergePatch(CAST('{}', 'JSON(s String)'), CAST('{"s":"x"}', 'JSON(s FixedString(2))')) AS r) SETTINGS output_format_trim_fixed_string = 1;
+SELECT hex(r.s) FROM (SELECT JSONMergePatch(CAST('{}', 'JSON(s String)'), CAST('{"s":"x"}', 'JSON(s FixedString(2))')) AS r) SETTINGS output_format_trim_fixed_string = 0;
+SELECT hex(CAST(c, 'JSON').s::String) FROM (SELECT CAST('{"s":"x"}', 'JSON(s FixedString(2))') AS c) SETTINGS output_format_trim_fixed_string = 1;
 
 SELECT 'stored types of untouched paths';
 SET input_format_try_infer_dates = 0, input_format_try_infer_datetimes = 0;
@@ -136,6 +139,16 @@ DROP TABLE t_limit;
 SELECT 'escaped dots in keys';
 SELECT JSONMergePatch(c, '{"a.b":5}') AS r, toString(r) = toString(JSONMergePatch(c::String, '{"a.b":5}')::JSON)
 FROM (SELECT '{"a.b":1,"a":{"b":2}}'::JSON AS c) SETTINGS json_type_escape_dots_in_keys = 1;
+
+SELECT 'keys with dots in rows merged as text';
+SELECT JSONMergePatch(c, '{"a.b":5,"m":{"y":2}}') AS r, toString(r) = toString(JSONMergePatch(c, '{"a.b":5}', '{"m":{"y":2}}'))
+FROM (SELECT CAST('{"a":{"b":1},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c);
+SELECT JSONMergePatch(c, '{"a.b":5,"m":{"y":2}}') AS r, toString(r) = toString(JSONMergePatch(c, '{"a.b":5}', '{"m":{"y":2}}'))
+FROM (SELECT CAST('{"a":{"b":1},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c) SETTINGS type_json_skip_duplicated_paths = 1;
+SELECT JSONMergePatch(c, '{"a.c":{"e":null,"d":1},"m":{"x.y":3}}') AS r, toString(r) = toString(JSONMergePatch(c, '{"a.c":{"e":null,"d":1}}', '{"m":{"x.y":3}}'))
+FROM (SELECT CAST('{"a":{"b":1,"c":{"e":2}},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c);
+SELECT JSONAllPathsWithTypes(r), toString(r) = toString(CAST(JSONMergePatch(c::String, '{"m.k":3,"m":{"y":2}}'), toTypeName(c)))
+FROM (SELECT c, JSONMergePatch(c, '{"m.k":3,"m":{"y":2}}') AS r FROM (SELECT CAST('{"a":{"b":1},"m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c));
 
 SELECT 'literal and nested object under the same key';
 SELECT JSONMergePatch(c, '{"a":{"b":"x"}}') AS r, JSONMergePatch(c, '{"c":1}') AS r2,
