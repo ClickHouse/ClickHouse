@@ -450,8 +450,16 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
 
         const auto & key_description = (*dict_struct.key)[i];
 
+        if (handle_nan && key_columns[i]->isNullAt(row))
+        {
+            writeString("isNull(", out);
+            writeQuoted(key_description.name, out);
+            writeChar(')', out);
+            continue;
+        }
+
         if (handle_nan && isFloat(removeNullable(removeLowCardinality(key_description.type)))
-            && !key_columns[i]->isNullAt(row) && std::isnan(key_columns[i]->getFloat64(row)))
+            && std::isnan(key_columns[i]->getFloat64(row)))
         {
             writeString("isNaN(", out);
             writeQuoted(key_description.name, out);
