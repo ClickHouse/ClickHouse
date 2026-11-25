@@ -531,6 +531,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
+        /// The task is activated in `startup`. Until then `SYSTEM START`/`SYSTEM REFRESH` must not run it:
+        /// if the table is created but `startup` throws or is never called, the storage is destroyed
+        /// without `shutdown`, and a running task would use the members already destroyed.
+        task->deactivate();
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
