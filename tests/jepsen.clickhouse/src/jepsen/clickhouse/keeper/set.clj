@@ -25,12 +25,10 @@
   (invoke! [this test op]
     (case (:f op)
       :read (chu/exec-with-retries 30 (fn []
-                                        (with-fresh-conn nodename (:with-auth test)
-                                          (fn [conn]
-                                            (zk-sync conn)
-                                            (assoc op
-                                                   :type :ok
-                                                   :value (read-string (:data (zk-get-str conn k))))))))
+                                    (zk-sync conn)
+                                    (assoc op
+                                           :type :ok
+                                           :value (read-string (:data (zk-get-str conn k))))))
       :add (try
              (do
                (zk-add-to-set conn k (:value op))

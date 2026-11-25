@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <mutex>
-#include <Common/SecretString.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -31,12 +30,8 @@ public:
 
         bool no_sign_request = false;
 
-        /// Opt in (via a named collection) to the server's ambient credentials. Subject to the user-query
-        /// credential restriction, like the underlying `s3` table function it is flattened into.
-        bool use_environment_credentials = false;
-
         std::optional<std::string> access_key_id;
-        std::optional<SecretString> secret_access_key;
+        std::optional<std::string> secret_access_key;
     };
 
     DatabaseS3(const String & name, const Configuration& config, ContextPtr context);

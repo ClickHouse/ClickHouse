@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- 26.3 only: with parallel replicas and a local plan, lazy materialization drops the ORDER BY column
+-- when a row policy on bare `_part_offset` is combined with a PREWHERE using `_part_offset` in an
+-- expression (NOT_FOUND_COLUMN_IN_BLOCK). Master and 26.4+ pass this under parallel replicas.
+
 DROP ROW POLICY IF EXISTS repro_pol ON repro;
 DROP TABLE IF EXISTS repro;
 
