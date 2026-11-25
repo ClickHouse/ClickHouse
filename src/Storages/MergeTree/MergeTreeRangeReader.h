@@ -53,9 +53,6 @@ struct PrewhereExprStep
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 
-    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
-    bool query_condition_cache_attribution_boundary = false;
-
     /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
     /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
     /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
@@ -81,8 +78,8 @@ struct PrewhereExprInfo
 {
     PrewhereExprSteps steps;
 
-    std::string dump() const;
-    std::string dumpConditions() const;
+    [[nodiscard]] std::string dump() const;
+    [[nodiscard]] std::string dumpConditions() const;
 };
 
 struct ReadStepPerformanceCounters
@@ -228,12 +225,12 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
 
-        size_t numDelayedRows() const { return num_delayed_rows; }
+        [[nodiscard]] size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(MutableColumns & columns, Columns & shared_columns);
 
-        bool isFinished() const { return is_finished; }
+        [[nodiscard]] bool isFinished() const { return is_finished; }
 
     private:
         size_t current_mark = 0;
@@ -252,7 +249,7 @@ private:
         bool is_finished = true;
 
         /// Current position from the beginning of file in rows
-        size_t position() const;
+        [[nodiscard]] size_t position() const;
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
     };
 
@@ -270,18 +267,18 @@ private:
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
-        bool isFinished() const { return current_mark >= last_mark; }
+        [[nodiscard]] bool isFinished() const { return current_mark >= last_mark; }
 
-        size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
-        size_t numPendingRowsInCurrentGranule() const
+        [[nodiscard]] size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
+        [[nodiscard]] size_t numPendingRowsInCurrentGranule() const
         {
             return current_mark_index_granularity - numReadRowsInCurrentGranule();
         }
-        size_t numPendingGranules() const { return last_mark - current_mark; }
-        size_t numPendingRows() const;
-        size_t currentMark() const { return current_mark; }
-        UInt64 currentPartOffset() const;
-        UInt64 lastPartOffset() const;
+        [[nodiscard]] size_t numPendingGranules() const { return last_mark - current_mark; }
+        [[nodiscard]] size_t numPendingRows() const;
+        [[nodiscard]] size_t currentMark() const { return current_mark; }
+        [[nodiscard]] UInt64 currentPartOffset() const;
+        [[nodiscard]] UInt64 lastPartOffset() const;
 
         IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -301,10 +298,10 @@ private:
 
         size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
-        size_t ceilRowsToCompleteGranules(size_t rows_num) const;
-        size_t alignRowsToColumnsCacheStripes(
+        [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
             size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
-        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
+        [[nodiscard]] size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:
@@ -317,9 +314,6 @@ public:
 
         /// All read marks.
         MarkRanges read_mark_ranges;
-
-        /// Marks emptied by the steps up to the query condition cache attribution boundary.
-        MarkRanges query_condition_cache_attributable_marks;
 
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
@@ -394,7 +388,7 @@ public:
         /// filtering is still deferred (an incomplete trailing granule, or a block not yet shrunk), this is
         /// always the post-filter survivor count, taken from `final_filter`. A granule is fully dropped by
         /// PREWHERE iff its entry here is 0.
-        NumRows survivingRowsPerGranule() const;
+        [[nodiscard]] NumRows survivingRowsPerGranule() const;
 
         /// Calls `callback(mark, granule_index)` once for every granule the caller gates in, in non-decreasing
         /// mark order, where `mark` is the granule's mark number in the part and `granule_index` indexes the

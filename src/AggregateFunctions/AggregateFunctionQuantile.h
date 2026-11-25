@@ -94,6 +94,9 @@ private:
 
     DataTypePtr & argument_type;
 
+    /// The weight is `UInt128` or `UInt256`, see `getWeight`.
+    bool weight_is_wide = false;
+
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>(
@@ -114,6 +117,12 @@ public:
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
+            /// Only a weight is checked: the determinator of `quantileDeterministic` may be any value of its type.
+            if constexpr (!requires { Data::second_argument_is_determinator; })
+            {
+                const WhichDataType which_weight(argument_types_[1]);
+                weight_is_wide = which_weight.isUInt128() || which_weight.isUInt256();
+            }
         }
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
         {
@@ -184,7 +193,7 @@ public:
         }
     }
 
-    String getName() const override { return Name::name; }
+    [[nodiscard]] String getName() const override { return Name::name; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
@@ -211,13 +220,13 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
@@ -233,7 +242,7 @@ public:
             params);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -250,11 +259,27 @@ public:
         }
 
         if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
-            this->data(place).add(value, columns[1]->getUInt(row_num));
+            this->data(place).add(value, getWeight(*columns[1], row_num));
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
             this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
+    }
+
+    /// The weights are `UInt64`: `getUInt` would narrow a wider one silently, so it is checked in its own type.
+    [[nodiscard]] UInt64 getWeight(const IColumn & column, size_t row_num) const
+    {
+        if (unlikely(weight_is_wide))
+        {
+            const Field weight = column[row_num];
+            const bool fits = weight.getType() == Field::Types::UInt128
+                ? weight.safeGet<UInt128>() <= std::numeric_limits<UInt64>::max()
+                : weight.safeGet<UInt256>() <= std::numeric_limits<UInt64>::max();
+            if (!fits)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The weight {} of function {} is too large: weights are at most the maximum of UInt64",
+                    weight.dump(), Name::name);
+        }
+        return column.getUInt(row_num);
     }
 
     void addBatchSinglePlace(
@@ -313,7 +338,7 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    bool isVersioned() const override { return state_version > 0; }
+    [[nodiscard]] bool isVersioned() const override { return state_version > 0; }
 
     /// The default version - the one used when the type carries no explicit version - must stay 0.
     /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
@@ -328,13 +353,13 @@ public:
     /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
     /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
     /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
     /// The state type spells the version out, so that the type name and the payload stay consistent
     /// on every medium the state can travel through - including the generic formats, which serialize
     /// query results with the state type as-is (only the `Native` wire re-derives versions from the
     /// negotiated revision).
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (state_version > 0)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
@@ -342,7 +367,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if constexpr (state_version >= 1)
         {

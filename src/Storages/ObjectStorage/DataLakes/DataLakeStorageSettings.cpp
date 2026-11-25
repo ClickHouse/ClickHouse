@@ -15,6 +15,9 @@ namespace DB
 DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, DataLakeStorageSettings, DataLakeStorageSetting)
 
+/// The settings are serialized with `writeChangedBinary` (see `serialize`), including by code outside of this repository.
+LIST_OF_DATA_LAKE_STORAGE_SETTINGS(ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION, ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION)
+
 DataLakeStorageSettings::DataLakeStorageSettings() : impl(std::make_unique<DataLakeStorageSettingsImpl>())
 {
 }
