@@ -53,12 +53,14 @@ flowchart LR
     Impact["Impact analysis, recommended"]
     Deploy["Deployment"]
     Rebuild["Rebuild the table, then EXCHANGE TABLES"]
+    Cleanup["Cleanup flow drops the old table after you click the button"]
     Alter["ALTER the production table"]
 
     Rec --> Impact
     Impact --> Deploy
     Rec -.->|"skip"| Deploy
     Deploy --> Rebuild
+    Rebuild --> Cleanup
     Deploy --> Alter
 ```
 
@@ -69,7 +71,7 @@ Else, run impact analysis first so you can see what the change does to your quer
 
 After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. 
 Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
-Once you're ready to apply the recommendation, click **Generate implementation plan** at the bottom of the recommendation page.
+Once you're ready to apply the recommendation, click **Generate Implementation Plan** at the bottom of the recommendation page.
 The Tables page is where the recommendation and the implementation plans live. You can always come back to that page to continue the implementation, or continue the conversation in ClickHouse Assistant.
 
 If you know the schema change you want and it is not shown for that table, you can start from ClickHouse Assistant. 
@@ -87,7 +89,7 @@ Schema Advisor builds a plan and shows the SQL for every step. After you approve
 1. We take a sample of the production table as the baseline table. Today that sample size is 10,000,000 rows. 
 2. Reading from the baseline, we build a candidate table with the proposed schema.
 3. We replay the queries that run most often on that production table with the baseline and candidate tables 3 times.
-4. The results are showed those runs side by side, averaged out across the queries. The metrics compared are: query time, rows scanned, and data read.
+4. The results show those runs side by side, averaged out across the queries. The metrics compared are: query time, rows scanned, and data read.
 
 You can choose where the analysis runs:
 
@@ -103,8 +105,13 @@ If you like the results of the impact analysis, you can deploy after. Else you c
 Schema Advisor creates the new table, copies the data, checks the copy, and then swaps it into place with [`EXCHANGE TABLES`](/sql-reference/statements/exchange).
 The exchange is atomic, so the production name points at the new table with no downtime.
 Schema Advisor shows the exact statement, and the workflow runs it after you approve it.
+After the swap, the old table is not dropped automatically. Schema Advisor has a separate cleanup flow that drops the old table, and it only runs after you click the button to start it.
 - **`ALTER TABLE`.** These changes apply in place, with no rebuild and no `EXCHANGE TABLES`. These include adding an index or a projection.
 Schema Advisor shows the exact `ALTER` statement. After you approve it, the workflow runs that statement on the production table.
+
+<Warning>
+After a full table rebuild, the old table is not dropped automatically. The cleanup flow drops it, and it only runs after you click the button.
+</Warning>
 
 ## Models and data handling {#models-and-data-handling}
 
@@ -115,7 +122,7 @@ By default, model calls from Schema Advisor go through the ClickHouse Inference 
 In this private preview, deployment of a full table rebuild change is unavailable in these cases:
 
 - The table ingests data continuously.
-- The table has more than 100 million rows, or is larger than 100 MB, whichever limit it reaches first. You can still build a plan and run impact analysis.
+- The table has more than 100 million rows, or is larger than 100 GB, whichever limit it reaches first. You can still build a plan and run impact analysis.
 - The table has downstream dependencies, including [materialized views](/materialized-views).
 
 ## Related pages {#related-pages}
