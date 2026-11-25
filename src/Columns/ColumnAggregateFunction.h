@@ -258,9 +258,17 @@ public:
         return 0;
     }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    /// Like `compareAt`, all values compare equal, so `row_indexes` keeps every row.
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results, int, int) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
+        compare_results.resize(size());
+        if (row_indexes)
+        {
+            for (UInt64 row : *row_indexes)
+                compare_results[row] = 0;
+        }
+        else
+            std::fill(compare_results.begin(), compare_results.end(), 0);
     }
 
     bool hasEqualValues() const override

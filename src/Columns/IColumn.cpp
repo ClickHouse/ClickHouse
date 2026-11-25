@@ -475,9 +475,9 @@ void compareColumnImpl(
 
     for (size_t row = 0; row < num_rows; ++row)
     {
+        /// `compareAt` promises only the sign: the generic `memcmpSmallAllowOverflow15` returns the byte difference.
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        chassert(res == 1 || res == -1 || res == 0);
-        compare_results[row] = static_cast<Int8>(res);
+        compare_results[row] = static_cast<Int8>((res > 0) - (res < 0));
 
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
@@ -506,9 +506,9 @@ void compareWithIndexImpl(
     UInt64 * next_index = row_indexes->data();
     for (auto row : *row_indexes)
     {
+        /// `compareAt` promises only the sign: the generic `memcmpSmallAllowOverflow15` returns the byte difference.
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        chassert(res == 1 || res == -1 || res == 0);
-        compare_results[row] = static_cast<Int8>(res);
+        compare_results[row] = static_cast<Int8>((res > 0) - (res < 0));
 
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
