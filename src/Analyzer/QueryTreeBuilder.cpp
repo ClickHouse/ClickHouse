@@ -88,25 +88,14 @@ namespace ErrorCodes
 namespace
 {
 
-/// Column names from the `name (col1, col2, ...)` alias list of a CTE/table expression
-/// Duplicates are rejected, they would collapse columns during identifier resolution
-Names getColumnAliasNames(const ASTPtr & column_aliases)
+/// An `Identifier` query parameter that was never substituted: an empty name part, with the parameter as a child.
+void throwIfQueryParameter(const ASTIdentifier & identifier)
 {
-    const auto & column_aliases_list = column_aliases->as<const ASTExpressionList &>();
+    if (!identifier.isParam())
+        return;
 
-    Names result;
-    result.reserve(column_aliases_list.children.size());
-
-    NameSet unique_aliases;
-    for (const auto & column_alias : column_aliases_list.children)
-    {
-        const auto & alias_name = column_alias->as<const ASTIdentifier &>().name();
-        if (!unique_aliases.insert(alias_name).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate column alias '{}' in column alias list", alias_name);
-        result.push_back(alias_name);
-    }
-
-    return result;
+    const auto & parameter = static_cast<const IAST &>(identifier).children.front()->as<ASTQueryParameter &>();
+    throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Query parameter {} was not set", backQuote(parameter.name));
 }
 
 class QueryTreeBuilder
@@ -322,22 +311,28 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
-        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-        /// reader's constraints keeps working. A top-level clause still throws
-        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
-        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
-        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
+        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) is clamped to the session's
+        /// settings constraints, as done for other settings crossing execution contexts
+        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are dropped,
+        /// out-of-bounds values are clamped, so a view whose inner clause violates the reader's constraints
+        /// keeps working. A top-level clause still throws (`applySettingsFromQuery`). An unknown name or an
+        /// uncastable value throws as for a top-level clause, on every server that executes the query. The
+        /// node records the effective `changes`: the ones that survive, with their clamped values and the
+        /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+        /// subquery see what was applied. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
         if (!set_query.changes.empty())
         {
-            auto checked_changes = set_query.changes;
-            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
-            updated_context->applySettingsChanges(checked_changes);
-            settings_changes = set_query.changes;
+            /// One change at a time, so that each is clamped against the context as the preceding changes
+            /// left it. Clamping the whole clause as a batch checks every change against the context as it
+            /// was before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve
+            /// differently from the last-wins reading the clause has everywhere else.
+            for (const auto & change : set_query.changes)
+            {
+                SettingsChanges single_change{change};
+                updated_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+                updated_context->applySettingsChanges(single_change);
+                settings_changes.insert(settings_changes.end(), single_change.begin(), single_change.end());
+            }
         }
     }
 
@@ -380,6 +375,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
+                auto * with_query_node = with_node->as<QueryNode>();
+
+                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
+                if (materialized_cte)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
+
                 if (!with_union_node)
                     continue;
 
@@ -394,7 +395,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     // Apply the override aliases to the projection nodes
     if (aliases)
-        current_query_tree->setProjectionAliasesToOverride(getColumnAliasNames(aliases));
+    {
+        // Collect the aliases into a vector of strings
+        Names collected_aliases;
+        auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
+        collected_aliases.reserve(override_aliases_children.size());
+
+        for (const auto & child : override_aliases_children)
+        {
+            const auto & alias_ast = child->as<ASTIdentifier &>();
+            collected_aliases.push_back(alias_ast.name());
+        }
+
+        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+    }
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)
@@ -624,11 +638,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
+        throwIfQueryParameter(*ast_identifier);
         auto identifier = Identifier(ast_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
+        throwIfQueryParameter(*table_identifier);
         auto identifier = Identifier(table_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
@@ -640,6 +656,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * qualified_asterisk = expression->as<ASTQualifiedAsterisk>())
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
     }
@@ -671,6 +688,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Lambda {} argument is not identifier",
                             function->formatForErrorMessage());
+
+                    throwIfQueryParameter(*lambda_argument_identifier);
 
                     if (lambda_argument_identifier->name_parts.size() > 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -775,6 +794,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
+            throwIfQueryParameter(column_list_identifier);
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
@@ -784,12 +804,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
         auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
+        throwIfQueryParameter(qualified_identifier);
 
         Identifiers column_list_identifiers;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
@@ -797,6 +819,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
+            throwIfQueryParameter(column_list_identifier);
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
@@ -965,6 +988,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
+                throwIfQueryParameter(table_identifier_typed);
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
                 QueryTreeNodePtr table_identifier_node;
 
@@ -998,7 +1022,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
                 if (table_expression.column_aliases)
                 {
-                    Names column_alias_names = getColumnAliasNames(table_expression.column_aliases);
+                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
+                    Names column_alias_names;
+                    column_alias_names.reserve(column_aliases_list.children.size());
+
+                    std::unordered_set<std::string> seen_aliases;
+                    for (const auto & column_alias : column_aliases_list.children)
+                    {
+                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        if (!seen_aliases.insert(alias_name).second)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Duplicate column alias '{}' in table expression column list", alias_name);
+                        column_alias_names.push_back(alias_name);
+                    }
 
                     if (auto * query_node = node->as<QueryNode>())
                     {
@@ -1082,12 +1118,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
 
-            /// `LATERAL JOIN` supports only `ALL` semantics, so an unspecified strictness must not
-            /// depend on `join_default_strictness` or `any_join_distinct_right_table_keys`.
-            if (table_join.lateral && result_join_strictness == JoinStrictness::Unspecified
-                && result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma)
-                result_join_strictness = JoinStrictness::All;
-
             if (result_join_strictness == JoinStrictness::Unspecified && (result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma))
             {
                 if (join_default_strictness == JoinStrictness::Any)
@@ -1154,7 +1184,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     result_join_kind,
                     table_join.using_expression_list != nullptr);
                 join_node->as<JoinNode &>().setNatural(table_join.is_natural);
-                join_node->as<JoinNode &>().setLateral(table_join.lateral);
             }
 
             join_node->setOriginalAST(table_element.table_join);
@@ -1207,7 +1236,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             if (apply_transformer->lambda)
             {
                 auto lambda_query_tree_node = buildExpression(apply_transformer->lambda, context);
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node), apply_transformer->column_name_prefix));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node)));
             }
             else
             {
@@ -1215,7 +1244,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 if (apply_transformer->parameters)
                     function_node->getParametersNode() = buildExpressionList(apply_transformer->parameters, context);
 
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node), apply_transformer->column_name_prefix));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node)));
             }
         }
         else if (auto * except_transformer = child->as<ASTColumnsExceptTransformer>())
@@ -1231,7 +1260,11 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 except_column_names.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
-                    except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
+                {
+                    const auto & except_identifier = except_transformer_child->as<ASTIdentifier &>();
+                    throwIfQueryParameter(except_identifier);
+                    except_column_names.push_back(except_identifier.full_name);
+                }
 
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
             }

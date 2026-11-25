@@ -3,92 +3,13 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-
 using namespace Coordination;
 using namespace DB;
-
-namespace DB::ErrorCodes
-{
-    extern const int REPLICA_ALREADY_EXISTS;
-}
-
-namespace
-{
-
-zkutil::ZooKeeper::Ptr makeTestKeeperClient(int32_t session_timeout_ms)
-{
-    zkutil::ZooKeeperArgs args;
-    args.implementation = "testkeeper";
-    args.session_timeout_ms = session_timeout_ms;
-    return zkutil::ZooKeeper::createWithoutKillingPreviousSessions(args);
-}
-
-}
-
-TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
-{
-    /// The node is persistent, so it never disappears and the wait always reaches its deadline.
-    constexpr int32_t session_timeout_ms = 200;
-    auto zk = makeTestKeeperClient(session_timeout_ms);
-    zk->create("/foreign", "someone-else", zkutil::CreateMode::Persistent);
-
-    const auto started_at = std::chrono::steady_clock::now();
-    try
-    {
-        zk->deleteEphemeralNodeIfContentMatches("/foreign", "me");
-        ADD_FAILURE() << "Expected an exception for a node held by someone else";
-    }
-    catch (const DB::Exception & e)
-    {
-        /// A foreign or not-yet-expired holder is expected runtime state, not a broken invariant.
-        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
-    }
-    const auto elapsed_ms
-        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count();
-
-    EXPECT_GE(elapsed_ms, 3 * session_timeout_ms);
-    EXPECT_TRUE(zk->exists("/foreign"));
-}
-
-TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
-{
-    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
-    zk->create("/mine", "me", zkutil::CreateMode::Persistent);
-
-    EXPECT_NO_THROW(zk->deleteEphemeralNodeIfContentMatches("/mine", "me"));
-    EXPECT_FALSE(zk->exists("/mine"));
-}
-
-TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesRewrittenNode)
-{
-    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
-    zk->create("/rewritten", "me", zkutil::CreateMode::Persistent);
-
-    try
-    {
-        /// The condition runs after the node and its version have been read, so writing from here makes the
-        /// versioned removal lose the same race a concurrent writer would cause.
-        zk->deleteEphemeralNodeIfContentMatches("/rewritten", [&](const std::string & content)
-        {
-            zk->set("/rewritten", "me");
-            return content == "me";
-        });
-        ADD_FAILURE() << "Expected an exception for a node rewritten while it was being removed";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
-    }
-
-    EXPECT_TRUE(zk->exists("/rewritten"));
-}
 
 TEST(ZooKeeperTest, TestMatchPath)
 {
@@ -98,30 +19,6 @@ TEST(ZooKeeperTest, TestMatchPath)
     ASSERT_EQ(matchPath("/", "/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path", "/path/"), PathMatchResult::EXACT);
     ASSERT_EQ(matchPath("/path/", "/path"), PathMatchResult::EXACT);
-}
-
-/// The orphaned-nodes log-tail guard (`KeeperStateMachine::findOrphanConflictInLogTail`) decides whether
-/// a request path and a removed subtree root lie on the same root-to-leaf chain by calling `matchPath`
-/// in both directions. Pin the boundary cases that decision depends on.
-TEST(ZooKeeperTest, TestMatchPathChainOverlap)
-{
-    /// A shared textual prefix that is not a path prefix must not match.
-    ASSERT_EQ(matchPath("/ab", "/a"), PathMatchResult::NOT_MATCH);
-    ASSERT_EQ(matchPath("/abc/d", "/ab"), PathMatchResult::NOT_MATCH);
-
-    /// Descendant direction.
-    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
-    ASSERT_EQ(matchPath("/a/b/c", "/a"), PathMatchResult::IS_CHILD);
-    ASSERT_EQ(matchPath("/x", "/"), PathMatchResult::IS_CHILD);
-
-    /// Ancestor direction: not a match forwards, but a match with the arguments reversed. This is the
-    /// asymmetry the guard relies on to also flag entries touching a parent of a removed subtree.
-    ASSERT_EQ(matchPath("/a", "/a/b"), PathMatchResult::NOT_MATCH);
-    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
-
-    /// Unrelated siblings match in neither direction.
-    ASSERT_EQ(matchPath("/a", "/b"), PathMatchResult::NOT_MATCH);
-    ASSERT_EQ(matchPath("/b", "/a"), PathMatchResult::NOT_MATCH);
 }
 
 TEST(ZooKeeperTest, ExtractZooKeeperPathAndCollapseTrailingSlashes)
@@ -179,53 +76,6 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, true);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
-}
-
-TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
-{
-    ZooKeeperListWithOptionsRequest request;
-    request.path = "/round/trip";
-    request.has_watch = true;
-    request.options = {
-        .filter = ListRequestType::EPHEMERAL_ONLY,
-        .with_stat = true,
-        .with_data = true,
-        .recursive = true,
-        .max_results = 17,
-        .shuffle = true,
-    };
-
-    WriteBufferFromOwnString request_out;
-    request.writeImpl(request_out);
-    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
-    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
-    ReadBufferFromString request_in(request_out.str());
-    decoded.readImpl(request_in);
-
-    EXPECT_TRUE(request_in.eof());
-    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V1);
-    EXPECT_EQ(decoded.path, request.path);
-    EXPECT_EQ(decoded.has_watch, request.has_watch);
-    EXPECT_EQ(decoded.options.filter, request.options.filter);
-    EXPECT_EQ(decoded.options.with_stat, request.options.with_stat);
-    EXPECT_EQ(decoded.options.with_data, request.options.with_data);
-    EXPECT_EQ(decoded.options.recursive, request.options.recursive);
-    EXPECT_EQ(decoded.options.max_results, request.options.max_results);
-    EXPECT_EQ(decoded.options.shuffle, request.options.shuffle);
-
-    auto response = request.makeResponse();
-    auto & expected_response = dynamic_cast<ZooKeeperListWithOptionsResponse &>(*response);
-    expected_response.names = {"child", "child/grandchild"};
-    expected_response.stats.resize(expected_response.names.size());
-    expected_response.data = {"one", "two"};
-    expected_response.truncated = true;
-
-    WriteBufferFromOwnString response_out;
-    expected_response.writeImpl(response_out);
-    auto decoded_response = request.makeResponse();
-    ReadBufferFromString response_in(response_out.str());
-    dynamic_cast<ZooKeeperListWithOptionsResponse &>(*decoded_response).readImpl(response_in);
-    EXPECT_TRUE(response_in.eof());
 }
 
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)

@@ -5,11 +5,14 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/assert_cast.h>
 
 #include <gtest/gtest.h>
 #include <base/types.h>
@@ -192,6 +195,24 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
+
+        /// `convert_inexact_floats` native-number matrix. The flag relaxes the exactness check only for
+        /// a floating-point target, so the column-native fast path serves it for every native-number
+        /// pair rather than falling back to the `Field` path - which matters because the `values` table
+        /// function passes it for every single conversion it makes.
+        {"Float64", Field(Float64(0.1)), "Float32", true, true},              // strict wins over inexact -> null
+        {"Float64", Field(Float64(3.0)), "Int32", false, true},               // integer target, exact -> 3
+        {"Float64", Field(Float64(3.5)), "Int32", false, true},               // integer target stays exact -> null
+        {"Int64", Field(Int64(9007199254740993ll)), "Float64", false, true},  // float target -> nearest
+        {"UInt64", Field(UInt64(5)), "UInt8", false, true},                   // integer target stays exact -> 5
+        {"UInt64", Field(UInt64(256)), "UInt8", false, true},                 // out of range -> null
+        {"Int64", Field(Int64(-1)), "UInt8", false, true},                    // negative -> null
+
+        /// identical types: the value passes through untouched (including a genuine NULL)
+        {"UInt64", Field(UInt64(5)), "UInt64", true},
+        {"String", Field(String("abc")), "String", true},
+        {"Nullable(UInt8)", Field(), "Nullable(UInt8)", true},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(2)", true},
     };
 
     for (const auto & c : cases)
@@ -228,4 +249,28 @@ TEST(ConvertColumnToType, OrThrow)
     ASSERT_NE(null_ok, nullptr);
     ASSERT_EQ(null_ok->size(), 1u);
     EXPECT_TRUE(null_ok->isNullAt(0));
+}
+
+/// `Dynamic` hides its payload type from the type tree, so a `Bool` row inside it must not take the
+/// identity fast path either: a raw `Bool` byte (2 here) is normalized through the `Field` path, as it
+/// is for a plain `Bool`, and the result compares equal to a genuine `true`.
+TEST(ConvertColumnToType, DynamicHoldingRawBoolIsNormalized)
+{
+    const auto dynamic = DataTypeFactory::instance().get("Dynamic");
+
+    auto raw = dynamic->createColumn();
+    raw->insert(Field(true));
+    auto & raw_dynamic = assert_cast<ColumnDynamic &>(*raw);
+    const auto bool_discriminator = raw_dynamic.getVariantInfo().variant_name_to_discriminator.at("Bool");
+    assert_cast<ColumnUInt8 &>(raw_dynamic.getVariantColumn().getVariantByGlobalDiscriminator(bool_discriminator)).getData()[0] = 2;
+
+    auto expected = dynamic->createColumn();
+    expected->insert(Field(true));
+
+    EXPECT_NE(raw->compareAt(0, 0, *expected, 1), 0);
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*raw, dynamic, dynamic);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    EXPECT_EQ(converted->compareAt(0, 0, *expected, 1), 0);
 }

@@ -57,6 +57,9 @@ struct BigQueryConfiguration
     /// When `table_id` is provided (the persistent table engine), the table is registered as a dependency
     /// of the named collection so that `DROP NAMED COLLECTION` is blocked while the table exists.
     static BigQueryConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
+
+    /// Validates the user-supplied values sent as HTTP headers with `HTTPHeaderFilter`.
+    void checkHeaders(const ContextPtr & context) const;
 };
 
 }

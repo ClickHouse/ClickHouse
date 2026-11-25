@@ -152,14 +152,14 @@ LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
     "zh": "Cloud 快速入门",
 }
 LOCALIZED_MCP_LABELS = {
-    "ar": "إعداد خادم MCP للوثائق",
-    "es": "Configurar el servidor MCP de documentación",
-    "fr": "Configurer le serveur MCP de la documentation",
-    "ja": "ドキュメントMCPサーバーを設定",
-    "ko": "문서 MCP 서버 설정",
-    "pt-BR": "Configurar o servidor MCP da documentação",
-    "ru": "Настроить MCP-сервер документации",
-    "zh": "设置文档 MCP 服务器",
+    "ar": "خادم MCP",
+    "es": "servidor MCP",
+    "fr": "serveur MCP",
+    "ja": "MCPサーバー",
+    "ko": "MCP 서버",
+    "pt-BR": "servidor MCP",
+    "ru": "MCP-сервер",
+    "zh": "MCP 服务器",
 }
 
 # The badge block the generator rewrites, same pattern as
@@ -840,13 +840,7 @@ def check_install_cloud_banners(docs_root: Path) -> list:
 
 
 def check_explorer_docs_links(docs_root: Path) -> list:
-    """Ensure card anchors are left for Mintlify to resolve against `/docs`.
-
-    Mintlify applies the `/docs` base to anchors rendered by JSX components at
-    hydration, so a manually prefixed href renders as `/docs/docs/...`. The
-    assetBase helper must stay for static assets (images) and full-page
-    `window.location.assign` navigations, which Mintlify does not rewrite.
-    """
+    """Ensure explorer card anchors include `/docs` before hydration."""
     errors = []
     for locale in [None, *LOCALES]:
         snippets_root = docs_root / "snippets"
@@ -868,8 +862,8 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "QuickStartsGrid"
                 / "QuickStartsGrid.jsx",
-                "href={quickStart.href}",
                 "href={withBase(quickStart.href)}",
+                "href={quickStart.href}",
                 2,
             ),
             (
@@ -877,12 +871,12 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "SampleDatasetExplorer"
                 / "SampleDatasetExplorer.jsx",
-                "href={ds.href}",
                 "href={withBase(ds.href)}",
+                "href={ds.href}",
                 1,
             ),
         ]
-        for path, expected_anchor, prefixed_anchor, expected_count in components:
+        for path, resolved_anchor, raw_anchor, expected_count in components:
             source = path.read_text(encoding="utf-8")
             name = path.relative_to(docs_root)
             if source.count(docs_base) != 1:
@@ -890,17 +884,15 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                     f"{name}: assetBase must default to `/docs` during "
                     "server-side rendering"
                 )
-            if source.count(expected_anchor) != expected_count:
+            if source.count(resolved_anchor) != expected_count:
                 errors.append(
-                    f"{name}: expected {expected_count} card anchor(s) left "
-                    "unprefixed for Mintlify's base handling"
+                    f"{name}: expected {expected_count} server-rendered "
+                    "card anchor(s) resolved through withBase"
                 )
-            if prefixed_anchor in source:
+            if raw_anchor in source:
                 errors.append(
-                    f"{name}: card anchor {prefixed_anchor!r} is prefixed "
-                    "with withBase; Mintlify already applies the `/docs` "
-                    "base to card anchors at hydration, so a manual prefix "
-                    "produces `/docs/docs/...` links"
+                    f"{name}: raw card anchor {raw_anchor!r} bypasses the "
+                    "canonical `/docs` mount"
                 )
     return errors
 

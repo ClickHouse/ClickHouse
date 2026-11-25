@@ -214,7 +214,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+           RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -258,7 +258,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };

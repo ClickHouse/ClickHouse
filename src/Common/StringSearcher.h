@@ -18,6 +18,10 @@
 #    include <arm_neon.h>
 #endif
 
+#if USE_MULTITARGET_CODE
+#    include <immintrin.h>
+#endif
+
 #include <stringzilla/stringzilla.h>
 
 namespace DB

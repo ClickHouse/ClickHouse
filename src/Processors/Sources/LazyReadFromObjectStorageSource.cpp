@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
@@ -18,7 +17,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool s3_validate_etag_on_read;
-    extern const SettingsBool azure_validate_etag_on_read;
 }
 
 namespace
@@ -30,7 +28,7 @@ class LazyRowsObjectIterator : public IObjectIterator
 {
 public:
     LazyRowsObjectIterator(
-        VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files_,
+        std::vector<ObjectStorageLazyMaterializingRows::FileRows> files_,
         ObjectStoragePtr object_storage_,
         bool etag_validated_on_read_,
         bool data_files_are_immutable_)
@@ -70,9 +68,8 @@ private:
                 "Lazy materialization: no object metadata was captured for {} in the main reading pass",
                 object.getPath());
 
-        /// For S3 with `s3_validate_etag_on_read` (and Azure with `azure_validate_etag_on_read`), the GET
-        /// itself is pinned to the captured ETag (see `ReadBufferFromS3`, `ReadBufferFromAzureBlobStorage`),
-        /// which is race-free; an extra HEAD here would buy nothing.
+        /// For S3 with `s3_validate_etag_on_read`, the GET itself is pinned to the captured ETag
+        /// (see `ReadBufferFromS3`), which is race-free; an extra HEAD here would buy nothing.
         if (etag_validated_on_read && !captured->etag.empty())
             return;
 
@@ -136,7 +133,7 @@ private:
                 changed ? "was modified" : "cannot be proven unchanged");
     }
 
-    const VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows> files;
+    const std::vector<ObjectStorageLazyMaterializingRows::FileRows> files;
     const ObjectStoragePtr object_storage;
     const bool etag_validated_on_read;
     const bool data_files_are_immutable;
@@ -218,10 +215,8 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     if (rows->rows_in_files.empty())
         return {};
 
-    const auto & settings = context->getSettingsRef();
-    const bool etag_validated_on_read
-        = (object_storage->getType() == ObjectStorageType::S3 && settings[Setting::s3_validate_etag_on_read])
-        || (object_storage->getType() == ObjectStorageType::Azure && settings[Setting::azure_validate_etag_on_read]);
+    const bool etag_validated_on_read = object_storage->getType() == ObjectStorageType::S3
+        && context->getSettingsRef()[Setting::s3_validate_etag_on_read];
     auto iterator = std::make_shared<LazyRowsObjectIterator>(
         std::move(rows->rows_in_files), object_storage, etag_validated_on_read, configuration->dataFilesAreImmutable());
 

@@ -7,16 +7,12 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
 
+#include <optional>
 
-namespace CurrentMetrics
-{
-    extern const Metric ParquetEncoderThreads;
-    extern const Metric ParquetEncoderThreadsActive;
-    extern const Metric ParquetEncoderThreadsScheduled;
-}
 
 namespace DB
 {
@@ -32,11 +28,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
     if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::ParquetEncoderThreads,
-            CurrentMetrics::ParquetEncoderThreadsActive,
-            CurrentMetrics::ParquetEncoderThreadsScheduled,
-            format_settings.max_threads);
+    {
+        getParquetEncoderThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        pool = &getParquetEncoderThreadPool().get();
+    }
 
     using C = FormatSettings::ParquetCompression;
     switch (format_settings.parquet.output_compression_method)
@@ -73,13 +68,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
-        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
-        schema = convertSchema(
-            *header_,
-            options,
-            column_encoding.empty() ? std::nullopt : std::optional(column_encoding),
-            iceberg_optionality);
+        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
     }
     else
         schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
@@ -88,10 +77,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
 {
     if (pool)
-    {
-        is_stopped = true;
-        pool->wait();
-    }
+        stopThreads();
+}
+
+void ParquetBlockOutputFormat::stopThreads()
+{
+    is_stopped = true;
+    std::unique_lock lock(mutex);
+    condvar.wait(lock, [this] { return threads_running == 0; });
 }
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
@@ -269,8 +262,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
 {
     if (pool)
     {
-        is_stopped = true;
-        pool->wait();
+        stopThreads();
         is_stopped = false;
     }
 
@@ -419,17 +411,16 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     size_t to_add = std::min(task_queue.size(), format_settings.max_threads - threads_running);
     for (size_t i = 0; i < to_add; ++i)
     {
-        auto job = [this, thread_group = CurrentThread::getGroup()]()
+        auto job = [this, thread_group = CurrentThread::getGroup()]() mutable
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
-
-                threadFunction();
+                threadFunction(thread_group);
             }
             catch (...)
             {
                 std::lock_guard lock(mutex);
+                thread_group.reset();
                 background_exception = std::current_exception();
                 condvar.notify_all();
                 --threads_running;
@@ -453,8 +444,11 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     }
 }
 
-void ParquetBlockOutputFormat::threadFunction()
+void ParquetBlockOutputFormat::threadFunction(ThreadGroupPtr & thread_group)
 {
+    std::optional<ThreadGroupSwitcher> switcher;
+    switcher.emplace(thread_group, ThreadName::PARQUET_ENCODER);
+
     std::unique_lock lock(mutex);
 
     while (true)
@@ -463,7 +457,12 @@ void ParquetBlockOutputFormat::threadFunction()
         {
             /// The check and the decrement need to be in the same critical section, to make sure
             /// we never get stuck with tasks but no threads.
+            /// Leave the query's thread group before stopThreads() can see the decrement.
+            switcher.reset();
+            thread_group.reset();
             --threads_running;
+            if (threads_running == 0)
+                condvar.notify_all();
             return;
         }
 

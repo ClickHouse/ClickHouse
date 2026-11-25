@@ -17,6 +17,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -39,6 +40,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char column_aggregate_function_ensureOwnership_exception[];
+    extern const char column_aggregate_function_expand_exception[];
 }
 
 
@@ -54,11 +56,21 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    /// This name travels with every state serialized into a `Field`, so it must spell the state the
-    /// same way its state type does, or such a `Field` no longer matches the type it came from.
-    stream << DataTypeAggregateFunction::formatParameters(func->getParameters());
+    const auto & parameters = func->getParameters();
+    const auto & argument_types = func->getArgumentTypes();
+    if (!parameters.empty())
+    {
+        stream << '(';
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            if (i)
+                stream << ", ";
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+        }
+        stream << ')';
+    }
 
-    for (const auto & argument_type : func->getArgumentTypes())
+    for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
     stream << ')';
@@ -66,19 +78,32 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
+/// A window function may keep its state in a faster layout that the type name does not show
+/// (see `AggregateFunctionStateVariant`). Such a state must not get into a column: other code can
+/// make the column's type again from its name, and would then read the state with the wrong layout.
+static void checkOrdinaryStateLayout(const IAggregateFunction & func)
+{
+    if (func.getStateVariant() != AggregateFunctionStateVariant::Aggregation)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "A column of `{}` states cannot hold states in the window function layout", func.getName());
+}
+
+
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
+    checkOrdinaryStateLayout(*func);
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
     : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
-
+    checkOrdinaryStateLayout(*func);
 }
 
 void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
+    checkOrdinaryStateLayout(*func_);
     func = func_;
     version = version_;
     type_string = getTypeString(func, version);
@@ -388,32 +413,61 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t from = data.size() - 1;
-    ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
-    while (index >= 0)
+    const size_t set_bytes = countBytesInFilter(mask);
+    const size_t selected = inverted ? mask.size() - set_bytes : set_bytes;
+    if (selected > data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+    if (selected < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    bool inject_memory_limit_exceeded = false;
+    /// Avoid checking failpoint in a loop, since it uses atomic's
+    fiu_do_on(FailPoints::column_aggregate_function_expand_exception,
     {
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+        inject_memory_limit_exceeded = true;
+    });
 
-            /// Copy only if it makes sense.
-            if (index != from)
-                data[index] = data[from];
-            --from;
-        }
-        else
-        {
-            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
-            func->create(data[index]);
-        }
+    /// The destructor destroys every state in `data`, so `data` must never hold a pointer to a state
+    /// that is not created. Build the expanded array aside and publish it only when it is complete.
+    Container new_data;
+    new_data.resize_exact(mask.size());
 
-        --index;
+    size_t from = 0;
+    size_t index = 0;
+    try
+    {
+        for (; index < mask.size(); ++index)
+        {
+            if (!!mask[index] ^ inverted)
+            {
+                new_data[index] = data[from];
+                ++from;
+            }
+            else
+            {
+                new_data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+                func->create(new_data[index]);
+
+                /// Throw after a state is created, so that the cleanup has something to destroy.
+                if (unlikely(inject_memory_limit_exceeded))
+                {
+                    ++index;
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        /// Destroy the states created so far; the ones taken from `data` stay owned by `data`.
+        if (!func->hasTrivialDestructor())
+            for (size_t i = 0; i < index; ++i)
+                if (!(!!mask[i] ^ inverted))
+                    func->destroy(new_data[i]);
+        throw;
     }
 
-    if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+    data.swap(new_data);
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
@@ -815,18 +869,13 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
     auto res = create(func, concatArenas(foreign_arenas, my_arena));
     res->src = getPtr();
-    /// The view refers to the same states, so it must keep the state version:
-    /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
-    res->version = version;
-    res->type_string = type_string;
     return res;
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
-    type_string(src_.type_string), version(src_.version)
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 

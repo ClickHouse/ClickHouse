@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- - no-parallel - due to usage of fail points
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/110518

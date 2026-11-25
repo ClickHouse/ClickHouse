@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <base/find_symbols.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 
 
 namespace DB

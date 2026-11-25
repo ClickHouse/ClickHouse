@@ -6,6 +6,7 @@
 #include <Databases/DataLake/AWSV4Signer.h>
 
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -39,6 +40,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
@@ -242,13 +244,13 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     const auto state_snapshot = state.get();
     const std::string endpoint
         = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
-        + "?purgeRequested=true";
+        + "?purgeRequested=True";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
-        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=true)", namespace_name, table_name);
+        LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -312,6 +314,8 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
     auto result_headers = extractSigV4AuthHeaders(std::move(all_signed));
     for (const auto & h : headers)
         result_headers.push_back(h);
+    /// The signed headers contain the access key id, region and session token from the database settings.
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(result_headers);
 
     LOG_DEBUG(log, "Requesting (SigV4): {}", url.toString());
 
@@ -326,7 +330,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
         .create(credentials);
 }
 
-String S3TablesCatalog::sendRequest(
+void S3TablesCatalog::sendRequest(
     const CatalogState & /* catalog_state */,
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
@@ -357,6 +361,7 @@ String S3TablesCatalog::sendRequest(
 
     auto headers = extractSigV4AuthHeaders(std::move(all_signed));
     headers.emplace_back("Content-Type", "application/json");
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -374,7 +379,6 @@ String S3TablesCatalog::sendRequest(
         readJSONObjectPossiblyInvalid(response_str, *wb);
     else
         wb->ignoreAll();
-    return response_str;
 }
 
 }

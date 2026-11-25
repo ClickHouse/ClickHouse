@@ -181,7 +181,6 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -226,23 +225,6 @@ public:
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf, version);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        bool flag = getFlag(place);
-        if constexpr (serialize_flag)
-            writeBinary(flag, dst);
-        if (flag)
-            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
@@ -355,11 +337,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
-    }
-
-    DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_function);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

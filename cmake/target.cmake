@@ -56,7 +56,7 @@ if (OS_WASM)
     set (ENABLE_GRPC OFF CACHE INTERNAL "")
     # Protobuf needs a `protoc` that runs on the host, and the nested native configure at the
     # bottom of the top-level `CMakeLists.txt` would be handed `emcc` as its host compiler.
-    # Arrow, Parquet and ORC hard-depend on it, so they go with it.
+    # Arrow and Parquet hard-depend on it, so they go with it.
     set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
     # Its `kj` library uses `fallocate` and friends unconditionally in its POSIX branch,
     # which the Emscripten libc does not provide.
@@ -111,13 +111,10 @@ if (OS_WASM)
 
     # Executable links. The Emscripten defaults are sized for small programs: a 64 KiB shadow
     # stack and a fixed 16 MiB linear memory, while `clickhouse` needs ~50 MiB for static data
-    # alone. An 8 MiB stack matches `DBMS_DEFAULT_THREAD_STACK_SIZE`. Memory starts at 2 GiB, enough for
-    # `clickhouse local` to start without growing it: V8 checks some accesses against a per-thread copy of
-    # the memory size that a grow on another thread updates later, so they can trap in just-grown memory
-    # (https://issues.chromium.org/issues/529880019). It may still grow (the maximum has to be explicit
-    # when growth is combined with shared memory).
+    # alone. An 8 MiB stack matches `DBMS_DEFAULT_THREAD_STACK_SIZE`; memory starts at 256 MiB
+    # and may grow (the maximum has to be explicit when growth is combined with shared memory).
     add_link_options (-sSTACK_SIZE=8388608)
-    add_link_options (-sINITIAL_MEMORY=2147483648)
+    add_link_options (-sINITIAL_MEMORY=268435456)
     add_link_options (-sALLOW_MEMORY_GROWTH=1)
     add_link_options (-sMAXIMUM_MEMORY=17179869184)
     # No DWARF in the linked module: binaryen's `wasm-opt` asserts in its debug-info

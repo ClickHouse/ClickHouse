@@ -29,17 +29,14 @@ FROM (EXPLAIN SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT
 -- as one serialized fragment. These queries pin that this shape executes through the distributed
 -- machinery without an exception and returns the same rows as the local plan.
 SELECT v, ver, k FROM t_lm_header_order FINAL PREWHERE k > 0 LIMIT 4
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, log_comment = '04652_distributed',
-    distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, log_comment = '04652_distributed';
 
 
 SELECT v, k FROM t_lm_header_order FINAL PREWHERE k > 2 LIMIT 4
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 SELECT ver, v, k FROM t_lm_header_order FINAL PREWHERE k = NULL LIMIT 4
-SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 
 -- The distributed plan must return exactly what the local plan returns.
 SELECT 'distributed == local:', (

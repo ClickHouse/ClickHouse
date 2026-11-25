@@ -150,7 +150,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType : uint8_t
+enum class AccessType : uint16_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
@@ -227,7 +227,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
-    M(ALTER_HANDLER, "", GLOBAL, ALTER) /* allows to execute ALTER HANDLER */\
+    M(ALTER_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute ALTER HANDLER */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -255,7 +255,7 @@ enum class AccessType : uint8_t
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
-    M(CREATE_HANDLER, "", GLOBAL, CREATE) /* allows to execute CREATE HANDLER */ \
+    M(CREATE_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute CREATE HANDLER */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -267,7 +267,7 @@ enum class AccessType : uint8_t
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
-    M(DROP_HANDLER, "", GLOBAL, DROP) /* allows to execute DROP HANDLER */\
+    M(DROP_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute DROP HANDLER */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -318,7 +318,8 @@ enum class AccessType : uint8_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
-    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, HANDLER_ADMIN) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(HANDLER_ADMIN, "", GROUP, ALL) /* allows to create, alter, drop and see SQL-defined HTTP handlers */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
@@ -335,7 +336,6 @@ enum class AccessType : uint8_t
     M(SYSTEM_DROP_POINT_IN_POLYGON_CACHE, "SYSTEM CLEAR POINT IN POLYGON CACHE, SYSTEM DROP POINT IN POLYGON CACHE, DROP POINT IN POLYGON CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, "SYSTEM PREWARM PRIMARY INDEX, PREWARM PRIMARY INDEX CACHE, PREWARM PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_PRIMARY_INDEX_CACHE, "SYSTEM CLEAR PRIMARY INDEX CACHE, SYSTEM DROP PRIMARY INDEX, DROP PRIMARY INDEX CACHE, DROP PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
-    M(SYSTEM_DROP_COLUMNS_CACHE, "SYSTEM CLEAR COLUMNS CACHE, SYSTEM DROP COLUMNS CACHE, DROP COLUMNS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_UNCOMPRESSED_CACHE, "SYSTEM CLEAR UNCOMPRESSED CACHE, SYSTEM DROP UNCOMPRESSED, DROP UNCOMPRESSED CACHE, DROP UNCOMPRESSED", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE, "SYSTEM CLEAR TEXT INDEX TOKENS CACHE, SYSTEM DROP TEXT INDEX TOKENS CACHE, DROP TEXT INDEX TOKENS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
@@ -354,7 +354,6 @@ enum class AccessType : uint8_t
     M(SYSTEM_DROP_SCHEMA_CACHE, "SYSTEM CLEAR SCHEMA CACHE, SYSTEM DROP SCHEMA CACHE, DROP SCHEMA CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_FORMAT_SCHEMA_CACHE, "SYSTEM CLEAR FORMAT SCHEMA CACHE, SYSTEM DROP FORMAT SCHEMA CACHE, DROP FORMAT SCHEMA CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_S3_CLIENT_CACHE, "SYSTEM CLEAR S3 CLIENT CACHE, SYSTEM DROP S3 CLIENT, DROP S3 CLIENT CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
-    M(SYSTEM_DROP_TIME_SERIES_CACHES, "SYSTEM CLEAR TIME SERIES CACHES, SYSTEM DROP TIME SERIES CACHES, DROP TIME SERIES CACHES", TABLE, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_CACHE, "DROP CACHE", GROUP, SYSTEM) \
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_USERS, "RELOAD USERS", GLOBAL, SYSTEM_RELOAD) \
@@ -411,7 +410,6 @@ enum class AccessType : uint8_t
     M(SYSTEM_INSTRUMENT_ADD, "SYSTEM INSTRUMENT ADD", GLOBAL, SYSTEM) \
     M(SYSTEM_INSTRUMENT_REMOVE, "SYSTEM INSTRUMENT REMOVE", GLOBAL, SYSTEM) \
     M(SYSTEM_RESET_DDL_WORKER, "SYSTEM RESET DDL WORKER, RESET DDL WORKER", GLOBAL, SYSTEM) \
-    M(SYSTEM_RESET_FILELOG, "RESET FILELOG", TABLE, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictGetRoot, dictGetChildren, dictGetDescendants, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictGetRoot(), dictGetChildren(), dictGetDescendants(), dictIsIn() */\
@@ -451,6 +449,17 @@ enum class AccessType : uint8_t
     M(BIGQUERY, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* AI functions */ \
+    M(aiClassify, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiClassify() */\
+    M(aiEmbed, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiEmbed() */\
+    M(aiExtract, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiExtract() */\
+    M(aiFilter, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiFilter() */\
+    M(aiGenerate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiGenerate() */\
+    M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
+    M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
+    M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
+    M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\
     \
     /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \

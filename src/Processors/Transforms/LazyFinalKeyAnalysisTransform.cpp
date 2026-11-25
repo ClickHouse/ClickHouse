@@ -180,9 +180,7 @@ void LazyFinalKeyAnalysisTransform::work()
             key_node = &filter_dag.addFunction(function_tuple, filter_dag.getOutputs(), {});
         }
         const auto * set_node = &filter_dag.addColumn(std::move(set_column), std::move(set_type), "");
-        /// A skip index evaluates this predicate on stored key values, so a set that holds NULL keys needs `nullIn`.
-        const auto set = future_set->get();
-        auto function_in = FunctionFactory::instance().get(set && set->transformNullIn() ? "nullIn" : "in", query_context);
+        auto function_in = FunctionFactory::instance().get("in", query_context);
         const auto * in_func = &filter_dag.addFunction(function_in, {key_node, set_node}, {});
         filter_dag.getOutputs().push_back(in_func);
 

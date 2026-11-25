@@ -45,18 +45,15 @@ struct TimeSeriesColumnNames
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
-    static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
-    static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 
     /// Old names kept for compatibility:
 
-    /// The name of the column with the name of a metric family in the "metric families" target table of tables
-    /// of versions before 6, see `getInnerMetricFamily`.
+    /// The old name of the "metric_family" column, still used in the "metric families" target table.
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Tables created by older versions declare it as an ephemeral column and used to fill it
@@ -68,13 +65,6 @@ struct TimeSeriesColumnNames
     static constexpr const char * getOuterSamples(UInt64 version)
     {
         return (version >= TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN) ? Samples : TimeSeries;
-    }
-
-    /// Returns the name of the column with the name of a metric family in the "metric families" target table
-    /// for a TimeSeries table of the specified version.
-    static constexpr const char * getInnerMetricFamily(UInt64 version)
-    {
-        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN) ? MetricFamily : MetricFamilyName;
     }
 };
 

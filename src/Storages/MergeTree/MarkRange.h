@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cstddef>
-#include <Common/DevectorWithMemoryTracking.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
+#include <boost/container/devector.hpp>
 #include <fmt/format.h>
 #include <base/types.h>
 
@@ -30,7 +31,7 @@ struct MarkRange
     bool operator<(const MarkRange & rhs) const;
 };
 
-struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
+struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>
 {
     enum class SearchAlgorithm : uint8_t
     {
@@ -39,7 +40,7 @@ struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
         GenericExclusionSearch,
     };
 
-    using DevectorWithMemoryTracking<MarkRange>::devector;
+    using boost::container::devector<MarkRange, AllocatorWithMemoryTracking<MarkRange>>::devector; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
@@ -50,8 +51,6 @@ struct MarkRanges : public DevectorWithMemoryTracking<MarkRange>
 
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
-
-using MarkRangesPtr = std::shared_ptr<const MarkRanges>;
 
 /** Get max range.end from ranges.
  */

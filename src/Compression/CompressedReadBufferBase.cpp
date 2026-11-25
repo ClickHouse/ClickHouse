@@ -7,7 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
