@@ -3062,6 +3062,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
     }
 
+    /// The clamp above drops a passed `group_by_overflow_mode` that is equal to the value of this server, so the
+    /// explicit mode of the user would look like a default (see `explicitGroupByOverflowModeIsLost`). Mark it as
+    /// changed again. The value stays the same, so this does not get around the constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && explicitGroupByOverflowModeIsLost(passed_settings, state->query_context->getSettingsRef()))
+        state->query_context->setSetting("group_by_overflow_mode", passed_settings.get("group_by_overflow_mode"));
+
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
     /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
