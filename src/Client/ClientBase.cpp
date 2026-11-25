@@ -5705,6 +5705,19 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTabl
     if (tables.empty())
         return;
 
+    /// What this check is, and is not. It keeps the model from choosing, on its own, a query that
+    /// reaches further than the data of this server. It is done on the client before the query is
+    /// sent, so it is not bound to the metadata the server resolves at execution: another session
+    /// that swaps a table or changes a stored expression in between is not caught. It also takes
+    /// the answer of the catalog tables at face value: a row policy on `system.tables`,
+    /// `system.columns`, `system.databases` or `system.row_policies` themselves can hide a row
+    /// from it, and is evaluated by this lookup like by any other read of those tables (a
+    /// `SHOW TABLES` that the user types is one). Closing either needs enforcement by the
+    /// server while it executes the query, which does not exist; a confirmation would not do it,
+    /// because it shows the text of the query and not what its names resolve to. Both need a
+    /// party that can already alter the objects of the user or manage access, and both are
+    /// stated in the documentation of the client as the residual risk.
+
     /// Ask the server what these names are. `system.tables` only narrows its enumeration by
     /// `database = ...` and `name = ...`, so each table is looked up by a branch of its own
     /// rather than by an `IN` list over all of them: an `IN` would make the server walk every
@@ -6023,9 +6036,17 @@ namespace
 
 /// Hide the secret parts of a query that was not parsed, for the context of the AI agent. They
 /// cannot be found the way `formatForLogging` finds them (the credentials of an external engine or
-/// of a user, a presigned URL), but they are always string literals, so every string literal is
+/// of a user, a presigned URL), but they are written as string literals, so every string literal is
 /// hidden, and everything after a literal that is not closed. The structure of the query, where
-/// the syntax error is, survives. Other dialects quote their string literals with double quotes
+/// the syntax error is, survives.
+///
+/// What is not a string literal is kept, and this is a deliberate limit rather than a guarantee:
+/// a few engines (`MySQL`, ...) also accept a credential written as a name, bare or quoted, and
+/// such a name stays in the text. Without a parsed query a name cannot be told from a mistyped
+/// keyword (`ELECT`), so hiding every name hides the syntax error as well - the very thing the
+/// user asks the agent about. The documentation of the client says so.
+///
+/// Other dialects quote their string literals with double quotes
 /// (KQL, PromQL, the JSON of `clickhouse_json`) or with backticks (LogsQL), which are names in SQL,
 /// so `hide_quoted_identifiers` hides those as well - see `dialectCanQuoteStringsAsNames`.
 String hideStringLiteralsOfUnparsedQuery(std::string_view query, bool hide_quoted_identifiers, bool & hidden_parts)
