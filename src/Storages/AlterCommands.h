@@ -211,7 +211,7 @@ struct AlterCommand
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
     /// The column of `ADD COLUMN`, before the Nested expansion and the IF NOT EXISTS filter.
-    ColumnDescription getAddedColumnDescription() const;
+    [[nodiscard]] ColumnDescription getAddedColumnDescription() const;
 
     /// Changes `column` as `MODIFY COLUMN` does. The implicit indices of `metadata`, if given, follow a type change.
     void modifyColumnDescription(ColumnDescription & column, StorageInMemoryMetadata * metadata, const ContextPtr & context) const;
