@@ -766,7 +766,7 @@ QValue firstOrLast(Call & call, bool first)
     if (value.kind == QValueKind::Column && call.scope)
         call.scope->uses_row_number = true;
     QValue result = aggregate(call,
-        [&](ASTPtr column) { return fn(first ? "argMin" : "argMax", std::move(column), ident("__qrow")); },
+        [&](ASTPtr column) { return QCompiler::pickFromColumn(first ? "argMin" : "argMax", std::move(column), ident("__qrow")); },
         [&](ASTPtr list) { return fn("arrayElement", std::move(list), lit(Field(static_cast<Int64>(first ? 1 : -1)))); });
     result.is_string = value.is_string;
     return result;
@@ -778,7 +778,7 @@ QValue columnToList(Call & call, const QValue & column)
 {
     if (column.depth > 0)
         call.unsupported("This function of a column of lists");
-    QValue result = QCompiler::scalar(fn("groupArray", call.compiler.columnForAggregation(column, call.scope)), 1);
+    QValue result = QCompiler::scalar(call.compiler.collectColumn(call.compiler.columnForAggregation(column, call.scope)), 1);
     result.aggregated = true;
     result.qtype = column.qtype;
     return result;
@@ -1295,8 +1295,8 @@ const std::unordered_map<String, Handler> & handlers()
             QValue b = c.scalarArg(1);
             if (a.kind == QValueKind::Column || b.kind == QValueKind::Column)
             {
-                ASTPtr left = a.kind == QValueKind::Column ? fn("groupArray", c.compiler.columnForAggregation(a, c.scope)) : a.ast;
-                ASTPtr right = b.kind == QValueKind::Column ? fn("groupArray", c.compiler.columnForAggregation(b, c.scope)) : b.ast;
+                ASTPtr left = a.kind == QValueKind::Column ? c.compiler.collectColumn(c.compiler.columnForAggregation(a, c.scope)) : a.ast;
+                ASTPtr right = b.kind == QValueKind::Column ? c.compiler.collectColumn(c.compiler.columnForAggregation(b, c.scope)) : b.ast;
                 QValue result = QCompiler::scalar(fn("equals", left, right));
                 result.aggregated = true;
                 result.qtype = QType::Boolean;

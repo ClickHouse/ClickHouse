@@ -715,6 +715,22 @@ ASTPtr QCompiler::selectAll(const QTable & table)
     return builder.build();
 }
 
+ASTPtr QCompiler::collectColumn(ASTPtr column)
+{
+    /// A tuple is never a `NULL`, so every row gets into the array, and the values are taken out of the tuples.
+    String item = newLambdaParameter();
+    return makeASTFunction("arrayMap",
+        makeLambda({item}, makeASTFunction("tupleElement", makeIdentifier(item), makeLiteral(Field(static_cast<UInt64>(1))))),
+        makeASTFunction("groupArray", makeASTFunction("tuple", std::move(column))));
+}
+
+ASTPtr QCompiler::pickFromColumn(const String & aggregate, ASTPtr column, ASTPtr by)
+{
+    ASTPtr wrapped = makeASTFunction("tuple", std::move(column));
+    ASTPtr picked = by ? makeASTFunction(aggregate, std::move(wrapped), std::move(by)) : makeASTFunction(aggregate, std::move(wrapped));
+    return makeASTFunction("tupleElement", std::move(picked), makeLiteral(Field(static_cast<UInt64>(1))));
+}
+
 QValue QCompiler::toScalar(const QValue & value, size_t offset)
 {
     if (value.kind == QValueKind::Scalar || value.kind == QValueKind::Column)
@@ -726,7 +742,7 @@ QValue QCompiler::toScalar(const QValue & value, size_t offset)
         const auto & column = value.table->columns.front();
         QSelectBuilder builder;
         builder.from = value.table->table_expression;
-        builder.select.push_back(makeASTFunction("groupArray", makeIdentifier(column.name)));
+        builder.select.push_back(collectColumn(makeIdentifier(column.name)));
         bool is_string = false;
         size_t depth = arrayDepth(column.type, is_string);
         QValue result = scalar(make_intrusive<ASTSubquery>(builder.build()), depth + 1);
@@ -1975,7 +1991,7 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             {
                 value.kind = QValueKind::Scalar;
                 value.aggregated = true;
-                value.ast = makeASTFunction("anyLast", value.ast);
+                value.ast = pickFromColumn("anyLast", value.ast);
             }
             values.push_back(std::move(value));
         }
@@ -2014,7 +2030,7 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             QValue value = values[i];
             if (value.kind == QValueKind::Column)
             {
-                value.ast = makeASTFunction("groupArray", columnForAggregation(value, &scope));
+                value.ast = collectColumn(columnForAggregation(value, &scope));
                 value.kind = QValueKind::Scalar;
                 value.depth += 1;
             }

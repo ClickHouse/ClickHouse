@@ -172,6 +172,15 @@ public:
     /// Converts a value to a scalar: a table with one column becomes the list of its values.
     QValue toScalar(const QValue & value, size_t offset);
 
+    /// An aggregate that collects the values of a column into a list, keeping the nulls in their places.
+    /// A null of q is a `NULL`, and `groupArray` skips those: the list would be shorter than the column,
+    /// and the lists of two columns of one group would no longer match item by item.
+    ASTPtr collectColumn(ASTPtr column);
+
+    /// The value of a column in the row that an aggregate picks (`anyLast`, or `argMin` and `argMax` with `by`),
+    /// which is a null if the row has a null: these aggregates skip the nulls as well.
+    static ASTPtr pickFromColumn(const String & aggregate, ASTPtr column, ASTPtr by = nullptr);
+
     /// A query that reads all the columns of a table.
     ASTPtr selectAll(const QTable & table);
 
