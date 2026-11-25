@@ -642,7 +642,7 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         set (THINLTO_CACHE_DIR "${CMAKE_BINARY_DIR}/thinlto-cache" CACHE PATH "Directory of the ThinLTO cache")
         if (ENABLE_THINLTO_CACHE)
             # lld removes the least recently used entries above this size after each link.
-            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-cache-dir=${THINLTO_CACHE_DIR} -Wl,--thinlto-cache-policy=cache_size_bytes=40g")
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-cache-dir=${THINLTO_CACHE_DIR} -Wl,--thinlto-cache-policy=prune_interval=0s:cache_size_bytes=40g")
         endif ()
     endif()
 

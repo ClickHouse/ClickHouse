@@ -479,8 +479,8 @@ def main():
     if thinlto_cache:
         restore_thinlto_cache(info, release_type)
         cmake_cmd += f" -DTHINLTO_CACHE_DIR={THINLTO_CACHE_DIR}"
-    elif official and "-DENABLE_THINLTO=1" in cmake_cmd:
-        # An official build links once in a fresh build directory, so it would never reuse a cache.
+    elif not info.is_local_run and "-DENABLE_THINLTO=1" in cmake_cmd:
+        # Any other CI build links once in a fresh build directory, so it would never reuse a cache.
         cmake_cmd += " -DENABLE_THINLTO_CACHE=0"
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
