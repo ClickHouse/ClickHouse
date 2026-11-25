@@ -1,4 +1,4 @@
--- A UInt64 size of arrayResize of 2^63 or more must not be read as a negative size.
+-- A UInt64 size of 2^63 or more in arrayResize must not be read as negative.
 SELECT arrayResize([1, 2], 18446744073709551612); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT arrayResize([1, 2], 18446744073709551612, 7); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT arrayResize([1, 2, 3], 9223372036854775808); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
