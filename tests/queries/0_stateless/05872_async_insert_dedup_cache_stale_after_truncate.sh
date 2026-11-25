@@ -21,7 +21,7 @@ function flush_events()
 {
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, asynchronous_insert_log"
     $CLICKHOUSE_CLIENT -q "
-    SELECT ProfileEvents['AsyncInsertCacheHits'], ProfileEvents['AsyncInsertCacheStaleHits'], ProfileEvents['DuplicatedAsyncInserts']
+    SELECT ProfileEvents['AsyncInsertCacheHits'] > 0, ProfileEvents['AsyncInsertCacheStaleHits'] > 0, ProfileEvents['DuplicatedAsyncInserts']
     FROM system.query_log
     -- AND current_database = currentDatabase() -- Just to silence style check: the flush is scoped via flush_query_id below.
     WHERE type = 'QueryFinish' AND query_id IN (
