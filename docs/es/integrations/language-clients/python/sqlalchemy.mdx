@@ -31,6 +31,14 @@ with engine.connect() as conn:
     print(version)
 ```
 
+Use estas formas explícitas de URL cuando `clickhouse-sqlalchemy` también esté instalado.
+Al importar `clickhouse_connect.cc_sqlalchemy`, se conserva el registro `clickhouse://`
+de ese paquete. Si otro proveedor instalado impide registrar nuestro alias,
+la importación emite un `UserWarning` que recomienda usar una URL explícita de
+ClickHouse Connect. Los registros existentes en tiempo de ejecución se mantienen intactos y no
+se emite ninguna advertencia. Si ningún otro proveedor reclama `clickhouse://`, esta importación lo pone
+a disposición como alias de compatibilidad de ClickHouse Connect.
+
 ### ID de sesión de ClickHouse {#sqlalchemy-session-ids}
 
 De forma predeterminada, cada conexión del grupo, tanto en el dialecto síncrono como en el asíncrono, genera su propio ID de sesión de ClickHouse. Cuando las solicitudes de esa conexión llegan al mismo proceso del servidor de ClickHouse, la configuración modificada con `SET` y las tablas temporales se conservan para esa conexión. El estado de las sesiones con nombre y las comprobaciones de solapamiento dentro de una misma sesión son locales a cada proceso. En un mismo proceso del servidor, una solicitud que se solape con otra del mismo usuario e ID de sesión se rechaza de inmediato con el código de servidor 373, en lugar de ponerse en cola. Si configura un `session_id` fijo, utilice `pool_size=1, max_overflow=0` o serialice el acceso antes de que las solicitudes lleguen a ClickHouse. En ClickHouse Cloud y en otras implementaciones con balanceo de carga, las solicitudes con el mismo ID de sesión pueden llegar a servidores diferentes, por lo que no debe usar un `session_id` fijo como estado distribuido ni como mutex distribuido.
@@ -135,6 +143,10 @@ with engine.connect() as conn:
 
 Los errores que genera el driver a través de una conexión de SQLAlchemy utilizan las clases DB-API exportadas desde `clickhouse_connect.dbapi`. Son los mismos objetos de clase que las clases correspondientes de `clickhouse_connect.driver.exceptions`, por lo que SQLAlchemy los envuelve en la subclase `sqlalchemy.exc.DBAPIError` correspondiente. `StreamFailureError` es un `OperationalError` y se envuelve como `sqlalchemy.exc.OperationalError`.
 
+Si una tabla no existe, la inspección de columnas y la reflexión de tablas lanzan `sqlalchemy.exc.NoSuchTableError`. Esta excepción también hereda de `sqlalchemy.exc.NoResultFound`, por lo que los manejadores de excepciones existentes la siguen capturando. Su mensaje es `Table <database>.<table_name> does not exist`.
+
+La ejecución de SQL se rige por la [política de reintentos HTTP](/es/integrations/language-clients/python/driver-api#http-retries) del driver. Las inserciones masivas Native utilizan la [política de reintentos de inserción](/es/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
+
 Si una cancelación por parte del llamador puede interrumpir una llamada explícita a `AsyncConnection.invalidate()`, ejecute la invalidación en una tarea propia y espere a que finalice antes de propagar la cancelación. De este modo, SQLAlchemy puede completar la gestión interna del registro de conexión:
 
 ```python
@@ -217,15 +229,36 @@ Cuando SQLAlchemy inserta en línea un valor vinculado mediante `literal_binds` 
 
 Los valores `datetime` de Python con un tipo SQLAlchemy `DateTime64` de ClickHouse conservan sus microsegundos en los parámetros del lado del Client y en los literales en línea, incluidos los valores Nullable y los valores anidados en arrays y tuplas. ClickHouse aplica la precisión declarada. El tipo `datetime` de Python admite hasta seis dígitos fraccionarios. Los valores `DateTime` simples mantienen el formato de segundos enteros. En una sentencia `text()`, especifique el tipo explícitamente con `bindparam("ts", type_=DateTime64(6))` para conservar las fracciones de segundo.
 
+Un valor `pandas.Timestamp` vinculado con `DateTime64(9)` conserva sus nanosegundos en los parámetros y en los literales en línea.
+
 Los tipos de columna de SQLAlchemy deben coincidir con el esquema del servidor. Si se declara `DateTime64` sobre una columna `DateTime` del servidor, se generan fracciones de segundo, lo que puede provocar errores de conversión durante la inserción y en las comparaciones `IN`.
 
 En SQLAlchemy 2.x, los literales en línea de tipos genéricos `sqlalchemy.ARRAY` que contienen elementos `Tuple` de ClickHouse requieren `dimensions=1` (o el número de dimensiones superior correspondiente en el caso de arrays anidados) para que SQLAlchemy trate cada tupla como un único elemento. SQLAlchemy 1.4 no admite literales en línea para tipos genéricos `ARRAY`.
 
+Los parámetros `Tuple` tipados con nombre aceptan diccionarios cuyas claves coincidan exactamente con los campos declarados. El client utiliza el orden de campos de la declaración para los parámetros vinculados y los literales en línea, incluidas las tuplas con nombre dentro de arrays y de otras tuplas. Esto se aplica a las inserciones síncronas y asíncronas, a los predicados y a ambos modos de parámetros. Si faltan campos o sobran, se lanza `ProgrammingError` durante la vinculación de parámetros de consulta. Las inserciones masivas con Native mantienen su tratamiento actual. Los diccionarios que se pasan a parámetros sin tipo de `exec_driver_sql()` conservan el formateo JSON o de mapa configurado.
+
+Para tuplas con nombre dentro de valores `Map`, establezca `common.set_setting("dict_parameter_format", "map")`. Esto también conserva las fracciones de segundo de los valores `DateTime64` tipados dentro de mapas, tanto en los parámetros vinculados como en los literales en línea.
+
 Si se reutiliza un parámetro datetime con nombre, cada aparición necesita un tipo de vinculación `DateTime64` compatible para conservar las fracciones. Una aparición sin tipo o con un tipo en conflicto mantiene el formato de segundos enteros. Establezca `type_=DateTime64(6)` en cada `bindparam` o utilice nombres de parámetro distintos con los tipos adecuados.
+
+Lo mismo ocurre cuando se reutiliza un nombre de vinculación cuyas apariciones de `Tuple` con nombre declaran nombres de campo diferentes. El client recurre al tratamiento posicional para ese nombre, por lo que un valor de diccionario no se reordena y el servidor lo rechaza. Utilice nombres de parámetro distintos o pase una tupla posicional.
+
+### Tuplas con nombre {#sqlalchemy-named-tuples}
+
+Declare los campos de una tupla con nombre mediante un mapeo `elements`. Las claves deben ser cadenas no vacías y los valores pueden ser clases de tipo de ClickHouse SQLAlchemy o instancias configuradas. Los campos conservan el orden de iteración del mapeo y los nombres se ponen entre comillas automáticamente.
+
+```python
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, Tuple, UInt32
+
+details_type = Tuple(elements={"user_id": UInt32, "display name": String()})
+# Tuple(`user_id` UInt32, `display name` String)
+```
+
+Use `Tuple(UInt32, String)` o `Tuple(elements=[UInt32, String])` para tuplas sin nombre. No se pueden combinar elementos posicionales con la palabra clave `elements`.
 
 ### Indicaciones de tipo en JSON {#sqlalchemy-json-type-hints}
 
-Declara rutas JSON tipadas mediante la correspondencia `typed_paths`. El tipo de una ruta puede ser una clase de tipo de ClickHouse SQLAlchemy, una instancia configurada o una cadena con un nombre de tipo de ClickHouse. Las cadenas con nombres de tipo admiten tipos que carecen de constructor en SQLAlchemy, como `Dynamic`, y también pueden usarse para expresiones de tipo configuradas complejas. Además, conservan los nombres en un `Tuple` con nombre.
+Declara rutas JSON tipadas mediante la correspondencia `typed_paths`. El tipo de una ruta puede ser una clase de tipo de ClickHouse SQLAlchemy, una instancia configurada o una cadena con un nombre de tipo de ClickHouse. Las cadenas con nombres de tipo admiten tipos que carecen de constructor en SQLAlchemy, como `Dynamic`, y también pueden usarse para expresiones de tipo configuradas complejas.
 
 Las cadenas con nombres de tipo pueden contener tipos JSON anidados configurados, como ``Array(JSON(`child` UInt32))``. Los nombres de tipo de ClickHouse reconocidos no distinguen entre mayúsculas y minúsculas en estas cadenas y se emiten con su capitalización canónica. Cada cadena debe contener una única expresión de tipo completa. El texto sobrante al final y los argumentos JSON anidados mal formados se rechazan.
 
@@ -432,6 +465,10 @@ ClickHouse no admite CTE materializadas recursivas. Las funciones auxiliares de 
 
 ClickHouse Connect proporciona tipos de datos de ClickHouse, motores de tablas, definiciones de diccionarios, DDL de bases de datos y reflexión de tablas.
 
+`Inspector.get_table_names()` incluye todos los tipos de vistas por motivos de compatibilidad. `MetaData.reflect()` las incluye de forma predeterminada, y `only` permite seleccionar una vista por su nombre. Use `Inspector.get_view_names()` para las vistas no materializadas e `Inspector.get_materialized_view_names()` para las vistas materializadas. Ambos métodos aceptan `schema` y funcionan con SQLAlchemy 1.4.40 y versiones posteriores, incluida la 2.x. `Inspector.get_view_definition()` devuelve el `SELECT` almacenado de una vista o vista materializada y lanza `NoSuchTableError` para tablas y nombres inexistentes. Una vista reflejada no tiene motor. Su `Table` incluye `clickhousedb_table_type` con el valor `view`, `materialized_view`, `window_view` o `live_view`.
+
+`Nullable()` y `LowCardinality()` de `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` aceptan una clase o una instancia de tipo SQLAlchemy de ClickHouse y conservan su tipo concreto para los verificadores de tipos. Por ejemplo, `Nullable(String)` devuelve una instancia de `String` y puede pasarse directamente a `Column`. Los verificadores de tipos infieren `list[String]` para `[Nullable(String)]`. Si la lista también contiene otros tipos de ClickHouse, anótela como `list[ChSqlaType]` e importe `ChSqlaType` desde `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
+
 Las columnas `Variant` independientes se reflejan mediante un tipo interno de SQLAlchemy, y la autogeneración de Alembic conserva sus nombres de tipo canónicos sin procesar, sin cambios de tipo repetidos. Las columnas `Geometry` y `MultiPoint` se reflejan como tipos públicos de SQLAlchemy.
 
 ```python
@@ -460,7 +497,26 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-Las columnas reflejadas incluyen `server_default` para las expresiones `DEFAULT` y atributos específicos del dialecto, como `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized` y `clickhouse_alias`, cuando están presentes.
+Las columnas reflejadas incluyen `server_default` para las expresiones `DEFAULT`. Los objetos
+reflejados de SQLAlchemy utilizan opciones específicas del dialecto, como `clickhousedb_codec`,
+`clickhousedb_ttl`, `clickhousedb_materialized` y `clickhousedb_alias`, cuando están presentes.
+Los diccionarios públicos que devuelve `Inspector.get_columns()` conservan las
+claves `clickhouse_*` correspondientes. En estos diccionarios, `server_default`,
+`clickhouse_materialized`, `clickhouse_alias` y `clickhouse_ttl` son cadenas SQL.
+Para crear una `Column` a partir de ellas, envuelva cada una en `sqlalchemy.text()`.
+
+Use `clickhousedb_*` para las nuevas declaraciones de tablas y columnas. La metadata
+generada por el driver y las revisiones de Alembic utilizan estos nombres. ClickHouse Connect también lee
+opciones heredadas `clickhouse_*` explícitas, pero SQLAlchemy las valida con respecto al
+dialecto al que pertenece `clickhouse`. En una instalación mixta, opciones de ClickHouse Connect
+como `clickhouse_engine`, `clickhouse_ttl`, `clickhouse_settings`,
+`clickhouse_table_type` y `clickhouse_dictionary_*` pueden generar `ArgumentError`.
+Cambie su nombre a `clickhousedb_*`.
+
+ClickHouse Connect lee los valores predeterminados únicamente de `clickhousedb`. Regístrelos con
+`Table.argument_for("clickhousedb", ...)` o
+`Column.argument_for("clickhousedb", ...)`. Los argumentos de las operaciones de Alembic, como
+`op.add_column(..., clickhouse_settings={...})`, conservan sus nombres actuales.
 
 Los valores String de las cláusulas `DEFAULT`, `MATERIALIZED`, `ALIAS` y `TTL` utilizan el mecanismo de escape de cadenas de ClickHouse. El mismo mecanismo de escape se aplica a los comentarios de tablas, diccionarios y columnas, incluidos los comentarios generados por Alembic.
 
@@ -468,7 +524,7 @@ Los argumentos de clave de MergeTree, como `order_by`, `partition_by`, `primary_
 
 `Memory()`, `Log()`, `StripeLog()`, `TinyLog()`, `Null()` y `Set()` pueden usarse sin argumentos y se conservan intactos en un ciclo completo con la autogeneración de Alembic. El argumento de diccionario existente sigue siendo compatible. Use `settings={...}` para proporcionar la configuración del motor.
 
-`SummingMergeTree` y `ReplicatedSummingMergeTree` aceptan un argumento `columns` opcional que solo puede pasarse por palabra clave. Los argumentos posicionales existentes conservan su significado, por lo que `SummingMergeTree("id")` sigue estableciendo `ORDER BY id`.
+`SummingMergeTree` y `ReplicatedSummingMergeTree` aceptan un argumento `columns` opcional que solo puede pasarse por palabra clave. Los argumentos posicionales existentes mantienen su significado, por lo que `SummingMergeTree("id")` sigue estableciendo `ORDER BY id`.
 
 ```python
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
@@ -527,6 +583,117 @@ with Session(engine) as session:
     session.commit()
 ```
 
+## Vistas y funciones SQL {#sqlalchemy-views-functions}
+
+Alembic proporciona funciones auxiliares explícitas para crear, reemplazar y eliminar vistas normales y funciones SQL definidas por el usuario:
+
+```python
+from alembic import op
+
+op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events", schema="analytics")
+op.create_clickhouse_view("active_events", "SELECT id FROM analytics.events WHERE id > 13", schema="analytics", or_replace=True)
+op.drop_clickhouse_view("active_events", schema="analytics", if_exists=True)
+
+op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 13")
+op.create_clickhouse_function("analytics_increment_v1", "(value) -> value + 79", or_replace=True)
+op.drop_clickhouse_function("analytics_increment_v1", if_exists=True)
+```
+
+Ambas funciones auxiliares de creación aceptan `if_not_exists=False` y `or_replace=False`. Si se pasan ambos como `True`, se lanza `ValueError`. Los cuerpos SQL son cadenas que se envían tal cual a ClickHouse. Los nombres se ponen entre comillas como identificadores, salvo que ya estén entre comillas; el nombre de una función es un único identificador, aunque contenga un punto. Las funciones SQL son globales en el servidor, por lo que las funciones auxiliares para funciones y los métodos de inspección no tienen el argumento `schema`. Utilice nombres de función únicos a nivel global o versionados en todas las bases de datos y flujos de migración. Estas operaciones admiten la ejecución en línea y la generación de SQL sin conexión, incluidas las conexiones async de SQLAlchemy mediante `run_sync`.
+
+`or_replace=True` solicita explícitamente el reemplazo. ClickHouse puede reemplazar una tabla o vista materializada existente por una vista ordinaria con el mismo nombre, con lo que se descartan los datos del objeto anterior. `DROP VIEW` rechaza las tablas base, pero puede eliminar vistas materializadas. `IF NOT EXISTS` deja sin cambios una definición existente y no la verifica. Ni el reemplazo ni la creación condicionada pueden inferir una reversión a una versión anterior segura; escríbala explícitamente a partir de la definición previa. Las eliminaciones también requieren definiciones explícitas de reversión. Restaurar una definición no restaura los datos descartados. El reemplazo de funciones SQL requiere los privilegios `CREATE FUNCTION` y `DROP FUNCTION`.
+
+ClickHouse expande las llamadas a UDF SQL al almacenar la definición de la vista. Reemplazar una UDF SQL no actualiza las vistas existentes que la utilizan; recree o modifique explícitamente esas vistas para que usen la nueva definición.
+
+Inspeccione las vistas ordinarias con los métodos existentes `get_view_names(schema=...)` y `get_view_definition(name, schema=...)`. La inspección de funciones SQL es específica del dialecto de ClickHouse:
+
+```python
+from sqlalchemy import inspect
+
+inspector = inspect(connection)
+names = inspector.get_clickhouse_function_names()
+create_sql = inspector.get_clickhouse_function_definition("analytics_increment_v1")
+```
+
+La inspección de funciones incluye solo las funciones `SQLUserDefined` y excluye las funciones integradas y las funciones executable. Los nombres se devuelven ordenados. La definición es la sentencia `CREATE FUNCTION` completa almacenada, no solo el cuerpo de su lambda; si un nombre no existe, se lanza `sqlalchemy.exc.NoResultFound`. Los errores de acceso al catálogo se propagan. La inspección de metadata devuelve siempre texto, incluso cuando los formatos de consulta del usuario solicitan bytes. Estas funciones auxiliares no añaden entidades declarativas de vista o función, comparación mediante autogenerate ni ordenación por dependencias. Mantenga las operaciones de migración explícitas en orden de dependencias y use `render_as_batch=False` al generarlas.
+
+## Índices de omisión de datos {#sqlalchemy-skip-indexes}
+
+Declare los índices de omisión de datos de ClickHouse como argumentos de la tabla. Esta API requiere SQLAlchemy y funciona sin Alembic:
+
+```python
+from sqlalchemy import Column, MetaData, Table, inspect
+from clickhouse_connect.cc_sqlalchemy import ClickHouseIndex, engines, types
+
+metadata = MetaData()
+events = Table(
+    "events",
+    metadata,
+    Column("value", types.UInt32),
+    Column("label", types.String),
+    ClickHouseIndex("value_idx", "value", "minmax"),
+    ClickHouseIndex("label_idx", "label", "bloom_filter(0.01)", granularity=4),
+    engines.MergeTree(order_by="value"),
+)
+metadata.create_all(engine)
+
+indexes = inspect(engine).get_clickhouse_indexes("events")
+```
+
+Las expresiones y los tipos de los índices son SQL de ClickHouse sin procesar. Las definiciones son inmutables y los nombres deben ser únicos dentro de una tabla. Las declaraciones se almacenan en la opción de tabla `clickhousedb_indexes`, que también acepta una secuencia de definiciones `ClickHouseIndex`. `Table.to_metadata()` las conserva. `CREATE TABLE` las genera en línea. `if_not_exists`, `first` y `after_index` siguen disponibles para las funciones auxiliares imperativas de ALTER y no afectan a la creación en línea ni a la comparación de esquemas.
+
+`Inspector.get_clickhouse_indexes()` devuelve, para los índices explícitos, definiciones que se pueden volver a aplicar. Las expresiones reflejadas usan un envoltorio `tuple(...)` para conservar la lista de expresiones de índice de ClickHouse, incluidas las tuplas anidadas. Los índices implícitos creados por el servidor se excluyen mediante el campo `creation` del catálogo. Los errores del catálogo y las clasificaciones desconocidas lanzan un error. El catálogo debe exponer `creation`. Las notas de la versión de ClickHouse documentan este campo en la versión 26.1.1.912 y en el backport a la 25.12.2.54. La compatibilidad se comprueba mediante la propia consulta y no a partir de una cadena de versión.
+
+El método genérico `Inspector.get_indexes()` sigue devolviendo una lista vacía. `Table(..., autoload_with=engine)` no lee el catálogo de skip-index. Para copiar explícitamente tanto las columnas como los índices:
+
+```python
+inspector = inspect(engine)
+reflected = Table(
+    "events",
+    MetaData(),
+    autoload_with=engine,
+    clickhousedb_indexes=inspector.get_clickhouse_indexes("events"),
+)
+```
+
+## Proyecciones {#sqlalchemy-projections}
+
+Declare las proyecciones SELECT como argumentos de la table, sin necesidad de usar Alembic:
+
+```python
+from sqlalchemy import Column, MetaData, Table, inspect
+from clickhouse_connect.cc_sqlalchemy import ClickHouseProjection, engines, types
+
+metadata = MetaData()
+events = Table(
+    "events",
+    metadata,
+    Column("value", types.UInt32),
+    Column("label", types.String),
+    ClickHouseProjection("by_label", "SELECT value, label ORDER BY label, value"),
+    engines.MergeTree(order_by="value"),
+)
+metadata.create_all(engine)
+
+projections = inspect(engine).get_clickhouse_projections("events")
+```
+
+`select` es el SQL directo dentro de los paréntesis de la proyección. Las definiciones son inmutables y los nombres de las proyecciones deben ser únicos dentro de una tabla. La opción de tabla `clickhousedb_projections` también acepta una secuencia de definiciones `ClickHouseProjection`. `Table.to_metadata()` conserva las declaraciones, y `CREATE TABLE` las genera en línea. Los diccionarios no admiten declaraciones de proyecciones. `if_not_exists`, `first` y `after_projection` siguen disponibles para las funciones auxiliares imperativas de ALTER y no afectan a la creación en línea ni a la comparación. Las importaciones desde `clickhouse_connect.cc_sqlalchemy.alembic` y `.alembic.operations`, incluidos los argumentos posicionales existentes del constructor, siguen siendo compatibles.
+
+`Inspector.get_clickhouse_projections()` devuelve las definiciones SELECT almacenadas y conserva los comodines, los alias, la agrupación y la ordenación. No admite `WITH SETTINGS` a nivel de proyección ni las formas de proyección basadas en índices, ya que la API, limitada a SELECT, no puede conservar esas definiciones por completo. Los fallos del catálogo también lanzan un error. Un `Table(..., autoload_with=engine)` ordinario no lee el catálogo de proyecciones. Para copiar columnas y proyecciones de forma explícita:
+
+```python
+inspector = inspect(engine)
+reflected = Table(
+    "events",
+    MetaData(),
+    autoload_with=engine,
+    clickhousedb_projections=inspector.get_clickhouse_projections("events"),
+)
+```
+
+La inspección requiere una tabla de destino visible y acceso a los campos `database`, `table`, `name`, `type`, `query` y `settings` de `system.projections`. ClickHouse incorporó este catálogo en la versión 24.9.1.3278. Su presencia por sí sola no basta para confirmar que se admita la comparación. El controlador verifica las funcionalidades disponibles mediante el catálogo y las consultas de normalización.
+
 ## Migraciones con Alembic {#sqlalchemy-alembic}
 
 ClickHouse Connect incluye integración con Alembic para las migraciones de esquemas de ClickHouse. Instálalo con:
@@ -549,7 +716,23 @@ alembic init -t async alembic
 
 El archivo `alembic.ini` generado usa `script_location = %(here)s/alembic`. Mantén esa configuración si el directorio de migraciones se llama `alembic`; de lo contrario, cámbiala por el directorio que se haya pasado a `alembic init`. Reemplaza `alembic/env.py` por el [ejemplo de `env.py` de Alembic asíncrono](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) incluido en el repositorio y, a continuación, establece `sqlalchemy.url` en `alembic.ini`.
 
-Importa `clickhouse_connect.cc_sqlalchemy.alembic` en el archivo `env.py` de Alembic para registrar la integración del dialecto. La autogeneración admite las operaciones habituales de evolución de tablas, incluida la creación y eliminación de tablas, la adición/modificación/eliminación de columnas, los valores predeterminados y los comentarios. Usa operaciones manuales para cambiar el nombre de tablas y columnas. Revisa cada migración generada antes de aplicarla.
+Importa `clickhouse_connect.cc_sqlalchemy.alembic` en el archivo `env.py` de Alembic para registrar la integración del dialecto. La autogeneración admite las operaciones habituales de evolución de tablas, incluida la creación y eliminación de tablas, la adición/modificación/eliminación de columnas, los valores predeterminados, los comentarios y la configuración de tablas MergeTree. Usa operaciones manuales para cambiar el nombre de tablas y columnas. Revisa cada migración generada antes de aplicarla.
+
+En ClickHouse Cloud, añade `alter_sync=2` a la URL del motor de migraciones para que la reflexión posterior vea los cambios de esquema ya completados en todas las réplicas. Esto es importante cuando se reemplaza una conexión o cuando la autogeneración se ejecuta inmediatamente después de una actualización. `select_sequential_consistency=1` afecta a las lecturas de datos, no a los cambios de esquema.
+
+Las inserciones en la tabla de versiones omiten la deduplicación de inserciones para que una reversión a una versión anterior pueda restaurar una revisión registrada previamente. El SQL generado en modo offline usa `SETTINGS deduplicate_insert = 'disable'`, por lo que ese parámetro de configuración debe existir en el servidor de destino. Las migraciones en modo online usan el parámetro de configuración heredado `insert_deduplicate = 0` cuando el servidor no dispone del más reciente. Las inserciones en tablas ordinarias mantienen el comportamiento de deduplicación configurado.
+
+La autogeneración compara el motor de tabla declarado con el del servidor en las tablas presentes en ambos. La migración automática de cambios en la familia del motor, los argumentos posicionales del motor, `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY` y el `TTL` de la tabla no es compatible, por lo que cualquier diferencia lanza `UnsupportedTableChangeError` en lugar de escribir una revisión vacía o engañosa. Escribe una migración explícita después de revisar qué operaciones ALTER admite el servidor y qué datos se ven afectados. La excepción incluye una tupla `drifts` de registros `TableOptionDrift` con la tabla, la opción y ambas formas de escritura. Para construir la excepción se necesita al menos una deriva; de lo contrario, lanza `ValueError`. Las expresiones se comparan tras normalizarlas y, si el texto sigue difiriendo, `formatQuerySingleLine` del servidor resuelve equivalencias como `INTERVAL 30 DAY` frente a `toIntervalDay(30)`. En los argumentos del motor entre comillas se compara exactamente el contenido de la cadena decodificada, incluidos los espacios en blanco y la puntuación. Las cláusulas TTL se formatean como `ALTER TABLE t MODIFY TTL ...`, conservando acciones como `DELETE WHERE`, `TO VOLUME` y `RECOMPRESS`. `MergeTree` y las variantes `Shared*` y `Replicated*` de Cloud se consideran una sola familia, y los argumentos de ruta de replicación no se comparan.
+
+Los `settings` del motor declarados que difieren de los del servidor se generan como `op.modify_clickhouse_table_settings(...)`, con una reversión a una versión anterior que restaura o restablece cada parámetro de configuración. Los valores y tipos de `system.merge_tree_settings` permiten resolver los valores predeterminados y las formas equivalentes de escribir valores booleanos y numéricos; los parámetros de configuración de tipo cadena conservan su significado como cadena. Los parámetros de configuración que el modelo no declara se conservan, incluidos los que se eliminaron del modelo después de una migración anterior. La reflexión no puede distinguirlos de los parámetros de configuración inyectados por el servidor, por lo que la autogeneración nunca los restablece automáticamente. Usa `op.reset_clickhouse_table_settings(...)` explícitamente cuando quieras restablecerlos. Los parámetros de configuración de solo lectura, como `index_granularity` e `index_granularity_bytes`, se comparan y rechazan igual que las claves. Pasa `clickhousedb_compare_table_options=False` a `context.configure()` para omitir la comparación.
+
+Las vistas y vistas materializadas reflejadas no son tablas. `include_object` las excluye, por lo que la autogeneración nunca propone `drop_table` para una vista que no figure en los metadata. Gestiónalas con las funciones auxiliares habituales para vistas o vistas materializadas.
+
+`op.alter_column(..., server_default=None)` emite `MODIFY COLUMN ... REMOVE DEFAULT`, que es la única forma que el servidor acepta. El servidor rechaza la sentencia cuando la columna no tiene `DEFAULT` o usa `MATERIALIZED` o `ALIAS`, por lo que solo debes solicitar la eliminación cuando exista un valor predeterminado. Un cambio de tipo por sí solo conserva el valor predeterminado existente. Las opciones de columna del dialecto siguen la misma regla: pasa `clickhousedb_codec=None`, `clickhousedb_ttl=None`, `clickhousedb_alias=None` o `clickhousedb_materialized=None` para eliminar la propiedad, o un valor para definirla. Definir o eliminar únicamente estas propiedades no requiere `existing_type`. Usa `text(...)` para las expresiones SQL de TTL, alias y materializadas, por ejemplo `clickhousedb_ttl=text("ts + INTERVAL 7 DAY")`. Las opciones que no se pasan permanecen sin cambios. Se aceptan tanto los nombres `clickhousedb_` como los nombres heredados `clickhouse_`; cuando se pasan ambos a `alter_column`, prevalece el valor explícito de `clickhousedb_`, incluido `None`.
+
+Cuando los metadata omiten la versión del estado de `AggregateFunction`, la autogeneración acepta la versión reflejada existente. Por ejemplo, `AggregateFunction(uniq, UInt32)` coincide con el tipo reflejado `AggregateFunction(1, uniq, UInt32)`. Esto también se aplica dentro de tipos anidados. Los cambios en la función de agregación, sus parámetros o los tipos de sus argumentos siguen generando un cambio de tipo.
+
+Una versión explícita en los metadata debe coincidir con la versión reflejada. Los tipos reflejados heredados sin versión coinciden con la versión explícita `0`. Omitir la versión no implica solicitar la actualización del formato de estado existente tras actualizar el servidor. Declara una versión explícita si quieres cambiar el formato de estado.
 
 Las funciones de migración de Alembic siguen siendo síncronas. Un entorno asíncrono crea un `AsyncEngine`, abre una `AsyncConnection` y pasa la función de migración síncrona a `await connection.run_sync(...)`. Las migraciones en modo offline llaman directamente a `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})` y no crean ningún motor. El [ejemplo de `env.py` de Alembic asíncrono](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) incluido en el repositorio contempla ambos modos y lee la URL de conexión a través de la configuración estándar `sqlalchemy.url` de Alembic. Además, mantiene los hooks y las opciones de Alembic para ClickHouse del ejemplo completo, incluidos `include_object`, `make_include_name(...)`, `clickhouse_writer` y `version_table`. No uses `engine.sync_engine` para ejecutar o liberar migraciones asíncronas.
 
@@ -558,12 +741,190 @@ Las funciones auxiliares específicas de ClickHouse `op.*` cubren:
 * índices de omisión de datos, incluidas las operaciones de agregar, materializar y eliminar.
 * proyecciones, incluidas las operaciones de agregar, materializar y eliminar.
 * modificación y restablecimiento de la configuración de tablas MergeTree.
+* creación, reemplazo y eliminación de vistas ordinarias y funciones SQL.
 * creación y eliminación de vistas materializadas.
 * creación, eliminación y recarga de diccionarios.
 
-Los índices de omisión de datos de ClickHouse no son índices de SQLAlchemy. `Index`, `Column(index=True)`, `op.create_index` y `op.drop_index` se rechazan para evitar DDL parciales o incorrectos. Usa `op.add_clickhouse_index` y `op.drop_clickhouse_index`.
+**Nota sobre la actualización:** De forma predeterminada, Alembic compara los índices de omisión explícitos y las proyecciones SELECT. Los objetos creados únicamente mediante migraciones imperativas anteriores pueden generar eliminaciones si no figuran en los metadata de las tablas gestionadas. Antes de actualizar, decláralos con `ClickHouseIndex` o `ClickHouseProjection`, excluye los objetos no gestionados con `include_name` o `include_object`, o desactiva la comparación correspondiente en `context.configure()`:
 
-Consulta el [ejemplo completo de Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). Los usuarios que migren desde `clickhouse-sqlalchemy` también deberían leer la [guía de migración](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
+```python
+context.configure(
+    connection=connection,
+    target_metadata=metadata,
+    clickhousedb_compare_indexes=False,
+    clickhousedb_compare_projections=False,
+)
+```
+
+Cada opción omite sus lecturas del catálogo y las instantáneas de reversión para la eliminación de tablas. Las modificaciones generan operaciones separadas de eliminación y adición. La reversión restaura las definiciones, pero ninguna de las dos direcciones restaura la materialización previa. Reemplazar una proyección descarta sus partes de proyección existentes. Evalúa ese coste de reconstrucción y ejecuta `MATERIALIZE PROJECTION` explícitamente cuando las partes existentes necesiten el reemplazo de inmediato. La materialización de índices también sigue siendo explícita.
+
+Declara los índices de omisión con `ClickHouseIndex` para que la autogeneración los admita, o usa las funciones auxiliares existentes `op.add_clickhouse_index` y `op.drop_clickhouse_index` en revisiones explícitas. Las importaciones desde `clickhouse_connect.cc_sqlalchemy.alembic` y `.alembic.operations` siguen siendo compatibles. Los elementos estándar de SQLAlchemy `Index`, `Column(index=True)`, `op.create_index` y `op.drop_index` se siguen rechazando.
+
+En las tablas gestionadas, las declaraciones determinan de forma predeterminada el conjunto explícito de índices activos. Un índice explícito no declarado genera una operación de eliminación, incluidos los índices creados anteriormente solo mediante migraciones imperativas. Un cambio en la expresión, el tipo de índice, un parámetro o la granularidad efectiva genera una eliminación separada seguida de una adición. La reversión restaura la definición previa. Las operaciones siguen siendo visibles para `process_revision_directives` antes de generarse. Los hooks de política deben emparejar las modificaciones de índices y proyecciones por esquema, tabla y nombre de objeto. No dependas de que aparezcan contiguas. Ninguna de las dos direcciones restaura la materialización previa y no se genera ningún `MATERIALIZE INDEX`. Materializa explícitamente si las partes existentes necesitan el índice de inmediato.
+
+Genere las adiciones, eliminaciones y modificaciones de índices con `render_as_batch=False`. Sus helpers no admiten la cola batch diferida de Alembic, por lo que `render_as_batch=True` lanza un error durante la generación. Se siguen admitiendo los índices en línea en la creación de tablas y en las instantáneas de downgrade de eliminación de tablas.
+
+La misma restricción se aplica a otras operaciones personalizadas de ClickHouse dentro de un bloque batch, incluidas la configuración de la tabla, las proyecciones y la materialización. Genere estas operaciones fuera del modo batch.
+
+Para la recreación física en modo batch con `op.batch_alter_table()`, pase una Table `copy_from` completa que contenga las columnas, el engine y `clickhousedb_indexes`. Use el ejemplo de reflexión explícita anterior para cargar tanto las columnas como los índices, o proporcione metadatos completos para las migraciones offline. La recreación automática online lee el catálogo de índices en tiempo de ejecución y rechaza las tablas con índices explícitos antes de crear o eliminar tablas. Desactivar la comparación de autogenerate no elude esta protección.
+
+Los hooks estándar `include_name` e `include_object` reciben `type_="index"`. Los filtros por nombre se aplican tanto a los candidatos reflejados como a los declarados, de modo que un nombre excluido queda sin gestionar. Los filtros de objetos reciben los valores habituales `reflected` y `compare_to`. Sus objetos de índice exponen los campos de la definición y `.table`. Por ejemplo, la receta estándar de Alembic para objetos no gestionados, `reflected and compare_to is None`, protege los índices creados únicamente de forma imperativa. Los filtros de tablas se aplican antes de leer el catálogo de índices. Los índices en línea de las tablas recién creadas también se filtran antes de los hooks de políticas.
+
+La comparación utiliza el formateo y el análisis del servidor para tener en cuenta las distintas grafías y los valores predeterminados de ClickHouse. El análisis de expresiones utiliza la tabla actual, las funciones del servidor y los ajustes. Requiere el analyzer y la salida esperada de `EXPLAIN`. Estas capacidades se verificaron con ClickHouse 26.8, con revisión del código fuente en la versión 26.6. El campo del catálogo por sí solo no garantiza que la comparación sea compatible con un servidor más antiguo. Si se modifican definiciones `ALIAS` que afectan a un índice, se requiere una migración explícita de la columna antes de comparar los índices.
+
+Una modificación de índice puede hacer referencia a una columna física añadida en la misma revisión. Si el análisis notifica esa nueva columna programada como un identificador desconocido, autogenerate valida la expresión completa con las columnas añadidas disponibles y, a continuación, emite la adición de la columna antes de eliminar y volver a añadir el índice. Otros identificadores desconocidos, como errores tipográficos o columnas excluidas por filtros, siguen lanzando `IndexComparisonError`.
+
+Los paréntesis de tipo vacíos y las diferencias entre mayúsculas y minúsculas, como `minmax()`, `MinMax()` y `minmax`, se consideran equivalentes en la comparación. Los argumentos de tipo omitidos no se expanden para la comparación: cambiar entre `bloom_filter` y `bloom_filter(0.025)` puede provocar una eliminación y adición puntual, aunque el servidor utilice ese valor predeterminado.
+
+La comparación no determina la equivalencia de expresiones SQL arbitrarias. Si la normalización se completa correctamente pero las formas resultantes difieren, autogenerate genera un reemplazo aunque las expresiones devuelvan los mismos valores. Revise estos cambios o gestione esos índices mediante migraciones explícitas y filtros.
+
+Si el acceso al catálogo, la resolución de expresiones o la salida de normalización esperada no están disponibles, autogenerate lanza `IndexComparisonError`, que incluye la tabla, el índice, las definiciones declarada y reflejada, y el motivo. Revise las modificaciones con atención. La eliminación y la adición son sentencias independientes y no transaccionales, por lo que una adición fallida puede dejar la tabla sin el índice anterior.
+
+### Autogenerate de proyecciones {#projection-autogenerate}
+
+De forma predeterminada, Alembic compara las proyecciones SELECT de las tablas administradas. Las declaraciones determinan el conjunto de proyecciones activas. Las proyecciones no declaradas generan eliminaciones, y las definiciones modificadas generan operaciones independientes de eliminación y adición. En cada tabla, autogenerate ordena las operaciones así: eliminaciones de proyecciones, adiciones y modificaciones de columnas, operaciones de índices, adiciones de proyecciones y, por último, eliminaciones de columnas. Alembic añade las eliminaciones de columnas una vez que finalizan los comparadores de tablas. En los hooks de política, empareje las modificaciones por esquema, tabla y nombre de proyección. Entre la eliminación y la adición pueden aparecer otras operaciones. Las reversiones a una versión anterior restauran las definiciones previas, incluidas las proyecciones de las tablas eliminadas que se vuelven a crear. Las operaciones exponen las definiciones completas a `process_revision_directives` antes del renderizado. No se genera ningún `MATERIALIZE PROJECTION`, y ni la actualización ni la reversión restauran la materialización previa de las partes. Materialice la proyección explícitamente cuando las partes existentes la necesiten de inmediato.
+
+Para `AggregatingMergeTree` y otros motores con un comportamiento de fusión no estándar, ClickHouse rechaza `ADD PROJECTION` cuando `deduplicate_merge_projection_mode='throw'`. Establézcalo explícitamente en `drop` o `rebuild` antes de aplicar adiciones o reemplazos de proyecciones, incluidos los reemplazos de proyecciones declaradas originalmente en línea.
+
+`include_name` e `include_object` reciben `type_="projection"`. Los filtros de nombre se aplican tanto a los nombres reflejados como a los declarados. Los filtros de objeto reciben definiciones con `.table`, `reflected` y `compare_to`. La receta habitual `reflected and compare_to is None` protege las proyecciones exclusivamente imperativas. Los filtros de tabla se ejecutan antes de las lecturas del catálogo, y las definiciones en línea de las tablas recién creadas se filtran antes de los hooks de política. Las definiciones no compatibles de proyecciones filtradas o de tablas no relacionadas no bloquean la comparación.
+
+La comparación utiliza el especificador de formato completo de la gramática de proyecciones del servidor y los nombres de funciones y alias que no distinguen entre mayúsculas y minúsculas de `system.functions`, siguiendo la normalización de CREATE de ClickHouse. Conserva la estructura del SELECT, incluidos los comodines y las expresiones de agregación, en lugar de analizar un SELECT ordinario contra la tabla activa. Las diferencias de formateo, de entrecomillado de identificadores y de grafía en funciones registradas que no distinguen entre mayúsculas y minúsculas no se tienen en cuenta. Los nombres que distinguen entre mayúsculas y minúsculas, como `sumIf` y `SumIf`, se siguen considerando distintos. Cuando las definiciones formateadas difieren, la comparación también verifica el árbol sintáctico analizado, que ignora los paréntesis de agrupación. Los paréntesis redundantes y las grafías equivalentes de operadores y funciones, como `value + 13` y `plus(value, 13)`, se consideran iguales, ya que las distintas versiones de ClickHouse y ClickHouse Cloud almacenan los paréntesis redundantes de forma inconsistente. El resto de diferencias estructurales generan operaciones de eliminación y adición. La comparación no garantiza la equivalencia de SQL arbitrario ni valida las dependencias de columnas. Un reemplazo puede hacer referencia a una columna física añadida anteriormente en la misma revisión. Revise las dependencias, incluidas las columnas ALIAS modificadas, antes de aplicarlo. Las dependencias no válidas provocan un error al ejecutarse el DDL, y una adición fallida puede dejar la tabla sin la proyección anterior, ya que la eliminación y la adición son sentencias independientes y no transaccionales.
+
+Los campos de catálogo ausentes, los errores de acceso al catálogo, la falta de metadata de formateo o de funciones, `WITH SETTINGS` a nivel de proyección y las formas basadas en índices generan `ProjectionComparisonError` con la tabla, la proyección, las definiciones declaradas y reflejadas, y el motivo. Si la normalización falla, se genera este diagnóstico en lugar de un reemplazo. Filtre las proyecciones no compatibles o adminístrelas con migraciones explícitas. Si `query_masking_rules` modifica el texto SELECT devuelto por el catálogo, la comparación y la reproducción pueden no ser fiables. Utilice migraciones explícitas, filtros o la opción de exclusión de la comparación para las proyecciones afectadas. La normalización de funciones requiere los campos `name`, `is_aggregate`, `case_insensitive` y `alias_to` en `system.functions`. La compatibilidad se comprueba mediante consultas reales al catálogo y al especificador de formato, no a partir de cadenas de versión.
+
+Genere las adiciones, eliminaciones y modificaciones de proyecciones con `render_as_batch=False`. Las definiciones CREATE en línea y las instantáneas de reversión de eliminación de tablas siguen siendo compatibles. Para la recreación física por lotes, proporcione metadata `copy_from` completa que incluya las columnas, el motor y `clickhousedb_projections`. La recreación automática en línea lee el catálogo de proyecciones y rechaza las tablas con proyecciones antes de ejecutar el DDL. La opción de exclusión de la comparación no omite esa protección de ejecución.
+
+Consulte el [ejemplo práctico completo de Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). Los usuarios que migren desde `clickhouse-sqlalchemy` también deben leer la [guía de migración](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
+
+### Clasificar las operaciones generadas antes de renderizarlas {#classify-generated-operations-before-rendering}
+
+Las 21 clases de operaciones de migración de ClickHouse son públicas en
+`clickhouse_connect.cc_sqlalchemy.alembic` y en su módulo `operations`. Use
+`isinstance` para inspeccionarlas en `process_revision_directives` o regístrelas
+con `Rewriter.rewrites` de Alembic. Los nombres antiguos con guion bajo siguen siendo alias de
+las mismas clases, por lo que los registros e importaciones existentes continúan funcionando.
+
+Los campos públicos de inspección coinciden con los argumentos del constructor. Las operaciones de tabla exponen
+`table_name`, `schema` y `clickhouse_settings`. Las operaciones sobre un único índice exponen
+`name`. Las adiciones también exponen `expression`, `type_`, `granularity`, `if_not_exists`,
+`first` y `after_index`. Las adiciones de proyecciones exponen `select` y
+`after_projection` en lugar de los campos de expresión, tipo y granularidad del índice. Las eliminaciones
+exponen `if_exists` y, en el caso de índices o proyecciones individuales, `existing_index` o
+`existing_projection` cuando se dispone de una definición previa. Las materializaciones
+exponen `if_exists` y `partition`. Las adiciones agrupadas almacenan `indexes` o
+`projections` como tuplas de `ClickHouseIndex` o `ClickHouseProjection`. Las eliminaciones
+agrupadas almacenan `names` como una tupla. Inspeccione cada uno de los miembros de una operación agrupada.
+
+`ModifyClickHouseTableSettingsOp` expone `settings` y, opcionalmente,
+`existing_settings`. `ResetClickHouseTableSettingsOp` expone una tupla de `names`.
+Esta configuración de la tabla es distinta de la correspondencia `clickhouse_settings` a nivel de consulta.
+Las operaciones de creación de vistas y funciones exponen `name`, `select` o `expression`,
+`if_not_exists` y `or_replace`. Las vistas también exponen `schema`. La creación de
+vistas materializadas expone `name`, `schema`, `to_table`, `to_schema`, `select` e
+`if_not_exists`. La creación de diccionarios expone `name`, `schema`, una tupla `columns`,
+`primary_key`, `source`, `layout`, `lifetime`, `comment`, `if_not_exists` y
+`clickhouse_settings`. Las eliminaciones de vistas, funciones, vistas materializadas y diccionarios exponen
+`name` e `if_exists`, además de `schema` y `clickhouse_settings` cuando
+el constructor los admite. La recarga de diccionarios expone `name` y `schema`. Los fragmentos SQL
+se mantienen como cadenas. Las correspondencias conservan los valores proporcionados. Las operaciones inversas pueden
+requerir definiciones previas o lanzar `NotImplementedError`. Una definición reversible
+no restaura los datos materializados.
+
+Este ejemplo es una política de la aplicación, no una garantía de seguridad del controlador. Solo permite
+una forma de índice o un ajuste de tabla elegidos explícitamente, envía a revisión los reemplazos y
+las operaciones desconocidas, y rechaza las eliminaciones independientes de índices, las eliminaciones independientes de
+proyecciones y las operaciones integradas destructivas. Adapte estas reglas a su implementación. Incluso
+las operaciones de creación requieren inspeccionar los campos: `or_replace=True` en una vista puede descartar los
+datos de una tabla con el mismo nombre, y los cuerpos SQL sin procesar y los orígenes de diccionarios deben revisarse.
+
+```python
+import logging
+
+from alembic.operations import ops
+from clickhouse_connect.cc_sqlalchemy import alembic as ch_alembic
+
+
+def leaves(operation):
+    if isinstance(operation, ops.OpContainer):
+        for child in operation.ops:
+            yield from leaves(child)
+    else:
+        yield operation
+
+
+def object_key(operation):
+    if isinstance(operation, (ch_alembic.AddClickHouseIndexOp,
+                              ch_alembic.DropClickHouseIndexOp)):
+        kind = "index"
+    elif isinstance(operation, (ch_alembic.AddClickHouseProjectionOp,
+                                ch_alembic.DropClickHouseProjectionOp)):
+        kind = "projection"
+    else:
+        return None
+    return kind, operation.schema, operation.table_name, operation.name
+
+
+def classify_tree(tree, direction):
+    operations = list(leaves(tree))
+    adds = {object_key(op) for op in operations if isinstance(
+        op, (ch_alembic.AddClickHouseIndexOp, ch_alembic.AddClickHouseProjectionOp))}
+    drops = {object_key(op) for op in operations if isinstance(
+        op, (ch_alembic.DropClickHouseIndexOp, ch_alembic.DropClickHouseProjectionOp))}
+    replacements = adds & drops
+    for operation in operations:
+        verdict, reason = "review", "operation needs explicit review"
+        if isinstance(operation, (ops.DropTableOp, ops.DropColumnOp, ops.ExecuteSQLOp)):
+            verdict, reason = "rejected", "destructive change or opaque SQL"
+        elif object_key(operation) in replacements:
+            reason = "replacement can discard existing materialization"
+        elif isinstance(operation, (ch_alembic.DropClickHouseIndexOp,
+                                    ch_alembic.DropClickHouseProjectionOp,
+                                    ch_alembic.DropClickHouseIndexesOp,
+                                    ch_alembic.DropClickHouseProjectionsOp)):
+            verdict, reason = "rejected", "removal requires a separate migration"
+        elif direction == "upgrade":
+            if isinstance(operation, ch_alembic.AddClickHouseIndexOp):
+                if (operation.type_ == "minmax" and operation.expression == "value"
+                        and operation.granularity == 1 and not operation.first
+                        and operation.after_index is None and not operation.clickhouse_settings):
+                    verdict, reason = "allowed", "approved index definition"
+            elif isinstance(operation, ch_alembic.ModifyClickHouseTableSettingsOp):
+                if (dict(operation.settings) == {"max_bytes_to_merge_at_max_space_in_pool": 107374182400}
+                        and not operation.clickhouse_settings):
+                    verdict, reason = "allowed", "approved table setting value"
+        yield direction, operation, verdict, reason
+
+
+def review_revision(context, revision, directives):
+    # Scope: a single-engine env.py. clickhouse_writer uses singular roots.
+    for script in directives:
+        if len(script.upgrade_ops_list) != 1 or len(script.downgrade_ops_list) != 1:
+            raise ValueError("This policy hook supports one operation stream only")
+        findings = [
+            *classify_tree(script.upgrade_ops_list[0], "upgrade"),
+            *classify_tree(script.downgrade_ops_list[0], "downgrade"),
+        ]
+        for direction, op, verdict, reason in findings:
+            logging.getLogger("alembic.policy").info(
+                "%s: %s: %s: %s", direction, type(op).__name__, verdict, reason)
+        blocked = [f"{direction}: {type(op).__name__}: {verdict}: {reason}"
+                   for direction, op, verdict, reason in findings
+                   if direction == "upgrade" and verdict != "allowed"]
+        if blocked:
+            raise ValueError("Migration requires review:\n" + "\n".join(blocked))
+    ch_alembic.clickhouse_writer(context, revision, directives)
+```
+
+Pase `process_revision_directives=review_revision` a `context.configure()` en
+lugar de `clickhouse_writer`. El hook registra los hallazgos en ambas direcciones y condiciona la generación de revisiones a
+los hallazgos de actualización. Los hallazgos de reversión a una versión anterior requieren una revisión aparte antes de ejecutar
+una reversión, pero no bloquean la escritura de una actualización aprobada. El hook recorre los contenedores anidados y empareja los reemplazos por
+tipo, esquema, tabla y nombre, sean o no adyacentes. Las adiciones agrupadas y todas
+las operaciones no reconocidas quedan, de forma predeterminada, pendientes de revisión. Esta receta admite un único motor y
+un único stream de operaciones por dirección. Usar listas de raíces en el clasificador no
+convierte `clickhouse_writer` en un hook multimotor. Un árbol generado vacío solo demuestra
+que las comparaciones habilitadas y compatibles no encontraron cambios. Las vistas, funciones,
+diccionarios y demás comparaciones no compatibles siguen requiriendo migraciones explícitas.
 
 ## Alcance y limitaciones {#scope-and-limitations}
 

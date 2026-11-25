@@ -13,7 +13,7 @@ class SourceNode final : public ITableExpressionNode
 public:
     SourceNode() : ITableExpressionNode(0 /*children_size*/) {}
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
     }
@@ -22,7 +22,7 @@ public:
     {
     }
 
-    bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
     {
         return true;
     }
@@ -31,12 +31,12 @@ public:
     {
     }
 
-    QueryTreeNodePtr cloneImpl() const override
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override
     {
         return std::make_shared<SourceNode>();
     }
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & /* options */) const override
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & /* options */) const override
     {
         return nullptr;
     }

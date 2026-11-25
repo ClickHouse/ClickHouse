@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_execution_speed">
-  ## max_execution_speed
-</div>
+## max_execution_speed {#max_execution_speed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -22,9 +20,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
 Если скорость выполнения слишком высока, она будет снижена.
 
-<div id="max_execution_speed_bytes">
-  ## max_execution_speed_bytes
-</div>
+## max_execution_speed_bytes {#max_execution_speed_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -32,25 +28,11 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings/other#timeout_before_checking_execution_speed).
 Если скорость выполнения слишком высока, она будет снижена.
 
-<div id="max_execution_time">
-  ## max_execution_time
-</div>
+## max_execution_time {#max_execution_time}
 
-<SettingsInfoBlock type="Секунды" default_value="0" />
+<SettingsInfoBlock type="Seconds" default_value="0" />
 
 Максимальное время выполнения запроса в секундах.
-
-Параметр `max_execution_time` бывает не так просто понять.
-Он работает на основе интерполяции относительно текущей скорости выполнения запроса
-(это поведение задаётся параметром [`timeout_before_checking_execution_speed`](/ru/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
-
-ClickHouse прервёт запрос, если прогнозируемое время выполнения превысит
-указанное значение `max_execution_time`. По умолчанию параметр `timeout_before_checking_execution_speed`
-равен 10 секундам. Это означает, что после 10 секунд выполнения запроса ClickHouse
-начнёт оценивать общее время выполнения. Если, например, для `max_execution_time`
-задано 3600 секунд (1 час), ClickHouse завершит запрос, если расчётное
-время превысит этот лимит в 3600 секунд. Если установить `timeout_before_checking_execution_speed`
-в 0, ClickHouse будет использовать фактическое время по часам как основу для `max_execution_time`.
 
 Если время выполнения запроса превысит указанное число секунд, поведение будет
 определяться параметром `timeout_overflow_mode`, который по умолчанию установлен в `throw`.
@@ -62,9 +44,7 @@ ClickHouse прервёт запрос, если прогнозируемое в
   будет больше значения этой настройки.
 </Note>
 
-<div id="max_execution_time_leaf">
-  ## max_execution_time_leaf
-</div>
+## max_execution_time_leaf {#max_execution_time_leaf}
 
 <SettingsInfoBlock type="Секунды" default_value="0" />
 

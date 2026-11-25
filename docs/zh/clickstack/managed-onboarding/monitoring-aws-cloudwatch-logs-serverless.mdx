@@ -1,0 +1,339 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless
+title: '使用 OpenTelemetry 收集 AWS CloudWatch 日志'
+sidebarTitle: '收集 CloudWatch 日志'
+description: '运行一个轻量级 OpenTelemetry 收集器，轮询您的 CloudWatch 日志组并将事件直接发送到 ClickHouse Observability，随后即可按日志组和日志 stream 搜索这些事件。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'AWS', 'CloudWatch', 'CloudWatch 日志', 'OpenTelemetry 收集器', 'aws_cloudwatch', 'OTLP', 'Lambda 日志']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { TrackedLink } from '/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx';
+
+<Info>
+  **TL;DR**
+
+  选择所需的 CloudWatch 日志组，将服务 **Collector config** 选项卡中的导出器块粘贴到一份简短的 OpenTelemetry 收集器配置中，然后用 Docker Compose 启动。采集器会轮询这些日志组，并将每个事件直接发送到 ClickHouse Observability，同时为事件标记其所属的日志组和 stream。
+
+  所需时间：约 15 分钟
+</Info>
+
+您已创建了 ClickHouse Observability 服务。如果所需日志已存储在 CloudWatch 中，例如来自 Lambda 函数、ECS 任务、RDS、VPC 流日志，或任何其他写入日志组的来源，请参阅本指南。
+
+该方案采用标准的 OpenTelemetry 模式：由一个配备 [`aws_cloudwatch` 接收器](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)的采集器通过 CloudWatch 日志 API 轮询您的日志组，并将事件直接发送到服务的 OTLP 端点。采集器可在任何具备 Docker 且能访问 AWS API 的环境中运行。若部署在与日志组同一区域的 EC2 实例上，可降低 API 延迟和数据传输成本。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务。如果您还没有，请参阅[入门指南](/zh/clickstack/observability/getting-started)进行创建。
+* 一个 AWS 账户，其中包含一个或多个 CloudWatch 日志组，并且您拥有创建或使用凭证读取这些日志组的权限。
+* 一台已安装 Docker 和 [AWS CLI](https://aws.amazon.com/cli/) 的主机，并且该主机能够通过端口 `4318` 以出站 HTTPS 方式访问您服务的遥测数据端点。
+
+请在该主机的同一个命令行环境中运行 AWS 和 Docker 命令。采集器会从该命令行环境的环境变量中读取 AWS 凭证。
+
+## 配置采集器 {#set-up-the-collector}
+
+<Steps>
+  <Step title="配置 AWS 凭证" id="set-up-aws-credentials">
+    该接收器使用标准的 AWS SDK 凭证链，因此凡是适用于 AWS CLI 的凭证配置，同样适用于采集器。所用凭证需具备列出日志组及读取其中事件的权限：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsList",
+          "Effect": "Allow",
+          "Action": "logs:DescribeLogGroups",
+          "Resource": "*"
+        },
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": "logs:FilterLogEvents",
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    将 `YOUR_ACCOUNT_ID` 替换为您的 AWS 账户 ID。导出凭证，然后确认凭证可用：
+
+    <Tabs>
+      <Tab title="AWS SSO" id="aws-sso">
+        ```shell
+        aws sso login --profile YOUR_PROFILE_NAME
+        eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+        aws sts get-caller-identity
+        ```
+
+        SSO 凭证有有效期，通常在 8 到 12 小时后过期。届时请重新运行上述命令以刷新并导出凭证，然后在 Compose 目录中运行 `docker compose up -d --force-recreate otel-collector`。重新创建容器才会应用新的环境变量；仅重启容器则会沿用已过期的凭证。改用访问密钥或实例角色可避免这种中断。
+      </Tab>
+
+      <Tab title="IAM 访问密钥" id="iam-access-keys">
+        ```shell
+        export AWS_ACCESS_KEY_ID="your-access-key-id"
+        export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+        export AWS_REGION="us-east-1"
+        aws sts get-caller-identity
+        ```
+      </Tab>
+    </Tabs>
+
+    <Info>
+      **生产环境凭证**
+
+      在生产环境中，请将策略附加到主机，而不是导出密钥：在 EC2 上使用 IAM role，在 EKS 上使用 IRSA，在 ECS 上使用任务角色。这样，采集器会从实例元数据服务获取凭证，下方的 Compose 文件也无需配置任何 AWS 变量。
+    </Info>
+  </Step>
+
+  <Step title="选择日志组" id="pick-your-log-groups">
+    列出您所在区域中的日志组，以便使用准确的日志组名称，并确认区域无误：
+
+    ```shell
+    aws logs describe-log-groups --region us-east-1 \
+      --query 'logGroups[].logGroupName' --output table
+    ```
+
+    记下所需的日志组名称。具有相同前缀 (例如 `/aws/lambda/`) 的日志组，可在编写配置时一并选取。
+  </Step>
+
+  <Step title="复制连接详情" id="copy-connection-details">
+    打开您的 ClickHouse Observability 服务。在收到数据之前，该服务会显示 **Start sending telemetry** 页面。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Start sending telemetry 页面，显示当前服务尚无数据，并提供三个选项：Use an existing OpenTelemetry setup、Instrument with AI 和 Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    在 **Use an existing OpenTelemetry setup** 下，选择 **View connection details**，然后打开 **Collector config** 选项卡。该选项卡会显示一个为您的服务预先生成的导出器块，其中包含端点以及一个 `authorization` 请求头，该请求头中已带有附加 `Bearer` 前缀的 API key。选择 **Reveal key** 显示完整密钥，然后点击复制按钮进行复制。
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Set up OpenTelemetry 对话框，已选中 Collector config 选项卡，显示一个 otlphttp 导出器，其中包含已遮盖的端点和 Bearer 授权请求头](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    该块的形态如下。在下一步中，请将其原样粘贴到采集器配置中：
+
+    ```yaml
+    exporters:
+      otlphttp:
+        endpoint: https://YOUR_OTEL_ENDPOINT:4318
+        headers:
+          authorization: Bearer <your-api-key>
+    ```
+
+    您也可以随时在 **团队设置 → Managed Telemetry** 中查看这些值。
+  </Step>
+
+  <Step title="编写采集器配置" id="write-the-configuration">
+    根据您希望选择日志组的方式，选用相应的配置变体创建 `otel-collector-config.yaml`，然后将其中的 `exporters` 块替换为您之前复制的内容。两种变体在启动时都会读取最近一小时的事件。
+
+    <Tabs>
+      <Tab title="指定日志组" id="named-log-groups">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                named:
+                  /aws/lambda/payment-processor:
+                  /aws/lambda/order-service:
+                  /ecs/api-gateway:
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        `named` 下的每个键对应一个日志组。值留空表示读取该组中的所有日志流；如只需读取部分日志流，可在其下添加 `names:` 或 `prefixes:`。
+      </Tab>
+
+      <Tab title="按前缀自动发现" id="autodiscover-by-prefix">
+        ```yaml
+        receivers:
+          aws_cloudwatch:
+            region: us-east-1
+            logs:
+              poll_interval: 1m
+              initial_lookback: 1h
+              groups:
+                autodiscover:
+                  limit: 100
+                  prefix: /aws/lambda/
+
+        processors:
+          batch:
+            timeout: 10s
+
+        exporters:
+          otlphttp:
+            endpoint: https://YOUR_OTEL_ENDPOINT:4318
+            headers:
+              authorization: Bearer <your-api-key>
+
+        service:
+          pipelines:
+            logs:
+              receivers: [aws_cloudwatch]
+              processors: [batch]
+              exporters: [otlphttp]
+        ```
+
+        此配置会读取名称以该前缀开头的所有日志组 (数量上限为 `limit`) ，包括之后新建的日志组。如需匹配名称中任意位置的子串，请将 `prefix` 替换为 `pattern`。
+      </Tab>
+    </Tabs>
+
+    导出器名称 `otlphttp` 与该选项卡中给出的名称一致。较新的采集器发行版将其命名为 `otlp_http`，并保留 `otlphttp` 作为别名，因此两者均可使用，但采集器会在启动时输出一次 `"otlphttp" alias is deprecated` 日志。此警告可以忽略。如果重命名导出器，请同步修改管道中的名称。端点请保持为基准 URL，不要追加 `/v1/logs`，因为导出器会自动添加信号路径。
+
+    该文件现已包含您的 API key，因此请勿将其纳入版本控制。采集器容器以 UID/GID `10001:10001` 运行。在 Linux 上，请为该组授予读取权限，同时确保主机上的文件所有者仍可编辑该文件：
+
+    ```shell
+    sudo chgrp 10001 otel-collector-config.yaml
+    chmod 640 otel-collector-config.yaml
+    ```
+
+    这样，容器既能读取通过 bind mount 挂载的配置文件，又无需将 API key 设为所有用户可读。
+
+    需要调整的设置：
+
+    * `region`：日志组所在的区域。
+    * `initial_lookback`：采集器启动时向前回溯读取的时间范围。若不设置，接收器会读取每个日志组保留的全部历史记录，可能造成一次性的大规模历史数据回填，并相应产生大量 API 调用。如需从特定时间点开始回填，请改用 `start_from`，并指定一个 RFC 3339 格式的时间戳。
+    * `poll_interval`：默认为 `1m`。轮询时间间隔越短，日志越及时，但 API 调用也越多。
+    * 每次重启都会重新读取回溯窗口内的数据，因此重启后最近一小时的日志会重复出现。对于长时间运行的部署，请添加 `file_storage` 扩展，并设置接收器的 `storage` 选项，使其从上次中断的位置继续读取。
+
+    有关其余选项 (包括日志流过滤器以及从关联账户读取数据) ，请参阅该接收器的 [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)。
+
+    <Accordion title="可选：使用日志组作为服务名称">
+      CloudWatch 事件不包含服务名称，因此 `ServiceName` 在搜索页面中为空，服务筛选器也不起作用。要根据日志组填充该字段，请添加一个 `transform` 处理器，并将其置于管道中 `batch` 之前：
+
+      ```yaml
+      processors:
+        transform:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], attributes["cloudwatch.log.group.name"])
+        batch:
+          timeout: 10s
+
+      service:
+        pipelines:
+          logs:
+            receivers: [aws_cloudwatch]
+            processors: [transform, batch]
+            exporters: [otlphttp]
+      ```
+    </Accordion>
+  </Step>
+
+  <Step title="使用 Docker Compose 启动" id="start-with-docker-compose">
+    在该配置文件所在目录下创建 `docker-compose.yaml`。该文件会挂载此配置，并将当前命令行环境中的 AWS 凭证传入容器：
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.162.0
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - type: bind
+            source: ./otel-collector-config.yaml
+            target: /etc/otel-config.yaml
+            read_only: true
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+        restart: unless-stopped
+    ```
+
+    启动 collector 并查看日志：
+
+    ```shell
+    docker compose up -d
+    docker compose logs -f otel-collector
+    ```
+
+    启动正常时，日志最后会输出 `Everything is ready. Begin running and processing data.`。首次轮询在启动后经过一个 `poll_interval` 才会发生，因此请等待一到两分钟。常见错误及其含义如下：
+
+    * `ensureSession` 中出现 `panic: runtime error: invalid memory address or nil pointer dereference`，随后容器重启：说明采集器无法通过 AWS 身份验证，原因可能是凭证缺失、无效或已过期，也可能是 STS 端点不可访问。采集器 0.162.0 会将此情况表现为崩溃，而不是输出错误消息，上游已在 [议题 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961) 中跟踪该问题。请在主机上运行 `aws sts get-caller-identity`，刷新并导出有效凭证，然后在 Compose 目录中运行 `docker compose up -d --force-recreate otel-collector`。
+    * `AccessDeniedException`：凭证需要具备 `logs:DescribeLogGroups` 权限 (`"Resource": "*"`) ，以及对目标日志组的 `logs:FilterLogEvents` 权限。
+    * `ResourceNotFoundException`：日志组名称拼写错误，或该日志组位于其他区域。
+    * 导出器返回 `401` 或 `403`：配置中的 `authorization` 值有误。该值必须为 `Bearer` 加上完整密钥，与 Collector config 选项卡中提供的一致。修正文件后，运行 `docker compose restart otel-collector`。
+    * 导出器返回 `404`：端点末尾误加了 `/v1/logs` 等信号路径。
+  </Step>
+</Steps>
+
+## 确认数据已到达 {#confirm-data-is-arriving}
+
+返回服务中的 **Start sending telemetry** 页面，然后选择 **Check for data**。遥测数据到达后，服务状态会变为 **Data received**，同时 **Start exploring** 按钮变为可用。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Start sending telemetry 页面，显示服务状态为 Data received、已可开始探索的确认提示，以及已启用的 Start exploring 按钮](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+选择 **Start exploring** 打开 **搜索** 页面，选择 **Logs** source，并将时间范围设置为 **Last 15 minutes**。事件会在几个轮询间隔内出现。每个事件都以资源属性的形式记录其来源：
+
+* `aws.region`：您配置的区域。
+* `cloudwatch.log.group.name`：来源日志组。
+* `cloudwatch.log.stream`：来源日志 stream。
+* `cloud.account.id`：事件所属的 AWS 账户。
+
+如需将这些属性显示为列，请将 `SELECT` 替换为 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![搜索页面中显示的 CloudWatch 事件，其区域、日志组和日志 stream 资源属性以列的形式呈现](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+  </Frame>
+</div>
+
+选择一个事件，然后打开 **Column Values** 查看其属性：
+
+<div className="ch-image-lg">
+  <Frame>
+    ![日志详情视图，显示 CloudWatch 事件的 aws.region、cloudwatch.log.group.name 和 cloudwatch.log.stream 资源属性](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+  </Frame>
+</div>
+
+## 如果没有显示任何数据 {#if-nothing-shows-up}
+
+* 首先使用 `docker compose logs -f otel-collector` 查看采集器日志。AWS 和导出器相关的问题都会在此处报告，对应的消息见上文。
+* 在主机上运行 `aws sts get-caller-identity`，确认凭证仍然有效。SSO 会话会过期，一旦过期，采集器会直接崩溃，而不会记录错误日志。
+* 确认该日志组近期收到过事件，因为接收器只读取在回溯窗口内及之后写入的事件。例如：`aws logs filter-log-events --log-group-name /aws/lambda/order-service --region us-east-1 --limit 5`。
+* 在**搜索**中扩大时间范围，并移除所有筛选条件。默认 source 可能被设置为 **Traces** 而不是 **Logs**。
+* 如需排除服务本身的问题，请前往**团队设置 → Managed Telemetry**，然后使用 **Send a Test Log**。如果该日志出现在**搜索**中，说明服务能够正常接收数据，问题出在采集器与 CloudWatch 或端点之间。
+
+## 导入 CloudWatch 仪表盘 (可选) {#import-the-cloudwatch-dashboard}
+
+预置仪表盘展示按日志组统计的日志量、严重级别细分以及错误来源。<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载 `cloudwatch-logs-dashboard.json`</TrackedLink>，然后打开 **仪表盘**，选择 **导入**，上传该文件，再选择 **完成导入**。这些图表基于上文所述的资源属性进行过滤，因此一旦有事件到达，图表便会立即填充数据。
+
+{/* TODO(dale): 在 ClickHouse Observability 中导入 CloudWatch 日志仪表盘后的截图。 */}
+
+## 后续步骤 {#next-steps}
+
+* [告警](/zh/clickstack/observability/features/alerts)：在某个日志组的错误数量上升时触发告警。
+* [搜索](/zh/clickstack/observability/features/search)：使用 Lucene 风格语法或 SQL，按日志组、日志 stream 和日志正文进行查询。
+* [连接 OpenTelemetry 收集器](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless)：为该采集器添加更多接收器 (例如采集其所在实例的主机指标) ，并通过同一个导出器发送数据。
+* [使用 OpenTelemetry 监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes-serverless)：直接从 EKS 采集容器日志和指标，无需经由 CloudWatch。

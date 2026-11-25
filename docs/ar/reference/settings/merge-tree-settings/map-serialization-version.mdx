@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="map_serialization_version">
-  ## map_serialization_version
-</div>
+## map_serialization_version {#map_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 
@@ -28,11 +26,10 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * basic — استخدم التسلسل القياسي لـ `Map`.
 * with&#95;buckets — قسّم المفاتيح إلى مجموعات أثناء التسلسل. ويؤدي استخدام هذه المجموعات إلى تحسين قراءة المفاتيح الفردية من `Map`.
 
-يُحدَّد عدد المجموعات في تسلسل `with_buckets` بواسطة [max&#95;buckets&#95;in&#95;map](/ar/reference/settings/merge-tree-settings/max#max_buckets_in_map) و [map&#95;buckets&#95;strategy](/ar/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
+يُحدَّد عدد المجموعات في تسلسل `with_buckets` بواسطة [max&#95;buckets&#95;in&#95;map](/ar/reference/settings/merge-tree-settings/max#max_buckets_in_map) و [map&#95;buckets&#95;strategy](/ar/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
+يُكتب عمود `Map` الذي يحتوي نوع مفتاحه على `JSON` أو `Dynamic` دائمًا في مجموعة واحدة، بغض النظر عن إعدادات المجموعات الأخرى.
 
-<div id="map_serialization_version_for_zero_level_parts">
-  ## map_serialization_version_for_zero_level_parts
-</div>
+## map_serialization_version_for_zero_level_parts {#map_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 

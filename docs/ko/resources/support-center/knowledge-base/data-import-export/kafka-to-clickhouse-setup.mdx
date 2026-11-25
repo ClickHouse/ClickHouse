@@ -6,19 +6,15 @@ tags: ['데이터 수집']
 keywords: ['Kafka']
 ---
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 이 문서에서는 Kafka 토픽의 데이터를 ClickHouse 테이블로 전송하는 과정을 안내합니다. Wikimedia의 여러 속성에서 발생한 변경 사항을 나타내는 [이벤트 스트림](https://stream.wikimedia.org/v2/stream/recentchange)을 제공하는 Wiki 최근 변경 피드를 사용합니다. 단계는 다음과 같습니다:
 
 1. Ubuntu에서 Kafka 설정하기
-2. 데이터 스트림을 Kakfa 토픽으로 수집하기
+2. 데이터 스트림을 Kafka 토픽으로 수집하기
 3. 토픽을 구독하는 ClickHouse 테이블 만들기
 
-<div id="1-setup-kafka-on-ubuntu">
-  # 1. Ubuntu에서 Kafka 설정하기
-</div>
+# 1. Ubuntu에서 Kafka 설정하기 {#1-setup-kafka-on-ubuntu}
 
 1. Ubuntu **ec2** 인스턴스를 생성한 후 SSH로 접속하세요:
 
@@ -70,9 +66,7 @@ bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
 bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
-<div id="2-ingest-the-wikimedia-stream-into-kafka">
-  # 2. Wikimedia 스트림을 Kafka에 수집하기
-</div>
+# 2. Wikimedia 스트림을 Kafka에 수집하기 {#2-ingest-the-wikimedia-stream-into-kafka}
 
 1. 먼저 몇 가지 유틸리티가 필요합니다:
 
@@ -101,9 +95,7 @@ bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-ser
 
 5. 이전 명령을 중지하려면 **Ctrl+c**를 누르십시오.
 
-<div id="3-ingest-the-data-into-clickhouse">
-  # 3. 데이터를 ClickHouse에 수집하기
-</div>
+# 3. 데이터를 ClickHouse에 수집하기 {#3-ingest-the-data-into-clickhouse}
 
 1. 수집되는 데이터는 다음과 같습니다:
 

@@ -43,7 +43,7 @@ upstream CMake files — that is expected, do not restore them and do not re-run
 need it either.
 
 Submodule URLs point to either upstream directly (unpatched) or a fork at `github.com/ClickHouse/<repo>` (when
-patches are needed; the repo name may differ from the contrib name, e.g. `contrib/cassandra` → `ClickHouse/cpp-driver`).
+patches are needed; the repo name may differ from the contrib name, e.g. `contrib/aws` → `ClickHouse/aws-sdk-cpp`).
 Fork branches are named `ClickHouse/<version>` — usually the bare upstream tag (`ClickHouse/v1.52.1`,
 `ClickHouse/2.17.1`), sometimes with the upstream's own prefix (`ClickHouse/openssl-3.5.8`,
 `ClickHouse/release-2.14.1`) — never `ClickHouse/master` or `ClickHouse/main`. A pin can also sit on a fork branch
@@ -53,9 +53,9 @@ the fork's branches before assuming a pin is a plain upstream commit.
 Submodules are cloned shallow in most checkouts. `git describe` and `git log OLD..NEW` then report nonsense or fail;
 run `git -C contrib/<lib> fetch --unshallow --tags origin` first (the pipeline does this for you).
 
-A few libraries are built through cargo instead of a plain CMake file list — either from `rust/workspace/<lib>/`
-(`wasmtime`) or from a `contrib/<lib>-cmake/` file that drives cargo (`chdig`, `delta-kernel-rs`); they export
-`ch_rust::*` targets. See [rust.md](rust.md) for those.
+A few libraries are built through cargo instead of a plain CMake file list, as members of the workspace in
+`contrib/rust-contrib-workspace/` (`wasmtime`, `pcodec`, `chdig`, `delta-kernel-rs`); they export `ch_rust::*`
+targets. See [rust.md](rust.md) for those.
 
 ## Process
 
@@ -78,17 +78,17 @@ Then locate the integration file(s) and keep them in `$INTEGRATION`; every later
 Three shapes exist:
 
 ```bash
-INTEGRATION=$(ls contrib/${LIB}-cmake/CMakeLists.txt rust/workspace/${LIB}/CMakeLists.txt 2>/dev/null)
+INTEGRATION=$(ls contrib/${LIB}-cmake/CMakeLists.txt 2>/dev/null)
 # Shared wrapper: no directory of its own, built by another contrib's CMake file
 # (aws-c-auth → contrib/aws-cmake/, the aws-c-* family; individual boost libs → contrib/boost-cmake/).
 [ -n "$INTEGRATION" ] || INTEGRATION=$(grep -rl "contrib/${LIB}\b" contrib/*-cmake/CMakeLists.txt)
 echo "$INTEGRATION"; [ -n "$INTEGRATION" ] || echo "no integration file found — stop and report"
-grep -n "\b${LIB}\b" contrib/CMakeLists.txt rust/workspace/CMakeLists.txt   # where it is added
+grep -n "\b${LIB}\b" contrib/CMakeLists.txt   # where it is added
 ```
 
 - plain CMake: `contrib/<lib>-cmake/CMakeLists.txt`;
-- Rust: either `rust/workspace/<lib>/CMakeLists.txt` (`wasmtime`) or a `contrib/<lib>-cmake/` file that drives
-  cargo (`chdig`, `delta-kernel-rs`) — see [rust.md](rust.md);
+- Rust: `contrib/<lib>-cmake/CMakeLists.txt` of a workspace member (`wasmtime`, `pcodec`, `chdig`, `delta-kernel-rs`) -
+  see [rust.md](rust.md);
 - shared wrapper: the fallback above; the wrapper's file list and aliases (`ch_contrib::aws_s3` for every
   `aws-c-*` library) are what steps 8, 9 and 11 must use.
 
@@ -134,7 +134,7 @@ git -C "contrib/$LIB" branch -r --contains HEAD | head -3                       
 git -C "contrib/$LIB" tag --contains HEAD | head -3
 
 UPSTREAM_URL=$(git config --file .gitmodules --get "submodule.contrib/$LIB.url")
-FORK_URL="https://github.com/ClickHouse/$(basename "$UPSTREAM_URL" .git)"        # guess; may differ (cassandra → cpp-driver)
+FORK_URL="https://github.com/ClickHouse/$(basename "$UPSTREAM_URL" .git)"        # guess; may differ (aws → aws-sdk-cpp)
 git -C "contrib/$LIB" fetch "$FORK_URL" '+refs/heads/ClickHouse/*:refs/remotes/ch-fork/ClickHouse/*' 2>/dev/null
 git -C "contrib/$LIB" branch -r --contains HEAD 'ch-fork/*'                       # non-empty: pin lives on a fork branch
 ```

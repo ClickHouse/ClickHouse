@@ -4,6 +4,7 @@
 #include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <base/arithmeticOverflow.h>
 
 #include <limits>
 #include <type_traits>
@@ -183,6 +184,7 @@ inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, siz
     return istr;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline Int64 decodeZigZag(UInt64 n)
 {
     return static_cast<Int64>((n >> 1) ^ -(n & 1));
@@ -195,7 +197,7 @@ inline UInt32 encodeZigZag32(Int32 value)
 
 inline Int32 decodeZigZag32(UInt32 n)
 {
-    return static_cast<Int32>((n >> 1) ^ -(n & 1));
+    return static_cast<Int32>((n >> 1) ^ common::negateIgnoreOverflow(n & 1));
 }
 
 template <typename InBuf>
@@ -244,16 +246,15 @@ inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
     x = static_cast<Int16>(tmp);
 }
 
+/// Only unsigned integral targets (including `bool`) are accepted, so a read through this template is always range-checked.
+/// Signed values are written with `writeVarInt` and must be read with `readVarInt`.
 template <typename T>
-requires(!std::is_same_v<T, UInt64>)
+requires(std::is_integral_v<T> && std::is_unsigned_v<T> && !std::is_same_v<T, UInt64>)
 inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp = 0;
     readVarUInt(tmp, istr);
-
-    if constexpr (std::is_integral_v<T>)
-        varint_impl::checkVarUIntFits<T>(tmp);
-
+    varint_impl::checkVarUIntFits<T>(tmp);
     x = static_cast<T>(tmp);
 }
 

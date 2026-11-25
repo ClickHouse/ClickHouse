@@ -15,9 +15,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Fornece uma interface semelhante a uma tabela, somente leitura, para tabelas Apache [Paimon](https://paimon.apache.org/) no Amazon S3, Azure, HDFS ou armazenadas localmente.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -31,24 +29,42 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 A descrição dos argumentos é a mesma das funções de tabela `s3`, `azureBlobStorage`, `HDFS` e `file`, respectivamente.
 `format` indica o formato dos arquivos de dados na tabela Paimon.
 
 Para `paimonS3`, é possível usar um parâmetro opcional `extra_credentials` para fornecer um `role_arn` para controle de acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.
 
-<div id="returned-value">
-  ### Valor retornado
-</div>
+### Valor retornado {#returned-value}
 
 Uma tabela com a estrutura especificada para ler dados da tabela Paimon informada.
 
-<div id="defining-a-named-collection">
-  ## Definindo uma coleção nomeada
-</div>
+## Limitações {#limitations}
+
+A mesclagem durante a leitura não foi implementada. Por isso, uma tabela com chave primária só é lida nos casos em que o Paimon a lê sem mesclagem: um bucket é
+lido quando todos os seus arquivos de dados estão acima do nível 0, sabidamente não contêm linhas de retratação e estão em um único nível. Com
+`deletion-vectors.enabled` ou `'merge-engine' = 'first-row'`, os arquivos podem estar em vários níveis e, a menos que
+`batch-scan-mode` esteja definido como um modo diferente de `none`, os arquivos de nível 0 só são lidos depois de compactados, assim como no Paimon.
+A leitura de qualquer outro bucket lança uma exceção; uma compactação completa no Paimon (`compact_strategy => 'full'`) o torna legível.
+
+Os vetores de exclusão não são aplicados. Por isso, **não é possível ler snapshots com vetores de exclusão**: o resultado ainda
+conteria as linhas removidas por instruções `DELETE` e `UPDATE` posteriores. Assim, a tentativa de ler um snapshot cujo manifesto de índice lista
+vetores de exclusão lança uma exceção, mesmo depois de desabilitar `deletion-vectors.enabled`.
+Uma compactação completa no Paimon (`compact_strategy => 'full'`) aplica os vetores de exclusão, e os snapshots criados depois
+dela voltam a poder ser lidos.
+
+Cada arquivo de dados é lido com o schema com o qual foi gravado, e suas colunas de nível superior são associadas ao schema atual pelo
+ID de campo do Paimon, de modo que colunas renomeadas e colunas removidas e readicionadas com o mesmo nome são lidas da mesma forma que no Spark.
+
+Os campos dentro de uma coluna `ROW` são associados aos arquivos de dados pelo nome, e não pelo ID de campo do Paimon. Por isso, **não é possível ler arquivos de dados gravados antes de um
+campo dentro de um `ROW` ser renomeado, ou antes de esse campo ser removido e outro com o mesmo nome (comparado
+sem distinguir maiúsculas de minúsculas) ser adicionado**: o resultado conteria `NULL` para o campo renomeado e os valores do campo
+removido para o campo readicionado. Assim, a tentativa de ler esse arquivo de dados lança uma exceção. Há suporte para adicionar e remover campos.
+Reescrever a tabela com o schema atual no Paimon, por exemplo com `INSERT OVERWRITE <table> SELECT * FROM <table>`,
+torna legíveis os snapshots criados a partir de então.
+
+## Definindo uma coleção nomeada {#defining-a-named-collection}
 
 Aqui está um exemplo de configuração de uma coleção nomeada para armazenar a URL e as credenciais:
 
@@ -71,15 +87,11 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="aliases">
-  ## Aliases
-</div>
+## Aliases {#aliases}
 
 A função de tabela `paimon` agora é um alias para `paimonS3`.
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
@@ -87,13 +99,11 @@ A função de tabela `paimon` agora é um alias para `paimonS3`.
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor será `NULL`.
 * `_etag` — O etag do arquivo. Tipo: `LowCardinality(String)`. Se o etag for desconhecido, o valor será `NULL`.
 
-<div id="data-types-supported">
-  ## Tipos de dados compatíveis
-</div>
+## Tipos de dados compatíveis {#data-types-supported}
 
 | Tipo de dado do Paimon            | Tipo de dado do ClickHouse |
 | --------------------------------- | -------------------------- |
-| BOOLEAN                           | Int8                       |
+| BOOLEAN                           | Bool                       |
 | TINYINT                           | Int8                       |
 | SMALLINT                          | Int16                      |
 | INTEGER                           | Int32                      |
@@ -101,7 +111,7 @@ A função de tabela `paimon` agora é um alias para `paimonS3`.
 | FLOAT                             | Float32                    |
 | DOUBLE                            | Float64                    |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                     |
-| DATE                              | Date                       |
+| DATE                              | Date32                     |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
@@ -110,10 +120,9 @@ A função de tabela `paimon` agora é um alias para `paimonS3`.
 | DECIMAL(P,S)                      | Decimal(P,S)               |
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
+| ROW                               | Tuple                      |
 
-<div id="partition-supported">
-  ## Partições compatíveis
-</div>
+## Partições compatíveis {#partition-supported}
 
 Tipos de dados compatíveis com chaves de partição no Paimon:
 
@@ -132,9 +141,7 @@ Tipos de dados compatíveis com chaves de partição no Paimon:
 * `FLOAT`
 * `DOUBLE`
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [função de tabela de cluster do Paimon](/pt-BR/reference/functions/table-functions/paimonCluster)
 

@@ -88,7 +88,6 @@ drop table test_new_compact;
 drop table test_new_wide;
 
 -- Test empty string comparison and .size subcolumn optimization
-set enable_analyzer = 1;
 set optimize_empty_string_comparisons = 1;
 set optimize_functions_to_subcolumns = 0;
 

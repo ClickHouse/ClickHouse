@@ -1,0 +1,97 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nextjs
+description: 'Настройка и Configuration Next.js для ClickHouse Observability и самоуправляемых развертываний.'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'инструментирование']
+sidebarTitle: 'Next.js'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Выберите server-side инструментирование для развертывания Next.js:
+
+* **Самоуправляемое развертывание, среда выполнения Node.js:** используйте ClickStack Node.js SDK.
+* **Vercel или среда выполнения Edge:** используйте `@vercel/otel`.
+
+Сведения о браузерной телеметрии и воспроизведении сеансов см. в [руководстве по браузерному SDK](/ru/clickstack/observability/ingesting-data/sdks/browser).
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Самоуправляемый Next.js {#self-hosted-nextjs}
+
+Используйте Node.js версии 22.15 или новее и установите SDK:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Создайте файл `instrumentation.ts` в корне проекта или в каталоге `src`, если он используется в вашем приложении. Инициализируйте SDK только в среде выполнения Node.js:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+Добавьте SDK в `serverExternalPackages` в текущей Configuration Next.js, чтобы он загружался вне серверного бандла:
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+Настройте пункт назначения ниже и задайте `OTEL_SERVICE_NAME`, чтобы идентифицировать ваше приложение. Не используйте вместе с этим предварительную загрузку SDK и не инициализируйте другой OpenTelemetry SDK. Дополнительные параметры описаны в [руководстве по Node.js](/ru/clickstack/observability/ingesting-data/sdks/nodejs).
+
+Рекомендации по завершению работы и развертыванию приведены в [руководстве SDK по Next.js](https://github.com/ClickHouse/clickstack-node#nextjs).
+
+## Vercel и среда выполнения Edge {#vercel-or-edge}
+
+Используйте `@vercel/otel` в соответствии с [инструкциями по настройке OpenTelemetry для Next.js](https://nextjs.org/docs/app/guides/open-telemetry). Этот вариант настройки заменяет описанную выше инициализацию ClickStack Node.js SDK.
+
+Настройте [экспорт OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) с помощью приведённых ниже параметров соединения. Замените все пункты назначения из примеров и переопределения конечных точек для отдельных сигналов, а затем задайте переменные в Configuration развертывания.
+
+Если в вашем развертывании Vercel уже используется интеграция трассировки, настройте для этого пункта назначения [пользовательский экспортер](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters): одних лишь переменных окружения с конечными точками недостаточно, чтобы переопределить эту интеграцию.
+
+## Настройка пункта назначения {#configure-destination}
+
+Задайте имя сервиса для любого из вариантов инструментирования:
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Сервис в стадии бета-тестирования" />
+
+    Откройте в своём сервисе раздел **Team Settings → Data → Managed Telemetry** и скопируйте **конечную точку OTLP по HTTP** и **ключ API**. Указывайте конечную точку HTTPS полностью, вместе с портом:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Самоуправляемый">
+    Укажите конечную точку OTLP по HTTP вашего коллектора и ключ приёма данных. Если в коллекторе не настроен TLS, используйте `http://` вместо `https://`. О настройке коллектора см. раздел [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Проверка ингестии {#verify-ingestion}
+
+Запустите приложение и отправьте несколько запросов к странице с серверным рендерингом или к маршруту API. В ClickHouse Observability выберите временной диапазон, охватывающий последние минуты, и найдите имя сервиса вашего приложения в разделе Traces.

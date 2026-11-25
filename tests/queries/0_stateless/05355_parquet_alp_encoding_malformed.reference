@@ -1,0 +1,30 @@
+['ALP']
+100	1	nan
+--- page header
+error 117: Unsupported ALP compression mode
+error 117: Unsupported ALP integer encoding
+error 117: Invalid ALP log_vector_size
+error 117: Invalid ALP log_vector_size
+error 117: Invalid ALP number of elements
+error 117: ALP page is too short for the offsets of its 2097152 vectors
+error 117: ALP page has 75 bytes after its last vector
+--- offsets
+error 117: Invalid offset of ALP vector 0
+error 117: Invalid offset of ALP vector 0
+error 117: Invalid offset of ALP vector 0
+--- vector header
+error 117: Invalid ALP exponent and factor in vector 0
+error 117: Invalid ALP exponent and factor in vector 0
+error 117: ALP vector 0 has 65535 exceptions, but only 100 values
+error 117: ALP vector 0 needs 183 bytes, but the page has only 173 bytes left
+error 117: ALP page has 10 bytes after its last vector
+error 117: Invalid ALP bit width in vector 0
+error 117: ALP vector 0 needs 823 bytes, but the page has only 173 bytes left
+--- exceptions
+error 117: ALP exception position 100 is out of bounds of vector 0 with 100 values
+100	nan
+['ALP']
+2000	19990
+--- vector boundaries
+error 117: Invalid offset of ALP vector 1
+error 117: Invalid offset of ALP vector 1

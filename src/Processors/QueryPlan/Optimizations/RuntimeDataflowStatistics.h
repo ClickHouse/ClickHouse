@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -11,9 +12,12 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <atomic>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,14 +35,26 @@ struct AggregatedDataVariants;
 
 struct RuntimeDataflowStatistics
 {
+    /// The read parallel replicas would coordinate: they split it, so the cost model divides it by the
+    /// number of replicas.
     size_t input_bytes = 0;
+    /// Every other read of the same subtree. Parallel replicas do not split these - each replica runs the
+    /// whole subtree, so each reads all of them. They cost the same wall-clock time either way, which is
+    /// why they are kept apart from `input_bytes` rather than added to it, but they cost the cluster
+    /// `num_replicas` times as much work, which is what the amplification gate weighs.
+    size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
 {
-    return RuntimeDataflowStatistics{lhs.input_bytes + rhs.input_bytes, lhs.output_bytes + rhs.output_bytes};
+    return RuntimeDataflowStatistics{
+        .input_bytes = lhs.input_bytes + rhs.input_bytes,
+        .duplicated_bytes = lhs.duplicated_bytes + rhs.duplicated_bytes,
+        .output_bytes = lhs.output_bytes + rhs.output_bytes,
+        .total_rows_to_read = lhs.total_rows_to_read + rhs.total_rows_to_read,
+    };
 }
 
 class RuntimeDataflowStatisticsCache
@@ -49,16 +65,65 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , undecided_query_cache(std::make_shared<UndecidedQueryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 64_MiB, 100'000))
     {
     }
 
-    std::optional<Entry> getStats(size_t key) const;
+    [[nodiscard]] std::optional<Entry> getStats(size_t key) const;
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
+    /// the read below it that parallel replicas coordinate, both found by an earlier execution, so that a later one
+    /// can find its statistics without building a replicas plan to match against.
+    struct Boundary
+    {
+        UInt64 boundary_hash = 0;
+        UInt64 coordinated_read_hash = 0;
+    };
+
+    /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
+    /// without changing that plan.
+    [[nodiscard]] std::optional<Boundary> getBoundary(UInt64 root_key) const;
+
+    void setBoundary(UInt64 root_key, Boundary boundary);
+
+    /// The last build of the plan with parallel replicas for a plan ended without a decision, so that the next
+    /// executions can skip building it. It is not a verdict: nothing proves the outcome permanent, so a number of
+    /// executions skip, and the one after them builds again.
+    struct UndecidedQuery
+    {
+        /// The event the outcome was counted in, which a skipped execution counts again: the plans could not be
+        /// compared, the planner used no parallel replicas in the plan built with them, or a step could not collect
+        /// statistics (`RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`).
+        ProfileEvents::Event outcome_event{};
+        /// The executions since, counted on the shared entry so that concurrent ones take turns: every one in
+        /// `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan, the others skip.
+        mutable std::atomic<UInt64> executions{0};
+        /// No earlier entry was replaced: this is the first time building the plan for this key ended without a
+        /// decision. Then the turn of the first execution after it comes at once. The first execution of a join is
+        /// what measures its hash table, and join reordering takes row counts from that, so the build after it often
+        /// orders both plans alike.
+        bool first = false;
+    };
+
+    /// Under the same key as the boundary.
+    [[nodiscard]] std::shared_ptr<const UndecidedQuery> getUndecided(UInt64 root_key) const;
+
+    void setUndecided(UInt64 root_key, ProfileEvents::Event outcome_event);
+
+    void forgetUndecided(UInt64 root_key);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
+
+    using UndecidedQueryCache = DB::CacheBase<UInt64, UndecidedQuery>;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
+    std::shared_ptr<UndecidedQueryCache> undecided_query_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -87,10 +152,10 @@ using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, ColumnCodecs>;
 /// a type-specific codec may be applied to.
 bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type);
 
-class RuntimeDataflowStatisticsCacheUpdater
+/// One execution's dataflow statistics, the single cache entry its updaters fill. Every updater of the
+/// execution shares it, and it writes the entry when the last of them is gone.
+struct RuntimeDataflowStatisticsBlock
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-
     struct Statistics
     {
         std::atomic_size_t counter{0};
@@ -102,19 +167,73 @@ class RuntimeDataflowStatisticsCacheUpdater
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 
-public:
-    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_)
+    enum InputStatisticsType
+    {
+        WithByteHint = 0,
+        WithoutByteHint = 1,
+        MaxInputType = 2,
+    };
+
+    enum OutputStatisticsType
+    {
+        AggregationState = 0,
+        AggregationKeys = 1,
+        OutputChunk = 2,
+        MaxOutputType = 3,
+    };
+
+    /// `undecided_query_key`, when not zero, is the key `RuntimeDataflowStatisticsCache::setUndecided` records under when a
+    /// step cannot collect, or when the collection measures nothing.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, UInt64 undecided_query_key_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , undecided_query_key(undecided_query_key_)
     {
         if (cache_key == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsCacheUpdater cannot be zero");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
 
         if (total_rows_to_read == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Total rows from storage cannot be zero");
     }
 
-    ~RuntimeDataflowStatisticsCacheUpdater();
+    ~RuntimeDataflowStatisticsBlock();
+
+    const size_t cache_key = 0;
+    const size_t total_rows_to_read = 0;
+    const UInt64 undecided_query_key = 0;
+
+    std::atomic_bool unsupported_case{false};
+
+    std::array<Statistics, MaxInputType> input_bytes_statistics;
+    std::array<Statistics, MaxInputType> duplicated_bytes_statistics;
+    std::array<Statistics, MaxOutputType> output_bytes_statistics;
+};
+
+class RuntimeDataflowStatisticsCacheUpdater
+{
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- mirrors `IMergeTreeDataPart::ColumnSizeByName`, which the callers pass directly
+    using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
+    using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
+    using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
+
+public:
+    /// `duplicated` is set on the updater given to the reads parallel replicas would not split: each replica
+    /// performs them in full, so their bytes go to `duplicated_bytes` rather than to `input_bytes`.
+    explicit RuntimeDataflowStatisticsCacheUpdater(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_ = false)
+        : block(std::move(block_))
+        , duplicated(duplicated_)
+    {
+    }
+
+    /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
+    /// block that is actually sampled, since building it costs a sort of the block's key columns.
+    using KeyOrderProvider = std::function<IColumn::Permutation()>;
+
+    /// Sort the sample by the group by keys before pricing it. Call this when the replicas' partial
+    /// aggregation uses memory-bound merging, and so sorts its output that way before sending it, while
+    /// the plan the sample is taken from does not. Left in hash table order such a sample compresses
+    /// several times worse than what it is meant to price.
+    void setReplicasSendOutputInKeyOrder() { replicas_send_output_in_key_order = true; }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
@@ -157,7 +276,13 @@ public:
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
-    void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
+    /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
+    /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
+    void markUnsupportedCase()
+    {
+        if (!duplicated)
+            block->unsupported_case.store(true, std::memory_order_relaxed);
+    }
 
 private:
     static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
@@ -165,29 +290,20 @@ private:
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
     static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        std::optional<size_t> full_bytes = {},
+        const KeyOrderProvider & key_order = {});
 
-    const size_t cache_key = 0;
-    const size_t total_rows_to_read = 0;
+    [[nodiscard]] KeyOrderProvider keyOrderProviderFor(
+        const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
 
-    std::atomic_bool unsupported_case{false};
+    bool replicas_send_output_in_key_order = false;
 
-    enum InputStatisticsType
-    {
-        WithByteHint = 0,
-        WithoutByteHint = 1,
-        MaxInputType = 2,
-    };
-    std::array<Statistics, 2> input_bytes_statistics;
-
-    enum OutputStatisticsType
-    {
-        AggregationState = 0,
-        AggregationKeys = 1,
-        OutputChunk = 2,
-        MaxOutputType = 3,
-    };
-    std::array<Statistics, 3> output_bytes_statistics;
+    const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
+    const bool duplicated;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

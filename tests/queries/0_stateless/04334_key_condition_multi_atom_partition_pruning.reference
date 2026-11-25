@@ -1,0 +1,9 @@
+6
+ts = toDateTime('2026-03-31 06:00:00', 'UTC')	1	1	Min-Max Parts: 1/6 Granules: 4/24 Partition Parts: 1/1 Granules: 4/4 PrimaryKey Parts: 1/1 Granules: 4/4	Condition: (ts in [1774936800, 1774936800]) | Condition: and((toDate(ts) in [20543, 20543]), (toYYYYMM(ts) in [202603, 202603])) | Condition: true
+ts >= toDateTime('2026-04-02 00:00:00', 'UTC')	12	12	Min-Max Parts: 3/6 Granules: 12/24 Partition Parts: 3/3 Granules: 12/12 PrimaryKey Parts: 3/3 Granules: 12/12
+ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	2	2	Min-Max Parts: 2/6 Granules: 8/24 Partition Parts: 2/2 Granules: 8/8 PrimaryKey Parts: 2/2 Granules: 8/8
+toDate(ts) = toDate('2026-03-31')	4	4	Min-Max Parts: 1/6 Granules: 4/24 Partition Parts: 1/1 Granules: 4/4 PrimaryKey Parts: 1/1 Granules: 4/4
+ts != toDateTime('2026-03-31 06:00:00', 'UTC')	23	23	Min-Max Parts: 6/6 Granules: 24/24 Partition Parts: 6/6 Granules: 24/24 PrimaryKey Parts: 6/6 Granules: 24/24
+ts NOT IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	22	22	Min-Max Parts: 6/6 Granules: 24/24 Partition Parts: 6/6 Granules: 24/24 PrimaryKey Parts: 6/6 Granules: 24/24
+k % 10 = 3	3	3	Min-Max Parts: 10/10 Granules: 30/30 Partition Parts: 1/10 Granules: 3/30 PrimaryKey Parts: 1/1 Granules: 3/3
+k = 13	1	1	Min-Max Parts: 10/10 Granules: 30/30 Partition Parts: 1/10 Granules: 3/30 PrimaryKey Parts: 1/1 Granules: 2/3	Condition: (k in [13, 13]) | Condition: (moduloLegacy(k, 10) in [3, 3]) | Condition: (k in [13, 13])

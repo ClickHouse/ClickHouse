@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "入门",
+      "group": "Get started",
       "pages": [
         "zh/products/managed-postgres/overview",
         "zh/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "功能",
+      "group": "Features",
       "pages": [
         "zh/products/managed-postgres/connection",
         "zh/products/managed-postgres/settings",
@@ -43,20 +43,40 @@
       ]
     },
     {
-      "group": "定价",
+      "group": "Guides",
+      "pages": [
+        "zh/products/managed-postgres/guides/bun",
+        "zh/products/managed-postgres/guides/cloudflare-workers",
+        "zh/products/managed-postgres/guides/django",
+        "zh/products/managed-postgres/guides/dotnet",
+        "zh/products/managed-postgres/guides/drizzle",
+        "zh/products/managed-postgres/guides/fastapi",
+        "zh/products/managed-postgres/guides/go",
+        "zh/products/managed-postgres/guides/kysely",
+        "zh/products/managed-postgres/guides/laravel",
+        "zh/products/managed-postgres/guides/nodejs",
+        "zh/products/managed-postgres/guides/phoenix",
+        "zh/products/managed-postgres/guides/prisma",
+        "zh/products/managed-postgres/guides/ruby-on-rails",
+        "zh/products/managed-postgres/guides/rust",
+        "zh/products/managed-postgres/guides/spring-boot"
+      ]
+    },
+    {
+      "group": "Pricing",
       "pages": [
         "zh/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse 集成",
+      "group": "ClickHouse Integration",
       "pages": [
         "zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "zh/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "迁移",
+      "group": "Migrations",
       "pages": [
         "zh/products/managed-postgres/migrations/overview",
         "zh/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +89,7 @@
       ]
     },
     {
-      "group": "监控",
+      "group": "Monitoring",
       "pages": [
         "zh/products/managed-postgres/monitoring/overview",
         "zh/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +100,7 @@
       ]
     },
     {
-      "group": "常见问题",
+      "group": "FAQ",
       "pages": [
         "zh/products/managed-postgres/faq"
       ]
