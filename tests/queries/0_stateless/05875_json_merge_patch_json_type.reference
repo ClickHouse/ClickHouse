@@ -108,6 +108,8 @@ Float64
 2	{'y':2}
 DateTime
 Float64
+Float64
+Float64
 stored types of untouched paths
 {"k":1,"k":2}	Date
 {"k":2}	String

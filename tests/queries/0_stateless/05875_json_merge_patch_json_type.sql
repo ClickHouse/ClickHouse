@@ -97,6 +97,8 @@ SELECT id, r.u FROM (SELECT id, JSONMergePatch(c, '{"u":{"a":9}}') AS r FROM t_m
 SELECT id, r.m FROM (SELECT id, JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM t_map) ORDER BY id SETTINGS output_format_json_map_as_array_of_tuples = 1;
 SELECT JSONAllPathsWithTypes(r)['t'] FROM (SELECT JSONMergePatch(c, '{"m":{"y":2}}') AS r FROM (SELECT CAST('{"t":"2020-01-01 10:00:00","m":{"x":1}}', 'JSON(m Map(String, UInt8))') AS c)) SETTINGS date_time_output_format = 'unix_timestamp';
 SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['a'] FROM (SELECT '{"a":0.5,"b":1}'::JSON AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_64bit_floats = 1;
+SELECT JSONAllPathsWithTypes(JSONMergePatch('{"a":1}'::JSON, CAST('{"k":1.5}', 'JSON(k Decimal(10, 2))')))['k'] SETTINGS output_format_json_quote_decimals = 1;
+SELECT JSONAllPathsWithTypes(CAST(c, 'JSON(b UInt32)'))['k'] FROM (SELECT CAST('{"k":1.5,"b":1}', 'JSON(k Decimal(10, 2))') AS c) SETTINGS json_use_optimized_type_conversion = 0, output_format_json_quote_decimals = 1;
 
 SELECT 'stored types of untouched paths';
 SET input_format_try_infer_dates = 0, input_format_try_infer_datetimes = 0;

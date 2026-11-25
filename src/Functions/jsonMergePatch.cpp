@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
@@ -176,9 +177,9 @@ namespace
     struct PatchOps
     {
         /// Paths the patch sets to a value which is not an object: the values at and below them are replaced.
-        VectorWithMemoryTracking<String> replaced;
+        VectorWithMemoryTracking<StringWithMemoryTracking> replaced;
         /// Paths the patch sets to an object: a value at exactly such a path is replaced by the object.
-        VectorWithMemoryTracking<String> dropped;
+        VectorWithMemoryTracking<StringWithMemoryTracking> dropped;
         /// The patch cannot be applied path by path, so the row is merged in its text form.
         bool fallback = false;
 
@@ -636,7 +637,7 @@ namespace
                 const auto & value = it->value;
                 if (!value.IsObject())
                 {
-                    ops.replaced.push_back(path);
+                    ops.replaced.emplace_back(std::string_view(path));
                 }
                 else if (auto typed = typed_paths.find(path);
                          typed != typed_paths.end() && !(descend_into_typed_paths && hasTypedPathWithPrefix(path + ".")))
@@ -644,11 +645,11 @@ namespace
                     /// The text form merges the patch into the object stored at this path.
                     if (canHoldObject(typed->second))
                         return false;
-                    ops.replaced.push_back(path);
+                    ops.replaced.emplace_back(std::string_view(path));
                 }
                 else
                 {
-                    ops.dropped.push_back(path);
+                    ops.dropped.emplace_back(std::string_view(path));
                     if (!collectPatchOps(value, path, false, ops))
                         return false;
                 }
