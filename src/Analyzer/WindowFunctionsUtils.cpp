@@ -3,6 +3,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -36,7 +37,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isWindowFunction())
+        if (!function_node || !function_node->isWindowCall())
             return;
 
         if (!assert_no_window_functions_place_message.empty())
@@ -51,7 +52,7 @@ public:
         has_window_functions = true;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_window_functions)
             return false;
@@ -60,7 +61,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    bool hasWindowFunctions() const
+    [[nodiscard]] bool hasWindowFunctions() const
     {
         return has_window_functions;
     }
@@ -98,6 +99,9 @@ void collectWindowFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes & 
 
 void assertNoWindowFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_window_functions_place_message)
 {
+    if (isQueryOrUnionNode(node))
+        return;
+
     CollectWindowFunctionNodeVisitor visitor(assert_no_window_functions_place_message);
     visitor.visit(node);
 }

@@ -2,14 +2,15 @@
 -- no-azure-blob-storage: too slow
 --          ^
 --          makes SELECTs extremely slow sometimes for some reason: "Aggregated. 1000000 to 1 rows (from 7.63 MiB) in 242.829221645 sec."
+-- Random settings limits: max_block_size=(65409, None)
 
 DROP TABLE IF EXISTS sample_00314_1;
 DROP TABLE IF EXISTS sample_00314_2;
 DROP TABLE IF EXISTS sample_merge_00314;
 
 set allow_deprecated_syntax_for_merge_tree=1;
-CREATE TABLE sample_00314_1 (x UInt64, d Date DEFAULT today()) ENGINE = MergeTree(d, intHash64(x), intHash64(x), 10);
-CREATE TABLE sample_00314_2 (x UInt64, d Date DEFAULT today()) ENGINE = MergeTree(d, intHash64(x), intHash64(x), 10);
+CREATE TABLE sample_00314_1 (x UInt64, d Date DEFAULT today()) ENGINE = MergeTree(d, intHash64(x), intHash64(x), 8192);
+CREATE TABLE sample_00314_2 (x UInt64, d Date DEFAULT today()) ENGINE = MergeTree(d, intHash64(x), intHash64(x), 8192);
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 

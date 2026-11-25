@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -21,9 +22,9 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
 
-    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+    [[nodiscard]] size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
 
     const String & index_name;
     const Block & index_sample_block;
@@ -40,7 +41,7 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
@@ -58,11 +59,11 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
-    bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
-    std::string getDescription() const override;
+    [[nodiscard]] std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
@@ -80,18 +81,23 @@ public:
 
     ~MergeTreeIndexMinMax() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
-    MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    [[nodiscard]] MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
+    [[nodiscard]] MergeTreeIndexSubstreams getPotentialSubstreams() const override
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+    }
+    using IMergeTreeIndex::getPhysicalFormat;
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
-        const std::string & path_prefix,
-        const IDataPartStorage * storage) const override;
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
@@ -118,6 +124,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
                                               size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    [[nodiscard]] size_t numValues() const override { return granules.size(); }
 
     void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,

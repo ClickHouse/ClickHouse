@@ -17,8 +17,8 @@ using namespace DB;
 /// `enable_packed_string_keys_in_aggregation` must reach the wire whenever it can take effect on a peer that knows
 /// it, and only when correctness demands it on a peer that does not.
 ///
-/// `QueryPlanSerializationSettings` is a strict named schema: `readBinary` throws on a name it does not know, so a
-/// peer that predates the setting rejects any plan carrying it. Towards such a peer (a query-plan serialization
+/// The reader of `QueryPlanSerializationSettings` in a peer that predates the setting throws on a name it does not
+/// know, so such a peer rejects any plan carrying it. Towards such a peer (a query-plan serialization
 /// version below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING`), emitting it for a
 /// `count()` or `GROUP BY UInt64` aggregation - where the single-`String` method is unreachable - would break the
 /// peer for nothing. A peer at that version or above always receives the value when the legacy method is requested,
@@ -39,16 +39,17 @@ Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        enable_packed_string_keys);
+        enable_packed_string_keys,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.group_by_two_level_threshold = group_by_two_level_threshold;
     return params;
 }
 
-/// The name as it appears in the binary settings stream written by `writeChangedBinary`.
+/// The name as it appears in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains("enable_packed_string_keys_in_aggregation");
 }
 
@@ -74,8 +75,7 @@ bool aggregatingStepCarriesSetting(
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 
     QueryPlanSerializationSettings settings;
     step.serializeSettings(settings, version);

@@ -28,6 +28,15 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
+    /// Declarative signature — element type of the first array is preserved
+    /// (wrapped in `Nullable` for the `OrNull` variants when the predicate
+    /// never matches). Lambda return type follows the boolean-predicate
+    /// convention used by `arrayFilter`.
+    static constexpr auto signature =
+        element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null
+            ? "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Nullable(T)"
+            : "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> T";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -50,8 +59,17 @@ struct ArrayFirstLastImpl
         return ColumnNullable::create(std::move(column), std::move(null_map));
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & result_type)
     {
+        /// For the OrNull variants `result_type` is Nullable, so the row under the NULL keeps the column zero.
+        const bool trivial_default = result_type->isDefaultInsertTrivial();
+        MutableColumnPtr type_default;
+        if (!trivial_default)
+        {
+            type_default = array.getData().cloneEmpty();
+            result_type->insertDefaultInto(*type_default);
+        }
+
         const auto * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
         if (!column_filter)
@@ -64,11 +82,10 @@ struct ArrayFirstLastImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
+                size_t offsets_size = offsets.size();
                 const auto & data = array.getData();
                 auto out = data.cloneEmpty();
-                out->reserve(data.size());
-
-                size_t offsets_size = offsets.size();
+                out->reserve(offsets_size);
 
                 ColumnUInt8::MutablePtr col_null_map_to;
                 ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -81,7 +98,7 @@ struct ArrayFirstLastImpl
 
                 for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
                 {
-                    size_t start_offset = offsets[offset_index - 1];
+                    size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
                     size_t end_offset = offsets[offset_index];
 
                     if (end_offset > start_offset)
@@ -93,7 +110,10 @@ struct ArrayFirstLastImpl
                     }
                     else
                     {
-                        out->insertDefault();
+                        if (trivial_default)
+                            out->insertDefault();
+                        else
+                            out->insertFrom(*type_default, 0);
 
                         if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                             (*vec_null_map_to)[offset_index] = true;
@@ -107,7 +127,10 @@ struct ArrayFirstLastImpl
             }
 
             auto out = array.getData().cloneEmpty();
-            out->insertManyDefaults(array.size());
+            if (trivial_default)
+                out->insertManyDefaults(array.size());
+            else
+                out->insertManyFrom(*type_default, 0, array.size());
 
             if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
             {
@@ -120,11 +143,10 @@ struct ArrayFirstLastImpl
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
+        size_t offsets_size = offsets.size();
         const auto & data = array.getData();
         auto out = data.cloneEmpty();
-        out->reserve(data.size());
-
-        size_t offsets_size = offsets.size();
+        out->reserve(offsets_size);
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -137,7 +159,7 @@ struct ArrayFirstLastImpl
 
         for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
         {
-            size_t start_offset = offsets[offset_index - 1];
+            size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
             size_t end_offset = offsets[offset_index];
 
             bool exists = false;
@@ -169,7 +191,10 @@ struct ArrayFirstLastImpl
 
             if (!exists)
             {
-                out->insertDefault();
+                if (trivial_default)
+                    out->insertDefault();
+                else
+                    out->insertFrom(*type_default, 0);
 
                 if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
                     (*vec_null_map_to)[offset_index] = true;
@@ -215,7 +240,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the first element of the source array for which `λ` is true, otherwise returns the default value of `T`."};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayFirst(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "b"},
-        {"No match", "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "0 UInt8"}
+        {"No match", "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "0\tUInt8"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -237,7 +262,7 @@ Returns the first element in the source array for which `func(x[, y1, y2, ... yN
     FunctionDocumentation::ReturnedValue returned_value_orNull = {"Returns the first element of the source array for which `func` is true, otherwise returns `NULL`."};
     FunctionDocumentation::Examples examples_orNull = {
         {"Usage example", "SELECT arrayFirstOrNull(x, y -> x=y, ['a', 'b', 'c'], ['c', 'b', 'a'])", "b"},
-        {"No match", "SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "NULL Nullable(UInt8)"}
+        {"No match", "SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)", "\\N\tNullable(UInt8)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_orNull = {1, 1};
     FunctionDocumentation::Category category_orNull = FunctionDocumentation::Category::Array;
@@ -262,7 +287,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
         {
             "No match",
             "SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)",
-            "0 UInt8"
+            "0\tUInt8"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in_last = {1, 1};
@@ -287,7 +312,7 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
         {
             "No match",
             "SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)",
-            "NULL Nullable(UInt8)"
+            "\\N\tNullable(UInt8)"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in_last_null = {1, 1};
@@ -298,4 +323,3 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
 }
 
 }
-

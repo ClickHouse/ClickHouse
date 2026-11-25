@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -97,12 +98,30 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).count += data(rhs).count;
+        /// The merged count is the modular `UInt64` sum of the partial counts (see `getMergedValueBound`), e.g. for a
+        /// state multiplied by a large number with repeated merges.
+        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
+    }
+
+    /// `count` is the number of non-NULL rows; the state is that of `count()`.
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & /*sum*/, UInt64 count) const override
+    {
+        AggregateFunctionCount::set(place, count);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeVarUInt(data(place).count, buf);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return VAR_UINT_MAX_SIZE;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
+    {
+        return writeVarUInt(data(place).count, dst);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -115,6 +134,9 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
+    /// The merged count of non-nulls is the modular `UInt64` sum of the partial counts, which
+    /// never exceeds their saturating sum - see `MergedValueBound::Subadditive`.
+    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -289,14 +311,14 @@ The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExac
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
 If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
 
-However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting.
-With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
+`SELECT count(nullable_column) FROM table` can read only the [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data, as long as `nullable_column` isn't used anywhere else in the query.
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
+This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
-:::tip Improving COUNT(DISTINCT expr) performance
+<Tip title="Improving COUNT(DISTINCT expr) performance">
 If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
 You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
-:::
+</Tip>
     )";
     FunctionDocumentation::Syntax syntax = "count([expr])";
     FunctionDocumentation::Arguments arguments = {
@@ -308,6 +330,9 @@ You can also use a [projection](/reference/statements/alter/projection) to creat
     {
         "Basic row count",
         R"(
+CREATE TABLE t (num UInt8) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (2), (3);
+
 SELECT count() FROM t
         )",
         R"(
@@ -327,9 +352,9 @@ SELECT count(DISTINCT num) FROM t
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
-┌─uniqExact(num)─┐
-│              3 │
-└────────────────┘
+┌─countDistinct(num)─┐
+│                  3 │
+└────────────────────┘
         )"
     }
     };

@@ -18,9 +18,6 @@ allowed
 42
 -- WRITE ON FILE alone does not authorize reading a backup
 denied
--- Disk(...) is exempt in this change: still allowed with SOURCES revoked
-allowed
-allowed
 -- re-attaching an already-authorized database does not re-demand the grant
 allowed
 42

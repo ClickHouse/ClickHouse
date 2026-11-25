@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -111,13 +112,41 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        bool read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
-        /// A capture group is the whole field, so the value must consume it entirely. The `Quoted`
-        /// readers stop at the first character that cannot belong to the value, and in a stream-based
-        /// format the leftover would fail the subsequent delimiter check; here there is no delimiter,
-        /// so without this check a trailing unparsed rest would be silently discarded (for example, a
-        /// fractional timestamp read by the integer-only compatibility parser would lose its fraction).
-        if (escaping_rule == FormatSettings::EscapingRule::Quoted && !field_buf.eof())
+        bool read = false;
+        /// A capture group is a whole field with no delimiter, so a tab inside it belongs to the
+        /// value, while the `Raw` reader stops there. A field equal to the null representation keeps
+        /// that reader, which owns the rule's null token where a null-aware one is selected at all.
+        const bool null_token_is_live
+            = isNullableOrLowCardinalityNullable(type) || isVariant(type) || format_settings.null_as_default;
+        if (escaping_rule == FormatSettings::EscapingRule::Raw
+            && matched_field.contains('\t')
+            && !(null_token_is_live && matched_field == format_settings.tsv.null_representation))
+        {
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
+                    *columns[index], field_buf, format_settings, serializations[index], type.get());
+            else
+            {
+                serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);
+                read = true;
+            }
+        }
+        else
+            read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+
+        /// A capture group is the whole field, so the value must consume it entirely: there is no
+        /// delimiter here whose parsing would otherwise reject the leftover. The `CSV` and `JSON`
+        /// rules permit whitespace after a value.
+        if (escaping_rule == FormatSettings::EscapingRule::CSV)
+        {
+            if (!format_settings.csv.allow_whitespace_or_tab_as_delimiter)
+                while (!field_buf.eof() && (*field_buf.position() == ' ' || *field_buf.position() == '\t'))
+                    ++field_buf.position();
+        }
+        else if (escaping_rule == FormatSettings::EscapingRule::JSON)
+            skipWhitespaceIfAny(field_buf);
+
+        if (!field_buf.eof())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Unexpected data '{}' after parsed value in the matched field '{}'",
                 String(field_buf.position(), field_buf.available()),
@@ -197,7 +226,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    });
+    }, /*supports_reset_parser=*/ true);
 
     factory.setDocumentation("Regexp", Documentation{
         .description = R"DOCS_MD(
@@ -271,6 +300,9 @@ When working with the `Regexp` format, you can use the following settings:
 )DOCS_MD"});
 }
 
+/// Rows are split only by `\n`, exactly as in `RegexpFieldExtractor::parseRow`; a `\r` before it
+/// belongs to the row and is stripped by the parser. The number of rows must match the parser,
+/// because parallel parsing uses it to report row numbers in errors.
 static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
 {
     char * pos = in.position();
@@ -279,7 +311,7 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
         if (pos == in.buffer().end())
@@ -289,18 +321,7 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
         if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
             need_more_data = false;
 
-        if (*pos == '\n')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\r')
-                ++pos;
-        }
-        else if (*pos == '\r')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                ++pos;
-        }
+        ++pos;
     }
 
     saveUpToPosition(in, memory, pos);

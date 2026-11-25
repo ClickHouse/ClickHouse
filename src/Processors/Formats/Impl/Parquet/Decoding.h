@@ -10,10 +10,24 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace DB
+{
+class IDataType;
+class StringValueFilter;
+}
+
 namespace DB::Parquet
 {
 
 struct PageDecoderInfo;
+
+/// Unpacks `count` values of `bit_width` bits each, stored back to back starting at bit
+/// `bit_offset` of `in`, least significant bits first, as in Parquet's bit-packed encodings.
+/// The values must lie within [`in`, `in_end`). The input does not have to be padded: the values
+/// whose 9-byte loads would cross `in_end` are unpacked from a zero-padded copy of the tail.
+/// Instantiated for `UInt32` and `UInt64`.
+template <typename T>
+void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_t bit_width, T * out, size_t count);
 
 struct Dictionary
 {
@@ -37,6 +51,21 @@ struct Dictionary
     PaddedPODArray<UInt32> offsets; // if !fixed_size
     size_t count = 0;
 
+    /// If not empty, `string_value_filter_mask[i]` says whether the i-th dictionary entry matches
+    /// the string filter from PREWHERE; `index` materializes empty strings for non-matching entries.
+    /// Filled by `buildStringValueFilterMask`, only for `StringPlain` mode.
+    PaddedPODArray<UInt8> string_value_filter_mask;
+    /// The filter the mask was built from (shared by all readers of the column within the query).
+    /// `index` reports its statistics to it and stops applying the mask when the filter disables
+    /// itself, same as the non-dictionary decoding paths.
+    const StringValueFilter * string_value_filter = nullptr;
+    /// Rows decided by `string_value_filter_mask` and not yet reported to `string_value_filter`.
+    /// A report per RLE run would cost more than reading the run, so the rows are reported in
+    /// batches, see `accountStringValueFilterRows`.
+    size_t string_value_filter_rows_checked = 0;
+    size_t string_value_filter_rows_replaced = 0;
+    size_t string_value_filter_bytes_skipped = 0;
+
     /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
     std::span<const char> data;
 
@@ -44,13 +73,39 @@ struct Dictionary
     ColumnPtr col;
 
     void reset();
-    bool isInitialized() const;
-    double getAverageValueSize() const;
+    [[nodiscard]] bool isInitialized() const;
+    [[nodiscard]] double getAverageValueSize() const;
     /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
-    size_t allocatedBytes() const;
-    void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    [[nodiscard]] size_t allocatedBytes() const;
+    /// `use_string_value_filter` = false gathers the raw values even when a `string_value_filter_mask`
+    /// was built, and does not report the observed selectivity to the shared `StringValueFilter`.
+    /// It is used by the dictionary materialization done for row-group pruning, which visits every
+    /// distinct value exactly once: letting it feed `updateStats` would make the adaptive disable be
+    /// driven by the dictionary's value mix instead of the row frequencies the scan actually sees.
+    void index(const ColumnUInt32 & indexes_col, IColumn & out, bool use_string_value_filter = true);
+    /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
+    /// array; `index` delegates here. The indexes must be within bounds.
+    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, bool use_string_value_filter = true);
+    /// Append the value at dictionary index `idx` to `out`, `n` times. Used by the fused
+    /// decode-and-index path (`PageDecoder::decodeAndIndex`) to turn an RLE run of a repeated
+    /// index into a bulk fill, instead of expanding the run into explicit indexes and gathering
+    /// them one by one.
+    /// The whole run references a single dictionary entry, so a `string_value_filter_mask` is
+    /// consulted once for the entire run, and the run is accounted in the filter statistics as a
+    /// whole - the adaptive disable covers repeated runs exactly as it covers explicit indexes.
+    void appendRepeated(size_t idx, size_t n, IColumn & out);
+    /// Adds rows to the pending statistics and reports them to `string_value_filter` every
+    /// `StringValueFilter::MAX_VALUES_BETWEEN_STATS_UPDATES` rows.
+    void accountStringValueFilterRows(size_t checked, size_t replaced, size_t bytes_skipped);
+    /// Reports the pending statistics. Called once per decoded column subchunk: a subchunk read
+    /// through a filter calls `index` / `decodeAndIndex` once per passing row range.
+    void flushStringValueFilterStats();
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
+    /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
+    /// `num_rows` is the number of rows expected to consult the mask, or 0 to credit every entry with a single row.
+    /// Does not build the mask if the filter disables itself meanwhile.
+    void buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
     /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
@@ -62,16 +117,28 @@ struct Dictionary
     /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
     /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
     /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
-    /// Must be kept in sync with `decode()`.
+    /// `has_string_value_filter` says whether `buildStringValueFilterMask` will be called after
+    /// `decode()`, allocating a per-entry mask on top (only in `StringPlain` mode).
+    /// Must be kept in sync with `decode()` and `buildStringValueFilterMask()`.
     static size_t decodedFootprintUpperBound(
         parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type);
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type, bool has_string_value_filter);
 };
 
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
+    /// Value `i` passes `filter` if `filter[filter_offset + i]` is nonzero (not necessarily 1).
     virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
+
+    /// Fused decode-and-gather for dictionary-encoded data pages: append the *dictionary values*
+    /// at the decoded indexes directly to `out`, without materializing the indexes as a column.
+    /// An RLE run of a repeated index becomes a single dictionary lookup and a bulk fill, and
+    /// bit-packed indexes are gathered from a small stack buffer, saving a full write + read pass
+    /// over an indexes column (most values in typical files sit in RLE runs). Returns false if
+    /// this decoder (or this dictionary mode) does not support the fusion; the caller then falls
+    /// back to `decode` into an indexes column + `Dictionary::index`.
+    virtual bool decodeAndIndex(size_t /*num_values*/, Dictionary & /*dictionary*/, IColumn & /*out*/) { return false; }
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;
@@ -95,7 +162,7 @@ struct FixedSizeConverter
 
     /// If true, we can just memcpy into IColumn::insertRawUninitialized instead of calling
     /// convertColumn.
-    virtual bool isTrivial() const { return false; }
+    [[nodiscard]] virtual bool isTrivial() const { return false; }
 
     virtual void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
     {
@@ -105,15 +172,20 @@ struct FixedSizeConverter
 
     /// Decodes min/max value from parquet Statistics or ColumnIndex.
     /// Called separately for min (with is_max=false) and max (is_max=true).
-    /// The caller pre-fills `out` with corresponding +-infinity, so this function can just leave
-    /// `out` unchanged if the value can't be decoded.
+    /// Returns std::nullopt if the value can't be decoded; the caller then keeps the corresponding
+    /// range bound at +-infinity. Returns a Null Field if reading a chunk that holds the value throws;
+    /// then none of the chunk's statistics may be used.
     /// Called only if PageDecoderInfo::allow_stats is true, which SchemaConverter sets only after
-    /// carefully checking that min/max stats are usable in this situation (e.g. no type conversion
-    /// is needed).
-    virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
+    /// carefully checking that min/max stats are usable in this situation (either no type
+    /// conversion is needed, or the Field is converted afterwards -
+    /// see PageDecoderInfo::cast_stats_to_output_type).
+    [[nodiscard]] virtual std::optional<Field> convertField(std::span<const char> /*data*/, bool /*is_max*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
     }
+
+    /// True if convertField can return a Null Field, so a chunk is bounded only if both its min and max are known.
+    [[nodiscard]] virtual bool statsNeedBothBounds() const { return false; }
 
     virtual ~FixedSizeConverter() = default;
 };
@@ -121,13 +193,13 @@ struct FixedSizeConverter
 struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
-    virtual bool isTrivial() const { return false; }
+    [[nodiscard]] virtual bool isTrivial() const { return false; }
 
-    /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
+    /// i-th string is range [offsets[static_cast<ssize_t>(i) - 1], offsets[i]-separator_bytes) in `chars`.
     /// `offsets[-1]` must be valid and is not necessarily 0.
     /// Does no range checks, the caller must ensure that `offsets` are valid and `chars` are long enough.
     virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
-    virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
+    [[nodiscard]] virtual std::optional<Field> convertField(std::span<const char> /*data*/, bool /*is_max*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
     }
@@ -154,22 +226,44 @@ struct PageDecoderInfo
     /// E.g. if the parquet file has column `x String`, but we read it as `file(..., 'x Int64')`, we
     /// silently auto-cast data from String to Int64 (by parsing number as text); but we can't do the
     /// same for min/max stats because String min/max is not the same as Int64 min/max (e.g. "10" < "9").
-    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter), and the
-    /// conversion is done together with decoding, by FixedSizeConverter/StringConverter.
-    /// In particular we don't call something like convertFieldToType because working through all
-    /// the cases would be a nightmare.
+    /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
+
+    /// True if we can use the bloom filter and the dictionary page to skip row groups.
+    bool allow_hash_filters = false;
+
+    /// If true, we need to call tryConvertFieldToType on the output of
+    /// FixedSizeConverter/StringConverter's convertField.
+    /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
+    /// output block (the type that KeyCondition compares the Field against), as provided to
+    /// decodeField.
+    /// E.g. if the file has timestamps in ms, but the requested type is DateTime64(6), IntConverter
+    /// will output Decimal64 Field with scale 3, then tryConvertFieldToType will rescale it to scale 6.
+    ///
+    /// SchemaConverter sets this only for type pairs where tryConvertFieldToType was audited to
+    /// behave exactly like the castColumn that is later applied to the data: monotonic, with the
+    /// same rounding (so the converted min/max still bound the converted values), and returning
+    /// Null on overflow (then we leave the bound at infinity) rather than clamping or wrapping.
+    /// E.g. this wouldn't be correct for Time64 output type: its cast wraps values around by day,
+    /// non-monotonically, while tryConvertFieldToType just rescales.
+    bool cast_stats_to_output_type = false;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
     bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;
 
     /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
     /// before `data` and after `end`.
-    std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
+    /// `num_values` is the number of values in the page (including nulls), an upper bound of the number of encoded values.
+    /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
+    /// as empty strings (used for substring search conditions pushed down from PREWHERE).
+    std::unique_ptr<PageDecoder> makeDecoder(
+        parq::Encoding::type, std::span<const char> data, size_t num_values, const StringValueFilter * string_value_filter = nullptr) const;
 
     /// Decode a min/max value from Statistics.
-    /// If not supported or allow_stats is false, leaves `out` unchanged.
-    void decodeField(std::span<const char> data, bool is_max, Field & out) const;
+    /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
+    /// `final_output_type` (see cast_stats_to_output_type), leaves `out` unchanged.
+    /// Returns false if none of the chunk's statistics may be used (see FixedSizeConverter::convertField).
+    bool decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
 };
 
 
@@ -185,11 +279,15 @@ struct IntConverter : public FixedSizeConverter
     /// Only allowed if input_size is 4.
     std::optional<size_t> output_size;
 
+    /// The output type is `Bool`: a nonzero value is read as 1, and so is a nonzero statistic.
+    bool output_bool = false;
+
     /// These determine the type of Field produced by convertField (when parsing min/max stats).
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
     bool field_ipv4 = false; // IPv4
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
+    bool field_datetime = false; // DateTime; the cast saturates values above UINT32_MAX
     bool field_signed = true; // Int64, otherwise UInt64
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
@@ -208,16 +306,21 @@ struct IntConverter : public FixedSizeConverter
     std::optional<std::pair<Int32, Int32>> date_target_datetime64_day_range;
 
     /// The allowed day-number window of the requested output type, and its name for error messages.
-    std::pair<Int32, Int32> dateTargetDayRange() const;
-    String dateTargetTypeName() const;
+    [[nodiscard]] std::pair<Int32, Int32> dateTargetDayRange() const;
+    [[nodiscard]] String dateTargetTypeName() const;
 
-    bool isTrivial() const override
+    [[nodiscard]] bool isTrivial() const override
     {
         return !output_size.has_value() && date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+
+    [[nodiscard]] bool statsNeedBothBounds() const override
+    {
+        return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+    }
 };
 
 /// Input physical type: FLOAT or DOUBLE.
@@ -228,9 +331,9 @@ struct FloatConverter : public FixedSizeConverter
 {
     FloatConverter() { input_size = sizeof(T); }
 
-    bool isTrivial() const override { return true; }
+    [[nodiscard]] bool isTrivial() const override { return true; }
 
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct FloatConverter<float>;
@@ -247,9 +350,9 @@ struct Float16Converter : public FixedSizeConverter
 /// FIXED_LEN_BYTE_ARRAY -> any fixed-size type
 struct FixedStringConverter : public FixedSizeConverter
 {
-    bool isTrivial() const override { return true; }
+    [[nodiscard]] bool isTrivial() const override { return true; }
 
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 struct UUIDConverter : public FixedSizeConverter
@@ -257,15 +360,14 @@ struct UUIDConverter : public FixedSizeConverter
     UUIDConverter() { input_size = 16; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
 {
-    bool isTrivial() const override { return true; }
+    [[nodiscard]] bool isTrivial() const override { return true; }
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 /// A thing that byteswaps and sign-extends integers up to 32 bytes long.
@@ -285,7 +387,7 @@ struct BigEndianHelper
     void fixupValue(T & x) const;
 
     T convertPaddedValue(const char * data) const;
-    T convertUnpaddedValue(std::span<const char> data) const;
+    [[nodiscard]] T convertUnpaddedValue(std::span<const char> data) const;
 };
 
 extern template struct BigEndianHelper<Int32>;
@@ -312,7 +414,7 @@ struct BigEndianDecimalFixedSizeConverter : public FixedSizeConverter
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalFixedSizeConverter<Int32>;
@@ -333,7 +435,7 @@ struct BigEndianDecimalWideIntegerConverter : public FixedSizeConverter
     }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalWideIntegerConverter<Int128>;
@@ -348,7 +450,7 @@ template <typename T>
 struct BigEndianDecimalWideIntegerStringConverter : public StringConverter
 {
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
@@ -367,7 +469,7 @@ struct BigEndianDecimalStringConverter : public StringConverter
     explicit BigEndianDecimalStringConverter(UInt32 scale_) : scale(scale_) {}
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
-    void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+    [[nodiscard]] std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
 extern template struct BigEndianDecimalStringConverter<Int32>;
@@ -377,6 +479,12 @@ extern template struct BigEndianDecimalStringConverter<Int256>;
 
 struct Int96Converter : public FixedSizeConverter
 {
+    /// Output is `DateTime64(scale)` ticks, rounded toward zero, or down if `round_down`. A value outside the range
+    /// that type holds is clamped to it with Saturate, otherwise throws.
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
+    UInt32 scale = 9;
+    bool round_down = false;
+
     Int96Converter();
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
@@ -394,7 +502,9 @@ struct GeoConverter : public StringConverter
 };
 
 
-void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);
+/// If out_num_zeros is not null, the number of zero levels is added to it, counted as part of the
+/// decoding.
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out, size_t * out_num_zeros = nullptr);
 
 std::unique_ptr<PageDecoder> makeDictionaryIndicesDecoder(parq::Encoding::type encoding, size_t dictionary_size, std::span<const char> data);
 

@@ -1,0 +1,29 @@
+---
+title: NYC 出租车示例数据集
+---
+
+<Note>
+  源 Parquet 文件约为 5.8 GB。加载该文件可能需要几分钟，具体取决于您的网络状况和可用资源。
+</Note>
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+USE nyc_taxi;
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT *
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet',
+    NOSIGN,
+    Parquet
+);
+
+INSERT INTO nyc_taxi.trips_small_inferred
+SELECT *
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet',
+    NOSIGN,
+    Parquet
+);
+```

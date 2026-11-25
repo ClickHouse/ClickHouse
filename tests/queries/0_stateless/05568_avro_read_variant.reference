@@ -1,0 +1,38 @@
+-- Dynamic
+1	42	Int32
+2	hello	String
+3	{"age":30,"name":"Alice"}	JSON
+4	[1,2]	Array(Dynamic)
+5	\N	None
+6	\N	None
+-- input_format_null_as_default = 0
+1	42	Int32
+2	hello	String
+3	{"age":30,"name":"Alice"}	JSON
+4	[1,2]	Array(Dynamic)
+5	\N	None
+6	\N	None
+-- a required record
+1	42	Int32
+2	hello	String
+3	{"age":30,"name":"Alice"}	JSON
+4	[1,2]	Array(Dynamic)
+5	\N	None
+-- value before metadata
+1	42
+3	{"age":30,"name":"Alice"}
+-- JSON
+3	{"age":30,"name":"Alice"}
+5	{}
+6	{}
+-- Nullable(JSON)
+3	{"age":30,"name":"Alice"}
+5	\N
+6	\N
+-- nested
+['{"age":30,"name":"Alice"}','{"age":30,"name":"Alice"}']	{'k':'{"age":30,"name":"Alice"}'}	(1,'{"age":30,"name":"Alice"}')
+-- errors
+Cannot read Parquet variant column 'v' as JSON: it contains a value of type Int32
+Malformed Parquet variant: 1 bytes are needed at offset 0, but the blob is 0 bytes
+Type Dynamic is not compatible with Avro record
+Type Dynamic is not compatible with Avro record

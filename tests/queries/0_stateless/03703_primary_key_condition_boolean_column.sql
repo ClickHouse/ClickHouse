@@ -127,3 +127,51 @@ SELECT count() FROM test_indexhint WHERE indexHint(id) SETTINGS optimize_use_pro
 SELECT count() FROM test_indexhint WHERE indexHint(id != 0) SETTINGS optimize_use_projections = 0;
 
 DROP TABLE test_indexhint;
+
+SELECT '--- Test 9: a bare key column whose type has no boolean reading';
+
+DROP TABLE IF EXISTS test_indexhint_no_bool;
+
+SET allow_suspicious_low_cardinality_types = 1;
+
+-- Same layout as Test 8. A wide integer, a `BFloat16` and their `LowCardinality` forms are
+-- rejected as a filter (`02473_prewhere_with_bigint`), so no row-level predicate corresponds to
+-- a granule skipped for one of them: the hint must state nothing and every row must be read.
+-- `n` is the control: it has a boolean reading, so its granule is still pruned.
+CREATE TABLE test_indexhint_no_bool
+(
+    w UInt256,
+    b BFloat16,
+    lw LowCardinality(UInt256),
+    n UInt64,
+    INDEX b_minmax  b  TYPE minmax GRANULARITY 1,
+    INDEX lw_minmax lw TYPE minmax GRANULARITY 1,
+    INDEX n_minmax  n  TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY w
+SETTINGS index_granularity = 8;
+
+INSERT INTO test_indexhint_no_bool
+SELECT if(number < 16, 0, number), if(number < 16, 0, number),
+       if(number < 16, 0, number), if(number < 16, 0, number) FROM numbers(24);
+
+SELECT count() FROM test_indexhint_no_bool WHERE indexHint(w)  SETTINGS optimize_use_projections = 0;
+SELECT count() FROM test_indexhint_no_bool WHERE indexHint(b)  SETTINGS optimize_use_projections = 0;
+SELECT count() FROM test_indexhint_no_bool WHERE indexHint(lw) SETTINGS optimize_use_projections = 0;
+SELECT count() FROM test_indexhint_no_bool WHERE indexHint(n)  SETTINGS optimize_use_projections = 0;
+
+DROP TABLE test_indexhint_no_bool;
+
+SELECT '--- Test 10: partition pruning by a bare key column with no boolean reading';
+
+DROP TABLE IF EXISTS test_indexhint_no_bool_part;
+
+CREATE TABLE test_indexhint_no_bool_part (w UInt256, id UInt32)
+ENGINE = MergeTree PARTITION BY w ORDER BY id SETTINGS index_granularity = 8;
+
+INSERT INTO test_indexhint_no_bool_part SELECT intDiv(number, 8) % 2, number FROM numbers(16);
+
+SELECT count() FROM test_indexhint_no_bool_part WHERE indexHint(w) SETTINGS optimize_use_projections = 0;
+
+DROP TABLE test_indexhint_no_bool_part;

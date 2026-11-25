@@ -17,6 +17,10 @@ Large single-replica services are available on the Scale and Enterprise tiers. B
 
 On the Scale and Enterprise tiers, you can create a primary or secondary service with one replica without contacting support. Services in a [warehouse](/products/cloud/features/infrastructure/warehouses) scale independently.
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) is provisioned through your account team during Private Preview, including for single-replica services.
+</Note>
+
 ## When to use a single-replica service {#when-to-use-a-single-replica-service}
 
 A large single-replica service can reduce compute costs for workloads that need more CPU or memory than a Basic tier service but don't require compute redundancy. It can also be useful for development, testing, batch processing, and other non-critical workloads.
@@ -36,4 +40,4 @@ Scale and Enterprise tier services support [horizontal scaling](/products/cloud/
 
 ## Service limits {#service-limits}
 
-The Basic tier limits of `100` databases and `500` tables apply only to single-replica services in that tier. Single-replica services on the Scale and Enterprise tiers use the standard service guardrails. For details, see [Usage limits](/products/cloud/guides/best-practices/usagelimits).
+Single-replica services are limited to `100` databases and `500` tables for the Basic tier. Other service guardrails (views, dictionaries, columns, partitions, parts, and so on) follow the standard limits. For details, see [Usage limits](/products/cloud/guides/best-practices/usagelimits).

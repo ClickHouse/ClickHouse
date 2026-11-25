@@ -1,0 +1,18 @@
+a clear, a drop and a rename onto the dropped name
+a	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+2	3
+a clear and a rename of the cleared column
+a1	[]
+b	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+1	2	3
+compact part: a clear, a drop and a rename onto the dropped name
+a	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+2	3
+compact part: a clear and a rename of the cleared column
+a1	[]
+b	['TDigest','Basic','UniqV2']
+c	['Basic','UniqV2']
+1	2	3

@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 我们建议用户始终为日志和链路追踪创建自己的 schema，原因如下：
 
 * **选择主键** - 默认 schema 使用的 `ORDER BY` 是针对特定访问模式优化的。你的访问模式很可能与其并不匹配。
@@ -256,7 +254,15 @@ LIMIT 5
 
 Materialized Views 允许你将计算成本从查询时转移到写入时。ClickHouse materialized view 本质上只是一个 trigger：当数据块插入表中时，它会对这些块执行查询。该查询的结果会被插入到第二个“目标”表中。
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Materialized view](/images/use-cases/observability/observability-10.webp)
+
+</Frame>
+
+</div>
 
 <Info>
   **实时更新**
@@ -411,7 +417,15 @@ FROM otel_logs
 
 如下图所示：
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</Frame>
+
+</div>
 
 如果现在重启在[&quot;导出到 ClickHouse&quot;](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)中使用的 collector 配置，数据就会以所需格式出现在 `otel_logs_v2` 中。请注意，这里使用了带类型的 JSON 提取函数。
 
@@ -476,7 +490,7 @@ FROM otel_logs
 
 上述 materialized view 依赖隐式类型转换，尤其是在使用 `LogAttributes` Map 的情况下。ClickHouse 通常会自动将提取出的值转换为目标表的类型，从而减少所需的语法。不过，我们建议用户始终通过以下方式测试视图：使用该视图的 `SELECT` 语句，并配合一个面向相同 schema 目标表的 [`INSERT INTO`](/zh/reference/statements/insert-into) 语句。这样应能确认类型是否得到了正确处理。尤其要注意以下情况：
 
-* 如果某个 key 在 Map 中不存在，将返回空字符串。对于数值类型，你需要将其映射为合适的值。这可以通过[条件函数](/zh/reference/functions/regular-functions/conditional-functions)实现，例如 `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`；如果可以接受默认值，也可以使用[类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)，例如 `toUInt8OrDefault(LogAttributes['status'] )`
+* 如果某个键在 Map 中不存在，将返回空字符串。对于数值类型，你需要将其映射为合适的值。这可以通过[条件函数](/zh/reference/functions/regular-functions/conditional-functions)实现，例如 `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`；如果可以接受默认值，也可以使用[类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)，例如 `toUInt8OrDefault(LogAttributes['status'] )`
 * 某些类型并不总是会被自动转换，例如，数值的字符串表示形式不会被转换为枚举值。
 * 如果未找到值，JSON 提取函数会返回该类型的默认值。请务必确认这些值是合理的！
 
@@ -645,7 +659,15 @@ LIMIT 5
 
 [字典](/zh/reference/statements/create/dictionary)是 ClickHouse 的一项[核心特性](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)，为来自各种内部和外部[数据源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)的数据提供内存中的[键值](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)表示，并针对超低延迟查找查询进行了优化。
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="可观测性与字典" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![可观测性与字典](/images/use-cases/observability/observability-12.webp)
+
+</Frame>
+
+</div>
 
 这在多种场景下都很实用，例如在不拖慢摄取过程的情况下实时富集已摄取的数据，以及整体提升查询性能，其中对 JOIN 的加速尤为明显。
 虽然在可观测性场景中很少需要使用 JOIN，但字典在富集方面仍然很有用——无论是在写入时还是查询时。下面我们会分别给出这两种示例。
@@ -955,11 +977,11 @@ CREATE TABLE regexp_device
 这些表可以通过 `url` 表函数，使用以下公开托管的 CSV 文件填充：
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 在内存表填充好数据后，我们就可以加载正则表达式字典了。请注意，我们需要将键值指定为列，这些列就是我们可以从 User-Agent 中提取的属性。
@@ -1473,7 +1495,15 @@ ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
   投影具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 投影 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="可观测性与投影" size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![可观测性与投影](/images/use-cases/observability/observability-13.webp)
+
+</Frame>
+
+</div>
 
 考虑下面这个查询，它会按 500 错误码过滤 `otel_logs_v2` 表中的数据。这很可能是日志场景中的一种常见访问模式，因为用户往往希望按错误码进行过滤：
 

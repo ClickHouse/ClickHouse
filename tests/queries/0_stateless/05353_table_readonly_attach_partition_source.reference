@@ -1,0 +1,5 @@
+source parts while read-only	1	0
+destination rows	20	190
+source rows	20	190
+source parts after the toggle	1	2
+source rows after the toggle	21

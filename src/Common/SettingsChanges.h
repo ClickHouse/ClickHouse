@@ -35,21 +35,30 @@ public:
     using std::vector<SettingChange>::vector;
 
     bool tryGet(std::string_view name, Field & out_value) const;
-    const Field * tryGet(std::string_view name) const;
+    [[nodiscard]] const Field * tryGet(std::string_view name) const;
     Field * tryGet(std::string_view name);
 
     /// The whole change rather than its value, for consumers that also have to look at `shorthand`.
-    const SettingChange * tryGetChange(std::string_view name) const;
+    [[nodiscard]] const SettingChange * tryGetChange(std::string_view name) const;
     SettingChange * tryGetChange(std::string_view name);
 
     /// Inserts element if doesn't exists and returns true, otherwise just returns false
     bool insertSetting(std::string_view name, const Field & value);
-    /// Sets element to value, inserts if doesn't exist
-    void setSetting(std::string_view name, const Field & value);
+
     /// If element exists - removes it and returns true, otherwise returns false
     bool removeSetting(std::string_view name);
 
-    String namesToString() const;
+    /// Removes the elements with the specified names, the missing ones are skipped.
+    void removeSettings(const Strings & names);
+
+    /// Sets element to value, inserts if doesn't exist
+    void setSetting(std::string_view name, const Field & value);
+    void setSetting(const SettingChange & change);
+
+    /// Applies `other` on top of these changes with `setSetting`.
+    void setSettings(const SettingsChanges & other);
+
+    [[nodiscard]] String namesToString() const;
 };
 
 }

@@ -9,7 +9,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -44,9 +43,25 @@ struct MergeTreeTemporaryPart
     {
         std::unique_ptr<MergedBlockOutputStream> stream;
         MergedBlockOutputStream::Finalizer finalizer;
+        /// Projection whose part this stream wrote; empty when it wrote `part` itself.
+        String projection_name = {};
     };
 
     std::vector<Stream> streams;
+
+    /// Marks of a projection whose stream was finalized, and released, before prewarmCaches() runs.
+    struct ProjectionMarks
+    {
+        String projection_name;
+        PlainMarksByName marks;
+        PlainMarksByName index_marks;
+    };
+
+    std::vector<ProjectionMarks> released_projection_marks;
+
+    /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
+    /// Empty when the part keeps the block's row order.
+    IColumn::Permutation sort_permutation;
 
     void cancel();
     void finalize();
@@ -88,42 +103,55 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
+      * `defer_fsync`: do not fsync the part files even if `fsync_after_insert` is enabled,
+      * because the caller will fsync them later, before acknowledging the insert.
+      * `txn`, when set, stamps the part's `creation_tid` instead of the context's transaction: an
+      * INSERT commits each partition under its own, and for `INSERT ... SELECT` the context's is the SELECT's.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
-        bool may_have_leftover = true);
+        bool may_have_leftover = true,
+        bool defer_fsync = false,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        PatchPartIndex patch_part_index,
         ContextPtr context,
         bool may_have_leftover = true);
 
-    MergeTreeData::MergingParams::Mode getMergingMode() const
+    [[nodiscard]] MergeTreeData::MergingParams::Mode getMergingMode() const
     {
         return data.merging_params.mode;
     }
 
     /// For insertion.
+    /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
+    /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         bool merge_is_needed,
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
+    /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         size_t block_num,
+        bool use_selected_codec,
+        bool is_explicit_recompression,
         ContextPtr context);
 
     static Block mergeBlock(
@@ -138,10 +166,12 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        std::optional<PatchPartIndex> patch_part_index,
         ContextPtr context,
         UInt64 block_number,
-        bool may_have_leftover);
+        bool may_have_leftover,
+        bool defer_fsync,
+        const MergeTreeTransactionPtr & txn = nullptr);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
@@ -150,9 +180,12 @@ private:
         const MergeTreeData & data,
         Block block,
         const ProjectionDescription & projection,
+        CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        ContextPtr context,
+        bool use_selected_codec = false);
 
     MergeTreeData & data;
     LoggerPtr log;

@@ -13,11 +13,14 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
@@ -28,6 +31,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -36,11 +41,13 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+#include <Databases/IDatabase.h>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -55,7 +62,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
+    extern const SettingsBool allow_kafka_offsets_storage_in_keeper;
     extern const SettingsBool kafka_disable_num_consumers_limit;
 }
 
@@ -113,8 +120,18 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
+            /// The named collection is checked every time, also when the definition is read back from metadata
+            /// (server startup, short `ATTACH`): the collection can change after the table is created.
+            KafkaConfigLoader::checkNamedCollection(*named_collection);
+
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
@@ -289,10 +306,10 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_kafka_offsets_storage_in_keeper` setting "
                 "to enable it");
 
         if (!has_keeper_path || !has_replica_name)
@@ -358,6 +375,12 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
+        SecretArgumentsSpec{
+            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+            /// secret and makes the collection name optional, so a named argument can be the first one.
+            .secret_settings = Kafka::settingsToHide(),
+            .settings_as_arguments = true,
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -365,13 +388,11 @@ void registerStorageKafka(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Kafka table engine
 
-:::tip
+<Tip>
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
-:::
+</Tip>
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -421,8 +442,10 @@ Required parameters:
 
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
-- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+- `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere. Supports macro expansion (e.g., `'consumers_{replica}'`), which lets each replica use its own consumer group and read all messages.
 - `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+
+The values of `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_client_id` and `kafka_schema` support macro expansion: `{database}` and `{table}` are replaced with the table's database and name, and other macros such as `{shard}` and `{replica}` are taken from the server's `macros` configuration.
 
 Optional parameters:
 
@@ -463,6 +486,82 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
+## TLS and SASL with named collections {#kafka-tls-sasl-named-collections}
+
+The Kafka table engine exposes only a subset of [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) settings as table-level `kafka_*` parameters (for example `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`). **TLS certificate paths, private keys, and key passwords are not table settings**; configure them as extended `librdkafka` properties.
+
+For `ENGINE = Kafka(named_collection)`:
+
+- Top-level `kafka_*` keys in the named collection are Kafka table-engine settings (brokers, topic, format, and the protocol/SASL settings listed above).
+- Keys with the `kafka.` prefix in `CREATE NAMED COLLECTION`, or nested under `<kafka>` in XML, are forwarded to `librdkafka`. Underscores in the key name are converted to dots (for example `kafka.ssl_ca_location` → `ssl.ca.location`, or `<ssl_ca_location>` under `<kafka>` → `ssl.ca.location`).
+
+When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
+
+A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, ClickHouse returns `BAD_ARGUMENTS`. To use other supported properties, such as `sasl.kerberos.keytab` or `sasl.oauthbearer.token.endpoint.url`, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
+
+In a named collection created with SQL, pass the contents of the file instead of its path: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, and `sasl.oauthbearer.assertion.private.key.pem`. The value `probe` of `ssl.ca.location` and `https.ca.location` is also accepted, because it is not a path.
+
+A common layout for `SASL_SSL` with client certificates: store the certificates, the private key, and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
+
+Example with a named collection created with SQL, which contains the certificates and the private key in the PEM format:
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_certificate_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----',
+    kafka.ssl_key_pem = '-----BEGIN ENCRYPTED PRIVATE KEY-----
+...
+-----END ENCRYPTED PRIVATE KEY-----',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+The same extended settings in an XML-defined collection, which can refer to the files instead (the files must exist on every ClickHouse server that runs consumers for the table):
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+See the [librdkafka configuration reference](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) for all TLS-related properties. For server-wide defaults without named collections, see [Configuration](#configuration) below.
+
+## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
+
+When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
+
+For `ENGINE = Kafka(named_collection)`, extended `librdkafka` settings (including OIDC) use the same `kafka.` / `<kafka>` namespace described in [TLS and SASL with named collections](#kafka-tls-sasl-named-collections). The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
+
 Examples:
 
 ```sql
@@ -497,9 +596,9 @@ CREATE TABLE queue3 (
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -508,9 +607,9 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-:::info
+<Info>
 The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
-:::
+</Info>
 
 ## Description {#description}
 
@@ -559,6 +658,24 @@ Example, using [named collections](/concepts/features/configuration/server-confi
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+
+The following table settings control how often the consumed data is written to the materialized views:
+
+- `kafka_max_block_size` — a block is flushed as soon as it has this many rows. Default: `max_insert_block_size` divided by `kafka_num_consumers`.
+- `kafka_flush_interval_ms` — a block is flushed after this time even if it is not full. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) (7500 ms). Decrease it to reduce the delay between producing a message and seeing it in the target table.
+- `kafka_consumer_reschedule_ms` — when there are no new messages, the engine waits this long before polling again. Default: `500` ms.
+
+These are settings of the Kafka table, set in its `SETTINGS` clause. They cannot be set in the `<kafka>` section of the server configuration file: every key there is passed to librdkafka as a property (see [Configuration](#configuration)), so for example `<flush_interval_ms>` is not a ClickHouse setting there.
+
+```sql
+CREATE TABLE queue (timestamp UInt64, level String, message String)
+ENGINE = Kafka
+SETTINGS kafka_broker_list = 'localhost:9092',
+         kafka_topic_list = 'topic',
+         kafka_group_name = 'group1',
+         kafka_format = 'JSONEachRow',
+         kafka_flush_interval_ms = 1000;
+```
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -617,9 +734,9 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
-:::note
+<Note>
 AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
-:::
+</Note>
 
 AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
 
@@ -648,7 +765,7 @@ The AWS region is automatically extracted from the broker endpoint using pattern
 
 **AWS Credentials:**
 
-Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS profile files) when present. To also enable EC2 instance profiles, environment variables (`AWS_ACCESS_KEY_ID`, etc.), ECS task roles, and other automatic credential sources, add to your server configuration:
+By default, the server does not resolve any AWS credentials for `AWS_MSK_IAM`, and authentication fails with `AWS credentials are empty or expired`. To let the server authenticate with its ambient AWS identity, add to your server configuration:
 
 ```xml
 <kafka>
@@ -656,7 +773,15 @@ Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS
 </kafka>
 ```
 
+The ambient credential sources are: environment variables (`AWS_ACCESS_KEY_ID`, etc.), EC2 instance profiles (IMDS), IAM roles for service accounts (IRSA), ECS task roles, SSO, and the `~/.aws/credentials` and `~/.aws/config` profile files.
+
 This setting can only be configured by server administrators. Default: `false`.
+
+<Warning>
+This setting is unsafe. When it is enabled, every user with the `KAFKA` source grant and `CREATE TABLE` can select the `AWS_MSK_IAM` mechanism, the broker list, and the AWS region in table settings. The server then signs a `kafka-cluster:Connect` token with its own AWS identity and sends the token to the user-chosen broker. The token contains the AWS access key ID and the full STS session token, and the receiving host can replay it against MSK clusters in that region as the server.
+
+Enable this setting only if you trust every user who can create Kafka tables with the server's AWS identity. Restrict the hosts that Kafka tables can connect to with [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), which is empty (allow all hosts) by default.
+</Warning>
 
 **PrivateLink and Custom DNS:**
 
@@ -805,7 +930,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 <ExperimentalBadge/>
 
-If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+If `allow_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
 - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
 - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
@@ -834,7 +959,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -844,7 +969,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
@@ -857,7 +982,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Known limitations {#known-limitations}
@@ -866,6 +991,12 @@ As the new engine is experimental, it is not production ready yet. There are few
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
 - When using partition affinity, all shards must use the same `kafka_shard_count`; otherwise some partitions may be consumed by multiple shards or remain unconsumed.
+
+## Data durability {#data-durability}
+
+The `Kafka` engine can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumed offset is committed (to the broker, or to ClickHouse Keeper when `kafka_keeper_path` is set), which lets the consumer resume past those messages. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the offset is committed but before the target part is fsynced, the consumer resumes past those messages on restart, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
+
+For the recommended materialized-view consumption path (the offset is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the offset is committed, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. The mitigation also does not apply where the offset is committed before the insert has finished. That is the case with a direct `INSERT ... SELECT ... FROM <kafka_table>` and `kafka_commit_on_select = 1`, and on the broker-backed engine with `kafka_commit_every_batch = 1`; the latter setting is ignored when `kafka_keeper_path` is set, so it cannot cause an intermediate commit there.
 
 **See Also**
 
@@ -927,6 +1058,53 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+String validateBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// The remote host filter must see exactly the host and port librdkafka will dial, so the value is
+    /// not passed on as it was written: every entry is parsed here, validated, and the returned list is
+    /// rebuilt from the parsed entries. The rebuilt entries are `[SCHEME://]host:port` with an explicit
+    /// port, a form librdkafka re-parses to the same host and port.
+    ///
+    /// librdkafka reads `metadata.broker.list` as a C string, splits it on `,` and ` `, cuts an entry at
+    /// the first `/` after the `scheme://` prefix, substitutes `localhost` for an empty host, and
+    /// connects to port 9092 when none is given (`rd_kafka_broker_name_parse`). An entry which such a
+    /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
+    /// ASCII - is rejected instead of repaired.
+
+    if (broker_list.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
+
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ',' || c == ' '; });
+
+    Names canonical_brokers;
+    canonical_brokers.reserve(brokers.size());
+
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        String scheme;
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+        {
+            scheme = broker.substr(0, scheme_end + strlen("://"));
+            broker = broker.substr(scheme_end + strlen("://"));
+
+            /// The underscore appears in the librdkafka protocols `sasl_plaintext` and `sasl_ssl`.
+            for (const char c : scheme.substr(0, scheme_end))
+                if (!isAlphaASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protocol in Kafka broker '{}{}'", scheme, broker);
+        }
+
+        canonical_brokers.push_back(
+            scheme + context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(broker, 9092, "Kafka broker"));
+    }
+
+    return boost::algorithm::join(canonical_brokers, ",");
 }
 
 void consumerGracefulStop(

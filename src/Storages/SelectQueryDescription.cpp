@@ -43,6 +43,21 @@ SelectQueryDescription & SelectQueryDescription::SelectQueryDescription::operato
 namespace
 {
 
+/// A parenthesized operand of a set operation with a `SETTINGS` clause of its own keeps its
+/// `ASTSelectWithUnionQuery` wrapper (see `ParserUnionQueryElement`): `SELECT ... UNION ALL (SELECT ... SETTINGS x = 1)`.
+/// It is still a simple `SELECT`, and the clause stays on the `ASTSelectQuery`, so look through the wrapper.
+ASTSelectQuery * getSimpleSelectQuery(const ASTPtr & operand)
+{
+    if (auto * query = operand->as<ASTSelectQuery>())
+        return query;
+    if (const auto * union_query = operand->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects->children.size() == 1)
+            return union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
+    }
+    return nullptr;
+}
+
 StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPtr context, bool add_default_db = true)
 {
     if (add_default_db)
@@ -64,9 +79,11 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
                 "StorageMaterializedView cannot be created from table functions ({})",
                 subquery->formatForErrorMessage());
 
-        auto & inner_query = ast_select->list_of_selects->children.at(0);
+        auto * inner_query = getSimpleSelectQuery(ast_select->list_of_selects->children.at(0));
+        if (!inner_query)
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW support query with multiple simple UNION [ALL] only");
 
-        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
+        return extractDependentTableFromSelectQuery(*inner_query, context, false);
     }
     return StorageID::createEmpty();
 }
@@ -76,7 +93,7 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select)
 {
     for (const auto & children : select.list_of_selects->children)
     {
-        auto * query = children->as<ASTSelectQuery>();
+        auto * query = getSimpleSelectQuery(children);
 
         if (query == nullptr)
             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW support query with multiple simple UNION [ALL] only");
@@ -112,7 +129,7 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
 
     checkAllowedQueries(query);
     /// We trigger only for the first found table
-    ASTSelectQuery & new_inner_query = query.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
+    ASTSelectQuery & new_inner_query = *getSimpleSelectQuery(query.list_of_selects->children.at(0));
     /// Extracting first found table ID
     result.select_table_id = extractDependentTableFromSelectQuery(new_inner_query, context);
     result.inner_query = new_inner_query.clone();

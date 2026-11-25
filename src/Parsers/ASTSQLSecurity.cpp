@@ -49,7 +49,7 @@ void ASTSQLSecurity::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SQLSecurity");
     if (type.has_value())
-        w.writeString("security_type", std::string(magic_enum::enum_name(*type)));
+        w.writeString("security_type", magic_enum::enum_name(*type));
     if (is_definer_current_user)
         w.writeBool("is_definer_current_user", true);
     if (definer)
