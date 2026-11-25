@@ -2038,13 +2038,9 @@ QTable QCompiler::applyWhere(const QTable & source, const std::vector<QNodePtr> 
         }
 
         /// The constraint has aggregates or uniform functions: they apply to the rows selected by the previous constraints.
-        if (!pending.empty())
-        {
-            apply_pending();
-            pre.clear();
-            scope = QScope{};
-            value = compile_constraint(pre, scope);
-        }
+        /// It is not compiled again for them: the filtered table has the same columns, and an assignment inside of
+        /// the constraint must happen once.
+        apply_pending();
 
         String flag = newName();
         QSelectBuilder flagged;
