@@ -760,6 +760,13 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     if (start > src_vec.data.size() || length > src_vec.data.size() - start)
         throwInsertRangeFromOutOfBound("ColumnVector<T>", start, length, src_vec.data.size());
 
+    if (length == 1)
+    {
+        const T value = src_vec.data[start];
+        data.push_back(value);
+        return;
+    }
+
     size_t old_size = data.size();
     data.resize(old_size + length);
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
