@@ -413,12 +413,9 @@ size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges, size_
             }
         }
 
-        /// Merged before the vector grows, so that it grows only by what merging leaves. Unless the ranges appended
-        /// since the last merge are few: a merge that frees just a slot or two would be repeated for every range.
-        if (united_ranges.size() == united_ranges.capacity() && united_ranges.size() - merged > merged / 4)
-            bytes += mergeLocked();
         united_ranges.emplace_back(begin, end);
-        /// Merged in bulk, once the appended ranges are as many as the merged ones.
+        /// Merged in bulk, once the appended ranges are as many as the merged ones, so that each merge is paid for by
+        /// the ranges appended since the last one.
         if (united_ranges.size() - merged > std::max<size_t>(merged, 64))
             bytes += mergeLocked();
     }
