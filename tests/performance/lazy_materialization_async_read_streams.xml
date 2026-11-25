@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the setup asserts one part, and the test measures the MergeTree lazy read. -->
     <settings>
         <max_threads>4</max_threads>
         <allow_asynchronous_read_from_io_pool_for_merge_tree>1</allow_asynchronous_read_from_io_pool_for_merge_tree>
