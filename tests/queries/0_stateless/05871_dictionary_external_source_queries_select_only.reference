@@ -27,28 +27,3 @@ With the grant, the name is an expression: created
 1
 --- The collection name is evaluated once, so the stored collection is the authorized one
 1	0
---- An ODBC source requires the privilege READ ON ODBC
-Without the grant: denied, not created
-1
-0
-Without the grant, RESTORE: denied, not restored
-1
-0
-Without the grant, RESTORE replacing the source by Null: restored
-0
-1
-1
-Without the grant, RESTORE replacing the source by Null with the setting of the session: restored
-0
-1
-1
-Without the grant, RESTORE ON CLUSTER replacing the source by Null: restored
-0
-1
-1
-With the grant: created
-0
-1
-With the grant, RESTORE: restored
-0
-1
