@@ -330,3 +330,11 @@ INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
 ALTER TABLE t_alter_previous_commands_marker DROP COLUMN q, RENAME COLUMN x TO q, DROP COLUMN q, ADD COLUMN IF NOT EXISTS x UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
 SELECT id, x FROM t_alter_previous_commands_marker;
 DROP TABLE t_alter_previous_commands_marker;
+
+-- A drop of a Nested group frees the names of the columns it removes, so this statement removes every column of the part.
+CREATE TABLE t_alter_previous_commands_group_order (n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_group_order VALUES ([11], [42]);
+ALTER TABLE t_alter_previous_commands_group_order ADD COLUMN gap UInt32 AFTER `n.a`;
+ALTER TABLE t_alter_previous_commands_group_order DROP COLUMN n, RENAME COLUMN `n.b` TO `n.a`, DROP COLUMN `n.a` SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_alter_previous_commands_group_order;
+DROP TABLE t_alter_previous_commands_group_order;

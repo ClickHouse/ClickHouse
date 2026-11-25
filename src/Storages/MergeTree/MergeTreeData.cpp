@@ -6336,8 +6336,11 @@ NameSet getColumnsDroppedByAlter(
                 for (const auto & nested_column : current_metadata.columns.getNested(command.column_name))
                 {
                     auto member = old_names.find(nested_column.name);
-                    if (member != old_names.end() && member->second)
+                    if (member == old_names.end())
+                        continue;
+                    if (member->second)
                         dropped_columns.emplace(*member->second);
+                    old_names.erase(member);
                 }
             }
             else if (old_columns.has(command.column_name))
