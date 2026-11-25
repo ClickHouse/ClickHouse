@@ -6732,6 +6732,29 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         apply_context->setAnalyzingBackgroundExpressions(true);
     const NameSet dropped_columns
         = getColumnsDroppedByAlter(commands, new_metadata, apply_context, share_nested_offsets, settings_defaults.get(), flatten_nested);
+    /// A Nested group dropped after a reorder can contain key or special columns that the group check above does not see.
+    /// Only the initial execution judges it: an older initiator of a `Replicated` database ALTER may have committed it.
+    if (!isSecondaryDDLReplay(local_context))
+    {
+        for (const auto & column_name : dropped_columns)
+        {
+            for (const auto & [role, special_column] :
+                 {std::pair{"version", &version_column}, std::pair{"is_deleted", &is_deleted_column}, std::pair{"sign", &sign_column}})
+            {
+                if (belongs_to(*special_column, column_name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Trying to ALTER DROP {} ({}) column",
+                        role,
+                        backQuoteIfNeed((*special_column)->name));
+            }
+            if (columns_in_keys.contains(column_name) || column_to_subcolumns_used_in_keys.contains(column_name))
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP key {} column which is a part of key expression",
+                    backQuoteIfNeed(column_name));
+        }
+    }
     commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts

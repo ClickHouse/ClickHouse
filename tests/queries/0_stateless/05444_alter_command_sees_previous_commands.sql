@@ -338,3 +338,18 @@ ALTER TABLE t_alter_previous_commands_group_order ADD COLUMN gap UInt32 AFTER `n
 ALTER TABLE t_alter_previous_commands_group_order DROP COLUMN n, RENAME COLUMN `n.b` TO `n.a`, DROP COLUMN `n.a` SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM t_alter_previous_commands_group_order;
 DROP TABLE t_alter_previous_commands_group_order;
+
+-- A Nested group dropped after a reorder of its columns must not drop a key column.
+CREATE TABLE t_alter_previous_commands_group_key (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY length(`n.b`) SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_group_key VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_group_key ADD COLUMN gap UInt32 AFTER `n.a`;
+ALTER TABLE t_alter_previous_commands_group_key MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS n Nested(b UInt32) SETTINGS alter_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT * FROM t_alter_previous_commands_group_key;
+DROP TABLE t_alter_previous_commands_group_key;
+
+-- Nor a special column of the engine.
+CREATE TABLE t_alter_previous_commands_group_sign (`n.a` UInt32, gap UInt32, `n.sign` Int8) ENGINE = CollapsingMergeTree(`n.sign`) ORDER BY tuple();
+INSERT INTO t_alter_previous_commands_group_sign VALUES (42, 7, 1);
+ALTER TABLE t_alter_previous_commands_group_sign MODIFY COLUMN `n.sign` Int8 AFTER `n.a`, DROP COLUMN n SETTINGS alter_sync = 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT * FROM t_alter_previous_commands_group_sign;
+DROP TABLE t_alter_previous_commands_group_sign;
