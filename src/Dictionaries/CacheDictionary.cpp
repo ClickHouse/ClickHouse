@@ -650,7 +650,7 @@ CacheDictionary<dictionary_key_type>::update(VectorWithMemoryTracking<CacheDicti
             if (key_index_to_state_from_storage[i].isExpired() || key_index_to_state_from_storage[i].isNotFound())
             {
                 typename HashMap<KeyType, size_t>::LookupResult it;
-                bool inserted;
+                bool inserted = false;
                 not_found_keys.emplace(requested_keys[i], it, inserted);
 
                 if (inserted)
