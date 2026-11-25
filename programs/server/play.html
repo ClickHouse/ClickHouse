@@ -16992,8 +16992,12 @@ function runEntryImplicitUser(server_address, user, implicit_user) {
 /// authenticated (see `runEntryImplicitUser`), while the server still authenticates a request without
 /// a user as the recorded account; the name is asked from the server if this visit does not know it
 /// yet. If the server now authenticates such a request as another account, the recorded account is
-/// named explicitly, so the request fails visibly or reproduces the result as that account, rather
-/// than silently exporting the data of another user. A stamp that denotes no known name (recorded by
+/// named explicitly, so the result is reproduced as that account rather than silently exporting the
+/// data of another user. Naming the account does not always select it though: a handler configured
+/// with its own user (`handler.user` of a `dynamic_query_handler`) authenticates every request as that
+/// user and ignores the `user` parameter. So the request naming the account is verified as well
+/// (`namedReplayAccountVerified`), and the result is `null`, which refuses the export, unless the
+/// server authenticates it as the recorded account. A stamp that denotes no known name (recorded by
 /// an earlier visit before the name was learned) keeps the empty field. `password` is the one the
 /// request will be sent with, snapshotted by the caller. The verification is required, so it is not
 /// skipped after an earlier export to the same server (`required` in `learnImplicitUser`): a skipped
@@ -17004,7 +17008,28 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
     const account = resolvedImplicitUser(server_address, implicit_user);
     if (!account) return '';
     if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password, /* required = */ true);
-    return account === learnedImplicitUser(server_address) ? '' : account;
+    if (account === learnedImplicitUser(server_address)) return '';
+    return await namedReplayAccountVerified(server_address, account, password) ? account : null;
+}
+
+/// Does the server authenticate a request that names `account` in the `user` parameter, sent with
+/// `password`, as that account? This is the request of an export that names the recorded account after
+/// the server stopped authenticating the empty field as it (`replayConnectionUser`,
+/// `implicitReplayAuthentication`). It is not enough to name the account: a handler configured with its
+/// own user ignores the parameter, and the export would be served as that user while attached to the
+/// result of the recorded one. False as well when the request is rejected (a wrong password, a proxy or
+/// a certificate that does not allow the parameter) or the server cannot be reached, so the export is
+/// refused instead of submitted with an authentication that was not verified. Sent outside of the
+/// connection's HTTP session and admitted like the required verification of `replayConnectionUser`.
+async function namedReplayAccountVerified(server_address, account, password) {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return false;
+    const json = await admitImplicitUserProbe(server_address, () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+        return getServerStatus(probe_address, account, password, controller.signal).finally(() => clearTimeout(timer));
+    }, /* required = */ true);
+    return !!json && json.u === account;
 }
 
 /// The authentication parameters of an export (Download) that reproduces an implicit connection sent
@@ -17017,8 +17042,9 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
 /// parameter, which the server prefers over the `Authorization` header, and which, with no `user`,
 /// still authenticates as the server's `default_session_user`. That exact request is verified first:
 /// - it authenticates as the recorded account (or the account is not known): `&password=`;
-/// - it authenticates as another account: the recorded account is named, so the export fails visibly
-///   or reproduces the result as that account, as in `replayConnectionUser`;
+/// - it authenticates as another account: the recorded account is named, as in `replayConnectionUser`,
+///   if the server authenticates the request naming it as that account (`namedReplayAccountVerified`),
+///   and the export is refused (`null`) otherwise;
 /// - the server rejects the parameters as mixed with another authentication method (a proxy with the
 ///   `X-ClickHouse-User` / `X-ClickHouse-Key` headers, a TLS certificate): no parameters, so the empty
 ///   field is authenticated as before. The server rejects a cached `Authorization` header combined
@@ -17044,7 +17070,10 @@ async function implicitReplayAuthentication(server_address, account) {
             clearTimeout(timer);
         }
     }, /* required = */ true);
-    if (outcome.user) return (!account || outcome.user === account) ? '&password=' : '&user=' + encodeURIComponent(account);
+    if (outcome.user) {
+        if (!account || outcome.user === account) return '&password=';
+        return await namedReplayAccountVerified(server_address, account, '') ? '&user=' + encodeURIComponent(account) : null;
+    }
     if (outcome.rejected_parameters) return '';
     return null;
 }
@@ -17136,7 +17165,7 @@ async function learnImplicitUser(server_address, password, required = false) {
 /// (`learnImplicitUser`), or no name, as when the server cannot tell. The exception to that is the
 /// `required` verification of a replay (`replayConnectionUser`): the user started another export, so
 /// the earlier one has normally been dispatched, and a probe that loses the query slot to an export
-/// still streaming fails the verification visibly, which names the account (fail closed).
+/// still streaming fails the verification visibly, which refuses the new export (fail closed).
 function implicitUserProbeAdmission(server_address) {
     const all = implicitUserProbeAdmission.servers ??= new Map();
     const key = serverAdmissionKey(server_address) ?? server_address;
@@ -22899,6 +22928,10 @@ document.getElementById('download-button').addEventListener('click', async funct
     const recorded_user = last_user_for_download;
     const recorded_implicit_user = last_implicit_user_for_download;
     const user = await replayConnectionUser(server_address, recorded_user, recorded_implicit_user, password);
+    if (user === null) {
+        alert('The server no longer authenticates this connection as the user that produced the result, so the download is refused. Run the query again to download its result.');
+        return;
+    }
 
     if (!query) {
         alert('No query to download results for');

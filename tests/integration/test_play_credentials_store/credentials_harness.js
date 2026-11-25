@@ -108,6 +108,10 @@ function makeContext(storage) {
         /// the `X-ClickHouse-User` / `X-ClickHouse-Key` headers, and, like the server, a request that
         /// also carries a `user` parameter is rejected.
         proxy_user: null,
+        /// When set, the fake server is a handler configured with its own user (`handler.user` of a
+        /// `dynamic_query_handler`): like `authenticateUserByHTTP` with configured credentials, it
+        /// authenticates every request as this user and ignores the `user` and `password` parameters.
+        handler_user: null,
         URL,
         console,
         encodeURIComponent,
@@ -169,6 +173,7 @@ function makeContext(storage) {
         const respond = (ok, json) => ({ ok, status: ok ? 200 : 500, headers: { get: () => null },
             json: async () => json, text: async () => JSON.stringify(json) });
         if (ctx.implicit_user === null) return respond(false, {});
+        if (ctx.handler_user !== null) return respond(true, { v: 'test', t: 0, u: ctx.handler_user });
         const m = url.match(/[?&]user=([^&]*)/);
         /// Like the server, the proxy headers combined with a `user` or a `password` parameter are rejected.
         if (ctx.proxy_user !== null && (m || /[?&]password=/.test(url)))
@@ -183,6 +188,7 @@ function makeContext(storage) {
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
     'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryImplicitUser', 'replayConnectionUser',
+    'namedReplayAccountVerified',
     'learnImplicitUser', 'implicitUserProbeAdmission', 'admitRunQuery', 'admitImplicitUserProbe', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'serverAdmissionKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
@@ -445,8 +451,9 @@ scenario('run-link-carries-implicit-account', async js => {
 /// An empty field can be authenticated by a proxy injecting the `X-ClickHouse-User` / `X-ClickHouse-Key`
 /// headers, and the server rejects a `user` parameter combined with them. Reproducing an implicit run
 /// (Download) must keep the empty field while the server still authenticates it as the recorded
-/// account, including on a later visit that has not learned the name yet, and only name the account
-/// when the server now authenticates an empty field as somebody else.
+/// account, including on a later visit that has not learned the name yet. When the server now
+/// authenticates an empty field as somebody else, the account cannot be named either (the proxy
+/// rejects the parameter), so the replay is refused.
 scenario('proxy-authenticated-implicit-replay', async js => {
     const server = 'http://host:8123/';
     const first = boot(js);
@@ -479,14 +486,66 @@ scenario('proxy-authenticated-implicit-replay', async js => {
     assertEqual(result.user, '', 'a later visit keeps the empty field too');
     assertEqual(result.status && result.status.u, 'alice', 'and is authenticated as the recorded account');
 
-    /// The empty field is now authenticated as another account: the recorded one is named, so the
-    /// request fails visibly instead of exporting the data of bob.
+    /// The empty field is now authenticated as another account, and the request naming the recorded
+    /// one is rejected by the proxy: the replay is refused instead of exporting the data of bob.
     const changed = boot(js);
     changed.proxy_user = 'bob';
     changed.url_elem.value = server;
-    result = await replay(changed, recorded);
-    assertEqual(result.user, 'alice', 'the recorded account is named when the implicit account changed');
-    assertEqual(result.status, false, 'and the request is not served as bob');
+    changed.entry = recorded;
+    assertEqual(await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', changed),
+        null, 'the replay is refused when the implicit account changed and the recorded one cannot be named');
+    assertEqual(/[?&]user=alice(&|$)/.test(changed.fetched[changed.fetched.length - 1].url), true, 'after verifying the request that names it');
+});
+
+/// A handler configured with its own user (`handler.user` of a `dynamic_query_handler`) authenticates
+/// every request as that user and ignores the `user` parameter (`authenticateUserByHTTP`). A result
+/// recorded as `alice` is restored on a later visit, after the handler was changed to `bob`: naming
+/// `alice` in the export would not select that account, and the export would be served as `bob` while
+/// attached to the result of `alice`. Both branches that name the recorded account verify that exact
+/// request (`namedReplayAccountVerified`) and refuse the export: with a password (`replayConnectionUser`)
+/// and without one (`implicitReplayAuthentication`). The sequence is that of the Download handler.
+scenario('configured-handler-user-replay', async js => {
+    const server = 'http://host:8123/custom?session_id=a';
+    /// Returns the authentication parameters of the export, or `null` when it is refused.
+    const download = async (ctx, password) => {
+        ctx.password_elem.value = password;
+        ctx.entry = { server, user: '', implicitUser: 'alice' };
+        return await vm.runInContext(`(async () => {
+            const password = password_elem.value;
+            const user = await replayConnectionUser(entry.server, entry.user, entry.implicitUser, password);
+            if (user === null) return null;
+            let authentication = (user ? '&user=' + encodeURIComponent(user) : '') + (password ? '&password=' + encodeURIComponent(password) : '');
+            if (!authentication) {
+                authentication = await implicitReplayAuthentication(entry.server, resolvedImplicitUser(entry.server, entry.implicitUser));
+                if (authentication === null) return null;
+            }
+            await submitDownload(entry.server, entry.server + '&default_format=CSV' + authentication, 'SELECT 1');
+            return authentication;
+        })()`, ctx);
+    };
+    for (const password of ['secret', '']) {
+        const changed = boot(js);
+        changed.handler_user = 'bob';
+        assertEqual(await download(changed, password), null, `the export is refused (password '${password}')`);
+        assertEqual(changed.submitted.length, 0, 'nothing is submitted');
+        const verification = changed.fetched[changed.fetched.length - 1];
+        assertEqual(/[?&]user=alice(&|$)/.test(verification.url), true, 'the request naming the recorded account is verified');
+        assertEqual(/[?&]session_id=/.test(verification.url), false, 'outside of the session');
+        assertEqual(verification.options.headers.Authorization, 'never', 'without the cached login');
+
+        /// While the handler still authenticates as the recorded account, the export keeps the empty field.
+        const same = boot(js);
+        same.handler_user = 'alice';
+        assertEqual(await download(same, password), password ? '&password=secret' : '&password=', `the export is submitted (password '${password}')`);
+        assertEqual(same.submitted.length, 1, 'once');
+
+        /// A changed `default_session_user` of an ordinary endpoint still allows naming the account.
+        const renamed = boot(js);
+        renamed.implicit_user = 'carol';
+        assertEqual(await download(renamed, password), password ? '&user=alice&password=secret' : '&user=alice',
+            `the verified recorded account is named (password '${password}')`);
+        assertEqual(renamed.submitted.length, 1, 'and the export is submitted');
+    }
 });
 
 /// A Download of an implicit result sent with no password is a form submission, which cannot suppress
@@ -899,7 +958,8 @@ scenario('proxy-authenticated-replay-after-export', async js => {
     assertEqual(await download('http://host:8123/proxied/'), '', 'a connection with another probe request keeps the empty field');
     assertEqual(probes(), 2, 'its required verification is sent after the export');
 
-    /// The verification still fails closed: an account that changed is named.
+    /// The verification still fails closed: when the account changed and the proxy rejects the request
+    /// naming the recorded one, the replay is refused.
     const changed = boot(js);
     changed.proxy_user = 'bob';
     changed.password_elem.value = '';
@@ -907,7 +967,7 @@ scenario('proxy-authenticated-replay-after-export', async js => {
     await vm.runInContext("submitDownload(server, server + '?default_format=CSV', 'SELECT 1')", changed);
     changed.entry = { server: 'http://host:8123/?session_id=a', user: '', implicitUser: 'alice' };
     assertEqual(await vm.runInContext('replayConnectionUser(entry.server, entry.user, entry.implicitUser, password_elem.value)', changed),
-        'alice', 'the recorded account is named after an export when the implicit account changed');
+        null, 'the replay is refused after an export when the implicit account changed');
 });
 
 /// A Download of a restored implicit result of a proxy-authenticated server while an identical optional
