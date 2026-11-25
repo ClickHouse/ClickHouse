@@ -26,7 +26,9 @@ INSERT INTO ts (metric_name, tags, samples) VALUES
     ('p', map('data', 'foo\nbar'), [(toDateTime64(0, 3), 12)]),
     ('p', map('data', 'foo'), [(toDateTime64(0, 3), 13)]),
     ('metric4', map('instance', 'd', 'job', '1'), [(toDateTime64(0, 3), 14)]),
-    ('target_info', map('instance', 'd', 'job', '1', 'data', 'foo\nbar'), [(toDateTime64(0, 3), 1)]);
+    ('target_info', map('instance', 'd', 'job', '1', 'data', 'foo\nbar'), [(toDateTime64(0, 3), 1)]),
+    ('build_info', map('instance', 'e', 'job', '1'), [(toDateTime64(0, 3), 15)]),
+    ('_info', map('instance', 'e', 'job', '1', 'data', 'x'), [(toDateTime64(0, 3), 1)]);
 
 SELECT '-- =~ in a selector';
 SELECT tags, value FROM prometheusQuery(ts, 'm{version=~"1\\\\.0|2\\\\.0"}', 0) ORDER BY ALL;
@@ -59,5 +61,15 @@ SELECT tags, value FROM prometheusQuery(ts, 'p{data!~"(?m)foo"}', 0) ORDER BY AL
 SELECT '-- multiline flag in the label selector of info';
 SELECT tags, value FROM prometheusQuery(ts, 'info(metric4, {data=~"(?m)foo"})', 0) ORDER BY ALL;
 SELECT tags, value FROM prometheusQuery(ts, 'info(metric4, {data!~"(?m)foo"})', 0) ORDER BY ALL;
+
+-- A quantifier right after `^` must not drop the anchor: `^*_info` matches only `_info`, so `build_info` is enriched.
+SELECT '-- quantifier after the start anchor in a selector';
+SELECT tags, value FROM prometheusQuery(ts, '{__name__=~"^*_info"}', 0) ORDER BY ALL;
+SELECT '-- quantifier after the start anchor in the label selector of info';
+SELECT tags, value FROM prometheusQuery(ts, 'info(build_info, {__name__=~"^*_info"})', 0) ORDER BY ALL;
+SELECT tags, value FROM prometheusQuery(ts, 'info(build_info, {__name__=~"^?_info"})', 0) ORDER BY ALL;
+SELECT '-- invalid regex';
+SELECT tags, value FROM prometheusQuery(ts, 'p{data=~"*a"}', 0); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
+SELECT tags, value FROM prometheusQuery(ts, 'info(metric4, {data=~"*a"})', 0); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 
 DROP TABLE ts;

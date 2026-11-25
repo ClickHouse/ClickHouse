@@ -28,3 +28,9 @@
 [('__name__','p'),('data','foo\nbar')]	12
 -- multiline flag in the label selector of info
 [('__name__','metric4'),('data','foo\nbar'),('instance','d'),('job','1')]	14
+-- quantifier after the start anchor in a selector
+[('__name__','_info'),('data','x'),('instance','e'),('job','1')]	1
+-- quantifier after the start anchor in the label selector of info
+[('__name__','build_info'),('data','x'),('instance','e'),('job','1')]	15
+[('__name__','build_info'),('data','x'),('instance','e'),('job','1')]	15
+-- invalid regex
