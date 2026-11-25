@@ -9,6 +9,7 @@
 
 #include <Poco/Event.h>
 
+#include <atomic>
 #include <thread>
 #include <functional>
 
@@ -37,7 +38,8 @@ private:
     /// Directories' updating periodicity (in seconds).
     int reload_period;
     int cur_reload_period = 1;
-    bool is_fast_start_stage = true;
+    /// Written by the periodic thread, read by `reloadImpl`, which also runs in `SYSTEM START RELOAD DICTIONARIES`.
+    std::atomic<bool> is_fast_start_stage = true;
     ActionBlocker reload_blocker;
 
     mutable std::mutex mutex;

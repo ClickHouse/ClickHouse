@@ -30,6 +30,9 @@ def test_start_reload_loads_embedded_dictionaries_skipped_while_stopped(started_
     assert "Embedded dictionaries were not loaded" in instance.query_and_get_error(
         "SELECT regionToCountry(toUInt32(3))"
     )
+    # A failed retry of the reloading thread updates its fast start state, which the load on START reads from
+    # another thread: under TSan this checks that the two accesses are synchronized.
+    instance.wait_for_log_line("Loading dictionaries.", timeout=60, repetitions=2)
 
     instance.query("SYSTEM STOP RELOAD DICTIONARIES")
     instance.exec_in_container(["mkdir", "-p", "/etc/clickhouse-server/geo"])
