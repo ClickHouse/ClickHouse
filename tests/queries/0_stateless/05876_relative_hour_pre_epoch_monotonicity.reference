@@ -1,0 +1,20 @@
+-- 1. Monotonicity across epoch (UTC, America/New_York, Europe/London, Asia/Kolkata)
+America/New_York	1
+Asia/Kolkata	1
+Europe/London	1
+UTC	1
+-- 2. Pre-epoch UTC values clamp to 0 (matching toRelativeMinuteNum)
+1969-12-31 20:00:00.000	0
+1969-12-31 23:00:00.000	0
+1969-12-31 23:59:59.999	0
+1970-01-01 00:00:00.000	0
+1970-01-01 01:00:00.000	1
+1970-01-01 02:00:00.000	2
+-- 3. MergeTree PARTITION BY toRelativeHourNum(d) range pruning (UTC)
+4	4
+-- 4. MergeTree ORDER BY d primary-key pruning (UTC)
+3	3	0	0
+-- 5. Date32 ORDER BY d primary-key pruning (America/New_York)
+3	3
+-- 6. Extended results & dateDiff remain consistent
+0	0	2
