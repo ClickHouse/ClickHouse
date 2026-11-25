@@ -1459,12 +1459,14 @@ getColumnsForNewDataPart(
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes,
+    size_t num_removes_from_commands,
     bool rewrites_all_columns,
     bool changes_storage_type)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
     all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());
+    const size_t rename_map_begin = commands_for_interpreter.size() + num_removes_from_commands;
 
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
@@ -1478,8 +1480,9 @@ getColumnsForNewDataPart(
     for (const auto & [name, _] : storage_columns)
         storage_columns_set.insert(name);
 
-    for (const auto & command : all_commands)
+    for (size_t command_index = 0; command_index < all_commands.size(); ++command_index)
     {
+        const auto & command = all_commands[command_index];
         affects_all_columns |= command.affectsAllColumns();
 
         /// If we don't have this column in source part, than we don't need to materialize it
@@ -1491,7 +1494,8 @@ getColumnsForNewDataPart(
             if (command.type == MutationCommand::RENAME_COLUMN)
             {
                 auto it = renamed_columns_to_from.find(command.column_name);
-                if (it != renamed_columns_to_from.end())
+                /// A rename-map entry names a column of the source part, so it never continues an earlier rename.
+                if (it != renamed_columns_to_from.end() && command_index < rename_map_begin)
                 {
                     auto original_name = it->second;
                     renamed_columns_to_from.erase(it);
@@ -5596,7 +5600,8 @@ bool MutateTask::prepare()
         ? std::make_tuple(ctx->source_part->getColumns(), ctx->source_part->getSerializationInfos(), ctx->source_part->getColumnsSubstreams())
         : MutationHelpers::getColumnsForNewDataPart(
             ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-            ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns, ctx->changes_storage_type);
+            ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames,
+            ctx->num_for_file_renames_from_commands, rewrites_all_columns, ctx->changes_storage_type);
 
     /// A part cannot be left with no columns: it could not be loaded or read.
     if (new_columns.empty())

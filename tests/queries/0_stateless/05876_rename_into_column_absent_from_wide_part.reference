@@ -1,0 +1,23 @@
+A: wide part without q
+Wide	id
+Wide	q
+1	43	0
+1
+1	43	0
+B: wide part with q stored only as a missing-column marker
+Wide	id
+Wide	q
+1	0	43
+1
+1	0	43
+C: ReplicatedMergeTree, wide part without q
+Wide	id
+Wide	q
+1	43	0
+1
+1	43	0
+D: compact part without q
+Compact	id
+Compact	q
+1	43	0
+1
