@@ -2,7 +2,6 @@
 -- that pass build() but throw during execute(), such as comparison functions.
 -- https://github.com/ClickHouse/ClickHouse/issues/103484
 
-SET enable_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET variant_throw_on_type_mismatch = false;
 
@@ -45,7 +44,6 @@ DROP TABLE test_v4;
 
 -- Dynamic tests
 
-SET allow_experimental_dynamic_type = 1;
 SET dynamic_throw_on_type_mismatch = false;
 
 -- Path 1: single variant, no NULLs

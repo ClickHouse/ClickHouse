@@ -27,9 +27,7 @@ Pueden aplicarse algunas reglas sencillas para ayudar a elegir una clave de orde
   Las claves de ordenación deben definirse al crear la tabla y no pueden añadirse después. Se puede agregar ordenación adicional a una tabla después (o antes) de la inserción de datos mediante una funcionalidad conocida como proyecciones. Tenga en cuenta que esto provoca duplicación de datos. Encontrará más detalles [aquí](/es/reference/statements/alter/projection).
 </Info>
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 Considere la siguiente tabla `posts_unordered`. Contiene una fila por cada publicación de Stack Overflow.
 
@@ -81,7 +79,7 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 Observe la cantidad de filas y bytes leídos por esta consulta. Sin una clave primaria, las consultas deben escanear todo el conjunto de datos.
 
-El uso de `EXPLAIN indexes=1` confirma un escaneo completo de la tabla debido a la falta de índices.
+El uso de `EXPLAIN indexes=1` confirma un escaneo completo de la tabla debido a la falta de indexación.
 
 ```sql
 EXPLAIN indexes = 1
@@ -121,13 +119,9 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 La siguiente animación muestra cómo se crea un índice primario disperso optimizado para la tabla Posts de Stack Overflow. En lugar de indexar filas individuales, el índice se aplica a bloques de filas:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Clave primaria](/images/bestpractices/create_primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Clave primaria](/images/bestpractices/create_primary_key.webp)
+  </Frame>
 </div>
 
 Si se repite la misma consulta en una tabla con esta clave de ordenación:
@@ -177,13 +171,9 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 Además, visualizamos cómo el índice disperso descarta todos los bloques de filas que no pueden contener coincidencias para nuestra consulta de ejemplo:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Clave primaria](/images/bestpractices/primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![Clave primaria](/images/bestpractices/primary_key.webp)
+  </Frame>
 </div>
 
 <Note>

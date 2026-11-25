@@ -20,14 +20,12 @@ Snowflake は、主に従来のオンプレミスのデータウェアハウジ�
 最適化されたデータベースが必要だと気づきます。
 
 <div id="comparison">
-  ## 比較
+  ## 比較 {#comparison}
 </div>
 
 このセクションでは、ClickHouse と Snowflake の主な特長を比較します。
 
-<div id="similarities">
-  ### 類似点
-</div>
+### 類似点 {#similarities}
 
 Snowflake はクラウドベースのデータウェアハウジングプラットフォームであり、大量の
 データを保存、処理、分析するための、スケーラブルで効率的なソリューションを
@@ -51,13 +49,9 @@ S3 のようなオブジェクト
 の図は、このアーキテクチャを示しています。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Snowflake アーキテクチャ](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![Snowflake アーキテクチャ](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
+  </Frame>
 </div>
 
 これに対して、オープンソースかつクラウドホスト型の製品である ClickHouse は、
@@ -80,17 +74,13 @@ S3 のスケーラビリティ特性は、shared-disk
 影響を受けないようにします。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse Cloud アーキテクチャ](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud アーキテクチャ](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
+  </Frame>
 </div>
 
 <div id="differences">
-  ### 違い
+  ### 違い {#differences}
 </div>
 
 基盤となるストレージフォーマットやクエリエンジン以外にも、これらのアーキテクチャには
@@ -150,7 +140,7 @@ S3 のスケーラビリティ特性は、shared-disk
   他のシステムに対する優位性となります。
 
 <div id="real-time-analytics">
-  ### リアルタイム分析
+  ### リアルタイム分析 {#real-time-analytics}
 </div>
 
 公開されている[ベンチマーク](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)データに基づくと、
