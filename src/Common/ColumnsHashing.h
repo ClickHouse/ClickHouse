@@ -558,8 +558,8 @@ struct HashMethodSerialized
         }
     }
 
-    /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
-    /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
+    /// Set up the `LowCardinality` position cache when every key column is a non-nullable `LowCardinality`: a dense array
+    /// when the product of the dictionary sizes is small enough, otherwise (sub-range states only) a hashed one.
     void initLowCardinalityCache(RowRange row_range)
     {
         if (keys_size < 2)
