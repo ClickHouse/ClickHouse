@@ -134,6 +134,8 @@ def test_projection_read_in_order_with_warm_query_condition_cache(start_cluster)
     )
     nodes[0].query(f"INSERT INTO {table} VALUES (-1, 5, 5)")
     nodes[0].query(f"DELETE FROM {table} WHERE k = -1", settings={"mutations_sync": 2})
+    for node in nodes:
+        node.query(f"SYSTEM STOP MERGES {table}")
     nodes[0].query(
         f"INSERT INTO {table} SELECT number, 1000000 - number, number % 7 FROM numbers(7000)",
         settings={"insert_quorum": 3},
