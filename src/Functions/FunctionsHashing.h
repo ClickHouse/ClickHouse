@@ -262,32 +262,47 @@ struct HalfMD5Impl
         /// all hashing threads serialize on it (with musl's `pthread_rwlock` on aarch64 this
         /// doubled `cryptographic_hashes` times in CI, `__pthread_rwlock_tryrdlock` dominating
         /// the profile).
-        static const EVP_MD_CTX_ptr ctx_template = []
+        struct ContextPair
         {
-            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
-            if (!new_ctx)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-            return new_ctx;
+            EVP_MD_CTX_ptr source;
+            EVP_MD_CTX_ptr destination;
+        };
+
+        /// Keep per-row copies between contexts owned by the same thread: a shared template
+        /// can share an allocation cache line with another thread's mutable working context.
+        thread_local ContextPair contexts = []
+        {
+            /// Keep the original once-per-process provider choice out of the per-row path.
+            static const EVP_MD_CTX_ptr ctx_template = []
+            {
+                EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+                if (!new_ctx)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+                if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+                return new_ctx;
+            }();
+
+            auto duplicate = []
+            {
+                EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+                if (!new_ctx)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+                if (EVP_MD_CTX_copy_ex(new_ctx.get(), ctx_template.get()) != 1)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
+                return new_ctx;
+            };
+            return ContextPair{duplicate(), duplicate()};
         }();
+        auto * ctx = contexts.destination.get();
 
-        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
-
-        if (!ctx)
-        {
-            ctx.reset(EVP_MD_CTX_new());
-            if (!ctx)
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-        }
-
-        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
+        if (EVP_MD_CTX_copy_ex(ctx, contexts.source.get()) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+        if (EVP_DigestUpdate(ctx, begin, size) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
 
-        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
+        if (EVP_DigestFinal_ex(ctx, buf.char_data, nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
 
         /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t

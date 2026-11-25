@@ -1,0 +1,6 @@
+<test>
+    <query>SELECT ignore(halfMD5(materialize(''))) FROM numbers_mt(10000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT ignore(halfMD5(materialize(''))) FROM numbers_mt(10000000) SETTINGS max_threads = 2 FORMAT Null</query>
+    <query>SELECT ignore(halfMD5(toString(1000000000+number))) FROM numbers_mt(10000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT ignore(halfMD5(toString(1000000000+number))) FROM numbers_mt(10000000) SETTINGS max_threads = 2 FORMAT Null</query>
+</test>
