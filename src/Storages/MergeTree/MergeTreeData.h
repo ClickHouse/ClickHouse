@@ -1273,6 +1273,12 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
+    /// `changeSettings` keeps the previous storage policy recorded for the checks of a reload of the storage configuration
+    /// (see `Context::addTableDataPath`), because the table goes back to it if the commit of the metadata fails. This is
+    /// called when an `ALTER` has committed or rolled back its changes, still under the alter lock, and leaves only the
+    /// storage policy the table has ended up with.
+    void finishStoragePolicyChange() noexcept;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 

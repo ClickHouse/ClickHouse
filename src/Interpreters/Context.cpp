@@ -669,9 +669,11 @@ struct ContextSharedPart : boost::noncopyable
     /// against the storage policies. Locked before `storage_policies_mutex`.
     mutable std::mutex storage_configuration_update_mutex;
     /// The data paths of the tables, which a reload of the storage configuration checks against the reloaded storage policies.
+    /// A table has more than one storage policy only while an `ALTER` changes it: both the policy in the committed metadata
+    /// and the pending one, because the table ends up with either of them depending on whether the commit succeeds.
     struct TableDataPaths
     {
-        String storage_policy_name;
+        std::set<String> storage_policy_names;
         std::set<String> relative_data_paths;
     };
     mutable std::unordered_map<const void *, TableDataPaths> table_data_paths TSA_GUARDED_BY(storage_configuration_update_mutex);
@@ -8894,8 +8896,18 @@ void Context::addTableDataPath(
 {
     chassert(lock.owns_lock() && lock.mutex() == &shared->storage_configuration_update_mutex);
     auto & paths = shared->table_data_paths[table];
-    paths.storage_policy_name = storage_policy_name;
+    paths.storage_policy_names.insert(storage_policy_name);
     paths.relative_data_paths.insert(relative_data_path);
+}
+
+void Context::keepOnlyTableStoragePolicy(const void * table, const String & storage_policy_name) const
+{
+    std::lock_guard lock(shared->storage_configuration_update_mutex);
+    auto it = shared->table_data_paths.find(table);
+    if (it == shared->table_data_paths.end())
+        return;
+
+    std::erase_if(it->second.storage_policy_names, [&](const String & name) { return name != storage_policy_name; });
 }
 
 void Context::removeTableDataPath(const void * table, const std::optional<String> & relative_data_path) const
@@ -8917,13 +8929,16 @@ void Context::checkTableDataPathsWithStoragePolicies(const StoragePolicySelector
 {
     for (const auto & [table, paths] : shared->table_data_paths)
     {
-        /// The temporary storage policies of tables with the `disk` setting are carried over unchanged.
-        const auto new_policy = new_policies.tryGet(paths.storage_policy_name);
-        if (!new_policy)
-            continue;
+        for (const auto & storage_policy_name : paths.storage_policy_names)
+        {
+            /// The temporary storage policies of tables with the `disk` setting are carried over unchanged.
+            const auto new_policy = new_policies.tryGet(storage_policy_name);
+            if (!new_policy)
+                continue;
 
-        for (const auto & relative_data_path : paths.relative_data_paths)
-            checkDisksHaveDistinctStorageForPath(new_policy->getDisks(), relative_data_path, new_policy->getName());
+            for (const auto & relative_data_path : paths.relative_data_paths)
+                checkDisksHaveDistinctStorageForPath(new_policy->getDisks(), relative_data_path, new_policy->getName());
+        }
     }
 }
 

@@ -95,6 +95,14 @@
                     </main>
                 </volumes>
             </reload_policy>
+            <!-- The same disks as `reload_policy` before the reload, to change the storage policy of a table to. -->
+            <reload_policy_same_disks>
+                <volumes>
+                    <main>
+                        <disk>reload_local</disk>
+                    </main>
+                </volumes>
+            </reload_policy_same_disks>
             <object_storage_different_buckets>
                 <volumes>
                     <root>

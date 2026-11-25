@@ -641,6 +641,10 @@ void StorageMergeTree::alter(
     bool commit_of_readonly_table = false;
     SCOPE_EXIT({ if (commit_of_readonly_table) readonly_commit_in_flight = false; });
 
+    /// Until the changed settings are committed or rolled back, both the previous and the new storage policy are checked by
+    /// a reload of the storage configuration, see `changeSettings`.
+    SCOPE_EXIT({ finishStoragePolicyChange(); });
+
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {

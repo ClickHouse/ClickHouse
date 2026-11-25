@@ -7165,6 +7165,10 @@ void StorageReplicatedMergeTree::alter(
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::alter");
     assertNotReadonly();
 
+    /// Until the changed settings are committed or rolled back, both the previous and the new storage policy are checked by
+    /// a reload of the storage configuration, see `changeSettings`. Done before the alter lock is released.
+    scope_guard storage_policy_change_guard = [this] { finishStoragePolicyChange(); };
+
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
@@ -7590,6 +7594,7 @@ void StorageReplicatedMergeTree::alter(
         throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
     }
 
+    storage_policy_change_guard.reset();
     table_lock_holder.unlock();
 
     /// ALTER is durable in ZK; further DDL serializes through ZK, so drop the local guard.

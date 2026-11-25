@@ -2077,11 +2077,16 @@ public:
     /// being attached. The paths are recorded rather than read from the tables, so the reload takes no locks of the tables.
     [[nodiscard]] std::unique_lock<std::mutex> lockStorageConfigurationUpdates() const;
     /// Records `relative_data_path` as a data path of `table`, which uses the storage policy `storage_policy_name` for all of its
-    /// data paths. Requires the lock returned by `lockStorageConfigurationUpdates`.
+    /// data paths. Requires the lock returned by `lockStorageConfigurationUpdates`. The storage policies recorded before are
+    /// kept: while an `ALTER` changes the storage policy, the table may still end up with the previous one, if the commit of
+    /// the metadata fails, so a reload has to check the data paths against both until `keepOnlyTableStoragePolicy` is called.
     void addTableDataPath(
         const void * table, const String & relative_data_path, const String & storage_policy_name, const std::unique_lock<std::mutex> & lock) const;
     /// Forgets one data path of `table`, or all of them if `relative_data_path` is not set.
     void removeTableDataPath(const void * table, const std::optional<String> & relative_data_path = {}) const;
+    /// Forgets the storage policies of `table` other than `storage_policy_name`, after a change of the storage policy has
+    /// been committed or rolled back.
+    void keepOnlyTableStoragePolicy(const void * table, const String & storage_policy_name) const;
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;

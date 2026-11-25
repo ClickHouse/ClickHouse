@@ -8138,6 +8138,9 @@ void MergeTreeData::changeSettings(
         storage_settings.set(std::move(copy));
         setFilenameRegexpForCachePrewarming(getSettings());
 
+        /// The previous storage policy stays recorded beside the new one until `finishStoragePolicyChange`: the metadata is
+        /// not committed yet, and if the commit fails, the table goes back to the previous policy, which a concurrent
+        /// reload of the storage configuration must therefore keep valid for the data path of this table.
         if (has_storage_policy_changed && !relative_data_path.empty())
             getContext()->addTableDataPath(this, relative_data_path, getStoragePolicy()->getName(), storage_configuration_lock);
         storage_configuration_lock = {};
@@ -8163,6 +8166,20 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
+    }
+}
+
+void MergeTreeData::finishStoragePolicyChange() noexcept
+{
+    try
+    {
+        if (!relative_data_path.empty())
+            getContext()->keepOnlyTableStoragePolicy(this, getStoragePolicy()->getName());
+    }
+    catch (...)
+    {
+        /// The storage policies stay recorded, so a reload of the storage configuration checks more than it has to.
+        tryLogCurrentException(log, "Cannot forget the previous storage policy of the table");
     }
 }
 

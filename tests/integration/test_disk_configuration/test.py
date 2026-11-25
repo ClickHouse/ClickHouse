@@ -1006,3 +1006,56 @@ def test_dynamic_disk_security_settings(start_cluster):
 
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
+
+def test_table_path_alias_on_reload_during_alter_of_storage_policy(start_cluster):
+    node = cluster.instances["node1"]
+    reload_config_path = "/etc/clickhouse-server/config.d/table_path_alias_on_reload.xml"
+    rejected_reload_log_line = "storage policies were not applied: Disks .* keep the path .* in the same storage"
+    pause_failpoint = "mt_alter_settings_pause_before_metadata_commit"
+    throw_failpoint = "mt_alter_settings_throw_before_metadata_commit"
+
+    node.query(
+        "CREATE TABLE alter_policy_alias_on_reload (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS storage_policy = 'reload_policy', search_orphaned_parts_disks = 'none'"
+    )
+    node.query("INSERT INTO alter_policy_alias_on_reload VALUES (1)")
+
+    try:
+        # The `ALTER` has switched the table to `reload_policy_same_disks`, but has not committed the metadata.
+        # The commit is going to fail, so the table goes back to `reload_policy`, and a reload must not make
+        # `reload_policy` read the parts of the table through two disks in the meantime.
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM ENABLE FAILPOINT {throw_failpoint}")
+        alter = node.get_query_request(
+            "ALTER TABLE alter_policy_alias_on_reload MODIFY SETTING storage_policy = 'reload_policy_same_disks'"
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE")
+
+        node.copy_file_to_container(
+            os.path.join(SCRIPT_DIR, "configs/table_path_alias_on_reload.xml"),
+            reload_config_path,
+        )
+        rejections = int(node.count_in_log(rejected_reload_log_line))
+        node.query("SYSTEM RELOAD CONFIG")
+        assert int(node.count_in_log(rejected_reload_log_line)) > rejections
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        assert "Injected failure before committing settings metadata" in alter.get_error()
+
+        assert (
+            node.query(
+                "SELECT storage_policy FROM system.tables "
+                "WHERE database = currentDatabase() AND name = 'alter_policy_alias_on_reload'"
+            )
+            == "reload_policy\n"
+        )
+        node.query("DETACH TABLE alter_policy_alias_on_reload SYNC")
+        node.query("ATTACH TABLE alter_policy_alias_on_reload")
+        assert node.query("SELECT x FROM alter_policy_alias_on_reload") == "1\n"
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {throw_failpoint}")
+        node.exec_in_container(["rm", "-f", reload_config_path])
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query("DROP TABLE IF EXISTS alter_policy_alias_on_reload SYNC")
