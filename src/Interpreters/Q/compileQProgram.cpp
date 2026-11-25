@@ -1231,8 +1231,8 @@ QValue QCompiler::compileList(const QNodePtr & node, QEnvironment & env, QScope 
     /// The items are evaluated from the last one to the first one, as everything in q:
     /// `x:10; (x+5; x:20; x-5)` is `25 20 5`.
     QValues items(node->children.size());
-    for (size_t i = node->children.size(); i-- > 0;)
-        items[i] = toScalar(compile(node->children[i], env, scope), node->children[i]->offset);
+    for (size_t i = node->children.size(); i > 0; --i)
+        items[i - 1] = toScalar(compile(node->children[i - 1], env, scope), node->children[i - 1]->offset);
 
     bool has_column = false;
     size_t depth = 0;
@@ -1556,7 +1556,7 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
     QValues args(node->children.size() - 1);
     std::vector<bool> elided(args.size(), false);
     bool any_elided = false;
-    for (size_t i = node->children.size(); i-- > 1;)
+    for (size_t i = args.size(); i > 0; --i)
     {
         const auto & child = node->children[i];
         if (child)
