@@ -1019,6 +1019,42 @@ bool Client::buzzHouse()
                              }
                          }
                      }},
+                    {10
+                         * static_cast<uint32_t>(
+                             fuzz_config->allow_query_oracles && fuzz_config->use_concurrent_write_oracle > 0
+                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_concurrent_write_oracle)),
+                     [&]()
+                     {
+                         /// A read in parallel with a write must see the table either before the write or after it
+                         auto & tbl
+                             = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_concurrent_write_oracle))
+                                   .get();
+
+                         sq1.Clear();
+                         sq2.Clear();
+                         qo.resetOracleValues();
+                         qo.generateConcurrentWriteQueries(rg, gen, tbl, sq1, sq2);
+                         /// The server-side AST fuzzer runs fuzzed copies of a query once it finishes, with the settings
+                         /// of its session: they would write the table and the result file again. A statement can turn
+                         /// that off in its own `SETTINGS`, but `PARALLEL WITH` has none, so turn it off for the client
+                         const DB::Settings settings_before = client_context->getSettingsCopy();
+                         client_context->setSetting("ast_fuzzer_runs", DB::Field(0));
+                         SCOPE_EXIT({ client_context->setSettings(settings_before); });
+                         for (uint32_t step = 0; step < 3; step++)
+                         {
+                             const BuzzHouse::SQLQuery & next = step == 1 ? sq2 : sq1;
+
+                             full_query.resize(0);
+                             BuzzHouse::SQLQueryToString(full_query, next);
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                             if (step == 1)
+                             {
+                                 gen.updateGenerator(sq2, *external_integrations, !have_error);
+                             }
+                             qo.processConcurrentWriteResult(step, !have_error);
+                         }
+                     }},
                     {5
                          * static_cast<uint32_t>(
                              fuzz_config->allow_query_oracles && fuzz_config->use_dump_table_oracle > 1

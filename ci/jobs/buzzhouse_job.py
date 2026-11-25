@@ -239,6 +239,8 @@ def generate_buzz_config(
         "enable_time_settings": random.randint(1, 5) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
+        # A read in `PARALLEL WITH` a write must see the table before or after it: 2 compares, 1 only runs them
+        "use_concurrent_write_oracle": random.randint(1, 2),
         "test_with_fill": random.randint(1, 10) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": random.randint(1, 10) == 1,

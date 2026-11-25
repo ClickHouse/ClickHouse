@@ -1072,6 +1072,10 @@ public:
         return t.isAttached() && !t.hasEngine(TableEngineValues::CollapsingMergeTree, true)
             && !t.hasEngine(TableEngineValues::VersionedCollapsingMergeTree, true) && t.isDeterministic();
     };
+    /// The table of a `Remote`, `Cluster` or `Overlay` database is on another server, which would run the write and the
+    /// read and write the rows of the read to its own `file`
+    const std::function<bool(const SQLTable &)> attached_tables_for_concurrent_write_oracle = [this](const SQLTable & t)
+    { return attached_tables_to_compare_content(t) && t.isMergeTreeFamily() && (!t.db || !t.db->isProxyDatabase()); };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.isDeterministic(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle

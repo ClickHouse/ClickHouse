@@ -508,6 +508,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"fuzz_floating_points", [&](const JSONValue & v) { fuzz_floating_points = v.getBool(); }},
         {"test_with_fill", [&](const JSONValue & v) { test_with_fill = v.getBool(); }},
         {"use_dump_table_oracle", [&](const JSONValue & v) { use_dump_table_oracle = v.getUInt32(); }},
+        {"use_concurrent_write_oracle", [&](const JSONValue & v) { use_concurrent_write_oracle = v.getUInt32(); }},
         {"compare_success_results", [&](const JSONValue & v) { compare_success_results = v.getBool(); }},
         {"allow_infinite_tables", [&](const JSONValue & v) { allow_infinite_tables = v.getBool(); }},
         {"compare_explains", [&](const JSONValue & v) { compare_explains = v.getBool(); }},

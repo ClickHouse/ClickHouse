@@ -407,6 +407,8 @@ public:
     uint32_t http_port = 8123;
     uint32_t http_secure_port = 8443;
     uint32_t use_dump_table_oracle = 2;
+    /// 0: off, 1: run the reads and the writes concurrently, 2: also compare what the concurrent read saw
+    uint32_t use_concurrent_write_oracle = 0;
     uint32_t max_reconnection_attempts = 3;
     uint32_t time_to_sleep_between_reconnects = 3000;
     uint32_t min_string_length = 0;

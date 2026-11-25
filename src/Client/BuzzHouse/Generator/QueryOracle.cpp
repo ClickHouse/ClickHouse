@@ -1380,6 +1380,155 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     sq2.CopyFrom(sq1);
 }
 
+/// Concurrent write oracle
+/// Before:     INSERT INTO TABLE FUNCTION file(...) SELECT <columns or count()> FROM t [FINAL] [WHERE pred = TRUE] ORDER BY ...
+/// Concurrent: <write to t> PARALLEL WITH <the same read>
+/// After:      <the same read>
+/// The concurrent read has to see `t` as one of the other two did. `PARALLEL WITH` rejects a statement that returns a
+/// result set, so every read writes its rows to the server's `file()` instead of `INTO OUTFILE`.
+void QueryOracle::generateConcurrentWriteQueries(
+    RandomGenerator & rg, StatementGenerator & gen, SQLTable & t, SQLQuery & read, SQLQuery & concurrent)
+{
+    Insert * ins = read.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+    FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
+    Select * sel = ins->mutable_select()->mutable_select();
+    SelectStatementCore * ssc = sel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    SQLQueryInner * write = concurrent.mutable_single_query()->mutable_explain()->mutable_inner_query();
+    SettingValues * write_settings = nullptr;
+
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
+    ff->set_path(qsfile.generic_string());
+    ff->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
+    ff->set_fname(FileFunc_FName::FileFunc_FName_file);
+
+    gen.setAllowNotDetermistic(false);
+    /// The table itself, not through `cluster` or `remote`: the write is made on this server only
+    t.setName(jtf->mutable_tof()->mutable_est(), false);
+    jtf->set_final(t.supportsFinal(true));
+    if (rg.nextBool())
+    {
+        addOrderedTableDumpColumns(rg, gen, t.cols, ssc);
+    }
+    else
+    {
+        addCountColumn(ssc, "s0");
+    }
+    if (rg.nextBool())
+    {
+        /// The index analysis of a filter is made on the snapshot of the table the read takes. Virtual columns are left
+        /// out: the names and offsets of the parts change with every merge, with or without the write.
+        gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+        gen.addTableRelation(rg, false, "", t);
+        generateTruePredicate(rg, gen, ssc->mutable_where()->mutable_expr()->mutable_expr());
+        gen.levels.clear();
+    }
+    SettingValues * svs = sel->mutable_setting_values();
+    finishSettings(svs);
+    /// A mutation is executed part by part, and a read that does not apply it on the fly can see it half done
+    StatementGenerator::appendSetting(svs, "apply_mutations_on_fly", "1");
+    /// The rows go to the `file` of this server, which a distributed `INSERT SELECT` would leave to other ones
+    StatementGenerator::appendSetting(svs, "parallel_distributed_insert_select", "0");
+
+    /// Only writes that change the table at once: an `INSERT` commits its blocks one by one. A lightweight `UPDATE`
+    /// needs the table to have `_block_number`, which few have. None is sent `ON CLUSTER`, which returns a status table
+    /// that `PARALLEL WITH` rejects, and would change other servers than the one the read is made on.
+    rg.pickWeighted(
+        {{10,
+          [&]()
+          {
+              LightUpdate * upt = write->mutable_upt();
+              gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+              upt->clear_cluster();
+              write_settings = upt->mutable_setting_values();
+          }},
+         {20,
+          [&]()
+          {
+              LightDelete * del = write->mutable_del();
+              gen.generateNextUpdateOrDeleteOnTable<LightDelete>(rg, t, del);
+              del->clear_cluster();
+              write_settings = del->mutable_setting_values();
+          }},
+         {30,
+          [&]()
+          {
+              Alter * at = write->mutable_alter();
+              at->set_is_temp(t.is_temp);
+              at->set_sobject(SQLObject::TABLE);
+              t.setName(at->mutable_object()->mutable_est(), false);
+              if (rg.nextBool())
+              {
+                  gen.generateNextUpdate(rg, t, at->mutable_alter()->mutable_update());
+              }
+              else
+              {
+                  gen.generateNextDelete(rg, t, at->mutable_alter()->mutable_del());
+              }
+              write_settings = at->mutable_setting_values();
+          }},
+         {10,
+          [&]()
+          {
+              OptimizeTable * ot = write->mutable_opt();
+              gen.generateNextOptimizeTableInternal(rg, t, false, ot);
+              ot->clear_cluster();
+              write_settings = ot->mutable_setting_values();
+          }},
+         {10,
+          [&]()
+          {
+              Truncate * trunc = write->mutable_trunc();
+              t.setName(trunc->mutable_est(), false);
+              write_settings = trunc->mutable_setting_values();
+          }}});
+    gen.setAllowNotDetermistic(true);
+    /// The write returns once it is done, so that the read after it sees all of it
+    finishSettings(write_settings);
+    /// In a `Replicated` database the write goes through the DDL log and returns a status table, which `PARALLEL WITH`
+    /// rejects
+    StatementGenerator::appendSetting(write_settings, "distributed_ddl_output_mode", "'none'");
+
+    SingleSQLQuery * parallel_read = concurrent.add_parallel_queries();
+    parallel_read->CopyFrom(read.single_query());
+    if (rg.nextBool())
+    {
+        concurrent.mutable_single_query()->Swap(parallel_read);
+    }
+    other_steps_success = true;
+}
+
+void QueryOracle::processConcurrentWriteResult(const uint32_t step, const bool success)
+{
+    /// Without a result from each of the three runs there is nothing to compare: a failed write leaves the table as
+    /// it was, but the read in parallel with it fails the whole `PARALLEL WITH` too. A run that failed in the client,
+    /// such as on a timeout, has no error code, so it is told by its success.
+    other_steps_success &= success;
+    /// After a receive timeout the client can take the answer to an earlier query for the answer to the next one, and
+    /// report a read done that never ran. Its file is then missing, or still the one of the step before, which can only
+    /// make the results agree.
+    other_steps_success &= std::filesystem::exists(qcfile);
+    if (!other_steps_success || fc.use_concurrent_write_oracle < 2)
+    {
+        return;
+    }
+    switch (step)
+    {
+        case 0: md5_hash1.hashFile(qcfile.generic_string(), first_digest); break;
+        case 1: md5_hash1.hashFile(qcfile.generic_string(), concurrent_digest); break;
+        default:
+            md5_hash2.hashFile(qcfile.generic_string(), second_digest);
+            if (concurrent_digest != first_digest && concurrent_digest != second_digest)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BUZZHOUSE_ORACLE,
+                    "Concurrent write oracle: the read in parallel with the write saw the table neither as it was before the write "
+                    "nor as it was after it");
+            }
+    }
+}
+
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
