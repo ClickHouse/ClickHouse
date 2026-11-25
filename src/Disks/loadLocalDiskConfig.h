@@ -6,6 +6,7 @@ namespace Poco::Util { class AbstractConfiguration; }
 
 namespace DB
 {
+
 void loadDiskLocalConfig(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
@@ -13,4 +14,7 @@ void loadDiskLocalConfig(
     ContextPtr context,
     String & path,
     UInt64 & keep_free_space_bytes);
+
+void checkCustomLocalDiskPath(const String & path, ContextPtr context);
+
 }

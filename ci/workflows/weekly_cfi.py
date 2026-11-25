@@ -4,17 +4,17 @@ from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 
 # Weekly Control-Flow Integrity (CFI) check.
-# Builds the monolithic ClickHouse binary with Clang CFI (cfi-vcall, cfi-derived-cast)
-# using the release compile profile (ThinLTO + -fwhole-program-vtables) and runs
-# integration and stress tests against it. A CFI violation traps (SIGILL) and aborts the
-# server, which surfaces as a job failure; -DSPLIT_DEBUG_SYMBOLS=ON keeps the core-dump
-# stack trace pointing at the offending virtual call or bad cast.
+# Builds the monolithic ClickHouse binary with all Clang CFI checks (`ENABLE_CFI`, static musl, the
+# default libc) using the release compile profile (ThinLTO + -fwhole-program-vtables) and runs
+# integration and stress tests against it. The build uses `ENABLE_CFI_DIAGNOSTICS`: instead of
+# trapping, a CFI violation is reported through the UBSan runtime (`runtime error: control flow
+# integrity check ...`, then `SUMMARY: UndefinedBehaviorSanitizer`) and the server continues, so one
+# run finds every violation, with its source location and the type that was expected. XRay is
+# disabled because it is incompatible with the diagnostics runtime, as it is in the sanitizer builds.
 #
-# Scope: this covers the single self-extracting `clickhouse` binary only. It is not a
-# full release-artifact build -- it omits -DBUILD_STANDALONE_KEEPER=1, so the standalone
-# `clickhouse-keeper` executable is not built; integration tests exercise Keeper via
-# `clickhouse keeper` mode (the same coordination code linked into the monolith), not
-# the standalone binary.
+# Scope: this covers the single self-extracting `clickhouse` binary, which also runs
+# Keeper (`clickhouse-keeper` is a symlink to it); integration tests exercise Keeper
+# through it.
 #
 # The stateless functional suite is intentionally excluded: its exact-output assertions
 # produce build-profile false positives (e.g. query-profiler symbolization) and pick up
@@ -25,6 +25,7 @@ from ci.defs.job_configs import JobConfigs
 # Runs every Monday at 03:00 UTC.
 workflow = Workflow.Config(
     name="WeeklyCFI",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[

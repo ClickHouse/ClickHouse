@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -91,15 +92,25 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
+    const auto * alias = table->as<StorageAlias>();
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
+    NameSet chain_granted;
+    if (alias)
+    {
+        Names all_columns;
+        all_columns.reserve(columns.size());
+        for (const auto & column : columns)
+            all_columns.push_back(column.name);
+        chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
+    }
+
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
-        if (const auto * alias = table->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
+        if (alias && !chain_granted.contains(column.name))
             continue;
 
         res_columns[0]->insert(column.name);
@@ -172,6 +183,9 @@ static void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
+        insert_function(function_name);
+    const auto & window_function_names = WindowFunctionFactory::instance().getAllRegisteredNames();
+    for (const auto & function_name : window_function_names)
         insert_function(function_name);
     const auto & user_defined_function_names = UserDefinedExecutableFunctionFactory::getRegisteredNames(context);
     for (const auto & function_name : user_defined_function_names)

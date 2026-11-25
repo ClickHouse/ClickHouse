@@ -27,8 +27,8 @@ your_profile_name:
       # Optional
       schema: [default] # ClickHouse database for dbt models
       driver: [http] # http or native.  If not set this will be autodetermined based on port setting
-      host: [localhost] 
-      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
+      host: [localhost]
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings
       user: [default] # User for all database operations
       password: [<empty string>] # Password for the user
       cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
@@ -42,7 +42,7 @@ your_profile_name:
       connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
       send_receive_timeout: [300] # Timeout in seconds to receive data from the ClickHouse server
       cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
-      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
+      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy for models with a `unique_key`.
       check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
       local_suffix: [_local] # Table suffix of local tables on shards for distributed materializations.
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
@@ -50,9 +50,9 @@ your_profile_name:
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
       reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
-      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
+      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic). Set it to `Shared` on ClickHouse Cloud, see the [read-after-write consistency](#read-after-write-consistency) section.
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
-      
+
       # Native (clickhouse-driver) connection settings
       sync_request_timeout: [5] # Timeout for server ping
       compress_block_size: [1048576] # Compression block size if compression is enabled
@@ -90,14 +90,18 @@ When using a ClickHouse cluster, you need to consider two things:
 
 #### Cluster Setting {#cluster-setting}
 
-The `cluster` setting in profile enables dbt-clickhouse to run against a ClickHouse cluster. If `cluster` is set in the profile, **all models will be created with the `ON CLUSTER` clause** by default—except for those using a **Replicated** engine. This includes:
+The `cluster` setting in profile enables dbt-clickhouse to run against a ClickHouse cluster.
+If `cluster` is set in the profile, DDL is executed with the `ON CLUSTER` clause by default.
+This includes:
 
 - Database creation
 - View materializations
 - Table and incremental materializations
 - Distributed materializations
+- Functions (UDFs)
 
-Replicated engines will **not** include the `ON CLUSTER` clause, as they're designed to manage replication internally.
+On a Replicated database (`database_engine: Replicated`), table and view DDL is executed **without** the `ON CLUSTER` clause, as the database engine replicates it to all replicas itself.
+Database creation and functions still use `ON CLUSTER`, since neither is replicated by the database engine.
 
 To **opt out** of cluster-based creation for a specific model, add the `disable_on_cluster` config:
 
@@ -111,9 +115,6 @@ To **opt out** of cluster-based creation for a specific model, add the `disable_
 
 ```
 
-table and incremental materializations with non-replicated engine won't be affected by `cluster` setting (model would
-be created on the connected node only).
-
 **Compatibility**
 
 If a model has been created without a `cluster` setting, dbt-clickhouse will detect the situation and run all DDL/DML
@@ -122,7 +123,7 @@ without `on cluster` clause for this model.
 #### Read-after-write Consistency {#read-after-write-consistency}
 
 dbt relies on a read-after-insert consistency model. This isn't compatible with ClickHouse clusters that have more than one replica if you can't guarantee that all operations will go to the same replica. You may not encounter problems in your day-to-day usage of dbt, but there are some strategies depending on your cluster to have this guarantee in place:
-- If you're using a ClickHouse Cloud cluster, you only need to set `select_sequential_consistency: 1` in your profile's `custom_settings` property. You can find more information about this setting [here](/reference/settings/session-settings/other#select_sequential_consistency).
+- If you're using a ClickHouse Cloud cluster, set `database_engine: Shared` in your profile (the value is case-sensitive). With it, dbt-clickhouse sends [`select_sequential_consistency: 1`](/reference/settings/session-settings/other#select_sequential_consistency) on every connection, including other internal queries that `custom_settings` cannot reach.
 - If you're using a self-hosted cluster, make sure all dbt requests are sent to the same ClickHouse replica. If you have a load balancer on top of it, try using some `replica aware routing`/`sticky sessions` mechanism to be able to always reach the same replica. Adding the setting `select_sequential_consistency = 1` in clusters outside ClickHouse Cloud is [not recommended](/reference/settings/session-settings/other#select_sequential_consistency).
 
 ## Additional ClickHouse macros {#additional-clickhouse-macros}
@@ -221,9 +222,9 @@ SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE iceberg_catalog
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
-SETTINGS 
-    catalog_type = 'rest', 
-    storage_endpoint = 'http://minio:9000/lakehouse', 
+SETTINGS
+    catalog_type = 'rest',
+    storage_endpoint = 'http://minio:9000/lakehouse',
     warehouse = 'demo'
 ```
 
@@ -243,7 +244,7 @@ sources:
 3. **Use the catalog tables in your dbt models:**
 
 ```sql
-SELECT 
+SELECT
     o.order_id,
     c.customer_name,
     o.order_date

@@ -1,0 +1,5 @@
+clickhouse_add_executable(wasm_fuzzer wasm_fuzzer.cpp)
+target_link_libraries(wasm_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable(wasm_memory_fuzzer wasm_memory_fuzzer.cpp)
+target_link_libraries(wasm_memory_fuzzer PRIVATE dbms)

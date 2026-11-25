@@ -74,6 +74,38 @@ TEST(IcebergSnapshotSummary, DeleteSubtractsFromParent)
     EXPECT_EQ(del.getTotals().files_size, 1638);
 }
 
+TEST(IcebergSnapshotSummary, DeleteRejectsUnderreportedParentTotals)
+{
+    DB::Iceberg::SnapshotSummaryTotals parent_totals{
+        .records = 1,
+        .files_size = 100,
+        .data_files = 1,
+        .delete_files = 0,
+        .position_deletes = 0,
+        .equality_deletes = 0};
+
+    EXPECT_THROW(
+        SnapshotSummary(
+            DB::Iceberg::SnapshotSummaryUpdateDelete{
+                .deleted_data_files = 1,
+                .removed_records = 2,
+                .removed_files_size = 100,
+                .num_partitions = 1},
+            parent_totals),
+        DB::Exception);
+}
+
+TEST(IcebergSnapshotSummary, RequiredTotalsRejectMissingFields)
+{
+    Poco::JSON::Object summary;
+    summary.set(DB::Iceberg::f_operation, DB::Iceberg::f_append);
+    summary.set(DB::Iceberg::f_total_records, "1");
+
+    auto parsed = SnapshotSummary::fromJSON(summary, /*with_extra_fields=*/false, /*require_totals=*/true);
+    ASSERT_FALSE(parsed);
+    EXPECT_NE(parsed.error().find(DB::Iceberg::f_total_files_size), std::string::npos);
+}
+
 TEST(IcebergSnapshotSummary, OverwriteAddsDeleteCounts)
 {
     SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 3, .added_records = 5, .added_files_size = 2461, .num_partitions = 3});

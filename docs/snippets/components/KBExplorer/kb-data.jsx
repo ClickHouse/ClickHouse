@@ -1249,6 +1249,16 @@ export const kbIndex = {
       "tags": []
     },
     {
+      "id": "materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts",
+      "title": "What happens to refreshable materialized views when the server restarts",
+      "description": "Why refreshable materialized views can all refresh at once when a server restarts, and how to start them again one at a time.",
+      "href": "/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts",
+      "category": "Materialized views & projections",
+      "tags": [
+        "Server Admin"
+      ]
+    },
+    {
       "id": "integrations/oracle-odbc",
       "title": "What if I have a problem with encodings when using Oracle via ODBC?",
       "description": "This page provides guidance on what to do if you have a problem with encodings when using Oracle via ODBC",

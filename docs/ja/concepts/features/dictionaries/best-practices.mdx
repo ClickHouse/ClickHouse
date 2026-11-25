@@ -11,9 +11,7 @@ keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 
 
 実例を交えた Dictionary の入門については、[Dictionary のメインガイド](/ja/concepts/features/dictionaries/index)を参照してください。
 
-<div id="when-to-use-dictionaries-vs-joins">
-  ## Dictionary と JOIN の使い分け
-</div>
+## Dictionary と JOIN の使い分け {#when-to-use-dictionaries-vs-joins}
 
 Dictionary が最も効果を発揮するのは、JOIN の片側がメモリに収まるルックアップテーブルである場合です。標準的な JOIN では、ClickHouse は左側から照合する前に右側からハッシュテーブルを構築します。たとえその後 `WHERE` フィルタで大半の行が破棄される場合でもです。最近のバージョン (24.12+) では、多くのケースで JOIN より前にフィルタが適用されるようになりましたが、それでもオーバーヘッドを常に解消できるとは限りません。一方、Dictionary では `dictGet` をインラインで呼び出すため、ルックアップが実行されるのは、フィルタを通過した行だけです。
 
@@ -24,9 +22,7 @@ Dictionary が最も効果を発揮するのは、JOIN の片側がメモリに�
 * ルックアップキーがすでに利用可能な小さなディメンションテーブルに対する JOIN を置き換えるには、Dictionary を使用します。
 * 多くの行にわたってルックアップした値でフィルタする場合は、通常のカラムと索引を使用します。
 
-<div id="choosing-a-layout">
-  ## レイアウトの選択
-</div>
+## レイアウトの選択 {#choosing-a-layout}
 
 `LAYOUT` 句は、Dictionary の内部データ構造を制御します。使用可能なすべてのレイアウトは、[レイアウトのリファレンス](/ja/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) に記載されています。
 
@@ -37,12 +33,16 @@ Dictionary が最も効果を発揮するのは、JOIN の片側がメモリに�
 * **`hashed`** — Dictionary 全体をハッシュテーブルに格納します。属性がごく少ない場合は `hashed_array` より高速になることがありますが、属性数が増えるにつれてメモリ消費も大きくなります。
 * **`complex_key_hashed` / `complex_key_hashed_array`** — キーを `UInt64` に CAST できない場合 (たとえば `String` キー) に使用します。性能面でのトレードオフは、complex でない対応レイアウトと同じです。
 * **`sparse_hashed`** — `hashed` よりメモリ使用量を抑えられる一方で、CPU コストは増えます。最適な選択になることはまれで、効率的なのは属性が 1 つしかない場合に限られます。ほとんどの場合、`hashed_array` のほうが適しています。
-* **`cache` / `ssd_cache`** — 頻繁にアクセスされるキーだけをキャッシュします。データセット全体がメモリに収まらない場合に有用ですが、cache ミス時にはルックアップがソースに到達することがあります。レイテンシに敏感なワークロードには推奨されません。
+* **`cache` / `ssd_cache`** — 頻繁にアクセスされるキーだけをキャッシュします。データセット全体がメモリに収まらない場合に有用ですが、cache ミス時にはルックアップがソースに到達することがあります。レイテンシに敏感なワークロードや、挿入時に確実にデータを付加したい場合には推奨されません。詳しくは [インジェスト経路における cache Dictionary](#cache-dictionaries-in-ingestion-path) を参照してください。
 * **`direct`** — インメモリストレージを使わず、すべてのルックアップでソースに対してクエリを実行します。データの更新頻度が高すぎてキャッシュできない場合や、Dictionary が大きすぎてメモリに収まらない場合に使用してください。
 
-<div id="monitoring-dictionary-usage">
-  ## Dictionaryの使用状況を監視する
-</div>
+## インジェスト経路における cache Dictionary {#cache-dictionaries-in-ingestion-path}
+
+キャッシュベースのレイアウト (`cache`、`complex_key_cache`、`ssd_cache`、`complex_key_ssd_cache`) は、ウォームアップ済みのエントリをローカルサーバー上にしか保持しません。キャッシュのウォームアップは各サーバーで個別に行われ、サーバーを再起動または置き換えた場合は空のキャッシュから始まります。コールドキャッシュ状態でのルックアップは Dictionary ソースに依存するため、レイテンシが増加します。また、ソースがルックアップに応答できない場合は、挿入処理がブロックされたり失敗したりするおそれがあります。ClickHouse Cloud では、オートスケーリングやマネージドなノードの置き換えが行われるため、この状況がより発生しやすくなります。
+
+レイテンシの予測可能性やソースの可用性が重要な場合は、[インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) や `MATERIALIZED`・`DEFAULT` カラムで挿入時にデータを付加する用途には、これらのレイアウトを使用しないでください。代わりに、各サーバーに Dictionary 全体をロードするレイアウトを使用してください。一般的には、`UInt64` キーには `hashed` または `hashed_array` を、文字列キーや複合キーには `complex_key_hashed` または `complex_key_hashed_array` を使用します。`flat` などの完全ロード型レイアウトも選択肢になります。Dictionary 全体がメモリに収まらない場合は、インジェスト経路でウォームアップ済みのキャッシュに頼るのではなく、挿入前またはクエリ実行時にデータを付加してください。
+
+## Dictionaryの使用状況を監視する {#monitoring-dictionary-usage}
 
 [`system.dictionaries`](/ja/reference/system-tables/dictionaries) テーブルを使用して、メモリ使用量と正常性を確認できます。
 

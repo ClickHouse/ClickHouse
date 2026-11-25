@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## ALTER TABLE ... MODIFY REFRESH SQL 문
-</div>
+## 필요한 권한 {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY`를 실행하려면 해당 뷰에 대한 `ALTER VIEW MODIFY QUERY` 권한이 필요합니다. 새 쿼리는 뷰의 [SQL security](/ko/reference/statements/create/view#sql_security) 설정으로 실행되므로, 이 SQL 문을 실행하려면 해당 SQL security로 뷰를 생성할 때 필요한 권한 부여도 함께 있어야 합니다.
+
+* 정의자(definer)가 현재 사용자가 아닌 `SQL SECURITY DEFINER`: 해당 정의자에 대한 `SET DEFINER`.
+* `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+같은 SQL 문에서 `MODIFY SQL SECURITY`로 SQL security도 함께 변경하는 경우에는 이전 SQL security가 아닌 새 SQL security 기준으로 위 권한 부여가 필요합니다.
+
+`ON CLUSTER`를 사용하면 SQL 문이 실행되는 호스트에서 권한 검사가 이루어지므로, 해당 호스트에 뷰가 존재해야 합니다. 뷰가 없으면 SQL 문은 `UNKNOWN_TABLE` 오류와 함께 실패합니다.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## ALTER TABLE ... MODIFY REFRESH SQL 문 {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH`는 일정, 종속성, 무작위화, [갱신 설정](/ko/reference/statements/create/view#refresh-settings)을 비롯한 [갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)의 갱신 매개변수를 변경합니다.
 

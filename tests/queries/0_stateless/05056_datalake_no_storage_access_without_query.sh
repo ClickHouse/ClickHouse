@@ -26,6 +26,16 @@ SELECT count(), countIf(total_rows IS NULL), countIf(total_bytes IS NULL) FROM s
 SELECT sum(value) FROM system.events WHERE event LIKE 'S3%Request%';
 "
 
+# The same holds for a table that reads a data lake table through another engine.
+$CLICKHOUSE_LOCAL --multiquery "
+CREATE DATABASE d ENGINE = Memory;
+ATTACH TABLE d.t (x UInt64) ENGINE = IcebergS3('${GONE_S3}_wrapped/', 'clickhouse', 'clickhouse');
+CREATE TABLE d.a ENGINE = Alias('d', 't');
+CREATE TABLE d.m (x UInt64) ENGINE = Merge('d', '^t');
+SELECT name, total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE database = 'd' ORDER BY name;
+SELECT sum(value) FROM system.events WHERE event LIKE 'S3%Request%';
+"
+
 # Reading a table still reports the failure. Local paths keep this offline and quick.
 GONE_LOCAL="$CUR_DIR/data_delta_lake/${CLICKHOUSE_TEST_UNIQUE_NAME}_gone"
 for engine in "IcebergLocal('${GONE_LOCAL}_iceberg')" "DeltaLakeLocal('${GONE_LOCAL}_delta')"; do

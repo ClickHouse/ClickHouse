@@ -10,17 +10,13 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
 [Amazon Glue](https://aws.amazon.com/glue/) 是 Amazon Web Services (AWS) 提供的一项全托管、无服务器数据集成服务。它简化了为分析、机器学习和应用开发而发现、准备和转换数据的过程。
 
-<div id="installation">
-  ## 安装
-</div>
+## 安装 {#installation}
 
 要将你的 Glue 代码与 ClickHouse 集成，可以通过以下任一方式在 Glue 中使用我们的官方 Spark Connector：
 
@@ -41,13 +37,21 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
       <Step title="激活连接器并创建连接" id="activate-the-connector">
         订阅后，选择与你的作业要求匹配的 Glue 版本。在 **Additional details** 部分的 **Usage instructions** 下，点击 **Open Glue Studio - Add ClickHouse connector** 的链接。该链接会打开 Glue 连接创建页面，并预先填好关键字段。为连接命名后，点击 create 即可 (此阶段无需提供 ClickHouse 连接信息) 。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="AWS Marketplace 中 ClickHouse Glue 连接器的使用说明" />
+        <div className="ch-image-md">
+          <Frame>
+            ![AWS Marketplace 中 ClickHouse Glue 连接器的使用说明](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+          </Frame>
+        </div>
       </Step>
 
       <Step title="在 Glue 作业中使用" id="use-in-glue-job">
         在你的 Glue 作业中，选择 `Job details` 选项卡，然后展开 `Advanced properties` 窗口。在 `Connections` 部分中，选择你刚刚创建的连接。该连接器会自动将所需 JAR 注入作业运行时。
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Glue Notebook 连接配置" force="true" />
+        <div className="ch-image-md">
+          <Frame>
+            ![Glue Notebook 连接配置](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+          </Frame>
+        </div>
 
         <Note>
           请确保选择与 Glue 作业配置匹配的连接器版本：
@@ -74,20 +78,24 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
       <Step title="配置依赖 JAR 路径">
         在 `Job details` 选项卡下，向下滚动并展开 `Advanced properties` 下拉菜单，然后在 `Dependent JARs path` 中填写 JAR 路径：
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Glue Notebook JAR 路径选项" force="true" />
+        <div className="ch-image-md">
+          <Frame>
+            ![Glue Notebook JAR 路径选项](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+          </Frame>
+        </div>
       </Step>
     </Steps>
   </Tab>
 </Tabs>
 
 <div id="secrets-manager">
-  ## 使用 AWS Secrets Manager 管理凭证
+  ## 使用 AWS Secrets Manager 管理凭证 {#secrets-manager}
 </div>
 
 不要在作业中硬编码 ClickHouse 用户名和密码，而应将其存储在 [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) 中，并在 Glue 连接或作业脚本中引用该密钥。在运行时，Glue 会拉取该密钥，并将其中的键值对合并到连接器的连接选项中。
 
 <div id="create-secret">
-  ### 创建密钥
+  ### 创建密钥 {#create-secret}
 </div>
 
 在 AWS Secrets Manager 中，创建一个类型为 **其他类型的密钥** 的密钥，并添加键值对，其中键名需与 connector 的选项名称一致：
@@ -100,7 +108,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 你在该密钥中放入的任何键都会被转发给 connector，因此如果你想避免将它们写在代码中，也可以在其中存储 `host`、`database` 或任何其他选项。
 
 <div id="reference-secret">
-  ### 引用密钥
+  ### 引用密钥 {#reference-secret}
 </div>
 
 有两种方式可让作业使用该密钥。
@@ -143,9 +151,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 密钥中的 `user` 和 `password` 键会在运行时合并到连接器选项中，因此你无需在脚本中读取它们。
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 以下示例使用 `marketplace.spark`，并通过 `connectionName` 引用连接器。如果你是手动安装连接器 (“手动安装”选项卡) ，请改用 `connection_type="custom.spark"`，并在选项中直接传入 `className`、`host`、`http_port`、`user` 和 `password`。
 
@@ -155,7 +161,11 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
   <Tab title="可视化编辑器">
     你可以在 Glue Studio 可视化编辑器中将 ClickHouse 连接器用作数据源或目标端。只需将 ClickHouse Spark 连接器组件拖到画布上，然后连接到你的数据管道即可。
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="带有 ClickHouse 连接器的 Glue Studio 可视化编辑器" />
+    <div className="ch-image-md">
+      <Frame>
+        ![带有 ClickHouse 连接器的 Glue Studio 可视化编辑器](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+      </Frame>
+    </div>
   </Tab>
 
   <Tab title="Scala">

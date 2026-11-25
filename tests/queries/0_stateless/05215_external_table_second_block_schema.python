@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Every Native-protocol block sent for an external table after the first one must match the schema
+# the first block bound. Without that check the columns of the later block are written to the table
+# as a `Chunk` (which carries no types) and labelled with the table header again, so the data ends up
+# being read as a type the client did not send it as.
+
+import os
+import socket
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "external table schema check"
+
+CLIENT_REVISION = 54449
+
+INCORRECT_DATA = 117
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+
+        ba.append(byte)
+
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8")
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise RuntimeError("Socket is closed")
+        size -= len(cur)
+        res.extend(cur)
+
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt8(s):
+    return readUInt(s)
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+
+        if not byte & 0x80:
+            return x
+
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return bytes(readStrict(s, size)).decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(26, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # password
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    packet_type = readVarUInt(s)
+    assert packet_type == 0, packet_type
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # version major
+    readVarUInt(s)  # version minor
+    readVarUInt(s)  # revision
+    readStringBinary(s)  # timezone
+    readStringBinary(s)  # display name
+    readVarUInt(s)  # version patch
+
+
+def serializeClientInfo(ba, query_id):
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds
+    ba.append(1)  # TCP
+    writeStringBinary("os_user", ba)  # os_user
+    writeStringBinary("client_hostname", ba)  # client_hostname
+    writeStringBinary(CLIENT_NAME, ba)  # client_name
+    writeVarUInt(26, ba)
+    writeVarUInt(9, ba)
+    writeVarUInt(CLIENT_REVISION, ba)
+    writeStringBinary("", ba)  # quota_key
+    writeVarUInt(0, ba)  # distributed_depth
+    writeVarUInt(1, ba)  # client_version_patch
+    ba.append(0)  # No telemetry
+
+
+def sendQuery(s, query):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+
+    ba.append(1)  # INITIAL_QUERY
+    serializeClientInfo(ba, query_id)
+
+    writeStringBinary("", ba)  # No settings
+    writeStringBinary("", ba)  # No interserver secret
+    writeVarUInt(2, ba)  # Stage - Complete
+    ba.append(0)  # No compression
+    writeStringBinary(query, ba)
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)
+    ba.append(0)  # is_overflows
+    writeVarUInt(2, ba)
+    writeVarUInt(0, ba)
+    ba.extend([0] * 4)  # bucket_num
+
+
+def sendBlock(s, table_name, columns, rows, data=b""):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary(table_name, ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(len(columns), ba)
+    writeVarUInt(rows, ba)
+    for name, type_name in columns:
+        writeStringBinary(name, ba)
+        writeStringBinary(type_name, ba)
+    ba.extend(data)
+    s.sendall(ba)
+
+
+def sendEmptyBlock(s, table_name=""):
+    sendBlock(s, table_name, [], 0)
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    readUInt8(s)  # has_nested
+    return code, text.replace("DB::Exception:", "").strip()
+
+
+def readResponse(s):
+    """Returns either `exception <code>` or `values <UInt64 values of the result>`."""
+    values = []
+    while True:
+        packet_type = readVarUInt(s)
+        if packet_type == 2:  # Exception
+            code, _ = readException(s)
+            if code == INCORRECT_DATA:
+                return "exception INCORRECT_DATA"
+            return "exception {}".format(code)
+        if packet_type == 1:  # Data
+            readStringBinary(s)  # external table name
+            # BlockInfo
+            readVarUInt(s)
+            readUInt8(s)  # is_overflows
+            readVarUInt(s)
+            readUInt32(s)  # bucket_num
+            readVarUInt(s)
+            columns = readVarUInt(s)
+            rows = readVarUInt(s)
+            for _ in range(columns):
+                readStringBinary(s)  # name
+                readStringBinary(s)  # type
+                for _ in range(rows):
+                    values.append(int.from_bytes(readStrict(s, 8), "little"))
+            continue
+        if packet_type == 3:  # Progress
+            for _ in range(5):
+                readVarUInt(s)
+            continue
+        if packet_type == 5:  # EndOfStream
+            return "values {}".format(values)
+        if packet_type == 6:  # ProfileInfo
+            readVarUInt(s)  # rows
+            readVarUInt(s)  # blocks
+            readVarUInt(s)  # bytes
+            readUInt8(s)  # applied_limit
+            readVarUInt(s)  # rows_before_limit
+            readUInt8(s)  # obsolete field
+            continue
+        raise RuntimeError("Unexpected packet type {}".format(packet_type))
+
+
+def connect():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(30)
+    s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+    sendHello(s)
+    receiveHello(s)
+    return s
+
+
+def sendMismatchingBlocks():
+    with connect() as s:
+        sendQuery(s, "SELECT x FROM ext")
+        # A block with zero rows is not an empty block: it creates the external table and binds
+        # `x UInt64` as its schema.
+        sendBlock(s, "ext", [("x", "UInt64")], 0)
+        # The same table, one row, but the column is declared as a different type.
+        sendBlock(s, "ext", [("x", "String")], 1, b"\x05hello")
+        sendEmptyBlock(s)
+        print(readResponse(s))
+
+
+def sendMatchingBlocks():
+    with connect() as s:
+        sendQuery(s, "SELECT sum(x) FROM ext")
+        sendBlock(s, "ext", [("x", "UInt64")], 0)
+        sendBlock(s, "ext", [("x", "UInt64")], 1, (1).to_bytes(8, "little"))
+        sendBlock(s, "ext", [("x", "UInt64")], 1, (2).to_bytes(8, "little"))
+        sendEmptyBlock(s)
+        print(readResponse(s))
+
+
+def main():
+    sendMismatchingBlocks()
+    sendMatchingBlocks()
+
+
+if __name__ == "__main__":
+    main()

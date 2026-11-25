@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+لا يمكن الجمع بين صيَغ `OFFSET ... FETCH` وفق معيار SQL وصيغة النطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until).
+
 يمكن أن تكون قيمة `offset_row_count` أو `fetch_row_count` رقمًا أو ثابتًا حرفيًا. ويمكنك حذف `fetch_row_count`؛ إذ تكون قيمته افتراضيًا 1.
 
 يحدد `OFFSET` عدد الصفوف التي يجب تخطيها قبل بدء إرجاع الصفوف من مجموعة نتائج الاستعلام. ويؤدي `OFFSET n` إلى تخطي أول `n` صفوف من النتيجة.
@@ -31,9 +33,11 @@ doc_type: 'reference'
 
 > **ملاحظة**
 > • يجب أن يكون الكسر رقم [Float64](/ar/reference/data-types/float) أقل من 1 وأكبر من صفر.
-> • إذا نتج عن العملية الحسابية عدد كسري من الصفوف، فسيُقرَّب إلى العدد الصحيح التالي.
+> • إذا نتج عن العملية الحسابية عدد كسري من الصفوف، فسيُقرَّب إلى العدد الصحيح التالي.
 
 يحدد `FETCH` الحد الأقصى لعدد الصفوف التي يمكن أن تتضمنها نتيجة الاستعلام.
+يعمل `FETCH ... ONLY` دون `ORDER BY`، شأنه شأن `LIMIT`، لكن لا يُضمن أن تكون الصفوف المُرجَعة حتمية.
+يتطلب `FETCH ... WITH TIES` وجود `ORDER BY` لتحديد الصفوف المتساوية مع آخر صف مُختار.
 
 يُستخدم الخيار `ONLY` لإرجاع الصفوف التي تأتي مباشرة بعد الصفوف التي تم تخطيها بواسطة `OFFSET`. وفي هذه الحالة، يكون `FETCH` بديلًا عن العبارة [LIMIT](/ar/reference/statements/select/limit). على سبيل المثال، الاستعلام التالي
 
@@ -57,9 +61,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   قد تعتمد الإزاحة الفعلية أيضًا على إعداد [offset](/ar/reference/settings/session-settings/other#offset).
 </Note>
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 جدول الإدخال:
 

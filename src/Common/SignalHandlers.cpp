@@ -10,6 +10,7 @@
 #include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <Common/CoverageCollection.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -60,6 +61,8 @@ static std::atomic_flag handled_signals_were_reset;
 /// so we need to preserve the address for core dump analysis.
 static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
+static std::atomic<const char *> saved_fault_access_type{nullptr};
+static_assert(std::atomic<const char *>::is_always_lock_free, "saved_fault_access_type must be lock-free for use in signal handlers");
 
 
 void call_default_signal_handler([[maybe_unused]] int sig)
@@ -139,7 +142,10 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
+    {
         saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
+        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).data(), std::memory_order_relaxed); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    }
 
     if (sig != SIGTSTP)
         is_crashed.store(true, std::memory_order_relaxed);
@@ -420,10 +426,40 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
+    /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
+    /// performs no allocations on the signal path. Mach-O binaries never carry the compact section, so on Darwin
+    /// this only builds the index.
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (daemon)
+    {
+        /// The daemon does not build the index at initialization, so this is the first time it is built,
+        /// and it can fail (for example, on a corrupted `clickhouse.debug` next to the executable).
+        /// The exception must not leave this thread: it would reach the Poco error handler, and the server
+        /// would be left without signal processing or hang in `std::terminate`. Instead, it is handed to the
+        /// main thread, which rethrows it from `waitForTerminationRequest` and exits with this error.
+        try
+        {
+            SymbolIndex::instance().warmUp();
+        }
+        catch (...)
+        {
+            /// Without the stack trace: symbolizing it would try to build the index again.
+            LOG_FATAL(log, "Cannot build the symbol index, the server will be terminated: {}", getCurrentExceptionMessage(false));
+            {
+                std::lock_guard lock(terminate_request_mutex);
+                symbol_index_exception = std::current_exception();
+            }
+            terminate_request_cv.notify_all();
+        }
+    }
+#endif
 
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
+        /// A daemon has read its build id during initialization (without the symbol index), so this is
+        /// a plain string that neither builds anything nor waits for anything.
+        build_id_if_already_known = build_id;
     }
     else
     {
@@ -432,8 +468,19 @@ void SignalListener::run()
         /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
         /// Do it lazily to not slow-down the termination of clickhouse-client.
         build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
+        /// Everything printed before the bare stack trace has to come out even when the symbol index
+        /// is unusable, so the short fault info must not be the thing that builds it: `SymbolIndex::instance`
+        /// blocks on the function-local static's guard while another thread is inside the constructor,
+        /// and a thread that faulted in there will never release that guard. The real build id is still
+        /// printed in the full fault info, which comes after the bare dump.
+        build_id_if_already_known = []
+        {
+            const SymbolIndex * symbol_index = SymbolIndex::instanceIfInitialized();
+            return symbol_index ? symbol_index->getBuildIDHex() : String("<not yet known>");
+        };
 #else
         build_id = [] { return String("<unknown>"); };
+        build_id_if_already_known = build_id;
 #endif
     }
 
@@ -543,7 +590,7 @@ void SignalListener::run()
 bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
 {
     std::unique_lock lock(terminate_request_mutex);
-    auto condition = [&] { return terminate_requested > 0; };
+    auto condition = [&] { return terminate_requested > 0 || symbol_index_exception; };
     bool res = true;
 
     /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
@@ -551,6 +598,9 @@ bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout
         terminate_request_cv.wait(lock, condition);
     else
         res = terminate_request_cv.wait_for(lock, timeout, condition);
+
+    if (symbol_index_exception)
+        std::rethrow_exception(symbol_index_exception);
 
     return res;
 }
@@ -576,6 +626,30 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     }
 }
 
+/// Prints an instruction address in the same representation as the symbolized lines below it, so that
+/// the two are comparable and the printed value survives ASLR of a position-independent executable.
+///
+/// This is the raw fallback that has to come out even when symbolization later fails, so it must not
+/// depend on the symbol index being buildable. Without the index (a fault at startup, in the thread that
+/// was building it, or in a program that is not a daemon) only addresses in the main executable resolve.
+/// An address that does not resolve to a loaded object has no such form and is not printed.
+static void writeResolvedAddress(const void * addr, WriteBuffer & out)
+{
+    const auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address)
+    {
+        writeString("<unknown>", out);
+        return;
+    }
+
+    writePointerHex(resolved.address, out);
+    if (resolved.kind == StackTrace::AddressKind::OtherObject)
+    {
+        writeString(" in ", out);
+        writeString(resolved.object, out);
+    }
+}
+
 void SignalListener::onFault(
     int sig,
     const siginfo_t & info,
@@ -596,9 +670,10 @@ try
 
     LOG_FATAL(log, "########## Short fault info ############");
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
-              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
+              VERSION_STRING, VERSION_OFFICIAL, build_id_if_already_known(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig,
-              info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
+              /// `si_pid` and `si_uid` are set only for signals sent by a process; for a fault they overlap `si_addr`.
+              info.si_code > 0 || info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 
@@ -625,7 +700,7 @@ try
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
         {
             writeChar(' ', bare_stacktrace);
-            writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            writeResolvedAddress(stack_trace.getFramePointers()[i], bare_stacktrace);
         }
 
         LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
@@ -688,7 +763,7 @@ try
                                 [&bare_stacktrace](const void * ptr)
                                 {
                                     writeChar(' ', bare_stacktrace);
-                                    writePointerHex(ptr, bare_stacktrace);
+                                    writeResolvedAddress(ptr, bare_stacktrace);
                                 }
                 );
 
@@ -736,7 +811,7 @@ try
     if (collectCrashLog)
     {
         const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
-        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
+        const String fault_access_type{getFaultMemoryAccessType(sig, info, *context)};
         const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
         collectCrashLog(
@@ -747,7 +822,9 @@ try
 
     if (daemon)
          daemon->flushTextLogs();
-    Context::getGlobalContextInstance()->handleCrash();
+    /// These handlers are installed before the global context is created, so it can still be absent during startup.
+    if (auto global_context = Context::getGlobalContextInstance())
+        global_context->handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)
@@ -787,6 +864,11 @@ try
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();
+
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// The process dies right after this, which loses the coverage since the last flush.
+    flushCoverageToFilesOnExit();
+#endif
 
     HandledSignals::instance().fatal_error_printed.test_and_set();
 }

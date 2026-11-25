@@ -936,9 +936,9 @@ void DeduplicationInfo::setViewBlockNumber(size_t block_number)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "The deduplication with async insert is only supported for the materialized view with the inner query which produces no more rows than in the input. "
-            " You can either use sync inserts with deduplicaton or disable deduplication in dependent materialised views with async insert (deduplicate_blocks_in_dependent_materialized_views=0). "
-            " Inner query of the materialized view '{}' produced more that one block. "
-            " debug: {}",
+            "You can either use sync inserts with deduplicaton or disable deduplication in dependent materialised views with async insert (deduplicate_blocks_in_dependent_materialized_views=0). "
+            "Inner query of the materialized view '{}' produced more that one block. "
+            "debug: {}",
             visited_views.back(),
             debug());
 }
@@ -971,7 +971,7 @@ size_t DeduplicationInfo::getTokenBegin(size_t pos) const
     chassert(pos < offsets.size());
     if (pos == 0)
         return 0;
-    return offsets[pos - 1];
+    return offsets[static_cast<ssize_t>(pos) - 1];
 }
 
 

@@ -29,6 +29,17 @@ unset (sanitize_cache_type)
 ## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
+# Unsigned integer overflow is well-defined behaviour in C++ - it wraps around modulo 2^N - so it is
+# not a part of `-fsanitize=undefined`. But an *unintended* wraparound is still a bug, and usually a
+# nasty one: `size - 1` of an empty container, an offset that runs behind a buffer, a capacity
+# calculation that silently truncates. UBSan has a separate check for it, which is also enabled in
+# OSS-Fuzz, so we enable it as well.
+#
+# The places that wrap around on purpose - hash functions, checksums, pseudo-random number
+# generators, the semantics of ClickHouse arithmetic over unsigned types - are annotated with
+# `NO_SANITIZE_UNSIGNED_OVERFLOW` (see `base/base/sanitizer_defs.h`) or, for whole files and for
+# third-party header-only code, excluded in `tests/ubsan_ignorelist.txt`.
+
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
         set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
@@ -102,8 +113,8 @@ if (SANITIZE)
         endif ()
 
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
-        # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie ${MSAN_X86_VZEROUPPER_FLAGS}")
+        # Work around this with position-independent builds (-fPIE), this is slightly slower than non-PIC/PIE but that's okay.
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIE ${MSAN_X86_VZEROUPPER_FLAGS}")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
@@ -116,14 +127,13 @@ if (SANITIZE)
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${TSAN_FLAGS}")
 
     elseif (SANITIZE STREQUAL "undefined")
-        set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        set (UBSAN_FLAGS "-fsanitize=undefined,unsigned-integer-overflow -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
         if (ENABLE_FUZZING)
-            # Unsigned integer overflow is well defined behaviour from a perspective of C++ standard,
-            # compilers or CPU. We use in hash functions like SipHash and many other places in our codebase.
-            # This flag is needed only because fuzzers are run inside oss-fuzz infrastructure
-            # and they have a bunch of flags not halt the program if UIO happend and even to silence that warnings.
-            # But for unknown reason that flags don't work with ClickHouse or we don't understand how to properly use them,
-            # that's why we often receive reports about UIO. The simplest way to avoid this is just  set this flag here.
+            # Fuzzers are run inside the oss-fuzz infrastructure, which has its own set of flags that
+            # are supposed to not halt the program on an unsigned integer overflow and even to silence
+            # the warnings. For unknown reason those flags don't work with ClickHouse or we don't
+            # understand how to properly use them, that's why we often receive reports about UIO.
+            # The simplest way to avoid this is just to set this flag here.
             set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
         set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
@@ -132,7 +142,7 @@ if (SANITIZE)
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
     elseif (SANITIZE STREQUAL "address,undefined")
-        set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined -fsanitize-address-use-after-scope -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined,unsigned-integer-overflow -fsanitize-address-use-after-scope -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
         if (ENABLE_FUZZING)
             set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
@@ -155,7 +165,7 @@ endif()
 # Default coverage instrumentation (dumping the coverage map on exit)
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
-option(WITH_COVERAGE_DEPTH "Shadow call-stack depth tracking via -finstrument-functions-after-inlining (requires WITH_COVERAGE)" OFF)
+option(WITH_COVERAGE_DEPTH "Per-test coverage collection via SYSTEM SET COVERAGE TEST (requires WITH_COVERAGE)" OFF)
 
 option(WITH_COVERAGE_XRAY
     "Use XRay instrumentation for exact call-depth tracking (requires WITH_COVERAGE and ENABLE_XRAY). Builds with -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1. XRay maps runtime function text addresses to LLVM profile records, solving the PIE FunctionPointer=0 limitation."
@@ -187,9 +197,6 @@ if (WITH_COVERAGE)
         # LLVMCoverageMapping.cpp, and SYSTEM SET COVERAGE TEST are compiled in.
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_COVERAGE=1")
         set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DWITH_COVERAGE=1")
-        message (STATUS "Enabled call-depth shadow stack via -finstrument-functions-after-inlining")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -finstrument-functions-after-inlining")
-        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -finstrument-functions-after-inlining")
         # -mllvm -enable-value-profiling=true activates indirect-call value profiling so that
         # __llvm_profile_instrument_target() records virtual-dispatch targets at runtime.
         # Without this flag, LLVMProfileData::Values is always NULL and indirect-call data
@@ -230,5 +237,9 @@ if (ENABLE_CFI)
     if (SANITIZE)
         message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
     endif()
-    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer: cfi-vcall, cfi-derived-cast")
+    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer")
 endif()
+
+# Reports CFI violations through the UBSan runtime and continues, so that one run finds all of them.
+# Only for finding violations: production builds must trap.
+option (ENABLE_CFI_DIAGNOSTICS "Report CFI violations and continue instead of trapping (requires ENABLE_CFI)" OFF)

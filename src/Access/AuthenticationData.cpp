@@ -84,7 +84,8 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view
 {
     Poco::SHA1Engine engine;
     engine.update(text.data(), text.size());
-    return engine.digest();
+    const auto & digest = engine.digest();
+    return Digest(digest.begin(), digest.end());
 }
 
 AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])
@@ -152,7 +153,7 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
-    return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
+    return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash) && (lhs.otp_secret == rhs.otp_secret)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
 #if USE_SSL
         && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
@@ -160,6 +161,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
+        && (lhs.salt == rhs.salt)
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
         && (lhs.valid_until == rhs.valid_until)

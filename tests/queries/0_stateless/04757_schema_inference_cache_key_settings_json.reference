@@ -6,9 +6,9 @@ JSON
 Nullable(JSON)
 -- JSONEachRow array_of_dynamic, dynamic=1 first
 Array(Dynamic)
-Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+Nullable(Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))))
 -- JSONEachRow array_of_dynamic, dynamic=0 first
-Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))
+Nullable(Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))))
 Array(Dynamic)
 -- JSONEachRow array_of_dynamic, a repeated query hits the cache
 1

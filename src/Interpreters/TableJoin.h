@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -80,7 +81,7 @@ public:
                 nullsafe_compare_key_indexes.insert(key_names_left.size() - 1);
         }
 
-        std::pair<String, String> condColumnNames() const
+        [[nodiscard]] std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
 
@@ -98,13 +99,13 @@ public:
             return res;
         }
 
-        size_t keysCount() const
+        [[nodiscard]] size_t keysCount() const
         {
             chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
-        String formatDebug(bool short_format = false) const
+        [[nodiscard]] String formatDebug(bool short_format = false) const
         {
             const auto & [left_cond, right_cond] = condColumnNames();
 
@@ -119,13 +120,13 @@ public:
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
 
-        bool isEmpty() const
+        [[nodiscard]] bool isEmpty() const
         {
             return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
                 && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
         }
 
-        String formatPretty(const ExplainFormatSettings & settings) const;
+        [[nodiscard]] String formatPretty(const ExplainFormatSettings & settings) const;
     };
 
     using Clauses = std::vector<JoinOnClause>;
@@ -167,16 +168,24 @@ private:
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
     const bool enable_software_prefetch_in_join = false;
+    /// Old behaviour of `max_rows_in_join` / `max_bytes_in_join`: they spill instead of capping the right side.
+    const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
+    /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
+    bool enable_packed_string_keys_in_hash_join = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
 
     /// Decision by the planner whether to enable row store tranformation or not.
-    bool enable_row_store = false;
+    NameSet row_store_candidate_columns;
+    std::unordered_map<String, Float64> right_columns_avg_bytes;
+    /// Right columns that an expression computes, whose average size can differ from the one in `right_columns_avg_bytes`.
+    NameSet right_columns_computed;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -230,7 +239,6 @@ private:
 
     std::optional<bool> join_expression_value = std::nullopt;
 
-    bool enable_analyzer = false;
 
     /// Which statistics EXPLAIN ANALYZ` needs from this join
     JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
@@ -292,8 +300,6 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableAnalyzer() const { return enable_analyzer; }
-    void assertEnableAnalyzer() const;
 
     JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
 
@@ -313,7 +319,6 @@ public:
         return isEnabledAlgorithm(join_algorithms, val);
     }
 
-    bool allowParallelHashJoin() const;
     void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
@@ -339,6 +344,8 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
     bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
+    bool preferParallelHashLayout(
+        HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const;
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -349,16 +356,32 @@ public:
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
+    bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
-    void setRowStoreEnabled(bool value) { enable_row_store = value; }
-    bool isRowStoreEnabled() const { return enable_row_store; }
-
-    const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
+    bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }
+    void setPackedStringKeysInHashJoinEnabled(bool value) { enable_packed_string_keys_in_hash_join = value; }
+    void setRowStoreCandidateColumns(NameSet columns) { row_store_candidate_columns = std::move(columns); }
+    const NameSet & getRowStoreCandidateColumns() const { return row_store_candidate_columns; }
+    bool isRowStoreEnabled() const { return !row_store_candidate_columns.empty(); }
+    void setRightColumnAvgBytes(const String & name, Float64 avg_bytes) { right_columns_avg_bytes[name] = avg_bytes; }
+    void setRightColumnComputed(const String & name) { right_columns_computed.insert(name); }
+    Float64 getRightColumnAvgBytes(const String & name) const
     {
-        static const std::vector<SharedRuntimeFilterDescriptor> empty;
+        if (auto it = right_columns_avg_bytes.find(name); it != right_columns_avg_bytes.end())
+            return it->second;
+        return 0;
+    }
+    /// The average size in bytes of the only key of the hash table, with the 8-byte offset of a `ColumnString`.
+    /// 0 is unknown, also for a join with `OR`, with several keys, or on a key that an expression computes.
+    Float64 getRightHashKeyAvgBytes() const;
+
+    const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
+    {
+        static const VectorWithMemoryTracking<SharedRuntimeFilterDescriptor> empty;
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 
@@ -501,7 +524,7 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-bool allowParallelHashJoin(
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,

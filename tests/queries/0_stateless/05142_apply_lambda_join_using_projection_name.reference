@@ -1,0 +1,43 @@
+-- unqualified * over JOIN USING: every USING column keeps its own name
+toString(id)	toString(g)	toString(v)	toString(w)
+100	1	10	a
+-- wrapping in a passthrough SELECT * must not swap values between USING columns
+toString(id)	toString(g)	toString(v)	toString(w)
+100	1	10	a
+-- USING columns of different types must not collide into one name
+toTypeName(id)	toTypeName(g)	toTypeName(v)	toTypeName(w)
+UInt64	UInt16	Int64	String
+-- COLUMNS list form
+toString(id)	toString(g)
+100	1
+-- ARRAY JOIN columns are a third producer of an unregistered matched node
+toString(id)	toString(a1)	toString(a2)
+1	10	20
+toString(id)	toString(a1)	toString(a2)
+1	10	20
+-- FULL JOIN promotes the USING column to a function of both sides
+toString(id)	toString(g)	toString(v)	toString(w)
+100	1	10	a
+-- join_use_nulls
+toString(id)	toString(g)	toString(v)	toString(w)
+100	1	10	a
+-- a single USING column cannot collide, but was still named after the parameter
+toString(id)	toString(g)	toString(v)	toString(ar.g)	toString(w)
+100	1	10	1	a
+-- subcolumn USING key
+toString(t.a)	toString(t)	toString(v)	toString(sr.t)	toString(w)
+100	(100)	10	(100)	a
+-- chained lambda APPLY transformers
+length(toString(id))	length(toString(g))	length(toString(v))	length(toString(w))
+3	1	2	1
+-- the function form of APPLY was already correct and must not change
+toString(id)	toString(g)	toString(v)	toString(w)
+100	1	10	a
+-- a qualified column selected next to the matcher keeps its own name, in either order
+id	toString(id)	toString(g)	toString(v)	toString(w)
+100	100	1	10	a
+toString(id)	toString(g)	toString(v)	toString(w)	id
+100	1	10	a	100
+-- an ordinary higher-order lambda still shows its parameter name
+arrayMap(lambda(tuple(x), plus(x, 1)), [1, 2])
+[2,3]

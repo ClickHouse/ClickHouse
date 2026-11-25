@@ -68,11 +68,11 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     statistics.reset(new_statistics);
 
     if (!configuration.username.empty() && !configuration.password.empty())
-        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
+        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), String(configuration.password).c_str());
     if (!configuration.token.empty())
-        natsOptions_SetToken(options.get(), configuration.token.c_str());
+        natsOptions_SetToken(options.get(), String(configuration.token).c_str());
     if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
+        natsOptions_SetUserCredentialsFromMemory(options.get(), String(configuration.credentials).c_str());
     else if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
@@ -116,6 +116,12 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
+    /// Without this the library reports asynchronous errors - a rejected authentication, most
+    /// notably - by printing them to `stderr`, which leaves a table that has stopped consuming
+    /// without an explanation in the server log. The handler knows only the connection, not the
+    /// table: `StorageNATS` names the table when it replaces the connection the library closed,
+    /// and reports the error recorded on it, see `lastErrorForLog`.
+    natsOptions_SetErrorHandler(options.get(), errorCallback, this);
 }
 NATSConnection::~NATSConnection()
 {
@@ -130,6 +136,17 @@ String NATSConnection::connectionInfoForLog() const
         return "url: [hidden]";
     }
     return "cluster: [hidden]";
+}
+
+String NATSConnection::lastErrorForLog()
+{
+    std::lock_guard lock(mutex);
+    if (!connection)
+        return "none";
+
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(connection.get(), &last_error);
+    return last_error && *last_error ? last_error : "none";
 }
 
 bool NATSConnection::isConnected()
@@ -213,7 +230,7 @@ void NATSConnection::connectImpl(const Lock &)
     }
     connection.reset(new_conection);
 
-    LOG_DEBUG(log, "New connection {} is connected to {}", static_cast<void*>(this), connectionInfoForLog());
+    LOG_DEBUG(log, "New connection is connected to {}", connectionInfoForLog());
 }
 
 void NATSConnection::disconnectImpl(const Lock & connection_lock)
@@ -224,14 +241,26 @@ void NATSConnection::disconnectImpl(const Lock & connection_lock)
     natsConnection_Close(connection.get());
 }
 
-void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::reconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
+    LOG_DEBUG(callback_logger, "Connection got reconnected to NATS server");
 }
 
-void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
+void NATSConnection::disconnectedCallback(natsConnection *, void *)
 {
-    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
+    LOG_DEBUG(callback_logger, "Connection got disconnected from NATS server");
+}
+
+void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void *)
+{
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(nats_connection, &last_error);
+
+    LOG_ERROR(
+        callback_logger,
+        "Connection got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
+        natsStatus_GetText(status),
+        last_error && *last_error ? last_error : "none");
 }
 
 }

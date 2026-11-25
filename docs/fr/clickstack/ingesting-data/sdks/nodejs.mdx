@@ -1,414 +1,129 @@
 ---
 slug: /use-cases/observability/clickstack/sdks/nodejs
-description: 'SDK Node.js pour ClickStack - la stack d’observabilité de ClickHouse'
+description: 'Envoyez les logs, les métriques et les traces de vos applications Node.js vers ClickStack grâce au SDK Node.js de ClickStack.'
 title: 'Node.js'
+sidebarTitle: 'Node.js'
 doc_type: 'guide'
-keywords: ['clickstack', 'sdk', 'journalisation', 'intégration', 'supervision des applications']
+keywords: ['ClickStack', 'SDK', 'Node.js', 'OpenTelemetry']
 ---
 
-ClickStack utilise la norme OpenTelemetry pour collecter les données de télémétrie (logs, metrics,
-traces et exceptions). Les traces sont générées automatiquement grâce à l’instrumentation automatique, donc une
-instrumentation manuelle n’est pas nécessaire pour bénéficier du tracing.
+import { ClickStackIntegrates } from '/snippets/fr/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Ce guide intègre :
+Le SDK Node.js de ClickStack s&#39;appuie sur le SDK OpenTelemetry amont et ses auto-instrumentations. Il y ajoute la capture de la sortie console, la capture des exceptions non gérées et le vidage de la télémétrie lors de l&#39;arrêt. Les applications qui configurent déjà OpenTelemetry peuvent continuer à utiliser leur SDK existant et [configurer l&#39;export OTLP](/fr/clickstack/ingesting-data/opentelemetry).
 
-* **Logs**
-* **Metrics**
-* **Traces**
-* **Exceptions**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="getting-started">
-  ## Premiers pas
-</div>
+## Installation {#install}
 
-<div id="install-hyperdx-opentelemetry-instrumentation-package">
-  ### Installez le paquet d&#39;instrumentation OpenTelemetry d&#39;HyperDX
-</div>
-
-Utilisez la commande suivante pour installer le [paquet OpenTelemetry de ClickStack](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
-
-<Tabs>
-  <Tab title="NPM">
-    ```shell
-    npm install @hyperdx/node-opentelemetry 
-    ```
-  </Tab>
-
-  <Tab title="Yarn">
-    ```shell
-    yarn add @hyperdx/node-opentelemetry 
-    ```
-  </Tab>
-</Tabs>
-
-<div id="initializin-the-sdk">
-  ### Initialisation du SDK
-</div>
-
-Pour initialiser le SDK, vous devez appeler la fonction `init` au début du fichier d’entrée de votre application.
-
-<Tabs>
-  <Tab title="require">
-    ```javascript
-    const HyperDX = require('@hyperdx/node-opentelemetry');
-
-    HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omettre pour Managed ClickStack
-        service: 'my-service'
-    });
-    ```
-  </Tab>
-
-  <Tab title="import">
-    ```javascript
-    import * as HyperDX from '@hyperdx/node-opentelemetry';
-
-    HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omettre pour Managed ClickStack
-        service: 'my-service'
-    });
-    ```
-  </Tab>
-</Tabs>
-
-Cela capturera automatiquement les traces, les métriques et les logs de votre application Node.js.
-
-<div id="setup-log-collection">
-  ### Configurer la collecte des logs
-</div>
-
-Par défaut, les logs `console.*` sont collectés. Si vous utilisez un logger
-comme `winston` ou `pino`, vous devrez ajouter un transport à votre logger pour
-envoyer les logs à ClickStack. Si vous utilisez un autre type de logger,
-[n&#39;hésitez pas à nous contacter](mailto:support@clickhouse.com) ou à consulter l&#39;une de nos
-intégrations de plateforme, le cas échéant (par exemple [Kubernetes](/fr/clickstack/integration-examples/kubernetes)).
-
-<Tabs>
-  <Tab title="Winston">
-    Si vous utilisez `winston` comme logger, vous devrez ajouter le transport suivant à votre logger.
-
-    ```typescript
-        import winston from 'winston';
-        import * as HyperDX from '@hyperdx/node-opentelemetry';
-
-        const logger = winston.createLogger({
-          level: 'info',
-          format: winston.format.json(),
-          transports: [
-            new winston.transports.Console(),
-            HyperDX.getWinstonTransport('info', { // Envoie les logs de niveau info et supérieurs
-              detectResources: true,
-            }),
-          ],
-        });
-
-        export default logger;
-    ```
-  </Tab>
-
-  <Tab title="Pino">
-    Si vous utilisez `pino` comme logger, vous devrez ajouter le transport suivant à votre logger et spécifier un `mixin` pour corréler les logs avec les traces.
-
-    ```typescript
-    import pino from 'pino';
-    import * as HyperDX from '@hyperdx/node-opentelemetry';
-
-    const logger = pino(
-        pino.transport({
-        mixin: HyperDX.getPinoMixinFunction,
-        targets: [
-            HyperDX.getPinoTransport('info', { // Envoie les logs de niveau info et supérieurs
-            detectResources: true,
-            }),
-        ],
-        }),
-    );
-
-    export default logger;
-    ```
-  </Tab>
-
-  <Tab title="console.log">
-    Par défaut, les méthodes `console.*` sont prises en charge nativement. Aucune configuration supplémentaire n&#39;est requise.
-
-    Vous pouvez désactiver ce comportement en définissant la variable d&#39;environnement `HDX_NODE_CONSOLE_CAPTURE` sur 0 ou en passant `consoleCapture: false` à la fonction `init`.
-  </Tab>
-</Tabs>
-
-<div id="setup-error-collection">
-  ### Configurer la collecte des erreurs
-</div>
-
-Le SDK ClickStack peut capturer automatiquement les exceptions non gérées et les erreurs de votre application, avec la stack trace complète et le contexte du code.
-
-Pour l’activer, vous devez ajouter le code suivant à la fin du middleware de gestion des erreurs de votre application, ou capturer manuellement les exceptions à l’aide de la fonction `recordException`.
-
-<Tabs>
-  <Tab title="Express">
-    ```javascript
-    const HyperDX = require('@hyperdx/node-opentelemetry');
-    HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // À omettre pour Managed ClickStack
-        service: 'my-service'
-    });
-    const app = express();
-
-    // Ajoutez vos routes, etc.
-
-    // Ajoutez ceci après toutes les routes,
-    // mais avant de définir tout autre middleware de gestion des erreurs
-    HyperDX.setupExpressErrorHandler(app);
-
-    app.listen(3000);
-    ```
-  </Tab>
-
-  <Tab title="Koa">
-    ```javascript
-    const Koa = require("koa");
-    const Router = require("@koa/router");
-    const HyperDX = require('@hyperdx/node-opentelemetry');
-    HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // À omettre pour Managed ClickStack
-        service: 'my-service'
-    });
-
-    const router = new Router();
-    const app = new Koa();
-
-    HyperDX.setupKoaErrorHandler(app);
-
-    // Ajoutez vos routes, etc.
-
-    app.listen(3030);
-    ```
-  </Tab>
-
-  <Tab title="Manuel">
-    ```javascript
-    const HyperDX = require('@hyperdx/node-opentelemetry');
-
-    function myErrorHandler(error, req, res, next) {
-        // Peut être utilisé n'importe où dans votre application
-        HyperDX.recordException(error);
-    }
-    ```
-  </Tab>
-</Tabs>
-
-<div id="troubleshooting">
-  ## Dépannage
-</div>
-
-Si vous rencontrez des difficultés avec le SDK, vous pouvez activer la journalisation détaillée en définissant
-la variable d’environnement `OTEL_LOG_LEVEL` sur `debug`.
+Utilisez Node.js **22.15 ou une version ultérieure**. Installez le SDK dans votre application :
 
 ```shell
-export OTEL_LOG_LEVEL=debug
+npm install @clickhouse/clickstack-node
 ```
 
-<div id="advanced-instrumentation-configuration">
-  ## Configuration avancée de l’instrumentation
-</div>
+Le paquet prend en charge les modules ES et CommonJS. npm installe automatiquement sa dépendance homologue (peer dependency) `@opentelemetry/api`. Si votre application importe directement ce paquet, installez `@opentelemetry/api@~1.9.1` ; la version 1.10 ne fait pas partie de la plage de versions prise en charge par ce SDK.
 
-<div id="capture-console-logs">
-  ### Capturer les logs de la console
-</div>
+## Configurer votre destination {#configure-destination}
 
-Par défaut, le SDK ClickStack capture les logs de la console. Vous pouvez désactiver cette fonctionnalité en
-définissant la variable d&#39;environnement `HDX_NODE_CONSOLE_CAPTURE` sur 0.
+Définissez les variables d’environnement avant de démarrer votre application. Utilisez un endpoint OTLP HTTP de base, sans `/v1/traces`, `/v1/logs` ni `/v1/metrics` : les exportateurs ajoutent eux-mêmes ces chemins à la fin.
 
-```sh copy
-export HDX_NODE_CONSOLE_CAPTURE=0
-```
-
-<div id="attach-user-information-or-metadata">
-  ### Ajouter des informations utilisateur ou des métadonnées
-</div>
-
-Pour marquer facilement tous les événements liés à un attribut ou à un identifiant donné (par ex. l&#39;ID utilisateur
-ou l&#39;e-mail), vous pouvez appeler la fonction `setTraceAttributes`, qui appliquera les
-attributs déclarés à chaque log/span associé à la trace en cours après l&#39;appel. Il est recommandé d&#39;appeler cette fonction le plus tôt possible dans une
-requête/trace donnée (par ex. le plus tôt possible dans une pile de middlewares Express).
-
-C&#39;est un moyen pratique de garantir que tous les logs/spans sont automatiquement marqués avec
-les bons identifiants pour pouvoir les rechercher plus tard, au lieu de devoir
-marquer et propager manuellement les identifiants vous-même.
-
-`userId`, `userEmail`, `userName` et `teamName` renseigneront l&#39;UI des sessions
-avec les valeurs correspondantes, mais peuvent être omis. Toute valeur supplémentaire
-peut être spécifiée et utilisée pour rechercher des événements.
-
-```typescript
-import * as HyperDX from '@hyperdx/node-opentelemetry';
-
-app.use((req, res, next) => {
-  // Get user information from the request...
-
-  // Attach user information to the current trace
-  HyperDX.setTraceAttributes({
-    userId,
-    userEmail,
-  });
-
-  next();
-});
-```
-
-Veillez à activer le mode bêta en définissant la variable
-d’environnement `HDX_NODE_BETA_MODE` sur 1, ou en passant `betaMode: true` à la fonction `init` afin
-d’activer les attributs de trace.
+Utilisez l&#39;endpoint OTLP HTTP de votre collecteur ainsi que la clé d&#39;ingestion configurée pour son récepteur OTLP. Pour configurer le collecteur, consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry).
 
 ```shell
-export HDX_NODE_BETA_MODE=1
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://localhost:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-node-app'
 ```
 
-<div id="google-cloud-run">
-  ### Google Cloud Run
-</div>
+Cet endpoint part du principe que l&#39;application et le collecteur s&#39;exécutent sur le même hôte. Si le collecteur s&#39;exécute ailleurs, remplacez-le par une adresse joignable depuis votre application.
 
-Si votre application s’exécute sur Google Cloud Run, Cloud Trace
-injecte automatiquement des headers d’échantillonnage dans les requêtes entrantes, ce qui
-limite actuellement l’échantillonnage des traces à 0,1 requête par seconde pour chaque instance.
+## Démarrer votre application {#start-application}
 
-Le paquet `@hyperdx/node-opentelemetry` définit toutefois par défaut le taux d’échantillonnage sur 1,0.
-
-Pour modifier ce comportement ou configurer d’autres installations OpenTelemetry, vous
-pouvez définir manuellement les variables d’environnement
-`OTEL_TRACES_SAMPLER=parentbased_always_on` et `OTEL_TRACES_SAMPLER_ARG=1` afin
-d’obtenir le même résultat.
-
-Pour en savoir plus et forcer le traçage de requêtes spécifiques, consultez la
-[documentation Google Cloud Run](https://cloud.google.com/run/docs/trace).
-
-<div id="auto-instrumented-libraries">
-  ### Bibliothèques auto-instrumentées
-</div>
-
-Les bibliothèques suivantes seront automatiquement instrumentées (avec traçage) par le SDK :
-
-* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
-* [`express`](https://www.npmjs.com/package/express)
-* [`graphql`](https://www.npmjs.com/package/graphql)
-* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
-* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
-* [`ioredis`](https://www.npmjs.com/package/ioredis)
-* [`knex`](https://www.npmjs.com/package/knex)
-* [`koa`](https://www.npmjs.com/package/koa)
-* [`mongodb`](https://www.npmjs.com/package/mongodb)
-* [`mongoose`](https://www.npmjs.com/package/mongoose)
-* [`mysql`](https://www.npmjs.com/package/mysql)
-* [`mysql2`](https://www.npmjs.com/package/mysql2)
-* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
-* [`pg`](https://www.npmjs.com/package/pg)
-* [`pino`](https://www.npmjs.com/package/pino)
-* [`redis`](https://www.npmjs.com/package/redis)
-* [`winston`](https://www.npmjs.com/package/winston)
-
-<div id="alternative-installation">
-  ## Autre méthode d’installation
-</div>
-
-<div id="run-the-application-with-cli">
-  ### Exécuter l’application avec la CLI OpenTelemetry de ClickStack
-</div>
-
-Vous pouvez également auto-instrumenter votre application sans modifier le code en utilisant la CLI `opentelemetry-instrument` ou l’option
-Node.js `--require`. L’installation de la CLI offre un plus large éventail de bibliothèques et de frameworks auto-instrumentés.
-
-<Tabs>
-  <Tab title="Avec NPX">
-    <Info>
-      **Managed ClickStack**
-
-      La variable `HYPERDX_API_KEY` peut être omise avec Managed ClickStack.
-    </Info>
-
-    ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
-    ```
-  </Tab>
-
-  <Tab title="Point d’entrée personnalisé (ex. Nodemon, ts-node, etc.)">
-    <Info>
-      **Managed ClickStack**
-
-      La variable `HYPERDX_API_KEY` peut être omise avec Managed ClickStack.
-    </Info>
-
-    ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
-    ```
-  </Tab>
-
-  <Tab title="Importation du code">
-    ```javascript
-    // Importez ceci tout en haut du premier fichier chargé par votre application
-    // Vous indiquerez toujours votre clé API via la variable d’environnement `HYPERDX_API_KEY`
-    import { initSDK } from '@hyperdx/node-opentelemetry';
-
-    initSDK({
-        consoleCapture: true, // facultatif, par défaut : true
-        additionalInstrumentations: [], // facultatif, par défaut : []
-    });
-    ```
-  </Tab>
-</Tabs>
-
-*La variable d’environnement `OTEL_SERVICE_NAME` est utilisée pour identifier votre service dans l’application HyperDX. Elle peut avoir le nom de votre choix.*
-
-<div id="enabling-exception-capturing">
-  ### Activer la capture des exceptions
-</div>
-
-Pour activer la capture des exceptions non gérées, vous devrez définir la variable d’environnement `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` sur 1.
+Préchargez le SDK avant que votre application n&#39;importe les bibliothèques qu&#39;il instrumente :
 
 ```shell
-HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
+node --import @clickhouse/clickstack-node/register server.js
 ```
 
-Ensuite, pour collecter automatiquement les exceptions d’Express ou de Koa, ou pour les intercepter manuellement, suivez les instructions de la section [Configurer la collecte des erreurs](#setup-error-collection) ci-dessus.
+Remplacez `server.js` par le fichier d’entrée de votre application. Cette commande charge le SDK avant le démarrage de votre application et utilise les variables d’environnement configurées ci-dessus. Elle prend en charge les applications CommonJS comme les applications à modules ES.
 
-<div id="auto-instrumented-libraries">
-  ### Bibliothèques auto-instrumentées
-</div>
+Vous pouvez maintenant [vérifier l’ingestion](#verify-ingestion). Les méthodes alternatives ci-dessous ne sont utiles que si vous souhaitez démarrer via un script npm ou configurer le SDK dans le code.
 
-Les bibliothèques suivantes seront instrumentées automatiquement (pour le traçage) via les méthodes d’installation ci-dessus :
+<Accordion title="Autres méthodes de démarrage">
+  `--require` est également pris en charge. Si vous utilisez `NODE_OPTIONS`, limitez sa portée à la commande de l’application afin que les outils de build ne démarrent pas leurs propres pipelines de télémétrie :
 
-* [`amqplib`](https://www.npmjs.com/package/amqplib)
-* [`AWS Lambda Functions`](https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html)
-* [`aws-sdk`](https://www.npmjs.com/package/aws-sdk)
-* [`bunyan`](https://www.npmjs.com/package/bunyan)
-* [`cassandra-driver`](https://www.npmjs.com/package/cassandra-driver)
-* [`connect`](https://www.npmjs.com/package/connect)
-* [`cucumber`](https://www.npmjs.com/package/@cucumber/cucumber)
-* [`dataloader`](https://www.npmjs.com/package/dataloader)
-* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
-* [`express`](https://www.npmjs.com/package/express)
-* [`fastify`](https://www.npmjs.com/package/fastify)
-* [`generic-pool`](https://www.npmjs.com/package/generic-pool)
-* [`graphql`](https://www.npmjs.com/package/graphql)
-* [`grpc`](https://www.npmjs.com/package/@grpc/grpc-js)
-* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
-* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
-* [`ioredis`](https://www.npmjs.com/package/ioredis)
-* [`knex`](https://www.npmjs.com/package/knex)
-* [`koa`](https://www.npmjs.com/package/koa)
-* [`lru-memoizer`](https://www.npmjs.com/package/lru-memoizer)
-* [`memcached`](https://www.npmjs.com/package/memcached)
-* [`mongodb`](https://www.npmjs.com/package/mongodb)
-* [`mongoose`](https://www.npmjs.com/package/mongoose)
-* [`mysql`](https://www.npmjs.com/package/mysql)
-* [`mysql2`](https://www.npmjs.com/package/mysql2)
-* [`nestjs-core`](https://www.npmjs.com/package/@nestjs/core)
-* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
-* [`pg`](https://www.npmjs.com/package/pg)
-* [`pino`](https://www.npmjs.com/package/pino)
-* [`redis`](https://www.npmjs.com/package/redis)
-* [`restify`](https://www.npmjs.com/package/restify)
-* [`socket.io`](https://www.npmjs.com/package/socket.io)
-* [`winston`](https://www.npmjs.com/package/winston)
+  ```shell
+  NODE_OPTIONS='--import @clickhouse/clickstack-node/register' npm start
+  ```
+
+  Vous pouvez aussi créer un module d’instrumentation et le précharger. Les variables d’environnement de la section précédente continuent de configurer l’export :
+
+  ```javascript
+  // instrumentation.mjs
+  import { isMainThread } from 'node:worker_threads';
+  import { init } from '@clickhouse/clickstack-node';
+
+  if (isMainThread) {
+    init();
+  }
+  ```
+
+  ```shell
+  node --import ./instrumentation.mjs server.mjs
+  ```
+
+  Cette condition empêche les threads de travail, comme les workers de transport Pino, de démarrer des instances supplémentaires du SDK.
+
+  Utilisez soit le point d’entrée d’enregistrement du paquet, soit votre propre module d’instrumentation, mais pas les deux. N’initialisez pas un second SDK dans l’application. Les imports statiques de modules ES s’exécutent avant le corps du module : appeler `init` au-dessus des imports statiques dans le même fichier ne garantit donc pas l’ordre d’initialisation.
+</Accordion>
+
+## Vérifier l&#39;ingestion {#verify-ingestion}
+
+Démarrez votre application, envoyez des requêtes vers une route instrumentée et affichez un message dans la console. Dans ClickStack, sélectionnez un intervalle de temps récent et recherchez `my-node-app` dans Logs ou Traces. Avant de vérifier les métriques, laissez s&#39;écouler l&#39;intervalle d&#39;export des métriques.
+
+Si des données sont manquantes, vérifiez les diagnostics du SDK sur stderr, l&#39;endpoint et l&#39;authentification, ainsi que la connectivité réseau. Assurez-vous que l&#39;instrumentation est chargée avant les dépendances de l&#39;application. Les bibliothèques intégrées au bundle ne peuvent pas être instrumentées automatiquement si le bundler les intègre en ligne ; conservez le SDK et les dépendances instrumentées en tant que dépendances externes. Consultez la section [compatibilité du SDK](https://github.com/ClickHouse/clickstack-node#compatibility) pour connaître les exigences relatives à TypeScript, aux modules ES, aux frameworks et aux bundlers.
+
+## Configurer l’instrumentation {#configure-instrumentation}
+
+Les variables d’environnement OpenTelemetry standard conservent la signification définie par le projet amont, notamment pour l’échantillonnage, le batching, les exportateurs et les attributs de ressource. Par exemple :
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='deployment.environment.name=production'
+```
+
+La sortie console est capturée par défaut. La capture du corps HTTP est désactivée par défaut ; ne l&#39;activez que si elle est adaptée aux données traitées par votre application :
+
+```shell
+export CLICKSTACK_CAPTURE_HTTP_BODY='true'
+```
+
+Les corps capturés peuvent contenir des données personnelles et des identifiants. Le masquage effectué par le SDK n’offre aucune garantie d’exhaustivité ; conservez le masquage côté collecteur si nécessaire. Consultez les [options de confidentialité du SDK](https://github.com/ClickHouse/clickstack-node#privacy) pour la capture des en-têtes, les limites de taille des corps et le nettoyage des données.
+
+### Options d’initialisation {#initialization-options}
+
+Transmettez ces options à `init` dans votre module d’instrumentation :
+
+| Option                       | Valeur par défaut                               | Rôle                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`                   | `http://localhost:4318`                         | URL HTTP OTLP de base ; surchargée par `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                                   |
+| `serviceName`                | `unknown_service:` suivi du nom de l’exécutable | Nom du service ; surchargé par `OTEL_SERVICE_NAME` ou par `service.name` dans `OTEL_RESOURCE_ATTRIBUTES`                                                                               |
+| `environment`                | Non défini                                      | Définit `deployment.environment.name` ; la même clé dans `OTEL_RESOURCE_ATTRIBUTES` est prioritaire                                                                                    |
+| `apiKey`                     | Non défini                                      | Valeur de l’en-tête d’autorisation ; ignorée si `OTEL_EXPORTER_OTLP_HEADERS` contient déjà une valeur, même s’il ne contient que des en-têtes sans rapport                             |
+| `httpBodyCapture`            | `false`                                         | Capture les corps HTTP ; surchargé par `CLICKSTACK_CAPTURE_HTTP_BODY`                                                                                                                  |
+| `instrumentations`           | Valeurs par défaut de la configuration amont    | Objet de configuration pour `getNodeAutoInstrumentations` ; les valeurs `enabled` explicites surchargent les variables d’environnement d’activation/désactivation des instrumentations |
+| `additionalInstrumentations` | `[]`                                            | Instances d’instrumentation supplémentaires pour les bibliothèques non incluses dans l’ensemble par défaut                                                                             |
+
+Si une variable d’environnement n’est pas définie ou est vide, c’est l’option correspondante qui s’applique. Pour désactiver la capture de la console, ajoutez `console` à `OTEL_NODE_DISABLED_INSTRUMENTATIONS`. Consultez la [référence du SDK Node.js](https://github.com/ClickHouse/clickstack-node#quick-start) pour l’ensemble des valeurs par défaut.
+
+Pour les arrêts explicites de processus ou les handlers AWS Lambda, consultez la [documentation sur le cycle de vie du SDK](https://github.com/ClickHouse/clickstack-node#lifecycle).
+
+## Utiliser le SDK amont {#using-upstream-sdk}
+
+Si votre application configure déjà OpenTelemetry, ou si elle nécessite des processeurs ou un comportement personnalisés que les options du SDK ClickStack ne couvrent pas, utilisez le `NodeSDK` amont et configurez l&#39;export OTLP vers la destination indiquée ci-dessus. Suivez l&#39;[exemple de configuration du SDK amont](https://github.com/ClickHouse/clickstack-node#using-the-upstream-sdk-directly), qui détaille la configuration supplémentaire du chargeur et du cycle de vie. N&#39;initialisez pas les deux SDK dans le même processus.
+
+## Migration depuis le SDK Node.js de HyperDX {#migration}
+
+Remplacez `@hyperdx/node-opentelemetry` par `@clickhouse/clickstack-node` et utilisez le nouveau point d’entrée d’enregistrement. Remplacez `HYPERDX_API_KEY` par `OTEL_EXPORTER_OTLP_HEADERS`, en utilisant le format d’autorisation indiqué plus haut pour votre destination.
+
+Le nouveau SDK ne reprend pas l’ensemble des fonctions utilitaires et des options de HyperDX. Consultez le [guide de migration du SDK](https://github.com/ClickHouse/clickstack-node/blob/main/docs/migration.md) avant de remplacer les intégrations de journaliseur, les gestionnaires d’erreurs, les attributs de trace personnalisés ou les paramètres d’échantillonnage.
