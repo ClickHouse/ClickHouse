@@ -1,0 +1,214 @@
+---
+slug: /clickstack/observability/example-datasets/sample-data
+title: 'ログ、トレース、メトリクスのサンプル'
+description: 'ログ、セッション、トレース、メトリクスを含むサンプルデータセットで ClickHouse Observability を探索する'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
+sidebarTitle: 'ログ、トレース、メトリクスのサンプル'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+EC ストアのサンプルログ、セッション、トレース、メトリクスを使って、ClickHouse Observability を探索します。どちらのデプロイモードでも、同じデータセットと調査ワークフローを使用します。
+
+始める前に、[完全マネージド型の入門ガイド](/ja/clickstack/observability/getting-started)または[セルフマネージドの入門ガイド](/ja/clickstack/self-configured/getting-started/managed)の手順を完了しておいてください。
+
+<Steps>
+  <Step title="接続を設定" id="configure-your-connection">
+    デプロイ方法を選択し、サンプルデータを読み込む端末で以下の変数を設定します。
+
+    <Tabs>
+      <Tab title="完全マネージド型">
+        <BetaBadge label="ベータ版" />
+
+        **チーム設定 → Data** を開き、**Managed Telemetry** を探します。**OpenTelemetry Collector** の **URL** オプションから、OTLP HTTP エンドポイントとAPIキーをコピーします。**Reveal key** を選択すると、値全体が表示されます。
+
+        エンドポイントには、`/v1/logs` などのシグナルパスを含まないベースエンドポイントを設定します。authorization の値には `Bearer` プレフィックスを含めてください。
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='<your-managed-otlp-http-endpoint>'
+        export CLICKSTACK_AUTHORIZATION='Bearer <your-api-key>'
+        ```
+
+        この例では collector をデプロイする必要はありません。
+      </Tab>
+
+      <Tab title="セルフマネージド" id="self-managed">
+        ClickHouse Cloud サービスに接続済みで、稼働中の ClickStack OpenTelemetryコレクターが必要です。接続の設定方法については [OpenTelemetry によるデータの取り込みガイド](/ja/clickstack/observability/ingesting-data/opentelemetry#self-managed) を、collector の起動方法については [デプロイメントガイド](/ja/clickstack/self-configured/deployment/managed) を参照してください。
+
+        アップロードコマンドを実行するマシンから接続可能な、collector の OTLP HTTP エンドポイントを設定します。`/v1/logs` などのシグナルパスを含まないベースURLを使用してください。
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='http://<collector-host>:4318'
+        export CLICKSTACK_AUTHORIZATION=''
+        ```
+
+        collector で認証が必要な場合は、`CLICKSTACK_AUTHORIZATION` に receiver のトークンを設定します。`OTLP_AUTH_TOKEN` で保護された ClickStack コレクターの場合は、その値を `Bearer` プレフィックスなしで指定します。receiver で認証が不要な場合は、値を空のままにしてください。なお、ここには ClickHouseデータベースのパスワードを使用しないでください。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="サンプルデータをダウンロード" id="download-sample-data">
+    UI にサンプルデータを投入するには、次のファイルをダウンロードしてください。
+
+    [サンプルデータ](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+    ```shell
+    # curl
+    curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+    # or
+    # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+    ```
+
+    このファイルには、公開している [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) (マイクロサービスで構成されたシンプルな EC サイト) のサンプルのログ、メトリクス、トレースが含まれています。このファイルを任意のディレクトリにコピーしてください。
+  </Step>
+
+  <Step title="サンプルデータを読み込む" id="load-sample-data">
+    `sample.tar.gz` があるディレクトリで、以下のコマンドを **Bash** で実行してください。これらのコマンドは、上記で設定済みのエンドポイントにサンプルデータを送信します。認証ヘッダーは、必要な場合にのみ付加されます。
+
+    ```bash
+    set -eo pipefail
+
+    auth_headers=()
+    if [ -n "${CLICKSTACK_AUTHORIZATION:-}" ]; then
+      auth_headers=(-H "Authorization: ${CLICKSTACK_AUTHORIZATION}")
+    fi
+
+    for filename in $(tar -tf sample.tar.gz); do
+      endpoint="${CLICKSTACK_OTLP_ENDPOINT%/}/v1/${filename%.json}"
+      echo "loading ${filename%.json}"
+      tar -xOf sample.tar.gz "$filename" | while read -r line; do
+        printf '%s\n' "$line" | curl --fail-with-body -sS -X POST "$endpoint" \
+          -H "Content-Type: application/json" \
+          "${auth_headers[@]}" \
+          --data-binary @-
+      done
+    done
+    ```
+
+    これにより、OTLP のログ、トレース、メトリクスの各ソースがデータを送信する状況がシミュレートされます。本番環境では、これらのソースはアプリケーションの SDK、エージェント、または OpenTelemetry コレクターなどになります。
+
+    ClickHouse Cloud コンソールでサービスを選択し、ClickHouse Observability を開きます。
+
+    [検索](/ja/clickstack/observability/features/search) 画面に戻り、読み込まれたデータを確認します。**Logs** ソースを選択し、サンプルイベントのタイムスタンプを含む時間範囲を指定します。以下のスクリーンショットは、**Live Tail** にサンプルログが届いている様子を示しています。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![e コマースのデモサービスから読み込まれたサンプルログを表示している検索画面](/images/clickstack/getting-started/observability-sample-data-search.png)
+      </Frame>
+    </div>
+
+    データの読み込みには数分かかります。読み込みが完了してから次のステップに進んでください。
+  </Step>
+
+  <Step title="セッションを探索" id="explore-sessions">
+    ユーザーから、商品の支払いで問題が発生しているという報告があったとします。セッションリプレイを使用すると、ユーザーの操作を確認できます。
+
+    左側のメニューから **クライアントセッション** を選択し、読み込んだサンプルセッションが含まれるように時間範囲を設定します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![エラー数が強調表示されたサンプルセッションを示すクライアントセッション画面](/images/clickstack/getting-started/observability-sample-data-sessions.png)
+      </Frame>
+    </div>
+
+    このビューには、匿名セッションやメールアドレスで識別されたセッションなど、デモストアのセッションが一覧表示されます。
+
+    一部のセッションでは、エラー数が 0 以外になっています。この例では、強調表示されたセッションに 1 件のエラーがあります。
+
+    強調表示されたセッションを選択して、リプレイを開きます。プレーヤー下部の再生ボタンを押すと、セッションを再生できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![OpenTelemetry demo のストアフロントとナビゲーションイベントを示すセッションリプレイ](/images/clickstack/getting-started/observability-sample-data-replay.png)
+      </Frame>
+    </div>
+
+    リプレイでは、ユーザーがサイト内を移動し、カートに商品を追加する様子を確認できます。支払いを完了しようとするセッション後半まで、適宜スキップしてください。
+
+    <Tip>
+      エラーイベントは、イベントリスト内で赤色で表示されます。
+    </Tip>
+
+    左側のイベントリストの一番下までスクロールします。強調表示された `POST /api/checkout` リクエストが HTTP `500` を返しており、同時刻にコンソールエラーが記録されていることがわかります。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![/api/checkout への失敗した POST リクエストと関連するコンソールエラーを強調表示したセッションリプレイ](/images/clickstack/getting-started/observability-sample-data-checkout-error.png)
+      </Frame>
+    </div>
+
+    失敗した `POST /api/checkout` イベントを選択して、リクエストとそのトレースを確認します。
+  </Step>
+
+  <Step title="トレースを探索" id="explore-traces">
+    **Trace** タブを開くと、関連するスパンや関連付けられたログを含む分散トレースを確認できます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![チェックアウトリクエストのスパン、関連付けられたログ、エラーを示すトレースのウォーターフォール](/images/clickstack/getting-started/observability-sample-data-trace.png)
+      </Frame>
+    </div>
+
+    トレースを下にスクロールし、`checkout` サービス内の `oteldemo.PaymentService/Charge` スパンを選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![属性にカードの期限切れエラーが表示された、選択中の支払いリクエストのスパン](/images/clickstack/getting-started/observability-sample-data-payment-span.png)
+      </Frame>
+    </div>
+
+    **Overview** タブで **Top Level Attributes** を確認します。`StatusCode` は `Error` で、`StatusMessage` からクレジットカードの有効期限が切れていることがわかります。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Error ステータスと、クレジットカードの有効期限切れを示すメッセージが表示された概要の属性](/images/clickstack/getting-started/observability-sample-data-span-attributes.png)
+      </Frame>
+    </div>
+
+    トレース内で、payment サービスのスパンの下にある `payment` エラーログを選択します。この行にはログアイコンが付いているため、エラーのスパンイベントと区別できます。**Overview** では、ログの **Body** からクレジットカードの有効期限が切れていることを確認できます。属性には `payment` サービスと `error` の重大度が示されており、トレースとあわせて状況を把握するためのコンテキストが得られます。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![カードの期限切れメッセージとログ属性を示す、関連付けられた payment エラーログ](/images/clickstack/getting-started/observability-sample-data-correlated-log.png)
+      </Frame>
+    </div>
+
+    以上で、チェックアウトの失敗をトレースし、その原因がクレジットカードの有効期限切れによって拒否された支払いリクエストであることを突き止められました。
+  </Step>
+
+  <Step title="ログを探索" id="explore-logs">
+    他の決済失敗を調査するには、[検索](/ja/clickstack/observability/features/search)に戻ります。
+
+    ログソースとして **Logs** を選択し、**ServiceName** フィルタで `payment` を選択します。時間範囲は、調査したセッションを含むように設定してください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![payment サービスで絞り込んだ検索画面。期限切れカードのエラーと Visa のキャッシュ満杯エラーが、成功したトランザクションとともに表示されている](/images/clickstack/getting-started/observability-sample-data-payment-logs.png)
+      </Frame>
+    </div>
+
+    結果には、調査したセッションで発生した期限切れカードのエラーに加え、`Visa cache full: cannot add new item.` エラーが繰り返し出現しています。payment サービス全体でエラーがいつ発生しているかを把握するには、これらのエラーログを時系列のチャートにします。
+  </Step>
+
+  <Step title="決済エラーをチャートで表示" id="chart-payment-errors">
+    **Chart Explorer** を開いて **Time Series** を選択し、データソースに **Logs** を指定します。集約には **Count of Events** を選択します。
+
+    **Where** で **Lucene** を選択し、次のフィルタを入力します：
+
+    ```text
+    SeverityText:"error" ServiceName:"payment"
+    ```
+
+    サンプルデータを含む時間範囲を設定し、**実行** を選択します。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Lucene フィルタを使用して payment サービスのエラーログ数を時系列でカウントする Chart Explorer](/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png)
+      </Frame>
+    </div>
+
+    このチャートには、時間間隔ごとに条件に一致したエラーログの件数が表示されます。`payment` サービスのすべてのエラーが対象で、カードの有効期限切れエラーやキャッシュ満杯エラーも含まれます。これはログイベントの件数であり、重複のない失敗した支払いの件数ではありません。
+  </Step>
+</Steps>

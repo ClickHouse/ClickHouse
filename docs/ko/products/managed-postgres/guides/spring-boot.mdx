@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'spring boot', 'spring', 'java', 'jdbc', 'pgjdbc'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-spring-boot-beta" />
-
 [Spring Boot](https://spring.io/projects/spring-boot)는 PostgreSQL JDBC 드라이버(pgjdbc)와 HikariCP 연결 풀을 통해 Postgres에 연결하며, 애플리케이션 시작 시 [Flyway](https://documentation.red-gate.com/flyway) 마이그레이션을 실행합니다. 이 가이드에서는 Flyway 마이그레이션으로 `todos` 테이블을 생성하고, Spring Data JPA REST 컨트롤러로 생성, 조회, 수정, 삭제 요청을 처리합니다. 모든 연결에는 TLS가 사용되며, 인증서 검증이 완전하게 수행됩니다.
 
 ## 사전 요구 사항 {#prerequisites}
