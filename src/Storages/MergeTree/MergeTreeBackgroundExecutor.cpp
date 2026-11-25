@@ -137,6 +137,8 @@ void MergeTreeBackgroundExecutor<Queue>::drainPendingTasks()
         item->cancel();
         item.reset();
     }
+    if (!tasks_to_cancel.empty())
+        notifyTaskSlotsReleased();
 }
 
 template <class Queue>
@@ -331,8 +333,17 @@ void MergeTreeBackgroundExecutor<Queue>::releaseTaskSlots(size_t count) noexcept
     {
         reserved_task_slots.fetch_sub(static_cast<Int64>(count));
         CurrentMetrics::values[metric].fetch_sub(static_cast<Int64>(count));
-        task_slots_available.notify_all();
+        notifyTaskSlotsReleased();
     }
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::notifyTaskSlotsReleased() noexcept
+{
+    /// Waiters check the task metric under `mutex`, so notifying under it cannot fall between
+    /// a waiter's check of the old value and the start of its wait.
+    std::lock_guard lock(mutex);
+    task_slots_available.notify_all();
 }
 
 static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
@@ -408,7 +419,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         item.reset();
     }
     if (!tasks_to_cancel.empty())
-        task_slots_available.notify_all();
+        notifyTaskSlotsReleased();
 
     /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
@@ -417,7 +428,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         item.reset();
     }
     if (!tasks_to_wait.empty())
-        task_slots_available.notify_all();
+        notifyTaskSlotsReleased();
 }
 
 template <class Queue>

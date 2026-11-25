@@ -53,6 +53,8 @@ struct TaskRuntimeData
 
     ~TaskRuntimeData()
     {
+        /// Release the slot only after the task is destroyed: an idle executor means freed tasks.
+        task.reset();
         CurrentMetrics::values[metric].fetch_sub(1);
     }
 
@@ -421,6 +423,7 @@ private:
     size_t scheduling_pause_count TSA_GUARDED_BY(mutex) = 0;
 
     void resumeScheduling() noexcept;
+    void notifyTaskSlotsReleased() noexcept;
 
     void routine(TaskRuntimeDataPtr item);
 
