@@ -2127,6 +2127,57 @@ def test_postgres_delete_in_partition_rejected(started_cluster):
     cursor.execute("DROP TABLE test_delete_partition")
 
 
+def test_postgres_delete_float_predicate_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_float")
+    cursor.execute("CREATE TABLE test_delete_float (id integer, f double precision)")
+    # PostgreSQL orders NaN above every value, so `f > 0` matches the stored NaN there, while
+    # ClickHouse's comparison does not. A delete commits what PostgreSQL matched and cannot
+    # re-filter locally, so the float predicate is rejected and the NaN row must survive.
+    cursor.execute("INSERT INTO test_delete_float VALUES (1, 1.5), (2, 'NaN'), (3, -4.0)")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_float (id Int32, f Float64) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_float', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_float WHERE f > 0")
+    assert "floating-point" in error
+    cursor.execute("SELECT count(*) FROM test_delete_float")
+    assert cursor.fetchall() == [(3,)]
+
+    # A predicate over a non-float column on the same table is still pushed down.
+    node1.query("DELETE FROM test.pg_delete_float WHERE id = 1")
+    cursor.execute("SELECT count(*) FROM test_delete_float")
+    assert cursor.fetchall() == [(2,)]
+
+    node1.query("DROP TABLE test.pg_delete_float")
+    cursor.execute("DROP TABLE test_delete_float")
+
+
+def test_postgres_delete_on_cluster_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_cluster")
+    cursor.execute("CREATE TABLE test_delete_cluster (id integer)")
+    cursor.execute("INSERT INTO test_delete_cluster SELECT i FROM generate_series(0, 4) AS i")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_cluster (id Int32) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_cluster', 'postgres', '{pg_pass}')"
+    )
+    # Each host of a cluster can point at a different PostgreSQL destination; the lightweight
+    # DELETE route mutates only the initiator's remote and cannot distribute, so an ON CLUSTER
+    # clause is rejected rather than silently applied to one host (ALTER ... DELETE takes the DDL path).
+    error = node1.query_and_get_error(
+        "DELETE FROM test.pg_delete_cluster ON CLUSTER test_shard_localhost WHERE id = 1"
+    )
+    assert "ON CLUSTER is not supported" in error
+    cursor.execute("SELECT count(*) FROM test_delete_cluster")
+    assert cursor.fetchall() == [(5,)]
+
+    node1.query("DROP TABLE test.pg_delete_cluster")
+    cursor.execute("DROP TABLE test_delete_cluster")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

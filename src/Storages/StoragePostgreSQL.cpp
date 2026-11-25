@@ -691,9 +691,13 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
 
         /// `exec`/`commit` below block, and libpqxx offers no way to interrupt them. So a watcher
         /// thread sends `PQcancel` (thread-safe, and built against this connection before the
-        /// statement starts) the moment the query is killed; the cancelled statement then returns a
+        /// statement starts) while the query is killed; the cancelled statement then returns a
         /// `query_canceled` error, surfaced as the cancellation it is in the `sql_error` handler.
-        /// The watcher is woken the instant the statement finishes, so it never outlives the call.
+        /// It keeps re-issuing the cancel until the statement finishes rather than sending one and
+        /// stopping: a single cancel dispatched before the statement starts, or while the server is
+        /// idle after `BEGIN`, interrupts nothing (a successful dispatch is not a guaranteed
+        /// interrupt), and the statement could then run unprotected. The watcher is woken the
+        /// instant the statement finishes, so it never outlives the call.
         auto cancel_handle = makeCancelHandle(tx);
         std::mutex watcher_mutex;
         std::condition_variable watcher_cv;
@@ -709,7 +713,6 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
                     std::array<char, 256> error{};
                     if (!PQcancel(cancel_handle.get(), error.data(), static_cast<int>(error.size())))
                         LOG_WARNING(log, "Cannot cancel the PostgreSQL statement: {}", error.data());
-                    return;
                 }
                 watcher_cv.wait_for(lock, std::chrono::milliseconds(100));
             }
@@ -724,7 +727,18 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
             cancel_watcher.join();
         });
 
+        /// A kill that landed while the connection was being acquired or `BEGIN` ran must stop the
+        /// delete before it is ever sent: nothing has been applied, so fail closed.
+        if (query_status)
+            query_status->throwIfKilled();
+
         const auto result = tx.exec(query);
+
+        /// A kill after the statement but before the commit must not be committed: throwing here
+        /// lets the transaction roll back, so an interrupted delete applies nothing.
+        if (query_status)
+            query_status->throwIfKilled();
+
         tx.commit();
         LOG_DEBUG(log, "Deleted {} rows on the PostgreSQL side", result.affected_rows());
     }

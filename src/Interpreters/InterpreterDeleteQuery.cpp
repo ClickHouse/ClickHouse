@@ -160,6 +160,16 @@ BlockIO InterpreterDeleteQuery::execute()
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
 
+        /// This branch mutates locally and returns before the cluster-dispatch code, so an `ON
+        /// CLUSTER` clause would be silently dropped. For an external-database engine each host can
+        /// point at a different remote, so dropping it would delete from only the initiator's remote
+        /// while reporting success. Reject it rather than mutate a narrower scope than requested.
+        /// (The `ALTER TABLE ... ON CLUSTER ... DELETE` form takes the distributed path instead.)
+        if (!delete_query.cluster.empty() && table->isExternalDatabase())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE ... ON CLUSTER is not supported for the external-database table {}; "
+                "use ALTER TABLE ... ON CLUSTER ... DELETE", table->getStorageID().getFullTableName());
+
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;

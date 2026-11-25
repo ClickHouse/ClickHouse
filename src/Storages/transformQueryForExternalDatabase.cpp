@@ -1651,6 +1651,38 @@ String transformMutationPredicateForExternalDatabase(
             "The mutation predicate '{}' contains expressions that cannot be pushed down to the external database",
             predicate.formatForErrorMessage());
 
+    /// Reject a predicate over a floating-point column. A SELECT pushdown re-evaluates the WHERE
+    /// locally and discards any extra rows, but a mutation commits what the external database
+    /// matched, and the match can differ: PostgreSQL orders `NaN` above every other value, so a
+    /// stored `NaN` satisfies `f > 0` there while ClickHouse's comparison rejects it. Checking the
+    /// literals for `NaN` is not enough — the exceptional value lives in the column — so any
+    /// floating-point column in the predicate is refused (fail-close), as an untranslatable one is.
+    {
+        std::unordered_map<String, DataTypePtr> column_type_by_name;
+        for (const auto & column : available_columns)
+            column_type_by_name.emplace(column.name, column.type);
+
+        std::vector<const IAST *> stack{where.get()};
+        while (!stack.empty())
+        {
+            const IAST * node = stack.back();
+            stack.pop_back();
+            if (const auto * identifier = node->as<ASTIdentifier>())
+            {
+                const auto it = column_type_by_name.find(identifier->name());
+                if (it != column_type_by_name.end()
+                    && WhichDataType(removeLowCardinalityAndNullable(it->second)).isFloat())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "The mutation predicate '{}' references the floating-point column '{}', whose "
+                        "comparison semantics (notably the ordering of NaN) differ between ClickHouse and "
+                        "the external database, so it is not pushed down",
+                        predicate.formatForErrorMessage(), identifier->name());
+            }
+            for (const auto & child : node->children)
+                stack.push_back(child.get());
+        }
+    }
+
     dropAliases(where);
 
     WriteBufferFromOwnString out;
