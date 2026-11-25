@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
-SET group_by_two_level_threshold = 100000;
+SET group_by_two_level_threshold = 100000000;
 SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 65536;
 SET collect_hash_table_stats_during_aggregation = 0;
@@ -50,8 +50,8 @@ SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
 # outgrow the bound). A table pre-sized from the hint would instead freeze at its first
 # between-blocks check with about one block of keys, failing the size assertion; a table the
 # hint initialized two-level could never freeze at all, failing the count assertion. The
-# two-level threshold is pinned below the freeze size so the two-level initialization stays
-# reachable from the recorded sizes.
+# two-level threshold is pinned below the sum of the recorded sizes, so that the two-level
+# initialization stays reachable from them.
 # The four UNION ALL branches are four streams of 500000 rows, one per table, so every table
 # outgrows the bound however the threads are scheduled (numbers_mt hands out blocks from a shared cursor).
 # The last check makes sure the warm run found the hint, so the cell cannot pass with two cold runs.
@@ -67,7 +67,7 @@ warm_trace="$CLICKHOUSE_TMP/04910_warm_trace.log"
 $CLICKHOUSE_LOCAL --send_logs_level=trace --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
-SET group_by_two_level_threshold = 30000;
+SET group_by_two_level_threshold = 50000;
 SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 4096;
 SET collect_hash_table_stats_during_aggregation = 1;

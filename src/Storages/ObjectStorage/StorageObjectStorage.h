@@ -80,6 +80,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// Requires `updateExternalDynamicMetadataIfExists` to have run for `context` before `storage_snapshot` was taken.
+    StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override;
+
+    void setHasClusterVariant() { has_cluster_variant = true; }
+
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -93,7 +98,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const PartitionedWriteAccessCheck & write_access_check);
 
     void truncate(
         const ASTPtr & query,
@@ -117,6 +123,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -247,8 +254,14 @@ public:
     }
 
 protected:
+    void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context);
+
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
+
+    /// Whether this table is the whole FROM of a query that a replica runs for the initiator's cluster read,
+    /// so the replica reads only the files the initiator gives it. Only `IStorageCluster` sends such a query.
+    bool isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const;
 
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
@@ -279,6 +292,14 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
+    bool has_cluster_variant = false;
+
+    /// `PARTITION BY` and `ORDER BY` of a data lake table as in its stored definition. The partitioning and the sorting
+    /// of a data lake are in its own metadata, which refers to the columns by id, so they are not in the in-memory
+    /// metadata of the table, but the stored definition names the columns and has to follow their renames.
+    /// Accessed under the alter lock.
+    ASTPtr data_lake_partition_by;
+    ASTPtr data_lake_order_by;
 
     struct HivePartitioningColumns
     {

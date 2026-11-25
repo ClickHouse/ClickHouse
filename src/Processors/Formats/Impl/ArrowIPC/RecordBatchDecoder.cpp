@@ -20,6 +20,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -43,6 +46,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -54,8 +58,31 @@ namespace DB::ArrowIPC
 
 namespace
 {
+/// The type of a binary leaf that was converted to the raw-byte type its hint requests, or null when `column`
+/// is not such a leaf. `reinterpretStringLeaf` converts a variable binary leaf to `IPv6` or a big integer, and
+/// the rewrite of dictionary values (`reinterpretRawByteColumns` in `ArrowIPCBlockInputFormat`) also converts
+/// a `fixed_size_binary` one, to any of these types or to `UUID`.
+DataTypePtr rawByteLeafType(const IColumn & column)
+{
+    switch (column.getDataType())
+    {
+        case TypeIndex::UUID: return std::make_shared<DataTypeUUID>();
+        case TypeIndex::IPv6: return std::make_shared<DataTypeIPv6>();
+        case TypeIndex::Int128: return std::make_shared<DataTypeInt128>();
+        case TypeIndex::UInt128: return std::make_shared<DataTypeUInt128>();
+        case TypeIndex::Int256: return std::make_shared<DataTypeInt256>();
+        case TypeIndex::UInt256: return std::make_shared<DataTypeUInt256>();
+        default: return nullptr;
+    }
+}
+
 /// Match the declared type to the decoded column, preserving tuple names. Nullable structs retain their
 /// null maps until conversion, including when schema inference produces a plain `Tuple`.
+/// A binary leaf declared by the schema as `String` or `FixedString` can be decoded as `IPv6`, `UUID` or a big
+/// integer, when its type hint asks for it. The hint can come from a header column other than the one the
+/// field is read for: a dotted name such as `t.s` also reaches the child `s` of a field `t` read as `String`.
+/// So declare the decoded type of the leaf: each consumer of the field must see a type that describes its
+/// column.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
     const bool is_nullable = column->isNullable();
@@ -85,6 +112,17 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
         nested_type = std::make_shared<DataTypeMap>(
             matchColumnNullability(map_type->getKeyType(), entries.getColumnPtr(0)),
             matchColumnNullability(map_type->getValueType(), entries.getColumnPtr(1)));
+    }
+    else if (isStringOrFixedString(nested_type))
+    {
+        if (DataTypePtr raw_type = rawByteLeafType(nested_column))
+            nested_type = std::move(raw_type);
+        /// Any other column would be read through the serialization of a type that does not describe it.
+        else if (nested_column.getDataType() != nested_type->getTypeId())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Arrow IPC leaf declared as {} was decoded into a column of type {}",
+                nested_type->getName(), nested_column.getName());
     }
 
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
@@ -161,7 +199,13 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
             return tuple->getElements()[*position];
         return nullptr;
     }
-    if (pos < tuple->getElements().size())
+    return tupleElementHintByPosition(hint, pos);
+}
+
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
 }
@@ -201,28 +245,45 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
     return nullptr;
 }
 
-}
-
-String DictionaryRegistry::positionKey(const FieldPosition & position)
+String hintName(const DataTypePtr & hint)
 {
-    return fmt::format("{}/{}", position.list_depth, position.path);
+    return hint ? hint->getName() : String{};
 }
 
-void DictionaryRegistry::set(Int64 id, const FieldPosition & position, Values values, bool is_delta)
+}
+
+bool DictionaryUse::operator==(const DictionaryUse & other) const
+{
+    return position == other.position && hintName(hint) == hintName(other.hint);
+}
+
+String DictionaryRegistry::useKey(const DictionaryUse & use)
+{
+    /// A type name can contain any character, so its length delimits it from the path.
+    const String hint_name = hintName(use.hint);
+    return fmt::format(
+        "{}/{}/{}/{}/{}", use.position.list_depth, use.position.below_union, hint_name.size(), hint_name, use.position.path);
+}
+
+void DictionaryRegistry::set(Int64 id, const DictionaryUse & use, Values values, bool is_delta)
 {
     if (!is_delta)
     {
         Dictionary dictionary;
         dictionary.offsets.push_back(values.column->size());
         dictionary.segments.push_back(std::move(values));
-        dictionaries[id][positionKey(position)] = std::move(dictionary);
+        dictionaries[id][useKey(use)] = std::move(dictionary);
         return;
     }
 
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
-    Dictionary & dictionary = it->second.at(positionKey(position));
+    auto use_it = it->second.find(useKey(use));
+    if (use_it == it->second.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Arrow IPC dictionary {} has no base values decoded for the field at {}", id, use.position.path);
+    Dictionary & dictionary = use_it->second;
     const IColumn * base_column = dictionary.segments.front().column.get();
     const IColumn * delta_column = values.column.get();
     if (const auto * constant = typeid_cast<const ColumnConst *>(base_column))
@@ -272,12 +333,16 @@ void DictionaryRegistry::set(Int64 id, const FieldPosition & position, Values va
     }
 }
 
-const DictionaryRegistry::Dictionary & DictionaryRegistry::get(Int64 id, const FieldPosition & position) const
+const DictionaryRegistry::Dictionary & DictionaryRegistry::get(Int64 id, const DictionaryUse & use) const
 {
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch references unknown dictionary id {}", id);
-    return it->second.at(positionKey(position));
+    auto use_it = it->second.find(useKey(use));
+    if (use_it == it->second.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Arrow IPC dictionary {} has no values decoded for the field at {}", id, use.position.path);
+    return use_it->second;
 }
 
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
@@ -348,20 +413,34 @@ MutableColumnPtr deserializeOpaqueBinaryLeaf(
     return out;
 }
 
+void RecordBatchDecoder::setBatchNodes(const flatbuf::RecordBatch * batch)
+{
+    if (!batch)
+    {
+        current_nodes = nullptr;
+        current_num_nodes = 0;
+        current_length = 0;
+        return;
+    }
+    const auto * nodes = batch->nodes();
+    /// The nodes are a vector of structs, stored contiguously (and aligned, see `isFlatBuffersVectorAligned8`).
+    current_nodes = nodes ? reinterpret_cast<const flatbuf::FieldNode *>(nodes->Data()) : nullptr;
+    current_num_nodes = nodes ? nodes->size() : 0;
+    current_length = batch->length();
+}
+
 const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
 {
-    const auto * nodes = current_batch->nodes();
-    if (!nodes || node_index >= nodes->size())
+    if (node_index >= current_num_nodes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
-    return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index++));
+    return current_nodes[node_index++];
 }
 
 const flatbuf::FieldNode & RecordBatchDecoder::peekNode(size_t offset) const
 {
-    const auto * nodes = current_batch->nodes();
-    if (!nodes || node_index + offset >= nodes->size())
+    if (node_index + offset >= current_num_nodes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
-    return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index + offset));
+    return current_nodes[node_index + offset];
 }
 
 Int64 RecordBatchDecoder::peekNextNodeLength() const
@@ -595,7 +674,7 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
         if (isInvisible(invisible_rows, i))
             continue;
 
-        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[i - 1]), child_rows);
+        const size_t range_begin = std::min<size_t>(static_cast<size_t>(base) + (i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1]), child_rows);
         const size_t range_end = std::min<size_t>(static_cast<size_t>(base) + offsets[i], child_rows);
         if (range_begin < range_end)
             memset(mask.data() + range_begin, 0, range_end - range_begin);
@@ -1286,9 +1365,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false,
-                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, invisible_rows);
+                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1627,8 +1705,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                childPath(path, child.name), list_depth));
+                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -1640,11 +1717,10 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
     const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
-    const String & path, size_t list_depth)
+    const DictionaryUse & use)
 {
     const Slice indices_slice = nextBuffer();
-    const DictionaryRegistry::Dictionary & dictionary
-        = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
+    const DictionaryRegistry::Dictionary & dictionary = registry.get(field.dictionary->id, use);
     const size_t dictionary_size = dictionary.size();
 
     const int bits = field.dictionary->index_bit_width;
@@ -1710,7 +1786,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
             ? static_cast<size_t>(std::upper_bound(dictionary.offsets.begin(), dictionary.offsets.end(), static_cast<size_t>(index))
                 - dictionary.offsets.begin())
             : 0;
-        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[segment_index - 1];
+        const size_t segment_start = segment_index == 0 ? 0 : dictionary.offsets[static_cast<ssize_t>(segment_index) - 1];
         const size_t index_in_segment = static_cast<size_t>(index) - segment_start;
         const FieldDictionaryValues & segment = segments[segment_index];
         if (segment.null_entries && segment.null_entries->getUInt(index_in_segment))
@@ -1769,7 +1845,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     VectorWithMemoryTracking<ChildState> child_states;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     UnorderedMapWithMemoryTracking<int, int> type_id_to_local;
-    size_t total_child_rows = 0;
+    /// No requested type reaches a child, as `fieldToCHType` declares the children below. The requested type
+    /// of the union does not say which child it describes, and the children restart the dotted path, so a
+    /// name looked up from it would belong to an unrelated column of the header.
+    const bool outer_below_union = decoding_below_union;
+    decoding_below_union = true;
+    SCOPE_EXIT({ decoding_below_union = outer_below_union; });
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
     {
         const ArrowField & child = type.children[child_idx];
@@ -1825,7 +1906,6 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             child_column = nullable.getNestedColumnPtr();
         }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
-        total_child_rows += child_column->size();
         variant_columns.push_back(std::move(child_column));
         variant_types.push_back(removeNullable(child_type));
         child_states.push_back({std::move(child_null_map), size_determined});
@@ -1854,12 +1934,32 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     auto & discr_data = local_discriminators->getData();
     auto & off_data = offsets->getData();
 
-    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it.
-    /// Sparse children hold a value for every union row, dense children may retain unselected values after
-    /// slicing, and a selected null value becomes a `Variant` NULL that leaves the value unreferenced. In
-    /// all these cases the selected values are gathered into compact element columns.
-    const bool compact_children = !dense || invisible_rows || total_child_rows > rows
+    /// `ColumnVariant` requires each element column to hold exactly the values of the rows selecting it, in the
+    /// order of these rows. Sparse children hold a value for every union row, dense children may retain
+    /// unselected values after slicing or have a value selected by several rows, and a selected null value
+    /// becomes a `Variant` NULL that leaves the value unreferenced. In all these cases the selected values are
+    /// gathered into compact element columns.
+    bool compact_children = !dense || invisible_rows
         || std::ranges::any_of(child_states, [](const ChildState & state) { return state.null_map != nullptr; });
+    if (!compact_children)
+    {
+        /// The children of a dense union are used as they are only if the offsets of the rows of each child are
+        /// 0, 1, 2, ... up to its size. A size-determined child is built this way from its selected rows.
+        VectorWithMemoryTracking<size_t> next_offsets(variant_columns.size(), 0);
+        for (size_t row = 0; row < rows && !compact_children; ++row)
+        {
+            /// An unknown type id is reported below.
+            const auto local_it = type_id_to_local.find(type_ids[row]);
+            if (local_it == type_id_to_local.end() || local_it->second < 0)
+                continue;
+            const size_t local = static_cast<size_t>(local_it->second);
+            const size_t expected_offset = next_offsets[local]++;
+            if (!child_states[local].size_determined && static_cast<size_t>(value_offsets[row]) != expected_offset)
+                compact_children = true;
+        }
+        for (size_t local = 0; local < variant_columns.size() && !compact_children; ++local)
+            compact_children = variant_columns[local]->size() != next_offsets[local];
+    }
     MutableColumns compact;
     if (compact_children)
     {
@@ -1994,7 +2094,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
 
     /// Dictionary values come from separate batches; `effective_invisible` controls index visibility.
     if (field.dictionary)
-        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, path, list_depth);
+        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, dictionaryUse(target_hint, path, list_depth));
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
     if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
@@ -2336,6 +2436,38 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     return result;
 }
 
+RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
+    const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+{
+    if (batch.length < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow record batch has a negative length {}", batch.length);
+
+    target_types = target_types_;
+    current_nodes = batch.nodes.data();
+    current_num_nodes = batch.nodes.size();
+    current_length = batch.length;
+    node_index = 0;
+    buffer_index = 0;
+    variadic_index = 0;
+    variadic_counts = batch.variadic_counts;
+    buffer_slices = batch.buffers;
+    total_buffer_bytes = 0;
+    for (const auto & slice : buffer_slices)
+        total_buffer_bytes += static_cast<size_t>(slice.length);
+
+    DecodedColumns result;
+    result.reserve(schema.fields.size());
+    for (const ArrowField & field : schema.fields)
+    {
+        expectNextNodeLength(static_cast<size_t>(batch.length), fmt::format("column '{}'", field.name));
+        result.push_back(
+            decodeBatchColumn(field, /*target_hint=*/nullptr, normalizedName(field.name), /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+    }
+
+    finishBatch();
+    return result;
+}
+
 DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field, const DictionaryUse & use,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
@@ -2344,6 +2476,9 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     if (!schema.little_endian)
         convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
+    /// The values decode as a field with this use would decode them inline.
+    decoding_below_union = use.position.below_union;
+    SCOPE_EXIT({ decoding_below_union = false; });
     ColumnUInt8::Ptr null_map;
     /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
     DecodedColumn values = decodeBatchColumn(
@@ -2364,7 +2499,7 @@ void RecordBatchDecoder::beginBatch(
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
 
     target_types = target_types_;
-    current_batch = &batch;
+    setBatchNodes(&batch);
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2388,7 +2523,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
-    const size_t batch_rows = static_cast<size_t>(current_batch->length());
+    const size_t batch_rows = static_cast<size_t>(current_length);
 
     DecodedColumn decoded;
     decoded.name = field.name;
@@ -2425,7 +2560,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     /// determines whether that type keeps its outer `Nullable` wrapper.
     if (effective_field.dictionary)
     {
-        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
+        const auto & dictionary = registry.get(effective_field.dictionary->id, dictionaryUse(target_hint, path, list_depth));
         const DataTypePtr & value_type = dictionary.segments.front().type;
         decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
         if (decoded.type->canBeInsideLowCardinality())
@@ -2461,7 +2596,7 @@ void RecordBatchDecoder::finishBatch()
 {
     /// Decoded and skipped fields must consume every declared node, buffer, and variadic count.
     /// Surplus entries indicate that the batch layout does not match the schema.
-    const size_t total_nodes = current_batch->nodes() ? current_batch->nodes()->size() : 0;
+    const size_t total_nodes = current_num_nodes;
     if (node_index != total_nodes || buffer_index != buffer_slices.size() || variadic_index != variadic_counts.size())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -2469,7 +2604,7 @@ void RecordBatchDecoder::finishBatch()
             "the record batch layout does not match the schema",
             node_index, total_nodes, buffer_index, buffer_slices.size(), variadic_index, variadic_counts.size());
 
-    current_batch = nullptr;
+    setBatchNodes(nullptr);
     target_types = nullptr;
     buffer_slices.clear();
 }
@@ -2486,6 +2621,18 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
 {
     const String seg = normalizedName(child_name);
     return path.empty() ? seg : path + "." + seg;
+}
+
+DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+{
+    if (type.positional_fields)
+        return tupleElementHintByPosition(hint, i);
+    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+}
+
+String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
+{
+    return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
 }
 
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
@@ -2700,7 +2847,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
 
     /// Walk the schema with `advanceField` so buffer spans match decoding. Counts come from field types
     /// and variadic counts; the body is not read. Placeholder slices let `nextBuffer` advance the cursor.
-    current_batch = &batch;
+    setBatchNodes(&batch);
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2738,7 +2885,7 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
         reachable.assign(num_buffers, 1);
     }
 
-    current_batch = nullptr;
+    setBatchNodes(nullptr);
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2752,7 +2899,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
     const size_t total_nodes = batch.nodes() ? batch.nodes()->size() : 0;
     const size_t total_buffers = batch.buffers() ? batch.buffers()->size() : 0;
 
-    current_batch = &batch;
+    setBatchNodes(&batch);
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2776,7 +2923,7 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
     const bool exact = node_index == total_nodes && buffer_index == total_buffers
         && variadic_index == variadic_counts.size();
 
-    current_batch = nullptr;
+    setBatchNodes(nullptr);
     node_index = 0;
     buffer_index = 0;
     variadic_index = 0;
@@ -2794,7 +2941,12 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
-    return resolveHint(parent_hint, path, list_depth, target_types);
+    return resolveHint(parent_hint, path, list_depth, decoding_below_union ? nullptr : target_types);
+}
+
+DictionaryUse RecordBatchDecoder::dictionaryUse(const DataTypePtr & target_hint, const String & path, size_t list_depth) const
+{
+    return {FieldPosition{path, list_depth, decoding_below_union}, resolveTargetHint(target_hint, path, list_depth)};
 }
 
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
@@ -2808,25 +2960,25 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
         const String normalized_name = normalizedName(field.name);
         if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
             continue;
-        collectDictionaryUses(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, target_types_, uses);
+        collectDictionaryUses(
+            field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
     }
     return uses;
 }
 
 void RecordBatchDecoder::collectDictionaryUses(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
-    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);
+    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, below_union ? nullptr : lookup_types);
     if (field.dictionary)
     {
-        /// Two fields share a position only below unions, which drop the path; they then resolve the same
-        /// hint too, so one decoding serves both.
-        const FieldPosition position{path, list_depth};
+        /// Fields with equal uses decode the values the same way, so one decoding serves them all.
+        const DictionaryUse use{FieldPosition{path, list_depth, below_union}, effective_hint};
         DictionaryUses & id_uses = uses[field.dictionary->id];
-        if (std::ranges::none_of(id_uses, [&](const DictionaryUse & use) { return use.position == position; }))
-            id_uses.push_back(DictionaryUse{position, effective_hint});
+        if (std::ranges::find(id_uses, use) == id_uses.end())
+            id_uses.push_back(use);
     }
 
     const ArrowType & type = field.type;
@@ -2838,30 +2990,31 @@ void RecordBatchDecoder::collectDictionaryUses(
         case TypeKind::ListView:
         case TypeKind::LargeListView:
             collectDictionaryUses(
-                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, lookup_types, uses);
+                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, below_union, lookup_types, uses);
             break;
         case TypeKind::Map:
             collectDictionaryUses(
-                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, lookup_types, uses);
+                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, below_union, lookup_types, uses);
             break;
         case TypeKind::Struct:
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, lookup_types, uses);
+                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    below_union, lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:
             /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`);
             /// the run ends are a plain integer child.
-            collectDictionaryUses(type.children.at(1), effective_hint, path, list_depth, lookup_types, uses);
+            collectDictionaryUses(type.children.at(1), effective_hint, path, list_depth, below_union, lookup_types, uses);
             break;
         case TypeKind::Union:
-            /// `decodeUnion` decodes its children with no hint, path or list depth.
+            /// `decodeUnion` decodes its children with no hint, path or list depth, and looks up no requested type.
             for (const ArrowField & child : type.children)
-                collectDictionaryUses(child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, lookup_types, uses);
+                collectDictionaryUses(
+                    child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, /*below_union=*/true, lookup_types, uses);
             break;
         default:
             break;

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -6,8 +7,9 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,6 +17,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/assert_cast.h>
 
 #include <gtest/gtest.h>
 #include <base/types.h>
@@ -242,7 +245,7 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"IPv4", Field(IPv4(0x7f000001)), "String"},
 
         /// `strict` native-number matrix. `convertColumnToType` now serves `strict` for native numbers
-        /// via the column-native fast path (`castColumnAccurateOrNull`), which must match
+        /// via the column-native fast path (`accurate::convertNumeric` on the column value), which must match
         /// `convertFieldToType` with `strict=true`. This is what the IN/set set builder relies on
         /// (it converts with `strict=true` to exclude values not exactly representable in the LHS type).
         {"UInt64", Field(UInt64(5)), "UInt8", true},                       // in range -> 5
@@ -256,10 +259,23 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Float64", Field(Float64(1e300)), "Float32", true},               // overflow -> null
         {"Int64", Field(Int64(9007199254740993ll)), "Float64", true},      // int -> float precision loss
         {"Int64", Field(Int64(5)), "Float32", true},                       // exact int -> float
+        /// `Float32` sources: read as `Float32` here and as a `Float64` `Field` there; the results must agree.
+        {"Float32", Field(Float64(0.5)), "Int32", true},                   // exact -> 0
+        {"Float32", Field(Float64(0.5)), "Float32", true},                 // same type
+        {"Float32", Field(inf), "Int32", true},                            // inf -> null
+        /// `NaN` -> integer: not representable (guarded before the cast, as in the accurate `CAST`).
+        {"Float64", Field(nan), "Int32", true},
+        {"Float64", Field(nan), "Int32"},
+        {"Float32", Field(nan), "Int64", true},
+        {"Float64", Field(nan), "UInt256", true},
+        {"Float32", Field(nan), "Float64", true},                          // NaN stays NaN
+        {"UInt8", Field(UInt64(200)), "Int256", true},                     // native -> wide
+        {"Int256", Field(Int256(-5)), "UInt8", true},                      // wide negative -> null
+        {"UInt128", Field(UInt128(255)), "UInt8", true},                   // wide -> native, fits
         {"UInt64", Field(UInt64(5)), "Int8", true},                        // in range across sign -> 5
 
         /// `strict` non-native controls: these keep going through the `Field` fallback (Decimal must NOT
-        /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
+        /// use an accurate `CAST`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
         /// Rescaling that does not fit the target: `strict` -> not representable (an `IN` set skips it), while
@@ -267,6 +283,24 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(1000000000), 0)), "Decimal128(30)", true},
         {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(1000000000), 0)), "Decimal128(30)"},
         {"Decimal128(0)", Field(DecimalField<Decimal128>(Decimal128(170141183), 0)), "Decimal128(30)", true}, // fits
+
+        /// `convert_inexact_floats` native-number matrix. The flag relaxes the exactness check only for
+        /// a floating-point target, so the column-native fast path serves it for every native-number
+        /// pair rather than falling back to the `Field` path - which matters because the `values` table
+        /// function passes it for every single conversion it makes.
+        {"Float64", Field(Float64(0.1)), "Float32", true, true},              // strict wins over inexact -> null
+        {"Float64", Field(Float64(3.0)), "Int32", false, true},               // integer target, exact -> 3
+        {"Float64", Field(Float64(3.5)), "Int32", false, true},               // integer target stays exact -> null
+        {"Int64", Field(Int64(9007199254740993ll)), "Float64", false, true},  // float target -> nearest
+        {"UInt64", Field(UInt64(5)), "UInt8", false, true},                   // integer target stays exact -> 5
+        {"UInt64", Field(UInt64(256)), "UInt8", false, true},                 // out of range -> null
+        {"Int64", Field(Int64(-1)), "UInt8", false, true},                    // negative -> null
+
+        /// identical types: the value passes through untouched (including a genuine NULL)
+        {"UInt64", Field(UInt64(5)), "UInt64", true},
+        {"String", Field(String("abc")), "String", true},
+        {"Nullable(UInt8)", Field(), "Nullable(UInt8)", true},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(2)", true},
 
         /// Two tuples that both name their elements are paired by name by `CAST` and positionally by
         /// `convertFieldToType`, so a target that names the same elements in another order must keep going
@@ -390,6 +424,31 @@ TEST(ConvertColumnToType, DateToDateTimeOutOfRange)
     EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*before_epoch, date32, type_factory.get("DateTime('UTC')")));
 }
 
+/// Checked directly rather than against `convertFieldToType`: converting `NaN` to an integer must be rejected before
+/// any cast, in both modes and for native and wide targets.
+TEST(ConvertColumnToType, NaNToIntegerIsNotRepresentable)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    for (const char * from_type : {"Float32", "Float64"})
+    {
+        const auto from = type_factory.get(from_type);
+        auto column = from->createColumn();
+        column->insert(Field(std::numeric_limits<double>::quiet_NaN()));
+        for (const char * to_type : {"UInt8", "Int32", "Int64", "UInt128", "Int256"})
+        {
+            for (const bool strict : {false, true})
+            {
+                SCOPED_TRACE(std::string(from_type) + " -> " + to_type + (strict ? " strict" : ""));
+                EXPECT_EQ(convertColumnToTypeOrNull(*column, from, type_factory.get(to_type), {}, strict), nullptr);
+            }
+        }
+        /// A floating-point target keeps the `NaN`.
+        const auto to_float = convertColumnToTypeOrNull(*column, from, type_factory.get("Float64"), {}, true);
+        ASSERT_NE(to_float, nullptr);
+        EXPECT_TRUE(std::isnan(to_float->getFloat64(0)));
+    }
+}
+
 TEST(ConvertColumnToType, OrThrow)
 {
     const auto & type_factory = DataTypeFactory::instance();
@@ -420,4 +479,28 @@ TEST(ConvertColumnToType, OrThrow)
     ASSERT_NE(null_ok, nullptr);
     ASSERT_EQ(null_ok->size(), 1u);
     EXPECT_TRUE(null_ok->isNullAt(0));
+}
+
+/// `Dynamic` hides its payload type from the type tree, so a `Bool` row inside it must not take the
+/// identity fast path either: a raw `Bool` byte (2 here) is normalized through the `Field` path, as it
+/// is for a plain `Bool`, and the result compares equal to a genuine `true`.
+TEST(ConvertColumnToType, DynamicHoldingRawBoolIsNormalized)
+{
+    const auto dynamic = DataTypeFactory::instance().get("Dynamic");
+
+    auto raw = dynamic->createColumn();
+    raw->insert(Field(true));
+    auto & raw_dynamic = assert_cast<ColumnDynamic &>(*raw);
+    const auto bool_discriminator = raw_dynamic.getVariantInfo().variant_name_to_discriminator.at("Bool");
+    assert_cast<ColumnUInt8 &>(raw_dynamic.getVariantColumn().getVariantByGlobalDiscriminator(bool_discriminator)).getData()[0] = 2;
+
+    auto expected = dynamic->createColumn();
+    expected->insert(Field(true));
+
+    EXPECT_NE(raw->compareAt(0, 0, *expected, 1), 0);
+
+    const ColumnPtr converted = convertColumnToTypeOrNull(*raw, dynamic, dynamic);
+    ASSERT_NE(converted, nullptr);
+    ASSERT_EQ(converted->size(), 1u);
+    EXPECT_EQ(converted->compareAt(0, 0, *expected, 1), 0);
 }

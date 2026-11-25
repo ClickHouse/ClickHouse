@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', '로그', 'OTEL', 'ClickStack', '브로커 모니터링', 'Log4j']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -18,14 +16,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-kafka">
-  ## 기존 Kafka 통합
+  ## 기존 Kafka 통합 {#existing-kafka}
 </div>
 
 이 섹션에서는 ClickStack OTel collector 구성을 수정하여 기존 Kafka 설치에서 브로커 로그를 ClickStack으로 전송하도록 설정하는 방법을 설명합니다.
 기존 환경을 직접 구성하기 전에 Kafka 로그 통합을 테스트하려면 [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/kafka-logs#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용해 테스트할 수 있습니다.
 
 <div id="prerequisites">
-  ### 사전 요구 사항
+  ### 사전 요구 사항 {#prerequisites}
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -60,7 +58,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="Kafka용 사용자 지정 OTel collector 구성 만들기" id="custom-otel">
-    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 머지됩니다.
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 ClickStack UI가 관리하는 기본 구성과 머지됩니다.
 
     다음 내용으로 `kafka-logs-monitoring.yaml` 파일을 만드세요:
 
@@ -160,17 +158,25 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="HyperDX에서 로그 확인" id="verifying-logs">
-    구성이 완료되면 HyperDX에 로그인하여 로그가 정상적으로 유입되는지 확인합니다:
+  <Step title="ClickStack UI에서 로그 확인" id="verifying-logs">
+    구성이 완료되면 ClickStack UI에 로그인하여 로그가 정상적으로 유입되는지 확인합니다:
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="검색 뷰" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![검색 뷰](/images/clickstack/kafka/logs/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="로그 뷰" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![로그 뷰](/images/clickstack/kafka/logs/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트
+  ## 데모 데이터세트 {#demo-dataset}
 </div>
 
 프로덕션 시스템을 구성하기 전에 미리 생성된 샘플 데이터세트로 Kafka 로그 통합을 테스트하십시오.
@@ -245,23 +251,29 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       clickhouse/clickstack-all-in-one:latest
     ```
 
-    ## HyperDX에서 로그 확인
+## ClickStack UI에서 로그 확인 {#verify-demo-logs}
 
     ClickStack이 실행되면 다음을 수행합니다:
 
-    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인합니다(먼저 계정을 생성해야 할 수 있습니다)
+    1. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인합니다(먼저 계정을 생성해야 할 수 있습니다)
     2. 검색 보기로 이동한 다음 source를 `Logs`로 설정합니다
-    3. 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다
+    3. 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**&#xAC00; 포함되도록 설정합니다
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="검색 보기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![검색 보기](/images/clickstack/kafka/logs/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="로그 보기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![로그 보기](/images/clickstack/kafka/logs/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 대시보드 및 시각화
-</div>
+## 대시보드 및 시각화 {#dashboards}
 
 <Steps>
   <Step title="대시보드 구성 다운로드" id="download">
@@ -269,25 +281,37 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. HyperDX를 열고 대시보드 섹션으로 이동합니다.
+    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다.
     2. 오른쪽 상단의 점 3개 메뉴에서 &quot;대시보드 가져오기&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![대시보드 가져오기](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. kafka-logs-dashboard.json 파일을 업로드한 다음 &quot;Finish Import&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Kafka 로그 대시보드 가져오기 완료" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Kafka 로그 대시보드 가져오기 완료](/images/clickstack/kafka/logs/finish-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다" id="created-dashboard">
-    데모 데이터세트를 사용하는 경우 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다.
+    데모 데이터세트를 사용하는 경우 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**&#xAC00; 포함되도록 설정합니다.
 
-    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafka 로그 예시 대시보드" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Kafka 로그 예시 대시보드](/images/clickstack/kafka/logs/example-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 **실제로 적용된 구성에 filelog 수신기가 포함되어 있는지 확인하세요:**
@@ -311,15 +335,13 @@ tail -1 /var/log/kafka/server.log
 Kafka 설치에서 사용자 지정 Log4j 패턴을 사용한다면, 이에 맞게 `regex_parser` 정규식을 조정하세요.
 
 <div id="next-steps">
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 </div>
 
 * 중요한 이벤트(브로커 장애, 복제 오류, consumer group 관련 문제)에 대한 [알림](/ko/clickstack/features/alerts)을 설정합니다
 * 보다 포괄적인 Kafka 모니터링을 위해 [Kafka 메트릭](/ko/clickstack/integration-examples/kafka-metrics)과 함께 사용합니다
 * 특정 사용 사례(컨트롤러 이벤트, 파티션 재할당)를 위한 추가 [대시보드](/ko/clickstack/features/dashboards/overview)를 생성합니다
 
-<div id="going-to-production">
-  ## 프로덕션 환경으로 전환하기
-</div>
+## 프로덕션 환경으로 전환하기 {#going-to-production}
 
 이 가이드는 빠른 설정을 위해 ClickStack에 내장된 OpenTelemetry Collector를 활용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP endpoint로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

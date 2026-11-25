@@ -7,16 +7,14 @@ title: 'دمج ClickHouse مع Databricks'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-يعمل موصل ClickHouse Spark بسلاسة مع Databricks. يوضّح هذا الدليل كيفية الإعداد والتثبيت وأساليب الاستخدام الخاصة بـ Databricks.
+يعمل موصل ClickHouse لـ Spark بسلاسة مع Databricks. يوضّح هذا الدليل كيفية الإعداد والتثبيت وأساليب الاستخدام الخاصة بـ Databricks.
 
 <div id="api-selection">
-  ## اختيار واجهة برمجة تطبيقات لـ Databricks
+  ## اختيار واجهة برمجة تطبيقات لـ Databricks {#api-selection}
 </div>
 
 افتراضيًا، يستخدم Databricks ‏Unity Catalog، مما يمنع تسجيل الكتالوج في Spark. في هذه الحالة، **يجب** عليك استخدام **واجهة برمجة تطبيقات TableProvider** (الوصول المستند إلى التنسيق).
@@ -29,12 +27,10 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | **معطّل** (No isolation shared) | واجهة برمجة تطبيقات Catalog                           | يتطلب عنقودًا بوضع الوصول &quot;No isolation shared&quot; |
 
 <div id="installation">
-  ## التثبيت في Databricks
+  ## التثبيت في Databricks {#installation}
 </div>
 
-<div id="installation-ui">
-  ### الخيار 1: رفع JAR عبر واجهة مستخدم Databricks
-</div>
+### الخيار 1: رفع JAR عبر واجهة مستخدم Databricks {#installation-ui}
 
 1. ابنِ ملف JAR الخاص ببيئة التشغيل أو [نزّله](https://repo1.maven.org/maven2/com/clickhouse/spark/):
    ```bash
@@ -53,14 +49,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
    * اختر **DBFS** أو **Workspace** → ثم انتقل إلى ملف JAR الذي رفعته
    * انقر على **Install**
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="علامة التبويب Libraries في Databricks" />
+<div className="ch-image-lg">
+  <Frame>
+    ![علامة التبويب Libraries في Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
+  </Frame>
+</div>
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="تثبيت المكتبة من وحدة تخزين مساحة العمل" />
+<div className="ch-image-lg">
+  <Frame>
+    ![تثبيت المكتبة من وحدة تخزين مساحة العمل](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+  </Frame>
+</div>
 
 4. أعد تشغيل العنقود لتحميل المكتبة
 
 <div id="installation-cli">
-  ### الخيار 2: التثبيت باستخدام Databricks CLI
+  ### الخيار 2: التثبيت باستخدام Databricks CLI {#installation-cli}
 </div>
 
 ```bash
@@ -74,9 +78,7 @@ databricks libraries install \
   --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
 ```
 
-<div id="installation-maven">
-  ### الخيار 3: إحداثيات Maven (موصى به)
-</div>
+### الخيار 3: إحداثيات Maven (موصى به) {#installation-maven}
 
 1. انتقل إلى مساحة العمل الخاصة بـ Databricks:
    * انتقل إلى **Compute** → اختر العنقود الخاص بك
@@ -90,18 +92,22 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="إعداد مكتبات Maven في Databricks" />
+<div className="ch-image-lg">
+  <Frame>
+    ![إعداد مكتبات Maven في Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+  </Frame>
+</div>
 
 3. انقر على **تثبيت** ثم أعد تشغيل العنقود لتحميل المكتبة
 
 <div id="tableprovider-api">
-  ## استخدام TableProvider API
+  ## استخدام TableProvider API {#tableprovider-api}
 </div>
 
 عندما يكون Unity Catalog مفعّلًا (افتراضيًا)، **يجب** عليك استخدام TableProvider API (الوصول المستند إلى التنسيق)، لأن Unity Catalog يمنع تسجيل الكتالوج في Spark. وإذا كنت قد عطّلت Unity Catalog باستخدام عنقود بوضع الوصول &quot;No isolation shared&quot;، فيمكنك استخدام [Catalog API](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) بدلًا من ذلك.
 
 <div id="reading-data-table-provider">
-  ### قراءة البيانات
+  ### قراءة البيانات {#reading-data-table-provider}
 </div>
 
 <Tabs>
@@ -145,7 +151,7 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Tabs>
 
 <div id="writing-data-unity">
-  ### كتابة البيانات
+  ### كتابة البيانات {#writing-data-unity}
 </div>
 
 <Tabs>
@@ -194,11 +200,11 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 </Note>
 
 <div id="considerations">
-  ## اعتبارات خاصة بـ Databricks
+  ## اعتبارات خاصة بـ Databricks {#considerations}
 </div>
 
 <div id="access-mode">
-  ### متطلبات وضع الوصول
+  ### متطلبات وضع الوصول {#access-mode}
 </div>
 
 يتطلب ClickHouse Spark Connector وضع الوصول **Dedicated** (المعروف سابقًا باسم Single User). ولا يدعم وضع الوصول **Standard** (المعروف سابقًا باسم Shared) عند تمكين Unity Catalog، لأن Databricks يحظر موصلات DataSource V2 الخارجية في هذا الإعداد.
@@ -211,7 +217,7 @@ com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scal
 | Standard (Shared)       | معطّل         | ✅ نعم |
 
 <div id="secret-management">
-  ### إدارة الأسرار
+  ### إدارة الأسرار {#secret-management}
 </div>
 
 استخدم نطاقات الأسرار في Databricks لتخزين بيانات اعتماد ClickHouse بشكل آمن:
@@ -226,7 +232,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 {/* TODO: أضف لقطة شاشة لتهيئة نطاقات الأسرار في Databricks */}
 
 <div id="clickhouse-cloud">
-  ### الاتصال بـ ClickHouse Cloud
+  ### الاتصال بـ ClickHouse Cloud {#clickhouse-cloud}
 </div>
 
 عند الاتصال بـ ClickHouse Cloud من Databricks:
@@ -235,11 +241,11 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
 2. فعِّل **SSL** (`ssl: true`)
 
 <div id="examples">
-  ## أمثلة
+  ## أمثلة {#examples}
 </div>
 
 <div id="workflow-example">
-  ### مثال كامل لسير العمل
+  ### مثال كامل لسير العمل {#workflow-example}
 </div>
 
 <Tabs>
@@ -330,9 +336,7 @@ password = dbutils.secrets.get(scope="clickhouse", key="password")
   </Tab>
 </Tabs>
 
-<div id="related">
-  ## الوثائق ذات الصلة
-</div>
+## الوثائق ذات الصلة {#related}
 
 * [دليل Spark Native Connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - الوثائق الكاملة للموصل
 * [وثائق واجهة برمجة تطبيقات TableProvider](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - تفاصيل الوصول القائم على التنسيق
