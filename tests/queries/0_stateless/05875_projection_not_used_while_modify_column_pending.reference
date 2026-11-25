@@ -1,6 +1,7 @@
 -- an aggregate projection
 [9,10,11,12,13]
 [9,10,11,12,13]
+[9,10,11,12,13]
 [9,10,11,12,13,14,15,16,17,18]
 [9,10,11,12,13,14,15,16,17,18]
 -- a projection ordered by an expression of the column

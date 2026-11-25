@@ -14,6 +14,9 @@ ALTER TABLE t_aggregate MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS al
 SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h ORDER BY h);
 SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
 SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+-- A read that applies neither patch parts nor mutations on the fly has no pending `MODIFY COLUMN` in its mutations snapshot.
+SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h ORDER BY h) SETTINGS apply_patch_parts = 0, apply_mutations_on_fly = 0;
+SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h SETTINGS apply_patch_parts = 0, apply_mutations_on_fly = 0, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 -- A part written with the new type uses its projection, while the part that the mutation has not rewritten is read as is.
 INSERT INTO t_aggregate SELECT number + 5, toDateTime64('2026-01-01 05:00:00', 0, 'UTC') + INTERVAL number HOUR FROM numbers(5);
 SELECT groupArray(h) FROM (SELECT toHour(dt) AS h, count() FROM t_aggregate GROUP BY h ORDER BY h);
