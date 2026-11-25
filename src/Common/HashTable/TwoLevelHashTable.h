@@ -99,11 +99,13 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Whether the buckets may switch to the Robin Hood mode when they become large. Call it before inserting.
-    void setRobinHoodAllowed(bool allowed) requires GrowerWithRobinHood<Grower>
+    /// When the buckets may switch to the Robin Hood mode. Call it before inserting.
+    /// The mode `OnMemoryPressure` needs a `budget`, which all the buckets share.
+    void setRobinHoodMode(RobinHoodMode mode, HashTableGrowthBudget * budget = nullptr)
+    requires GrowerWithRobinHood<Grower>
     {
         for (auto & impl : impls)
-            impl.grower.setRobinHoodAllowed(allowed);
+            impl.grower.setRobinHoodMode(mode, budget);
     }
 
     /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.

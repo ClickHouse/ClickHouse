@@ -6,6 +6,10 @@
 #include <base/types.h>
 #include <Common/MemoryTracker.h>
 
+/// The memory that `getMaxBytesBeforeExternalProcessing` takes its ratio of: what the current query can still allocate
+/// under its strictest hard limit. None without a limit, or outside a query.
+std::optional<UInt64> getAvailableMemoryForSpilling();
+
 /// The query memory threshold at which an operator spills to disk, from its absolute setting `max_bytes` and
 /// its ratio setting `max_bytes_ratio`, where 0 disables either. The ratio applies to the memory available
 /// under the strictest query (`max_memory_usage`), user or server limit, where the userspace page cache above

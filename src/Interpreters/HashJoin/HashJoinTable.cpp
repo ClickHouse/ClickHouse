@@ -55,13 +55,14 @@ HashJoinTable::HashJoinTable(
     JoinStrictness strictness,
     JoinMapsKind maps_kind,
     const HashJoinBuildLayout & layout,
-    bool robin_hood_allowed)
+    RobinHoodMode robin_hood_mode,
+    HashTableGrowthBudget * growth_budget)
     : key_type(layout.two_level ? toTwoLevelType(key_class) : key_class)
     , key_sizes(std::move(key_sizes_))
     , slots(layout.num_slots)
 {
     joinDispatchInit(kind, strictness, maps, maps_kind);
-    std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_allowed); }, maps);
+    std::visit([&](auto & maps_) { maps_.create(key_type, robin_hood_mode, growth_budget); }, maps);
 
     arenas.reserve(layout.num_build_streams);
     for (size_t stream = 0; stream < layout.num_build_streams; ++stream)

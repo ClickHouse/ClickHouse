@@ -490,8 +490,8 @@ public:
     using Cursor = std::any;
 
     /// `key_class` is the key type of a one-bucket map. A two-level `layout` turns it into the two-level type.
-    /// `robin_hood_allowed` is the setting `enable_robin_hood_hash_for_joins`: a two-level map may switch to the Robin Hood mode
-    /// when it grows large.
+    /// `robin_hood_mode` comes from the setting `enable_robin_hood_hash_for_joins`: when a two-level map may switch to the Robin Hood mode.
+    /// In the mode `OnMemoryPressure` the buckets ask `growth_budget`, which must outlive the table.
     HashJoinTable(
         Type key_class,
         Sizes key_sizes_,
@@ -499,7 +499,8 @@ public:
         JoinStrictness strictness,
         JoinMapsKind maps_kind,
         const HashJoinBuildLayout & layout,
-        bool robin_hood_allowed);
+        RobinHoodMode robin_hood_mode,
+        HashTableGrowthBudget * growth_budget);
 
     /// The key type of the maps. Only `tryConvertToFixedHashMap` changes it.
     Type type() const { return key_type; }

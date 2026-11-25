@@ -56,6 +56,7 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
+    hash_join->setSpillThreshold(max_bytes_before_external_join);
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
 }
 

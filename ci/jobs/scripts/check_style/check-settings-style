@@ -55,9 +55,11 @@ FNR == 1 {
 # previous releases, which is more important than consistency.
 # `join_algorithm` is `QueryPlanJoinAlgorithm` in `QueryPlanSerializationSettings`: the same list as `JoinAlgorithm`,
 # but it writes the inequality join as `ie_join`, so that servers released before its rename to `inequality` accept the plan.
+# `enable_robin_hood_hash_for_joins` is `BoolAuto` in `Settings` and `Bool` in `QueryPlanSerializationSettings`, which has no `BoolAuto`
+# type and which servers released before the value `'auto'` read as a `Bool`; `'auto'` travels as `robin_hood_hash_for_joins_on_memory_pressure`.
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size" | grep -vx "mode" | grep -vx "join_algorithm"
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size" | grep -vx "mode" | grep -vx "join_algorithm" | grep -vx "enable_robin_hood_hash_for_joins"
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "

@@ -60,6 +60,7 @@ namespace ProfileEvents
 {
     extern const Event HashJoinBuiltWithParallelLayout;
     extern const Event HashJoinBuiltWithSerialLayout;
+    extern const Event JoinRobinHoodSwitchesOnMemoryPressure;
 }
 
 namespace CurrentMetrics
@@ -448,7 +449,8 @@ HashJoin::HashJoin(
                 strictness,
                 maps_kind,
                 build_layout,
-                table_join->enableRobinHoodHashForJoins()));
+                table_join->robinHoodMode(),
+                &data->growth_budget));
     chassert(std::ranges::all_of(data->tables, [&](const auto & table) { return table->type() == keyType(); }));
 
     LOG_TRACE(log, "{}Join hash table type: {}", instance_log_id, keyType());
@@ -469,9 +471,24 @@ HashJoin::HashJoin(
     /// is not: sized from the estimate, it lands on a worse load factor than the grower picks. The cached size counts
     /// the keys of all maps, while each map reserves the whole hint, so a join with several disjuncts does not use it.
     size_t size_hint = reserve_num;
+    size_t expected_right_rows = 0;
     if (!size_hint && build_layout.two_level && table_join->oneDisjunct())
+    {
         if (const auto hint = getSizeHint(stats_collecting_params.build))
+        {
             size_hint = hint->ht_size;
+            expected_right_rows = hint->source_rows;
+        }
+    }
+    /// The buckets first ask the budget at the first insert, so it can be configured here.
+    data->growth_budget.configure(
+        data->total_bytes,
+        data->allocated_size,
+        data->rows_to_join,
+        expected_right_rows,
+        data->tables.front()->cellSize(),
+        NUM_HASH_TABLE_BUCKETS * data->tables.size(),
+        build_layout.num_slots);
     const size_t keys_to_reserve
         = capReserveAtSpillBudget(size_hint, table_join->maxBytesBeforeExternalJoin(), data->tables.front()->cellSize());
     for (auto & table : data->tables)
@@ -2403,6 +2420,8 @@ void HashJoin::onBuildPhaseFinish()
     /// The plan prints `HashJoin` for both layouts, so record which one this join built on.
     ProfileEvents::increment(
         build_layout.two_level ? ProfileEvents::HashJoinBuiltWithParallelLayout : ProfileEvents::HashJoinBuiltWithSerialLayout);
+    if (const size_t switches = data->growth_budget.switches())
+        ProfileEvents::increment(ProfileEvents::JoinRobinHoodSwitchesOnMemoryPressure, switches);
 
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot

@@ -875,3 +875,150 @@ TEST(HashTableRobinHood, ReserveSerializationAndTwoLevel)
     ASSERT_TRUE(deserialized.empty());
     deserialized.checkInvariants();
 }
+
+namespace
+{
+
+/// Says yes once it is asked about a bucket of at least `latch_at_cells` cells, and to every question after that.
+struct LatchingBudget final : HashTableGrowthBudget
+{
+    explicit LatchingBudget(size_t latch_at_cells_)
+        : latch_at_cells(latch_at_cells_)
+    {
+    }
+
+    bool preferSmallerTable(size_t /*growth_cells*/, size_t bucket_cells) override
+    {
+        ++asked;
+        latched = latched || bucket_cells >= latch_at_cells;
+        return latched;
+    }
+
+    [[nodiscard]] bool pressureLatched() const override { return latched; }
+
+    size_t latch_at_cells;
+    size_t asked = 0;
+    bool latched = false;
+};
+
+}
+
+TEST(HashTableRobinHood, GrowerOnMemoryPressure)
+{
+    using Grower = HashTableGrowerWithPrecalculationAndRobinHood<4, 23, 8>;
+
+    LatchingBudget budget(64);
+    Grower grower;
+    grower.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
+
+    /// A projection of the growth does not ask the budget.
+    Grower projection = grower;
+    for (size_t i = 0; i < 8; ++i)
+        projection.increaseSize();
+    ASSERT_EQ(budget.asked, 0);
+    ASSERT_FALSE(projection.isRobinHood());
+    ASSERT_EQ(projection.bufSize(), 16 << 16);
+
+    /// The budget is asked at every size, also below the size at which the mode `Always` switches. The first answer is no.
+    grower.increaseSizeAskingBudget();
+    ASSERT_EQ(budget.asked, 1);
+    ASSERT_EQ(grower.bufSize(), 64);
+    ASSERT_FALSE(grower.isRobinHood());
+
+    /// The second one is yes: the bucket switches in place, to the higher load factor.
+    grower.increaseSizeAskingBudget();
+    ASSERT_EQ(budget.asked, 2);
+    ASSERT_EQ(grower.bufSize(), 64);
+    ASSERT_TRUE(grower.isRobinHood());
+    ASSERT_FALSE(grower.overflow(57));
+    ASSERT_TRUE(grower.overflow(58));
+
+    /// A bucket in the Robin Hood mode only doubles, and nobody is asked.
+    grower.increaseSizeAskingBudget();
+    ASSERT_EQ(budget.asked, 2);
+    ASSERT_EQ(grower.bufSize(), 128);
+    ASSERT_TRUE(grower.isRobinHood());
+
+    /// After a yes every other bucket switches at once, even when it does not ask.
+    Grower later;
+    later.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &budget);
+    later.increaseSize();
+    ASSERT_EQ(later.bufSize(), 16);
+    ASSERT_TRUE(later.isRobinHood());
+
+    /// Sizing for a number of elements asks about the plain size, and takes the smallest Robin Hood size on a yes.
+    LatchingBudget no(size_t(1) << 40);
+    LatchingBudget yes(1);
+    Grower plain_sized;
+    plain_sized.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &no);
+    plain_sized.set(600);
+    ASSERT_EQ(no.asked, 1);
+    ASSERT_EQ(plain_sized.bufSize(), 2048);
+    ASSERT_FALSE(plain_sized.isRobinHood());
+
+    Grower robin_hood_sized;
+    robin_hood_sized.setRobinHoodMode(RobinHoodMode::OnMemoryPressure, &yes);
+    robin_hood_sized.set(600);
+    ASSERT_EQ(yes.asked, 1);
+    ASSERT_EQ(robin_hood_sized.bufSize(), 1024);
+    ASSERT_TRUE(robin_hood_sized.isRobinHood());
+    ASSERT_FALSE(robin_hood_sized.overflow(600));
+
+    /// The modes without a budget never ask, and behave as before.
+    Grower always;
+    always.setRobinHoodMode(RobinHoodMode::Always);
+    Grower never;
+    never.setRobinHoodMode(RobinHoodMode::Never);
+    for (size_t i = 0; i < 10; ++i)
+    {
+        always.increaseSizeAskingBudget();
+        never.increaseSizeAskingBudget();
+    }
+    ASSERT_TRUE(always.isRobinHood());
+    ASSERT_FALSE(never.isRobinHood());
+}
+
+TEST(HashTableRobinHood, OnMemoryPressureKeepsTheInvariants)
+{
+    struct Map : HashTableWithInvariantsCheck<HashMap<UInt64, UInt64, CollidingHash, RobinHoodTestGrower>>
+    {
+        void setMode(RobinHoodMode mode, HashTableGrowthBudget * budget) { this->grower.setRobinHoodMode(mode, budget); }
+    };
+
+    /// The hash table switches at different sizes, in the middle of a growing and a shrinking sequence of operations,
+    /// or never.
+    for (size_t latch_at_cells : {size_t(16), size_t(64), size_t(1024), size_t(1) << 40})
+    {
+        LatchingBudget budget(latch_at_cells);
+        Map map;
+        map.setMode(RobinHoodMode::OnMemoryPressure, &budget);
+        std::unordered_map<UInt64, UInt64> expected;
+        std::mt19937_64 rng(42); /// NOLINT(cert-msc32-c,cert-msc51-cpp,bugprone-random-generator-seed) a reproducible sequence
+
+        for (size_t i = 0; i < 100000; ++i)
+        {
+            UInt64 key = rng() % 20000;
+            if (rng() % 8 == 0)
+            {
+                ASSERT_EQ(map.erase(key), expected.erase(key) != 0);
+            }
+            else
+            {
+                map[key] = i;
+                expected[key] = i;
+            }
+            if (i % 2000 == 0)
+                map.checkInvariants();
+        }
+
+        map.checkInvariants();
+        ASSERT_EQ(map.size(), expected.size());
+        for (const auto & [key, value] : expected)
+        {
+            auto * it = map.find(key);
+            ASSERT_TRUE(it);
+            ASSERT_EQ(it->getMapped(), value);
+        }
+        ASSERT_EQ(map.isRobinHoodMode(), latch_at_cells < (size_t(1) << 40)) << "latch at " << latch_at_cells << " cells";
+    }
+}

@@ -17,6 +17,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/HashJoin/JoinGrowthBudget.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -508,14 +509,17 @@ public:
         std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
         std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
-        void create(Type which, bool robin_hood_allowed)
+        /// Only a two-level map has a Robin Hood mode, and only the mode `OnMemoryPressure` uses `growth_budget`.
+        void create(Type which, RobinHoodMode robin_hood_mode, HashTableGrowthBudget * growth_budget)
         {
-            visit(which, [robin_hood_allowed]<typename Table>(std::shared_ptr<Table> & map)
-            {
-                map = std::make_shared<Table>();
-                if constexpr (requires { map->setRobinHoodAllowed(robin_hood_allowed); })
-                    map->setRobinHoodAllowed(robin_hood_allowed);
-            });
+            visit(
+                which,
+                [robin_hood_mode, growth_budget]<typename Table>(std::shared_ptr<Table> & map)
+                {
+                    map = std::make_shared<Table>();
+                    if constexpr (requires { map->setRobinHoodMode(robin_hood_mode, growth_budget); })
+                        map->setRobinHoodMode(robin_hood_mode, growth_budget);
+                });
         }
 
         /// Calls `f` with the map of type `which`, a `std::shared_ptr` that is null until `create`.
@@ -620,6 +624,9 @@ public:
         ~RightTableData();
 
         void spliceBuildStreamLists();
+
+        /// Declared before `tables`, whose growers point to it, so that it outlives them.
+        JoinGrowthBudget growth_budget;
 
         /// One table per `ON` disjunct:
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
@@ -860,6 +867,9 @@ public:
     /// keeps no block a set map does not need, and whether some algorithm merely appears in
     /// `join_algorithm` says nothing about what was instantiated.
     void keepRightBlocksForAnotherAlgorithm() { right_blocks_may_be_taken = true; }
+
+    /// Called by `SpillingHashJoin` before the first insert, see `JoinGrowthBudget::setSpillThreshold`.
+    void setSpillThreshold(size_t max_bytes_before_external_join) { data->growth_budget.setSpillThreshold(max_bytes_before_external_join); }
 
     /// Called once that algorithm can no longer take them - it has settled on this join. A join that
     /// stores only the keys reads nothing from them, so they can go.
