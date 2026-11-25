@@ -184,8 +184,16 @@ public:
 			}
 
 			/// With no events, this processes the timeouts.
-			ares_process_fds(_channel, events.data(), events.size(), ARES_PROCESS_FLAG_NONE);
+			const ares_status_t status = ares_process_fds(_channel, events.data(), events.size(), ARES_PROCESS_FLAG_NONE);
 			rethrowCallbackException();
+
+			/// The only error that c-ares reports here is a failed allocation (other errors are handled by its retries
+			/// and reported to the callback of the query). It can leave a query without a timeout, so the loop must
+			/// not continue: it would wait in `poll` forever if the DNS server did not answer.
+			if (status == ARES_ENOMEM)
+				throw std::bad_alloc();
+			if (status != ARES_SUCCESS)
+				throw DNSException(std::string("Cannot process the events of the DNS resolver: ") + ares_strerror(status), "", EAI_FAIL);
 		}
 	}
 
@@ -429,6 +437,20 @@ bool isLocalhostName(const std::string& hostname)
 }
 
 
+/// The loopback addresses of an address family (of both families for `AF_UNSPEC`), which a localhost name resolves to.
+HostEntry::AddressList loopbackAddresses(int family)
+{
+	HostEntry::AddressList addresses;
+	if (family != AF_INET6)
+		addresses.push_back(IPAddress("127.0.0.1"));
+#if defined(POCO_HAVE_IPv6)
+	if (family != AF_INET)
+		addresses.push_back(IPAddress("::1"));
+#endif
+	return addresses;
+}
+
+
 /// Reads the values of one `hosts` entry of a configuration file into the sources ("f" for the hosts file,
 /// "b" for DNS), as c-ares does. Unknown values (other NSS modules, actions such as `[NOTFOUND=return]`) are skipped.
 void parseLookups(const std::string& values, const char* separators, std::string& lookups)
@@ -665,16 +687,33 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 			/// An entry without an address of the requested family (`AI_ADDRCONFIG`) is as good as no entry.
 			/// It must not be passed to c-ares: for such an entry it reports the initial status of its lookup,
 			/// `ARES_ECONNREFUSED`, which would be thrown instead of trying the next source.
-			if (hostsFileEntry && family != AF_UNSPEC
+			const bool familyMiss = hostsFileEntry && family != AF_UNSPEC
 				&& std::none_of(hostsFileEntry->addresses.begin(), hostsFileEntry->addresses.end(),
-					[family](const IPAddress& address) { return address.af() == family; }))
+					[family](const IPAddress& address) { return address.af() == family; });
+			if (familyMiss)
 			{
 				hostsFileEntry.reset();
 				status = ARES_ENODATA;
 			}
 
-			if (!hostsFileEntry && !localhost)
-				continue;
+			if (!hostsFileEntry)
+			{
+				if (!localhost)
+					continue;
+
+				/// A localhost name without a usable entry resolves to the loopback addresses, and only to them.
+				HostEntry::AddressList loopback = loopbackAddresses(family);
+
+				/// The name is in the hosts file, but without an address of the requested family. c-ares must not
+				/// be asked about it: it looks for an address of this family in its merged entry, and returns
+				/// the address of an unrelated name that shares an address of the other family with this one.
+				if (familyMiss)
+					return HostEntry(hostname, loopback);
+
+				/// The name is not in the hosts file, and c-ares synthesizes the loopback addresses.
+				/// Its answer is checked against them in the same way as against the addresses of an entry.
+				hostsFileEntry.emplace(HostsFileEntry{hostname, std::move(loopback)});
+			}
 		}
 		else if (source != 'b' || localhost)
 			continue;
@@ -713,8 +752,8 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 #endif
 		}
 
-		/// A name from the hosts file keeps only the addresses of its own lines, in the order of c-ares (RFC 6724).
-		/// Without an entry, this is a localhost name that c-ares resolves to the loopback addresses.
+		/// A name from the hosts file keeps only the addresses of its own lines, and a localhost name that is not
+		/// there only the loopback addresses, in the order of c-ares (RFC 6724). Only an answer of DNS is not checked.
 		if (hostsFileEntry)
 		{
 			const auto& listed = hostsFileEntry->addresses;
