@@ -249,16 +249,16 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
+    [[nodiscard]] [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 
     IdentifierResolveScope * getNearestQueryScope();
 
     /// True while the `ASOF JOIN` expression of the nearest query is being resolved. Functions are not constant-folded there.
-    bool isResolvingAsofJoinExpression() const;
+    [[nodiscard]] bool isResolvingAsofJoinExpression() const;
 
     AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
 
-    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
+    [[nodiscard]] const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
@@ -283,10 +283,10 @@ struct IdentifierResolveScope
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
-    [[maybe_unused]] String dump() const;
+    [[nodiscard]] [[maybe_unused]] String dump() const;
 
 private:
-    bool canCacheIdentifier(
+    [[nodiscard]] bool canCacheIdentifier(
         const IdentifierLookup & lookup,
         const IdentifierResolveContext & resolve_context) const;
 

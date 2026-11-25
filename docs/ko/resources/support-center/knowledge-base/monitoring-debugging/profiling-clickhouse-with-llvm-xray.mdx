@@ -5,10 +5,8 @@ description: "LLVM의 XRay 계측(instrumentation) 프로파일러를 사용하�
 tags: ['성능 및 최적화', '도구 및 유틸리티']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="types-of-profilers">
-  ## 프로파일러의 유형
+  ## 프로파일러의 유형 {#types-of-profilers}
 </div>
 
 LLVM에는 이미 코드를 계측하여 [계측
@@ -21,9 +19,7 @@ LLVM에는 이미 코드를 계측하여 [계측
 수집되는 시점에 실행 중인 함수만 고려됩니다. [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29)는 매우 널리 알려진
 통계적 프로파일러입니다.
 
-<div id="profiling-clickhouse-using-xray-integration">
-  ## XRay 통합 기능을 사용한 ClickHouse 프로파일링
-</div>
+## XRay 통합 기능을 사용한 ClickHouse 프로파일링 {#profiling-clickhouse-using-xray-integration}
 
 ClickHouse 25.12에서는 함수에 새로운 계측 지점을 손쉽게 추가할 수 있도록 XRay가 통합되어 있습니다.
 따라서 모든 공식 릴리스에는 이 기능이 이미 포함되어 있으며, 활성화하지 않은 경우에는
@@ -52,17 +48,19 @@ system.trace&#95;log에 수집된 데이터를 [Chrome
 시각화합니다. 각 항목에서 query&#95;id, cpu&#95;id, stacktrace를
 확인하십시오.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="시간 순서" />
+<div className="ch-image-md">
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+  </Frame>
+</div>
 
 <div id="profiling-a-native-application-using-xray">
-  ## XRay를 사용한 네이티브 애플리케이션 프로파일링
+  ## XRay를 사용한 네이티브 애플리케이션 프로파일링 {#profiling-a-native-application-using-xray}
 </div>
 
 다음 섹션은 XRay가 내부에서 어떻게 작동하는지, 그리고 기본 제공 기능만으로 네이티브 애플리케이션을 프로파일링하는 데 어떻게 사용할 수 있는지 이해할 수 있도록 참고용으로 남겨두었습니다.
 
-<div id="instrument-the-code">
-  ### 코드 계측하기
-</div>
+### 코드 계측하기 {#instrument-the-code}
 
 다음과 같은 소스 코드가 있다고 가정해 보겠습니다:
 
@@ -119,7 +117,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### 트레이스를 수집하려면 적절한 env var 값으로 프로세스를 실행합니다
+  ### 트레이스를 수집하려면 적절한 env var 값으로 프로세스를 실행합니다 {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
 </div>
 
 기본적으로는 명시적으로 요청하지 않는 한 프로파일러 데이터가 수집되지 않습니다. 다시 말해,
@@ -135,7 +133,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### 트레이스 변환
+  ### 트레이스 변환 {#convert-the-trace}
 </div>
 
 XRay의 트레이스는 여러 포맷으로 변환할 수 있습니다. `trace_event` 포맷은 파싱하기 쉽고
@@ -146,7 +144,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### 트레이스 시각화
+  ### 트레이스 시각화 {#visualize-the-trace}
 </div>
 
 [speedscope.app](https://www.speedscope.app/) 또는
@@ -155,26 +153,32 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 Perfetto는 여러 스레드를 시각화하고 데이터를 쿼리하기에 더 편리하지만, speedscope는
 데이터의 플레임 그래프와 샌드위치 뷰를 생성하는 데 더 적합합니다.
 
-<div id="time-order">
-  #### 시간순
+#### 시간순 {#time-order}
+
+<div className="ch-image-md">
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+  </Frame>
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="시간순" />
+#### Left Heavy {#left-heavy}
 
-<div id="left-heavy">
-  #### 왼쪽 편중
+<div className="ch-image-md">
+  <Frame>
+    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+  </Frame>
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="왼쪽 편중" />
+#### 샌드위치 {#sandwitch}
 
-<div id="sandwitch">
-  #### 샌드위치
+<div className="ch-image-md">
+  <Frame>
+    ![sandwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+  </Frame>
 </div>
-
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="샌드위치" />
 
 <div id="check-out-the-docs">
-  ## 문서 살펴보기
+  ## 문서 살펴보기 {#check-out-the-docs}
 </div>
 
 * [SYSTEM INSTRUMENT](/ko/reference/statements/system#instrument) — 계측 지점을 추가하거나

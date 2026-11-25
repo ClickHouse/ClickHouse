@@ -12,28 +12,31 @@ integration:
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_native.mdx';
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Hashboard](https://hashboard.com) est un outil interactif d’exploration de données qui permet à toute personne de votre organisation de suivre des métriques et d’en tirer des informations exploitables. Hashboard envoie des requêtes SQL en direct à votre base de données ClickHouse et est particulièrement utile pour les cas d’usage d’exploration ponctuelle des données en libre-service.
 
-<Image size="md" img="/images/integrations/data-visualization/hashboard_01.webp" alt="Interface d’exploration de données Hashboard montrant un générateur de requêtes interactif et une visualisation" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Interface d’exploration de données Hashboard montrant un générateur de requêtes interactif et une visualisation](/images/integrations/data-visualization/hashboard_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 Ce guide vous explique les étapes à suivre pour connecter Hashboard à votre instance ClickHouse. Ces informations sont également disponibles dans la [documentation sur l’intégration ClickHouse](https://hashboard.com/docs/database-connections/clickhouse) de Hashboard.
 
 <div id="pre-requisites">
-  ## Prérequis
+  ## Prérequis {#pre-requisites}
 </div>
 
 * Une base de données ClickHouse hébergée soit sur votre propre infrastructure, soit sur [ClickHouse Cloud](https://clickhouse.com/).
 * Un [compte Hashboard](https://hashboard.com/getAccess) ainsi qu’un projet.
 
 <div id="steps-to-connect-hashboard-to-clickhouse">
-  ## Étapes pour connecter Hashboard à ClickHouse
+  ## Étapes pour connecter Hashboard à ClickHouse {#steps-to-connect-hashboard-to-clickhouse}
 </div>
 
 <Steps>
@@ -55,7 +58,7 @@ Ce guide vous explique les étapes à suivre pour connecter Hashboard à votre i
 </Steps>
 
 <div id="learn-more">
-  ## En savoir plus
+  ## En savoir plus {#learn-more}
 </div>
 
 Pour découvrir des fonctionnalités plus avancées et obtenir de l&#39;aide pour le dépannage, consultez la [documentation de Hashboard](https://hashboard.com/docs).
