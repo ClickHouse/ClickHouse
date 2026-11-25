@@ -1190,6 +1190,7 @@ void ObjectStorageQueueSource::FileIterator::abandonOrderingBarrierHandOff(const
     {
         /// Not even the path could be obtained. An orphaned barrier would make `isFinished` wait
         /// forever, and the pass is blocked as a whole anyway.
+        tryLogCurrentException(log, "Failed to remove the ordering barrier of a file, removing all the barriers of the pass");
         unresolved_set_processing_per_domain.clear();
     }
 
@@ -1686,7 +1687,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             /// `BehindReplay`: a smaller file of the same ordering domain is pending a replay and
             /// is not handed out yet: the gate queues this file to be replayed together with it,
             /// in path order.
-            OrderingDomainGate gate;
+            OrderingDomainGate gate = OrderingDomainGate::Shutdown;
             try
             {
                 gate = waitOrderingDomainGate(object_info);
