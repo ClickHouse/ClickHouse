@@ -69,6 +69,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] String getName() const override { return name; }
+    void updateHash(SipHash & hash) const override { hash.update(null_equals_null); }
 
     [[nodiscard]] String getSignatureString() const override
     {
@@ -115,11 +116,8 @@ public:
                 ->execute(if_null_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
         }
 
-        if (!null_equals_null)
-            return equals_result;
-
-        /// Preserve the ClickHouse behavior where `NULL` matches `NULL` in a simple `CASE`.
-        /// We need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when).
+        /// Mask NULL operands independently of the comparison function's own null handling.
+        /// Legacy `Variant` comparison can return a non-nullable true value for two NULLs.
         const auto & is_null_func = fun_is_null;
         const auto & if_func = fun_if;
 
@@ -142,11 +140,11 @@ public:
         auto inner_if_result = if_func->build(inner_if_args)
             ->execute(inner_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
 
-        // if (isNull(expr)) then (isNull(when)) else inner_if_result
+        // if (isNull(expr)) then (isNull(when) when enabled, else 0) else inner_if_result
         ColumnsWithTypeAndName outer_if_args
         {
             {is_null_expr, std::make_shared<DataTypeUInt8>(), ""},
-            {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
+            {null_equals_null ? is_null_when : zero_const, std::make_shared<DataTypeUInt8>(), ""},
             {inner_if_result, std::make_shared<DataTypeUInt8>(), ""}
         };
         return if_func->build(outer_if_args)
