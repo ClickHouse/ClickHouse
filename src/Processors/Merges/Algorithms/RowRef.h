@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
 
@@ -33,10 +32,6 @@ struct SharedChunk : Chunk
     MutableColumnPtr replace_final_selection;
     /// The number of rows the merge had selected when the first row of `replace_final_selection` was selected.
     size_t replace_final_selection_start = 0;
-
-    /// The chunk's row filter, resolved from its infos when the chunk is taken from the
-    /// allocator, or nullptr when it carries none. Owned by the chunk's infos.
-    const IColumnFilter * row_filter_mask = nullptr;
 
     using Chunk::Chunk;
     using Chunk::operator=;

@@ -205,7 +205,7 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
         auto current = std::move(nodes_to_visit.back());
         nodes_to_visit.pop_back();
 
-        if (const auto * function_node = current->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
+        if (const auto * function_node = current->as<FunctionNode>(); function_node && function_node->isOrdinaryCall())
         {
             auto function_base = function_node->getFunction();
             if (function_base
@@ -340,12 +340,12 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         }
         else if (auto * function_node = current->as<FunctionNode>())
         {
-            if (check_server_dependent && function_node->isOrdinaryFunction() && dependsOnServerTimeZone(*function_node))
+            if (check_server_dependent && function_node->isOrdinaryCall() && dependsOnServerTimeZone(*function_node))
                 keep_in_having();
 
             if (inside_subquery)
             {
-                if (function_node->isOrdinaryFunction())
+                if (function_node->isOrdinaryCall())
                 {
                     auto function_base = function_node->getFunction();
                     if (abort_on_side_effects && function_base && function_base->hasObservableSideEffects())
@@ -359,10 +359,10 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
             }
             else
             {
-                if (function_node->isWindowFunction())
+                if (function_node->isWindowCall())
                     return HavingConjunctMoveAction::AbortRewrite;
 
-                if (function_node->isOrdinaryFunction())
+                if (function_node->isOrdinaryCall())
                 {
                     if (auto function_base = function_node->getFunction())
                     {
@@ -381,7 +381,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                     }
                 }
 
-                if (function_node->isAggregateFunction())
+                if (function_node->isAggregationCall())
                     keep_in_having();
 
                 /// `GroupingFunctionsResolvePass` replaces `grouping` with its specializations, like `__groupingOrdinary`.
