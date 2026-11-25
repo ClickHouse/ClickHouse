@@ -25,6 +25,11 @@
 
 #include <algorithm>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 namespace DB
 {
 
@@ -126,14 +131,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
     configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
 
-    /// Server-internal log-pipeline object storage tables live in the `system` database and are named
-    /// `<log>_s3` (the plain S3 engine sink) or `<log>_s3queue`. Users cannot create tables there, so this is a
-    /// safe internal marker. These tables must never abort server startup when server-managed credentials are
-    /// restricted: force the anonymous-load fallback in `getClient` even if the operator disabled
-    /// `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap re-credentials the client afterwards.
-    if (args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE
-        && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
+#if CLICKHOUSE_CLOUD
+    /// The tables of the system log pipeline must never abort the startup when server-managed credentials are
+    /// restricted. The catalog builds the current ones with the server credentials.
+    if (SharedSystemDatabase::isPipelineTable(args.table_id))
         configuration->force_anonymous_load_fallback = true;
+#endif
 
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
@@ -158,7 +161,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         auto metadata = *metadata_snapshot;
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
         storage->setInMemoryMetadata(metadata);
     }
 
@@ -195,8 +198,15 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 ## Create table {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -210,11 +220,11 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/reference/formats) of the file.
+- `format` — The [format](/reference/formats/index) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
+- `extra_credentials` - Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).
 
 **Example**
 
@@ -292,7 +302,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern that skips hidden paths (segments starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), following the Hive ecosystem convention. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -318,7 +328,9 @@ select _path, * from azure_table;
 [Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD",
         .syntax = "ENGINE = AzureBlobStorage(connection_string | storage_account_url, container_name, blobpath, "
-            "[account_name, account_key,] format [, compression])",
+            "[account_name, account_key,] format [, compression])\n"
+            "ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, "
+            "extra_credentials(client_id=, tenant_id=), format [, compression])",
         .related = {"S3", "HDFS"}});
 }
 #endif
@@ -367,12 +379,14 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](/reference/formats#formats-overview) of the file.
+- `format` — The [format](/reference/formats/index#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Parameter is optional. By default, it will auto-detect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `upload_checksum_algorithm` - Optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.
+- `delete_checksum_algorithm` - Optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -418,7 +432,7 @@ With the `hive` partition strategy, the default set by `file_like_engine_default
 
 When no `partition_strategy` is set, a path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 
-`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`, except that hidden paths (segments below the table root starting with `_` or `.`, e.g. `_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`) are skipped, following the Hive ecosystem convention. For plain glob paths without a partition strategy, the same filtering is available via the `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` settings.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -482,7 +496,7 @@ in subsets, hence partitioned writes.
 </Note>
 
 #### Create the table {#create-the-table}
-```sql
+```sql highlight={8}
 CREATE TABLE p
 (
     `column1` UInt32,
@@ -490,7 +504,6 @@ CREATE TABLE p
     `column3` UInt32
 )
 ENGINE = S3(
--- highlight-next-line
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
@@ -686,6 +699,7 @@ The following settings can be specified in configuration file for given endpoint
 - `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Optional, default value is `false`.
 - `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
 - `no_sign_request` - Ignore all the credentials so requests are not signed. Useful for accessing public buckets.
+- `request_payer` - Set to `requester` to access a requester-pays bucket: every request to the given endpoint carries the header `x-amz-request-payer: requester`. Optional. Takes precedence over the [`s3_request_payer`](/reference/settings/session-settings/s3#s3_request_payer) setting.
 - `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
 - `access_header` - Adds specified HTTP header to a request to given endpoint, in cases where there are no other credentials from another source.
 - `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set. Optional.
@@ -860,8 +874,6 @@ static void registerStorageHDFS(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # HDFS table engine
 
 <CloudNotSupportedBadge/>
@@ -882,7 +894,7 @@ ENGINE = HDFS(URI, format)
 - `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/reference/formats#formats-overview) section.
+[Formats](/reference/formats/index#formats-overview) section.
 - [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
@@ -953,8 +965,6 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
     - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
-
-<!-- -->
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -1278,9 +1288,9 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
-| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
-| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, the time zone is set by the table setting `iceberg_timezone_for_timestamptz` (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
@@ -1303,7 +1313,7 @@ The data type mappings above apply to reads. The following limitations apply whe
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
-- For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
+- For data files containing types whose bounds ClickHouse cannot serialize, such as `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1607,7 +1617,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
 
 - the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
-- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge` and `iceberg_compaction_max_rows_to_merge`.
 
 The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
 
@@ -2417,9 +2427,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 # DeltaLake table engine
 
 This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
@@ -2429,7 +2436,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
-<TabItem value="S3" label="S3" default>
+<Tab title="S3">
 
 **Syntax**
 
@@ -2471,9 +2478,9 @@ Using named collections:
 CREATE TABLE deltalake
 ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
 ```
-</TabItem>
+</Tab>
 
-<TabItem value="GCP" label="GCP" default>
+<Tab title="GCP">
 
 **Syntax**
 
@@ -2508,15 +2515,20 @@ CREATE TABLE gcpDeltaLake
 ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
 ```
 
-</TabItem>
+</Tab>
 
-<TabItem value="Azure" label="Azure" default>
+<Tab title="Azure">
 
 **Syntax**
 
 ```sql
+-- Account key
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE table_name
+ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -2527,8 +2539,35 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
+- `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
 
-</TabItem>
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections). Named collections accept the same `client_id` and `tenant_id` keys.
+
+**Workload identity**
+
+The delta-kernel Azure path also requires environment variables:
+
+- `AZURE_FEDERATED_TOKEN_FILE` — required (the projected token file, e.g. on AKS)
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — required unless passed via `extra_credentials` or a named collection
+- `AZURE_AUTHORITY_HOST` — optional
+
+Workload identity uses the server's own identity, so it is refused by default: each session that creates or queries the table needs `allow_server_credentials_in_user_queries` enabled, either with `SET` or in its settings profile.
+
+```sql
+SET allow_server_credentials_in_user_queries = 1;
+
+CREATE NAMED COLLECTION azure_wi AS
+    storage_account_url = 'https://<account>.blob.core.windows.net',
+    container = 'mycontainer',
+    blob_path = 'path/to/table',
+    client_id = '<client-id>',
+    tenant_id = '<tenant-id>';
+
+CREATE TABLE azureDeltaLake
+ENGINE = DeltaLakeAzure(azure_wi)
+```
+
+</Tab>
 </Tabs>
 
 ## Write data using a DeltaLake table {#insert-data}
@@ -2547,7 +2586,6 @@ Delta Lake writes are a Beta feature disabled by default and must be enabled wit
 <Note>
 Writing using the table engine is supported only through delta kernel.
 Writes work for S3 and GCS, and for Azure from version 26.9.
-Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
 </Note>
 
 ### Data cache {#data-cache}
@@ -2637,7 +2675,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])\n"
+                      "ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(

@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -13,6 +14,7 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -36,13 +38,20 @@ public:
     FunctionSubstring(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
 
     static FunctionPtr create(const char * name, bool is_utf8) { return std::make_shared<FunctionSubstring>(name, is_utf8); }
-    String getName() const override { return function_name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
+    }
+
+    [[nodiscard]] String getSignatureString() const override
     {
         if (is_utf8)
             return "(String, NativeNumber, [NativeNumber]) -> String";
@@ -50,12 +59,13 @@ public:
             return "(StringOrFixedString | Enum, NativeNumber, [NativeNumber]) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
     template <typename Source>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeForSource(const ColumnPtr & column_offset, const ColumnPtr & column_length,
                           bool column_offset_const, bool column_length_const,
                           Int64 offset, Int64 length,
@@ -70,7 +80,7 @@ public:
                 if (offset > 0)
                     sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(offset - 1));
                 else if (offset < 0)
-                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(offset));
+                    sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(offset)));
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -84,7 +94,7 @@ public:
                 if (offset > 0)
                     sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(offset - 1), length);
                 else if (offset < 0)
-                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(offset), length);
+                    sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), common::negateIgnoreOverflow(static_cast<size_t>(offset)), length);
                 else
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
@@ -95,7 +105,7 @@ public:
         return col_res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -104,6 +114,12 @@ public:
         ColumnPtr column_length;
         if (number_of_arguments == 3)
             column_length = arguments[2].column;
+
+        /// The offset and the length are read with IColumn::getInt() below, so a UInt64 value that
+        /// does not fit Int64 must be rejected here rather than read as a negative number.
+        checkIntegerArgumentFitsInt64(*column_offset, function_name, "offset");
+        if (column_length)
+            checkIntegerArgumentFitsInt64(*column_length, function_name, "length");
 
         const ColumnConst * column_offset_const = checkAndGetColumn<ColumnConst>(column_offset.get());
         const ColumnConst * column_length_const = nullptr;

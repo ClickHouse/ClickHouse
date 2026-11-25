@@ -109,7 +109,7 @@ TEST(IcebergMetadataListingRequests, EmptyMetadataPrefixIsListedOncePerAttempt)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
-        EXPECT_NE(e.message().find("no .metadata.json under " + metadata_prefix + ", which held 0 entries"), String::npos)
+        EXPECT_NE(e.message().find("no .metadata.json under " + metadata_prefix + "/, which held 0 entries"), String::npos)
             << e.message();
     }
 
@@ -148,7 +148,7 @@ TEST(IcebergMetadataListingRequests, ReportsTheListingThatDecidedTheThrow)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
         const String & message = e.message();
-        EXPECT_NE(message.find("which held 1 entry: /late-arrival.text"), String::npos) << message;
+        EXPECT_NE(message.find("which held 1 entry: late-arrival.text"), String::npos) << message;
     }
 
     EXPECT_EQ(object_storage->list_calls.load(), 5u);
@@ -183,7 +183,7 @@ TEST(IcebergMetadataListingRequests, ReportsAnObjectKeyedExactlyAsThePrefix)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
         const String & message = e.message();
-        const String listed_prefix = (table / "metadata").string();
+        const String listed_prefix = (table / "metadata" / "").string();
         EXPECT_NE(
             message.find("which held 1 entry: " + listed_prefix + " (2001-09-09T01:46:40Z)"), String::npos) << message;
     }

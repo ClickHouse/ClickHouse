@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -11,10 +14,11 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
-#include <deque>
+#include <atomic>
+#include <mutex>
 #include <optional>
-#include <unordered_set>
 #include <variant>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -27,48 +31,28 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
-//  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
-//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
-//  * look at issues in 00900_long_parquet_load.sh
+//  * test on files from https://www.timestored.com/data/sample/parquet
 //  * check fields for false sharing, add cacheline padding as needed
-//  * make sure userspace page cache read buffer supports readBigAt
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
-//  * make writer write DataPageV2
-//  * make writer write PageEncodingStats
 //  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
-//  * support or deprecate the preserve-order setting
 //  * add comments everywhere
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
-//  * cache FileMetaData in something like SchemaCache
 //  * TSA
-//  * test with tsan
-//  * use dictionary page instead of bloom filter when possible
-//  * test performance with prewhere i%2=0, to have lots of range skips
 //  * check if prewhere works with datalakes
 //  * remember to test these:
 //     - expression appearing both in prewhere and in select list (presumably remove_prewhere_column = false)
-//     - prewhere with all 3 storages (maybe have the main big test pick random storage)
-//     - prewhere and where together
 //     - reading tuple element without reading the whole tuple
 //     - `select t, t.x`, `select t.x.x, t.x`, `select t.x.dyn_col`, `select t.`1``
 //        -- somehow assert that only the expected subcolumns are read
 //        -- also tuples inside arrays:
 //           insert into function file('p4.parquet') select [((number*100 + 10,number*100+11),number*100+20)::Tuple(x Tuple(x Int64, y String), y Int64)] as a from numbers(3)
 //     - prewhere with tuple element access (prepareReadingFromFormat looks like it won't work)
-//     - prewhere with expression string equal to some (weird) column name in the file
-//     - prewhere with expression that's just a (UInt8) column name, present or not present in select
 //     - prewhere condition that uses no columns (e.g. rand()%2=0)
-//     - prewhere condition that uses all columns (e.g. select x prewhere x%2=0)
-//     - no columns to read outside prewhere
-//     - no columns to read, but not trivial count either
-//     - ROW POLICY, with and without prewhere, with old and new reader
 //     - prewhere and other skipping with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
 //     - prewhere on virtual columns (do they end up in additional_columns?)
-//     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
-//     - prewhere involving arrays and tuples
-//     - prewhere with url() and s3()
+//     - prewhere with const UInt8 filter
 //     - tuple elements with url() and s3()
 //     - IN with subqueries with and without prewhere
 //     - compare performance to MergeTree (full scan, prewhere, skipping granules)
@@ -76,7 +60,6 @@ namespace DB::Parquet
 //     - array touching >2 pages
 //     - bf and page filtering on prewhere-only columns
 //     - all types of filtering by IS NULL / IS NOT NULL
-//     - Bool type
 //     - looking for NaN using min/max indices; try it with merge tree too
 //     - input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, make a file by hacking PrepareForWrite.cpp to use garbage physical type for some data type (~/t/invalid_type.parquet has column `invalid` that's FixedString(5) but has type=42 instead of type=FIXED_LEN_BYTE_ARRAY)
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
@@ -85,8 +68,6 @@ namespace DB::Parquet
 //    choosing the column with least <row group idx, subgroup idx> among runnable ones, with one total
 //    memory budget; but also think about memory locality - is it worse than for simple solution?
 //    is there a way to make it better or to support simple solution as special case?
-//  * lazy materialization (not feasible because of unaligned pages?)
-//  * add prewhere check next to addNumRowsToCache calls, in addition to key condition check
 //  * make sure ~all reader and writer settings are randomized in tests
 
 /// Components of this parquet reader implementation:
@@ -107,13 +88,31 @@ namespace DB::Parquet
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
 
+/// Column chunks of one file, parsed by any of the readers that read parts of this file within one
+/// query (see `ParquetBucketSplitter::splitForParallelReading`). Each column is parsed only once and
+/// kept in memory once, regardless of the number of readers, even without `ParquetMetadataCache`.
+struct SharedFileColumnChunks
+{
+    std::mutex mutex;
+    /// By Parquet column index, nullptr if not parsed yet. Protected by `mutex`.
+    VectorWithMemoryTracking<FileColumnChunksPtr> column_chunks;
+
+    /// Sorted offsets of all structures in the file, to find where a bloom filter without
+    /// `bloom_filter_length` ends (see `Reader::initializePrefetches`). Built once by the first reader
+    /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
+    /// taken before `mutex`.
+    std::mutex bloom_filter_bounds_mutex;
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds TSA_GUARDED_BY(bloom_filter_bounds_mutex);
+};
+using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
+
 struct RowGroupByteRange
 {
     UInt64 offset = 0;
     UInt64 length = 0;
 };
 
-using RowGroupSelection = std::variant<std::monostate, std::unordered_set<UInt64>, RowGroupByteRange>;
+using RowGroupSelection = std::variant<std::monostate, UnorderedSetWithMemoryTracking<UInt64>, RowGroupByteRange>;
 
 struct Reader
 {
@@ -186,9 +185,13 @@ struct Reader
         ///       (adjusting indices and dictionary).
 
         /// How to interpret repetition/definition levels.
-        std::vector<LevelInfo> levels;
+        VectorWithMemoryTracking<LevelInfo> levels;
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
+
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
 
         bool use_bloom_filter = false;
 
@@ -203,12 +206,15 @@ struct Reader
             /// only under the same four-column zero-nulls guarantee the row-group path requires
             /// (see `spatialBboxStatsHaveNoNulls`).
             size_t spatial_key_condition_idx = SIZE_MAX;
+
+            /// The condition is a conjunct of `join_runtime_filter_key_condition`.
+            bool from_join_runtime_filter = false;
         };
 
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
         /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
         /// column) each contribute their own KeyCondition here; a page must pass all of them.
-        std::vector<ColumnIndexCondition> column_index_conditions;
+        VectorWithMemoryTracking<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
         /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
@@ -223,6 +229,7 @@ struct Reader
         StringValueFilterPtr string_value_filter;
 
         bool used_by_key_condition = false;
+        bool used_by_join_runtime_filter = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
@@ -234,7 +241,9 @@ struct Reader
         /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
         /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
         /// row groups using the smaller atoms.
-        std::vector<UInt64> bloom_filter_hashes;
+        VectorWithMemoryTracking<UInt64> bloom_filter_hashes;
+        /// Number of condition atoms that probe this column's dictionary filter in one row group evaluation.
+        size_t hash_filter_atoms = 0;
 
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
@@ -250,10 +259,14 @@ struct Reader
         DataTypePtr input_type; // make a column of this type from the nested columns...
         DataTypePtr output_type; // ... then castColumn it to this type, if `needs_cast`
         std::optional<size_t> idx_in_output_block;
-        std::vector<size_t> nested_columns;
+        VectorWithMemoryTracking<size_t> nested_columns;
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// If set, the value of the missing column (the data lake default of a field absent from the file).
+        std::optional<Field> missing_column_default;
+        /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
+        bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
@@ -368,9 +381,10 @@ struct Reader
         bool top_k_bound_from_dictionary = false;
         /// The `Dictionary` stage decodes the dictionary only for `top_k_bound_from_dictionary`.
         bool decode_dictionary_for_top_k = false;
+        /// The `OffsetIndex` stage builds the page locations from the page headers, see `locatePagesFromHeaders`.
+        bool locate_pages_from_headers = false;
 
         /// Prefetches.
-        /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
         /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
@@ -380,12 +394,14 @@ struct Reader
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle top_k_dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
+        /// If not null, the column index is taken from it instead of `column_index_prefetch`.
+        KeptOffsetIndexes::ColumnIndexPtr kept_column_index;
         PrefetchHandle offset_index_prefetch;
         PrefetchHandle data_pages_prefetch;
         size_t data_pages_bytes = 0;
 
         /// Smaller prefetches for parts of bloom_filter_data_prefetch that we actually need.
-        std::vector<BloomFilterBlock> bloom_filter_blocks;
+        VectorWithMemoryTracking<BloomFilterBlock> bloom_filter_blocks;
 
         /// Smaller prefetches for pages inside data_pages_prefetch that we actually need.
         /// Based on offset index.
@@ -395,7 +411,7 @@ struct Reader
         /// is small and very close to other ranges (e.g. if column data is right next to offset
         /// index), Prefetcher may read it incidentally; then the `pages` prefetch ranges won't
         /// do any additional reading and will just point into the already-read bigger range.
-        std::vector<DataPage> data_pages;
+        VectorWithMemoryTracking<DataPage> data_pages;
 
         parq::BloomFilterHeader bloom_filter_header;
         parq::OffsetIndex offset_index;
@@ -417,9 +433,9 @@ struct Reader
         /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
         ColumnPtr dictionary_values;
 
-        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
+        VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
-        PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
+        PageState page;
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
         size_t next_page_offset = 0;
         size_t data_pages_idx = 0; // corresponding to `page`
@@ -485,10 +501,10 @@ struct Reader
         /// Initially `filter` is based only on column index, then it's updated after running prewhere.
         RowSet filter;
 
-        std::vector<ColumnSubchunk> columns;
+        VectorWithMemoryTracking<ColumnSubchunk> columns;
         BlockMissingValues block_missing_values;
 
-        std::vector<OutputColumnState> output; // parallel to extended_sample_block
+        VectorWithMemoryTracking<OutputColumnState> output; // parallel to extended_sample_block
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -509,7 +525,7 @@ struct Reader
 
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
-        std::vector<ColumnChunk> columns;
+        VectorWithMemoryTracking<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
 
@@ -527,16 +543,16 @@ struct Reader
         bool top_k_best_value_is_final = false;
         bool top_k_no_value_passes = false;
 
-        std::deque<RowSubgroup> subgroups;
+        DequeWithMemoryTracking<RowSubgroup> subgroups;
 
-        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
+        VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
         /// Columns cache, see `initColumnsCache`. The row group is cached in chunks of
         /// `COLUMNS_CACHE_CHUNK_ROWS` rows, and while it uses the cache, its row subgroups are cut at
         /// the boundaries of the chunks, so that a row subgroup is never more than one chunk.
         /// Both are parallel to extended_sample_block, or empty when not used.
         /// The chunks of the output columns found in the cache, all chunks of a column or none.
-        std::vector<std::vector<ColumnPtr>> cached_columns;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> cached_columns;
         /// The output columns to write to the cache, with the entries of their chunks written so far.
         /// A chunk decoded by a row subgroup in full is written to the cache at once, shared with the
         /// result of the read, see `addToColumnsCacheWrite`. A column whose chunks turn out not to be all
@@ -547,9 +563,9 @@ struct Reader
             bool active = false;
             size_t chunks_written = 0;
             /// Not owning: an entry the cache evicts is released as soon as the cache lets it go.
-            std::vector<std::weak_ptr<ColumnsCacheEntry>> entries;
+            VectorWithMemoryTracking<std::weak_ptr<ColumnsCacheEntry>> entries;
         };
-        std::vector<ColumnsCacheWrite> columns_cache_writes;
+        VectorWithMemoryTracking<ColumnsCacheWrite> columns_cache_writes;
 
         /// Fields below are used only by ReadManager.
         std::atomic<size_t> read_ptr {0};
@@ -569,8 +585,8 @@ struct Reader
     {
         ExpressionActions actions;
         std::optional<String> filter_column_name {};
-        std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
+        VectorWithMemoryTracking<size_t> input_idxs {}; // indices in extended_sample_block
+        VectorWithMemoryTracking<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
@@ -582,7 +598,7 @@ struct Reader
     /// `file_footer->metadata`, without column chunks; see getColumnChunk.
     const parq::FileMetaData & file_metadata() const { return file_footer ? file_footer->metadata : empty_file_metadata; }
     static const parq::FileMetaData empty_file_metadata;
-    std::deque<RowGroup> row_groups;
+    DequeWithMemoryTracking<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
     ///  * In parquet metadata, columns are listed in array `schema`.
@@ -603,42 +619,50 @@ struct Reader
     ///    columns. E.g. for Array(Array(Int64)) there would be 3 elements in output_columns:
     ///    Int64 (pointing to an element of primitive_columns), Array(Int64), and Array(Array(Int64)).
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
     size_t total_primitive_columns_in_file = 0;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
     ///     prewhere_steps[?].idxs_in_output_block[?].second == i
-    std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
+    VectorWithMemoryTracking<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Step> steps;
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
     /// are referenced by PrimitiveColumnInfo::column_index_conditions.
-    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     /// KeyConditions built from GeoParquet covering.bbox spatial filters.
     /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
-    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    VectorWithMemoryTracking<std::shared_ptr<KeyCondition>> spatial_key_conditions;
     /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
     /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
     /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
-    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+    VectorWithMemoryTracking<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
 
     /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
     /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
     /// alive, since raw pointers from them are referenced by
     /// PrimitiveColumnInfo::column_index_conditions.
-    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
+
+    /// See FormatFilterInfo::join_runtime_filter_predicate.
+    std::shared_ptr<const KeyCondition> join_runtime_filter_key_condition;
+    size_t row_groups_pruned_by_join_runtime_filter = 0;
+    /// Per-column conditions extracted from `join_runtime_filter_key_condition`, referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> join_runtime_filter_column_conditions;
+    std::atomic<size_t> pages_pruned_by_join_runtime_filter {0};
 
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
@@ -662,7 +686,7 @@ struct Reader
     static constexpr size_t COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP = size_t(1) << 24;
     /// The identity of each output column in the cache, parallel to extended_sample_block;
     /// zero for a column that does not use the cache. Empty if the cache is not used.
-    std::vector<UInt128> columns_cache_identities;
+    VectorWithMemoryTracking<UInt128> columns_cache_identities;
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
@@ -676,38 +700,55 @@ struct Reader
     /// Works around writer bugs in column chunk metadata.
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
-    void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
+    /// `shared_column_chunks_`, if not null, are taken from and filled with the column chunks of `footer`
+    /// that are not in `cached_column_chunks`, so that other readers of the same file don't parse them again.
+    /// `kept_offset_indexes_` were read from the same file: a column chunk found there does not read its offset index.
+    void setFileFooter(
+        std::shared_ptr<const FileFooter> footer,
+        VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {},
+        SharedFileColumnChunksPtr shared_column_chunks_ = nullptr,
+        KeptOffsetIndexesPtr kept_offset_indexes_ = nullptr);
     void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
-    /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
+    /// Takes from the cache, from `shared_column_chunks`, or parses those of `column_indices` (sorted, unique)
+    /// that are not in `column_chunks` yet.
     /// Never replaces an entry: ColumnChunk::meta points into them.
-    void ensureColumnChunks(const std::vector<size_t> & column_indices);
+    void ensureColumnChunks(const ColumnIndices & column_indices);
+    /// Sorted offsets of everything in the file that a bloom filter may be followed by, see initializePrefetches.
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> collectSortedMetadataOffsets();
     /// Only for the columns of `primitive_columns`, see parseColumnChunks.
     const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
     /// By Parquet column index, nullptr for the columns that are not parsed.
-    const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
+    const VectorWithMemoryTracking<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
-    std::optional<std::unordered_set<UInt64>> selectRowGroups(const RowGroupSelection & row_group_selection);
-    static std::optional<std::unordered_set<UInt64>> selectRowGroups(
+    std::optional<UnorderedSetWithMemoryTracking<UInt64>> selectRowGroups(const RowGroupSelection & row_group_selection);
+    static std::optional<UnorderedSetWithMemoryTracking<UInt64>> selectRowGroups(
         const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column);
 
     struct KeyConditionColumnRanges
     {
         /// Position in `extended_sample_block`.
         size_t idx = 0;
-        std::vector<Range> ranges;
+        VectorWithMemoryTracking<Range> ranges;
         /// `sizeof(Range)` and the heap bytes of the bounds, for every range.
         size_t bytes = 0;
     };
     /// Statistics ranges of key condition columns for every non-empty row group, as `prefilterAndInitRowGroups` checked
     /// them. Complete only if every row group was checked by statistics alone.
-    std::vector<KeyConditionColumnRanges> key_condition_column_ranges;
+    VectorWithMemoryTracking<KeyConditionColumnRanges> key_condition_column_ranges;
     bool key_condition_column_ranges_complete = false;
     /// The key condition columns whose ranges `prefilterAndInitRowGroups` collects. While the ranges of all of them take
     /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
-    std::vector<size_t> collect_key_condition_column_ranges;
+    VectorWithMemoryTracking<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
+
+    /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
+    size_t max_read_offset_indexes_bytes = 0;
+    /// The same for the column indexes read.
+    size_t max_read_column_indexes_bytes = 0;
+    /// The offset and column indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
+    VectorWithMemoryTracking<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -765,7 +806,7 @@ struct Reader
     /// are present but cannot be decoded throw, as in the static min/max pruning path.
     std::optional<Range> getTopKSortColumnRange(size_t row_group_idx) const;
     /// Two rows (min, max of every output column) from chunk statistics; nullopt if some chunk lacks exact statistics.
-    std::optional<Chunk> readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const;
+    std::optional<Chunk> readMinMaxFromStatistics(const std::optional<UnorderedSetWithMemoryTracking<UInt64>> & row_groups_to_read) const;
     /// If set, no row groups are read and the format returns this chunk instead.
     std::optional<Chunk> min_max_chunk;
     /// True if the running top-K threshold proves that no row of this row group can enter the
@@ -780,11 +821,13 @@ struct Reader
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
-    void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
+    void decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
+    /// Builds the page locations an offset index would hold from the page headers; leaves them empty on anything unusual.
+    void locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
     /// May assign dictionary_page_prefetch.
-    void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out);
+    void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, VectorWithMemoryTracking<PrefetchHandle *> & out);
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
@@ -828,10 +871,11 @@ private:
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
-        bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+        NO_SANITIZE_UNSIGNED_OVERFLOW
+        bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) override;
 
     private:
-        bool probe(const std::vector<uint64_t> & hashes);
+        bool probe(const VectorWithMemoryTracking<uint64_t> & hashes);
     };
 
     /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
@@ -864,6 +908,8 @@ private:
         bool build_string_value_filter_mask = true);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// Returns the size of the header. `header` must be default-constructed.
+    size_t decodePageHeader(parq::PageHeader & header, const char * data, size_t size) const;
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
     bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
@@ -873,9 +919,16 @@ private:
     const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
     /// By Parquet column index, nullptr if not parsed. Immutable, ColumnChunk::meta points into them.
-    std::vector<FileColumnChunksPtr> column_chunks;
+    VectorWithMemoryTracking<FileColumnChunksPtr> column_chunks;
     /// See setFileFooter, released by prefilterAndInitRowGroups.
-    std::vector<FileColumnChunksPtr> cached_column_chunks;
+    VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks;
+    SharedFileColumnChunksPtr shared_column_chunks;
+    KeptOffsetIndexesPtr kept_offset_indexes;
+
+    std::mutex read_offset_indexes_mutex;
+    VectorWithMemoryTracking<KeptOffsetIndexes::Entry> read_offset_indexes TSA_GUARDED_BY(read_offset_indexes_mutex);
+    size_t read_offset_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
+    size_t read_column_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
 };
 
 }
