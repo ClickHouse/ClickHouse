@@ -1021,20 +1021,15 @@ struct PlainStringDecoderWithTopKBound : public PlainStringDecoder
         }
 
         auto & col_str = assert_cast<ColumnString &>(col);
-        size_t to_reserve = num_values;
-        if (filter)
-        {
-            to_reserve = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                to_reserve += filter[filter_offset + i];
-        }
+        size_t to_reserve = filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values;
         col_str.reserve(col_str.size() + to_reserve);
 
         top_k_checker.start();
         for (size_t i = 0; i < num_values; ++i)
         {
+            requireRemainingBytes(4);
             UInt32 x = 0;
-            memcpy(&x, data, 4); /// omitting range check because input is padded
+            memcpy(&x, data, 4);
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
             if (!filter || filter[filter_offset + i])
@@ -1747,9 +1742,7 @@ struct DeltaByteArrayDecoderWithTopKBound : public DeltaByteArrayDecoder
         size_t pass_count = num_values;
         if (filter)
         {
-            pass_count = 0;
-            for (size_t i = 0; i < num_values; ++i)
-                pass_count += filter[filter_offset + i];
+            pass_count = countBytesInFilter(filter, filter_offset, filter_offset + num_values);
             if (pass_count == 0)
             {
                 decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
