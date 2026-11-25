@@ -1143,9 +1143,9 @@ void alter(
 
         auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
 
-        /// ClickHouse's copy of the schema may lag other writers, so `IF [NOT] EXISTS` is decided on the latest one.
+        /// `ignore` comes from ClickHouse's copy of the schema, which may lag other writers, so the latest one must agree.
         const auto & command = params[0];
-        if (command.if_exists || command.if_not_exists)
+        if (command.ignore)
         {
             const auto fields = getCurrentSchema(metadata)->getArray(Iceberg::f_fields);
             bool column_exists = false;

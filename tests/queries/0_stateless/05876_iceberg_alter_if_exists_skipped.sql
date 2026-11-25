@@ -31,13 +31,15 @@ SELECT * FROM t ORDER BY x;
 SELECT count(DISTINCT _file) - (SELECT c FROM metadata_files)
 FROM file(concat((SELECT path FROM iceberg_path), 'metadata/*.metadata.json'), 'LineAsString');
 
--- IF [NOT] EXISTS is decided on the latest schema, not on the stale one of `t2`.
+-- A command that the stale schema of `t2` skips still runs when the latest schema needs it.
 ALTER TABLE t DROP COLUMN y;
 SELECT count(DISTINCT _file) - (SELECT c FROM metadata_files)
 FROM file(concat((SELECT path FROM iceberg_path), 'metadata/*.metadata.json'), 'LineAsString');
 ALTER TABLE t2 ADD COLUMN IF NOT EXISTS y DEFAULT 'a'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t2 ADD COLUMN IF NOT EXISTS y Nullable(String);
 ALTER TABLE t ADD COLUMN z Nullable(Int64);
+-- `t2` does not see `z` yet, so its `IF NOT EXISTS` is not skipped and fails, as before, on the latest schema.
+ALTER TABLE t2 ADD COLUMN IF NOT EXISTS z Nullable(String); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t2 DROP COLUMN IF EXISTS z;
 
 DESCRIBE TABLE t SETTINGS describe_compact_output = 1;
