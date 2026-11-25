@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-QUERY_ID="${CLICKHOUSE_DATABASE}_status_poll_failure"
+QUERY_ID="${CLICKHOUSE_DATABASE}_status_poll_error"
 
 # Polls until the query `$1` returns 1, for at most 60 seconds.
 function wait_for()
@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "SELECT count(), sum(c) FROM (
     distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 2, enable_analyzer = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, enable_cascades_optimizer = 0, max_rows_to_group_by = 0,
     max_threads = 1, max_block_size = 1000, function_sleep_max_microseconds_per_block = 0, max_execution_time = 30" 2>&1 \
-    | grep -o -m1 -E "FAULT_INJECTED|TIMEOUT_EXCEEDED" > "${CLICKHOUSE_TMP}/status_poll_failure_error" &
+    | grep -o -m1 -E "FAULT_INJECTED|TIMEOUT_EXCEEDED" > "${CLICKHOUSE_TMP}/status_poll_error_code" &
 CLIENT_PID=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT distributed_plan_status_poll_pause_before_snapshot PAUSE"
@@ -53,4 +53,4 @@ $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT distributed_plan_status_poll
 wait $CLIENT_PID
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT distributed_plan_status_poll_pause_before_snapshot"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT distributed_plan_status_poll_snapshot_fault"
-cat "${CLICKHOUSE_TMP}/status_poll_failure_error"
+cat "${CLICKHOUSE_TMP}/status_poll_error_code"
