@@ -786,20 +786,29 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
     return listen_try;
 }
 
-/// Whether listeners on the same port and these hosts conflict: the same address, or a wildcard that covers the other one.
-/// An IPv6 wildcard socket is dual-stack.
+/// Whether listeners on the same port and these hosts conflict whatever `IPV6_V6ONLY` is: the same address, or a wildcard that covers
+/// the other one. An IPv4-mapped address binds its IPv4 address, and an IPv6 wildcard covers IPv4 only without `IPV6_V6ONLY`.
 bool listenHostsOverlap(const std::string & lhs, const std::string & rhs)
 {
-    Poco::Net::IPAddress lhs_address;
-    Poco::Net::IPAddress rhs_address;
-    if (!Poco::Net::IPAddress::tryParse(lhs, lhs_address) || !Poco::Net::IPAddress::tryParse(rhs, rhs_address))
+    using Poco::Net::IPAddress;
+    IPAddress lhs_address;
+    IPAddress rhs_address;
+    if (!IPAddress::tryParse(lhs, lhs_address) || !IPAddress::tryParse(rhs, rhs_address))
         return lhs == rhs;
 
-    const auto covers = [](const Poco::Net::IPAddress & wildcard, const Poco::Net::IPAddress & address)
+    const auto unmapped = [](const IPAddress & address)
     {
-        return wildcard.isWildcard() && (wildcard.family() == address.family() || wildcard.family() == Poco::Net::IPAddress::IPv6);
+        if (address.family() == IPAddress::IPv6 && address.isIPv4Mapped())
+            return IPAddress(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+        return address;
     };
-    return lhs_address == rhs_address || covers(lhs_address, rhs_address) || covers(rhs_address, lhs_address);
+    const auto covers = [&](const IPAddress & wildcard, const IPAddress & address)
+    {
+        if (wildcard.isWildcard() && wildcard.family() == IPAddress::IPv6)
+            return address.family() == IPAddress::IPv6;
+        return unmapped(wildcard).isWildcard() && unmapped(address).family() == IPAddress::IPv4;
+    };
+    return unmapped(lhs_address) == unmapped(rhs_address) || covers(lhs_address, rhs_address) || covers(rhs_address, lhs_address);
 }
 
 #if USE_GRPC || USE_ARROWFLIGHT
