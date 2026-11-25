@@ -1036,6 +1036,23 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Whether the actions do work on every row, as opposed to the header plumbing of
+/// `convertAndFilterSourceStream`: renames, constants, and `materialize` of a constant.
+static bool computesPerRow(const ActionsDAG & actions)
+{
+    for (const auto & action : actions.getNodes())
+    {
+        if (action.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return true;
+
+        if (action.type == ActionsDAG::ActionType::FUNCTION
+            && !(action.function_base && action.function_base->getName() == "materialize"))
+            return true;
+    }
+
+    return false;
+}
+
 /// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
 /// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
 /// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
@@ -1059,14 +1076,17 @@ static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool
         return;
     }
 
-    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
-    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
-    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
-    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
-    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
-    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
-    /// materialization, missing defaults) - counting them would disable
-    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    /// The outer query's own expressions (e.g. a monotonic `ORDER BY` key) stay above
+    /// `ReadFromMerge`, where `findReadingStep` sees them and forwards the opt-out via
+    /// `ReadFromMerge::setPreferMultipleStreams`. The `ExpressionStep`s of a child plan are added
+    /// by `convertAndFilterSourceStream`. Most of them are header plumbing (renames, constants,
+    /// `materialize`), and counting those would disable `PrefetchingConcatProcessor` for every
+    /// read of a `Merge` table. But some compute per row: the expression of an `ALIAS` column of
+    /// the child table, a cast to the type of the `Merge` table, a subcolumn extraction. Those must
+    /// keep one instance per read stream, like a residual filter.
+    if (const auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        passed_residual_cpu_step = passed_residual_cpu_step || computesPerRow(expression_step->getExpression());
+
     passed_residual_cpu_step = passed_residual_cpu_step
         || typeid_cast<FilterStep *>(node->step.get()) != nullptr
         || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
