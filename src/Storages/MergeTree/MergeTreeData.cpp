@@ -16351,7 +16351,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, getMinMaxColumns(*metadata_snapshot, getSettings()));
+    minmax_idx->update(block, getMinMaxColumns(*metadata_snapshot, getSettings()), metadata_snapshot->getColumns());
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     VolumePtr volume = getStoragePolicy()->getVolume(0);

@@ -309,7 +309,7 @@ MergeTreePartMinMaxIndex::WrittenFiles MergeTreePartMinMaxIndex::store(
     return written_files;
 }
 
-void MergeTreePartMinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
+void MergeTreePartMinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update, const ColumnsDescription & table_columns)
 {
     if (block.rows() == 0)
         return;
@@ -322,7 +322,11 @@ void MergeTreePartMinMaxIndex::update(const Block & block, const NamesAndTypesLi
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        /// Next to a `Map` column `a` and a `Tuple` column `a.key_x`, the subcolumn `a.key_x.y` is the element
+        /// of `a.key_x`, not a subcolumn of the value of the key `x.y` of `a`.
+        const ColumnWithTypeAndName column_and_type = block.has(column_name)
+            ? block.getByName(column_name)
+            : table_columns.getSubcolumnFromBlock(block, column_name);
         const auto & src_column = column_and_type.column;
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL

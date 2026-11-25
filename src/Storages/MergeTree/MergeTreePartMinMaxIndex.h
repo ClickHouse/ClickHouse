@@ -12,6 +12,7 @@ namespace DB
 {
 
 class Block;
+class ColumnsDescription;
 class IDataPartStorage;
 class IDataType;
 class IMergeTreeDataPart;
@@ -54,7 +55,9 @@ public:
     [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
     [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
-    void update(const Block & block, const NamesAndTypesList & columns);
+    /// A column of the index that the block does not hold by its name is a subcolumn. It is taken from the column
+    /// that the table gives the name (`table_columns`), as the partition key expression takes it.
+    void update(const Block & block, const NamesAndTypesList & columns, const ColumnsDescription & table_columns);
     void merge(const MergeTreePartMinMaxIndex & other);
 
     /// Repair the block column ranges of an index inherited from `source_part` when that part does not

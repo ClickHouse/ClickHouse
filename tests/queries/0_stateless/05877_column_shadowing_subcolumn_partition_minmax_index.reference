@@ -1,0 +1,15 @@
+-- INSERT
+0
+1
+1
+0
+-- mutation
+1
+1
+-- merge
+1
+1
+0
+-- a merge that may reduce rows
+1
+1

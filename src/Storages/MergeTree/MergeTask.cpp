@@ -2079,7 +2079,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
             /// incrementally-built minmax index in the parts arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns);
+            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns, global_ctx->metadata_snapshot->getColumns());
         }
 
         calculateProjections(block, starting_offset);

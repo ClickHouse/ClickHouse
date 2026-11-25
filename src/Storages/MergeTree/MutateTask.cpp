@@ -3266,7 +3266,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns, ctx->metadata_snapshot->getColumns());
 
         if (!ctx->statistics_to_build.empty())
             ctx->statistics_to_build.buildIfExists(cur_block);
