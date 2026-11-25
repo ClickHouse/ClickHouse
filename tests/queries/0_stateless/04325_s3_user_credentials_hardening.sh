@@ -172,7 +172,8 @@ $CLICKHOUSE_CLIENT -m -q "
 
 # `from_env` placeholders resolve to the server's environment, so they must not
 # satisfy the explicit-credentials requirement even with dynamic_disk_allow_from_env.
-# A `from_env` disk type could hide an S3 disk, so it is treated as S3 and rejected.
+# A `from_env` disk type could hide an S3 disk, so without explicit literal credentials it is treated as S3 and
+# rejected. (With a literal key pair it is checked against the resolved configuration instead.)
 $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -m -q "
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS disk = disk(name = '${DISK}_env', type = s3,
@@ -180,8 +181,7 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -m -q "
         access_key_id = 'from_env ${DB}_AKID', secret_access_key = 'from_env ${DB}_SAK'); -- { serverError ACCESS_DENIED }
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS disk = disk(name = '${DISK}_indirect_type', type = 'from_env ${DB}_DISK_TYPE',
-        endpoint = 'http://localhost:11111/test/${DB}_indirect_type/',
-        access_key_id = 'k', secret_access_key = 's'); -- { serverError ACCESS_DENIED }
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_type/'); -- { serverError ACCESS_DENIED }
 "
 
 # `include` could pull S3 credentials from server config into a user-created disk.

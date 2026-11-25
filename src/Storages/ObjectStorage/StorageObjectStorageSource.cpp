@@ -2756,6 +2756,17 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
     }
 
+    /// The filesystem cache key has no identity of the credentials either, so a cached native GCS read is authorized
+    /// the same way: a listing needs only `storage.objects.list`, and the size and generation it returns do not prove
+    /// that this reader may read the object another identity has put into the cache.
+    if (use_filesystem_cache && object_storage->getType() == ObjectStorageType::GCS && !metadata_is_fetched_by_this_read)
+    {
+        ObjectAttributes tags = std::move(object_info.metadata->tags);
+        object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+        object_info.metadata->tags = std::move(tags);
+        metadata_is_fetched_by_this_read = true;
+    }
+
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {
         LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");

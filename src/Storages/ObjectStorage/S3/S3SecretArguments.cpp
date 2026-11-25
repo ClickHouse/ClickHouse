@@ -27,9 +27,11 @@ namespace
 /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
 constexpr std::string_view extra_credentials_visible_keys[] = {"role_arn"};
 
+/// `service_account_key` and `access_token` are native GCS credentials of the `gcs` table function, which shares this
+/// argument grammar. They are masked even where they are rejected: the query is logged before validation.
 constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
-       "external_id", "role_session_name"};
+       "external_id", "role_session_name", "service_account_key", "access_token"};
 
 /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
 /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before
