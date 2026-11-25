@@ -186,8 +186,11 @@ ALTER TABLE t_clear_block_r1 CLEAR COLUMN _block_number;
 SYSTEM SYNC REPLICA t_clear_block_r2;
 
 SELECT 'replicated';
-SELECT 'r1', id, _block_number, _block_offset FROM t_clear_block_r1 ORDER BY id;
-SELECT 'r2', id, _block_number, _block_offset FROM t_clear_block_r2 ORDER BY id;
+-- The first block number of a replicated table depends on the environment, so it is compared with the one of the part.
+SELECT 'r1', id, _block_number = (SELECT min_block_number FROM system.parts WHERE database = currentDatabase() AND table = 't_clear_block_r1' AND active), _block_offset
+FROM t_clear_block_r1 ORDER BY id;
+SELECT 'r2', id, _block_number = (SELECT min_block_number FROM system.parts WHERE database = currentDatabase() AND table = 't_clear_block_r2' AND active), _block_offset
+FROM t_clear_block_r2 ORDER BY id;
 
 DROP TABLE t_clear_block_r1;
 DROP TABLE t_clear_block_r2;
