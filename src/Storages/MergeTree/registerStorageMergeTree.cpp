@@ -54,6 +54,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool enable_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -1252,6 +1253,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         merging_params.allow_tuple_element_aggregation = false;
     }
+
+    /// Before construction, which creates directories and Keeper nodes that a rejected definition would leave behind.
+    validateColumnsAgainstVirtuals(
+        metadata.columns,
+        MergeTreeData::createVirtuals(metadata.hasPartitionKey() ? &metadata.partition_key : nullptr),
+        !local_settings[Setting::allow_reserved_column_names] && !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()),
+        args.engine_name);
 
     if (replicated)
     {

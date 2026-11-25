@@ -3,6 +3,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
     extern const int UNKNOWN_SETTING;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -62,6 +64,39 @@ bool isReplayedTableDefinition(
 {
     return !isFreshDefinition(mode) || query.attach_short_syntax || isSecondaryDDLReplay(local_context)
         || local_context->isRecoveryFromStoredMetadata();
+}
+
+
+void validateColumnsAgainstVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, bool reject_reserved_names, const String & engine_name)
+{
+    for (const auto & column : columns)
+    {
+        if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                column.name, engine_name);
+        }
+
+        /// An EPHEMERAL column cannot shadow a virtual one: the header would take its type, the data the virtual's.
+        if (column.default_desc.kind == ColumnDefaultKind::Ephemeral
+            && virtuals.tryGet(column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with ephemeral column '{}' for {} engines "
+                "because it conflicts with a virtual column of the same name",
+                column.name, engine_name);
+        }
+
+        if (reject_reserved_names && virtuals.has(column.name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
+                "Use another name or enable the setting `allow_reserved_column_names`",
+                column.name, engine_name);
+        }
+    }
 }
 
 

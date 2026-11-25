@@ -2754,35 +2754,7 @@ void validateVirtualColumns(IStorage & storage, const ASTCreateQuery & create, L
     /// NOLINT(storage-cast): the storage `StorageFactory` has just built, never a proxy.
     const bool reject_reserved_names = dynamic_cast<const MergeTreeData *>(&storage)
         && !context->getSettingsRef()[Setting::allow_reserved_column_names] && !isReplayedTableDefinition(mode, create, context);
-    for (const auto & storage_column : metadata->columns)
-    {
-        if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
-                storage_column.name, storage.getName());
-        }
-
-        /// An EPHEMERAL user column has no physical storage and no read-time expression,
-        /// so it cannot properly shadow a virtual column of the same name.
-        /// This leads to a type mismatch: the Block header uses the user column's type
-        /// while the data comes from the virtual column (which may have a different type).
-        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral && metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with ephemeral column '{}' for {} engines "
-                "because it conflicts with a virtual column of the same name",
-                storage_column.name, storage.getName());
-        }
-
-        if (reject_reserved_names && metadata->virtuals.has(storage_column.name))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with column '{}' for {} engines because it is reserved for a virtual column. "
-                "Use another name or enable the setting `allow_reserved_column_names`",
-                storage_column.name, storage.getName());
-        }
-    }
+    validateColumnsAgainstVirtuals(metadata->columns, metadata->virtuals, reject_reserved_names, storage.getName());
 }
 
 void validateStorage(IStorage & storage, const ASTCreateQuery & create, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)

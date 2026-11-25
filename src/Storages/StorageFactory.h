@@ -26,6 +26,7 @@ class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
+class VirtualColumnsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -221,6 +222,11 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
+/// Rejects columns that conflict with the virtual columns of the storage. Engines that know their virtual columns
+/// from the definition call it before construction, so that a rejected definition leaves no state behind.
+void validateColumnsAgainstVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, bool reject_reserved_names, const String & engine_name);
 
 /// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
 /// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
