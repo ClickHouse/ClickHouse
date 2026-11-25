@@ -7356,7 +7356,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.11", false, true, "Enables cache of ORC file metadata (serialized file tail)."}) \
+        {"26.12", false, true, "Enables cache of ORC file metadata (serialized file tail)."}) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Minimum time of delay between 2 background compaction operations.
 )", 0, \

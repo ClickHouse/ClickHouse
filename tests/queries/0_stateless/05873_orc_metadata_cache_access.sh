@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # no-fasttest: requires an `ORC`-enabled build.
+# no-parallel: the test clears the process-wide ORC metadata cache.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

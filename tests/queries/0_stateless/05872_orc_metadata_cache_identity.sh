@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings
+# Tags: no-fasttest, no-random-settings, no-parallel
 # no-fasttest: requires an `ORC`-enabled build and a local HTTP server.
 # no-random-settings: the cache and count settings are part of the regression.
+# no-parallel: the test clears the process-wide ORC metadata cache.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
