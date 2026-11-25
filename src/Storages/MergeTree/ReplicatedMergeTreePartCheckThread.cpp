@@ -451,7 +451,8 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                 throw;
 
             PreformattedMessage message;

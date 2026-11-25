@@ -17,6 +17,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
@@ -28,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <memory>
 #include <mutex>
 
@@ -87,6 +89,12 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char query_status_cancel_with_injected_exception[];
 }
 
 
@@ -681,6 +689,15 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
+    if (reason == CancelReason::CANCELLED_BY_USER && !exception)
+    {
+        fiu_do_on(FailPoints::query_status_cancel_with_injected_exception,
+        {
+            exception = std::make_exception_ptr(
+                Exception(ErrorCodes::FAULT_INJECTED, "Injected query cancellation exception"));
+        });
+    }
+
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
 
@@ -692,7 +709,22 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         is_killed = true;
         cancel_reason = reason;
         /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
-        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
+        if (exception && reason != CancelReason::TIMEOUT)
+        {
+            cancellation_exception = copyMutableException(exception);
+            try
+            {
+                std::rethrow_exception(cancellation_exception);
+            }
+            catch (const Poco::Exception & e)
+            {
+                cancellation_exception_origin = e.origin();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Ok: `copyMutableException` shares non-Poco exceptions, so pointer equality suffices.
+            }
+        }
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -721,22 +753,22 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(UInt64 max_execution_time_us)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
         if (is_killed)
         {
-            String additional_error_part;
-            if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
-
-            if (cancel_reason == CancelReason::TIMEOUT)
-                throw Exception(
+            if (cancel_reason == CancelReason::TIMEOUT && !cancellation_exception)
+            {
+                Exception exception(
                     ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Timeout exceeded: {}maximum: {:.3f} ms",
-                    additional_error_part,
+                    "Timeout exceeded: elapsed {:.3f} ms, maximum: {:.3f} ms",
+                    static_cast<double>(execution_watch.elapsedNanoseconds()) / 1000000ULL,
                     static_cast<double>(max_execution_time_us) / 1000);
+                cancellation_exception_origin = exception.origin();
+                cancellation_exception = std::make_exception_ptr(std::move(exception));
+            }
             throwQueryWasCancelled();
         }
     }
@@ -748,7 +780,7 @@ void QueryStatus::addPipelineExecutor(IExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
-    throwProperExceptionIfNeeded(max_exec_time, 0);
+    throwProperExceptionIfNeeded(max_exec_time);
 
     std::lock_guard lock(executors_mutex);
     chassert(!executors.contains(e));
@@ -779,7 +811,7 @@ bool QueryStatus::checkTimeLimit()
 bool QueryStatus::checkTimeLimit(OverflowMode mode)
 {
     auto elapsed_ns = execution_watch.elapsed();
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds());
 
     return limits.checkTimeLimit(elapsed_ns, mode);
 }
@@ -788,7 +820,9 @@ void QueryStatus::throwQueryWasCancelled() const
 {
     /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
+    {
         std::rethrow_exception(copyMutableException(cancellation_exception));
+    }
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
@@ -797,7 +831,39 @@ void QueryStatus::throwIfKilled()
 {
     if (!is_killed.load())
         return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), 0);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds());
+}
+
+bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
+{
+    UInt64 stored_origin = 0;
+    {
+        std::lock_guard lock(cancel_mutex);
+        if (!is_killed || !cancellation_exception || !exception)
+            return false;
+
+        if (cancellation_exception == exception)
+            return true;
+
+        stored_origin = cancellation_exception_origin;
+    }
+
+    if (stored_origin == 0)
+        return false;
+
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const Poco::Exception & e)
+    {
+        return e.origin() == stored_origin;
+    }
+    catch (...)
+    {
+        /// Ok: non-Poco exceptions are matched by pointer equality above.
+        return false;
+    }
 }
 
 CancelReason QueryStatus::getCancelReason() const

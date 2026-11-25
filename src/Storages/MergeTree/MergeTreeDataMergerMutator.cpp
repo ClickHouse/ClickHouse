@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Common/BackgroundTaskCancellationException.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
@@ -581,7 +582,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
                 [merge_cancelled]
                 {
                     if (merge_cancelled())
-                        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+                        throw BackgroundTaskCancellationException(ErrorCodes::ABORTED, "Cancelled merging parts");
                 });
         }
     }

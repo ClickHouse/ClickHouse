@@ -2,6 +2,8 @@
 #include <IO/ByteRangeSet.h>
 #include <IO/ReadBufferWrapperBase.h>
 
+#include <Common/BackgroundTaskCancellationException.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -96,14 +98,20 @@ std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
     return std::make_unique<ReadBufferWrapper<ReadBufferPtr>>(*ptr, ReadBufferPtr{ptr});
 }
 
+bool ReadBuffer::isCurrentExceptionCancellation()
+{
+    return CurrentThread::isQueryCancellationException(std::current_exception())
+        || current_exception_cast<const BackgroundTaskCancellationException *>();
+}
+
 void ReadBuffer::cancel()
 {
-    if (std::current_exception())
-        tryLogCurrentException(getLogger("ReadBuffer"), "ReadBuffer is canceled by the exception", LogsLevel::debug);
-    else
-        LOG_DEBUG(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
-
     canceled = true;
+
+    if (!std::current_exception())
+        LOG_DEBUG(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
+    else if (!isCurrentExceptionCancellation())
+        tryLogCurrentException(getLogger("ReadBuffer"), "ReadBuffer is canceled by the exception", LogsLevel::debug);
 }
 
 bool ReadBuffer::next()

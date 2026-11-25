@@ -1,0 +1,9 @@
+plain part kill 0: preserved
+plain projection timeout 1: preserved
+replicated part timeout 0: preserved
+replicated projection kill 1: preserved
+replicated projection injected 0: preserved
+replicated projection_serialization timeout 1: preserved
+load_data_part_before_metadata_read: preserved
+load_projection_before_metadata_read: preserved
+cache and data preserved

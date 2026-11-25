@@ -15,7 +15,9 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -63,6 +65,13 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char check_data_part_before_projection_read[];
+    extern const char check_data_part_before_serialization_read[];
+    extern const char merge_tree_reader_pause_before_report_broken[];
 }
 
 
@@ -206,6 +215,14 @@ bool isQueryCancellation(std::exception_ptr exception_ptr)
     }
 }
 
+bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_reader_pause_before_report_broken);
+    return !isRetryableException(exception_ptr)
+        && !isQueryCancellation(exception_ptr)
+        && !CurrentThread::isQueryCancellationException(exception_ptr);
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -283,12 +300,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         try
         {
+            FailPointInjection::pauseFailPoint(FailPoints::check_data_part_before_serialization_read);
             auto serialization_file = read_file(data_part_storage, IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
-            if (isIOErrorException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isIOErrorException(exception))
                 throw;
 
             throw Exception(
@@ -468,6 +487,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
+            FailPointInjection::pauseFailPoint(FailPoints::check_data_part_before_projection_read);
+
             bool noop = false;
             auto projection_storage = data_part_storage.getProjection(projection_file);
 
@@ -495,7 +516,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                 throw;
 
             is_broken_projection = true;
@@ -673,7 +695,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception))
+                throw;
+
+            if (isRetryableException(exception))
             {
                 LOG_DEBUG(
                     getLogger("checkDataPart"),
@@ -712,7 +738,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     catch (...)
     {
-        if (isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception))
+            throw;
+
+        if (isRetryableException(exception))
         {
             LOG_DEBUG(
                 getLogger("checkDataPart"),
