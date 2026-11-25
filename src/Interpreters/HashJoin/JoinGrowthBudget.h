@@ -27,7 +27,7 @@ inline constexpr size_t SPILL_THRESHOLD_DIVISOR = 2;
   * build also takes the smaller table. The buckets that already grew are not counted again: their growth joins the byte
   * counts when their insert ends. The hash tables of a join with several disjuncts grow at their own rates, so a hash table
   * counts only once one of its buckets has reached that size: a hash table that grows with this one has reached it when
-  * half full, and one whose keys stay few never does.
+  * half full, and one whose keys stay few stays at the size it was reserved at.
   *
   * The step is judged against two limits:
   *  - the spill threshold, see `SPILL_THRESHOLD_DIVISOR`;
