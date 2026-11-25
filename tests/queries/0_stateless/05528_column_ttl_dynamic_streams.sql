@@ -41,20 +41,21 @@ ALTER TABLE t_ttl_dynamic MATERIALIZE TTL SETTINGS mutations_sync = 2;
 ALTER TABLE t_ttl_json MATERIALIZE TTL SETTINGS mutations_sync = 2;
 ALTER TABLE t_ttl_dynamic_future MATERIALIZE TTL SETTINGS mutations_sync = 2;
 
--- A TTL merge writes the whole part.
+-- A TTL merge writes the whole part. Background merges are disabled, so each table gets exactly one merge,
+-- by `OPTIMIZE`: a later merge would clean up the expired column on its own, and the part level changes
+-- the serialization of `_block_offset`, so the parts of different tables would not be comparable.
 
 CREATE TABLE t_ttl_merge_string (id UInt64, ts DateTime, c String TTL ts + INTERVAL 1 DAY)
-ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '',
+    max_number_of_merges_with_ttl_in_pool = 0, min_parts_to_merge_at_once = 3;
 
 CREATE TABLE t_ttl_merge_dynamic (id UInt64, ts DateTime, c Dynamic TTL ts + INTERVAL 1 DAY)
-ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '',
+    max_number_of_merges_with_ttl_in_pool = 0, min_parts_to_merge_at_once = 3;
 
 CREATE TABLE t_ttl_merge_json (id UInt64, ts DateTime, c JSON TTL ts + INTERVAL 1 DAY)
-ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
-
-SYSTEM STOP MERGES t_ttl_merge_string;
-SYSTEM STOP MERGES t_ttl_merge_dynamic;
-SYSTEM STOP MERGES t_ttl_merge_json;
+ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '',
+    max_number_of_merges_with_ttl_in_pool = 0, min_parts_to_merge_at_once = 3;
 
 INSERT INTO t_ttl_merge_string SELECT 1, toDateTime('2020-01-01 00:00:00'), 'hello';
 INSERT INTO t_ttl_merge_string SELECT 2, toDateTime('2020-01-01 00:00:00'), 'world';
@@ -62,10 +63,6 @@ INSERT INTO t_ttl_merge_dynamic SELECT 1, toDateTime('2020-01-01 00:00:00'), CAS
 INSERT INTO t_ttl_merge_dynamic SELECT 2, toDateTime('2020-01-01 00:00:00'), CAST(42, 'Dynamic');
 INSERT INTO t_ttl_merge_json SELECT 1, toDateTime('2020-01-01 00:00:00'), '{"a" : 1, "c" : [1, 2]}';
 INSERT INTO t_ttl_merge_json SELECT 2, toDateTime('2020-01-01 00:00:00'), '{"b" : "x"}';
-
-SYSTEM START MERGES t_ttl_merge_string;
-SYSTEM START MERGES t_ttl_merge_dynamic;
-SYSTEM START MERGES t_ttl_merge_json;
 
 OPTIMIZE TABLE t_ttl_merge_string FINAL;
 OPTIMIZE TABLE t_ttl_merge_dynamic FINAL;
