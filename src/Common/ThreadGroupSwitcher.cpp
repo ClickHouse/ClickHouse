@@ -26,6 +26,11 @@ ThreadGroupPtr getCurrentThreadGroup()
     return current_thread->getThreadGroup();
 }
 
+bool hasThreadStatus()
+{
+    return current_thread != nullptr;
+}
+
 ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {

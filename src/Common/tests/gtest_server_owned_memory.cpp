@@ -124,4 +124,24 @@ TEST(ServerOwnedMemory, AttachedJobDroppedUnrunReleasesCapturesInQuery)
     t.join();
 }
 
+/// A job dropped on a thread that never got a `ThreadStatus`, like a global pool worker that failed to set one up, cannot
+/// attach to the group of its query, and releases what it captured as it is.
+TEST(ServerOwnedMemory, AttachedJobDroppedWithoutThreadStatus)
+{
+    std::function<void()> job;
+    std::thread scheduler([&]
+    {
+        ThreadStatus ts;
+        auto group = std::make_shared<ThreadGroup>(getContext().context, 0);
+        CurrentThread::attachToGroupIfDetached(group);
+        job = attachedJob(ThreadName::UNKNOWN, [buffer = std::vector<char>(1 << 10, 'x')] {});
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    scheduler.join();
+
+    std::thread raw([&] { job = {}; });
+    raw.join();
+    EXPECT_FALSE(job);
+}
+
 }

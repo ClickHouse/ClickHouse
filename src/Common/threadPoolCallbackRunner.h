@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <algorithm>
 #include <Common/Exception.h>
 #include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
@@ -223,8 +224,9 @@ private:
 
         ~JobState()
         {
-            /// Not run (cancelled, or dropped by the pool): what the callback captured is the query's, so release it there.
-            if (!thread_group)
+            /// Not run (cancelled, or dropped by the pool): what the callback captured is the query's, so release it there,
+            /// unless the thread has no `ThreadStatus` to attach.
+            if (!thread_group || !hasThreadStatus())
                 return;
             ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
             callback = {};
@@ -377,6 +379,9 @@ public:
 
     void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
+        /// Grow before scheduling: a task the pool accepted has to be tracked, so that it is waited for.
+        if (tasks.size() == tasks.capacity())
+            tasks.reserve(std::max<size_t>(1, tasks.size() * 2));
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 

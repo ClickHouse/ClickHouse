@@ -572,11 +572,14 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         try
         {
-            /// A worker frees what the job holds besides the callable after detaching, so it is the server's.
+            /// A worker frees what the job holds besides the callable after detaching, so it is the server's. The callable
+            /// is moved in after, so that it stays the caller's when this throws; if the queue does, it is released like
+            /// on the worker.
             std::optional<JobWithPriority> job_with_priority;
+            SCOPE_EXIT({ if (job_with_priority) releaseJob(job_with_priority); });
             {
                 ServerOwnedMemoryScope server_owned;
-                job_with_priority.emplace(std::move(job),
+                job_with_priority.emplace(Job{},
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -587,6 +590,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
             }
+            job_with_priority->job = std::move(job);
             jobs.emplace(std::move(*job_with_priority));
 
             ++scheduled_jobs;

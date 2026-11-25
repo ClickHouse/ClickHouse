@@ -23,6 +23,9 @@ class ThreadStatus;
 /// This is equivalent to CurrentThread::getGroup() but avoids including CurrentThread.h.
 ThreadGroupPtr getCurrentThreadGroup();
 
+/// Whether the current thread has a `ThreadStatus`, so that it can attach to a group.
+bool hasThreadStatus();
+
 /**
  * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
  *
@@ -68,7 +71,8 @@ auto attachedJob(ThreadName thread_name, F && f)
         ~State()
         {
             /// Not run: dropped by the pool, or after a failed schedule on the scheduling thread, where this does nothing.
-            if (!f)
+            /// A thread without a `ThreadStatus` cannot attach, and releases it as it is.
+            if (!f || !hasThreadStatus())
                 return;
             ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
             f.reset();
