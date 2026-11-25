@@ -1558,16 +1558,21 @@ namespace
 {
 
 std::pair<size_t, size_t> sampleAutoFingerprintKeys(
-    const ScatteredBlock & block, const ColumnUInt64 & keys, const HashJoinTable & table, size_t limit,
-    std::span<UInt64> sampled_keys = {})
+    const ScatteredBlock & block, const ColumnUInt64 & keys, const HashJoinTable & table, std::span<UInt64> sampled_keys)
 {
-    const auto [samples, hits] = table.sampleKey64(block, keys, limit, sampled_keys);
+    const auto [samples, hits] = table.sampleKey64(block, keys, sampled_keys);
     if (samples)
     {
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSampleRows, samples);
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSampleHits, hits);
     }
     return {samples, hits};
+}
+
+size_t countDistinctSampleKeys(std::span<UInt64> keys)
+{
+    std::sort(keys.begin(), keys.end());
+    return std::unique(keys.begin(), keys.end()) - keys.begin();
 }
 
 }
@@ -1629,14 +1634,12 @@ void HashJoin::selectAutoFingerprints([[maybe_unused]] const ScatteredBlock & bl
             != AutoFingerprintPolicy::Reason::Selected)
             return false;
         std::array<UInt64, AutoFingerprintPolicy::initial_sample_rows> sampled_keys{};
-        const auto [samples, hits] = sampleAutoFingerprintKeys(
-            block, *keys, table, AutoFingerprintPolicy::initial_sample_rows, sampled_keys);
-        std::sort(sampled_keys.begin(), sampled_keys.begin() + samples);
-        const size_t distinct = std::unique(sampled_keys.begin(), sampled_keys.begin() + samples) - sampled_keys.begin();
+        const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, sampled_keys);
+        const size_t distinct = countDistinctSampleKeys(std::span(sampled_keys).first(samples));
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialSampleRows, samples);
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialSampleHits, hits);
         ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialDistinctKeys, distinct);
-        if (distinct * 2 < samples)
+        if (distinct * 2 <= samples)
             return false;
         const auto reason = AutoFingerprintPolicy::select(estimated_probe_rows, build_keys, capacity, samples, hits);
         LOG_TEST(log, "{}Automatic fingerprint estimate={}, build={}, capacity={}, sample={}/{}, decision={}",
@@ -1676,10 +1679,17 @@ void HashJoin::monitorAutoFingerprints(const ScatteredBlock & block)
             ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
         return;
     }
-    const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, AutoFingerprintPolicy::monitor_sample_rows);
-    if (samples && hits * AutoFingerprintPolicy::monitor_sample_rows >= AutoFingerprintPolicy::monitor_disable_hits * samples
-        && table.disableFingerprints())
-        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
+    std::array<UInt64, AutoFingerprintPolicy::monitor_sample_rows> sampled_keys;
+    const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, sampled_keys);
+    const bool frequent_hits = samples && hits * AutoFingerprintPolicy::monitor_sample_rows
+        >= AutoFingerprintPolicy::monitor_disable_hits * samples;
+    /// Repeated misses can stay hot in the ordinary table. Short blocks provide little evidence of periodic reuse.
+    if (frequent_hits || (block.rows() >= AutoFingerprintPolicy::min_monitor_rows_for_reuse
+        && countDistinctSampleKeys(std::span(sampled_keys).first(samples)) <= AutoFingerprintPolicy::monitor_max_distinct_for_reuse))
+    {
+        if (table.disableFingerprints())
+            ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
+    }
 }
 
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)

@@ -237,12 +237,10 @@ bool HashJoinTable::hasExclusiveKey64Map() const
 }
 
 std::pair<size_t, size_t> HashJoinTable::sampleKey64(
-    const ScatteredBlock & block, const ColumnUInt64 & keys, size_t limit, std::span<UInt64> sampled_keys) const
+    const ScatteredBlock & block, const ColumnUInt64 & keys, std::span<UInt64> sampled_keys) const
 {
     const size_t rows = block.rows();
-    const size_t samples = std::min(rows, limit);
-    if (!sampled_keys.empty() && sampled_keys.size() < samples)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Insufficient space for hash join key sample");
+    const size_t samples = std::min(rows, sampled_keys.size());
     if (key_type != Type::key64 && key_type != Type::fingerprint_key64)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sample ordinary UInt64 lookup for hash join map type {}", key_type);
     if (!samples)
@@ -252,19 +250,20 @@ std::pair<size_t, size_t> HashJoinTable::sampleKey64(
     {
         auto sample = [&](const auto & map)
         {
-            /// An odd stride visits each position of a power-of-two domain once; reject positions outside the block.
-            /// This avoids measuring duplicate output rows or sampling only a contiguous prefix of the block.
+            /// An odd stride visits every position once. Fold high bits into the low bits so a short
+            /// power-of-two key cycle does not appear distinct just because the sample walks its entire period.
             const size_t mask = std::bit_ceil(rows) - 1;
+            const auto shift = (std::bit_width(mask) + 1) / 2;
             size_t position = 0x243f6a8885a308d3ULL & mask;
             size_t hits = 0;
             size_t sampled = 0;
             while (sampled < samples)
             {
-                if (position < rows)
+                const size_t row = position ^ (position >> shift);
+                if (row < rows)
                 {
-                    const UInt64 key = keys.getData()[block.getSelector()[position]];
-                    if (!sampled_keys.empty())
-                        sampled_keys[sampled] = key;
+                    const UInt64 key = keys.getData()[block.getSelector()[row]];
+                    sampled_keys[sampled] = key;
                     if constexpr (requires { map.findInBase(key); })
                         hits += map.findInBase(key) != nullptr;
                     else

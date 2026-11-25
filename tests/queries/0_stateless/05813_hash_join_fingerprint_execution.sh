@@ -135,6 +135,22 @@ try:
                     assert events.get("HashJoinAutoFingerprint" + key, 0) == expected, (key, events)
                 assert events.get("HashJoinAutoFingerprintProbeEstimate", 0) >= probe_rows, events
                 assert (events.get("HashJoinAutoFingerprintSampleHits", 0) > 0) == phase, events
+        # Each key misses. Stationary reuse should reject preparation; a diverse first
+        # block followed by a 128-key cycle should select and subsequently disable.
+        for label, key_id, selected in (
+            ("stationary", "id % 2048", 0),
+            ("reuse_suffix", f"if(id < {first_block}, id, id % 128)", 1),
+        ):
+            key = f"(({key_id}) + toUInt64({build_rows})) * toUInt64({multiplier})"
+            source = f"(SELECT id, {key} AS k FROM {large_probe} ORDER BY id)"
+            sql = f"SELECT count(), sum(p.id), sum(b.v) FROM {source} p ALL INNER JOIN {large_build} b USING(k)"
+            events = check(label, sql, (0, 0, 0), 4)
+            assert events["JoinProbeTableRowCount"] == probe_rows, events
+            for counter, expected in {"Candidates": 1, "Selected": selected, "Rejected": 1 - selected,
+                                      "Disabled": selected, "InitialSampleRows": 4096, "SampleHits": 0}.items():
+                assert events.get("HashJoinAutoFingerprint" + counter, 0) == expected, (label, counter, events)
+            distinct = events["HashJoinAutoFingerprintInitialDistinctKeys"]
+            assert (distinct == 4096 if selected else 0 < distinct <= 2048), (label, distinct)
     else:
         events = check("auto_uncalibrated", f"SELECT count(),sum(p.id),sum(toUInt128(b.v)) "
                        f"FROM {probe} p ALL INNER JOIN {build} b USING(k)", all_expected, 4)

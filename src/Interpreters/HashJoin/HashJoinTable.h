@@ -613,9 +613,9 @@ public:
     /// Automatic adoption requires exclusive ownership of an ordinary `UInt64` map.
     [[nodiscard]] bool hasExclusiveKey64Map() const;
     /// Samples row-weighted key presence through ordinary lookup, even if fingerprints have been prepared.
-    /// `sampled_keys`, when nonempty, must have room for the sample and receives its keys for diversity checks.
+    /// Writes the sampled keys into the supplied buffer and returns the number sampled and the number of hits.
     [[nodiscard]] std::pair<size_t, size_t> sampleKey64(
-        const ScatteredBlock & block, const ColumnUInt64 & keys, size_t limit, std::span<UInt64> sampled_keys = {}) const;
+        const ScatteredBlock & block, const ColumnUInt64 & keys, std::span<UInt64> sampled_keys) const;
     /// Allocates all metadata before moving cells; call under the join's first-probe barrier, before handles escape.
     void prepareAutoFingerprints();
     [[nodiscard]] bool fingerprintsEnabled() const;

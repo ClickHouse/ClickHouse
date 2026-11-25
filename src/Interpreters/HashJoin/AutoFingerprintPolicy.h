@@ -14,6 +14,9 @@ struct AutoFingerprintPolicy
     static constexpr size_t initial_sample_rows = 4096;
     static constexpr size_t monitor_sample_rows = 128;
     static constexpr size_t monitor_disable_hits = 8;
+    /// Spread the sample over at least eight times its length to observe short key cycles.
+    static constexpr size_t min_monitor_rows_for_reuse = 8 * monitor_sample_rows;
+    static constexpr size_t monitor_max_distinct_for_reuse = 112;
 
     enum class Reason : uint8_t
     {
