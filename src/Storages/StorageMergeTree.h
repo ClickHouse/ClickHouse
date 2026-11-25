@@ -177,6 +177,8 @@ public:
     /// shared ownership keeps the previous object alive for foreground operations still using it.
     std::shared_ptr<MergeTreeDeduplicationLog> getDeduplicationLog() const;
 
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context) override;
+
     /// Called when the deferred fsync of an inserted part failed, see `DeferredPartsSync`. Its data may not be durable,
     /// so the part is moved to `detached` with the prefix `fsync-failed`, and it is removed from the deduplication log,
     /// so that a retry of the insert writes the data again, even after a restart of the server.
