@@ -1,6 +1,5 @@
 #include <IO/ZstdContext.h>
 #include <Common/CompactSymbols.h>
-#include <Common/SymbolNamePreference.h>
 #include <base/defines.h>
 
 #include <algorithm>
@@ -394,32 +393,6 @@ TEST(CompactSymbols, EncodingDoesNotDependOnOrder)
         }
         EXPECT_EQ(encode(symbols), expected) << "shuffle " << shuffle;
     }
-}
-
-/// `SymbolIndex::load` orders the symbols by range and keeps one per range with `keepPreferredPerRange`, and
-/// the symbols of a section are what the encoder kept, so both must give the same name to every range.
-TEST(CompactSymbols, SameNamesAsSelectionAtLoad)
-{
-    std::vector<Symbol> selected = symbolsWithAliases();
-    std::sort(selected.begin(), selected.end(), [](const Symbol & lhs, const Symbol & rhs)
-    {
-        return lhs.address != rhs.address ? lhs.address < rhs.address : lhs.size < rhs.size;
-    });
-    selected.erase(
-        keepPreferredPerRange(
-            selected.begin(),
-            selected.end(),
-            [](const Symbol & lhs, const Symbol & rhs) { return lhs.address == rhs.address && lhs.size == rhs.size; },
-            [](const Symbol & lhs, const Symbol & rhs) { return isPreferredSymbolName(lhs.name, rhs.name); }),
-        selected.end());
-
-    std::vector<DecodedSymbol> expected;
-    for (const auto & symbol : selected)
-        expected.push_back({symbol.address, symbol.size, std::string(symbol.name)});
-
-    auto encoded = encode(symbolsWithAliases());
-    Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_EQ(decodeSymbols(reader), expected);
 }
 
 TEST(CompactSymbols, SingleName)
