@@ -2764,7 +2764,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         ObjectAttributes tags = std::move(object_info.metadata->tags);
         object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
         object_info.metadata->tags = std::move(tags);
-        metadata_is_fetched_by_this_read = true;
     }
 
     if (use_page_cache && !object_info.metadata->getContentCacheToken())
