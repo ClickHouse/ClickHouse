@@ -1161,6 +1161,8 @@ static void splitAndModifyMutationCommands(
             if (!mutated_columns.contains(column.name))
             {
                 /// Historical part columns that became `EPHEMERAL` or `ALIAS` are omitted from the rewrite.
+                ///   ALTER TABLE t MODIFY COLUMN a UInt64 EPHEMERAL;
+                //    ALTER TABLE t RENAME COLUMN a TO a_old;
                 if (table_columns.has(column.name) && !table_columns.hasPhysical(column.name))
                     continue;
 
@@ -1430,9 +1432,8 @@ static void splitAndModifyMutationCommands(
         }
     }
 
-    /// A secondary replica can have only historical nonphysical columns after replaying an `ALTER`.
-    /// Both full rewrites and partial `Wide` mutations must materialize a physical column before
-    /// discarding the last stored row-count source.
+    /// After replaying an `ALTER`, a secondary replica's old part may store only columns now declared `EPHEMERAL` or `ALIAS`.
+    /// Before removing them, materialize a remaining physical column to preserve the rows. This applies to both full rewrites and partial `Wide` mutations.
     auto is_removed = [&](const String & name)
     {
         auto removes_column = [&](const auto & command)
@@ -1449,6 +1450,7 @@ static void splitAndModifyMutationCommands(
         return !is_removed(name_in_table)
             && (table_columns.hasPhysical(name_in_table) || metadata_snapshot->virtuals.has(name_in_table));
     });
+    /// Will the part retain a stored column that can preserve its rows?
     if (!has_stored_column)
     {
         for (const auto & column : table_columns.getAllPhysical())
@@ -1461,6 +1463,7 @@ static void splitAndModifyMutationCommands(
                 return command.type == MutationCommand::READ_COLUMN && command.column_name == column.name;
             });
             if (!already_read)
+                /// If not, materialize one
                 for_interpreter.push_back(
                 {
                     .type = MutationCommand::READ_COLUMN,
