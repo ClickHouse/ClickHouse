@@ -70,14 +70,14 @@ DatabaseRemote::DatabaseRemote(
     const String & database_name_,
     const String & remote_database_,
     const String & username_,
-    const String & password_,
+    std::string_view password_,
     ClusterPtr cluster_,
     ClusterPtr remote_only_cluster_,
     bool secure_,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , remote_database(remote_database_)
     , log(getLogger("DatabaseRemote(" + database_name_ + ")"))
     , metadata_path(metadata_path_)
@@ -940,7 +940,7 @@ ASTPtr DatabaseRemote::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define->clone());
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -998,7 +998,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by
     /// inserting the remote table name right after the remote database name.
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
@@ -1020,7 +1020,7 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
                     make_intrusive<ASTLiteral>(remote_database),
                     make_intrusive<ASTLiteral>(table_name),
                     make_intrusive<ASTLiteral>(username),
-                    make_intrusive<ASTLiteral>(password)};
+                    make_intrusive<ASTLiteral>(String(password))};
                 if (has_implicit_sharding_key)
                     engine_arguments.push_back(makeASTFunction("rand"));
             }
@@ -1123,19 +1123,31 @@ struct DatabaseRemoteClusters
 /// self-connection; this matches the well-tested behavior of the `remote` table function and the
 /// `Remote` storage engine and, as for them, means the stored credentials are honored only for
 /// genuinely remote shards.
-static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
+/// `limit_total_addresses` is unset when the server loads a definition it stored itself: it has to load
+/// even if it was accepted by an older version, see `parseRemoteDescriptionWithFailover`.
+static DatabaseRemoteClusters buildClusters(
+    const String & cluster_description,
+    const String & username,
+    std::string_view password,
+    bool secure,
+    bool limit_total_addresses,
+    ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-    Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+    const RemoteDescriptionCaller caller{
+        secure ? "Database engine 'RemoteSecure'" : "Database engine 'Remote'",
+        TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+        /*listing_alternative=*/ {}};
+    /// The limit applies to the total number of addresses, over both the shards and their replicas.
+    auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller, limit_total_addresses);
 
     HostsByShard names;
     names.reserve(shards.size());
-    for (const auto & shard : shards)
+    for (auto & shard : shards)
     {
-        auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses);
-        if (replicas.empty())
+        if (shard.replicas.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
-        names.push_back(std::move(replicas));
+        names.push_back(std::move(shard.replicas));
     }
 
     if (names.empty())
@@ -1204,7 +1216,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         String addresses_expr;
         String remote_database;
         String username = "default";
-        String password;
+        SecretString password;
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
@@ -1226,7 +1238,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             }
             remote_database = named_collection->getAnyOrDefault<String>({"database", "db"}, "default");
             username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
-            password = named_collection->getOrDefault<String>("password", "");
+            password = named_collection->getOrDefault<SecretString>("password");
         }
         else
         {
@@ -1247,7 +1259,10 @@ void registerDatabaseRemote(DatabaseFactory & factory)
                 password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
-        auto clusters = buildClusters(addresses_expr, username, password, secure, args.context);
+        /// A short `ATTACH DATABASE` reads the definition the server stored itself, like loading on startup.
+        const bool is_stored_definition = args.isLoadingFromExistingMetadata() || args.create_query.attach_short_syntax;
+        auto clusters = buildClusters(
+            addresses_expr, username, password, secure, /* limit_total_addresses = */ !is_stored_definition, args.context);
 
         auto database = std::make_shared<DatabaseRemote>(
             args.context,

@@ -14,6 +14,8 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <base/arithmeticOverflow.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -54,9 +56,11 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            for (UInt32 value = starts[i] / time_slot_size, end = (starts[i] + durations[i]) / time_slot_size; value <= end; ++value)
+            /// `start + duration` can leave the `DateTime` range; keep the historical wrapped end.
+            /// The counter is wider than `UInt32` so that it does not wrap after the last slot `UINT32_MAX`.
+            for (UInt64 value = starts[i] / time_slot_size, end = common::addIgnoreOverflow(starts[i], durations[i]) / time_slot_size; value <= end; ++value)
             {
-                result_values.push_back(value * time_slot_size);
+                result_values.push_back(static_cast<UInt32>(value * time_slot_size));
                 ++current_offset;
             }
 
@@ -78,9 +82,11 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            for (UInt32 value = starts[i] / time_slot_size, end = (starts[i] + duration) / time_slot_size; value <= end; ++value)
+            /// `start + duration` can leave the `DateTime` range; keep the historical wrapped end.
+            /// The counter is wider than `UInt32` so that it does not wrap after the last slot `UINT32_MAX`.
+            for (UInt64 value = starts[i] / time_slot_size, end = common::addIgnoreOverflow(starts[i], duration) / time_slot_size; value <= end; ++value)
             {
-                result_values.push_back(value * time_slot_size);
+                result_values.push_back(static_cast<UInt32>(value * time_slot_size));
                 ++current_offset;
             }
 
@@ -102,9 +108,11 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            for (UInt32 value = start / time_slot_size, end = (start + durations[i]) / time_slot_size; value <= end; ++value)
+            /// `start + duration` can leave the `DateTime` range; keep the historical wrapped end.
+            /// The counter is wider than `UInt32` so that it does not wrap after the last slot `UINT32_MAX`.
+            for (UInt64 value = start / time_slot_size, end = common::addIgnoreOverflow(start, durations[i]) / time_slot_size; value <= end; ++value)
             {
-                result_values.push_back(value * time_slot_size);
+                result_values.push_back(static_cast<UInt32>(value * time_slot_size));
                 ++current_offset;
             }
 

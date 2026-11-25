@@ -20,6 +20,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
+    extern const Event FilesystemCacheSkippedBusyPriorityLock;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
     extern const Event FilesystemCacheEvictionSkippedMovingFileSegments;
     extern const Event FilesystemCacheEvictionReusedIterator;
@@ -83,6 +84,7 @@ LRUFileCachePriority::LRUFileCachePriority(
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
     , reserve_eviction_pos(queue.end())
     , background_eviction_pos(queue.end())
+    , promotion_eviction_pos(queue.end())
     , queue_id(randomSeed())
 {
     if (state_)
@@ -562,14 +564,69 @@ bool LRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
     CacheStateGuard &,
     QueueEntryType)
 {
-    const auto & info = eviction_info.get(queue_id);
-    size_t size = info.size_to_evict;
-    size_t elements = info.elements_to_evict;
-
-    if (!size && !elements)
+    if (!eviction_info.get(queue_id).requiresEviction())
         return true;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
+    bool success = false;
+    {
+        auto lock = getPriorityGuard().readLock();
+        success = collectCandidatesForEvictionImpl(eviction_info, stat, res, eviction_cursor, max_candidates_size, lock);
+    }
+    if (!success)
+        logFailedToCollectCandidates(eviction_info, stat);
+    return success;
+}
+
+bool LRUFileCachePriority::tryCollectCandidatesForEviction(
+    EvictionInfo & eviction_info,
+    FileCacheReserveStat & stat,
+    EvictionCandidates & res,
+    EvictionCursor eviction_cursor,
+    size_t max_candidates_size)
+{
+    if (!eviction_info.get(queue_id).requiresEviction())
+        return true;
+
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
+
+    bool success = false;
+    {
+        auto lock = getPriorityGuard().tryReadLock();
+        if (!lock.owns_lock())
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheSkippedBusyPriorityLock);
+            LOG_TEST(log, "Skipped collecting eviction candidates: the priority guard is busy");
+            return false;
+        }
+        success = collectCandidatesForEvictionImpl(eviction_info, stat, res, eviction_cursor, max_candidates_size, lock);
+    }
+    if (!success)
+        logFailedToCollectCandidates(eviction_info, stat);
+    return success;
+}
+
+void LRUFileCachePriority::logFailedToCollectCandidates(const EvictionInfo & eviction_info, const FileCacheReserveStat & stat) const
+{
+    const auto & info = eviction_info.get(queue_id);
+    LOG_TEST(
+        log, "Failed to collect eviction candidates "
+        "(for size: {}, elements: {}, current size: {}, current elements: {}): {}",
+        info.size_to_evict, info.elements_to_evict, getSizeApprox(), getElementsCountApprox(), stat.total_stat.toString());
+}
+
+bool LRUFileCachePriority::collectCandidatesForEvictionImpl(
+    EvictionInfo & eviction_info,
+    FileCacheReserveStat & stat,
+    EvictionCandidates & res,
+    EvictionCursor eviction_cursor,
+    size_t max_candidates_size,
+    const CachePriorityGuard::ReadLock & lock)
+{
+    const auto & info = eviction_info.get(queue_id);
+    const size_t size = info.size_to_evict;
+    const size_t elements = info.elements_to_evict;
 
     auto get_iteration_result = [&]()
     {
@@ -582,8 +639,6 @@ bool LRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
 
         return IterationResult::CONTINUE;
     };
-
-    auto lock = getPriorityGuard().readLock();
 
     const bool use_cursor = eviction_cursor != EvictionCursor::FromHead;
 
@@ -634,20 +689,9 @@ bool LRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
     if (use_cursor)
         setEvictionPos(eviction_cursor, iteration_pos, lock);
 
-    lock.unlock();
-
-    const bool success = (max_candidates_size && res.size() >= max_candidates_size)
+    return (max_candidates_size && res.size() >= max_candidates_size)
         || ((!size || stat.total_stat.releasable_size >= size)
             && (!elements || stat.total_stat.releasable_count >= elements));
-
-    if (!success)
-    {
-        LOG_TEST(
-            log, "Failed to collect eviction candidates "
-            "(for size: {}, elements: {}, current size: {}, current elements: {}): {}",
-            size, elements, getSizeApprox(), getElementsCountApprox(), stat.total_stat.toString());
-    }
-    return success;
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
@@ -898,6 +942,7 @@ void LRUFileCachePriority::shuffle()
     auto lock = getPriorityGuard().writeLock();
     chassert(TSA_SUPPRESS_WARNING_FOR_READ(reserve_eviction_pos) == queue.end());
     chassert(TSA_SUPPRESS_WARNING_FOR_READ(background_eviction_pos) == queue.end());
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(promotion_eviction_pos) == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -977,6 +1022,8 @@ LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(Evi
             return reserve_eviction_pos;
         case EvictionCursor::Background:
             return background_eviction_pos;
+        case EvictionCursor::Promotion:
+            return promotion_eviction_pos;
         case EvictionCursor::FromHead:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
     }
@@ -990,6 +1037,8 @@ const LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionP
             return reserve_eviction_pos;
         case EvictionCursor::Background:
             return background_eviction_pos;
+        case EvictionCursor::Promotion:
+            return promotion_eviction_pos;
         case EvictionCursor::FromHead:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "EvictionCursor::FromHead has no persistent cursor");
     }
@@ -1010,7 +1059,7 @@ void LRUFileCachePriority::setEvictionPos(EvictionCursor cursor, LRUQueue::itera
 void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
-    for (auto * pos : {&reserve_eviction_pos, &background_eviction_pos})
+    for (auto * pos : {&reserve_eviction_pos, &background_eviction_pos, &promotion_eviction_pos})
     {
         if (*pos != LRUQueue::iterator{} && *pos == it)
             *pos = std::next(it);
