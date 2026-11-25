@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-fasttest, no-parallel
+-- no-fasttest: a test with a fail point must run alone, and tests that run alone are kept out of the fast test.
 -- no-parallel: the failpoint is server-wide and fires once, so another test that loads a cache dictionary can consume it.
 
 -- A failure to reserve the update batches fails the load of the dictionary.

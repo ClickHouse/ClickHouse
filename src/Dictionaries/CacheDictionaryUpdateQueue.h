@@ -184,7 +184,7 @@ private:
 
     /// One per update thread, reserved in the constructor: an update thread must not allocate outside its try block.
     /// Declared before update_pool, so it is destroyed after the threads stop.
-    std::vector<Batch> batches;
+    VectorWithMemoryTracking<Batch> batches;
     ThreadPool update_pool;
 
     /// Number of update threads that are updating a batch (the others wait for a unit in the queue).
