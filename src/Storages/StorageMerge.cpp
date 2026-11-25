@@ -5,12 +5,14 @@
 #include <span>
 #include <Access/ContextAccess.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
@@ -1720,6 +1722,37 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
+/// Whether a filter on `table_expression` may run before the joins of `join_tree_node` above it, by the rules of
+/// `tryPushDownOverJoinStep`. Empty if `table_expression` is not under `join_tree_node`.
+std::optional<bool> isFilterPushDownToTableExpressionSafe(const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression)
+{
+    if (join_tree_node == table_expression)
+        return true;
+
+    if (const auto * join_node = join_tree_node->as<JoinNode>())
+    {
+        auto kind = join_node->getKind();
+        if (auto safe = isFilterPushDownToTableExpressionSafe(join_node->getLeftTableExpressionNode(), table_expression))
+            return *safe && !isFull(kind) && !isPaste(kind) && !isRight(kind);
+        if (auto safe = isFilterPushDownToTableExpressionSafe(join_node->getRightTableExpressionNode(), table_expression))
+            return *safe && !isFull(kind) && !isPaste(kind) && !isLeft(kind) && join_node->getStrictness() != JoinStrictness::Asof;
+        return {};
+    }
+
+    if (const auto * cross_join_node = join_tree_node->as<CrossJoinNode>())
+    {
+        for (const auto & child : cross_join_node->getTableExpressions())
+            if (auto safe = isFilterPushDownToTableExpressionSafe(child, table_expression))
+                return safe;
+        return {};
+    }
+
+    if (const auto * array_join_node = join_tree_node->as<ArrayJoinNode>())
+        return isFilterPushDownToTableExpressionSafe(array_join_node->getTableExpressionNode(), table_expression);
+
+    return {};
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
@@ -1734,6 +1767,8 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // For the case when join tree is just a table or a table function we don't need to do anything more.
     if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
         return modified_query;
+
+    bool keep_where = isFilterPushDownToTableExpressionSafe(query_node->getJoinTreeNode(), original_table_expression).value_or(false);
 
     // JOIN needs to be removed because StorageMerge should produce not joined data.
     // GROUP BY should be removed as well.
@@ -1764,11 +1799,12 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
     query_node = modified_query->as<QueryNode>();
 
-    // For backward compatibility we need to leave all filters related to this table.
-    // It may lead to some incorrect result.
+    /// Keep the filters over this table only, and the `WHERE` ones only where they may run before the joins.
     if (query_node->hasPrewhere())
         removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
-    if (query_node->hasWhere())
+    if (query_node->hasWhere() && !keep_where)
+        query_node->getWhere() = {};
+    else if (query_node->hasWhere())
         removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
 
     query_node->getGroupBy().getNodes().clear();
