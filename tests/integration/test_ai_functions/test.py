@@ -951,6 +951,7 @@ def test_provider_error_hides_configured_values(
         f"http://localhost:{MOCK_PORT}{path}",
         [] if embedding else [("X-Tenant", secret)],
         api_key=secret if embedding else None,
+        model=not embedding,
     )
     expression = "aiEmbed('x', 'test-model'," if embedding else "aiGenerate('x',"
     qid = unique_query_id("provider_error")

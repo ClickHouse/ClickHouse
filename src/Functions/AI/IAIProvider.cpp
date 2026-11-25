@@ -37,7 +37,7 @@ String IAIProvider::formatProviderError(int status_code, const String & response
 {
     auto safe_text = [&](std::string_view text, size_t limit = std::string_view::npos)
     {
-        auto contains_value = [&](std::string_view value) { return !value.empty() && text.find(value) != std::string_view::npos; };
+        auto contains_value = [&](std::string_view value) { return !value.empty() && text.contains(value); };
         if (contains_value(api_key) || std::any_of(custom_headers.begin(), custom_headers.end(),
                 [&](const HTTPHeaderEntry & header) { return contains_value(header.value); }))
             return String("[REDACTED]");

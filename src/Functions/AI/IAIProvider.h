@@ -176,7 +176,7 @@ public:
 
 protected:
     /// Format a remote error without exposing configured credentials.
-    String formatProviderError(int status_code, const String & response_body, std::string_view api_key) const;
+    [[nodiscard]] String formatProviderError(int status_code, const String & response_body, std::string_view api_key) const;
 
     /// Reject ambiguous, case-insensitive duplicates instead of silently replacing authentication.
     [[nodiscard]] HTTPHeaderEntries addCustomHeaders(HTTPHeaderEntries headers) const;
