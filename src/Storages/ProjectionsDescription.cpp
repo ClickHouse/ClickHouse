@@ -241,7 +241,6 @@ std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
 {
     auto table = createProjectionQuerySource(columns, MergeTreeData::createVirtuals(partition_key));
     storeValuesOfScalarSubqueries(result.query_ast, table, context);
-    storeExpressionsOfAliasesInIf(result.query_ast, table, context);
 
     ProjectionPlanner planner(result.query_ast, table, context);
 

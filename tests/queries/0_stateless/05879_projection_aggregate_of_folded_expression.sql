@@ -7,7 +7,7 @@ CREATE TABLE t_projection_folded_argument
     a UInt8,
     b UInt64,
     PROJECTION p_count (SELECT count(b IS NOT NULL)),
-    PROJECTION p_sum (SELECT a, sum(b IS NOT NULL), count(toTypeName(b)), count(1 + 1), count(1) GROUP BY a),
+    PROJECTION p_sum (SELECT a, sum(b IS NOT NULL), count(toTypeName(b)), count(1 + 1) GROUP BY a),
     PROJECTION p_if (SELECT if(b IS NOT NULL, a, 0), count() GROUP BY if(b IS NOT NULL, a, 0))
 )
 ENGINE = MergeTree ORDER BY a

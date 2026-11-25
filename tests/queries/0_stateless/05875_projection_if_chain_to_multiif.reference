@@ -1,4 +1,0 @@
-multiIf(greater(a, 0), 1, greater(a, 5), 2, 3)
-count()
-1	2
-3	1

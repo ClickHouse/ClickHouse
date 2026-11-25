@@ -5,7 +5,6 @@ p_sum	a
 p_sum	sum(isNotNull(b))
 p_sum	count(toTypeName(b))
 p_sum	count(plus(1, 1))
-p_sum	count()
 4
 1	2
 2	1

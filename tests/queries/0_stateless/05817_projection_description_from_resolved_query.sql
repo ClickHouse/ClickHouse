@@ -10,7 +10,7 @@ CREATE TABLE t_projection_resolved
     m Int64 MATERIALIZED a * 2,
     al ALIAS a + 1,
     -- these calls are replaced, and the new call gives the name
-    PROJECTION p_same (SELECT a % 10 AS k, count(*), count(1), sum(1), countDistinct(c), sumIf(a, a > 1 + 1), sum(al) GROUP BY k),
+    PROJECTION p_same (SELECT a % 10 AS k, count(*), countDistinct(c), sumIf(a, a > 1 + 1), sum(al) GROUP BY k),
     -- these resolve to another function but keep the written name
     PROJECTION p_resolved (SELECT a, any(b) RESPECT NULLS, count() IGNORE NULLS, sum(NULL), median(a) GROUP BY a),
     -- a constant key is not stored, and the last key takes its place

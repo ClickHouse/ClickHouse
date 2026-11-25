@@ -22,7 +22,4 @@ String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context);
 /// runs scalar subqueries once and keeps their values in the stored query
 void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
-/// puts the expression of an alias in its place in the arguments of `if`, as the old analysis did before it changed `if`
-void storeExpressionsOfAliasesInIf(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
-
 }
