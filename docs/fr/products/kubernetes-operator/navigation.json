@@ -1,9 +1,9 @@
 {
-  "item": "Kubernetes Operator",
+  "item": "Opérateur Kubernetes",
   "pages": [
     "fr/products/kubernetes-operator/overview",
     {
-      "group": "Install",
+      "group": "Installer",
       "expanded": true,
       "pages": [
         "fr/products/kubernetes-operator/install/kubectl",
@@ -26,7 +26,7 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "Référence",
       "expanded": true,
       "pages": [
         "fr/products/kubernetes-operator/reference/api-reference"

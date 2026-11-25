@@ -2,7 +2,7 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Overview",
+      "group": "Vue d’ensemble",
       "pages": [
         "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "fr/products/bring-your-own-cloud/overview/architecture"
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "Prise en main",
       "pages": [
         "fr/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "Personnalisation",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/customization-aws",
             "fr/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Network",
+          "group": "Réseau",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/network",
             "fr/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,11 +40,11 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "Référence",
       "pages": [
         "fr/products/bring-your-own-cloud/reference/network-security",
         {
-          "group": "Privilege",
+          "group": "Privilège",
           "root": "fr/products/bring-your-own-cloud/reference/privilege",
           "pages": [
             "fr/products/bring-your-own-cloud/reference/privilege-aws",
@@ -59,7 +59,7 @@
         "fr/products/bring-your-own-cloud/reference/security-shared-responsibility",
         "fr/products/bring-your-own-cloud/reference/faq",
         {
-          "group": "Connector Mode",
+          "group": "Mode connecteur",
           "hidden": true,
           "tag": "Preview",
           "pages": [

@@ -1,0 +1,55 @@
+---
+sidebarTitle: 'Recomendaciones'
+title: 'Recomendaciones de consultas y esquemas'
+description: 'Recomendaciones deterministas que ClickHouse Cloud muestra a partir de sus registros de consultas y esquemas de tablas.'
+keywords: ['recomendaciones', 'recomendación de esquema', 'recomendación de consultas', 'clave de ordenación', 'ClickHouse Cloud', 'vista previa privada']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud analiza su tráfico de consultas y los esquemas de sus tablas para generar recomendaciones que mejoran el rendimiento. Las pruebas son deterministas, no utilizan LLM y no se ejecutan en sus servicios.
+
+Hay dos tipos de recomendaciones:
+
+* Las recomendaciones de esquema aparecen en **monitorización** &gt; **Tablas** y se refieren a cambios que puede realizar en los esquemas de sus tablas.
+* Las recomendaciones de consulta aparecen en **monitorización** &gt; **rendimiento de las consultas** al abrir una consulta, y se refieren a cambios que puede realizar en sus consultas.
+  Es posible que algunas recomendaciones de esquema y de consulta se solapen, lo que le ofrece distintas formas de resolver el problema, ya sea mediante su patrón de consulta o su esquema de tabla.
+
+<Warning>
+  Las recomendaciones están en versión preliminar. Pueden cambiar y no están cubiertas por el SLA estándar de ClickHouse Cloud.
+</Warning>
+
+## Recomendaciones de esquema {#schema-recommendations}
+
+Se muestran en la tabla de la sección [monitorización](/es/products/cloud/features/monitoring/cloud-console).
+
+| Recomendación                  | Cuándo aparece                                                                                              | Qué hacer                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cambiar la clave de ordenación | Muchas consultas filtran por las mismas columnas y esas columnas no forman parte de la clave de ordenación. | Considere cambiar la clave de ordenación para que los filtros habituales coincidan con ella. Esto reconstruye la tabla. [Schema Advisor](/es/products/cloud/features/ai-ml/schema-advisor) puede planificar y desplegar este cambio.                                                                    |
+| Añadir una proyección          | Muchas consultas filtran por un pequeño conjunto de columnas que quedan fuera de la clave de ordenación.    | Añada una [proyección](/es/data-modeling/projections) sobre esas columnas. Así se aceleran esas consultas sin cambiar la clave de ordenación. [Schema Advisor](/es/products/cloud/features/ai-ml/schema-advisor) aplica este cambio in situ con `ALTER TABLE`, sin reconstrucción y sin `EXCHANGE TABLES`. |
+| Usar un diccionario            | La mayoría de las consultas sobre la tabla son búsquedas de una sola fila.                                  | Para una tabla de dimensiones que se lee con frecuencia y se actualiza rara vez, considere usar un [diccionario](/es/sql-reference/statements/create/dictionary).                                                                                                                                       |
+| Inserciones por lotes          | La tabla recibe muchas inserciones pequeñas que generan muchas partes pequeñas.                             | Agrupe las inserciones en lotes para que cada parte sea más grande. Menos partes implican menos trabajo de fusión. Consulte [inserciones asíncronas](/es/optimize/asynchronous-inserts).                                                                                                                |
+
+## Recomendaciones de consultas {#query-recommendations}
+
+Aparecen al abrir una consulta normalizada en **monitorización** &gt; **rendimiento de las consultas**. Esa página es la nueva versión de [Query insights](/es/products/cloud/features/sql-console-features/query-insights): permite filtrar las consultas por tabla y abrir una consulta concreta para ver sus métricas. Aplicar una recomendación de consulta implica modificar la propia consulta. Schema Advisor no las aplica automáticamente.
+
+| Recomendación                                                | Cuándo aparece                                                                                                                                                                                                                                                                                                                                                                       | Qué hacer                                                                                                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Usar `uniq`                                                  | La consulta usa `COUNT(DISTINCT ...)` o [`uniqExact`](/es/sql-reference/aggregate-functions/reference/uniqexact), y bastaría con un recuento aproximado.                                                                                                                                                                                                                                | Use [`uniq`](/es/sql-reference/aggregate-functions/reference/uniq) para recuentos de valores distintos sobre grandes volúmenes. Consume menos memoria.                               |
+| Almacenar JSON de forma nativa                               | La consulta analiza JSON a partir de una columna de tipo String durante su ejecución.                                                                                                                                                                                                                                                                                                | Almacene el valor como una columna [JSON](/es/sql-reference/data-types/newjson), o como columnas ordinarias, en lugar de analizar una cadena en cada consulta.                       |
+| Enumerar las columnas necesarias                             | La consulta usa `SELECT *` o `alias.*` sobre una tabla con muchas columnas.                                                                                                                                                                                                                                                                                                          | Indique solo las columnas que necesita para que ClickHouse no lea el resto.                                                                                                       |
+| Evitar `OPTIMIZE ... FINAL` de forma rutinaria               | La consulta ejecuta [`OPTIMIZE`](/es/sql-reference/statements/optimize) con `FINAL`, lo que reescribe la tabla.                                                                                                                                                                                                                                                                         | No ejecute `OPTIMIZE ... FINAL` como paso habitual. Consume mucha E/S y CPU, y puede bloquear las inserciones.                                                                    |
+| Usar un JOIN por ordenación y mezcla                         | Ambos lados de un `JOIN` ya están ordenados por las claves de join.                                                                                                                                                                                                                                                                                                                  | Establezca [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) en `full_sorting_merge` para que ClickHouse no vuelva a ordenar las entradas.             |
+| Filtrar por las columnas iniciales de la clave de ordenación | Los filtros de la consulta omiten las columnas iniciales de la clave de ordenación. ClickHouse aún puede descartar gránulos a partir de columnas posteriores de la clave, pero ese descarte puede ser menos eficaz. Consulte [filtrado por columnas secundarias de la clave](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns). | Revise el plan con `EXPLAIN indexes = 1`. Añada un filtro por la clave inicial solo si el resultado de la consulta no cambia.                                                     |
+| Permitir inserciones asíncronas                              | Un `INSERT` desactiva las inserciones asíncronas y crea muchas partes pequeñas.                                                                                                                                                                                                                                                                                                      | Mantenga habilitadas las [inserciones asíncronas](/es/optimize/asynchronous-inserts), o agrupe las inserciones en lotes en el cliente, para que las escrituras pequeñas se combinen. |
+
+## Páginas relacionadas {#related-pages}
+
+* [Schema Advisor](/es/products/cloud/features/ai-ml/schema-advisor)
+* [monitorización en la consola de ClickHouse Cloud](/es/products/cloud/features/monitoring/cloud-console)
+* [Query insights](/es/products/cloud/features/sql-console-features/query-insights)
+* [Diseño de esquemas](/es/data-modeling/schema-design)

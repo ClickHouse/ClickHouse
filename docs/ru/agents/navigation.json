@@ -1,8 +1,8 @@
 {
-  "item": "Agents",
+  "item": "Агенты",
   "pages": [
     {
-      "group": "Get started",
+      "group": "Начало работы",
       "pages": [
         "ru/agents/index",
         "ru/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Agent Builder",
+      "group": "Конструктор агентов",
       "pages": [
         "ru/agents/builder/index",
         "ru/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Manage agents",
+      "group": "Управление агентами",
       "pages": [
         "ru/agents/prompts",
         "ru/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "Assistant",
+      "group": "Помощник",
       "pages": [
         "ru/agents/assistant/using-ai-chat",
         "ru/agents/assistant/customizing-semantic-layer"

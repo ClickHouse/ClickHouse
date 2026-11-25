@@ -1,5 +1,5 @@
 {
-  "group": "Server Settings",
+  "group": "サーバー設定",
   "directory": "none",
   "pages": [
     "ja/reference/settings/server-settings/settings",

@@ -8,12 +8,12 @@
         "ar/clickstack/observability/index",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "المقدمة",
           "pages": [
             "ar/clickstack/observability/overview",
             "ar/clickstack/observability/getting-started/index",
             {
-              "group": "Sample datasets",
+              "group": "مجموعات بيانات نموذجية",
               "root": "ar/clickstack/observability/example-datasets/index",
               "pages": [
                 "ar/clickstack/observability/example-datasets/sample-data",
@@ -31,11 +31,11 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "الميزات",
           "pages": [
             "ar/clickstack/observability/features/search",
             {
-              "group": "Dashboards",
+              "group": "لوحات المعلومات",
               "pages": [
                 "ar/clickstack/observability/features/dashboards/overview",
                 "ar/clickstack/observability/features/dashboards/dashboard-templates",
@@ -63,13 +63,13 @@
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "November",
+                      "group": "نوفمبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-11-12"
                       ]
                     },
                     {
-                      "group": "October",
+                      "group": "أكتوبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-10-22",
                         "ar/clickstack/demo-days/2026/2026-10-15",
@@ -78,7 +78,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "سبتمبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-09-24",
                         "ar/clickstack/observability/demo-days/2026/2026-09-17",
@@ -87,7 +87,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "أغسطس",
                       "pages": [
                         "ar/clickstack/observability/demo-days/2026/2026-08-28",
                         "ar/clickstack/observability/demo-days/2026/2026-08-21",
@@ -96,7 +96,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "يوليو",
                       "pages": [
                         "ar/clickstack/observability/demo-days/2026/2026-07-31",
                         "ar/clickstack/observability/demo-days/2026/2026-07-24",
@@ -106,7 +106,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "يونيو",
                       "pages": [
                         "ar/clickstack/observability/demo-days/2026/2026-06-26",
                         "ar/clickstack/observability/demo-days/2026/2026-06-18",
@@ -115,7 +115,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "مايو",
                       "pages": [
                         "ar/clickstack/observability/demo-days/2026/2026-05-29",
                         "ar/clickstack/observability/demo-days/2026/2026-05-22",
@@ -124,7 +124,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "أبريل",
                       "pages": [
                         "ar/clickstack/observability/demo-days/2026/2026-04-17",
                         "ar/clickstack/observability/demo-days/2026/2026-04-10",
@@ -139,7 +139,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "الإدارة",
           "pages": [
             "ar/clickstack/observability/managing/overview",
             "ar/clickstack/observability/managing/config",
@@ -147,17 +147,17 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "أدلة إرشادية",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "استيعاب البيانات",
               "pages": [
                 "ar/clickstack/observability/ingesting-data/overview",
                 "ar/clickstack/observability/ingesting-data/opentelemetry",
                 "ar/clickstack/observability/ingesting-data/vector",
                 {
-                  "group": "Integrations",
+                  "group": "التكاملات",
                   "pages": [
                     "ar/clickstack/observability/integration-examples/index",
                     "ar/clickstack/observability/integration-examples/nginx-logs",
@@ -167,7 +167,7 @@
                     "ar/clickstack/observability/integration-examples/cloudwatch",
                     "ar/clickstack/observability/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "سجلات المضيف",
                       "pages": [
                         "ar/clickstack/observability/integration-examples/host-logs",
                         "ar/clickstack/observability/integration-examples/host-logs/ec2"
@@ -188,7 +188,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "حزم SDK للغات البرمجة",
                   "pages": [
                     "ar/clickstack/observability/ingesting-data/sdks/index",
                     "ar/clickstack/observability/ingesting-data/sdks/instrument-with-ai",
@@ -210,11 +210,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "أدلة الترحيل",
               "pages": [
                 "ar/clickstack/observability/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "الترحيل من Elastic",
                   "pages": [
                     "ar/clickstack/observability/migration/elastic/index",
                     "ar/clickstack/observability/migration/elastic/intro",
@@ -231,7 +231,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "شركاء التكامل",
           "pages": [
             "ar/clickstack/observability/integration-partners/index",
             "ar/clickstack/observability/integration-partners/bindplane",
@@ -241,14 +241,14 @@
           ]
         },
         {
-          "group": "Self-managed",
+          "group": "مُدار ذاتيًا",
           "pages": [
             "ar/clickstack/self-configured/overview",
             "ar/clickstack/self-configured/getting-started/managed",
             "ar/clickstack/self-configured/architecture",
             "ar/clickstack/self-configured/deployment/managed",
             {
-              "group": "Configuration and schemas",
+              "group": "الإعدادات والمخططات",
               "pages": [
                 "ar/clickstack/self-configured/ingesting-data/collector",
                 "ar/clickstack/self-configured/managing/config",
@@ -258,7 +258,7 @@
               ]
             },
             {
-              "group": "Administration",
+              "group": "الإدارة",
               "pages": [
                 "ar/clickstack/self-configured/managing/overview",
                 "ar/clickstack/self-configured/managing/estimating-resources",
@@ -270,7 +270,7 @@
               ]
             },
             {
-              "group": "Migration reference",
+              "group": "مرجع الترحيل",
               "pages": [
                 {
                   "group": "Elasticsearch",
@@ -284,10 +284,10 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "مرجع API",
           "pages": [
             {
-              "group": "Dashboards",
+              "group": "لوحات المعلومات",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
@@ -298,7 +298,7 @@
               ]
             },
             {
-              "group": "Alerts",
+              "group": "التنبيهات",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
@@ -308,7 +308,7 @@
               ]
             },
             {
-              "group": "Sources",
+              "group": "المصادر",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
@@ -318,7 +318,7 @@
               ]
             },
             {
-              "group": "Webhooks",
+              "group": "خطافات الويب",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
@@ -328,7 +328,7 @@
               ]
             },
             {
-              "group": "Roles",
+              "group": "الأدوار",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
@@ -338,7 +338,7 @@
               ]
             },
             {
-              "group": "Saved searches",
+              "group": "عمليات بحث محفوظة",
               "pages": [
                 "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
                 "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
@@ -356,7 +356,7 @@
           }
         },
         {
-          "group": "Onboarding guides",
+          "group": "أدلة الإعداد الأولي",
           "hidden": true,
           "pages": [
             "ar/clickstack/managed-onboarding/instrument-application-serverless",
@@ -391,12 +391,12 @@
         "ar/clickstack",
         {
           "expanded": true,
-          "group": "Introduction",
+          "group": "المقدمة",
           "pages": [
             "ar/clickstack/overview",
             "ar/clickstack/getting-started/oss",
             {
-              "group": "Sample datasets",
+              "group": "مجموعات بيانات نموذجية",
               "pages": [
                 "ar/clickstack/example-datasets/index",
                 "ar/clickstack/example-datasets/sample-data",
@@ -415,10 +415,10 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "الميزات",
           "pages": [
             {
-              "group": "Deployment",
+              "group": "النشر",
               "pages": [
                 "ar/clickstack/deployment/oss",
                 "ar/clickstack/deployment/all-in-one",
@@ -437,7 +437,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (deprecated)",
+                      "group": "v1.x (تم إهماله)",
                       "pages": [
                         "ar/clickstack/deployment/helm-v1",
                         "ar/clickstack/deployment/helm-configuration-v1",
@@ -455,7 +455,7 @@
             },
             "ar/clickstack/features/search",
             {
-              "group": "Dashboards",
+              "group": "لوحات المعلومات",
               "pages": [
                 "ar/clickstack/features/dashboards/overview",
                 "ar/clickstack/features/dashboards/dashboard-templates",
@@ -480,13 +480,13 @@
                   "group": "2026",
                   "pages": [
                     {
-                      "group": "November",
+                      "group": "نوفمبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-11-12"
                       ]
                     },
                     {
-                      "group": "October",
+                      "group": "أكتوبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-10-22",
                         "ar/clickstack/demo-days/2026/2026-10-15",
@@ -495,7 +495,7 @@
                       ]
                     },
                     {
-                      "group": "September",
+                      "group": "سبتمبر",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-09-24",
                         "ar/clickstack/demo-days/2026/2026-09-17",
@@ -504,7 +504,7 @@
                       ]
                     },
                     {
-                      "group": "August",
+                      "group": "أغسطس",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-08-28",
                         "ar/clickstack/demo-days/2026/2026-08-21",
@@ -513,7 +513,7 @@
                       ]
                     },
                     {
-                      "group": "July",
+                      "group": "يوليو",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-07-31",
                         "ar/clickstack/demo-days/2026/2026-07-24",
@@ -523,7 +523,7 @@
                       ]
                     },
                     {
-                      "group": "June",
+                      "group": "يونيو",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-06-26",
                         "ar/clickstack/demo-days/2026/2026-06-18",
@@ -532,7 +532,7 @@
                       ]
                     },
                     {
-                      "group": "May",
+                      "group": "مايو",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-05-29",
                         "ar/clickstack/demo-days/2026/2026-05-22",
@@ -541,7 +541,7 @@
                       ]
                     },
                     {
-                      "group": "April",
+                      "group": "أبريل",
                       "pages": [
                         "ar/clickstack/demo-days/2026/2026-04-17",
                         "ar/clickstack/demo-days/2026/2026-04-10",
@@ -556,7 +556,7 @@
         },
         {
           "expanded": true,
-          "group": "Administration",
+          "group": "الإدارة",
           "pages": [
             "ar/clickstack/managing/overview",
             "ar/clickstack/managing/config",
@@ -568,11 +568,11 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "أدلة إرشادية",
           "pages": [
             {
               "expanded": true,
-              "group": "Ingesting data",
+              "group": "استيعاب البيانات",
               "pages": [
                 "ar/clickstack/ingesting-data/overview",
                 "ar/clickstack/ingesting-data/opentelemetry",
@@ -582,7 +582,7 @@
                 "ar/clickstack/ingesting-data/schema/map-vs-json",
                 "ar/clickstack/ingesting-data/trace-sampling",
                 {
-                  "group": "Integrations",
+                  "group": "التكاملات",
                   "pages": [
                     "ar/clickstack/integration-examples/index",
                     "ar/clickstack/integration-examples/nginx-logs",
@@ -592,7 +592,7 @@
                     "ar/clickstack/integration-examples/cloudwatch",
                     "ar/clickstack/integration-examples/aws-lambda",
                     {
-                      "group": "Host logs",
+                      "group": "سجلات المضيف",
                       "pages": [
                         "ar/clickstack/integration-examples/host-logs",
                         "ar/clickstack/integration-examples/host-logs/ec2"
@@ -614,7 +614,7 @@
                   ]
                 },
                 {
-                  "group": "Language SDKs",
+                  "group": "حزم SDK للغات البرمجة",
                   "pages": [
                     "ar/clickstack/ingesting-data/sdks/index",
                     "ar/clickstack/ingesting-data/sdks/browser",
@@ -635,11 +635,11 @@
             },
             {
               "expanded": true,
-              "group": "Migration guides",
+              "group": "أدلة الترحيل",
               "pages": [
                 "ar/clickstack/migration/index",
                 {
-                  "group": "Migrating from Elastic",
+                  "group": "الترحيل من Elastic",
                   "pages": [
                     "ar/clickstack/migration/elastic/index",
                     "ar/clickstack/migration/elastic/intro",
@@ -658,7 +658,7 @@
         },
         {
           "expanded": true,
-          "group": "Integration partners",
+          "group": "شركاء التكامل",
           "pages": [
             "ar/clickstack/integration-partners/index",
             "ar/clickstack/integration-partners/bindplane",
@@ -669,7 +669,7 @@
         },
         {
           "expanded": true,
-          "group": "API reference",
+          "group": "مرجع API",
           "openapi": {
             "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
             "directory": "ar/clickstack/api-reference"

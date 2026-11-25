@@ -4,47 +4,47 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "b390a35a38a3acb03d3cd26c473a3bcda1fe56c1a398d625d6b03fd95c347986",
+      "versionId": "62b5cc6dd5c2a83b9d1c3a0b913cf70ed9e42e8bfb940c180bf45390ed9e0dc1",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-11-25T20:32:18.067Z",
+        "ja": {
+          "updatedAt": "2026-11-25T20:36:02.851Z",
           "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
-        },
-        "es": {
-          "updatedAt": "2026-11-25T20:32:17.707Z",
-          "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-25T20:32:17.928Z",
+          "updatedAt": "2026-11-25T20:36:02.953Z",
           "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
-        },
-        "ko": {
-          "updatedAt": "2026-11-25T20:32:17.857Z",
-          "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
-        },
-        "ja": {
-          "updatedAt": "2026-11-25T20:32:17.779Z",
-          "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
         },
         "fr": {
-          "updatedAt": "2026-11-25T20:32:18.203Z",
+          "updatedAt": "2026-11-25T20:36:03.047Z",
           "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
+        },
+        "zh": {
+          "updatedAt": "2026-11-25T20:36:03.140Z",
+          "fileName": "docs.json",
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
         },
         "ar": {
-          "updatedAt": "2026-11-25T20:32:18.135Z",
+          "updatedAt": "2026-11-25T20:36:03.237Z",
           "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
+        },
+        "ko": {
+          "updatedAt": "2026-11-25T20:36:03.357Z",
+          "fileName": "docs.json",
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
+        },
+        "es": {
+          "updatedAt": "2026-11-25T20:36:03.455Z",
+          "fileName": "docs.json",
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
         },
         "ru": {
-          "updatedAt": "2026-11-25T20:32:17.997Z",
+          "updatedAt": "2026-11-25T20:36:03.550Z",
           "fileName": "docs.json",
-          "postProcessHash": "b05e08a259fb313df6f2c957d4c440e3f28bac0a60fe3fc9c0526c0f901d3691"
+          "postProcessHash": "286d07778bd8186ff2098d0c9a7b5c96065af794698e4a9e76960744c1e9eb20"
         }
       },
       "fileName": "docs.json"
@@ -81270,47 +81270,47 @@
     },
     {
       "fileId": "65b78c1c6b68ba9f79262414cf11e3de50956e35547c21cef77b8fd5e055f0f9",
-      "versionId": "bb1de5c40693404e3abfd39a709f86c7bc835d7066f3ac258de4eee070cd8499",
+      "versionId": "3417d1df5eddf9f897e5d695e46f855fff7eb2fae46c1dc7c80d5a9124db3c39",
       "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-11-25T20:36:02.741Z",
+          "fileName": "pt-BR/products/cloud/features/ai-ml/index.mdx",
+          "postProcessHash": "2f5e1a7c9649feac8fece1e834e56309fa7b5c3e63d3fe7daafdece66da39955"
+        },
         "es": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
+          "updatedAt": "2026-11-25T20:36:02.741Z",
           "fileName": "es/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "351e02f56e16a81c62a36b59782d4f67c322a23aa1fab624ee5aac550bb2d5af"
+          "postProcessHash": "f11e382d6d3a06264997b620fcbf041d76e27f284e038ac938ac4ed2baebc496"
         },
         "ja": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
+          "updatedAt": "2026-11-25T20:36:02.742Z",
           "fileName": "ja/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "0e241d0c2d32f4ee198f736cdc0b215af84ea2e3cd30755337876a19f99806c8"
-        },
-        "ko": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
-          "fileName": "ko/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "f7426f916c8f20cabf8d7168bdb3c19c10c3c045d941df999ddee2132cea5cd4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
-          "fileName": "pt-BR/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "1700b22f393804a0428ff44986b1f9f7fb129f4d38b890757c0319f9344a3cd5"
-        },
-        "ru": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
-          "fileName": "ru/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "45e3ebe839aa5c9e0973b893c120f78a2a4a4db6b3575249e160d3daa1f6ec04"
+          "postProcessHash": "0c7da62ea5c43e5d7ec4db174edfa9636112bbb7d4f0afc0db675a3fbba405e1"
         },
         "zh": {
-          "updatedAt": "2026-11-17T19:23:09.518Z",
+          "updatedAt": "2026-11-25T20:36:02.743Z",
           "fileName": "zh/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "f9a6f6683f98708c5644479ddfb78af2740436b48beb6588672202cea73f3415"
-        },
-        "ar": {
-          "updatedAt": "2026-11-17T19:23:09.519Z",
-          "fileName": "ar/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "e8802015762e4980a0941ea26f90b26993c58fcfd48f9d7fc983a1be429c6655"
+          "postProcessHash": "8835d94034c33b4efce6843b666bf390ba6751bb7a3fa0130476c399e4af4a9a"
         },
         "fr": {
-          "updatedAt": "2026-11-17T19:23:09.519Z",
+          "updatedAt": "2026-11-25T20:36:02.743Z",
           "fileName": "fr/products/cloud/features/ai-ml/index.mdx",
-          "postProcessHash": "99e0edfda740c35e9979bd2953938b8dead1b355aec89b9f416da85bc8573b18"
+          "postProcessHash": "45212bd6601e531eb7588c896ea7c79ec5f5d6500c1deb7078816087172a432d"
+        },
+        "ru": {
+          "updatedAt": "2026-11-25T20:36:02.743Z",
+          "fileName": "ru/products/cloud/features/ai-ml/index.mdx",
+          "postProcessHash": "322ac716f23e7e326eaa59cd0ca77af920298edbb6ab3153ce014db40d1a874b"
+        },
+        "ar": {
+          "updatedAt": "2026-11-25T20:36:02.743Z",
+          "fileName": "ar/products/cloud/features/ai-ml/index.mdx",
+          "postProcessHash": "e6d8436508ab3e9cb7f2e58dec7d8e955590b4e6d17d064e51b9c88a606c5059"
+        },
+        "ko": {
+          "updatedAt": "2026-11-25T20:36:02.743Z",
+          "fileName": "ko/products/cloud/features/ai-ml/index.mdx",
+          "postProcessHash": "037477e48be5202e10fd69fb7e9731720a5cb68cd0647d76a01f092635e7c8b8"
         }
       },
       "fileName": "products/cloud/features/ai-ml/index.mdx"
@@ -153098,6 +153098,100 @@
         }
       },
       "fileName": "concepts/features/operations/insert/schema-inference.mdx"
+    },
+    {
+      "fileId": "91493dd65eb30ee1169b58ceda0a00d0d8696f6af0db419985f973f29a0154fb",
+      "versionId": "a6e95c184c73a75f07c59f32b4e906a97861c430adf8d045fbf76ce137855b75",
+      "translations": {
+        "ja": {
+          "updatedAt": "2026-11-25T20:36:02.744Z",
+          "fileName": "ja/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "467bd798fc67c4be233f658bf3b0574ce10e26dffe40158c2a154e245c3164d9"
+        },
+        "ko": {
+          "updatedAt": "2026-11-25T20:36:02.744Z",
+          "fileName": "ko/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "7bf8d616ce541b7f007d3375f1bb797ebeb3573d6e86a20b03618b9ae672855d"
+        },
+        "zh": {
+          "updatedAt": "2026-11-25T20:36:02.744Z",
+          "fileName": "zh/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "e63b86c078d3406b4d7f74b642d254c655c7e8d2ea761cb04b3618caf5d80c92"
+        },
+        "ru": {
+          "updatedAt": "2026-11-25T20:36:02.745Z",
+          "fileName": "ru/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "4c57db93e87c6b8119259459b310c208d2285587865eff5c4cc5d5318e33c33d"
+        },
+        "fr": {
+          "updatedAt": "2026-11-25T20:36:02.745Z",
+          "fileName": "fr/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "f111c69088af72e0356838c792107a6b91872d767a1f15f14ff887c66f00ccbb"
+        },
+        "ar": {
+          "updatedAt": "2026-11-25T20:36:02.746Z",
+          "fileName": "ar/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "ba20f9d161f9214c37663ca1c78c843407fb556f57ad99d1c6dd5792c42753f3"
+        },
+        "es": {
+          "updatedAt": "2026-11-25T20:36:02.746Z",
+          "fileName": "es/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "0939272bad8b37ad66259994d33be5492b44b399a6755db43b266fc7f1329e00"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-25T20:36:02.747Z",
+          "fileName": "pt-BR/products/cloud/features/ai-ml/schema-advisor.mdx",
+          "postProcessHash": "edeab27274f6d277651cba0a8353f9ade60724c59627fa555ae1343335c9bbb4"
+        }
+      },
+      "fileName": "products/cloud/features/ai-ml/schema-advisor.mdx"
+    },
+    {
+      "fileId": "9ca5708b93b2bafbe9866582133a09adf67556cdb41ce972b8e0bf828c06ccd9",
+      "versionId": "38c327735302d3574bf0a0e028ef148cf48bf8e0185209b25c49a6b2fd750ae4",
+      "translations": {
+        "ru": {
+          "updatedAt": "2026-11-25T20:36:02.744Z",
+          "fileName": "ru/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "0fbff9738e28aa1dc726031582e73d055f329adb78df294b51bbdfdac8bb2267"
+        },
+        "fr": {
+          "updatedAt": "2026-11-25T20:36:02.745Z",
+          "fileName": "fr/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "40e6cc71aec7220dd90e3403003df70c28ff3d426dcba1411dfcb96bec639814"
+        },
+        "ja": {
+          "updatedAt": "2026-11-25T20:36:02.745Z",
+          "fileName": "ja/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "8f6f64ae8a3b86c3e8ce0d472db8c869aa132948fb0503711efd5c32dd47abf7"
+        },
+        "ko": {
+          "updatedAt": "2026-11-25T20:36:02.746Z",
+          "fileName": "ko/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "6b741ae7fa212ae877fbdb1ec60e606fa18c9dfa000d13f80a16871787106ac5"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-11-25T20:36:02.746Z",
+          "fileName": "pt-BR/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "cbe5c7ffd56cef7e57654b810a725b1e5d6b8c56df3f796dfbc63081602541f2"
+        },
+        "zh": {
+          "updatedAt": "2026-11-25T20:36:02.747Z",
+          "fileName": "zh/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "ddf3ab8405f0b2c0792bb386b1a34cb01bc3bc552072c527edd2e3983319bd86"
+        },
+        "ar": {
+          "updatedAt": "2026-11-25T20:36:02.747Z",
+          "fileName": "ar/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "eb9885243dd349e475e1b3cfcec24abf833decb1c4ef49ce693a1ca7683e0d3b"
+        },
+        "es": {
+          "updatedAt": "2026-11-25T20:36:02.753Z",
+          "fileName": "es/products/cloud/features/monitoring/recommendations.mdx",
+          "postProcessHash": "b8d5aa5a00308bd010ce5e89cd64ead796c781cb19675d81e2f064f1f62475b4"
+        }
+      },
+      "fileName": "products/cloud/features/monitoring/recommendations.mdx"
     }
   ]
 }

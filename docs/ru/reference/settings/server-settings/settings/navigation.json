@@ -1,5 +1,5 @@
 {
-  "group": "Server Settings",
+  "group": "Настройки сервера",
   "directory": "none",
   "pages": [
     "ru/reference/settings/server-settings/settings",

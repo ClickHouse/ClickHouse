@@ -1,8 +1,8 @@
 {
-  "item": "Agents",
+  "item": "الوكلاء",
   "pages": [
     {
-      "group": "Get started",
+      "group": "بدء الاستخدام",
       "pages": [
         "ar/agents/index",
         "ar/agents/quickstart",
@@ -10,7 +10,7 @@
       ]
     },
     {
-      "group": "Agent Builder",
+      "group": "منشئ الوكلاء",
       "pages": [
         "ar/agents/builder/index",
         "ar/agents/builder/model-parameters",
@@ -24,7 +24,7 @@
       ]
     },
     {
-      "group": "Manage agents",
+      "group": "إدارة الوكلاء",
       "pages": [
         "ar/agents/prompts",
         "ar/agents/memory",
@@ -33,7 +33,7 @@
       ]
     },
     {
-      "group": "Assistant",
+      "group": "المساعد",
       "pages": [
         "ar/agents/assistant/using-ai-chat",
         "ar/agents/assistant/customizing-semantic-layer"

@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Organização",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Organização",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -29,7 +29,7 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "Notificações",
         "pages": [
           "products/cloud/api-reference/notifications/notification-get-list",
           "products/cloud/api-reference/notifications/notification-types-get-list",
@@ -38,7 +38,7 @@
         ]
       },
       {
-        "group": "Billing",
+        "group": "Faturamento",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/inference-usage-cost-get",
@@ -47,7 +47,7 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "Gerenciamento de usuários",
         "pages": [
           "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
@@ -61,7 +61,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Gerenciamento de Funções",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -90,10 +90,10 @@
     ]
   },
   {
-    "group": "Service",
+    "group": "Serviço",
     "pages": [
       {
-        "group": "Service",
+        "group": "Serviço",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -144,7 +144,7 @@
         ]
       },
       {
-        "group": "Snapshot",
+        "group": "Captura instantânea",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
           "products/cloud/api-reference/snapshot/snapshot-get",
@@ -153,7 +153,7 @@
         ]
       },
       {
-        "group": "Query API endpoints",
+        "group": "Endpoints da API de consultas",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
@@ -163,7 +163,7 @@
         ]
       },
       {
-        "group": "Saved queries",
+        "group": "Consultas salvas",
         "pages": [
           "GET /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
           "POST /v1/organizations/{organizationId}/services/{serviceId}/saved-queries",
@@ -175,7 +175,7 @@
     ]
   },
   {
-    "group": "API keys",
+    "group": "Chaves de API",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",

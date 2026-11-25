@@ -1,0 +1,55 @@
+---
+sidebarTitle: '建议'
+title: '查询与 schema 建议'
+description: 'ClickHouse Cloud 基于您的查询日志和表结构给出的确定性建议。'
+keywords: ['建议', 'schema 建议', '查询建议', 'sorting key', 'ClickHouse Cloud', '私有预览']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud 会分析您的查询流量和表结构，并据此生成性能优化建议。这些检测是确定性的，不使用 LLM，也不会在您的服务上运行。
+
+建议分为以下两类：
+
+* Schema 建议显示在 **监控** &gt; **Tables** 中，涉及您可以对表结构做出的调整。
+* 查询建议显示在 **监控** &gt; **Query performance** 中 (需打开某个查询) ，涉及您可以对查询做出的调整。
+  部分 schema 建议与查询建议可能有所重叠，因此您既可以通过调整查询模式，也可以通过调整表结构来解决问题。
+
+<Warning>
+  建议功能目前处于预览阶段，后续可能会有变动，且不在 ClickHouse Cloud 标准 SLA 的保障范围内。
+</Warning>
+
+## schema 建议 {#schema-recommendations}
+
+这些建议显示在[监控](/zh/products/cloud/features/monitoring/cloud-console)中的表上。
+
+| 建议             | 出现条件                                 | 处理方式                                                                                                                                                                                        |
+| -------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 更改 sorting key | 许多查询都按相同的列进行过滤，而这些列不在 sorting key 中。 | 考虑更改 sorting key，使常用的筛选条件与该键匹配。此操作会重建表。[Schema Advisor](/zh/products/cloud/features/ai-ml/schema-advisor) 可以规划并部署此更改。                                                                          |
+| 添加投影           | 大量查询按 sorting key 之外的少数几列进行过滤。       | 在这些列上添加[投影](/zh/data-modeling/projections)，即可在不更改 sorting key 的情况下加速这些查询。[Schema Advisor](/zh/products/cloud/features/ai-ml/schema-advisor) 会通过 `ALTER TABLE` 原地应用此更改，无需重建，也无需 `EXCHANGE TABLES`。 |
+| 使用字典           | 针对该表的大多数查询都是单行查找。                    | 对于读取频繁但很少更新的维度表，可考虑使用[字典](/zh/sql-reference/statements/create/dictionary)。                                                                                                                     |
+| 批量插入           | 该表接收大量小批量插入操作，这些插入操作会产生许多小数据片段。      | 将插入操作合并为批次，使每个 part 更大。parts 越少，合并工作量就越小。请参阅[异步插入](/zh/optimize/asynchronous-inserts)。                                                                                                         |
+
+## 查询建议 {#query-recommendations}
+
+当您在 **监控** &gt; **Query performance** 中打开某个归一化查询时，会显示这些建议。该页面是 [查询洞察](/zh/products/cloud/features/sql-console-features/query-insights) 的新一代版本：您可以按表筛选查询，并打开单个查询查看其指标。要应用查询建议，需要修改查询本身。Schema Advisor 不会自动部署这些建议。
+
+| 建议                          | 出现时机                                                                                                                                                                                | 处理方式                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 使用 `uniq`                   | 查询使用了 `COUNT(DISTINCT ...)` 或 [`uniqExact`](/zh/sql-reference/aggregate-functions/reference/uniqexact)，而近似计数即可满足需求。                                                                    | 对于大规模去重计数，请使用 [`uniq`](/zh/sql-reference/aggregate-functions/reference/uniq)，其内存占用更少。                                                |
+| 以原生方式存储 JSON                | 查询在运行时从 String 类型的列中解析 JSON。                                                                                                                                                        | 将该值存储为 [JSON](/zh/sql-reference/data-types/newjson) 列或普通列，避免每次查询都解析字符串。                                                              |
+| 列出所需的列                      | 查询在宽表上使用了 `SELECT *` 或 `alias.*`。                                                                                                                                                   | 明确指定所需的列，使 ClickHouse 无需读取其余列。                                                                                                    |
+| 避免例行执行 `OPTIMIZE ... FINAL` | 查询运行了带 `FINAL` 的 [`OPTIMIZE`](/zh/sql-reference/statements/optimize)，这会重写整张表。                                                                                                          | 不要将 `OPTIMIZE ... FINAL` 作为常规步骤运行。它会消耗大量 I/O 和 CPU 资源，并可能阻塞插入操作。                                                                  |
+| 使用排序合并连接                    | `JOIN` 两侧的数据均已按连接键排序。                                                                                                                                                               | 将 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 设置为 `full_sorting_merge`，使 ClickHouse 无需再次对输入进行排序。 |
+| 按 sorting key 的前导列过滤        | 查询的筛选条件跳过了 sorting key 的前导列。ClickHouse 仍可根据后续键列裁剪粒度，但裁剪效果可能较弱。请参阅 [按次级键列筛选](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns)。 | 使用 `EXPLAIN indexes = 1` 检查执行计划。仅当查询结果保持不变时，才添加针对前导键的过滤条件。                                                                        |
+| 允许异步插入                      | 某个 `INSERT` 关闭了异步插入，并产生了大量小数据片段。                                                                                                                                                    | 保持 [异步插入](/zh/optimize/asynchronous-inserts) 处于启用状态，或在客户端批量执行插入，以便合并小规模写入。                                                           |
+
+## 相关页面 {#related-pages}
+
+* [Schema Advisor](/zh/products/cloud/features/ai-ml/schema-advisor)
+* [Cloud 控制台中的监控](/zh/products/cloud/features/monitoring/cloud-console)
+* [查询洞察](/zh/products/cloud/features/sql-console-features/query-insights)
+* [Schema 设计](/zh/data-modeling/schema-design)
