@@ -27,7 +27,9 @@ namespace DB
 /// Without the cursor, the stream is read from the beginning.
 ///
 /// A bounded stream (`STREAM BOUNDED`) finishes once it has read all the messages of the stream at its start;
-/// the messages published later are not read.
+/// the messages published later are not read. For an incremental refresh of a materialized view, it reports
+/// the last sequence of the stream at its start as the cursor through `Context::getStreamingCursor`, before
+/// it returns any rows.
 class NATSStreamSource final : public ISource
 {
 public:
@@ -62,9 +64,7 @@ public:
 private:
     void start();
     bool hasNothingPending();
-    void reportFinalCursor() const;
-    void reportEndOfBoundedReadAsCursor();
-    void finish();
+    void reportCursor(UInt64 sequence) const;
 
     Params params;
     StorageSnapshotPtr storage_snapshot;

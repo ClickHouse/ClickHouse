@@ -125,9 +125,17 @@ void NATSStreamSource::start()
         if (end_sequence <= last_sequence)
         {
             LOG_DEBUG(log, "NATS stream {} has no messages after sequence {}", params.stream_name, last_sequence);
-            finish();
+            stream_finished = true;
             return;
         }
+
+        /// The result of a successful bounded read is the result over all the messages up to `end_sequence`, also
+        /// when the query stops reading earlier (e.g. `LIMIT BY` or `DISTINCT` with constant keys), so the cursor
+        /// after the read is known now. It is reported before any row is returned, and not when the read finishes:
+        /// the query can finish its output while a fetch is in progress, and a transactional target of
+        /// an incremental refresh (e.g. `Iceberg`) commits the cursor along with the data, possibly before
+        /// this source gets to know that it was finished.
+        reportCursor(end_sequence);
     }
 
     /// An ephemeral pull consumer without acknowledgements, which delivers the messages in the order of the stream.
@@ -215,42 +223,30 @@ bool NATSStreamSource::hasNothingPending()
     return info->Delivered.Consumer <= received_messages;
 }
 
-void NATSStreamSource::finish()
-{
-    reportFinalCursor();
-    stream_finished = true;
-}
-
-void NATSStreamSource::reportFinalCursor() const
+void NATSStreamSource::reportCursor(UInt64 sequence) const
 {
     /// Only an incremental refresh of a materialized view has the holder of the cursor.
     auto streaming_cursor = context->getStreamingCursor();
-    if (!streaming_cursor || last_sequence == 0)
+    if (!streaming_cursor)
         return;
 
     auto cursor = std::make_shared<CursorTreeNode>();
-    cursor->setValue(params.stream_name, static_cast<Int64>(last_sequence));
+    cursor->setValue(params.stream_name, static_cast<Int64>(sequence));
     streaming_cursor->merge(cursor);
-}
-
-void NATSStreamSource::reportEndOfBoundedReadAsCursor()
-{
-    /// Nothing was read if the read did not start, and a finished read has already reported its cursor.
-    if (!started || stream_finished || stream_settings.subscribe_for_updates)
-        return;
-
-    last_sequence = std::max(last_sequence, end_sequence);
-    finish();
 }
 
 IProcessor::Status NATSStreamSource::prepare()
 {
-    /// The query can stop reading before the bounded read is finished (e.g. `LIMIT BY` or `DISTINCT` with constant keys).
-    /// Its result is the result over all the messages of the bounded read, so the cursor advances to its end,
-    /// the same as if the rest of the messages were read. Otherwise the next incremental refresh would read
-    /// the same messages again. A cancelled query does not have a successful result.
-    if (getPort().isFinished() && !isCancelled())
-        reportEndOfBoundedReadAsCursor();
+    /// A read that is cancelled before it reached the end of the bounded read (e.g. a limit on the amount of data
+    /// to read with the overflow mode `break`) returns only the messages up to `last_sequence`, and the query can
+    /// still be successful. So replace the cursor reported at the start with the position that was actually read,
+    /// otherwise the next incremental refresh would skip the rest of the messages. The limits are checked by
+    /// the thread that has just run `generate`, and it gets here before the last block is pushed to the output.
+    if (isCancelled() && started && !stream_finished && !stream_settings.subscribe_for_updates)
+    {
+        reportCursor(last_sequence);
+        stream_finished = true;
+    }
 
     return ISource::prepare();
 }
@@ -332,7 +328,7 @@ Chunk NATSStreamSource::generate()
         if (bounded && sequence > end_sequence)
         {
             /// Published after the start of a bounded read.
-            finish();
+            stream_finished = true;
             return;
         }
 
@@ -365,7 +361,7 @@ Chunk NATSStreamSource::generate()
         total_rows += new_rows;
 
         if (bounded && (sequence >= end_sequence || meta->NumPending == 0))
-            finish();
+            stream_finished = true;
     };
 
     while (!stream_finished && !isCancelled() && total_rows < params.max_block_size)
@@ -374,7 +370,7 @@ Chunk NATSStreamSource::generate()
         if (remaining_ms <= 0)
         {
             if (!total_rows && bounded && hasNothingPending())
-                finish();
+                stream_finished = true;
             break;
         }
 
@@ -385,7 +381,7 @@ Chunk NATSStreamSource::generate()
         if (status == NATS_TIMEOUT)
         {
             if (!total_rows && bounded && hasNothingPending())
-                finish();
+                stream_finished = true;
             break;
         }
 
