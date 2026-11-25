@@ -61,6 +61,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -2499,7 +2500,16 @@ void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, Context
     if (planner_context)
     {
         const auto subqueries = planner_context->getPreparedSets().getSubqueries();
+        QueryTreeNodes subquery_trees;
+        for (const auto & subquery : subqueries)
+            if (const auto & tree = subquery->getQueryTree())
+                subquery_trees.push_back(tree);
+
         addBuildSubqueriesForSetsStepIfNeeded(plan, SelectQueryOptions{}, planner_context, UsefulSets(subqueries.begin(), subqueries.end()));
+
+        /// Gate the CTE readers here: a set built at run time loses the safety net of its own plan.
+        for (const auto & tree : subquery_trees)
+            addBuildSubqueriesForMaterializedCTEsIfNeeded(plan, SelectQueryOptions{}, collectMaterializedCTEs(tree, SelectQueryOptions{}));
         return;
     }
 

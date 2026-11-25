@@ -14,5 +14,6 @@ or chain plan	1
 lambda	3
 nested sets	3
 materialized cte	3
+materialized cte log	2
 join subcolumn	1
 memory table	1

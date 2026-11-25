@@ -6,7 +6,8 @@ DROP ROW POLICY IF EXISTS p_rpa ON t_rpa_b;
 DROP ROW POLICY IF EXISTS p_rpa_m ON m_rpa_a;
 DROP ROW POLICY IF EXISTS p_rpa ON t_rpa_j;
 DROP ROW POLICY IF EXISTS p_rpa ON t_rpa_m;
-DROP TABLE IF EXISTS m_rpa_a, m_rpa_ab, m_rpa_j, m_rpa_m, t_rpa_a, t_rpa_b, t_rpa_j, t_rpa_m;
+DROP ROW POLICY IF EXISTS p_rpa ON t_rpa_l;
+DROP TABLE IF EXISTS m_rpa_a, m_rpa_ab, m_rpa_j, m_rpa_l, m_rpa_m, t_rpa_a, t_rpa_b, t_rpa_j, t_rpa_l, t_rpa_m;
 
 CREATE TABLE t_rpa_a (tenant String, payload String, tv String ALIAS concat(_table, ':', tenant)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rpa_b (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
@@ -65,6 +66,13 @@ CREATE ROW POLICY p_rpa ON t_rpa_a USING tenant IN (WITH c AS MATERIALIZED (SELE
 SELECT 'materialized cte', count() FROM m_rpa_a SETTINGS enable_materialized_cte = 1;
 DROP ROW POLICY p_rpa ON t_rpa_a;
 
+CREATE TABLE t_rpa_l (tenant String, payload String) ENGINE = Log;
+INSERT INTO t_rpa_l VALUES ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_rpa_l AS t_rpa_l ENGINE = Merge(currentDatabase(), '^t_rpa_l$');
+CREATE ROW POLICY p_rpa ON t_rpa_l USING tenant IN (WITH c AS MATERIALIZED (SELECT 'a' AS x) SELECT x FROM c WHERE x IN (SELECT x FROM c)) TO ALL;
+SELECT 'materialized cte log', count() FROM m_rpa_l SETTINGS enable_materialized_cte = 1;
+DROP ROW POLICY p_rpa ON t_rpa_l;
+
 CREATE TABLE t_rpa_j (k String, tup Tuple(a UInt8, b String)) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO t_rpa_j VALUES ('1', (1, 'x')), ('2', (0, 'y'));
 CREATE TABLE m_rpa_j (k String) ENGINE = Merge(currentDatabase(), '^t_rpa_j$');
@@ -79,4 +87,4 @@ CREATE ROW POLICY p_rpa ON t_rpa_m USING _table = 't_rpa_m' AND tenant = 'a' TO 
 SELECT 'memory table', count() FROM m_rpa_m;
 DROP ROW POLICY p_rpa ON t_rpa_m;
 
-DROP TABLE m_rpa_a, m_rpa_ab, m_rpa_j, m_rpa_m, t_rpa_a, t_rpa_b, t_rpa_j, t_rpa_m;
+DROP TABLE m_rpa_a, m_rpa_ab, m_rpa_j, m_rpa_l, m_rpa_m, t_rpa_a, t_rpa_b, t_rpa_j, t_rpa_l, t_rpa_m;
