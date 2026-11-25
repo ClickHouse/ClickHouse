@@ -1,0 +1,37 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>width</name>
+            <values>
+                <value>16</value>
+                <value>3</value>
+                <value>6</value>
+                <value>15</value>
+                <value>17</value>
+                <value>31</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <create_query>CREATE TABLE fixed_string_bit_const (value16 FixedString(16), value3 FixedString(3), value6 FixedString(6), value15 FixedString(15), value17 FixedString(17), value31 FixedString(31), value64 FixedString(64)) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO fixed_string_bit_const
+        WITH repeat(concat(toString(number), unhex('00F17E')), 16) AS source
+        SELECT
+            toFixedString(substring(source, 1, 16), 16),
+            toFixedString(substring(source, 1, 3), 3),
+            toFixedString(substring(source, 1, 6), 6),
+            toFixedString(substring(source, 1, 15), 15),
+            toFixedString(substring(source, 1, 17), 17),
+            toFixedString(substring(source, 1, 31), 31),
+            toFixedString(substring(source, 1, 64), 64)
+        FROM numbers(1048576)
+    </fill_query>
+    <query>SELECT bitAnd(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <query>SELECT bitOr(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <query>SELECT bitXor(value{width}, toFixedString(substring(repeat(unhex('A501F0803C12D769'), 8), 1, {width}), {width})) FROM fixed_string_bit_const FORMAT Null</query>
+    <drop_query>DROP TABLE fixed_string_bit_const</drop_query>
+</test>

@@ -486,6 +486,18 @@ private:
         size_t b_offset = 0;
         const size_t b_increment = 16 % N;
 
+        if (b_increment == 0)
+        {
+            /// The constant pattern repeats at every 16-byte boundary.
+#pragma clang loop unroll_count(4)
+            for (size_t i = 0; i < size; i += 16)
+                for (size_t j = 0; j < 16; ++j)
+                    c[i + j] = inverted
+                        ? Op::template apply<UInt8>(a[i + j], b_repeated[j])
+                        : Op::template apply<UInt8>(b_repeated[j], a[i + j]);
+            return;
+        }
+
         /// Example:
         ///
         /// At first iteration we copy 16 bytes at offset 0 from b_repeated:
