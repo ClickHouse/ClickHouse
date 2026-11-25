@@ -55,7 +55,7 @@ PartAggregationCache::Key makePartAggregationCacheKey(
 
 Names collectPartAggregationCacheColumnsToRead(
     const Aggregator::Params & params,
-    const std::vector<IntermediateStepAction> & intermediate_actions)
+    const VectorWithMemoryTracking<IntermediateStepAction> & intermediate_actions)
 {
     /// What the aggregator consumes.
     NameSet required;
@@ -93,7 +93,7 @@ void populatePartAggregationCache(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const std::vector<IntermediateStepAction> & intermediate_actions)
+    const VectorWithMemoryTracking<IntermediateStepAction> & intermediate_actions)
 {
     auto log = getLogger("PartAggregationCachePopulator");
 

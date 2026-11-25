@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ PartAggregationCache::Key makePartAggregationCacheKey(
 /// takes it. The result is sorted and free of duplicates.
 Names collectPartAggregationCacheColumnsToRead(
     const Aggregator::Params & params,
-    const std::vector<IntermediateStepAction> & intermediate_actions);
+    const VectorWithMemoryTracking<IntermediateStepAction> & intermediate_actions);
 
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
@@ -54,6 +55,6 @@ void populatePartAggregationCache(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const std::vector<IntermediateStepAction> & intermediate_actions = {});
+    const VectorWithMemoryTracking<IntermediateStepAction> & intermediate_actions = {});
 
 }

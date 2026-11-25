@@ -101,9 +101,9 @@ static bool hasLambda(const ActionsDAG & dag)
 /// The actions are built with the query's `ExpressionActionsSettings` (as `ExpressionStep` and
 /// `FilterStep` do when building the pipeline), so the cache population evaluates them the same
 /// way as the query itself: short-circuit evaluation, `max_temporary_columns` and the other limits apply.
-static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan::Node & node, const ExpressionActionsSettings & actions_settings)
+static VectorWithMemoryTracking<IntermediateStepAction> collectIntermediateActions(QueryPlan::Node & node, const ExpressionActionsSettings & actions_settings)
 {
-    std::vector<IntermediateStepAction> actions;
+    VectorWithMemoryTracking<IntermediateStepAction> actions;
     QueryPlan::Node * current = &node;
 
     while (current)
