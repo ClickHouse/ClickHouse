@@ -8,6 +8,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -101,6 +103,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> lhs_source_to_rhs_source;
     UnorderedMapWithMemoryTracking<const IQueryTreeNode *, const IQueryTreeNode *> rhs_source_to_lhs_source;
 
+    /** A node that is shared between the two trees is not traversed, because it is equal to itself.
+      * But every column source that is referenced from a shared node corresponds to itself,
+      * and this must not contradict the correspondence above: `f(a.x, a.x)` is not equal to `f(a.x, b.x)`
+      * also when the first argument is the same node in both trees.
+      * This is checked after the traversal, and only if some column source was paired with a different one.
+      * It is not so in the usual case, when the compared expressions refer to the same table expressions.
+      */
+    VectorWithMemoryTracking<const IQueryTreeNode *> shared_nodes;
+    bool has_different_sources_paired = false;
+
     nodes_to_process.emplace_back(this, &rhs);
 
     while (!nodes_to_process.empty())
@@ -120,6 +132,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         if (lhs_node_to_compare == rhs_node_to_compare)
         {
             equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+            shared_nodes.push_back(lhs_node_to_compare);
             continue;
         }
 
@@ -169,12 +182,57 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
                 if (lhs_it->second != rhs_source.get() || rhs_it->second != lhs_source.get())
                     return false;
 
+                if (lhs_source != rhs_source)
+                    has_different_sources_paired = true;
+
                 if (lhs_inserted)
                     nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
             }
         }
 
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+    }
+
+    if (!has_different_sources_paired || shared_nodes.empty())
+        return true;
+
+    /// A column source that is referenced from a shared node corresponds to itself.
+    auto is_paired_with_different_source = [&](const IQueryTreeNode * source)
+    {
+        auto lhs_it = lhs_source_to_rhs_source.find(source);
+        if (lhs_it != lhs_source_to_rhs_source.end() && lhs_it->second != source)
+            return true;
+
+        auto rhs_it = rhs_source_to_lhs_source.find(source);
+        return rhs_it != rhs_source_to_lhs_source.end() && rhs_it->second != source;
+    };
+
+    UnorderedSetWithMemoryTracking<const IQueryTreeNode *> visited_shared_nodes;
+
+    while (!shared_nodes.empty())
+    {
+        const auto * shared_node = shared_nodes.back();
+        shared_nodes.pop_back();
+
+        if (!visited_shared_nodes.emplace(shared_node).second)
+            continue;
+
+        for (const auto & child : shared_node->children)
+        {
+            if (child)
+                shared_nodes.push_back(child.get());
+        }
+
+        if (const auto * column_node = shared_node->as<ColumnNode>())
+        {
+            if (auto source = column_node->getColumnSourceOrNull())
+            {
+                if (is_paired_with_different_source(source.get()))
+                    return false;
+
+                shared_nodes.push_back(source.get());
+            }
+        }
     }
 
     return true;
