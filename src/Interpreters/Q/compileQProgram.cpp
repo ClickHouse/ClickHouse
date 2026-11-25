@@ -30,6 +30,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <base/scope_guard.h>
 
@@ -434,6 +435,7 @@ bool isAggregateFunctionName(const String & name)
 
 void windowizeImpl(ASTPtr & ast, const ASTs & partition)
 {
+    checkStackSize();
     auto * function = ast->as<ASTFunction>();
     if (!function)
         return;
@@ -491,6 +493,7 @@ const QNode * functionNode(const QNode & apply)
 
 String deriveColumnName(const QNodePtr & node)
 {
+    checkStackSize();
     if (!node)
         return "x";
     switch (node->kind)
@@ -1362,6 +1365,9 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
 
 QValue QCompiler::compile(const QNodePtr & node, QEnvironment & env, QScope * scope)
 {
+    /// The tree of a q program can be as deep as `max_parser_depth`, and every level takes several frames here.
+    checkStackSize();
+
     if (!node)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "An empty expression in the q program");
 
@@ -1670,6 +1676,7 @@ ASTPtr buildSource(const QTable & source, const QScope & scope, const std::vecto
 
 bool hasWindow(const ASTPtr & ast)
 {
+    checkStackSize();
     if (const auto * function = ast->as<ASTFunction>())
     {
         if (function->isWindowFunction())

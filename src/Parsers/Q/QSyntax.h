@@ -126,6 +126,11 @@ struct QNode
     /// The offset in the source text, for error messages.
     size_t offset = 0;
 
+    /// The height of the tree under the node: 1 for a node without parts. A long expression without parentheses,
+    /// like `1+1+1+...`, is as deep as it is long, so the parser limits the height by `max_parser_depth`
+    /// along with the nesting of the brackets: the tree is processed recursively.
+    size_t height = 1;
+
     /// Literal: the type of the atoms, and whether it is a list (a one-item list `enlist 1` is distinct from the atom `1`).
     QType type = QType::Mixed;
     bool is_list = false;

@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <charconv>
 #include <cmath>
@@ -575,6 +576,7 @@ private:
         QParser & parser;
         explicit DepthGuard(QParser & parser_) : parser(parser_)
         {
+            checkStackSize();
             ++parser.depth;
             if (parser.max_depth && parser.depth > parser.max_depth)
                 throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "The q program is too deeply nested (the maximum depth is {})", parser.max_depth);
@@ -642,6 +644,37 @@ private:
         return std::make_shared<QNode>(kind, offset);
     }
 
+    /// Sets the height of a node from its parts, and checks it against the limit. The nesting of the brackets is limited
+    /// by `DepthGuard`, but a sequence of operators (`1+1+1+...`) or of brackets and adverbs after an item (`f[1][2][3]...`)
+    /// makes a tree as deep as the sequence is long with no nesting in the text, and the tree is processed recursively.
+    void finish(QNode & node) const
+    {
+        size_t height = 0;
+        auto visit = [&](const QNodePtr & part)
+        {
+            if (part)
+                height = std::max(height, part->height);
+        };
+        for (const auto & child : node.children)
+            visit(child);
+        for (const auto * columns : {&node.key_columns, &node.columns})
+            for (const auto & column : *columns)
+                visit(column.expression);
+        if (node.sql)
+        {
+            for (const auto * columns : {&node.sql->columns, &node.sql->by})
+                for (const auto & column : *columns)
+                    visit(column.expression);
+            visit(node.sql->from);
+            visit(node.sql->limit);
+            for (const auto & constraint : node.sql->where)
+                visit(constraint);
+        }
+        node.height = height + 1;
+        if (max_depth && node.height > max_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "The q program is too deeply nested (the maximum depth is {})", max_depth);
+    }
+
     /// Parses an expression up to a stop token, without consuming it. Returns `nullptr` for an empty expression.
     QNodePtr parseExpression(const Stop & stop)
     {
@@ -663,6 +696,7 @@ private:
                 if (!value)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing the value of the assignment to '{}' in the q program", token.text);
                 node->children.push_back(value);
+                finish(*node);
                 items.push_back(Item{node, false});
                 break;
             }
@@ -705,6 +739,7 @@ private:
                     auto node = makeNode(QNodeKind::Apply, item.node->offset);
                     node->children = {item.node, items[i - 1].node, result};
                     node->infix = true;
+                    finish(*node);
                     result = node;
                     --i;
                 }
@@ -713,6 +748,7 @@ private:
                     auto node = makeNode(QNodeKind::Apply, item.node->offset);
                     node->children = {item.node, result};
                     node->juxtaposition = true;
+                    finish(*node);
                     result = node;
                 }
             }
@@ -721,6 +757,7 @@ private:
                 auto node = makeNode(QNodeKind::Apply, item.node->offset);
                 node->children = {item.node, result};
                 node->juxtaposition = true;
+                finish(*node);
                 result = node;
             }
         }
@@ -815,6 +852,7 @@ private:
                 auto node = makeNode(QNodeKind::Apply, offset);
                 node->children.push_back(item.node);
                 parseBracketArguments(node->children);
+                finish(*node);
                 item = Item{node, false};
             }
             else if (token.type == QTokenType::Adverb && !token.space_before)
@@ -822,6 +860,7 @@ private:
                 auto node = makeNode(QNodeKind::Derived, token.offset);
                 node->name = String(token.text);
                 node->children.push_back(item.node);
+                finish(*node);
                 ++pos;
                 item = Item{node, true};
             }
@@ -895,6 +934,7 @@ private:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "An empty item in the list at position {} of the q program", offset + 1);
             node->children.push_back(item);
         }
+        finish(*node);
         return node;
     }
 
@@ -947,11 +987,13 @@ private:
             }
         }
         expect(QTokenType::CloseParen, ")");
+        finish(*node);
         return node;
     }
 
     static void collectImplicitParams(const QNodePtr & node, bool & has_x, bool & has_y, bool & has_z)
     {
+        checkStackSize();
         if (!node || node->kind == QNodeKind::Lambda)
             return;
         if (node->kind == QNodeKind::Name)
@@ -1019,6 +1061,7 @@ private:
         const QToken & close = peek();
         expect(QTokenType::CloseBrace, "}");
         node->source = String(text.substr(offset, close.offset + 1 - offset));
+        finish(*node);
 
         if (!explicit_params)
         {
@@ -1155,6 +1198,7 @@ private:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "'update' requires the columns to update");
 
         node->sql = std::move(sql);
+        finish(*node);
         return node;
     }
 };
