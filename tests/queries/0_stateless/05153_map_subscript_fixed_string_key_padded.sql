@@ -5,6 +5,7 @@
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_fixed_key;
+DROP TABLE IF EXISTS t_fixed_key_buckets;
 DROP TABLE IF EXISTS t_lc_fixed_key;
 DROP TABLE IF EXISTS t_string_key;
 DROP TABLE IF EXISTS t_bad_key;
@@ -36,8 +37,11 @@ SELECT 'S5 control, wider than N, constant', m[unhex('6100000000')] FROM t_fixed
 SELECT 'S5 control, wider than N, non-constant', m[materialize(unhex('6100000000'))] FROM t_fixed_key;
 
 -- S6: the constant subscript must keep reaching the padded subcolumn read rather than the matchers.
+-- Only the `with_buckets` map serialization has that rewrite.
+CREATE TABLE t_fixed_key_buckets (m Map(FixedString(4), UInt8)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 SELECT 'S6 control, subcolumn rewrite still fires', count() FROM (
-    EXPLAIN QUERY TREE SELECT m[unhex('6100')] FROM t_fixed_key
+    EXPLAIN QUERY TREE SELECT m[unhex('6100')] FROM t_fixed_key_buckets
 ) WHERE explain ILIKE '%column\_name: m.key\_%' SETTINGS optimize_functions_to_subcolumns = 1;
 
 -- S21: arrayElementOrNull is the same matchers in Null mode, so a paddable key must return the value
@@ -168,6 +172,7 @@ SELECT 'S34 control, bloom_filter explicit key subcolumn already matched unindex
        (SELECT count() FROM t_bloom_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_fixed_key;
+DROP TABLE t_fixed_key_buckets;
 DROP TABLE t_lc_fixed_key;
 DROP TABLE t_string_key;
 DROP TABLE t_bloom_key;
