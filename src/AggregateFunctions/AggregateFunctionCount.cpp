@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -97,7 +98,9 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).count += data(rhs).count;
+        /// The merged count is the modular `UInt64` sum of the partial counts (see `getMergedValueBound`), e.g. for a
+        /// state multiplied by a large number with repeated merges.
+        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

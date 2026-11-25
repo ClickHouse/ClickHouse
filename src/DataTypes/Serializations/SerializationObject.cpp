@@ -972,8 +972,8 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         /// Calculate statistics for paths in shared data.
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        size_t start = shared_data_offsets[offset - 1];
-        size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
+        size_t start = shared_data_offsets[static_cast<ssize_t>(offset) - 1];
+        size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[static_cast<ssize_t>(offset + limit) - 1];
         for (size_t i = start; i != end; ++i)
         {
             auto path = shared_data_paths->getDataAt(i);
@@ -1436,6 +1436,10 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+
+                        /// Skip value of this path.
+                        auto tmp_column = typed_column->cloneEmpty();
+                        typed_it->second->deserializeBinary(*tmp_column, istr, settings);
                     }
                     else
                     {
@@ -1450,9 +1454,15 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                    }
 
-                    dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
+                        /// Skip value of this path.
+                        auto tmp_column = dynamic_it->second->cloneEmpty();
+                        dynamic_serialization->deserializeBinary(*tmp_column, istr, settings);
+                    }
+                    else
+                    {
+                        dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
+                    }
                 }
                 /// Try to add a new dynamic paths.
                 else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(path))
@@ -1465,9 +1475,10 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     String value;
                     Field field;
                     readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
-                    /// Don't write nulls into shared data.
-                    if (!field.isNull())
-                        paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
+                    /// Keep nulls as empty values, so a later duplicate of this path is skipped too.
+                    if (field.isNull())
+                        value.clear();
+                    paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
                 }
             }
             else
@@ -1478,7 +1489,11 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             }
         }
 
-        std::sort(paths_and_values_for_shared_data.begin(), paths_and_values_for_shared_data.end());
+        /// Sort by path only, so the first value of a duplicated path is kept.
+        std::stable_sort(
+            paths_and_values_for_shared_data.begin(),
+            paths_and_values_for_shared_data.end(),
+            [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
             const auto & [path, value] = paths_and_values_for_shared_data[i];
@@ -1487,7 +1502,8 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                 if (!settings.json.type_json_skip_duplicated_paths)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
             }
-            else
+            /// Don't write nulls into shared data.
+            else if (!value.empty())
             {
                 shared_data_paths->insertData(path.data(), path.size());
                 shared_data_values->insertData(value.data(), value.size());
