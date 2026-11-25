@@ -22,6 +22,7 @@ namespace Setting
 {
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
+    extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
@@ -67,7 +68,11 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
 {
     /// Split ranges to read more concurrently.
     /// We need to keep an order of parts and ranges, but we can read the same part from multiple readers.
-    const size_t marks_per_stream = total_marks / std::max<size_t>(max_threads, 1) + 1;
+    /// Asynchronous readers wait in the IO thread pool, not in a thread, so read with as many streams as a `ReadFromMergeTree` would.
+    size_t num_streams = max_threads;
+    if (reader_settings.use_asynchronous_read_from_pool && num_streams > 1)
+        num_streams = std::max<size_t>(num_streams, context->getSettingsRef()[Setting::max_streams_for_merge_tree_reading]);
+    const size_t marks_per_stream = total_marks / std::max<size_t>(num_streams, 1) + 1;
 
     RangesInDataParts split_parts_and_ranges;
 
