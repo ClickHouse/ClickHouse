@@ -31,6 +31,14 @@ SETTINGS max_threads = 8;
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY f) FROM t_window_float_nan SETTINGS max_threads = 8)
 WHERE explain ILIKE '%ScatterByPartition%';
 
+-- A distributed plan keeps the window above a sorted gather, which merges the streams of the sort below it.
+SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY k) AS c FROM t_window_float_nan) ORDER BY c
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0,
+    distributed_plan_optimize_exchanges = 1, distributed_plan_max_rows_to_broadcast = 0, enable_parallel_replicas = 0,
+    distributed_plan_default_reader_bucket_count = 2, max_rows_to_group_by = 0, max_threads = 4, max_block_size = 1024,
+    optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 1,
+    read_in_order_use_buffering = 0, read_in_order_use_virtual_row = 0;
+
 -- A parallel DISTINCT below the window partitions its streams by the bits of the key, which the
 -- window must not reuse.
 CREATE TABLE t_window_float_distinct (k Float64, v UInt64) ENGINE = MergeTree() ORDER BY v;
