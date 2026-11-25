@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -39,7 +40,7 @@ class ConstantExpressionTemplate : boost::noncopyable
         static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
 
-        String dumpTemplate() const;
+        [[nodiscard]] String dumpTemplate() const;
 
         String result_column_name;
 
@@ -89,7 +90,7 @@ public:
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
     ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset = 0);
 
-    size_t rowsCount() const { return rows_count; }
+    [[nodiscard]] size_t rowsCount() const { return rows_count; }
 
 private:
     bool tryParseExpression(
@@ -98,6 +99,7 @@ private:
         const FormatSettings & format_settings,
         size_t & cur_column,
         const Settings & settings);
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     bool parseLiteralAndAssertType(
         ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 
