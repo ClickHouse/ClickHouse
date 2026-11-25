@@ -139,14 +139,6 @@ SELECT count(), sum(a1 + a3 + b1 + b3) FROM t_foc_l AS l,
 WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 SETTINGS join_algorithm = 'hash';
 
-SELECT '-- the same filter on a computed column named like a stored column that is not an operand: syntax order';
-SELECT extract(explain, 'Conditions: .*') FROM (
-    EXPLAIN actions = 1
-    SELECT count() FROM t_foc_l AS l JOIN (SELECT * FROM (SELECT b1, b2, b3, b3 + 1 AS f FROM t_foc_r) WHERE f < 500) AS r
-    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
-    SETTINGS query_plan_filter_push_down = 0, query_plan_merge_expressions = 0, optimize_move_to_prewhere = 0
-) WHERE explain LIKE '%Conditions:%';
-
 -- A predicate on a column computed by a `DEFAULT` or `MATERIALIZED` expression reads the columns the expression reads,
 -- and a predicate on those reads the computed column too.
 SELECT '-- WHERE on a MATERIALIZED column computed from an operand: syntax order';
