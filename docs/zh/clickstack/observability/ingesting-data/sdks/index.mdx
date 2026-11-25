@@ -1,0 +1,38 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks
+description: '适用于 ClickHouse Observability 和自管理部署的语言 SDK 设置与配置。'
+title: '语言 SDK'
+sidebarTitle: '概览'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
+---
+
+使用 ClickStack SDKs 或 OpenTelemetry 对应用程序进行插桩，将遥测数据发送到 ClickHouse Observability。以下指南介绍了如何对应用程序进行插桩，以及如何为 ClickHouse Observability 和自管理部署配置连接设置。
+
+如需让编码助手将这些指令应用到您的应用程序中，请参阅 [使用 AI 进行插桩](/zh/clickstack/observability/ingesting-data/sdks/instrument-with-ai)。
+
+| 语言或平台                    | 指南                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| AWS Lambda               | [适用于异步处理器的 ClickStack Node.js SDK，或 OpenTelemetry 层](/zh/clickstack/observability/ingesting-data/sdks/aws-lambda) |
+| 浏览器                      | [浏览器遥测数据与会话回放](/zh/clickstack/observability/ingesting-data/sdks/browser)                                          |
+| Deno                     | [内置 OpenTelemetry 支持](/zh/clickstack/observability/ingesting-data/sdks/deno)                                      |
+| Elixir                   | [Erlang/Elixir 追踪](/zh/clickstack/observability/ingesting-data/sdks/elixir)                                       |
+| Go                       | [Go 应用程序插桩](/zh/clickstack/observability/ingesting-data/sdks/golang)                                              |
+| Java                     | [Java 代理与 SDK](/zh/clickstack/observability/ingesting-data/sdks/java)                                             |
+| NestJS                   | [适用于 NestJS 的 ClickStack Node.js SDK](/zh/clickstack/observability/ingesting-data/sdks/nestjs)                    |
+| Next.js (自托管 Node.js)    | [ClickStack Node.js SDK](/zh/clickstack/observability/ingesting-data/sdks/nextjs#self-hosted-nextjs)              |
+| Next.js (Vercel 或 Edge)  | [`@vercel/otel`](/zh/clickstack/observability/ingesting-data/sdks/nextjs#vercel-or-edge)                          |
+| Node.js                  | [ClickStack Node.js SDK](/zh/clickstack/observability/ingesting-data/sdks/nodejs)                                 |
+| Python                   | [Python 应用程序插桩](/zh/clickstack/observability/ingesting-data/sdks/python)                                          |
+| React Native             | [React Native JavaScript 层追踪](/zh/clickstack/observability/ingesting-data/sdks/react-native)                      |
+| Ruby on Rails            | [Ruby on Rails 追踪](/zh/clickstack/observability/ingesting-data/sdks/ruby)                                         |
+
+## 连接您的应用程序 {#connect-your-application}
+
+1. 参照适用于您所用语言或平台的指南配置插桩。
+2. 在该指南中选择目标端：
+   * **全托管：** 使用您服务的托管 OTLP 端点和摄取 API key，可在 **团队设置 → 数据 → Managed Telemetry** 中找到。
+   * **自管理：** 使用您的 OpenTelemetry 收集器的 OTLP 端点及已配置的摄取密钥。
+3. 在应用程序中产生一些活动，然后在 UI 中确认能看到预期的遥测数据。
+
+各指南分别说明了每个 SDK 的身份验证格式和导出器设置。Lambda 指南还提供了 OpenTelemetry 层选项，可通过本地采集器转发遥测数据。

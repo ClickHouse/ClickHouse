@@ -16,13 +16,14 @@
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocJITArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -167,6 +168,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
     cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -179,6 +181,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+    if (!cgroupcpuset)
+        openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cgroupcpuset);
 
     try
     {
@@ -187,7 +191,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        if (version == ICgroupsReader::CgroupsVersion::V2)
+            openCgroupv2MemoryFiles(cgroup_path);
+        else
+            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -221,6 +228,33 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
+void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
+{
+    cgroupmem_limit_in_bytes.reset();
+    cgroupmem_reader.reset();
+    cgroupmem_dir.reset();
+    if (!dir)
+        return;
+
+    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
+    try
+    {
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+    }
+    catch (...)
+    {
+        if (cgroupmem_failed_dir != dir)
+            tryLogCurrentException(log, "cgroups are not available");
+        cgroupmem_failed_dir = dir;
+    }
+
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    {
+        cgroupmem_dir = dir;
+        cgroupmem_failed_dir.reset();
+    }
+}
+
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -1811,9 +1845,55 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
+    /// and the limit is only visible in the cpuset.
+    /// As for `cpu.max`, the nearest cgroup v2 `cpuset.cpus.effective` can move at runtime. The cgroup v1 file is opened once.
+    try
+    {
+        if (getCgroupsV2PathContainingFile("cpuset.cpus.effective") != cgroupcpuset_dir)
+            cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpuset.reset();
+        cgroupcpuset_dir.reset();
+    }
+    if (cgroupcpuset)
+    {
+        try
+        {
+            cgroupcpuset->rewind();
+
+            String cpu_list;
+            readString(cpu_list, *cgroupcpuset);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list))
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                if (max_cpu_cgroups > 0)
+                    max_cpu_cgroups = std::min(max_cpu_cgroups, cpuset_cores);
+                /// Without a quota, a cpuset with all online CPUs is not a limit.
+                else if (*cpuset_cpus < getNumberOfLogicalCPUCores())
+                    max_cpu_cgroups = cpuset_cores;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// Reopened on the next update for cgroup v2.
+            if (cgroupcpuset_dir)
+            {
+                cgroupcpuset.reset();
+                cgroupcpuset_dir.reset();
+            }
+        }
+    }
+
     if (max_cpu_cgroups > 0)
     {
-        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups,
+            "The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period "
+            "and the number of CPUs in the effective cpuset."};
     }
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)
@@ -2011,6 +2091,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
+    try
+    {
+        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+            openCgroupv2MemoryFiles(dir);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (cgroupmem_dir)
+            openCgroupv2MemoryFiles({});
+    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -2062,6 +2154,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (cgroupmem_dir)
+                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)

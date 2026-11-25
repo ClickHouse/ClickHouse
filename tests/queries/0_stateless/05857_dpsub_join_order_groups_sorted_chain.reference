@@ -1,0 +1,7 @@
+-- planned two tables at a time: merge joins only, every input of a merge join already sorted, every join sharded
+3	0	6	6	3
+-- without optimize_sorting_by_input_stream_properties a join result is sorted again, so the joins between the groups hash
+1	2
+-- results
+1000	1998000
+1000	1998000

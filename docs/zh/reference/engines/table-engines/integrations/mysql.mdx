@@ -40,9 +40,9 @@ SETTINGS
 
 **引擎参数**
 
-* `host:port` — MySQL 服务器地址。
+* `host:port` — MySQL 服务器地址。主机必须是普通主机名或 IP 地址，并通过 TCP 连接指定端口，`localhost` 也不例外：不支持 Unix 套接字。MySQL 客户端库支持的其他主机写法 (例如连接字符串或以逗号分隔的主机列表) 均会被拒绝。
 * `database` — 远程数据库名称。
-* `table` — 远程表名，或按原样传递给 MySQL 的查询 (请参见[传递查询而不是表名](#passing-a-query)) 。
+* `table` — 远程表名，或按原样传递给 MySQL 的查询 (请参见[传入查询而非表名](#passing-a-query)) 。
 * `user` — MySQL 用户。
 * `password` — 用户密码。
 * `replace_query` — 将 `INSERT INTO` 查询转换为 `REPLACE INTO` 的标志。如果 `replace_query=1`，则会替换该查询。
@@ -54,21 +54,22 @@ SETTINGS
 
 简单的 `WHERE` 子句 (如 `=, !=, >, >=, <, <=`) 会在 MySQL 服务器上执行。
 
-其余条件以及 `LIMIT` 采样约束仅会在对 MySQL 的查询完成后由 ClickHouse 执行。
+其余条件会在对 MySQL 的查询完成后由 ClickHouse 执行。仅当可以安全下推且启用了 [external&#95;storage&#95;push&#95;down&#95;limit](/zh/reference/settings/session-settings/external-storage#external_storage_push_down_limit) 时，`LIMIT` 采样约束才会下推到 MySQL 执行；否则，将在 ClickHouse 中执行。
 
 ## TLS/SSL {#tls-ssl}
 
 与 MySQL 的加密连接凭据以命名集合键 (或键值参数) 的形式传递：
 
-| 参数             | 说明                         |
-| -------------- | -------------------------- |
-| `ssl_ca_pem`   | 用于验证 MySQL 服务器证书的 CA 证书内容。 |
-| `ssl_cert_pem` | 用于基于证书的身份验证的客户端证书内容。       |
-| `ssl_key_pem`  | 与 `ssl_cert_pem` 对应的私钥内容。  |
+| 参数                   | 说明                                       |
+| -------------------- | ---------------------------------------- |
+| `ssl_ca_pem`         | 用于验证 MySQL 服务器证书的 CA 证书内容。               |
+| `ssl_cert_pem`       | 用于基于证书的身份验证的客户端证书内容。                     |
+| `ssl_key_pem`        | 与 `ssl_cert_pem` 对应的私键内容。                |
+| `ssl_key_passphrase` | 已加密的 `ssl_key` / `ssl_key_pem` 的密码短语。可选。 |
 
-这些值为相应 PEM 文件的内容，可复制到命名集合或查询中。它们会像密码一样在日志和 `SHOW` 查询中被掩盖。
+这些值为相应 PEM 文件的内容 (以及私键密码短语)，可复制到命名集合或查询中。它们会像密码一样在日志和 `SHOW` 查询中被掩盖。
 
-也可以在 `ssl_ca`、`ssl_cert` 和 `ssl_key` 中通过服务器上的文件路径提供相同的凭据——但**仅限于服务器配置文件中定义的命名集合**，且此类值无法在查询中被覆盖。服务器会以自身的特权打开这些文件；因此，若允许通过 SQL 接受路径，任何能够定义 MySQL 数据源的用户都可以探查本地文件系统，并使用自己无权读取的证书和密钥进行身份验证。
+也可以在 `ssl_ca`、`ssl_cert` 和 `ssl_key` 中通过服务器上的文件路径提供相同的凭据——但**仅限于服务器配置文件中定义的命名集合**，且此类值无法在查询中被覆盖。服务器会以自身的特权打开这些文件；因此，若允许通过 SQL 接受路径，任何能够定义 MySQL 数据源的用户都可以探查本地文件系统，并使用自己无权读取的证书和键进行身份验证。
 
 ```xml
 <named_collections>

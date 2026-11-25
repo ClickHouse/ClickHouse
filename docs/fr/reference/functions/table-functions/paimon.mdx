@@ -42,9 +42,27 @@ Une table ayant la structure spécifiée, permettant de lire les données de la 
 
 ## Limitations {#limitations}
 
-La fusion à la lecture (merge-on-read) n&#39;étant pas implémentée, **les tables à clé primaire ne peuvent pas être lues** : le lecteur renvoie l&#39;union brute des
-fichiers de données du snapshot, qui contient encore les versions de lignes remplacées par des upserts ultérieurs. La lecture d&#39;une table dont le schéma
-déclare `primary-key` lève donc une exception.
+La fusion à la lecture (merge-on-read) n&#39;étant pas implémentée, une table à clé primaire n&#39;est lue que dans les cas où Paimon la lit sans fusion : un bucket est
+lu lorsque tous ses fichiers de données se trouvent au-dessus du niveau 0, sont réputés ne contenir aucune ligne de rétractation et se trouvent tous dans un même niveau. Avec
+`deletion-vectors.enabled` ou `'merge-engine' = 'first-row'`, les fichiers peuvent se répartir sur plusieurs niveaux et, sauf si
+`batch-scan-mode` est défini sur un mode autre que `none`, les fichiers de niveau 0 ne sont pas lus tant qu&#39;ils n&#39;ont pas été compactés, comme dans Paimon.
+La lecture de tout autre bucket lève une exception ; un compactage complet dans Paimon (`compact_strategy => 'full'`) le rend lisible.
+
+Les vecteurs de suppression n&#39;étant pas appliqués, **les snapshots comportant des vecteurs de suppression ne peuvent pas être lus** : l&#39;ensemble de résultats contiendrait encore
+les lignes supprimées par des instructions `DELETE` et `UPDATE` ultérieures. La lecture d&#39;un snapshot dont le manifest d&#39;index référence
+des vecteurs de suppression lève donc une exception, même après la désactivation de `deletion-vectors.enabled`.
+Un compactage complet dans Paimon (`compact_strategy => 'full'`) applique les vecteurs de suppression ; les snapshots créés ensuite
+peuvent alors de nouveau être lus.
+
+Chaque fichier de données est lu avec le schéma utilisé lors de son écriture, et ses colonnes de premier niveau sont mises en correspondance avec le schéma actuel via
+l&#39;identifiant de champ Paimon : les colonnes renommées, ainsi que les colonnes supprimées puis rajoutées sous le même nom, sont donc lues comme dans Spark.
+
+Les champs d&#39;une colonne `ROW` sont mis en correspondance avec les fichiers de données par nom, et non par identifiant de champ Paimon. Par conséquent, **les fichiers de données écrits avant qu&#39;un
+champ d&#39;une colonne `ROW` soit renommé, ou avant qu&#39;un tel champ soit supprimé puis remplacé par un autre portant le même nom (comparé
+sans tenir compte de la casse), ne peuvent pas être lus** : l&#39;ensemble de résultats contiendrait `NULL` pour le champ renommé et les valeurs du champ
+supprimé pour le champ rajouté. La lecture d&#39;un tel fichier de données lève donc une exception. L&#39;ajout et la suppression de champs sont pris en charge.
+Réécrire la table avec le schéma actuel dans Paimon, par exemple avec `INSERT OVERWRITE <table> SELECT * FROM <table>`,
+rend lisibles les snapshots créés ensuite.
 
 ## Définir une collection nommée {#defining-a-named-collection}
 
@@ -93,7 +111,7 @@ La fonction de table `paimon` est désormais un alias de `paimonS3`.
 | FLOAT                             | Float32                    |
 | DOUBLE                            | Float64                    |
 | STRING,VARCHAR,BYTES,VARBINARY    | String                     |
-| DATE                              | Date                       |
+| DATE                              | Date32                     |
 | TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
 | TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
 | TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
@@ -102,6 +120,7 @@ La fonction de table `paimon` est désormais un alias de `paimonS3`.
 | DECIMAL(P,S)                      | Decimal(P,S)               |
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
+| ROW                               | Tuple                      |
 
 ## Prise en charge des partitions {#partition-supported}
 
