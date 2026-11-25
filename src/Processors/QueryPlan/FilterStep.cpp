@@ -319,9 +319,11 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
-static bool canBeEvaluatedOnMoreRowsImpl(const ActionsDAG::Node * atom, bool must_be_cheap)
+/// Can the atom be evaluated on more rows than in the original order? All its functions must be unable to throw,
+/// be stateless, have no observable side effects and be deterministic in the scope of the query.
+bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * atom)
 {
-    return allReachableNodes({atom}, [&](const ActionsDAG::Node * node)
+    return allReachableNodes({atom}, [](const ActionsDAG::Node * node)
     {
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
             return false;
@@ -337,27 +339,12 @@ static bool canBeEvaluatedOnMoreRowsImpl(const ActionsDAG::Node * atom, bool mus
             if (function.isStateful()
                 || function.hasObservableSideEffects()
                 || !function.isDeterministicInScopeOfQuery()
-                || (must_be_cheap && function.isSuitableForShortCircuitArgumentsExecution(arguments))
                 || function.canThrow(arguments))
                 return false;
         }
 
         return true;
     });
-}
-
-/// Can the atom be evaluated on more rows than in the original order? All its functions must be unable to throw,
-/// be stateless, have no observable side effects and be deterministic in the scope of the query.
-bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * atom)
-{
-    return canBeEvaluatedOnMoreRowsImpl(atom, /*must_be_cheap=*/ false);
-}
-
-/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
-/// so it must also be cheap (no functions that are worth to execute lazily). See setting `short_circuit_function_evaluation_reorder_arguments`.
-bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
-{
-    return canBeEvaluatedOnMoreRowsImpl(atom, /*must_be_cheap=*/ true);
 }
 
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
@@ -379,6 +366,13 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * atom)
 
         return false;
     });
+}
+
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must also be cheap. See setting `short_circuit_function_evaluation_reorder_arguments`.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * atom)
+{
+    return canBeEvaluatedOnMoreRows(atom) && !isHeavyAndChainAtom(atom);
 }
 
 /// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
