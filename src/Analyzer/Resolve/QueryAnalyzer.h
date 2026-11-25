@@ -14,6 +14,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -119,7 +120,10 @@ class QueryAnalyzer
 {
 public:
     explicit QueryAnalyzer(
-        bool only_analyze_, bool positional_arguments_already_resolved_ = false, StoragePtr replaced_storage_ = nullptr);
+        bool only_analyze_,
+        bool positional_arguments_already_resolved_ = false,
+        StoragePtr replaced_storage_ = nullptr,
+        bool view_source_in_subqueries_ = false);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -156,6 +160,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
@@ -174,8 +179,12 @@ private:
 
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
-    static std::string
-    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
+    static std::string rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
@@ -334,7 +343,7 @@ private:
     };
     std::vector<ReplacedTableStorage> replaced_table_storages;
 
-    const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
+    [[nodiscard]] const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
       * An inlined view keeps behaving as a table expression with that name, exactly as it does without
@@ -379,8 +388,10 @@ private:
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
-    /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
-    std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+    /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants
+    /// the key also holds `Context::isDistributed` of the scope, because their bases capture it.
+    /// See `resolveFunction`.
+    std::map<std::pair<IQueryTreeNode::Hash, bool>, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
 
@@ -389,6 +400,8 @@ private:
 
     /// The view source that the interpreter swaps into the query tree after the analysis.
     const StoragePtr replaced_storage;
+    /// See `SelectQueryOptions`. Not passed to the analyzers of inlined views: the inner query of a view reads the table itself.
+    const bool view_source_in_subqueries;
 
     /// True while resolving a cloned AND/OR expression to infer its real result type and detect
     /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early

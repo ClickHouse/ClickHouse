@@ -1,4 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -16,6 +20,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,6 +36,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
             return nullptr;
 
         if (reading->isParallelReadingEnabled())
+            return nullptr;
+
+        /// A bucketed read of a distributed plan reads only the marks pinned to its bucket. Splitting
+        /// into layers takes the ranges of the whole table, so every bucket would read all rows.
+        if (reading->getDistributedReadBucketCount() > 0)
             return nullptr;
 
         /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
@@ -86,7 +96,7 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     {
         const auto & array_joined_columns = array_join->getColumns();
 
-        std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
+        UnorderedSetWithMemoryTracking<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
 
         /// Remove array joined columns from outputs.
         /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
@@ -113,7 +123,8 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
-    const TableJoin::JoinOnClause & clause)
+    const TableJoin::JoinOnClause & clause,
+    VectorWithMemoryTracking<size_t> & matched_clause_keys)
 {
     const auto & lhs_pk = lhs_reading->getStorageMetadata()->getPrimaryKey();
     if (lhs_pk.column_names.empty())
@@ -123,8 +134,8 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     if (rhs_pk.column_names.empty())
         return {};
 
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
 
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
@@ -207,7 +218,10 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
 
             /// Check if both keys matched exactly to expected PK nodes.
             if (lhs_match->second.node == lhs_pk_output && rhs_match->second.node == rhs_pk_output)
+            {
                 sharding.emplace_back(lhs_pk_colum_names[pos], rhs_pk_colum_names[pos]);
+                matched_clause_keys.push_back(i);
+            }
         }
 
         if (sharding.size() <= pos)
@@ -215,6 +229,41 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     }
 
     return sharding;
+}
+
+/// Every row of an inner join has equal keys on both sides, so a right-side column equal to the right
+/// primary key is the same shard key as the left one for the joins above.
+static void addRightShardKeysToLeftDAG(
+    ActionsDAG & lhs_dag,
+    const VectorWithMemoryTracking<const ActionsDAG::Node *> & lhs_key_nodes,
+    const ActionsDAG & rhs_dag,
+    const ReadFromMergeTree & rhs_reading,
+    const Block & lhs_input_header,
+    const Block & output_header)
+{
+    const auto & rhs_pk = rhs_reading.getStorageMetadata()->getPrimaryKey();
+    const auto & rhs_pk_dag = rhs_pk.expression->getActionsDAG();
+    auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
+
+    for (const auto * output : rhs_dag.getOutputs())
+    {
+        auto match = rhs_matches.find(output);
+        if (match == rhs_matches.end() || !match->second.node || match->second.monotonicity)
+            continue;
+
+        for (size_t pos = 0; pos < lhs_key_nodes.size(); ++pos)
+        {
+            if (match->second.node != rhs_pk_dag.tryFindInOutputs(rhs_pk.column_names[pos]))
+                continue;
+
+            const auto & name = output->result_name;
+            const auto * column = output_header.findByName(name);
+            if (column && !lhs_input_header.has(name) && !lhs_dag.tryFindInOutputs(name)
+                && column->type->equals(*lhs_key_nodes[pos]->result_type))
+                lhs_dag.getOutputs().push_back(&lhs_dag.addAlias(*lhs_key_nodes[pos], name));
+            break;
+        }
+    }
 }
 
 /// We can apply sharding for multiple join steps at the same time.
@@ -228,22 +277,22 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
         JoinStep::PrimaryKeySharding sharding;
     };
 
-    std::list<JoinAndSharding> joins;
+    ListWithMemoryTracking<JoinAndSharding> joins;
     /// Separately, store joins which use full sorting merge algorithm.
     /// We should mark this joins to keep the number of streams for the left table the same.
-    std::list<JoinStep *> joins_to_keep_in_order;
+    ListWithMemoryTracking<JoinStep *> joins_to_keep_in_order;
     /// Source steps are kept according to in-order traverse.
     /// The important part that the first source is the left-most.
-    std::list<ReadFromMergeTree *> sources;
+    ListWithMemoryTracking<ReadFromMergeTree *> sources;
     /// For sorting steps which are created for full sorting merge algorithm,
     /// We need to change the sorting mode to sort partitions independently.
-    std::list<SortingStep *> sorting_steps;
+    ListWithMemoryTracking<SortingStep *> sorting_steps;
     /// Merge-join sorting steps above this subtree whose join has not been reached yet. They move to
     /// `sorting_steps` once that join is sharded. If it is not, they are left alone: such a sort then feeds
     /// a single merge join, which needs one stream per side, so it must merge the shards of a sharded join
     /// below it instead of keeping them (a `FinishSorting` above a `full_sorting_merge` join is normal - the
     /// join emits its result in key order).
-    std::list<SortingStep *> pending_sorting_steps;
+    ListWithMemoryTracking<SortingStep *> pending_sorting_steps;
     /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
     /// Whether the common primary key prefix used for sharding is in reverse order.
@@ -262,8 +311,8 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
     /// The `part_index_in_query` a part had in its source, by its position in `all_parts`.
-    std::vector<size_t> original_part_indexes;
-    std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
+    VectorWithMemoryTracking<size_t> original_part_indexes;
+    VectorWithMemoryTracking<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
         auto analysis_result = source->getAnalyzedResult();
@@ -293,7 +342,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     auto logger = getLogger("optimizeJoinByLayers");
     auto all_split = splitIntersectingPartsRangesIntoLayers(
         all_parts, data.sources.front()->getNumStreams(), data.common_prefix, data.is_reverse_order, logger);
-    std::vector<SplitPartsByRanges> splits(analysis_results.size());
+    VectorWithMemoryTracking<SplitPartsByRanges> splits(analysis_results.size());
     splits[0].borders = std::move(all_split.borders);
     splits[0].in_reverse_order = data.is_reverse_order;
     for (size_t i = 1; i < splits.size(); ++i)
@@ -376,11 +425,11 @@ void optimizeJoinByShards(QueryPlan::Node & root)
     {
         const QueryPlan::Node * node;
         size_t next_child_to_process = 0;
-        std::vector<std::optional<Result>> results{};
+        VectorWithMemoryTracking<std::optional<Result>> results{};
     };
 
     std::optional<Result> result;
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push({&root});
 
     while (!stack.empty())
@@ -422,6 +471,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             // std::cerr << "can_split_join " << can_split_join << std::endl;
 
             JoinStep::PrimaryKeySharding sharding;
+            VectorWithMemoryTracking<size_t> matched_clause_keys;
             if (can_split_join)
             {
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
@@ -434,7 +484,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
                     frame.results.back()->joins.sources.front(), frame.results.back()->dag,
-                    clauses[0]);
+                    clauses[0], matched_clause_keys);
             }
 
             // std::cerr << "common_prefix " << common_prefix << std::endl;
@@ -442,6 +492,17 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             if (!sharding.empty())
             {
                 result = std::move(frame.results.front());
+
+                if (isInner(kind))
+                {
+                    VectorWithMemoryTracking<const ActionsDAG::Node *> lhs_key_nodes;
+                    for (size_t key : matched_clause_keys)
+                        lhs_key_nodes.push_back(result->dag.tryFindInOutputs(clauses[0].key_names_left[key]));
+                    if (std::ranges::all_of(lhs_key_nodes, [](const auto * node) { return node != nullptr; }))
+                        addRightShardKeysToLeftDAG(
+                            result->dag, lhs_key_nodes, frame.results.back()->dag, *frame.results.back()->joins.sources.front(),
+                            *join_step->getInputHeaders().front(), *join_step->getOutputHeader());
+                }
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
@@ -460,8 +521,16 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
 
                 frame.results.back() = std::nullopt;
+
+                /// The rows a RIGHT or FULL join adds for non-joined right rows have default values in the left
+                /// columns, so they are not in the shard of the left key, and no join above can be sharded by it.
+                if (isRightOrFull(kind))
+                {
+                    apply(result->joins);
+                    result.reset();
+                }
             }
-            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped)
+            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped && !isRightOrFull(kind))
             {
                 /// A hash join probes each left stream independently, so the shards of the left table
                 /// survive it and a join above can still be sharded. A `full_sorting_merge` join that is
@@ -529,7 +598,7 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
     if (num_shards <= 1)
         return;
 
-    std::stack<QueryPlan::Node *> stack;
+    StackWithMemoryTracking<QueryPlan::Node *> stack;
     stack.push(&root);
 
     while (!stack.empty())
