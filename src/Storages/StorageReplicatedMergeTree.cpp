@@ -8325,8 +8325,12 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             String log_entry_str;
             Coordination::Stat log_entry_stat;
             bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "log" / log_entry_name, log_entry_str, &log_entry_stat);
+            /// The log is cleaned up concurrently, so the node may have been removed after we listed it.
+            if (!exists)
+                continue;
+
             ReplicatedMergeTreeLogEntryData log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, log_entry_stat, format_version);
-            if (exists && entry.log_entry_id == log_entry.log_entry_id)
+            if (entry.log_entry_id == log_entry.log_entry_id)
             {
                 LOG_DEBUG(log, "Found log entry with id `{}` in the log", entry.log_entry_id);
 
@@ -8392,7 +8396,12 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         String queue_entry_str;
         Coordination::Stat queue_entry_stat;
         bool exists = getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / entry_name, queue_entry_str, &queue_entry_stat);
-        if (exists && queue_entry_str == entry_str)
+        /// The replica executes and removes its queue entries concurrently, so the node may have been removed after we listed it.
+        /// It cannot be parsed then; if it was the entry we are looking for, it has been already processed.
+        if (!exists)
+            continue;
+
+        if (queue_entry_str == entry_str)
         {
             queue_entry_to_wait_for = entry_name;
             break;
