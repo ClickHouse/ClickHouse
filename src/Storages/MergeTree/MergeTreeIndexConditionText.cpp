@@ -40,7 +40,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -2001,18 +2000,18 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
-/// Whether the predicate of the sub-DAG may be true on the value `make_default_value` builds for its single input column,
-/// the value a row with a missing map key or JSON path reads. Unknown if that value cannot be built (`Nothing` in a `Tuple`)
-/// or the predicate throws on it, e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
-static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag, const std::function<ColumnPtr()> & make_default_value)
+/// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
+/// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
+/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
 {
     const auto * input = subdag.getInputs().front();
+    ActionsDAG::IntermediateExecutionResult default_input;
+    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 
     ColumnsWithTypeAndName result;
     try
     {
-        ActionsDAG::IntermediateExecutionResult default_input;
-        default_input.emplace(input, ColumnWithTypeAndName(make_default_value(), input->result_type, input->result_name));
         result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
     }
     catch (const Exception &)
@@ -2113,31 +2112,22 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    /// A `FixedString(N)` key is indexed padded to N bytes.
-    if (indexed_fixed_string_size && key_const_value->size() < *indexed_fixed_string_size)
-        key_const_value->resize(*indexed_fixed_string_size, '\0');
+    /// The key compares as a value of the key type, so a `FixedString(N)` key is looked up padded to N bytes.
+    const FixedStringNeedleContext key_padding_context{
+        .semantics = FixedStringPaddingSemantics::BothStripped,
+        .indexed_fixed_string_size = indexed_fixed_string_size,
+        .padding_never_in_terms = false,
+    };
+    if (!tryNormalizeNeedlePadding(*key_const_value, /*needle_is_fixed_string=*/ false, key_padding_context))
+        return false;
 
     if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     /// If the function returns true for the empty map, we cannot use index.
-    /// A missing key reads the column's own default, not `getDefault` (an `Enum`'s lowest member, `Date32`'s 1900-01-01).
-    if (mayBeTrueOnDefaultValue(subdag, [&] { return createColumnConstWithDefaultValue(required_column.type->createColumn()); }))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
-
-    /// Also probe the type default (`insertDefaultInto`), so the result does not depend on which one fills a missing key.
-    if (!required_column.type->isDefaultInsertTrivial())
-    {
-        auto make_type_default = [&]
-        {
-            auto type_default = required_column.type->createColumn();
-            required_column.type->insertDefaultInto(*type_default);
-            return ColumnPtr(ColumnConst::create(std::move(type_default), 1));
-        };
-        if (mayBeTrueOnDefaultValue(subdag, make_type_default))
-            return false;
-    }
 
     auto tokens = stringToTokens(std::string_view(*key_const_value), /*compact=*/ true);
     out.function = RPNElement::FUNCTION_EQUALS;
@@ -2465,7 +2455,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),
     /// we cannot safely skip the granule.
-    if (mayBeTrueOnDefaultValue(subdag, [&] { return required_column.type->createColumnConstWithDefaultValue(1); }))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
     auto tokens = stringToTokens(Field(json_info->path), /*compact=*/ true);
