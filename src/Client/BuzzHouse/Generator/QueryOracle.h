@@ -68,6 +68,8 @@ private:
     bool can_test_success;
     bool measure_performance;
     bool compare_explain = false;
+    /// Whether the concurrent write oracle compares the results of the round, or only runs it
+    bool compare_concurrent_write = false;
 
     std::unordered_set<String> found_tables;
     DB::Strings nsettings;

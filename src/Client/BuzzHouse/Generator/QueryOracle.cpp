@@ -1468,7 +1468,8 @@ static bool setColumnLiteralPredicate(RandomGenerator & rg, StatementGenerator &
 /// Concurrent: <write to t> PARALLEL WITH <the same read>
 /// After:      <the same read>
 /// The concurrent read has to see `t` as one of the other two did. `PARALLEL WITH` rejects a statement that returns a
-/// result set, so every read writes its rows to the server's `file()` instead of `INTO OUTFILE`.
+/// result set, so every read writes its rows to the server's `file()` instead of `INTO OUTFILE`. Only rounds whose
+/// write becomes visible at once, and whose read takes one snapshot, are compared; the others only run.
 void QueryOracle::generateConcurrentWriteQueries(
     RandomGenerator & rg, StatementGenerator & gen, SQLTable & t, SQLQuery & read, SQLQuery & concurrent)
 {
@@ -1479,6 +1480,9 @@ void QueryOracle::generateConcurrentWriteQueries(
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     SQLQueryInner * write = concurrent.mutable_single_query()->mutable_explain()->mutable_inner_query();
     SettingValues * write_settings = nullptr;
+
+    /// A merge drops all-zero `SummingMergeTree` rows that `FINAL` keeps, so background merges change the read
+    compare_concurrent_write = fc.use_concurrent_write_oracle > 1 && !t.isSummingMergeTree(true);
 
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
@@ -1504,7 +1508,16 @@ void QueryOracle::generateConcurrentWriteQueries(
         /// out: the names and offsets of the parts change with every merge, with or without the write.
         Expr * where = ssc->mutable_where()->mutable_expr()->mutable_expr();
 
-        if (rg.nextSmallNumber() < 3 || !setColumnLiteralPredicate(rg, gen, t, where))
+        if (compare_concurrent_write)
+        {
+            /// Only a filter on the row itself: a subquery in it can read the table on a snapshot of its own, taken on
+            /// the other side of the write
+            if (!setColumnLiteralPredicate(rg, gen, t, where))
+            {
+                ssc->clear_where();
+            }
+        }
+        else if (rg.nextSmallNumber() < 3 || !setColumnLiteralPredicate(rg, gen, t, where))
         {
             gen.levels[gen.current_level] = QueryLevel(gen.current_level);
             gen.addTableRelation(rg, false, "", t);
@@ -1527,21 +1540,26 @@ void QueryOracle::generateConcurrentWriteQueries(
     /// The rows go to the `file` of this server, which a distributed `INSERT SELECT` would leave to other ones
     StatementGenerator::appendSetting(svs, "parallel_distributed_insert_select", "0");
 
-    /// Most of the time the write gets the simple predicate as well
+    /// Most of the time the write gets the simple predicate as well, and always when the round is compared
     const auto maybe_simple_where = [&](Expr * where)
     {
-        if (rg.nextSmallNumber() < 8)
+        if (compare_concurrent_write || rg.nextSmallNumber() < 8)
         {
             Expr simple;
 
             if (setColumnLiteralPredicate(rg, gen, t, &simple))
             {
                 where->Swap(&simple);
+                return;
             }
         }
+        /// A read that applies the write on the fly evaluates its filter, and a subquery in it, on its own snapshot
+        compare_concurrent_write = false;
     };
     /// A lightweight write throws on a table with projections, with the default `lightweight_mutation_projection_mode`
     const uint32_t lightweight = t.proj_counter == 0 ? 1 : 0;
+    /// Settings that keep a compared write a single mutation, which a read applies on the fly or not at all
+    std::vector<std::pair<String, String>> atomic_write_settings;
 
     /// Only writes that change the table at once: an `INSERT` commits its blocks one by one. A lightweight `UPDATE`
     /// needs the table to have `_block_number`, which few have. None is sent `ON CLUSTER`, which returns a status table
@@ -1555,6 +1573,8 @@ void QueryOracle::generateConcurrentWriteQueries(
               upt->clear_cluster();
               maybe_simple_where(upt->mutable_upt()->mutable_where()->mutable_expr()->mutable_expr());
               write_settings = upt->mutable_setting_values();
+              /// Each partition gets a patch part of its own, which is visible as soon as it is committed
+              compare_concurrent_write = false;
           }},
          {20 * lightweight,
           [&]()
@@ -1564,6 +1584,9 @@ void QueryOracle::generateConcurrentWriteQueries(
               del->clear_cluster();
               maybe_simple_where(del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr());
               write_settings = del->mutable_setting_values();
+              /// Done as an `ALTER UPDATE`, which `alter_update_mode` can make a lightweight one again
+              atomic_write_settings.emplace_back("lightweight_delete_mode", "'alter_update'");
+              atomic_write_settings.emplace_back("alter_update_mode", "'heavy'");
           }},
          {30,
           [&]()
@@ -1577,6 +1600,10 @@ void QueryOracle::generateConcurrentWriteQueries(
                   Update * upt = at->mutable_alter()->mutable_update();
                   gen.generateNextUpdate(rg, t, upt);
                   maybe_simple_where(upt->mutable_where()->mutable_expr()->mutable_expr());
+                  atomic_write_settings.emplace_back("alter_update_mode", "'heavy'");
+                  /// The same holds for the new values, which only a literal keeps off the table
+                  compare_concurrent_write &= upt->update().expr().has_lit_val()
+                      && std::ranges::all_of(upt->other_updates(), [](const UpdateSet & uset) { return uset.expr().has_lit_val(); });
               }
               else
               {
@@ -1593,6 +1620,8 @@ void QueryOracle::generateConcurrentWriteQueries(
               gen.generateNextOptimizeTableInternal(rg, t, false, ot);
               ot->clear_cluster();
               write_settings = ot->mutable_setting_values();
+              /// Each partition is merged and committed on its own, which only `DEDUPLICATE` makes visible
+              compare_concurrent_write &= !ot->has_dedup();
           }},
          {10,
           [&]()
@@ -1600,6 +1629,9 @@ void QueryOracle::generateConcurrentWriteQueries(
               Truncate * trunc = write->mutable_trunc();
               t.setName(trunc->mutable_est(), false);
               write_settings = trunc->mutable_setting_values();
+              /// A replicated table drops its partitions one by one
+              compare_concurrent_write
+                  &= !t.isReplicatedOrSharedMergeTree(true) && (!t.db || !t.db->isReplicatedOrSharedDatabase());
           }}});
     gen.setAllowNotDetermistic(true);
     /// The write returns once it is done, so that the read after it sees all of it
@@ -1607,6 +1639,13 @@ void QueryOracle::generateConcurrentWriteQueries(
     /// In a `Replicated` database the write goes through the DDL log and returns a status table, which `PARALLEL WITH`
     /// rejects
     StatementGenerator::appendSetting(write_settings, "distributed_ddl_output_mode", "'none'");
+    if (compare_concurrent_write)
+    {
+        for (const auto & [name, value] : atomic_write_settings)
+        {
+            StatementGenerator::appendSetting(write_settings, name, value);
+        }
+    }
 
     SingleSQLQuery * parallel_read = concurrent.add_parallel_queries();
     parallel_read->CopyFrom(read.single_query());
@@ -1627,7 +1666,7 @@ void QueryOracle::processConcurrentWriteResult(const uint32_t step, const bool s
     /// report a read done that never ran. Its file is then missing, or still the one of the step before, which can only
     /// make the results agree.
     other_steps_success &= std::filesystem::exists(qcfile);
-    if (!other_steps_success || fc.use_concurrent_write_oracle < 2)
+    if (!other_steps_success || !compare_concurrent_write)
     {
         return;
     }
@@ -2173,6 +2212,7 @@ void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     compare_explain = false;
+    compare_concurrent_write = false;
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
