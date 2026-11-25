@@ -9,9 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # attributed to the stored columns they read. The provenance is only visible in the trace log of the estimate, hence a
 # shell test. Each query estimates `t_r` once, for the choice of the IEJoin key conditions.
 
-# Prints the provenance of every column of `t_r` in the estimate of the join with the input `$1` under the settings `$2`,
-# one column per line.
-function print_provenance() {
+# Prints the provenance of every column of `t_r` in its estimate for the query `$1` under the settings `$2`, one column per
+# line.
+function print_provenance_of() {
     local query="$1"
     local settings="${2:+, $2}"
     $CLICKHOUSE_LOCAL --multiquery --query "
@@ -23,13 +23,15 @@ function print_provenance() {
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
+        CREATE TABLE t_d (k UInt32, x UInt32) ENGINE = MergeTree ORDER BY tuple();
+
         SET materialize_statistics_on_insert = 1;
         INSERT INTO t_l SELECT number % 1000, number % 1000, (number * 97) % 100000 FROM numbers(1000);
         INSERT INTO t_r SELECT number % 10, number % 1000, 1000 + number % 1000, number % 1000 FROM numbers(1000);
+        INSERT INTO t_d SELECT number, number FROM numbers(10);
 
         EXPLAIN actions = 1
-        SELECT count() FROM t_l AS l JOIN ($query) AS r
-        ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+        $query
         SETTINGS
             join_algorithm = 'ie_join',
             join_use_nulls = 0,
@@ -44,6 +46,11 @@ function print_provenance() {
         grep -oE '(f|m|b[0-9]): [0-9]+ \(ndv: [^ ]+ range: [^)]+\)' |
         sed -E 's/: [0-9]+ \(ndv: [^ ]+ range: / range: /; s/\)$//' |
         sort
+}
+
+# The same for the join of `t_l` with the input `$1`.
+function print_provenance() {
+    print_provenance_of "SELECT count() FROM t_l AS l JOIN ($1) AS r ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3" "$2"
 }
 
 echo '-- WHERE on a column that is not an operand, PREWHERE optimization disabled'
@@ -67,3 +74,10 @@ print_provenance "SELECT * FROM (SELECT f, b1, b2, b3, b3 + 1 AS x FROM t_r) WHE
 
 echo '-- a non-throwing read limit: no attribution'
 print_provenance "SELECT * FROM t_r WHERE f < 5" "max_rows_to_read = 1000000, read_overflow_mode = 'break'"
+
+# The hash join above the IEJoin pushes its runtime filter on `f` into the read of `t_r`.
+echo '-- a runtime filter on a column that is not an operand: attributed to its key column'
+print_provenance_of "
+    SELECT count() FROM (SELECT * FROM t_l AS l JOIN t_r AS r ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3) AS j
+    JOIN (SELECT * FROM t_d WHERE x < 5) AS d ON j.f = d.k" \
+    "join_algorithm = 'ie_join,hash', enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0"

@@ -404,7 +404,8 @@ struct ReadCoverage
     bool may_drop_rows = false;
     /// The read has predicates that may drop rows and that can be attributed to the columns they read (see
     /// `getColumnsReadByPredicates`): the predicate of the parent `FilterStep`, the row-level filter, the PREWHERE or the
-    /// filter pushed into the read.
+    /// filter pushed into the read. This includes a runtime filter, which prunes nothing at plan time but drops rows by
+    /// its key column.
     bool has_predicates = false;
     /// The read may return values that the statistics did not measure.
     bool may_rewrite_values = false;
