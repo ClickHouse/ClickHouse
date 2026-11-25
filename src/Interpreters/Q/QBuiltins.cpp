@@ -1597,7 +1597,20 @@ std::optional<QValue> clockArithmetic(Call & call, const String & function)
 
     std::optional<QType> result_type;
     if (isClockType(left) && isClockType(right))
-        result_type = left == QType::Timespan || right == QType::Timespan ? QType::Timespan : (left == QType::Time || right == QType::Time ? QType::Time : *left);
+    {
+        /// The more precise of the two types, whatever the order of the operands is: a minute and a second make a second.
+        auto precision = [](QType type)
+        {
+            switch (type)
+            {
+                case QType::Timespan: return 3;
+                case QType::Time: return 2;
+                case QType::Second: return 1;
+                default: return 0;
+            }
+        };
+        result_type = precision(*left) >= precision(*right) ? *left : *right;
+    }
     else if (function == "minus" && isDateTimeType(left) && isDateTimeType(right))
         result_type = QType::Timespan;
     else
