@@ -54,7 +54,8 @@ FROM t ORDER BY id;
 
 SELECT 'MergeTree';
 CREATE TABLE t_merge_tree ENGINE = MergeTree ORDER BY id AS SELECT * FROM t;
-RENAME TABLE t TO t_memory, t_merge_tree TO t;
+RENAME TABLE t TO t_memory;
+RENAME TABLE t_merge_tree TO t;
 SELECT * FROM oracle ORDER BY id;
 
 SELECT 'escaped dots';
