@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <cmath>
@@ -23,42 +24,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for a limit aggregation operator.
-    void checkArgumentTypes(
-        const PrometheusQueryTree::AggregationOperator * operator_node,
-        const std::vector<SQLQueryPiece> & arguments,
-        const ConverterContext & context)
-    {
-        const auto & operator_name = operator_node->operator_name;
-
-        if (arguments.size() != 2)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Aggregation operator '{}' expects 2 arguments, but was called with {} arguments",
-                            operator_name, arguments.size());
-        }
-
-        const auto & k_arg = arguments[0];
-
-        if (k_arg.type != ResultType::SCALAR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Aggregation operator '{}' expects first argument of type {}, but expression {} has type {}",
-                            operator_name, ResultType::SCALAR,
-                            getPromQLText(k_arg, context), k_arg.type);
-        }
-
-        const auto & vector_arg = arguments[1];
-
-        if (vector_arg.type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Aggregation operator '{}' expects second argument of type {}, but expression {} has type {}",
-                            operator_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(vector_arg, context), vector_arg.type);
-        }
-    }
-
     /// Converts the `k` argument from ScalarType to UInt64:
     ///  - negative values (including -Inf) are clamped to 0
     ///  - NaN, +Inf, and values exceeding the UInt64 range cause an exception
@@ -376,7 +341,9 @@ SQLQueryPiece applyLimitAggregationOperator(
     const ImplInfo * impl_info = getImplInfo(operator_name);
     chassert(impl_info);
 
-    checkArgumentTypes(operator_node, arguments, context);
+    checkNumberOfArguments(operator_node, arguments, 2);
+    checkArgumentType(operator_node, arguments, 0, ResultType::SCALAR, context);
+    checkArgumentType(operator_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
 
     auto & k_arg = arguments[0];
     auto & vector_arg = arguments[1];
