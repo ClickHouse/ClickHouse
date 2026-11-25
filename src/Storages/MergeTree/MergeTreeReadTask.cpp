@@ -495,7 +495,8 @@ UInt64 MergeTreeReadTask::estimateNumRows(bool scale_by_filtration_ratio) const
         return rows_to_read;
 
     /// The estimation counts the rows that pass the filters, but the rows are read before the filters drop some of them.
-    if (scale_by_filtration_ratio && size_predictor->filtered_rows_ratio > 0)
+    /// A read that follows one in which no row passed may start a run of passing rows, so it is not scaled.
+    if (scale_by_filtration_ratio && size_predictor->filtered_rows_ratio > 0 && !size_predictor->all_rows_filtered_in_last_read)
     {
         /// The averages describe the previous reads, so the first read into a run of matching rows must stay bounded.
         static constexpr size_t max_growth = 8;
@@ -522,7 +523,9 @@ UInt64 MergeTreeReadTask::estimateNumRows(bool scale_by_filtration_ratio) const
         auto rows_to_read_for_max_size_column
             = size_predictor->estimateNumRowsForMaxSizeColumn(block_size_params.preferred_max_column_in_block_size_bytes);
 
-        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
+        double filtration_ratio = scale_by_filtration_ratio
+            ? std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio)
+            : 1.0;
         auto rows_to_read_for_max_size_column_with_filtration
             = static_cast<size_t>(static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio);
 

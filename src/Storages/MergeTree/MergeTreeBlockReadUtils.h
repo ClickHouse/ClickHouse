@@ -99,6 +99,7 @@ struct MergeTreeBlockSizePredictor
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
+        all_rows_filtered_in_last_read = rows_was_read != 0 && rows_was_filtered == rows_was_read;
     }
 
     /// Predicts what number of rows, as read before they are filtered, takes `bytes_quota`. 0 while nothing was read.
@@ -174,6 +175,8 @@ public:
 
     /// Bytes per row of the columns as they are read, before the rows are filtered.
     double read_bytes_per_row = 0;
+    /// Whether the filters dropped every row of the last read.
+    bool all_rows_filtered_in_last_read = false;
 };
 
 }
