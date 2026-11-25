@@ -10146,13 +10146,21 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
+/// Modular like the subtraction in `removePartContributionToColumnAndSecondaryIndexSizes`, so a total it wrapped is restored.
+static void addSizeModular(ColumnSize & total, const ColumnSize & size)
+{
+    total.marks = common::addIgnoreOverflow(total.marks, size.marks);
+    total.data_compressed = common::addIgnoreOverflow(total.data_compressed, size.data_compressed);
+    total.data_uncompressed = common::addIgnoreOverflow(total.data_uncompressed, size.data_uncompressed);
+}
+
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
         ColumnSize part_column_size = part->getColumnSize(column.name);
-        total_column_size.add(part_column_size);
+        addSizeModular(total_column_size, part_column_size);
     }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
@@ -10161,7 +10169,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     {
         IndexSize & total_secondary_index_size = secondary_index_sizes[index.name];
         IndexSize part_index_size = part->getSecondaryIndexSize(index.name);
-        total_secondary_index_size.add(part_index_size);
+        addSizeModular(total_secondary_index_size, part_index_size);
     }
 
     primary_index_size.add(part->getIndexSizeFromFile());
