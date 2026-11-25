@@ -187,6 +187,9 @@ private:
     /// The structs of `scan_schema` whose null maps the decoder keeps only for the conversion of the decoded
     /// columns (see `RecordBatchDecoder::collectVisibilityOnlyStructs`). Set and cleared along with `scan_schema`.
     ArrowIPC::RecordBatchDecoder::VisibilityOnlyStructs visibility_only_structs;
+    /// The fields of `scan_schema` that are not decoded, because a later field has the same normalized name
+    /// (see `RecordBatchDecoder::shadowedTopLevelFields`). Set and cleared along with `scan_schema`.
+    VectorWithMemoryTracking<char> shadowed_scan_fields;
 
     std::mutex delivery_mutex;
     std::condition_variable delivery_cv;

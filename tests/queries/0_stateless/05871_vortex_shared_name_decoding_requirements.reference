@@ -10,3 +10,11 @@ A Array(String), a Array(Int32)
 ['9999-12-31']	[3000000]
 a Array(Int32), A Array(String)
 [3000000]	['9999-12-31']
+T Tuple(d String), t Tuple(Int32)
+('')	(19723)
+t Tuple(Int32), T Tuple(d String)
+(3000000)	('9999-12-31')
+T Tuple(x String), t Tuple(Int32)
+('2024-01-01')	(19723)
+t Tuple(Int32), T Tuple(x String)
+(3000000)	('')

@@ -291,7 +291,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
             /// The array is borrowed for the duration of this callback; importing it moves the
             /// data out and marks the struct released, which is how it is handed back.
             const size_t num_rows = static_cast<size_t>(array->length);
-            auto decoded = ArrowIPC::importRecordBatchFromC(*array, *scan_schema, format_settings, &requested_types);
+            auto decoded = ArrowIPC::importRecordBatchFromC(
+                *array, *scan_schema, format_settings, &requested_types, &shadowed_scan_fields);
 
             ColumnPtr row_index;
             if (row_index_column)
@@ -413,6 +414,7 @@ void VortexBlockInputFormat::closeReader()
         }
         scan_schema.reset();
         visibility_only_structs.clear();
+        shadowed_scan_fields.clear();
     }
     {
         std::lock_guard lock(delivery_mutex);
@@ -571,10 +573,16 @@ void VortexBlockInputFormat::prepareReader()
     ArrowIPC::resolveSharedRequestedTypes(
         *scan_schema, /*keep_top_level_fields=*/nullptr, case_insensitive, shared_requested_header_types, requested_types);
     {
-        /// The batches are decoded with all the fields of the scan schema (see `importRecordBatchFromC`).
         ArrowIPC::DictionaryRegistry registry;
-        visibility_only_structs = ArrowIPC::RecordBatchDecoder(*scan_schema, format_settings, registry)
-            .collectVisibilityOnlyStructs(/*keep_top_level_fields=*/nullptr, &requested_types);
+        const ArrowIPC::RecordBatchDecoder decoder(*scan_schema, format_settings, registry);
+        /// Of the fields with the same normalized name, the columns are taken from the last one (see `buildChunk`),
+        /// which is the one the shared requested types are resolved against. The other ones are not decoded, as in
+        /// `Arrow`: the requested types could not describe them. The row numbers are taken by position.
+        shadowed_scan_fields = decoder.shadowedTopLevelFields();
+        if (row_index_column)
+            shadowed_scan_fields.front() = 0;
+        /// A shadowed field is in the scan schema, but it is not decoded, so its structs are not looked up.
+        visibility_only_structs = decoder.collectVisibilityOnlyStructs(/*keep_top_level_fields=*/nullptr, &requested_types);
     }
 
     char * error = nullptr;

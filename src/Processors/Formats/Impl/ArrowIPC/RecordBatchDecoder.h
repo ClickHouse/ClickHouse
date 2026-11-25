@@ -248,10 +248,19 @@ public:
         VectorWithMemoryTracking<Int64> variadic_counts;
     };
 
-    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
-    /// for the duration of the call only: the decoded columns own their data.
+    /// Decodes the fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
+    /// for the duration of the call only: the decoded columns own their data. The top-level fields marked in
+    /// `skip_top_level_fields` (may be null; see `shadowedTopLevelFields`) are not decoded, and the batch has no
+    /// nodes and buffers for them.
     DecodedColumns decodeExternalBatch(
-        const ExternalBatch & batch, const RequestedTypes * target_types = nullptr);
+        const ExternalBatch & batch, const RequestedTypes * target_types = nullptr,
+        const VectorWithMemoryTracking<char> * skip_top_level_fields = nullptr);
+
+    /// Whether each top-level field of the schema is followed by another one with the same normalized name
+    /// (`T` and `t` with case-insensitive matching). The reader takes the last of these fields (see
+    /// `ArrowIPCBlockInputFormat::buildChunk`), so the others are not decoded: the requested types, resolved
+    /// against the field that supplies the column, could not describe them.
+    [[nodiscard]] VectorWithMemoryTracking<char> shadowedTopLevelFields() const;
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
@@ -469,11 +478,6 @@ private:
     /// A field name as the reader matches it against the header: lower-cased when column matching is
     /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
     [[nodiscard]] String normalizedName(const String & name) const;
-    /// Whether each top-level field of the schema is followed by another one with the same normalized name
-    /// (`T` and `t` with case-insensitive matching). The reader takes the last of these fields (see
-    /// `ArrowIPCBlockInputFormat::buildChunk`), so the others are not decoded: the requested types, resolved
-    /// against the field that supplies the column, could not describe them.
-    [[nodiscard]] VectorWithMemoryTracking<char> shadowedTopLevelFields() const;
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
     /// normalized name appended to its parent's path.
     [[nodiscard]] String childPath(const String & path, const String & child_name) const;

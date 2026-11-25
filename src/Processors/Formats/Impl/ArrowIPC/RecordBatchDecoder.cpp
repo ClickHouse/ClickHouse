@@ -2615,8 +2615,13 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 }
 
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
-    const ExternalBatch & batch, const RequestedTypes * target_types_)
+    const ExternalBatch & batch, const RequestedTypes * target_types_, const VectorWithMemoryTracking<char> * skip_top_level_fields)
 {
+    if (skip_top_level_fields && skip_top_level_fields->size() != schema.fields.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "The mask of the skipped fields has {} entries for {} fields",
+            skip_top_level_fields->size(), schema.fields.size());
+
     if (batch.length < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow record batch has a negative length {}", batch.length);
 
@@ -2635,8 +2640,11 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
 
     DecodedColumns result;
     result.reserve(schema.fields.size());
-    for (const ArrowField & field : schema.fields)
+    for (size_t i = 0; i < schema.fields.size(); ++i)
     {
+        if (skip_top_level_fields && (*skip_top_level_fields)[i])
+            continue;
+        const ArrowField & field = schema.fields[i];
         expectNextNodeLength(static_cast<size_t>(batch.length), fmt::format("column '{}'", field.name));
         result.push_back(
             decodeBatchColumn(field, /*target_hint=*/nullptr, normalizedName(field.name), /*list_depth=*/0, /*read_undeclared_nulls=*/true));
