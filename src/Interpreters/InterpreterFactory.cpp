@@ -28,6 +28,10 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowEngineQuery.h>
+#include <Parsers/ASTShowIcebergWarehousesQuery.h>
+#include <Parsers/ASTCreateIcebergWarehouseQuery.h>
+#include <Parsers/ASTAlterIcebergWarehouseQuery.h>
+#include <Parsers/ASTDropIcebergWarehouseQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -193,6 +197,26 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowEnginesQuery>())
     {
         interpreter_name = "InterpreterShowEnginesQuery";
+    }
+    else if (query->as<ASTShowIcebergWarehousesQuery>())
+    {
+        interpreter_name = "InterpreterShowIcebergWarehousesQuery";
+    }
+    else if (query->as<ASTShowCreateIcebergWarehouseQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateIcebergWarehouseQuery";
+    }
+    else if (query->as<ASTCreateIcebergWarehouseQuery>())
+    {
+        interpreter_name = "InterpreterCreateIcebergWarehouseQuery";
+    }
+    else if (query->as<ASTAlterIcebergWarehouseQuery>())
+    {
+        interpreter_name = "InterpreterAlterIcebergWarehouseQuery";
+    }
+    else if (query->as<ASTDropIcebergWarehouseQuery>())
+    {
+        interpreter_name = "InterpreterDropIcebergWarehouseQuery";
     }
     else if (query->as<ASTShowFunctionsQuery>())
     {

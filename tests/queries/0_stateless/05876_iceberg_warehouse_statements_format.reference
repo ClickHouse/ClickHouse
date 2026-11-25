@@ -1,0 +1,6 @@
+CREATE ICEBERG WAREHOUSE IF NOT EXISTS wh SETTINGS base_location = 's3://bucket/wh', role_arn = 'arn:aws:iam::123456789012:role/catalog', external_id = 'id', role_session_name = 'session'	1
+ALTER ICEBERG WAREHOUSE wh SET role_arn = 'arn:aws:iam::123456789012:role/other', external_id = 'id' DELETE role_session_name	1
+ALTER ICEBERG WAREHOUSE wh DELETE external_id, role_session_name	1
+DROP ICEBERG WAREHOUSE IF EXISTS wh	1
+SHOW ICEBERG WAREHOUSES	1
+SHOW CREATE ICEBERG WAREHOUSE wh	1

@@ -110,6 +110,7 @@
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
+#include <Storages/System/StorageSystemIcebergWarehouses.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemHandlers.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
@@ -3620,6 +3621,12 @@ may be embedded in the handler's query (for example, credentials passed to a tab
 `display_secrets_in_show_and_select` server setting and `format_display_secrets_in_show_and_select` format
 setting are enabled and the user holds the `displaySecretsInShowAndSelect` privilege); otherwise, they are
 masked, exactly as in `SHOW CREATE TABLE`.
+)DOCS_MD");
+    attachNoDescription<StorageSystemIcebergWarehouses>(context, system_database, "iceberg_warehouses", R"DOCS_MD(
+.description
+Contains warehouses of the Iceberg REST catalog, created with `CREATE ICEBERG WAREHOUSE` or through the management API of the catalog server.
+
+Reading this table requires the `SHOW ICEBERG WAREHOUSES` privilege. Without it the table appears empty. The table is also empty when the server setting `enable_iceberg_rest_catalog` is off.
 )DOCS_MD");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", R"DOCS_MD(
 .description

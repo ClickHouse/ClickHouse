@@ -87,10 +87,11 @@ private:
     [[nodiscard]] IcebergRESTResponse handleRenameTable(const RoutedRequest & request) const;
     [[nodiscard]] IcebergRESTResponse handleReportMetrics(const RoutedRequest & request) const;
 
-    /// Warehouse management API (issue #127488).
+    /// Warehouse management API (issue #127488). Each handler checks same grant as its `ICEBERG WAREHOUSE` statement.
+    /// TODO(asya): Behavior change. A SQL-created user without these grants now gets 403. Confirm and mention in changelog.
     [[nodiscard]] IcebergRESTResponse handleCreateWarehouse(const String & body, const Context & user_context) const;
-    [[nodiscard]] IcebergRESTResponse handleListWarehouses() const;
-    [[nodiscard]] IcebergRESTResponse handleGetWarehouse(const IcebergRESTRouteMatch & match) const;
+    [[nodiscard]] IcebergRESTResponse handleListWarehouses(const Context & user_context) const;
+    [[nodiscard]] IcebergRESTResponse handleGetWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const;
     [[nodiscard]] IcebergRESTResponse handleReplaceWarehouseCredential(
         const IcebergRESTRouteMatch & match, const String & body, const Context & user_context) const;
     [[nodiscard]] IcebergRESTResponse handleDeleteWarehouse(const IcebergRESTRouteMatch & match, const Context & user_context) const;
