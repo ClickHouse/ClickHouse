@@ -53,7 +53,6 @@ private:
     static Derived & createInstanceOrThrow();
 
     static inline std::atomic<Derived *> instance_raw_ptr;
-    /// It was supposed to be std::optional, but gcc fails to compile it for some reason.
     /// `no_destroy`: the members are constant-initialized, and skipping the exit-time destructor means
     /// no static initializer at all in the translation units including this header.
     [[clang::no_destroy]] static inline std::shared_ptr<Derived> instance_holder;

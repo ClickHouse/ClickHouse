@@ -516,8 +516,6 @@ PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
 # `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
 # artifacts.
 PR_SINGLE_ARCH_SKIPPED_BUILDS = (
-    f"{JobNames.BUILD} (arm_debug)",
-    f"{JobNames.BUILD} (arm_tsan)",
     f"{JobNames.BUILD} (arm_msan)",
 )
 
