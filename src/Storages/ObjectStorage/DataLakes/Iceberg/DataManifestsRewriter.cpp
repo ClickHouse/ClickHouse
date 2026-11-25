@@ -151,8 +151,9 @@ DataTypePtr getManifestPartitionType(const DataTypePtr & partitioner_type, const
     /// The Avro `fixed` of a decimal takes its width from the precision, and the transform functions do not keep it:
     /// `icebergTruncate` of a `decimal(5, 2)` returns `Decimal(9, 2)`, the widest precision of the same carrier. The
     /// partition type of `identity` and `truncate` is the source type, so write the values with exactly its precision
-    /// and scale, which `getAvroType` then declares as the Iceberg spec requires.
-    if (auto precision_and_scale = tryParseIcebergDecimal(source_type))
+    /// and scale, which `getAvroType` then declares as the Iceberg spec requires. This is only about a transform whose
+    /// result is the decimal itself: `bucket` of a decimal returns an `int`, which takes the integer path below.
+    if (auto precision_and_scale = required == "fixed" ? tryParseIcebergDecimal(source_type) : std::nullopt)
     {
         auto nested = removeNullable(partitioner_type);
         if (!isDecimal(nested) || getDecimalScale(*nested) != precision_and_scale->second)
