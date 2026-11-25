@@ -6,6 +6,7 @@ exact FixedString LIKE	1
 LIKE %	1
 LIKE % lower bound	1
 ILIKE %	1
+ILIKE % lower bound	1
 NOT ILIKE %	1
 prefix LIKE	1
 prefix LIKE lower bound	1
@@ -18,6 +19,9 @@ startsWithUTF8	1
 startsWith empty	1
 startsWith empty lower bound	1
 FixedString LIKE %	1
+FixedString LIKE % lower bound	1
 FixedString startsWith empty	1
+FixedString startsWith empty lower bound	1
 Enum LIKE %	1
+Enum LIKE % lower bound	1
 startsWith Array	1

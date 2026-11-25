@@ -29,6 +29,7 @@ INSERT INTO tab SELECT number, toString(number), if(number % 100 = 0, toString(n
     ("LIKE %", "x < 500 AND n LIKE '%'", "like(", "less("),
     ("LIKE % lower bound", "x < 50 AND n LIKE '%'", "less(", "like("),
     ("ILIKE %", "x < 500 AND n ILIKE '%'", "ilike(", "less("),
+    ("ILIKE % lower bound", "x < 50 AND n ILIKE '%'", "less(", "ilike("),
     ("NOT ILIKE %", "x < 50 AND n NOT ILIKE '%'", "notILike(", "less("),
     ("prefix LIKE", "x < 2000 AND s LIKE '12%'", "startsWith(", "less("),
     ("prefix LIKE lower bound", "x < 500 AND s LIKE '12%'", "less(", "startsWith("),
@@ -41,8 +42,11 @@ INSERT INTO tab SELECT number, toString(number), if(number % 100 = 0, toString(n
     ("startsWith empty", "x < 500 AND startsWith(n, '')", "startsWith(", "less("),
     ("startsWith empty lower bound", "x < 50 AND startsWith(n, '')", "less(", "startsWith("),
     ("FixedString LIKE %", "x < 500 AND f LIKE '%'", "like(", "less("),
+    ("FixedString LIKE % lower bound", "x < 50 AND f LIKE '%'", "less(", "like("),
     ("FixedString startsWith empty", "x < 500 AND startsWith(f, '')", "startsWith(", "less("),
+    ("FixedString startsWith empty lower bound", "x < 50 AND startsWith(f, '')", "less(", "startsWith("),
     ("Enum LIKE %", "x < 500 AND e LIKE '%'", "like(", "less("),
+    ("Enum LIKE % lower bound", "x < 50 AND e LIKE '%'", "less(", "like("),
     ("startsWith Array", "x < 2000 AND startsWith(a, [1])", "less(", "startsWith("),
 ] -%}
 SELECT '{{ name }}', position(p, '{{ first }}') > 0 AND position(p, '{{ first }}') < position(p, '{{ second }}') FROM (
