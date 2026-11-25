@@ -133,7 +133,8 @@ bool ExpressionProperties::isSatisfiedBy(const ExpressionProperties & existing_p
 {
     return isSortingSatisfiedBy(sorting, existing_properties.sorting) &&
         isDistributionSatisfiedBy(distribution, existing_properties.distribution) &&
-        isStreamLayoutSatisfiedBy(*this, existing_properties);
+        isStreamLayoutSatisfiedBy(*this, existing_properties) &&
+        aggregation_buckets_in_order == existing_properties.aggregation_buckets_in_order;
 }
 
 void  ExpressionProperties::dump(WriteBuffer & out) const
@@ -148,6 +149,8 @@ void  ExpressionProperties::dump(WriteBuffer & out) const
         out << ", single stream";
     else if (stream_layout == StreamLayout::Disjoint)
         out << fmt::format(", streams disjoint on {}", fmt::join(stream_disjoint_columns, ","));
+    if (aggregation_buckets_in_order)
+        out << ", buckets in order";
     out << "}}";
 }
 

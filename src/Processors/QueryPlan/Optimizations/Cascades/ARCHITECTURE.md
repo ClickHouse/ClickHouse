@@ -389,6 +389,24 @@ tree one group per step:
   operator from the global top-N — it may be implemented per node, and the split is
   not applied to it again.
 
+### Bucket Order of Aggregation States
+
+With `distributed_aggregation_memory_efficient`, the merge on one node reads the buckets of
+two-level states in ascending order from each input stream. The merge of a two-phase
+aggregation requires this from its input as a property,
+`ExpressionProperties::aggregation_buckets_in_order`:
+
+- The partial aggregation has an implementation that delivers it: each node sends its result
+  from one stream, in bucket order. It is added only for this requirement.
+- A gather keeps it, because its receiver keeps the stream of every sender apart.
+- The merge per bucket over shuffled states does not require it, so its partial aggregation
+  sends its result from all streams.
+
+A non-final aggregation that the query plan has with a promise of bucket order (a shard of a
+distributed query) made the promise to the merge of the initiator, which reads the whole
+shard as one stream. That merge has no requirement in the memo: it relies on the promise.
+Such a step runs on one node, or as a two-phase aggregation whose merge restores the order.
+
 ### Cost Model
 
 Three-component cost with `work`, `network`, and `sequential` dimensions,

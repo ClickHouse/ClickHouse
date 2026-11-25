@@ -56,6 +56,10 @@ struct ExpressionProperties
     /// to an input passes this mark with it, and the expressions that deliver such a sorting keep it in their properties.
     /// It does not take part in `isSatisfiedBy`.
     bool sorting_for_window = false;
+    /// Each node sends the buckets of a two-level aggregation in ascending order, from one stream. A
+    /// memory-efficient merge of aggregation states requires it from its input. The match is exact: one
+    /// stream is slower than several, so only a consumer that requires the order gets such an input.
+    bool aggregation_buckets_in_order = false;
 
     /// Marks the streams disjoint on the columns (must be nonempty sets). Orders the column
     /// sets canonically, so equal layouts compare and hash equal (disjointness has no key order).
@@ -92,6 +96,7 @@ struct ExpressionPropertiesHash
             boost::hash_combine(h, type_name);
         boost::hash_combine(h, static_cast<UInt8>(props.stream_layout));
         boost::hash_combine(h, props.sorting_for_window);
+        boost::hash_combine(h, props.aggregation_buckets_in_order);
         for (const auto & col_set : props.stream_disjoint_columns)
         {
             /// Equal sets must hash equally regardless of insertion order.

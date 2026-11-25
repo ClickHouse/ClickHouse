@@ -82,11 +82,8 @@ public:
     /// its own input in the same group. It is not an answer to those: the plan below it is.
     [[nodiscard]] bool answers(const ExpressionProperties & required_properties) const;
 
-    /// Set on the partial half of a two-stage aggregation split. Its promise of bucket order is kept
-    /// for the merge half of the same plan, which reads the gathered inputs one stream per node, so
-    /// the partial may run on several nodes. Every other non-final aggregation that promises bucket
-    /// order is the root of a shard plan whose consumer receives the shard output as one stream, and
-    /// only a single instance keeps that promise (see `AggregationImplementation`).
+    /// Set on the partial half of a two-stage aggregation split. The merge per bucket is offered only
+    /// for the merge half of such a split (see `MergingAggregationImplementation`).
     bool is_partial_of_two_stage_aggregation = false;
 
     UnorderedSetWithMemoryTracking<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;

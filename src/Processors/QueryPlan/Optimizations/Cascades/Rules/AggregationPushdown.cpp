@@ -736,9 +736,9 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
     partial_step->disableBucketTopK();
     if (!full_pushdown)
         partial_step->setFinal(false);
-    /// Unlike `TwoStageAggregationTransformation`, no bucket-order forcing under the
-    /// memory-efficient merge: bucket annotations do not survive the join anyway, and the merge
-    /// treats the join output as single-level data.
+    /// Unlike in `TwoStageAggregationTransformation`, the merge requires no bucket order from this
+    /// step: bucket annotations do not survive the join anyway, and the merge treats the join
+    /// output as single-level data.
     partial_step->rebaseOntoInput(std::move(partial_input_header), keys->pushed_keys);
     partial_step->setStepDescription(
         fmt::format("{}: {}", full_pushdown ? "Pushed" : "Partial", agg_step.getStepDescription()), 200);

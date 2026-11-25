@@ -57,7 +57,7 @@ public:
         Memo & memo_,
         GroupExpressions & result_);
 
-    void addPartialAggregation(size_t node_count);
+    void addPartialAggregation(size_t node_count, bool in_bucket_order);
     void addLocalAggregation();
     void addShuffleAggregation(size_t node_count);
     void addSingleKeyShuffleAggregations(const VectorWithMemoryTracking<size_t> & candidate_node_counts);
@@ -79,11 +79,13 @@ public:
 private:
     /// Clones the aggregation step with the given description into a physical alternative
     /// with the given strategy and distributions and offers it to the memo.
+    /// With `in_bucket_order` the clone sends its result as one stream in the order of the two-level buckets.
     void addAlternative(
         ImplementationStrategyPtr strategy,
         const DistributionDescription & input_dist,
         const DistributionDescription & output_dist,
-        String description = {});
+        String description = {},
+        bool in_bucket_order = false);
 
     const AggregationImplementation & rule;
     GroupExpressionPtr expression;
@@ -171,9 +173,12 @@ void AggregationImplementation::StrategyEnumerator::addAlternative(
     ImplementationStrategyPtr strategy,
     const DistributionDescription & input_dist,
     const DistributionDescription & output_dist,
-    String description)
+    String description,
+    bool in_bucket_order)
 {
-    auto new_step = agg_step.clone();
+    auto new_step = cloneStepAs(agg_step);
+    if (in_bucket_order)
+        new_step->setShouldProduceResultsInBucketOrder(true);
     if (description.empty())
         new_step->setStepDescription(agg_step);
     else
@@ -186,17 +191,19 @@ void AggregationImplementation::StrategyEnumerator::addAlternative(
     if (alternative->strategy == strategySingleton<ShuffleAggregationStrategy>())
         alternative->inputs[0].required_properties.distribution.without_enforcer = shuffle_input_without_enforcer;
     alternative->properties.distribution = output_dist;
+    alternative->properties.aggregation_buckets_in_order = in_bucket_order;
 
     rule.addPhysicalToMemo(alternative, required_properties, memo, result);
 }
 
 /// Partial (non-final) aggregation at the given node count. The output distribution is
-/// `{node_count, []}` (no column guarantee).
-void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t node_count)
+/// `{node_count, []}` (no column guarantee). With `in_bucket_order`, for a consumer that requires the
+/// bucket order, every node sends its result as one stream in the order of the two-level buckets.
+void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t node_count, bool in_bucket_order)
 {
     DistributionDescription dist;
     dist.node_count = node_count;
-    addAlternative(strategySingleton<PartialAggregationStrategy>(), dist, dist);
+    addAlternative(strategySingleton<PartialAggregationStrategy>(), dist, dist, {}, in_bucket_order);
 }
 
 /// Local - gather all input to one node, aggregate there.
@@ -278,17 +285,15 @@ GroupExpressions AggregationImplementation::applyImpl(GroupExpressionPtr express
     /// are no multi-node candidates and no enforcer path to bridge the gap.
     if (!agg_step->getFinal())
     {
-        /// A non-final aggregation that promises bucket order to a consumer outside this plan - the
-        /// initiator's memory-efficient merge, which reads this shard as one stream - keeps the
-        /// promise only as a single instance. Several instances each order their own share, and
-        /// the gather that brings them to one node interleaves the sequences, so the consumer
-        /// receives a bucket twice and rejects the query. The partial half of a two-stage split is
-        /// exempt: its merge is in this plan and reads the gathered inputs one stream per node.
-        /// The distributed alternative for such a step is the split itself, see
+        /// A step promises bucket order to a consumer that reads its whole output as one stream:
+        /// the initiator's memory-efficient merge reads a shard so. Only a single instance keeps
+        /// that promise. Several instances each order their own share, and the gather that brings
+        /// them to one node interleaves the sequences, so the consumer would receive a bucket twice
+        /// and reject the query. The distributed alternative for such a step is the split, see
         /// `TwoStageAggregationTransformation`.
-        if (agg_step->shouldProduceResultsInBucketOrder() && !expression->is_partial_of_two_stage_aggregation)
+        if (agg_step->shouldProduceResultsInBucketOrder())
         {
-            strategies.addPartialAggregation(1);
+            strategies.addPartialAggregation(1, /*in_bucket_order=*/false);
             return result;
         }
 
@@ -296,8 +301,11 @@ GroupExpressions AggregationImplementation::applyImpl(GroupExpressionPtr express
         if (partial_candidates.empty())
             partial_candidates.push_back(1);
 
+        /// The memory-efficient merge of a split reads the gathered inputs one stream per node, so it
+        /// requires the bucket order from each node, and any node count can deliver it. The match of
+        /// this requirement is exact, so only the alternatives that can answer it are added.
         for (size_t candidate_node_count : partial_candidates)
-            strategies.addPartialAggregation(candidate_node_count);
+            strategies.addPartialAggregation(candidate_node_count, required_properties.aggregation_buckets_in_order);
         return result;
     }
 
@@ -355,14 +363,14 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
 
     if (!agg_step->getFinal())
     {
-        /// A non-final aggregation is split only when it promises bucket order to a consumer outside
-        /// this plan: `AggregationImplementation` restricts it to a single node then, and the split -
+        /// A non-final aggregation is split only when it promises bucket order to a consumer that
+        /// reads one stream: `AggregationImplementation` restricts it to a single node then, and the split -
         /// a partial on every node, gathered one stream per node into a merge that restores the bucket
-        /// order - is its distributed alternative. The partial half of a split is never split again.
+        /// order - is its distributed alternative. The partial half of a split makes no such promise,
+        /// so it is not split again.
         /// An aggregation in order stays single-node: its consumer expects the stream sorted by the
         /// keys as well, and the merge does not restore that, the same as in the rule-based planner.
         const bool split_for_bucket_order = agg_step->shouldProduceResultsInBucketOrder()
-            && !expression->is_partial_of_two_stage_aggregation
             && !agg_step->inOrder()
             && !agg_step->explicitSortingRequired();
         if (!split_for_bucket_order)
@@ -398,17 +406,21 @@ GroupExpressions TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr
     auto partial_step_ptr = cloneStepAs(*agg_step);
     auto * partial_step = partial_step_ptr.get();
     partial_step->setFinal(false);
-    /// The memory-efficient merge below expects every input to deliver two-level buckets in
-    /// ascending order. Force the partial step to emit them that way; otherwise a parallel
-    /// flush unites several bucket sequences into one exchange stream out of order and the
-    /// merge emits some groups twice. A promise the original step already made stays on the clone.
+    /// A promise of bucket order that the original step made is for its consumer, and the merge
+    /// below keeps it. The partial step itself makes no promise.
+    partial_step->setShouldProduceResultsInBucketOrder(false);
+    partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
+
+    /// The memory-efficient merge expects every input stream to deliver two-level buckets in
+    /// ascending order, so it requires that from the partial step. Otherwise a parallel flush
+    /// would unite several bucket sequences into one exchange stream out of order, and the merge
+    /// would emit some groups twice.
     /// The memory-efficient merge does not support the per-set states of grouping sets, so for
     /// them it stays off, the same as in the rule-based planner.
     const bool memory_efficient_merge
         = memo.getContext().distributed_aggregation_memory_efficient && !agg_step->isGroupingSets();
-    if (memory_efficient_merge)
-        partial_step->setShouldProduceResultsInBucketOrder(true);
-    partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
+    ExpressionProperties merge_input_required;
+    merge_input_required.aggregation_buckets_in_order = memory_efficient_merge;
 
     /// Phase 2: merge aggregation - takes intermediate aggregate states from Phase 1, produces
     /// the results of the original step: final ones, or merged states when the original step was
@@ -436,7 +448,8 @@ GroupExpressions TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr
     /// the appropriate exchange before the partial step.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
     partial_expr->is_partial_of_two_stage_aggregation = true;
-    auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});
+    auto merge_expr = addTwoStageSplit(
+        memo, expression, std::move(partial_expr), std::move(merge_step_ptr), std::move(merge_input_required));
 
     if (!merge_expr)
         return {};
@@ -536,12 +549,14 @@ GroupExpressions MergingAggregationImplementation::applyImpl(GroupExpressionPtr 
 
         auto shuffle = std::make_shared<GroupExpression>(*expression);
         /// Each node receives the states of its keys from every sender in no particular bucket
-        /// order, which the memory-efficient merge cannot consume.
+        /// order, which the memory-efficient merge cannot consume. So this merge is not
+        /// memory-efficient, and it does not require the bucket order from its input.
         auto shuffle_step = merge_step->cloneWithoutMemoryEfficientAggregation();
         shuffle_step->setStepDescription(*merge_step);
         shuffle->plan_step = std::move(shuffle_step);
         shuffle->strategy = strategySingleton<ShuffleMergeStrategy>();
         shuffle->inputs[0].required_properties.distribution = by_keys;
+        shuffle->inputs[0].required_properties.aggregation_buckets_in_order = false;
         shuffle->properties.distribution = by_keys;
         addPhysicalToMemo(shuffle, required_properties, memo, result);
     }
