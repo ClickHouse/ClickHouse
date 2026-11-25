@@ -10,7 +10,7 @@ doc_type: 'guide'
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## المقدمة
+  ## المقدمة {#introduction}
 </div>
 
 يوفّر ClickHouse آليات متعددة لتسريع الاستعلامات التحليلية على كميات كبيرة
@@ -43,25 +43,21 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 تتشابه الإسقاطات من بعض الجوانب مع [العروض المادية](/ar/concepts/features/materialized-views/index)
 ، التي تتيح لك أيضًا استخدام ترتيبات متعددة للصفوف والحساب المسبق للتجميعات
 وقت الإدراج.
-تُحدَّث الإسقاطات تلقائيًا
+تُحدَّث الإسقاطات تلقائيًا
 وتبقى متزامنة مع الجدول الأصلي، بخلاف العروض المادية التي
-تُحدَّث صراحةً. وعندما يستهدف الاستعلام الجدول الأصلي،
+تُحدَّث صراحةً. وعندما يستهدف الاستعلام الجدول الأصلي،
 يأخذ ClickHouse تلقائيًا عينات من المفاتيح الأساسية ويختار جدولًا يمكنه
 إنتاج النتيجة الصحيحة نفسها، لكنه يتطلب أقل قدر ممكن من البيانات
 للقراءة، كما هو موضح في الشكل أدناه:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![الإسقاطات في ClickHouse](/images/data-modeling/projections_1.webp)
-
-</Frame>
-
+  <Frame>
+    ![الإسقاطات في ClickHouse](/images/data-modeling/projections_1.webp)
+  </Frame>
 </div>
 
 <div id="smarter_storage_with_part_offset">
-  ### تخزين أكثر ذكاءً باستخدام `_part_offset`
+  ### تخزين أكثر ذكاءً باستخدام `_part_offset` {#smarter_storage_with_part_offset}
 </div>
 
 بدءًا من الإصدار 25.5، يدعم ClickHouse العمود الافتراضي `_part_offset` في
@@ -82,7 +78,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 الأعمدة الأخرى بشكل غير مباشر عبر `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## متى تستخدم الإسقاطات؟
+  ## متى تستخدم الإسقاطات؟ {#when-to-use-projections}
 </div>
 
 تُعدّ الإسقاطات ميزة جذابة للمستخدمين الجدد لأنها تُصان تلقائيًا
@@ -120,11 +116,11 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
   [قيّم عبء التخزين](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## أمثلة
+  ## أمثلة {#examples}
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### التصفية على أعمدة ليست ضمن المفتاح الأساسي
+  ### التصفية على أعمدة ليست ضمن المفتاح الأساسي {#filtering-without-using-primary-keys}
 </div>
 
 في هذا المثال، سنوضح كيفية إضافة إسقاط إلى جدول.
@@ -324,7 +320,7 @@ SETTINGS mutations_sync = 1
 <Note>
   إذا كانت هناك عبارة `GROUP BY` مستخدمة في إسقاط مثل الإسقاط `prj_gby_county`
   أعلاه، فإن محرك التخزين الأساسي للجدول (المخفي)
-  يصبح `AggregatingMergeTree`، وتُحوَّل جميع الدوال التجميعية إلى
+  يصبح `AggregatingMergeTree`، وتُحوَّل جميع الدوال التجميعية إلى
   `AggregateFunction`. وهذا يضمن تجميع البيانات التزايدي بشكل صحيح.
 </Note>
 
@@ -332,13 +328,9 @@ SETTINGS mutations_sync = 1
 والإسقاطين التابعين له:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![تصور للجدول الرئيسي uk_price_paid_with_projections والإسقاطين التابعين له](/images/data-modeling/projections_2.webp)
-
-</Frame>
-
+  <Frame>
+    ![تصور للجدول الرئيسي uk_price_paid_with_projections والإسقاطين التابعين له](/images/data-modeling/projections_2.webp)
+  </Frame>
 </div>
 
 إذا شغّلنا الآن الاستعلام الذي يسرد المقاطعات في لندن ذات أعلى ثلاثة
@@ -434,7 +426,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### أمثلة إضافية
+  ### أمثلة إضافية {#further-examples}
 </div>
 
 تستخدم الأمثلة التالية مجموعة بيانات أسعار المملكة المتحدة نفسها، وتقارن بين الاستعلامات عند استخدام الإسقاطات وعند عدم استخدامها.
@@ -486,7 +478,7 @@ SETTINGS mutations_sync = 1
 تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings/optimize-use#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
 
 <div id="average-price-projections">
-  #### الاستعلام 1. متوسط السعر لكل سنة
+  #### الاستعلام 1. متوسط السعر لكل سنة {#average-price-projections}
 </div>
 
 <RunnableCode>
@@ -518,7 +510,7 @@ SETTINGS mutations_sync = 1
 يُفترض أن تكون النتائج نفسها، لكن الأداء سيكون أفضل في المثال الأخير!
 
 <div id="average-price-london-projections">
-  #### الاستعلام 2. متوسط السعر سنويًا في لندن
+  #### الاستعلام 2. متوسط السعر سنويًا في لندن {#average-price-london-projections}
 </div>
 
 <RunnableCode>
@@ -549,7 +541,7 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### الاستعلام 3. الأحياء الأكثر تكلفة
+  #### الاستعلام 3. الأحياء الأكثر تكلفة {#most-expensive-neighborhoods-projections}
 </div>
 
 يشير عامل التصفية الخاص بالصفوف من عام 2020 فصاعدًا إلى بُعد الإسقاط المخزَّن `year` مباشرةً:
@@ -603,7 +595,7 @@ SETTINGS mutations_sync = 1
 </Note>
 
 <div id="combining-projections">
-  ### دمج الإسقاطات في استعلام واحد
+  ### دمج الإسقاطات في استعلام واحد {#combining-projections}
 </div>
 
 اعتبارًا من الإصدار 25.6، واستنادًا إلى دعم `_part_offset` الذي أُضيف في

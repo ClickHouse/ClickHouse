@@ -396,7 +396,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
     if (line.size() >= 2 && line[line.size() - 2] == '\r' && line[line.size() - 1] == '\n')
         line.resize(line.size() - 2);
     else
-        throw Poco::Net::MessageException("Malformed chunked encoding");
+        throw Poco::Net::MalformedMessageException("Malformed chunked encoding");
 
     /// Chunk extensions are not interpreted, the same as in `Poco`.
     if (const size_t pos = line.find(';'); pos != std::string::npos)
@@ -404,7 +404,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
 
     unsigned chunk_length = 0;
     if (!Poco::NumberParser::tryParseHex(line, chunk_length))
-        throw Poco::Net::MessageException("Invalid chunk length");
+        throw Poco::Net::MalformedMessageException("Invalid chunk length");
 
     return chunk_length;
 }
@@ -418,7 +418,7 @@ void HTTPResponseReadBuffer::skipCRLF()
     if (c1 == eof || c2 == eof)
         throw Poco::Net::MessageException("Unexpected EOF");
     if (c1 != '\r' || c2 != '\n')
-        throw Poco::Net::MessageException("Malformed chunked encoding");
+        throw Poco::Net::MalformedMessageException("Malformed chunked encoding");
 }
 
 void HTTPResponseReadBuffer::markComplete()

@@ -242,6 +242,8 @@ def _build_dockers(workflow, job_name):
                     add_latest=add_latest,
                 )
             )
+            if not results[-1].is_ok():
+                break
 
     return Result.create_from(results=results, info=job_info)
 

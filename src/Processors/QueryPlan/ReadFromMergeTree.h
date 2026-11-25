@@ -334,8 +334,7 @@ public:
         std::optional<std::unordered_set<String>> part_values; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- returned by `MergeTreeDataSelectExecutor::filterPartsByVirtualColumns`
     };
 
-    void addJoinRuntimeFilterIndexAnalysisOnDataRead(
-        const String & filter_id, const String & column_name, const DataTypePtr & column_type, bool is_global_row_index = false);
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor);
     const VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
     {
         return join_runtime_filters_for_index_analysis;
@@ -363,7 +362,8 @@ public:
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
         bool skip_ranges_analysis,
-        bool report_index_usage);
+        bool report_index_usage,
+        bool stop_at_first_match);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -399,6 +399,10 @@ public:
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void copyVirtualRowConversions(const ReadFromMergeTree & other)
+    {
+        virtual_row_conversion = other.virtual_row_conversion;
+    }
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
 
     /// Whether every part surviving pruning has the value of its virtual row in the index.
@@ -424,9 +428,26 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    /// Whether `requestOutputEachPartitionThroughSeparatePortForWindow` would apply, without applying it.
+    bool canOutputEachPartitionThroughSeparatePortForWindow() const;
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Signal that downstream needs multiple output streams (e.g. aggregation-in-order).
+    /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+    bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
+
+    /// For optimizations that rebuild the reading step (e.g. lazy `FINAL`): carry over the fact that
+    /// reading in order was requested through `requestReadingInOrder`, together with the opt-outs
+    /// already stamped into `prefer_multiple_streams`, so the rebuilt read keeps the same
+    /// `PrefetchingConcatProcessor` eligibility as the original.
+    void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
+    bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
+
+    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
+    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
 
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
@@ -434,6 +455,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -460,6 +484,7 @@ public:
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
+        filter_actions_dag_conditions = other.filter_actions_dag_conditions;
 
         limit = other.limit;
         no_rows_needed = other.no_rows_needed;
@@ -666,6 +691,11 @@ public:
             top_k_filter_info->dynamic_filter_pending = false;
     }
 
+    bool filterActionsDAGWasBuiltFrom(const String & filter_column_name) const
+    {
+        return filter_actions_dag_conditions.contains(filter_column_name);
+    }
+
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
     /// `createLocalParallelReplicasReadingStep` do the same for the steps they rebuild internally).
@@ -703,9 +733,16 @@ public:
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<size_t> & lazy_output_positions);
 
-    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
-    /// their part offsets. Reading a projection instead would address other rows.
-    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
+    /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.
+    bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
+    /// The columns the lazy read reads for the rows of this one.
+    const Names & getColumnsReadLazily() const { return columns_read_lazily; }
+    /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
+    /// reads them from.
+    void shareLazyReadOf(const ReadFromMergeTree & other);
+    /// The rows the lazy read of the columns this read leaves out reads, or null without such a lazy read.
+    const LazyMaterializingRowsPtr & getLazyReadRows() const { return lazy_read_rows; }
 
     /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
     /// them. The columns the output header had keep their order.
@@ -762,6 +799,9 @@ private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
+    size_t getReplicasCountForParallelReading();
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -810,10 +850,24 @@ private:
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
+    /// Set by aggregation-in-order optimizer to prevent PrefetchingConcat from collapsing streams.
+    bool prefer_multiple_streams = false;
+
+    /// True when reading in order was requested through `requestReadingInOrder` (the query-plan
+    /// optimizer entry points: `optimizeReadInOrder`, `applyOrder`, and `ReadFromMerge` forwarding).
+    /// The legacy path (`InterpreterSelectQuery` with `query_plan_read_in_order = 0`, including the
+    /// `query_info.order_optimizer` branch of `ReadFromMerge::createChildrenPlans`) sets
+    /// `query_info.input_order_info` directly instead, bypassing the opt-outs that stamp
+    /// `prefer_multiple_streams`; PrefetchingConcat must stay disabled there.
+    bool read_in_order_requested_by_plan_optimizer = false;
+
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Names of the filter conditions `filter_actions_dag` was built from, as of the call that built it.
+    UnorderedSetWithMemoryTracking<String> filter_actions_dag_conditions;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
@@ -959,6 +1013,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
@@ -972,11 +1027,15 @@ private:
     bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool has_lazily_read_columns = false;
+
+    /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
+    LazyMaterializingRowsPtr lazy_read_rows;
+    Names columns_read_lazily;
 
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+    std::optional<size_t> replicas_count_for_parallel_reading;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     std::shared_ptr<HypotheticalProjection> hypothetical_projection;
