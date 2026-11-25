@@ -123,7 +123,11 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE x IN (SELECT x FROM plain_other_database)"
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same AS a INNER JOIN plain_other_database AS b USING (x)"
 echo '-- and fails if the database of the table depends on the shard'
-$CLICKHOUSE_CLIENT -q "CREATE TABLE plain_shard_database (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', local_data)"
+# With `serialize_query_plan` the initiator plans the set on every shard first, so `shard_1` needs the table too.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE shard_1.local_data (d Date, x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE plain_shard_database (d Date, x UInt64) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', local_data);
+"
 $CLICKHOUSE_CLIENT --distributed_product_mode local -q "SELECT count() FROM dist_same WHERE (d, x) IN plain_shard_database" 2>&1 \
     | grep -o -m1 'NOT_IMPLEMENTED'
 
