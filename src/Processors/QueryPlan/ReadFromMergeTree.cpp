@@ -6148,6 +6148,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// (which may skip index analysis).
     if (result.parts_with_ranges.empty())
         announceEmptyReadRangesToCoordinatorIfInitiator();
+    /// A read in order coordinates only its split streams, while a replica that planned this table differently reads it
+    /// as one Default stream: register that stream empty.
+    else if (query_info.input_order_info && result.readFromProjection())
+        announceEmptyReadRangesToCoordinatorIfInitiator(CoordinationMode::Default);
 
     if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
@@ -7069,7 +7073,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         getParallelReplicasStreamId());
 }
 
-bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
+bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator(std::optional<CoordinationMode> mode)
 {
     if (!isParallelReplicasLocalPlanForInitiator())
         return false;
@@ -7095,9 +7099,9 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
             ? CoordinationMode::WithOrder
             : CoordinationMode::ReverseOrder;
     };
-    // This code is executed only if there is no parts to read, so the parameter values don't really matter
+    // The announcement has no parts to read, so the parameter values don't really matter
     std::ignore = extension.sendInitialRequest(
-        get_coordination_mode(), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1, /*wants_analyzed_ranges=*/false);
+        mode.value_or(get_coordination_mode()), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1, /*wants_analyzed_ranges=*/false);
     return true;
 }
 
