@@ -29,7 +29,7 @@ ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr c
 
 StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/, bool is_table_definition) const
+    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
     checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
 
@@ -49,13 +49,8 @@ StoragePtr TableFunctionURLCluster::getStorage(
             configuration.headers,
             configuration.http_method,
             nullptr,
-            /*distributed_processing=*/ true,
-            globCaller(),
-            /*is_replayed_definition=*/ false,
-            /*check_redirect_access=*/ !is_table_definition);
+            /*distributed_processing=*/ true);
     }
-
-    checkCallerGrantAppliesOnWorkers(context, cluster_name);
 
     return std::make_shared<StorageURLCluster>(
         context,

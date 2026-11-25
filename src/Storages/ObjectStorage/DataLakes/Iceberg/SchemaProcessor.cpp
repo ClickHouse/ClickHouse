@@ -1458,12 +1458,6 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
-                /// An unchanged nested type passes through like an unchanged primitive one.
-                if (typesAreStructurallyIdentical(old_json->get(f_type), field->get(f_type), {}) && old_node->result_type->equals(*type))
-                {
-                    outputs.push_back(old_json->getValue<String>(f_name) == name ? old_node : &dag->addAlias(*old_node, name));
-                    continue;
-                }
                 auto old_type = getFieldType(old_json, "type", required);
                 /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
                 Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
@@ -1711,24 +1705,6 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
                 {
                     if (type.isString() && canonicalizeTypeName(type.extract<String>()) == Iceberg::f_time)
                         result.insert(field_id);
-                });
-    }
-    return result;
-}
-
-std::unordered_map<Int64, String> IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_map<Int64, String> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        if (current_object->has(Iceberg::f_type))
-            forEachFieldId(
-                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
-                [&](Int64 field_id, const Poco::Dynamic::Var & type)
-                {
-                    if (type.isString())
-                        result.emplace(field_id, canonicalizeTypeName(type.extract<String>()));
                 });
     }
     return result;

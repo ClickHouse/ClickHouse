@@ -15,7 +15,6 @@
 
 #include <Poco/Exception.h>
 #include <Poco/String.h>
-#include <Poco/URI.h>
 
 namespace DB
 {
@@ -32,13 +31,13 @@ namespace ServerSetting
     extern const ServerSettingsString default_session_user;
 }
 
-void AuthMiddleware::sendingHeaders(grpc::ServerContext & context) const
+void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers)
 {
     if (!token.empty())
-        context.AddInitialMetadata(AUTHORIZATION_HEADER, "Bearer " + token);
+        outgoing_headers->AddHeader(AUTHORIZATION_HEADER, "Bearer " + token);
 }
 
-void AuthMiddleware::callCompleted()
+void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
 {
     if (!session)
         return;
@@ -88,25 +87,14 @@ namespace
         return std::chrono::seconds(session_timeout);
     }
 
-    using CallHeaders = std::multimap<grpc::string_ref, grpc::string_ref>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the type of gRPC
-
-    std::optional<std::string_view> findHeader(const CallHeaders & headers, std::string_view name)
+    std::optional<std::pair<std::string, std::string>> getCredentialsFromBasicHeader(const arrow::flight::CallHeaders & headers)
     {
-        auto it = std::ranges::find_if(
-            headers, [&](const auto & p) { return Poco::toLower(std::string(p.first.data(), p.first.size())) == name; });
+        auto it = std::ranges::find_if(headers, [](const auto & p) { return Poco::toLower(std::string(p.first)) == "authorization"; });
         if (it == headers.end())
-            return std::nullopt;
-        return std::string_view(it->second.data(), it->second.size());
-    }
-
-    std::optional<std::pair<std::string, std::string>> getCredentialsFromBasicHeader(const CallHeaders & headers)
-    {
-        auto header = findHeader(headers, "authorization");
-        if (!header)
             return std::nullopt;
 
         const std::string basic_prefix = "basic ";
-        const auto auth_str = *header;
+        const auto & auth_str = it->second;
 
         if (!Poco::toLower(std::string(auth_str)).starts_with(basic_prefix))
             return std::nullopt;
@@ -130,14 +118,14 @@ namespace
         return {{credentials.substr(0, pos), credentials.substr(pos+1)}};
     }
 
-    std::optional<std::string> getTokenFromBearerHeader(const CallHeaders & headers)
+    std::optional<std::string> getTokenFromBearerHeader(const arrow::flight::CallHeaders & headers)
     {
-        auto header = findHeader(headers, "authorization");
-        if (!header)
+        auto it = std::ranges::find_if(headers, [](const auto & p) { return Poco::toLower(std::string(p.first)) == "authorization"; });
+        if (it == headers.end())
             return std::nullopt;
 
         const std::string bearer_prefix = "bearer ";
-        const auto auth_str = *header;
+        const auto & auth_str = it->second;
 
         if (!Poco::toLower(std::string(auth_str)).starts_with(bearer_prefix))
             return std::nullopt;
@@ -145,13 +133,13 @@ namespace
         return std::string(auth_str.substr(bearer_prefix.size()));
     }
 
-    bool hasAuthorizationHeader(const CallHeaders & headers)
+    bool hasAuthorizationHeader(const arrow::flight::CallHeaders & headers)
     {
-        return findHeader(headers, "authorization").has_value();
+        return std::ranges::any_of(headers, [](const auto & p) { return Poco::toLower(std::string(p.first)) == "authorization"; });
     }
 
     /// Extracts the client's address from the call context.
-    Poco::Net::SocketAddress getClientAddress(const grpc::ServerContext & context)
+    Poco::Net::SocketAddress getClientAddress(const arrow::flight::ServerCallContext & context)
     {
         /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
         String uri_encoded_peer = context.peer();
@@ -222,10 +210,12 @@ void AuthMiddlewareFactory::TokenStorage::cleanupExpiredTokens()
     }
 }
 
-ArrowFlight::Status AuthMiddlewareFactory::startCall(grpc::ServerContext & context, std::unique_ptr<AuthMiddleware> & middleware)
+arrow::Status AuthMiddlewareFactory::StartCall(
+        const arrow::flight::CallInfo & /*info*/,
+        const arrow::flight::ServerCallContext & context,
+        std::shared_ptr<arrow::flight::ServerMiddleware> * middleware)
 {
-    using ArrowFlight::Status;
-    const auto & headers = context.client_metadata();
+    const auto & headers = context.incoming_headers();
 
     std::string username;
     std::string password;
@@ -248,7 +238,7 @@ ArrowFlight::Status AuthMiddlewareFactory::startCall(grpc::ServerContext & conte
                 token = *token_opt;
                 credentials = token_storage.getCredentials(token);
                 if (!credentials)
-                    return Status::FlightError(Status::FlightCode::Unauthenticated, "Session expired or not authenticated.");
+                    return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, "Session expired or not authenticated.");
 
                 std::tie(username, password) = *credentials;
             }
@@ -274,7 +264,7 @@ ArrowFlight::Status AuthMiddlewareFactory::startCall(grpc::ServerContext & conte
                 auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
                 session->onAuthenticationFailure(username, getClientAddress(context), exception);
-                return Status::FlightError(Status::FlightCode::Unauthenticated, exception.message());
+                return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, exception.message());
             }
         }
 
@@ -282,31 +272,45 @@ ArrowFlight::Status AuthMiddlewareFactory::startCall(grpc::ServerContext & conte
     }
     catch (DB::Exception & e)
     {
-        return Status::FlightError(Status::FlightCode::Unauthenticated, e.what());
+        return arrow::flight::MakeFlightError(arrow::flight::FlightStatusCode::Unauthenticated, e.what());
     }
     catch (...)
     {
         /// An exception escaping this method would be caught inside gRPC and converted to a meaningless
         /// "Unexpected error in RPC handling" status, so we convert it to a proper error status ourselves.
-        return Status::FlightError(Status::FlightCode::Unauthenticated, getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        return arrow::flight::MakeFlightError(
+            arrow::flight::FlightStatusCode::Unauthenticated, getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
     try
     {
-        auto header_or_empty = [&](std::string_view name) { return std::string(findHeader(headers, name).value_or("")); };
-        std::string session_id = header_or_empty("x-clickhouse-session-id");
-        std::string session_check = header_or_empty("x-clickhouse-session-check");
-        std::string session_timeout_str = header_or_empty("x-clickhouse-session-timeout");
+        std::string session_id;
+        auto session_it = headers.find("x-clickhouse-session-id");
+        if (session_it != headers.end())
+            session_id = std::string(session_it->second);
+
+        std::string session_check;
+        session_it = headers.find("x-clickhouse-session-check");
+        if (session_it != headers.end())
+            session_check = std::string(session_it->second);
+
+        std::string session_timeout_str;
+        session_it = headers.find("x-clickhouse-session-timeout");
+        if (session_it != headers.end())
+            session_timeout_str = std::string(session_it->second);
 
         unsigned session_timeout = 0;
         if (!session_timeout_str.empty())
         {
             ReadBufferFromString buf(session_timeout_str);
             if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-                return Status::Invalid("Invalid session timeout: " + session_timeout_str);
+                return arrow::Status::Invalid("Invalid session timeout: " + session_timeout_str);
         }
 
-        std::string session_close = header_or_empty("x-clickhouse-session-close");
+        std::string session_close;
+        session_it = headers.find("x-clickhouse-session-close");
+        if (session_it != headers.end())
+            session_close = std::string(session_it->second);
 
         if (session_id.empty())
             session->makeSessionContext();
@@ -320,19 +324,18 @@ ArrowFlight::Status AuthMiddlewareFactory::startCall(grpc::ServerContext & conte
             ? std::chrono::steady_clock::duration{0}
             : parseSessionTimeout(server.context()->getConfigRef(), session_timeout);
 
-        middleware = std::make_unique<AuthMiddleware>(session, token, username, calls_data, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true), parsed_session_timeout);
+        *middleware = std::make_unique<AuthMiddleware>(session, token, username, calls_data, session_id, session_close == "1" && server.config().getBool("enable_arrow_close_session", true), parsed_session_timeout);
     }
     catch (DB::Exception & e)
     {
-        return Status::Invalid(e.what());
+        return arrow::Status::Invalid(e.what());
     }
     catch (...)
     {
-        return Status::Invalid(getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        return arrow::Status::Invalid(getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
-    middleware->sendingHeaders(context);
-    return Status::OK();
+    return arrow::Status::OK();
 }
 
 }

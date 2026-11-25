@@ -7,8 +7,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <base/unaligned.h>
 
-#include <fmt/format.h>
-
 #if USE_PARQUET
 
 #include <xxhash.h>
@@ -297,15 +295,6 @@ std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const ICo
     }
 
     return hashes;
-}
-
-String parquetHashKind(const SchemaElement & schema_element)
-{
-    return fmt::format("{} {} {} {}",
-        Parquet::thriftEnumToInt(schema_element.type),
-        schema_element.type_length,
-        isParquetStringTypeSupportedForBloomFilters(schema_element),
-        isParquetIntegerTypeSupportedForBloomFilters(schema_element));
 }
 
 }

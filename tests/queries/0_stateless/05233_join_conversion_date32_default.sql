@@ -108,22 +108,22 @@ FROM kr_05233 AS r LEFT JOIN kl_tup_mix_05233 AS l ON l.v = r.v
 WHERE toDateTime(l.t.1) < toDateTime('2020-07-25 12:00:00')
 SETTINGS optimize_functions_to_subcolumns = 0;
 
--- An inequality-only ON routes to `inequality`, whose not-matched rows hold the type default (the smallest value)
+-- An inequality-only ON routes to `ie_join`, whose not-matched rows hold the type default (the smallest value)
 -- like the hash join's, so the filter rejects them with and without the rewrite.
 CREATE TABLE kie_l_05233 (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE kie_r_05233 (x UInt8, y UInt8, e Enum8('a' = 1)) ENGINE = MergeTree ORDER BY x;
 INSERT INTO kie_l_05233 VALUES (1, 1), (2, 2);
 INSERT INTO kie_r_05233 VALUES (0, 0, 'a');   -- no row of kie_r can match on both inequalities
 
-SELECT 'Enum8 over inequality, conversion disabled', count()
+SELECT 'Enum8 over ie_join, conversion disabled', count()
 FROM kie_l_05233 AS l LEFT JOIN kie_r_05233 AS r ON l.x > r.x AND l.y < r.y
 WHERE toInt8(r.e) = 0
-SETTINGS join_algorithm = 'inequality', query_plan_convert_outer_join_to_inner_join = 0;
+SETTINGS join_algorithm = 'ie_join', query_plan_convert_outer_join_to_inner_join = 0;
 
-SELECT 'Enum8 over inequality', count()
+SELECT 'Enum8 over ie_join', count()
 FROM kie_l_05233 AS l LEFT JOIN kie_r_05233 AS r ON l.x > r.x AND l.y < r.y
 WHERE toInt8(r.e) = 0
-SETTINGS join_algorithm = 'inequality';
+SETTINGS join_algorithm = 'ie_join';
 
 -- `Date` agrees on both values, so neither its result nor its conversion may move.
 CREATE TABLE kl_date_05233 (d Date, v Int64) ENGINE = MergeTree ORDER BY d;

@@ -208,7 +208,7 @@ protected:
 
                 if (can_expose_any_column_metadata && columns_mask[22])
                 {
-                    if (auto hints = storage->tryGetSerializationHints(*metadata_snapshot))
+                    if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
                 }
             }

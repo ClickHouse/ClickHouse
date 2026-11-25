@@ -58,10 +58,6 @@ public:
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
-    /// Whether the streams of the column are known only after reading the serialization prefixes:
-    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
-    static bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos);
-
     /// Return map (requested column name) -> (list of all streams required to read this column, each stream once; the
     /// size hints of a stream reported several times are summed).
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();

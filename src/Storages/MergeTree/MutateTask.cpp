@@ -2183,14 +2183,7 @@ static NameToNameVector collectFilesForRenames(
         /// Delete files if they are no longer shared with another column.
         auto remove_stream = [&](const std::optional<String> & stream_name)
         {
-            /// `operator[]` would insert a 0 for a stream that is not in the map and wrap it
-            /// to `SIZE_MAX`, so look the stream up and keep the decrement out of the condition.
-            auto stream_it = stream_name ? stream_counts.find(*stream_name) : stream_counts.end();
-            if (stream_it == stream_counts.end() || stream_it->second == 0)
-                return;
-
-            --stream_it->second;
-            if (stream_it->second == 0)
+            if (stream_name && --stream_counts[*stream_name] == 0)
             {
                 add_rename(*stream_name + ".bin", "");
                 add_rename(*stream_name + mrk_extension, "");
@@ -2398,18 +2391,7 @@ static NameToNameVector collectFilesForRenames(
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
-                    if (new_streams.contains(old_stream))
-                        continue;
-
-                    /// Every such command walks all streams of the source part, so with several of them
-                    /// the count of a stream can already have reached zero (and the stream been removed)
-                    /// on behalf of an earlier command. Do not decrement it below zero.
-                    auto stream_it = stream_counts.find(old_stream);
-                    if (stream_it == stream_counts.end() || stream_it->second == 0)
-                        continue;
-
-                    --stream_it->second;
-                    if (stream_it->second == 0)
+                    if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
                     {
                         add_rename(old_stream + ".bin", "");
                         add_rename(old_stream + mrk_extension, "");
@@ -2769,13 +2751,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -3952,8 +3934,7 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true /*apply_ttl*/,
-                true /*force*/);
+                true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -4009,7 +3990,7 @@ private:
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
                 ctx->source_part->rows_count,
-                [&] { return ctx->source_part->getTotalColumnsReadSize().data_uncompressed; },
+                ctx->source_part->getBytesUncompressedOnDisk(),
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
@@ -4280,7 +4261,7 @@ private:
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
         (*ctx->mutate_entry)->columns_written = ctx->recalculate_ttl_only
-            ? 0 : ctx->storage_columns.size() - std::min(ctx->storage_columns.size(), ctx->updated_header.columns());
+            ? 0 : ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
@@ -4409,8 +4390,7 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true /*apply_ttl*/,
-                    true /*force*/);
+                    true);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -4899,40 +4879,26 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
-    /// entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and they are
-    /// the source of truth here. A partition expression is arbitrary user SQL and may evaluate to a
-    /// different partition later - re-evaluating it per part would let the set of parts the mutation
-    /// rewrites diverge from the one the pending on-the-fly reads have already been answering from.
-    /// The expression is re-evaluated below only for an entry whose ids are not resolved.
-    if (command.has_partition && command.partition_ids)
+    if (auto alter = command.ast(); alter && alter->partition)
     {
-        if (!command.partition_ids->contains(part->info.getPartitionId()))
+        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+        if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
-    else if (auto alter = command.ast())
+    else if (alter && alter->partitions)
     {
-        if (alter->partition)
+        bool part_in_partitions = false;
+        for (const auto & partition_ast : alter->partitions->children)
         {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-            if (part->info.getPartitionId() != command_partition_id)
-                return true;
-        }
-        else if (alter->partitions)
-        {
-            bool part_in_partitions = false;
-            for (const auto & partition_ast : alter->partitions->children)
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+            if (part->info.getPartitionId() == command_partition_id)
             {
-                auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-                if (part->info.getPartitionId() == command_partition_id)
-                {
-                    part_in_partitions = true;
-                    break;
-                }
+                part_in_partitions = true;
+                break;
             }
-            if (!part_in_partitions)
-                return true;
         }
+        if (!part_in_partitions)
+            return true;
     }
 
     /// APPLY PATCHES command is handled separately.

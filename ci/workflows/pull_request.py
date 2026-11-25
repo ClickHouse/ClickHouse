@@ -11,7 +11,6 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import (
     PR_SINGLE_ARCH_SKIPPED_BUILDS,
     PR_SINGLE_ARCH_SKIPPED_JOBS,
-    configure_amd_release_thinlto,
     configure_performance_shards,
     configure_toolchain_builds,
     should_skip_job,
@@ -147,9 +146,11 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
-        # The non-sanitizer (`amd_binary`) flaky check, so a test that is only
-        # too slow (or only flaky) without a sanitizer is reported in the PR.
-        *JobConfigs.stateless_tests_flaky_amd_binary_jobs,
+        # The merge queue's non-sanitizer flaky check also runs here, so a test
+        # that is only too slow (or only flaky) without a sanitizer is reported
+        # in the PR rather than first bouncing it from the merge queue. Same job
+        # config as in `ci/workflows/merge_queue.py`.
+        *JobConfigs.stateless_tests_flaky_mq_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
         # both amd64 and aarch64). Each per-arch variant has
@@ -164,7 +165,7 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.bugfix_validation_it_jobs
         ],
-        # Unit-test (gtest) bugfix validation: a single ARM-only job (allow_failure)
+        # Unit-test (gtest) bugfix validation: a single AMD-only job (allow_failure)
         # that builds a merge-base "before" binary and runs the touched suite against it.
         # It is not part of the per-arch FT/IT aggregation; instead new_tests_check.py
         # blocks the unit case iff this job reported a definitive FAIL (failed to
@@ -314,7 +315,6 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         configure_performance_shards,
-        configure_amd_release_thinlto,
         configure_toolchain_builds,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",

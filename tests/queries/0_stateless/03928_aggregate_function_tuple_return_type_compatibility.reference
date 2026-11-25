@@ -55,7 +55,7 @@ FROM
 (
     SELECT finalizeAggregation(CAST(unhex('010000000000000840000000000000224000000000008041400000000000000040'), 'AggregateFunction(studentTTestOneSample, Nullable(Float64), Nullable(Float64))')) AS res
 );
-(0.866,0.4778)
+(2.5981,0.1217)
 -- argAndMin non-empty state.
 SELECT finalizeAggregation(CAST(unhex('0101030000000100000000'), 'AggregateFunction(argAndMin, Nullable(Int32), Nullable(Int32))'));
 (3,0)

@@ -514,11 +514,11 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             col_offset->insertValue(die_offset);
         if (need[COL_ANCESTOR_TAGS])
         {
-            for (auto it = unit.stack.rbegin(); it != unit.stack.rend(); ++it)
+            for (size_t i = unit.stack.size() - 1; i != UINT64_MAX; --i)
             {
-                col_ancestor_tags->insertValue(it->tag);
+                col_ancestor_tags->insertValue(unit.stack[i].tag);
                 if (need[COL_ANCESTOR_OFFSETS])
-                    col_ancestor_dwarf_offsets->insertValue(it->offset);
+                    col_ancestor_dwarf_offsets->insertValue(unit.stack[i].offset);
             }
             col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
         }

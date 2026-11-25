@@ -164,7 +164,7 @@ public:
             return;
 
         /// A window function also processes subtotals, and totals of the subquery, which can be equal.
-        if (function_node->isWindowCall() && (query_node->hasGroupBy() || subquery_node->isGroupByWithTotals()))
+        if (function_node->isWindowFunction() && (query_node->hasGroupBy() || subquery_node->isGroupByWithTotals()))
             return;
 
         /// `count` has no parameters, and does not return NULL as some variants do if all arguments are NULL, or if there are none.

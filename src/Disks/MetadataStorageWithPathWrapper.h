@@ -80,6 +80,13 @@ public:
         delegate->setLastModified(wrappedPath(path), timestamp);
     }
 
+    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
+
+    void chmod(const String & path, mode_t mode) override
+    {
+        delegate->chmod(wrappedPath(path), mode);
+    }
+
     void setReadOnly(const std::string & path) override
     {
         delegate->setReadOnly(wrappedPath(path));
@@ -225,6 +232,8 @@ public:
     {
         return delegate->getLastChanged(wrappedPath(path));
     }
+
+    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
 
     [[nodiscard]] bool supportsStat() const override { return delegate->supportsStat(); }
 

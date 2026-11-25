@@ -2,7 +2,6 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
@@ -15,20 +14,20 @@
 namespace DB
 {
 
+class ASTFunction;
+
 class ActionsDAG;
+class IGeneralWindowFunction;
 
 struct WindowFunctionDescription
 {
     std::string column_name;
+    const ASTFunction * function_node = nullptr;
     AggregateFunctionPtr aggregate_function;
-    GeneralWindowFunctionPtr general_function;
     Array function_parameters;
     DataTypes argument_types;
     Names argument_names;
 
-public:
-    [[nodiscard]] String getFunctionName() const;
-    [[nodiscard]] const DataTypePtr & getResultType() const;
     [[nodiscard]] std::string dump() const;
 };
 
@@ -112,6 +111,7 @@ struct WindowDescription
 
 using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
 
+std::shared_ptr<const IGeneralWindowFunction> asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
 void validateWindowFunctions(const WindowDescription & window);
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;

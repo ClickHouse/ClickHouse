@@ -3,7 +3,7 @@ ice_added_column	3	4000
 ice_left	1	1000
 ice_right	1	1000
 ice_types	1	1000
---- T1: inequality keys chosen by the min/max from the manifests
+--- T1: ie_join keys chosen by the min/max from the manifests
 Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 --- T2: rows, then NDV [NULL fraction] per column

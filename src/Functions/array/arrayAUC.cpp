@@ -305,7 +305,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto current = offsets[i];
-                auto previous = i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1];
+                auto previous = i == 0 ? 0 : offsets[i - 1];
                 if (current - previous != array_partial_offsets_size)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -377,7 +377,7 @@ private:
             /// Later we can divide it by (TP + FN) to obtain the correct AUC.
             ///
             /// This can be done because (TP + FN) is constant and equal to total positive labels.
-            return static_cast<Float64>(curr_tp) / (static_cast<Float64>(curr_tp) + static_cast<Float64>(curr_fp)) * static_cast<Float64>(curr_tp - prev_tp);
+            return static_cast<Float64>(curr_tp) / static_cast<Float64>(curr_tp + curr_fp) * static_cast<Float64>(curr_tp - prev_tp);
         else
             /// ROC curve plots TPR x FPR
             ///
@@ -397,7 +397,7 @@ private:
             ///
             /// This can be done because both (TP + FN) and (FP + TN) are constant and
             ///   equal to total positive labels and total negative labels, respectively.
-            return static_cast<Float64>(curr_fp - prev_fp) * (static_cast<Float64>(curr_tp) + static_cast<Float64>(prev_tp)) / 2.0;
+            return static_cast<Float64>(curr_fp - prev_fp) * static_cast<Float64>(curr_tp + prev_tp) / 2.0;
     }
 
     [[nodiscard]] Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels) const

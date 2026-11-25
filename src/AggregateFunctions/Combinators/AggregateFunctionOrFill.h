@@ -476,10 +476,8 @@ public:
                     nested_function->insertResultInto(place, to, arena);
             }
         }
-        else if (this->result_type->isDefaultInsertTrivial())
-            to.insertDefault();
         else
-            this->result_type->insertDefaultInto(to);
+            to.insertDefault();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

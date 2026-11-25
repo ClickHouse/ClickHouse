@@ -3,15 +3,9 @@
 #if USE_ARROWFLIGHT
 #include <algorithm>
 #include <limits>
-#include <Common/Base64.h>
-#include <Poco/String.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-
-#include <grpcpp/create_channel.h>
-#include <grpcpp/security/credentials.h>
-#include <grpcpp/support/channel_arguments.h>
 
 namespace DB
 {
@@ -19,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARROWFLIGHT_CONNECTION_FAILURE;
+    extern const int BAD_ARGUMENTS;
 }
 
 ArrowFlightConnection::ArrowFlightConnection(const StorageArrowFlight::Configuration & config)
@@ -33,172 +28,103 @@ ArrowFlightConnection::ArrowFlightConnection(const StorageArrowFlight::Configura
 {
 }
 
-void ArrowFlightConnection::setDeadline(grpc::ClientContext & context, UInt64 timeout_sec)
+arrow::flight::TimeoutDuration ArrowFlightConnection::toTimeoutDuration(UInt64 timeout_sec)
 {
-    /// Zero means no deadline.
+    /// Zero is Arrow's own "no deadline"; it has to come before the clamp, because a zero
+    /// TimeoutDuration would mean "deadline already reached".
     if (timeout_sec == 0)
-        return;
+        return arrow::flight::TimeoutDuration(-1);
 
-    /// The deadline is now() + timeout; half of the range of the clock is left for now(), which still keeps every
-    /// value a caller can mean.
-    static constexpr UInt64 max_timeout_sec = static_cast<UInt64>(std::numeric_limits<Int64>::max() / 2 / 1'000'000'000);
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(std::min(timeout_sec, max_timeout_sec)));
+    /// Arrow builds the deadline as now() + timeout and narrows the sum to the clock's microsecond
+    /// rep, so a bound is only usable while that sum stays representable. Half of the rep's range is
+    /// left for now(), which still keeps every value a caller can mean.
+    static constexpr UInt64 max_timeout_sec = static_cast<UInt64>(std::numeric_limits<Int64>::max() / 2 / 1'000'000);
+    return arrow::flight::TimeoutDuration(std::min(timeout_sec, max_timeout_sec));
 }
 
-String ArrowFlightConnection::formatError(const grpc::Status & status, const grpc::ClientContext & context)
+std::shared_ptr<arrow::flight::FlightClient> ArrowFlightConnection::getClient(UInt64 timeout_sec) const
 {
-    /// A server of Arrow Flight sends the original status in the trailing metadata, which the client of the Apache
-    /// Arrow library restores (`FromGrpcContext`).
-    const auto & trailers = context.GetServerTrailingMetadata();
-    auto find = [&](std::string_view name) -> std::optional<String>
-    {
-        auto it = trailers.find(grpc::string_ref(name.data(), name.size()));
-        if (it == trailers.end())
-            return std::nullopt;
-        return String(it->second.data(), it->second.size());
-    };
-    if (auto code = find("x-arrow-status"))
-    {
-        static const std::unordered_map<String, String> code_names = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
-            {"1", "Out of memory"}, {"2", "Key error"}, {"3", "Type error"}, {"4", "Invalid"}, {"5", "IOError"},
-            {"6", "Capacity error"}, {"7", "Index error"}, {"8", "Cancelled"}, {"9", "Unknown error"},
-            {"10", "NotImplemented"}, {"11", "Serialization error"}, {"42", "ExecutionError in Gandiva"},
-            {"45", "Already exists"}};
-        auto name = code_names.find(*code);
-        String result = (name == code_names.end() ? String("Unknown") : name->second) + ": "
-            + find("x-arrow-status-message-bin").value_or(status.error_message());
-        if (auto detail = find("x-arrow-status-detail-bin"))
-            result += ". Detail: " + *detail;
-        return result;
-    }
-
-    /// As `arrow::flight::TransportStatus::ToStatus` for the gRPC code.
-    const String & message = status.error_message();
-    switch (status.error_code())
-    {
-        case grpc::StatusCode::OK:
-            return "OK";
-        case grpc::StatusCode::CANCELLED:
-            return "Cancelled: Flight cancelled call, with message: " + message + ". Detail: Cancelled";
-        case grpc::StatusCode::UNKNOWN:
-            return "Unknown error: Flight RPC failed with message: " + message + ". Detail: Failed";
-        case grpc::StatusCode::INVALID_ARGUMENT:
-        case grpc::StatusCode::OUT_OF_RANGE:
-            return "Invalid: Flight returned invalid argument error, with message: " + message;
-        case grpc::StatusCode::DEADLINE_EXCEEDED:
-            return "IOError: Flight returned timeout error, with message: " + message + ". Detail: TimedOut";
-        case grpc::StatusCode::NOT_FOUND:
-            return "Key error: Flight returned not found error, with message: " + message;
-        case grpc::StatusCode::ALREADY_EXISTS:
-            return "Already exists: Flight returned already exists error, with message: " + message;
-        case grpc::StatusCode::PERMISSION_DENIED:
-            return "IOError: Flight returned unauthorized error, with message: " + message + ". Detail: Unauthorized";
-        case grpc::StatusCode::RESOURCE_EXHAUSTED:
-        case grpc::StatusCode::FAILED_PRECONDITION:
-        case grpc::StatusCode::ABORTED:
-        case grpc::StatusCode::UNAVAILABLE:
-            return "IOError: Flight returned unavailable error, with message: " + message + ". Detail: Unavailable";
-        case grpc::StatusCode::UNIMPLEMENTED:
-            return "NotImplemented: Flight returned unimplemented error, with message: " + message;
-        case grpc::StatusCode::INTERNAL:
-        case grpc::StatusCode::DATA_LOSS:
-            return "IOError: Flight returned internal error, with message: " + message + ". Detail: Internal";
-        case grpc::StatusCode::UNAUTHENTICATED:
-            return "IOError: Flight returned unauthenticated error, with message: " + message + ". Detail: Unauthenticated";
-        default:
-            return fmt::format("Unknown error: gRPC failed with error code {} and message: {}", static_cast<int>(status.error_code()), message);
-    }
-}
-
-std::shared_ptr<ArrowFlightConnection::Stub> ArrowFlightConnection::getStub(UInt64 timeout_sec) const
-{
-    connect(timeout_sec);
+    connect(toTimeoutDuration(timeout_sec));
 
     std::lock_guard lock{mutex};
-    return stub;
+    return client;
 }
 
-void ArrowFlightConnection::prepareCall(grpc::ClientContext & context, UInt64 timeout_sec) const
+arrow::flight::FlightCallOptions ArrowFlightConnection::getCallOptions(UInt64 timeout_sec) const
 {
-    connect(timeout_sec);
+    auto timeout = toTimeoutDuration(timeout_sec);
+    connect(timeout);
 
-    setDeadline(context, timeout_sec);
     std::lock_guard lock{mutex};
-    if (!authorization.empty())
-        context.AddMetadata("authorization", String(authorization));
+    arrow::flight::FlightCallOptions call_options;
+    if (auth_header)
+        call_options.headers.emplace_back(auth_header->first, String(auth_header->second));
+    call_options.timeout = timeout;
+    return call_options;
 }
 
-void ArrowFlightConnection::connect(UInt64 timeout_sec) const
+void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) const
 {
     {
         std::lock_guard lock{mutex};
-        if (stub)
+        if (client)
             return;
     }
 
-    /// An IPv6 address is enclosed in brackets in a gRPC target.
-    const String target = (host.contains(':') && !host.starts_with('[')) ? fmt::format("[{}]:{}", host, port) : fmt::format("{}:{}", host, port);
+    auto location_result = enable_ssl ? arrow::flight::Location::ForGrpcTls(host, port) : arrow::flight::Location::ForGrpcTcp(host, port);
+    if (!location_result.ok())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Arrow Flight endpoint specified: {}", location_result.status().ToString());
+    }
+    auto location = std::move(location_result).ValueOrDie();
 
-    grpc::ChannelArguments arguments;
-    /// As the Arrow Flight client: a message is not limited in size.
-    arguments.SetMaxReceiveMessageSize(-1);
-    arguments.SetMaxSendMessageSize(-1);
+    auto client_options = arrow::flight::FlightClientOptions::Defaults();
 
-    std::shared_ptr<grpc::ChannelCredentials> credentials;
     if (enable_ssl)
     {
-        grpc::SslCredentialsOptions options;
         if (!ssl_ca.empty())
-            options.pem_root_certs = loadCertificate(ssl_ca);
-        if (!ssl_override_hostname.empty())
-            arguments.SetSslTargetNameOverride(ssl_override_hostname);
-        credentials = grpc::SslCredentials(options);
+            client_options.tls_root_certs = loadCertificate(ssl_ca);
+        client_options.override_hostname = ssl_override_hostname;
     }
-    else
+
+    auto client_result = arrow::flight::FlightClient::Connect(location, client_options);
+    if (!client_result.ok())
     {
-        credentials = grpc::InsecureChannelCredentials();
+        throw Exception(
+            ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to connect to Arrow Flight server: {}", client_result.status().ToString());
     }
+    auto new_client = std::move(client_result).ValueOrDie();
 
-    auto new_stub = arrow::flight::protocol::FlightService::NewStub(grpc::CreateCustomChannel(target, credentials, arguments));
+    std::optional<std::pair<String, SecretString>> new_auth_header;
 
-    String new_authorization;
     if (use_basic_authentication)
     {
-        /// As `arrow::flight::FlightClient::AuthenticateBasicToken`: a handshake with the credentials in the header,
-        /// which the server answers with the token in the `authorization` header.
-        grpc::ClientContext context;
-        setDeadline(context, timeout_sec);
-        context.AddMetadata("authorization", "Basic " + base64Encode(username + ":" + String(password)));
-        auto stream = new_stub->Handshake(&context);
-        stream->WritesDone();
-        arrow::flight::protocol::HandshakeResponse response;
-        while (stream->Read(&response))
-        {
-        }
-        auto status = stream->Finish();
-        if (!status.ok())
-            throw Exception(
-                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to authenticate Arrow Flight server: {}", formatError(status, context));
+        arrow::flight::FlightCallOptions auth_options;
+        auth_options.timeout = timeout;
 
-        for (const auto * metadata : {&context.GetServerInitialMetadata(), &context.GetServerTrailingMetadata()})
+        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, String(password));
+        if (!auth_result.ok())
         {
-            for (const auto & [key, value] : *metadata)
-            {
-                String name(key.data(), key.size());
-                String header_value(value.data(), value.size());
-                if (Poco::toLower(name) == "authorization" && Poco::toLower(header_value).starts_with("bearer "))
-                    new_authorization = header_value;
-            }
+            throw Exception(
+                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE, "Failed to authenticate Arrow Flight server: {}", auth_result.status().ToString());
         }
+        auto auth_token = std::move(auth_result).ValueOrDie();
+        new_auth_header.emplace(auth_token.first, SecretString(auth_token.second));
     }
 
+    /// Destroyed after the lock below is released: dropping a client shuts its gRPC transport down,
+    /// which is the kind of call this function keeps off the locked path.
+    std::shared_ptr<arrow::flight::FlightClient> superseded;
     std::lock_guard lock{mutex};
 
-    /// Published only if nobody published first: every query has to see the same authenticated connection.
-    if (!stub)
+    /// Published only now, and only if nobody published first: a connection whose handshake failed
+    /// must not be reused, and every query has to see the same authenticated client.
+    if (client)
+        superseded = std::move(new_client);
+    else
     {
-        stub = std::move(new_stub);
-        authorization = std::move(new_authorization);
+        client = std::move(new_client);
+        auth_header = std::move(new_auth_header);
     }
 }
 

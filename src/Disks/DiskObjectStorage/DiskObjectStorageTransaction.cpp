@@ -510,6 +510,14 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
     });
 }
 
+void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
+{
+    addOperation([path, mode](MetadataTransactionPtr tx)
+    {
+        tx->chmod(path, mode);
+    });
+}
+
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     if (metadata_storage->supportsEmptyFilesWithoutBlobs())

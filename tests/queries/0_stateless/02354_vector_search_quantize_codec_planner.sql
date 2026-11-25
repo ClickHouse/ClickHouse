@@ -41,10 +41,10 @@ FROM
     LIMIT 5 SETTINGS vector_search_index_fetch_multiplier = 50
 );
 
--- rabitq is a cosine-only estimator (it drops the vector norm). An L2Distance query uses the codes shortlist ranked by
--- the angle, and the exact rescore ranks by L2Distance.
-SELECT 'l2_on_cosine_only_uses_shortlist',
-    countIf(explain ILIKE '%quantized shortlist%') > 0
+-- rabitq is a cosine-only estimator (it drops the vector norm), so an L2Distance query must NOT use the codes shortlist
+-- (which would rank by angle and could drop the true L2-nearest rows); the rewrite bails and the query stays exact.
+SELECT 'l2_on_cosine_only_no_shortlist',
+    countIf(explain ILIKE '%quantized shortlist%') = 0
 FROM
 (
     EXPLAIN PLAN

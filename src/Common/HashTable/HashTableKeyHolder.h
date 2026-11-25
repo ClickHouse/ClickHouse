@@ -3,7 +3,6 @@
 #include <functional>
 
 #include <Common/Arena.h>
-#include <Common/CacheLine.h>
 #include <Common/Concepts.h>
 #include <Common/HashTable/KeysAndPackedString.h>
 #include <base/PackedStringRef.h>
@@ -223,7 +222,7 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeysAndPackedStringHolder
 
 inline void keyPrefetch(const std::string_view key)
 {
-    const size_t cache_line_size = DB::CH_CACHE_LINE_SIZE;
+    const size_t cache_line_size = 64;
     // Prefetch up to 4 cache lines.
     const size_t max_prefetch = cache_line_size * 4;
     const size_t n = std::min(key.size(), max_prefetch);

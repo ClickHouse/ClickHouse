@@ -21,9 +21,9 @@ public:
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
+    void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    [[nodiscard]] std::optional<UInt64> getSerializedSize(StatisticsFileVersion version) const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
 
     [[nodiscard]] String getNameForLogs() const override { return "CMSketch"; }
     [[nodiscard]] size_t allocatedBytes() const override;

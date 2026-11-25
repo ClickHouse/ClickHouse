@@ -242,12 +242,7 @@ def test_doget_uuid_is_tagged():
     table = client.do_get(flight_info.endpoints[0].ticket, options).read_all()
 
     field = table.schema.field("v")
-    # A pyarrow that knows the canonical `arrow.uuid` extension reads the field as that type and
-    # removes the extension keys from the field metadata; an older one keeps the keys.
-    if isinstance(field.type, pa.BaseExtensionType):
-        assert field.type.extension_name == "arrow.uuid"
-    else:
-        assert field.metadata[b"ARROW:extension:name"] == b"arrow.uuid"
+    assert field.metadata[b"ARROW:extension:name"] == b"arrow.uuid"
     assert field.type.storage_type == pa.binary(16)
 
     node.query("DROP TABLE arrow_uuid SYNC")

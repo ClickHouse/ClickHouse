@@ -81,26 +81,9 @@ A saved dashboard. Omit `<dashboardId>` (`/dashboards`) to open a temporary, uns
 | `from`, `to` | epoch milliseconds | Time range applied to all tiles. If omitted, defaults to the last 15 minutes. |
 | `where` | string | Dashboard-level filter query text, applied across all tiles. |
 | `whereLanguage` | `lucene` \| `sql` | Which query language `where` is written in. |
-| `filters` | JSON array of filter value entries | The selections of the dashboard's [custom filters and variables](/clickstack/features/dashboards/overview#custom-filters). See [Filter values](#dashboard-filter-values). |
+| `filters` | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Structured dashboard filter values, selecting two items in a `ServiceName` filter drop-down. |
 | `granularity` | `auto` \| `30 second` \| `1 minute` \| `5 minute` \| `10 minute` \| `15 minute` \| `30 minute` \| `1 hour` \| `12 hour` \| `1 day` \| `7 day` | Bucket size for time-series tiles. `auto` picks a bucket size based on the selected time range. |
 | `highlightedTileId` | string | Scrolls to and highlights a specific tile — useful when linking from an alert. |
-
-### Filter values {#dashboard-filter-values}
-
-The `filters` parameter is a JSON array. Each entry sets the selection of one filter, in one of the following forms:
-
-| Entry | Used for |
-| --- | --- |
-| `{"type":"variable","name":"<variableName>","values":["<value1>","<value2>"]}` | Filters that are variables: static values, SQL query values, PromQL label values, data source, and connection variables, and SQL expression values filters with **Available as variable** enabled. `name` is the filter's variable name. |
-| `{"type":"adhoc","name":"<uniqueName>","conditions":[{"key":"<key>","operator":"<operator>","value":"<value>"}]}` | [Ad hoc filters](/clickstack/features/dashboards/overview#adhoc-filters). `name` is the filter's unique name, and `operator` is one of `=`, `!=`, `=~`, `!~`, `LIKE`, `NOT LIKE`, or `IN`. `LIKE` and `NOT LIKE` apply only to SQL sources — Prometheus ad hoc filters ignore conditions that use them. |
-| `{"type":"sql","condition":"<expression> IN ('<value1>', '<value2>')"}` | SQL expression values filters that aren't variables. The condition's expression must match the filter's **Filter expression**. |
-
-The following rules apply:
-
-- A variable entry takes precedence over a `sql` entry addressing the same filter. Links that predate variables, which use `sql` entries for every filter, keep working.
-- For data source and connection variables, a value can be the source or connection **name** instead of its ID. Names are matched exactly first, then case-insensitively. This keeps links stable across environments where the same source has different IDs.
-- A single-select filter uses only the first value.
-- Entries that don't match any filter on the dashboard, or that are malformed, are ignored.
 
 ### Example: Open a dashboard for a time range with one tile highlighted {#example-dashboard-highlight}
 
@@ -108,30 +91,6 @@ Useful when linking from an alert notification straight to the tile that fired i
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
-```
-
-### Example: Select values in filters that are variables {#example-dashboard-variables}
-
-Selects `checkout` and `payments` in a filter with the variable name `service`, and `ERROR` in a filter with the variable name `severity`.
-
-```text
-<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"service","values":["checkout","payments"]},{"type":"variable","name":"severity","values":["ERROR"]}]
-```
-
-### Example: Select a data source and a connection by name {#example-dashboard-source-variable}
-
-Selects the `Production Logs` source in a data source variable named `logs`, and the `Production` connection in a connection variable named `cluster`.
-
-```text
-<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"variable","name":"logs","values":["Production Logs"]},{"type":"variable","name":"cluster","values":["Production"]}]
-```
-
-### Example: Add ad hoc filter conditions {#example-dashboard-adhoc}
-
-Adds two conditions to an ad hoc filter with the unique name `adhoc`: `ServiceName` is `checkout` or `payments`, and `SeverityText` isn't `DEBUG`.
-
-```text
-<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?filters=[{"type":"adhoc","name":"adhoc","conditions":[{"key":"ServiceName","operator":"IN","value":"checkout"},{"key":"ServiceName","operator":"IN","value":"payments"},{"key":"SeverityText","operator":"!=","value":"DEBUG"}]}]
 ```
 
 ## Dashboards List — `/dashboards/list` {#dashboards-list}

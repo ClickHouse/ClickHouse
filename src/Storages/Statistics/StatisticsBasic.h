@@ -44,9 +44,9 @@ public:
     void build(UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count);
     void merge(const StatisticsPtr & other_stats) override;
 
-    void serialize(WriteBuffer & buf, StatisticsFileVersion version) override;
+    void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
-    [[nodiscard]] std::optional<UInt64> getSerializedSize(StatisticsFileVersion version) const override;
+    [[nodiscard]] std::optional<UInt64> getSerializedSize() const override;
 
     [[nodiscard]] std::optional<Float64> estimateLess(const Field & val) const override;
     [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const override;
@@ -57,7 +57,6 @@ public:
     void copyStructureFrom(const IStatistics & other) override;
 
     [[nodiscard]] bool hasNumericMinMax() const { return tracks_numeric; }
-    [[nodiscard]] bool isUnusable() const override { return is_unusable; }
     [[nodiscard]] bool hasStringLengthAvg() const { return tracks_string; }
     [[nodiscard]] bool hasNullCount() const { return is_nullable && has_default_count; }
     [[nodiscard]] bool hasDefaultCount() const { return has_default_count; }
@@ -91,8 +90,6 @@ private:
     /// Column-level default: the Field produced by `IColumn::insertDefault()`.
     Field column_default_field;
     bool tracks_numeric = false;
-    /// The bounds read from a file have a type other than the one of the values of the column.
-    bool is_unusable = false;
     bool tracks_string = false;
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count

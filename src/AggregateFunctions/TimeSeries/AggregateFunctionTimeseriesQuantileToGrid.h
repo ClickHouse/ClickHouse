@@ -7,7 +7,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantileHelpers.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSortedValues.h>
@@ -39,24 +38,12 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     /// The sorted values of the window, so every quantile is read from them without sorting.
     using Summary = AggregateFunctionTimeseriesSortedValues<ValueType>;
 
-    /// Sliding aggregator: keeps the values of the window (sorted unless `one_bucket_windows`) and takes their R-7 phi-quantile.
+    /// Sliding aggregator: keeps the sorted values of the window and reads the phi-quantile (R-7, inclusive) from them.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
         static_assert(decltype(sliding_sum)::is_invertible);
-
-        /// Each window is one bucket (the window is not longer than the step, or the grid start equals the end), read by one
-        /// grid point only: it is kept unsorted, and `getResult` selects the quantile from it.
-        bool one_bucket_windows;
-        mutable VectorWithMemoryTracking<ValueType> one_bucket_values;
-        /// The end of the bucket in `one_bucket_values`, only to check that `removeBefore` drops a bucket out of the window.
-        GridScaleTimestampType one_bucket_end{};
-
-        explicit Aggregator(bool one_bucket_windows_)
-            : one_bucket_windows(one_bucket_windows_)
-        {
-        }
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -69,13 +56,6 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             if (values.empty())
                 return;
 
-            if (one_bucket_windows)
-            {
-                one_bucket_values = std::move(values);
-                one_bucket_end = bucket_end_timestamp;
-                return;
-            }
-
             Summary summary;
             summary.add(std::move(values));
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
@@ -83,21 +63,12 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            if (one_bucket_windows)
-            {
-                /// The bucket of the previous grid point is out of the window, and the bucket of this one is added after.
-                chassert(one_bucket_values.empty() || one_bucket_end <= cut_off);
-                one_bucket_values.clear();
-                return;
-            }
             sliding_sum.removeBefore(cut_off);
         }
 
         [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
-            if (one_bucket_windows)
-                return calculateTimeseriesQuantile(one_bucket_values, phi);
-            return calculateTimeseriesQuantileOfSorted(sliding_sum.getCurrentSum().values, phi);
+            return sliding_sum.getCurrentSum().quantile(phi);
         }
     };
 
@@ -158,7 +129,7 @@ public:
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{Base::buckets_per_window == 1};
+        return {};
     }
 
     void addExtraArguments(

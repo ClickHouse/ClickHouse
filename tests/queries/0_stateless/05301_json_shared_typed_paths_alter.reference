@@ -59,7 +59,7 @@ b_w [(json.a, json)]	1
 b_w [(json.a, json)] max_block_size = 7	1
 b_w [(json.c, json.a, json.b)]	1
 b_w [(json.c, json.a, json.b)] max_block_size = 7	1
-b_w paths after	['b']	['d']	['a','b','c','d']
+b_w paths after	['b','d']	[]	['a','b','c','d']
 b_w [json]	1
 b_w [(json.c.size0, json.a)] max_block_size = 5	1
 1
@@ -137,7 +137,7 @@ b_cn [(json.a, json)]	1
 b_cn [(json.a, json)] max_block_size = 7	1
 b_cn [(json.c, json.a, json.b)]	1
 b_cn [(json.c, json.a, json.b)] max_block_size = 7	1
-b_cn paths after	['b']	['d']	['a','b','c','d']
+b_cn paths after	['b','d']	[]	['a','b','c','d']
 b_cn [json]	1
 b_cn [(json.c.size0, json.a)] max_block_size = 5	1
 1

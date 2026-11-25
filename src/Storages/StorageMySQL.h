@@ -4,7 +4,6 @@
 
 #if USE_MYSQL
 
-#include <Common/parseRemoteDescription.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -85,15 +84,13 @@ public:
         String addresses_expr;
     };
 
-    /// `caller` names the surface the user invoked (`Table function 'mysql'`, `Table engine 'MySQL'`,
-    /// `Database engine 'MySQL'`, ...); it is only used in the error messages of the address parser.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-        const RemoteDescriptionCaller & caller, const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
-        ContextPtr context_, const RemoteDescriptionCaller & caller, bool require_table_or_query = true);
+        ContextPtr context_, bool require_table_or_query = true);
 
     /// Reads the TLS/SSL credentials from a named collection.
     /// The paths `ssl_ca`, `ssl_cert` and `ssl_key` are only accepted from a collection defined in the

@@ -88,7 +88,7 @@ void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
     sketch.merge(other->sketch);
 }
 
-void StatisticsCountMinSketch::serialize(WriteBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
     const size_t sketch_size = sketch.get_serialized_size_bytes();
     writeIntBinary(static_cast<UInt64>(sketch_size), buf);
@@ -104,7 +104,7 @@ void StatisticsCountMinSketch::serialize(WriteBuffer & buf, StatisticsFileVersio
             written, sketch_size);
 }
 
-std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize(StatisticsFileVersion /*version*/) const
+std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize() const
 {
     return sizeof(UInt64) + sketch.get_serialized_size_bytes();
 }

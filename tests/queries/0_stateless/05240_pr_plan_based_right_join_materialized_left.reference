@@ -16,7 +16,7 @@ view left: reads from replicas
 the join is shipped to the replicas
 1
 view left with FINAL: reads from replicas
-0
+1
 10	45	28
 the join is not shipped
 0

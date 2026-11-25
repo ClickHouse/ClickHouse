@@ -80,6 +80,25 @@ void SetLastModifiedOperation::undo()
         disk.setLastModified(path, *old_timestamp);
 }
 
+ChmodOperation::ChmodOperation(std::string path_, mode_t mode_, IDisk & disk_)
+    : path(std::move(path_))
+    , mode(mode_)
+    , disk(disk_)
+{
+}
+
+void ChmodOperation::execute()
+{
+    old_mode = disk.stat(path).st_mode;
+    disk.chmod(path, mode);
+}
+
+void ChmodOperation::undo()
+{
+    if (old_mode)
+        disk.chmod(path, *old_mode);
+}
+
 WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDisk & disk_)
     : path(std::move(path_))
     , data(std::move(data_))

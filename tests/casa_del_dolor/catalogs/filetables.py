@@ -320,15 +320,14 @@ def _from_avro_value(value, dtype):
     return value
 
 
-# The formats `serialize_data_file` writes, in lowercase
-DATA_FILE_FORMATS = ("arrow", "arrowstream", "parquet", "orc", "avro")
-
-
-def serialize_data_file(table: FileTable, arrow_table) -> bytes:
-    """The data file of `table` with the rows of `arrow_table`. Format-level compression and
-    batching options are randomized to also exercise ClickHouse's compressed and multi-batch
-    reading paths."""
+def write_data_file(table: FileTable, arrow_table) -> None:
+    """Write the data file atomically, so a concurrent ClickHouse read never sees a
+    partial file. Format-level compression and batching options are randomized to also
+    exercise ClickHouse's compressed and multi-batch reading paths, and the whole file
+    is wrapped with the compression the `File` engine declares."""
     fmt = table.file_format.lower()
+    tmp_path = table.path + ".tmp"
+    os.makedirs(os.path.dirname(table.path), exist_ok=True)
     if fmt in ("arrow", "arrowstream"):
         options = pa.ipc.IpcWriteOptions(
             compression=random.choice([None, None, None, "lz4", "zstd"])
@@ -400,15 +399,6 @@ def serialize_data_file(table: FileTable, arrow_table) -> bytes:
             payload = sink.getvalue()
     else:
         raise ValueError(f"Unsupported file format {table.file_format}")
-    return payload
-
-
-def write_data_file(table: FileTable, arrow_table) -> None:
-    """Write the data file atomically, so a concurrent ClickHouse read never sees a
-    partial file, wrapped with the compression the `File` engine declares."""
-    tmp_path = table.path + ".tmp"
-    os.makedirs(os.path.dirname(table.path), exist_ok=True)
-    payload = serialize_data_file(table, arrow_table)
     with open(tmp_path, "wb") as out:
         out.write(_compress_bytes(payload, table.compression))
     os.replace(tmp_path, table.path)
@@ -532,17 +522,6 @@ def _to_spark_compatible_arrow(arrow_table):
     return arrow_table, unsupported
 
 
-def _to_spark_column(mapper: ClickHouseTypeMapper, val: dict, is_avro: bool):
-    """The Spark column of the ClickHouse column `val` from BuzzHouse, None when Avro cannot hold it."""
-    mapper.increment()
-    _, nullable, spark_type = mapper.clickhouse_to_spark(
-        val["type"], False, ClickHouseMapping.Spark
-    )
-    if is_avro and not avro_compatible(spark_type, val["name"]):
-        return None
-    return SparkColumn(val["name"], spark_type, nullable, False, val["type"])
-
-
 class FileHandler:
     """Manages ClickHouse `File` engine tables whose data file is written by Spark + pyarrow."""
 
@@ -559,26 +538,6 @@ class FileHandler:
             next_session, table, random.randint(0, 100)
         )
         return df.toArrow()
-
-    def random_data_file(self, columns: list, file_format: str) -> bytes:
-        """A data file in `file_format` with random rows of the ClickHouse `columns`, e.g. the
-        payload of one message of a streaming table."""
-        mapper = ClickHouseTypeMapper()
-        mapper.reset()
-        is_avro = file_format.lower() == "avro"
-        spark_columns = {}
-        for val in columns:
-            column = _to_spark_column(mapper, val, is_avro)
-            if column is not None:
-                spark_columns[val["name"]] = column
-        if not spark_columns:
-            return b""
-        table = FileTable(
-            "", "", spark_columns, set(spark_columns), False, file_format, "", "none"
-        )
-        # No Spark session: one per message would be slow, and no check reads these files back
-        arrow_table = self.spark.data_generator.random_arrow_table(table, random.randint(0, 100))
-        return serialize_data_file(table, arrow_table)
 
     def create_table(self, cluster, data) -> bool:
         mapper = ClickHouseTypeMapper()
@@ -606,8 +565,11 @@ class FileHandler:
                 )
         first = True
         for val in file_columns:
-            column = _to_spark_column(mapper, val, is_avro)
-            if column is None:
+            mapper.increment()
+            _, nullable, spark_type = mapper.clickhouse_to_spark(
+                val["type"], False, ClickHouseMapping.Spark
+            )
+            if is_avro and not avro_compatible(spark_type, val["name"]):
                 continue
             # Sometimes skip columns: ClickHouse fills them with defaults on read. Not
             # for Avro, where `input_format_avro_allow_missing_fields` is 0 by default,
@@ -619,7 +581,9 @@ class FileHandler:
                 and random.randint(1, 11) == 1
             ):
                 continue
-            columns[val["name"]] = column
+            columns[val["name"]] = SparkColumn(
+                val["name"], spark_type, nullable, False, val["type"]
+            )
             first = False
         if not columns:
             raise ValueError(

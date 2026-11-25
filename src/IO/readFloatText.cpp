@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
-#include <base/sanitizer_defs.h>
 #include <base/unaligned.h>
 #include <Common/StringUtils.h>
 #include <Common/intExp.h>
@@ -99,9 +98,7 @@ bool assertOrParseNaN(ReadBuffer & buf)
 
 
 // credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
-/// The addition of the magic constant carries between the packed bytes on purpose - that is what
-/// makes this a branchless test of all eight at once.
-NO_SANITIZE_UNSIGNED_OVERFLOW inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
 {
     return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
 }
@@ -114,7 +111,7 @@ inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
 }
 
 /// Convert 8 ASCII decimal digits (read as a little-endian uint64) into their integer value. credit: @aqrit
-inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW parse_eight_digits_unrolled(uint64_t val) noexcept
+inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
 {
     const uint64_t mask = 0x000000FF000000FF;
     const uint64_t mul1 = 0x000F424000000064; // 100 + (1000000ULL << 32)
@@ -156,7 +153,7 @@ inline uint64_t byteMask16(Vector bytes)
 /// Value of the `n` <= 15 decimal digits at `p`, reading 16 bytes.
 /// Uses parse_eight_digits_unrolled above (credit: @aqrit), which needs exactly 8 digits. Right-aligning a
 /// shorter run behind leading zeros lets one or two such conversions handle any length without a loop.
-inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW parseDigits16(const char * p, unsigned n)
+inline uint64_t parseDigits16(const char * p, unsigned n)
 {
     if (n == 0)
         return 0;
@@ -198,9 +195,6 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     /// Accumulate 8 digits at a time via SWAR (byteswap on big-endian; see parse_eight_digits_unrolled).
     while (p + 8 <= last && is_made_of_eight_digits_fast(p))
     {
-        /// Eight more digits would exceed what fits exactly, and the tail loop below rejects it.
-        if (p - digits_begin + 8 > max_u128_integer_digits)
-            break;
         uint64_t chunk = 0;
         ::memcpy(&chunk, p, 8);
         if constexpr (std::endian::native == std::endian::big)
@@ -210,9 +204,6 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     }
     while (p < last && isNumericASCII(*p))
     {
-        /// One digit too many: the value cannot be represented exactly, so stop before it overflows.
-        if (p - digits_begin >= max_u128_integer_digits)
-            return false;
         value = value * 10 + static_cast<unsigned>(*p - '0');
         ++p;
     }
@@ -659,7 +650,7 @@ inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 
 
 template <typename T, typename ReturnType, bool allow_exponent = true>
-ReturnType NO_SANITIZE_UNSIGNED_OVERFLOW readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
+ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
@@ -1062,35 +1053,6 @@ template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in,
         return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
 }
 
-
-template <typename T>
-bool tryParseFloatFromPaddedRange(T & x, PaddedRange range)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp = 0;
-        bool res = tryParseFloatFromPaddedRange(tmp, range);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-    {
-        static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for tryParseFloatFromPaddedRange must be float or double");
-        if (range.begin() == range.end())
-            return false;
-        T value{};
-        auto res = parseFloatFromBuffer(value, range.begin(), range.end(), /* padded = */ true);
-        if ((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr != range.end())
-            return false;
-        x = value;
-        return true;
-    }
-}
-
-template bool tryParseFloatFromPaddedRange<BFloat16>(BFloat16 &, PaddedRange);
-template bool tryParseFloatFromPaddedRange<Float32>(Float32 &, PaddedRange);
-template bool tryParseFloatFromPaddedRange<Float64>(Float64 &, PaddedRange);
 
 template void readFloatTextPrecise<BFloat16>(BFloat16 &, ReadBuffer &);
 template void readFloatTextPrecise<Float32>(Float32 &, ReadBuffer &);

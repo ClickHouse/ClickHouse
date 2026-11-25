@@ -5,7 +5,6 @@
 #include <Common/Logger.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -14,33 +13,30 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory_tracker, bool exclude_releasable_page_cache = false)
+static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory_tracker)
 {
     std::optional<UInt64> available;
     for (; memory_tracker; memory_tracker = memory_tracker->getParent())
     {
         if (Int64 tracker_limit = memory_tracker->getHardLimit(); tracker_limit > 0)
         {
-            Int64 used = memory_tracker->get();
-            if (const auto * page_cache = exclude_releasable_page_cache ? memory_tracker->getPageCache() : nullptr)
-                used = std::max<Int64>(used - static_cast<Int64>(page_cache->releasableSizeInBytes()), 0);
-            UInt64 tracker_available = static_cast<UInt64>(std::max<Int64>(tracker_limit - used, 0));
+            UInt64 tracker_available = static_cast<UInt64>(std::max<Int64>(tracker_limit - memory_tracker->get(), 0));
             available = available ? std::min(*available, tracker_available) : tracker_available;
         }
     }
     return available;
 }
 
-static std::optional<UInt64> getAvailableMemoryForSpilling()
+std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
-    auto * memory_tracker = DB::CurrentThread::getMemoryTracker();
-    while (memory_tracker && memory_tracker->level == VariableContext::Thread)
-        memory_tracker = memory_tracker->getParent();
-
-    if (!memory_tracker || memory_tracker->level != VariableContext::Process)
+    MemoryTracker * query_memory_tracker = nullptr;
+    if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
+        return {};
+    /// query-level memory tracker
+    if (query_memory_tracker = query_memory_tracker->getParent(); !query_memory_tracker)
         return {};
 
-    return getMostStrictAvailableMemory(memory_tracker, /*exclude_releasable_page_cache=*/ true);
+    return getMostStrictAvailableMemory(query_memory_tracker->getParent());
 }
 
 size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ratio, std::string_view ratio_setting_name)
@@ -55,21 +51,21 @@ size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ra
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Setting {} should be >= 0 and < 1 ({})", ratio_setting_name, max_bytes_ratio);
 
-        auto available_memory = getAvailableMemoryForSpilling();
-        if (available_memory.has_value())
+        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        if (available_system_memory.has_value())
         {
             /// Zero disables spilling, so an enabled ratio must produce at least a one-byte threshold.
             const size_t ratio_in_bytes
-                = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(*available_memory) * max_bytes_ratio));
+                = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(*available_system_memory) * max_bytes_ratio));
             threshold = threshold ? std::min(*threshold, ratio_in_bytes) : ratio_in_bytes;
 
             LOG_TRACE(
                 getLogger("MemoryTrackerUtils"),
-                "Adjusting spill threshold with {} ({}: {}, available memory: {})",
+                "Adjusting spill threshold with {} ({}: {}, available system memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                 ratio_setting_name,
                 max_bytes_ratio,
-                formatReadableSizeWithBinarySuffix(*available_memory));
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
         }
         else
         {

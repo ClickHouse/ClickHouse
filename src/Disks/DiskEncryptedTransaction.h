@@ -212,6 +212,13 @@ public:
         delegate_transaction->setLastModified(wrapped_path, timestamp);
     }
 
+    /// Just chmod.
+    void chmod(const String & path, mode_t mode) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        delegate_transaction->chmod(wrapped_path, mode);
+    }
+
     /// Set file at `path` as read-only.
     void setReadOnly(const std::string & path) override
     {

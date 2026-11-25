@@ -37,7 +37,7 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.PER_TEST_COVERAGE: f" cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON",
     BuildTypes.AMD_COVERAGE: f" cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSANITIZE_COVERAGE=1",
     BuildTypes.ARM_BINARY: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
-    BuildTypes.AMD_CFI: f"    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=1 -DSANITIZE=          -DENABLE_CFI=1 -DENABLE_CFI_DIAGNOSTICS=1 -DENABLE_XRAY=0 -DSPLIT_DEBUG_SYMBOLS=ON -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON",
+    BuildTypes.AMD_CFI: f"    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=1 -DSANITIZE=          -DENABLE_CFI=1 -DSPLIT_DEBUG_SYMBOLS=ON -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON",
     BuildTypes.AMD_TIDY: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=1 -DENABLE_UTILS=1 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_CLANG_TIDY=1 -DENABLE_EXAMPLES=1 -DENABLE_BUZZHOUSE=1",
     BuildTypes.ARM_TIDY: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=1 -DENABLE_UTILS=1 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_CLANG_TIDY=1 -DENABLE_EXAMPLES=1 -DENABLE_BUZZHOUSE=1",
     BuildTypes.AMD_DARWIN: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/darwin/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld",
@@ -96,29 +96,6 @@ BUILD_TYPE_TO_CMAKE[BuildTypes.ARM_TIDY_CHANGED_FILES] = BUILD_TYPE_TO_CMAKE[
 BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
     BuildTypes.AMD_RELEASE: "release",
     BuildTypes.ARM_RELEASE: "release",
-}
-
-# Outputs that nothing reads after a CI build: the artifacts of these builds are
-# `programs/self-extracting/clickhouse`, the packages and `unit_tests_dbms` (see `ci/defs/`),
-# and their post hooks read the plain binaries of the release builds only.
-PLAIN_BINARIES = (
-    "programs/clickhouse",
-    "programs/clickhouse-stripped",
-    "programs/self-extracting/clickhouse-stripped",
-)
-UNUSED_BUILD_OUTPUTS = {
-    BuildTypes.AMD_DEBUG: PLAIN_BINARIES,
-    BuildTypes.AMD_ASAN_UBSAN: PLAIN_BINARIES,
-    BuildTypes.AMD_TSAN: PLAIN_BINARIES,
-    BuildTypes.AMD_MSAN: PLAIN_BINARIES,
-    BuildTypes.AMD_BINARY: PLAIN_BINARIES,
-    BuildTypes.ARM_BINARY: PLAIN_BINARIES,
-    BuildTypes.ARM_DEBUG: PLAIN_BINARIES,
-    BuildTypes.ARM_ASAN_UBSAN: PLAIN_BINARIES,
-    BuildTypes.ARM_TSAN: PLAIN_BINARIES,
-    BuildTypes.ARM_MSAN: PLAIN_BINARIES,
-    BuildTypes.AMD_RELEASE: ("root", "programs/stripped"),
-    BuildTypes.ARM_RELEASE: ("root", "programs/stripped"),
 }
 
 
@@ -211,16 +188,6 @@ def build_tidy_shard(index, count):
     for line in process.stdout:
         print(line, end="", flush=True)
     return process.wait() == 0
-
-
-def remove_unused_build_outputs(build_type):
-    for output in UNUSED_BUILD_OUTPUTS[build_type]:
-        path = f"{build_dir}/{output}"
-        print(f"Remove [{path}]")
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
 
 
 def run_shell_with_output(name, command, **kwargs):
@@ -354,20 +321,6 @@ def main():
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
-    # A PR without the AMD performance comparison builds `amd_release` without ThinLTO, PGO
-    # and BOLT, see `configure_amd_release_thinlto`. Its compile commands are then those of
-    # `amd_binary`, so the compiler cache that master fills for that build serves it.
-    from ci.jobs.scripts.workflow_hooks.filter_job import AMD_RELEASE_WITHOUT_THINLTO_KV
-
-    without_thinlto = build_type == BuildTypes.AMD_RELEASE and info.get_kv_data(
-        AMD_RELEASE_WITHOUT_THINLTO_KV
-    ) is True
-    if without_thinlto:
-        assert info.pr_number > 0, "only PR builds may skip ThinLTO"
-        print("NOTE: no AMD performance comparison in this PR - build without ThinLTO, PGO and BOLT")
-        assert "-DENABLE_THINLTO=1" in cmake_cmd
-        cmake_cmd = cmake_cmd.replace("-DENABLE_THINLTO=1", "-DENABLE_THINLTO=0")
-
     cmake_cmd += flavor_cmake_options(
         cmake_cmd,
         official=info.pr_number == 0 and not reference_build,
@@ -378,8 +331,8 @@ def main():
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
     release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
-    use_pgo = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = not without_thinlto and release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -585,15 +538,6 @@ def main():
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
-        elif build_type in (
-            BuildTypes.AMD_DEBUG,
-            BuildTypes.AMD_ASAN_UBSAN,
-            BuildTypes.AMD_TSAN,
-            BuildTypes.ARM_MSAN,
-        ):
-            # `clickhouse-bundle` without `clickhouse-tests`: the unit tests run on
-            # the build of the other architecture.
-            targets = "self-extracting"
         elif build_type in (
             BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
@@ -880,15 +824,6 @@ def main():
                     info="host architecture does not match the target - cannot execute the wrapper",
                 )
             )
-
-    if res and not info.is_local_run and build_type in UNUSED_BUILD_OUTPUTS:
-        results.append(
-            Result.from_commands_run(
-                name="Remove unused build outputs",
-                command=lambda: remove_unused_build_outputs(build_type),
-            )
-        )
-        res = results[-1].is_ok()
 
     # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
     headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(

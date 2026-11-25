@@ -1,9 +1,9 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -81,7 +81,7 @@ public:
             else if (arguments.size() > 2)
                 arguments.at(2, row).appendTo(result);
             else
-                result_type->insertDefaultInto(result);
+                result.insertDefault();
         }
 
         if (is_lead)
@@ -95,23 +95,15 @@ private:
     const bool in_frame;
 };
 
-DataTypes bindLagLeadArgumentTypes(DataTypes argument_types)
-{
-    if (argument_types.size() == 3)
-        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-
-    return argument_types;
 }
 
-}
-
-void registerWindowFunctionsLagLead(WindowFunctionFactory & factory);
-void registerWindowFunctionsLagLead(WindowFunctionFactory & factory)
+void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, true);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, true));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 
@@ -188,12 +180,12 @@ ORDER BY date DESC
 5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
    └────────────┴────────┴────────────────────┴───────┴────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, false);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, false, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always reads the whole partition; a window frame, if specified, is ignored.
@@ -263,12 +255,12 @@ ORDER BY date DESC
 5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
    └────────────┴────────┴────────────────────┴───────┴────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, true);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, true));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
@@ -336,12 +328,12 @@ LIMIT 9
 9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
    └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes});
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, false);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionLagLead>(name, argument_types, parameters, true, false));
         }, {.description = R"DOCS_MD(
 Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
 This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always reads the whole partition; a window frame, if specified, is ignored.
@@ -404,7 +396,7 @@ LIMIT 9
 9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
    └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}, bindLagLeadArgumentTypes}, WindowFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

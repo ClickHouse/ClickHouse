@@ -1018,14 +1018,13 @@ void throwIfEngineIsUnknownAndNotGranted(
 /// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
 /// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
 /// A function with a source but no engine, such as `filesystem`, needs unfiltered `READ` and `WRITE` on its source instead.
-std::optional<AccessRightsElement> InterpreterCreateQuery::getRequiredAccessOfTableFunction(
-    const ASTPtr & table_function_ast, const ContextPtr & query_context, bool is_replayed_definition)
+std::optional<AccessRightsElement> InterpreterCreateQuery::getRequiredAccessOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
 {
     /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
     /// parsed, because parsing may change the arguments, e.g. `mysql` takes out its `SETTINGS`, which the structure
     /// inference of the table still needs.
     const ASTPtr parsed_ast = table_function_ast->clone();
-    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context, is_replayed_definition);
+    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context);
     /// A definition that cannot be a table is refused the same way whatever the grants of the user.
     throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
     String engine_name = table_function->getEngineNameForAccessCheck();
@@ -1070,8 +1069,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
     if (create.as_table_function)
-        if (auto access = getRequiredAccessOfTableFunction(
-                create.as_table_function->ptr(), getContext(), isReplayedTableDefinition(mode, create, getContext())))
+        if (auto access = getRequiredAccessOfTableFunction(create.as_table_function->ptr(), getContext()))
             getContext()->checkAccess(*access);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
@@ -1339,8 +1337,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(
-            table_function_ast, getContext(), isReplayedTableDefinition(mode, create, getContext()));
+        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before inferring the structure from it: the inference opens and
@@ -2430,15 +2427,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    /// Check type compatible for materialized dest table and select columns.
-    /// A full-definition `ATTACH` by a user is validated like `CREATE`, unlike a replayed one: a follower replica
-    /// gets `ATTACH` (not `SECONDARY_CREATE`), and the initiator has already validated it before enqueueing.
-    const bool is_user_full_attach = !internal && mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax
-        && !is_secondary_query && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
-    if (create.select && create.is_materialized_view && (mode <= LoadingStrictnessLevel::CREATE || is_user_full_attach))
+    /// Check type compatible for materialized dest table and select columns
+    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
-        if (mode <= LoadingStrictnessLevel::CREATE && create.is_materialized_view_with_inner_table())
+        if (create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
@@ -2970,8 +2963,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQL SECURITY is not supported for tables created from a table function");
 
         auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(
-            table_function_ast, getContext(), isReplayedTableDefinition(mode, create, getContext()));
+        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
         /// from the function; a definition with an explicit column list skips that inference and is
@@ -3376,9 +3368,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        InterpreterCreateQuery create_interpreter(query_ptr, create_context);
-        create_interpreter.setInternal(internal);
-        [[maybe_unused]] bool done = create_interpreter.doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
         ddl_guard.reset();
         chassert(done);
         created = true;
@@ -4230,8 +4220,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
     if (create.as_table_function)
-        if (auto access = getRequiredAccessOfTableFunction(
-                create.as_table_function->ptr(), getContext(), /*is_replayed_definition=*/ false))
+        if (auto access = getRequiredAccessOfTableFunction(create.as_table_function->ptr(), getContext()))
             required_access.push_back(std::move(*access));
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the

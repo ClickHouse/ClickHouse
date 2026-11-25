@@ -25,11 +25,5 @@ SELECT count(), sum(v) FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in);
 SELECT count() FROM t_pr_in_tmp WHERE k NOT IN (SELECT k FROM tmp_pr_in);
 -- The sets nested in the plan of a set are shipped with it.
 SELECT count() FROM t_pr_in_tmp WHERE k IN (SELECT k FROM t_pr_in_tmp WHERE k IN (SELECT k FROM tmp_pr_in));
--- A set used inside a lambda, also a nested one or one that captures a column, is passed into it from the outer
--- expression, so it is checked the same way.
-SELECT count() FROM t_pr_in_tmp WHERE arrayExists(x -> x IN (SELECT k FROM tmp_pr_in), [k]);
-SELECT count() FROM t_pr_in_tmp WHERE arrayExists(x -> x IN tmp_pr_in, [k]);
-SELECT count() FROM t_pr_in_tmp WHERE arrayExists(x -> arrayExists(y -> y IN tmp_pr_in, [x]), [k]);
-SELECT count() FROM t_pr_in_tmp WHERE arrayExists(x -> (x + k) IN tmp_pr_in, [0]);
 
 DROP TABLE t_pr_in_tmp;

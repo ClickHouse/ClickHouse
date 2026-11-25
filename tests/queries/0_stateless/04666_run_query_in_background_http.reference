@@ -1,8 +1,10 @@
 === run_http ===
 --- CREATE TABLE AS SELECT returns as soon as the SELECT has started
 no output
+still populating after the client returned
 --- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started
 no output
+still populating after the client returned
 --- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started
 no output
 --- INSERT SELECT in background: no output, rows land, attributed in query_log
@@ -43,12 +45,9 @@ SETTING_CONSTRAINT_VIOLATION
 no output
 rows land in the database of the setting
 no output
---- the CREATE ... AS SELECT queries above fill their tables, and their clients got the answer before they finished
+--- the CREATE ... AS SELECT queries above fill their tables
 created with rows
 replaced with rows
-answered before it finished
-answered before it finished
-answered before it finished
 === http ===
 --- server-minted query_id is returned in the header and inline body data is inserted
 query_id header present

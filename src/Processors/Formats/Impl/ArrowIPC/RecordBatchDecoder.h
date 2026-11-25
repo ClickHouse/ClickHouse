@@ -214,23 +214,6 @@ public:
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
-    /// A record batch whose layout is given directly rather than by a `RecordBatch` message: the pre-ordered field
-    /// nodes, the buffers each pointing to its own memory, and the variadic buffer counts of the view fields. This is
-    /// how a batch of the Arrow C data interface is decoded (see `ArrowCData`). Dictionary-encoded fields are not
-    /// supported here, as they have no record batch of their own.
-    struct ExternalBatch
-    {
-        Int64 length = 0;
-        VectorWithMemoryTracking<flatbuf::FieldNode> nodes;
-        VectorWithMemoryTracking<Slice> buffers;
-        VectorWithMemoryTracking<Int64> variadic_counts;
-    };
-
-    /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
-    /// for the duration of the call only: the decoded columns own their data.
-    DecodedColumns decodeExternalBatch(
-        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
-
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn
     /// types. The returned null map preserves entry validity independently of the resulting column type.
@@ -423,13 +406,8 @@ private:
     const FormatSettings & settings;
     const DictionaryRegistry & registry;
 
-    /// Points the node cursor at the nodes and length of `batch`, or clears them for null.
-    void setBatchNodes(const flatbuf::RecordBatch * batch);
-
-    /// State valid only during a single decode call: the field nodes and the row count of the current batch.
-    const flatbuf::FieldNode * current_nodes = nullptr;
-    size_t current_num_nodes = 0;
-    Int64 current_length = 0;
+    /// State valid only during a single decode call.
+    const flatbuf::RecordBatch * current_batch = nullptr;
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;

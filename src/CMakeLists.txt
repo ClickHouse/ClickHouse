@@ -200,11 +200,6 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
-if (USE_PULSAR)
-    add_subdirectory(Storages/Pulsar/Client/Proto)
-    add_headers_and_sources(dbms Storages/Pulsar/Client)
-endif()
-
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -516,7 +511,7 @@ endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
-if (TARGET ch_contrib::arrow_flight_proto)
+if (TARGET ch_contrib::arrow_flight)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
@@ -871,7 +866,7 @@ endif ()
 
 # Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
 if (TARGET ch_contrib::arrow_ipc_metadata)
-    target_link_libraries(dbms PUBLIC ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -1058,18 +1053,14 @@ if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow_flight_proto)
-    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight_proto)
+if (TARGET ch_contrib::arrow_flight)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
 
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
-endif()
-
-if (USE_PULSAR)
-    target_link_libraries(dbms PRIVATE clickhouse_pulsar_proto)
 endif()
 
 if (TARGET ch_rust::wasmtime)
@@ -1120,10 +1111,6 @@ if (ENABLE_TESTS)
         ch_contrib::lz4)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
-
-    if (USE_PULSAR)
-        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_pulsar_proto)
-    endif()
 
     # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
     if (TARGET libllvmlibc_str_test_candidates)

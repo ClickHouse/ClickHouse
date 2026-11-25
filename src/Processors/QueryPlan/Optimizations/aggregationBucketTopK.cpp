@@ -112,16 +112,18 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         || params.keys_size == 0)
         return 0;
 
-    /// `Nullable` keys take both optimizations. A method of several keys stores the NULL flags in its keys.
-    /// The method of one key keeps the NULL key in a slot of its own, which both optimizations rank like a
-    /// cell (see `Aggregator::convertOneBucketToChunkTopKImpl` and
-    /// `Aggregator::mergeAndConvertOneBucketToChunkThresholdTopKImpl`). `LowCardinality` keys get the
-    /// selection only: the threshold merge below does not serve them.
+    /// The selection handles no null-key cell, so nullable keys stay on the ordinary conversion. `LowCardinality` keys get
+    /// the selection only: the threshold merge below does not serve them.
     const auto & header = node->step->getOutputHeader();
     bool has_low_cardinality_key = false;
     for (const auto & key : params.keys)
-        if (typeid_cast<const DataTypeLowCardinality *>(header->getByName(key).type.get()))
+    {
+        const auto & type = header->getByName(key).type;
+        if (type->isNullable() || type->isLowCardinalityNullable())
+            return 0;
+        if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
             has_low_cardinality_key = true;
+    }
 
     for (size_t i = 0; i < params.aggregates.size(); ++i)
     {

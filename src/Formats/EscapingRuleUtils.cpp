@@ -482,7 +482,7 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}, input_format_skip_duplicated_fields={}, input_format_column_name_matching_mode={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
@@ -490,9 +490,7 @@ String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & setti
         settings.schema_inference_allow_nullable_tuple_type,
         settings.date_time_input_format,
         settings.try_infer_variant,
-        settings.max_parser_depth,
-        settings.skip_duplicated_fields,
-        settings.input_format_column_matching_case_sensitivity);
+        settings.max_parser_depth);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)

@@ -377,7 +377,7 @@ struct SetWatchesRequest : virtual Request
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
 
-    [[nodiscard]] String getPath() const override { return data_watches.empty() ? String{} : data_watches[0]; }
+    [[nodiscard]] String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
     [[nodiscard]] size_t bytesSize() const override
     {
@@ -409,7 +409,7 @@ struct SetWatches2Request : virtual SetWatchesRequest
     std::vector<String> persistent_watches;
     std::vector<String> persistent_recursive_watches;
 
-    [[nodiscard]] String getPath() const override { return data_watches.empty() ? String{} : data_watches[0]; }
+    [[nodiscard]] String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
     [[nodiscard]] size_t bytesSize() const override
     {

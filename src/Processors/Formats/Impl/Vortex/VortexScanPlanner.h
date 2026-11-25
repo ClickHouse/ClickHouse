@@ -7,12 +7,16 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/Vortex/VortexFFIHelpers.h>
 #include <Common/Logger.h>
 
 #include <string>
 #include <Common/VectorWithMemoryTracking.h>
+
+namespace arrow
+{
+class Schema;
+}
 
 namespace DB
 {
@@ -50,7 +54,7 @@ struct VortexScanPlan
 
 VortexScanPlan planVortexScan(
     const Block & header,
-    const ArrowIPC::ArrowSchema & file_schema,
+    const arrow::Schema & file_schema,
     const FormatFilterInfo * filter_info,
     const FormatSettings & format_settings,
     const LoggerPtr & log);

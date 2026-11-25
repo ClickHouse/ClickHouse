@@ -1,7 +1,7 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpcds -->
 <!-- Scale factor: 1. The queries of tpcds.xml over an IcebergLocal copy of its `tpcds` dataset. -->
 <!-- Each table is one data file. Iceberg has no FixedString: those columns are copied as String. -->
-<test>
+<test run_all_queries="1">
 
 <settings file="../benchmarks/tpc-ds/settings.json"/>
 <!-- As in tpcds.xml: keep the join order the same on every run. -->

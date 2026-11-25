@@ -1325,19 +1325,6 @@ bool allowHashJoinCacheKeys(
     return true;
 }
 
-Float64 TableJoin::getRightHashKeyAvgBytes() const
-{
-    if (clauses.size() != 1)
-        return 0;
-
-    const auto & clause = clauses.front();
-    /// The last key of an `ASOF` join is not in the hash table.
-    const size_t hash_keys = clause.keysCount() - (strictness() == JoinStrictness::Asof);
-    if (hash_keys != 1 || right_columns_computed.contains(clause.key_names_right.front()))
-        return 0;
-    return getRightColumnAvgBytes(clause.key_names_right.front());
-}
-
 bool TableJoin::preferParallelHashLayout(
     HashJoinLayout layout, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold) const
 {

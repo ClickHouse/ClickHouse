@@ -268,9 +268,6 @@ void LocalConnection::sendQuery(
     const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
-    /// In case the client did not report releasing the output of the previous query.
-    finished_query_scope = {};
-
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
         sendCancel();
@@ -752,18 +749,8 @@ void LocalConnection::finishQuery()
     }
 
     state->io.onFinish();
-    resetEndedQueryState();
-    last_sent_snapshots.clear();
-}
-
-void LocalConnection::resetEndedQueryState()
-{
-    /// The state of the query is freed while the thread is still attached to it.
-    QueryScope query_scope = std::move(state->query_scope_holder);
-    const bool client_output_created = state->client_output_created;
     state.reset();
-    if (client_output_created)
-        finished_query_scope = std::move(query_scope);
+    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)
@@ -1070,7 +1057,7 @@ Packet LocalConnection::receivePacket()
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
             /// An exception is the last packet of the query, as `EndOfStream` is.
-            resetEndedQueryState();
+            state.reset();
             last_sent_snapshots.clear();
             break;
         }

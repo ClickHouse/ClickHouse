@@ -225,10 +225,11 @@ protected:
     template <PaddedBufferStorage Storage>
     void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size, size_t offset)
     {
-        setWorkingBuffer(WorkingBuffer::fromPaddedStorage(storage, storage_offset, size), offset);
+        working_buffer = WorkingBuffer::fromPaddedStorage(storage, storage_offset, size);
+        internal_buffer = working_buffer;
+        pos = working_buffer.begin() + offset;
     }
 
-    /// Assigns both buffers from `buffer`: copying one into the other right after writing it stalls on store forwarding.
     void setWorkingBuffer(WorkingBuffer buffer, size_t offset)
     {
         working_buffer = buffer;
@@ -285,7 +286,9 @@ private:
     /// The mmap readers establish padding from page boundaries, which no storage type can express.
     void setAssumePadded(Position ptr, size_t size, size_t offset)
     {
-        setWorkingBuffer(WorkingBuffer::assumePadded(ptr, ptr + size), offset);
+        working_buffer = WorkingBuffer::assumePadded(ptr, ptr + size);
+        internal_buffer = working_buffer;
+        pos = ptr + offset;
     }
 
     friend class MMapReadBufferFromFileDescriptor;

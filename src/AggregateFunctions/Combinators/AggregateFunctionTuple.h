@@ -171,6 +171,8 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
+    bool isOnlyWindowFunction() const override;
+
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
     void mergeStateFromDifferentVariant(
@@ -221,11 +223,8 @@ private:
                 }
                 catch (...)
                 {
-                    for (size_t j = transferred; j > 0; --j)
-                    {
-                        const size_t i = j - 1;
+                    for (size_t i = transferred; i-- > 0;)
                         nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
-                    }
                     throw;
                 }
 

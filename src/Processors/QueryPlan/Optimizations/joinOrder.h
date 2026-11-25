@@ -49,9 +49,6 @@ struct DPJoinEntry
     /// For join nodes
     JoinOperator join_operator;
     JoinMethod join_method = JoinMethod::None;
-    /// For a merge join: the column its result is sorted by (the key of its left input), and whether it is sharded.
-    String merge_order_column;
-    bool sharded = false;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -186,7 +183,6 @@ struct QueryGraph
     {
         Names prefix;
         size_t primary_key_prefix = 0;
-        bool from_join = false;
     };
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
     std::function<VectorWithMemoryTracking<ReadInOrder>(const VectorWithMemoryTracking<NameSet> & candidates)> find_read_in_order_prefixes;

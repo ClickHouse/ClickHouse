@@ -166,14 +166,6 @@ public:
     /// merge starts.
     [[nodiscard]] bool countsEveryProducer(size_t producers) const { return producer_bins.size() + merge_counted_tables.size() == producers; }
 
-    /// Raises the bound of `bucket` to `bound`, a rank that a group of the bucket outside the bins does not
-    /// exceed, such as the NULL key that bucket 0 holds for a method that keeps it in a slot of its own (see
-    /// `AdaptiveTopKNullKey`). Called after the finish barrier, before `orderBuckets`.
-    void raiseBucketBound(size_t bucket, UInt64 bound)
-    {
-        count_bound_per_bucket[bucket] = std::max(count_bound_per_bucket[bucket], bound);
-    }
-
     /// Orders the buckets for the merge by their bounds, `count_bound_per_bucket`. A table without the
     /// largest counts of its buckets is not in this order, which only lets the threshold rise later. Called
     /// once, after the finish barrier and before the merge starts.
@@ -218,10 +210,9 @@ private:
     /// `boundsForBucket`).
     std::vector<AdaptiveTopKCountBins> producer_bins;
     std::vector<const AggregatedDataVariants *> merge_counted_tables;
-    /// The sum of every producer's largest bin in each bucket and of the bucket's largest count in every
-    /// table that the merge counts and that brought it, raised by `raiseBucketBound`. It orders the buckets
-    /// for the merge (see `orderBuckets`), and it bounds the ranks of the groups of every bucket but those of
-    /// `bucket_is_unbounded` (see `bucketBound`).
+    /// The sum of every producer's largest bin in each bucket and of the bucket's largest count in every table
+    /// that the merge counts and that brought it. It orders the buckets for the merge (see `orderBuckets`), and it
+    /// bounds the ranks of the groups of every bucket but those of `bucket_is_unbounded` (see `bucketBound`).
     std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> count_bound_per_bucket{};
     std::array<bool, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_is_unbounded{};
     std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};

@@ -1,5 +1,4 @@
 #include "config.h"
-#include <base/arithmeticOverflow.h>
 
 #if USE_AVRO
 
@@ -54,37 +53,26 @@ std::optional<UInt64> valueRangeWidth(const Field & min_value, const Field & max
     if (min_value.getType() != max_value.getType())
         return std::nullopt;
 
-    /// The bounds are written by any writer: a minimum above the maximum says nothing about the values. Otherwise the
-    /// difference of the signed values fits in `UInt64`, computed modulo 2^64.
-    auto width = [](auto max, auto min) -> std::optional<UInt64>
-    {
-        if (max < min)
-            return std::nullopt;
-        return common::subIgnoreOverflow(static_cast<UInt64>(max), static_cast<UInt64>(min));
-    };
-
-    std::optional<UInt64> difference;
+    UInt64 difference = 0;
     switch (min_value.getType())
     {
         case Field::Types::Int64:
-            difference = width(max_value.safeGet<Int64>(), min_value.safeGet<Int64>());
+            difference = static_cast<UInt64>(max_value.safeGet<Int64>()) - static_cast<UInt64>(min_value.safeGet<Int64>());
             break;
         case Field::Types::UInt64:
-            difference = width(max_value.safeGet<UInt64>(), min_value.safeGet<UInt64>());
+            difference = max_value.safeGet<UInt64>() - min_value.safeGet<UInt64>();
             break;
         case Field::Types::Bool:
-            difference = width(max_value.safeGet<bool>(), min_value.safeGet<bool>());
+            difference = static_cast<UInt64>(max_value.safeGet<bool>()) - static_cast<UInt64>(min_value.safeGet<bool>());
             break;
         case Field::Types::Decimal64:
-            difference = width(max_value.safeGet<DecimalField<Decimal64>>().getValue().value,
-                min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
+            difference = static_cast<UInt64>(max_value.safeGet<DecimalField<Decimal64>>().getValue().value)
+                - static_cast<UInt64>(min_value.safeGet<DecimalField<Decimal64>>().getValue().value);
             break;
         default:
             return std::nullopt;
     }
-    if (!difference)
-        return std::nullopt;
-    return *difference == std::numeric_limits<UInt64>::max() ? *difference : *difference + 1;
+    return difference == std::numeric_limits<UInt64>::max() ? difference : difference + 1;
 }
 
 }

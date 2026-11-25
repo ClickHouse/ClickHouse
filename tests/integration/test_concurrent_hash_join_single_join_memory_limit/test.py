@@ -26,17 +26,18 @@ INNER JOIN (SELECT number AS id, number AS val FROM numbers(1)) AS b USING (id)
 """
 
 
-def test_single_join_planning_fits_small_limit():
-    instance.query(
+def test_single_join_exceeding_limit_is_caught():
+    error = instance.query_and_get_error(
         JOIN_QUERY,
         settings={
             "max_threads": 256,
             "join_algorithm": "parallel_hash",
-            # A bucket of the parallel layout gets its cells at the first insert of its slot, so planning the join
-            # fits in 1 MiB.
-            "max_memory_usage": "1Mi",
+            # One join's parallel layout is about 1 MiB, below the 4 MiB a thread may leave uncharged,
+            # so `max_untracked_memory` stays at its default.
+            "max_memory_usage": "512Ki",
         },
     )
+    assert "MEMORY_LIMIT_EXCEEDED" in error
 
 
 def test_single_join_within_limit_succeeds():

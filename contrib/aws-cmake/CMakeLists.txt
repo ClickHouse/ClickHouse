@@ -137,13 +137,7 @@ configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
 set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
-# Config.h.in takes the version from the project() of aws-crt-cpp, which is not used here.
-block()
-    set(PROJECT_VERSION_MAJOR ${AWS_CRT_CPP_VERSION_MAJOR})
-    set(PROJECT_VERSION_MINOR ${AWS_CRT_CPP_VERSION_MINOR})
-    set(PROJECT_VERSION_PATCH ${AWS_CRT_CPP_VERSION_PATCH})
-    configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
-endblock()
+configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
 list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
 

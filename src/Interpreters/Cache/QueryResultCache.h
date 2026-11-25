@@ -201,8 +201,6 @@ public:
     bool entrySizeLimitsAllowEntries() const;
 
     size_t maxSizeInBytes() const;
-    size_t maxCount() const;
-    size_t maxEntrySizeInBytes() const;
     size_t sizeInBytes() const;
     size_t count() const;
 

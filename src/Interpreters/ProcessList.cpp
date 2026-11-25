@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -367,8 +366,6 @@ ProcessList::EntryPtr ProcessList::insert(
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
         {
-            /// Lives as long as the server (entries are never erased), not the query that first comes from this user.
-            MemoryTrackerBlockerInThread not_charged_to_the_query;
             user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
                 std::forward_as_tuple(client_info.current_user),
                 std::forward_as_tuple(query_context->getGlobalContext(), this)).first;

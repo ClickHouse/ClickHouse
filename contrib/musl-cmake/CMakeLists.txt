@@ -1684,21 +1684,6 @@ target_compile_options(musl PRIVATE
     -Werror=pointer-arith
 )
 
-if (ENABLE_CFI)
-    # Clang CFI needs no runtime, so turn it back on after `-fno-sanitize=all`.
-    separate_arguments(_musl_cfi_flags UNIX_COMMAND "${CFI_FLAGS}")
-    target_compile_options(musl PRIVATE ${_musl_cfi_flags})
-    if (ENABLE_CFI_DIAGNOSTICS)
-        # A function built without CFI has no entry in the CFI jump tables, so a checked indirect call to it always
-        # fails. With diagnostics, the UBSan runtime that reports the violations is linked in, is built without CFI,
-        # and passes its own functions to musl: `atexit` handlers (e.g. `__sanitizer_cov_dump`) and `dl_iterate_phdr`
-        # callbacks (while it symbolizes a report). `CFI_UNCHECKED_RUNTIME` exempts only the musl functions that call
-        # them, those marked `no_cfi_icall_runtime` (see src/include/features.h in musl). Without diagnostics there is
-        # no runtime: those callbacks are built with CFI, and the calls stay checked.
-        target_compile_definitions(musl PRIVATE CFI_UNCHECKED_RUNTIME)
-    endif ()
-endif ()
-
 if (ENABLE_XRAY)
     # Emit XRay sleds in libc too, so `SYSTEM INSTRUMENT` can patch musl
     # functions. Sleds are inert nops until patched, so early-init code is

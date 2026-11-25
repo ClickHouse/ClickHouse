@@ -518,21 +518,10 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
 {
     auto state = getCurrentState();
-    Int64 schema_id = 0;
-    if (state)
-    {
-        schema_id = state->schema_id;
-    }
-    else
-    {
-        /// A table without snapshots is empty, but its columns are still in the latest schema file.
-        const auto latest_schema_info = table_client->getLatestTableSchemaInfo();
-        schema_id = latest_schema_info.first;
-        if (!persistent_components.schema_processor->hasSchema(schema_id))
-            persistent_components.schema_processor->addSchema(table_client->getTableSchemaJSON(latest_schema_info));
-    }
+    if (!state)
+        return {};
 
-    auto schema = persistent_components.schema_processor->getClickHouseSchema(schema_id);
+    auto schema = persistent_components.schema_processor->getClickHouseSchema(state->schema_id);
     return schema ? *schema : NamesAndTypesList{};
 }
 

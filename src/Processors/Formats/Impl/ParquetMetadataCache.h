@@ -14,7 +14,6 @@
 #include <Common/logger_useful.h>
 #include <boost/noncopyable.hpp>
 #include <IO/WithFileName.h>
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <generated/parquet_types.h>
 
 #include <mutex>
@@ -96,17 +95,13 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
     UInt64 memory_bytes;
     /// Counts in the weight of the cell (see `ParquetMetadataCache::keepStatistics`); shared with the cells that replace it.
     std::shared_ptr<ParquetKeptStatistics> kept_statistics;
-    /// Counts in the weight of the cell (see `ParquetMetadataCache::keepOffsetIndexes`); shared with the cells that replace it.
-    Parquet::KeptOffsetIndexesPtr kept_offset_indexes;
     explicit ParquetMetadataCacheCell(
         std::shared_ptr<const Parquet::FileFooter> footer_,
         VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> column_chunks_ = {},
-        std::shared_ptr<ParquetKeptStatistics> kept_statistics_ = nullptr,
-        Parquet::KeptOffsetIndexesPtr kept_offset_indexes_ = nullptr);
+        std::shared_ptr<ParquetKeptStatistics> kept_statistics_ = nullptr);
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
     static constexpr size_t MIN_KEPT_STATISTICS_BYTES = 4096;
-    static constexpr size_t MIN_KEPT_OFFSET_INDEXES_BYTES = 4096;
     [[nodiscard]] size_t calculateMemorySize() const;
 };
 
@@ -160,11 +155,6 @@ public:
         const String & column_key,
         const ParquetKeptStatistics::Ranges & ranges,
         size_t ranges_bytes);
-
-    /// Keeps copies of the offset indexes of `entries`, read from the file of `cell`, in `cell` and counts them in its weight,
-    /// if the cache still holds `cell` (or a cell that replaced it) under `key`. Moves the cell in the cache like a hit.
-    void keepOffsetIndexes(
-        const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::KeptOffsetIndexes::Entry> & entries);
 
 private:
     LoggerPtr log;

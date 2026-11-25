@@ -145,8 +145,6 @@ public:
 
     void clear();
     [[nodiscard]] size_t sizeInBytes() const;
-    /// The part of `sizeInBytes` that `autoResize` can give back, i.e. above `min_size_in_bytes`.
-    [[nodiscard]] size_t releasableSizeInBytes() const;
     [[nodiscard]] size_t count() const;
     [[nodiscard]] size_t maxSizeInBytes() const;
 

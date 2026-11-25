@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -104,7 +103,7 @@ struct IdentifierLookupHash
     {
         size_t hash = std::hash<std::string>()(identifier_lookup.identifier.getFullName());
         for (const auto & part : identifier_lookup.identifier.getParts())
-            hash = common::addIgnoreOverflow(common::mulIgnoreOverflow(hash, 31), part.size()); /// Wraps by design.
+            hash = hash * 31 + part.size();
 
         return hash
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context)

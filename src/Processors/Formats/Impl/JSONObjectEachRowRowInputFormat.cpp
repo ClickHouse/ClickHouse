@@ -92,8 +92,7 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
         JSONUtils::skipComma(in);
 
     JSONUtils::readFieldName(in, format_settings.json);
-    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(
-        in, format_settings, &inference_info, format_settings.json_object_each_row.column_for_object_name);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
 }
 
 NamesAndTypesList JSONObjectEachRowSchemaReader::getStaticNamesAndTypes()

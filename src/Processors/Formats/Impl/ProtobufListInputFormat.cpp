@@ -182,35 +182,33 @@ void registerInputFormatProtobufList(FormatFactory & factory)
 
 ## Description {#description}
 
-The `ProtobufList` format groups rows in one length-delimited [Protocol Buffers](/reference/formats/Protobuf/Protobuf) message called `Envelope`. Each row is encoded as a submessage with field number 1.
+The `ProtobufList` format is similar to the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
 
 ## Example usage {#example-usage}
 
-Save the following schema as `schemafile.proto`. Declare the `row` field as `repeated` so that a Protobuf decoder using this schema can read all the rows in the envelope.
+For example:
+
+```sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Where the file `schemafile.proto` looks like this:
 
 ```capnp title="schemafile.proto"
 syntax = "proto3";
 message Envelope {
   message MessageType {
     string name = 1;
-  }
-  repeated MessageType row = 1;
-}
-```
-
-From the same directory, run these commands to write two rows to a file and read them back.
-
-```bash
-clickhouse local --query "SELECT name FROM values('name String', 'Ada', 'Grace') ORDER BY name
-    SETTINGS format_schema = 'schemafile:MessageType' FORMAT ProtobufList" > people.bin
-
-clickhouse local --structure 'name String' --input-format ProtobufList \
-    --format_schema 'schemafile:MessageType' --query 'SELECT name FROM table' < people.bin
-```
-
-```text
-Ada
-Grace
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
 ```
 
 The message type specified in `format_schema` is resolved by first looking for it as a nested type inside a top-level `Envelope` message. If no match is found there — either because the schema has no `Envelope` message, or the `Envelope` does not contain a message with the requested name — the top-level message with that name is used directly.

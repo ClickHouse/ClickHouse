@@ -25,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STATISTICS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -84,7 +83,7 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
         const auto & offsets = s->getOffsets();
         UInt64 bytes = 0;
         for (size_t i = 0; i < column_size; ++i)
-            bytes += (offsets[i] - offsets[static_cast<ssize_t>(i) - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
+            bytes += (offsets[i] - offsets[i - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
         return bytes;
     }
     return 0;
@@ -260,7 +259,7 @@ void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & 
     sum.reset();
 }
 
-void StatisticsBasic::serialize(WriteBuffer & buf, StatisticsFileVersion version)
+void StatisticsBasic::serialize(WriteBuffer & buf)
 {
     /// Bounds and NULL counts read back would be taken to cover every row.
     if (!min_max_covers_all_values)
@@ -283,15 +282,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf, StatisticsFileVersion version
 
     if (tracks_numeric)
     {
-        if (version >= StatisticsFileVersion::V5)
-        {
-            StatisticsUtils::serializeBounds(min, max, *data_type, buf);
-        }
-        else
-        {
-            writeFieldBinary(min, buf);
-            writeFieldBinary(max, buf);
-        }
+        writeFieldBinary(min, buf);
+        writeFieldBinary(max, buf);
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
@@ -301,16 +293,11 @@ void StatisticsBasic::serialize(WriteBuffer & buf, StatisticsFileVersion version
         sum->function.function->serialize(sum->state, buf);
 }
 
-std::optional<UInt64> StatisticsBasic::getSerializedSize(StatisticsFileVersion version) const
+std::optional<UInt64> StatisticsBasic::getSerializedSize() const
 {
     UInt64 size = sizeof(row_count) + sizeof(UInt8);
     if (tracks_numeric)
-    {
-        if (version >= StatisticsFileVersion::V5)
-            size += StatisticsUtils::getSerializedBoundsSize(min, max, *data_type);
-        else
-            size += getFieldBinarySize(min) + getFieldBinarySize(max);
-    }
+        size += getFieldBinarySize(min) + getFieldBinarySize(max);
     if (tracks_string)
         size += sizeof(string_total_bytes);
     if (has_default_count)
@@ -320,7 +307,7 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize(StatisticsFileVersion v
     return size;
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     readIntBinary(row_count, buf);
 
@@ -329,27 +316,8 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion versio
 
     if (mask & BasicFeatureMask::NumericMinMax)
     {
-        if (version < StatisticsFileVersion::V5)
-        {
-            min = readFieldBinary(buf);
-            max = readFieldBinary(buf);
-            /// The bounds of the `Field` encoding have to be written again with the serialization of the column type.
-            if (tracks_numeric && (!StatisticsUtils::isBoundOfType(min, *data_type) || !StatisticsUtils::isBoundOfType(max, *data_type)))
-                is_unusable = true;
-        }
-        else if (tracks_numeric)
-        {
-            StatisticsUtils::deserializeBounds(min, max, *data_type, buf);
-        }
-        else
-        {
-            /// Only the types that track the bounds write them, and they are read with the type.
-            throw Exception(
-                ErrorCodes::ILLEGAL_STATISTICS,
-                "Basic statistics of type {} have bounds. The statistics file may be corrupted. "
-                "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
-                data_type->getName());
-        }
+        min = readFieldBinary(buf);
+        max = readFieldBinary(buf);
     }
 
     if (mask & BasicFeatureMask::StringLengthSum)

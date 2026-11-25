@@ -13,7 +13,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -43,12 +42,7 @@ const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const St
 
 PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name)
 {
-    /// The column may be shared with another owner (e.g. a cached patch block), so unshare it before handing out mutable data.
-    auto & column = block.getByName(column_name).column;
-    auto mutable_column = IColumn::mutate(std::move(column));
-    auto & data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-    column = std::move(mutable_column);
-    return data;
+    return assert_cast<ColumnUInt64 &>(block.getByName(column_name).column->assumeMutableRef()).getData();
 }
 
 bool canApplyPatchInplace(const IColumn & column)
@@ -100,7 +94,7 @@ static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const
         IColumn::Patch::Source source =
         {
             .column = *source_col,
-            .versions = getColumnUInt64Data(std::as_const(patch_block), PartDataVersionColumn::name),
+            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
         };
 
         sources.push_back(std::move(source));
@@ -200,10 +194,7 @@ void applyPatchesIndices(
 
             if (canApplyPatchInplace(*result_column.column))
             {
-                /// COW-safe in-place update: clone when the column is shared instead of mutating
-                /// a column still referenced by another owner via `assumeMutableRef`.
                 auto mutable_column = IColumn::mutate(std::move(result_column.column));
-                SCOPE_EXIT({ if (!result_column.column) result_column.column = std::move(mutable_column); });
                 mutable_column->updateInplaceFrom(patch);
                 result_column.column = std::move(mutable_column);
             }

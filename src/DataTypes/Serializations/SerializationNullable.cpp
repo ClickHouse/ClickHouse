@@ -169,24 +169,15 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     if (use_default_null_map)
-    {
-        /// Read the nested column size via the const overload — the substream cache may hold a reference
-        /// to the nested column (so its `use_count() >= 2`), which would trip
-        /// `chassert(use_count() == 1)` in the non-const `getNestedColumn`
-        /// (it goes through `WrappedPtr::operator*` -> `assumeMutableRef`).
-        col.getNullMapData().resize_fill(std::as_const(col).getNestedColumn().size());
-    }
+        col.getNullMapData().resize_fill(col.getNestedColumn().size());
 
-    /// Size-only reads again: by now both the null map and the nested column may be referenced from
-    /// the substreams cache, so stay on the const accessors here as well.
-    const auto & const_col = std::as_const(col);
-    if (const_col.getNullMapColumn().size() != const_col.getNestedColumn().size())
+    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            const_col.getNullMapColumn().size(),
-            const_col.getNestedColumn().size());
+            col.getNullMapColumn().size(),
+            col.getNestedColumn().size());
 }
 
 
@@ -435,13 +426,10 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
                 "containing '\\r' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        if (!nested_column.empty())
-        {
-            if constexpr (escaped)
-                nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
-            else
-                nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
-        }
+        if constexpr (escaped)
+            nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
+        else
+            nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
@@ -827,8 +815,7 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
-        if (!nested_column.empty())
-            nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
+        nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",

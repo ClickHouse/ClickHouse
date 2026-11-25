@@ -1476,18 +1476,16 @@ size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    /// This check goes before any use of the descriptor: otherwise the error would depend on whether
-    /// the descriptor is open, and a query could find out which descriptor numbers the server uses.
-    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
-    if (args.format_name == "Distributed")
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
-
     struct stat buf{};
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
+
+    if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
+    if (args.format_name == "Distributed")
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;

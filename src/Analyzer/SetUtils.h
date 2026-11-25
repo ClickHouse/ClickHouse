@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Field.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
 
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -46,10 +44,5 @@ bool nullableTupleKeyCanHoldAllNullTuple(const DataTypeTuple & key_tuple_type, s
 /// `rhs_column` is a size-1 (const) column holding the constant right-hand side of `IN` (a scalar,
 /// Array or Tuple). Values are read column-natively - no `Field` is materialized.
 ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params);
-
-/// The set elements of `x IN (v1, v2, ...)` for a scalar key from a tuple of `UInt64`, `Int64` or `String` `Field`s,
-/// equal to those of `getSetElementsForConstantValue`. Returns nullopt for any other key or value types.
-std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
-    const DataTypePtr & expression_type, const Tuple & rhs_elements, GetSetElementParams params);
 
 }

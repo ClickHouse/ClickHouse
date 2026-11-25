@@ -114,7 +114,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -1942,11 +1941,6 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 1)
         keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[1], "keys_limit");
 
-    if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()) && args.columns.hasNotAlias(String(version_column_name)))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column '{}' for KeeperMap engine because it is reserved for a virtual column. Use another name",
-            version_column_name);
-
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -1983,6 +1977,7 @@ void registerStorageKeeperMap(StorageFactory & factory)
         SecretArgumentsSpec{},
         {
             .supports_sort_order = true,
+            .supports_parallel_insert = true,
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -114,13 +114,8 @@
 
     <create_query>CREATE DATABASE perf_system_clusters_{n} ENGINE = Replicated('/clickhouse/perf_system_clusters/{n}', 'shard1', 'replica1')</create_query>
 
-    <query disabled="1">SELECT is_active, replication_lag FROM system.clusters FORMAT Null</query>
-    <query disabled="1">SELECT is_active, replication_lag FROM system.clusters WHERE cluster = 'perf_system_clusters_50' FORMAT Null</query>
-
-    <!-- The two scans above, repeated in one query: an idle Keeper polls for requests only every
-         `dispatch_busy_wait_long_sleep_us` (10 ms), so the first reply of a query can be ~20 ms late. -->
-    <query>SELECT * FROM loop(view(SELECT countIf(is_active) AS active, sum(replication_lag) AS lag FROM system.clusters)) LIMIT 128 FORMAT Null</query>
-    <query>SELECT * FROM loop(view(SELECT countIf(is_active) AS active, sum(replication_lag) AS lag FROM system.clusters WHERE cluster = 'perf_system_clusters_50')) LIMIT 512 FORMAT Null</query>
+    <query>SELECT is_active, replication_lag FROM system.clusters FORMAT Null</query>
+    <query>SELECT is_active, replication_lag FROM system.clusters WHERE cluster = 'perf_system_clusters_50' FORMAT Null</query>
 
     <drop_query>DROP DATABASE IF EXISTS perf_system_clusters_{n} SYNC</drop_query>
 </test>

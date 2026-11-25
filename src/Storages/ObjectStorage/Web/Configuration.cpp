@@ -41,17 +41,23 @@ namespace
 using URLFailoverOptions = std::vector<String>;
 using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
-URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
+URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
 {
-    /// The limit is on the whole first argument: the failover options of all the comma-separated URLs
-    /// are summed up, and the number reported when it is exceeded is the cardinality of the whole
-    /// pattern, not of the URLs disclosed so far.
-    auto url_shards = parseRemoteDescriptionWithFailover(uri, max_addresses, caller);
+    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name);
 
     URLShardsWithFailover result;
-    result.reserve(url_shards.size());
-    for (auto & url_shard : url_shards)
-        result.push_back(std::move(url_shard.replicas));
+    result.reserve(disclosed_urls.size());
+    size_t url_options_count = 0;
+
+    for (const auto & disclosed_url : disclosed_urls)
+    {
+        auto failover_options = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name);
+        if (url_options_count + failover_options.size() > max_addresses)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+
+        url_options_count += failover_options.size();
+        result.push_back(std::move(failover_options));
+    }
 
     return result;
 }
@@ -101,16 +107,6 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
     {
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
-}
-
-StorageWebConfiguration::StorageWebConfiguration()
-    : StorageWebConfiguration(tableFunctionURLCaller())
-{
-}
-
-StorageWebConfiguration::StorageWebConfiguration(RemoteDescriptionCaller glob_caller_)
-    : glob_caller(std::move(glob_caller_))
-{
 }
 
 StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(const ContextPtr & context) const
@@ -283,8 +279,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
-    const auto url_shards_with_failover = parseURLShardsWithFailover(
-        url_root_for_expansion + query_fragment_part, max_addresses, glob_caller);
+    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))

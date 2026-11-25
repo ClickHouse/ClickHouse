@@ -4,8 +4,6 @@
 -- Pins which groups `EXPLAIN ANALYZE` reports for the algorithms outside the hash join family, over
 -- every kind each of them accepts: `grace_hash` adds the bucket and spill groups, `partial_merge` the
 -- on-disk ones. The hash join family is in `04510_explain_analyze_join_stats`.
--- `unique keys` is matched on the `Hash table` line: a runtime filter that the join does not replace reports its
--- keys too, on its own step.
 --
 -- `parallel_full_sorting_merge` builds the same join as `full_sorting_merge` and is told apart by the
 -- `Sharding:` group: the optimizer rewrites it into independent per-shard joins, but only when neither
@@ -37,7 +35,7 @@ INSERT INTO t2 SELECT number % 500, number FROM numbers(1000);
             'ANTI LEFT JOIN t2 ON t1.x = t2.x',
             'ANTI RIGHT JOIN t2 ON t1.x = t2.x',
         ],
-        "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2 AND countIf(explain LIKE '%Hash table: unique keys%') = 1 AND countIf(explain LIKE '%· memory %') = 1 AND countIf(explain LIKE '%buckets%') = 1 AND countIf(explain LIKE '%rehashes%') = 1 AND countIf(explain LIKE '%Spill:%') = 1"),
+        "countIf(explain LIKE '%Left: rows%') = 1 AND countIf(explain LIKE '%Right: rows%') = 1 AND countIf(explain LIKE '%matched %') = 2 AND countIf(explain LIKE '%match rate%') = 2 AND countIf(explain LIKE '%unique keys%') = 1 AND countIf(explain LIKE '%· memory %') = 1 AND countIf(explain LIKE '%buckets%') = 1 AND countIf(explain LIKE '%rehashes%') = 1 AND countIf(explain LIKE '%Spill:%') = 1"),
 
     ('partial_merge', '',
         all_kinds + [

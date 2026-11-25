@@ -26,12 +26,6 @@
     <!-- Strings of up to 15 bytes are keyed by their bytes. -->
     <query>SELECT uniqExact(toString(number % 1000)) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
     <query>SELECT uniqExact(s) FROM radix_low_cardinality FORMAT Null</query>
-    <!-- Tuples of fixed-size values, `Nullable` or not, are packed into the keys. -->
-    <query>SELECT uniqExact((RegionID, UserID)) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT uniqExact((nullIf(RegionID, 0), UserID)) FROM hits_100m_single FORMAT Null</query>
-    <!-- The other tuples are hashed several rows at a time, after the rows that repeat the previous one are skipped. -->
-    <query>SELECT uniqExact((CounterID, RegionID, UserID, EventDate)) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT uniqExact((RegionID, SearchPhrase)) FROM hits_100m_single FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS radix_low_cardinality</drop_query>
 </test>

@@ -1,5 +1,6 @@
 import logging
 import re
+import traceback
 import random
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -371,5 +372,6 @@ class SparkAndClickHouseCheck:
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
+            traceback.print_exc()
             self.logger.exception(e)
         return True

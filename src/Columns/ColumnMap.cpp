@@ -38,12 +38,7 @@ std::string ColumnMap::getName() const
 ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_)
     : nested(std::move(nested_)), statistics(statistics_)
 {
-    /// Use the const `ColumnPtr` accessor `getNestedColumnPtr` rather than `nested.get()`. The
-    /// latter goes through `WrappedPtr::get` → `assumeMutableRef`, which now
-    /// `chassert(use_count() == 1)`. When this constructor is reached via
-    /// `ColumnMap::create(const ColumnPtr &, ...)`, the caller still holds an immutable reference
-    /// to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
-    const auto * column_array = typeid_cast<const ColumnArray *>(getNestedColumnPtr().get());
+    const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
 
@@ -79,8 +74,8 @@ Field ColumnMap::operator[](size_t n) const
 void ColumnMap::get(size_t n, Field & res) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
-    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
     auto & map = res.safeGet<Map>();
@@ -93,8 +88,8 @@ void ColumnMap::get(size_t n, Field & res) const
 void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
-    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
 
     if (options.notFull(name_buf))
         name_buf << "[";

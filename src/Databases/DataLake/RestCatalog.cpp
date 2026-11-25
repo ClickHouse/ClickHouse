@@ -2488,8 +2488,7 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(
     const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
 {
-    /// `self` keeps catalog alive while S3 client holds this callback.
-    return [this, self = shared_from_this(), storage_id] () -> std::shared_ptr<IStorageCredentials>
+    return [this, storage_id] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 

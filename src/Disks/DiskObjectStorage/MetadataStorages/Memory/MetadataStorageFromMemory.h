@@ -73,6 +73,8 @@ public:
 
     struct stat stat(const String & path) const override;
 
+    bool supportsChmod() const override { return false; }
+
     bool isReadOnly() const override { return false; }
     bool isRemote() const override { return false; }
 
@@ -113,6 +115,8 @@ public:
 
     void commit(const TransactionCommitOptionsVariant & options) override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
+
+    [[nodiscard]] bool supportsChmod() const override { return false; }
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;

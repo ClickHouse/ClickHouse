@@ -69,11 +69,3 @@ SELECT 'using full', countIf(t_bool.k IS NULL), max(ignore(k)) FROM t_bool FULL 
 SELECT 'using full reversed', countIf(t_bool.k IS NULL), max(ignore(k)) FROM t_int FULL JOIN t_bool USING (k);
 SELECT 'using left', count(), max(ignore(t_int.k)) FROM t_bool LEFT JOIN t_int USING (k);
 SELECT 'using types', toTypeName(t_bool.k), toTypeName(k) FROM t_bool INNER JOIN t_int USING (k);
-
-CREATE TABLE t_bool_plain (k Bool) ENGINE = Memory;
-INSERT INTO t_bool_plain VALUES (false), (true);
-SELECT 'plain anti rf', count() FROM t_int LEFT ANTI JOIN t_bool_plain ON t_int.k = t_bool_plain.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
-SELECT 'plain anti rf built', countIf(explain LIKE '%BuildRuntimeFilter%') > 0, countIf(position(explain, '__applyFilter(') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM t_int LEFT ANTI JOIN t_bool_plain ON t_int.k = t_bool_plain.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0);
-SELECT 'nullable anti rf', count() FROM (SELECT toNullable(k) AS k FROM t_int) a LEFT ANTI JOIN t_bool b ON a.k = b.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
-SELECT 'lc anti rf', count() FROM (SELECT toLowCardinality(k) AS k FROM t_int) a LEFT ANTI JOIN (SELECT CAST(k, 'LowCardinality(Bool)') AS k FROM t_bool_plain) b ON a.k = b.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
-SELECT 'right anti rf', count() FROM t_bool_plain RIGHT ANTI JOIN t_int ON t_bool_plain.k = t_int.k SETTINGS query_plan_join_swap_table = 1, query_plan_optimize_join_order_limit = 10, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;

@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorSum.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ FieldVisitorSum::FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
 
 // We can add all ints as unsigned regardless of their actual signedness.
 bool FieldVisitorSum::operator() (Int64 & x) const { return this->operator()(reinterpret_cast<UInt64 &>(x)); }
-bool NO_SANITIZE_UNSIGNED_OVERFLOW FieldVisitorSum::operator() (UInt64 & x) const
+bool FieldVisitorSum::operator() (UInt64 & x) const
 {
     x += applyVisitor(FieldVisitorConvertToNumber<UInt64>(), rhs);
     return x != 0;

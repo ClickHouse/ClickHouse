@@ -225,8 +225,8 @@ WindowFunctionRequirements collectRequirements(const WindowDescription & descrip
     WindowFunctionRequirements requirements;
     for (const auto & function : functions)
     {
-        if (function.general_function)
-            requirements = unionOf(requirements, function.general_function->getRequirements(description));
+        if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            requirements = unionOf(requirements, general->getRequirements(description));
         else
             requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
     }

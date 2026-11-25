@@ -1150,8 +1150,7 @@ void considerEnablingParallelReplicas(
             const UInt64 period = retry_after == std::numeric_limits<UInt64>::max() ? retry_after : retry_after + 1;
             const UInt64 execution = undecided->executions.fetch_add(1, std::memory_order_relaxed);
             const bool first_retry = undecided->first && execution == 0;
-            /// The first retry does not use the turn, and it is the only one where `execution - 1` would wrap.
-            if (const auto turn = (undecided->first && !first_retry ? execution - 1 : execution) % period; !first_retry && turn < retry_after)
+            if (const auto turn = (undecided->first ? execution - 1 : execution) % period; !first_retry && turn < retry_after)
             {
                 ProfileEvents::increment(undecided->outcome_event);
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRetryDeferred);

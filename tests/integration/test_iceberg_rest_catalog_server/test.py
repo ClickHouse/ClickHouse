@@ -176,9 +176,6 @@ def catalog_url(path, instance=None):
 
 
 def get_keeper():
-    # The server may write through another Keeper replica, and a replica answers reads from its own state.
-    # `sync` makes this client's replica apply every acknowledged write, so the reads after the call see them.
-    keeper.sync("/")
     return keeper
 
 
@@ -1287,19 +1284,20 @@ def test_rename_keeps_commit_version(started_cluster):
     commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
 
     # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
+    zk = get_keeper()
     store_root = keeper_store_root()
     uuid_path = f"{store_root}/tables_by_uuid/{table_uuid}"
-    assert get_keeper().get(uuid_path)[1].version == 1
+    assert zk.get(uuid_path)[1].version == 1
 
     # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
     rename_table([ns], "a", [ns], "b")
     rename_table([ns], "b", [ns], "a")
-    assert get_keeper().get(uuid_path)[1].version == 1
-    assert get_keeper().get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+    assert zk.get(uuid_path)[1].version == 1
+    assert zk.get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
 
     committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
     assert committed["metadata"]["current-snapshot-id"] == 200
-    assert get_keeper().get(uuid_path)[1].version == 2
+    assert zk.get(uuid_path)[1].version == 2
 
 
 def test_report_metrics(started_cluster):

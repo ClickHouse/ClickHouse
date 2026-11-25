@@ -148,7 +148,6 @@ private:
     };
 
     static DeserializeBinaryBulkStatePtr deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
-    static void checkBucketsHaveSameNumberOfRows(const VectorWithMemoryTracking<ColumnPtr> & buckets);
 
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;

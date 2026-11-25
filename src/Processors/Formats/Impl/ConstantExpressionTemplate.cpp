@@ -33,7 +33,6 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -621,7 +620,6 @@ bool ConstantExpressionTemplate::tryParseExpression(
     return true;
 }
 
-NO_SANITIZE_UNSIGNED_OVERFLOW
 bool ConstantExpressionTemplate::parseLiteralAndAssertType(
     ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {

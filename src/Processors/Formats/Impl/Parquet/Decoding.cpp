@@ -5,7 +5,6 @@
 #include <utility>
 
 #include <base/arithmeticOverflow.h>
-#include <base/sanitizer_defs.h>
 #include <bit>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -13,8 +12,6 @@
 #include <Common/StringValueFilter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
-
-#include <Common/memcpySmall.h>
 #include <base/unaligned.h>
 #include <IO/VarInt.h>
 
@@ -29,29 +26,6 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
-
-template <typename Get>
-static void appendStrings(ColumnString & col, size_t n, size_t total_bytes, const char * source_end, Get && get)
-{
-    auto & chars = col.getChars();
-    auto & col_offsets = col.getOffsets();
-
-    size_t pos = chars.size();
-    const size_t old_rows = col_offsets.size();
-    chars.resize(pos + total_bytes);
-    col_offsets.resize(old_rows + n);
-    char * out = reinterpret_cast<char *>(chars.data());
-    for (size_t i = 0; i < n; ++i)
-    {
-        std::string_view s = get(i);
-        if (likely(size_t(source_end - s.data()) >= s.size() + 15))
-            memcpySmallAllowReadWriteOverflow15(out + pos, s.data(), s.size());
-        else
-            memcpy(out + pos, s.data(), s.size());
-        pos += s.size();
-        col_offsets[old_rows + i] = pos;
-    }
-}
 
 namespace
 {
@@ -762,55 +736,6 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
-            if (!value_filter || !value_filter->isEnabled())
-            {
-                auto & chars = col_str.getChars();
-                auto & col_offsets = col_str.getOffsets();
-                const size_t old_bytes = chars.size();
-                const size_t old_rows = col_offsets.size();
-                size_t pos = old_bytes;
-                size_t row = old_rows;
-                chars.resize(chars.capacity());
-                col_offsets.resize(old_rows + (filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values));
-                char * out = reinterpret_cast<char *>(chars.data());
-                for (size_t i = 0; i < num_values; ++i)
-                {
-                    if (unlikely(end - data < 4))
-                    {
-                        chars.resize(old_bytes);
-                        col_offsets.resize(old_rows);
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
-                    }
-                    UInt32 x = 0;
-                    memcpy(&x, data, 4);
-                    size_t len = 4 + size_t(x);
-                    if (unlikely(len > size_t(end - data)))
-                    {
-                        chars.resize(old_bytes);
-                        col_offsets.resize(old_rows);
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
-                    }
-                    if (!filter || filter[filter_offset + i])
-                    {
-                        if (unlikely(pos + x > chars.size()))
-                        {
-                            chars.resize(std::max(pos + x, chars.size() * 2));
-                            out = reinterpret_cast<char *>(chars.data());
-                        }
-                        if (likely(size_t(end - data) >= len + 15))
-                            memcpySmallAllowReadWriteOverflow15(out + pos, data + 4, x);
-                        else
-                            memcpy(out + pos, data + 4, x);
-                        pos += x;
-                        col_offsets[row++] = pos;
-                    }
-                    data += len;
-                }
-                chars.resize(pos);
-                col_offsets.resize(row);
-                return;
-            }
-
             size_t to_reserve = filter ? countBytesInFilter(filter, filter_offset, filter_offset + num_values) : num_values;
             col_str.reserve(col_str.size() + to_reserve);
 
@@ -1154,7 +1079,6 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     }
 
     template <typename T, typename F>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void decodeImpl(size_t num_values, char * out_bytes, F func)
     {
         if (total_values_remaining < num_values)
@@ -2128,15 +2052,14 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
-            size_t total_bytes = 0;
             for (size_t i = 0; i < n; ++i)
-                total_bytes += offsets[indexes[i]] - offsets[ssize_t(indexes[i]) - 1] - 4;
-            appendStrings(c, n, total_bytes, data.data() + data.size(), [&](size_t i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
-                return std::string_view(data.data() + start, offsets[idx] - start);
-            });
+                size_t len = offsets[idx] - start;
+                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
+                c.insertData(data.data() + start, len);
+            }
             break;
         }
         case Mode::Column:
@@ -2340,7 +2263,7 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
 
     /// Sign-extend.
     if (input_signed && input_size < 8 && (val >> (input_size * 8 - 1)) != 0)
-        val |= common::negateIgnoreOverflow(1ul << (input_size * 8));
+        val |= 0 - (1ul << (input_size * 8));
 
     /// A day outside the requested date type's window is saturated or rejected by the read: the former bounds
     /// nothing, the latter makes the chunk unreadable. Before the sign check, as a negative day is outside `Date` too.
@@ -2492,25 +2415,22 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
 {
     auto & col_str = assert_cast<ColumnString &>(col);
     col_str.reserve(col_str.size() + num_values);
-    chassert(chars.size() >= offsets[static_cast<ssize_t>(num_values) - 1]);
+    chassert(chars.size() >= offsets[num_values - 1]);
     if (separator_bytes == 0)
     {
         /// Can memcpy all strings in bulk.
-        col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[static_cast<ssize_t>(num_values) - 1]);
+        col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[num_values - 1]);
 
         auto & out_offsets = col_str.getOffsets();
-        /// Rebase the offsets without wrap-around: `offsets[-1]` may exceed `out_offsets.back()`
-        /// when a page is split across output columns.
-        UInt64 out_base = out_offsets.back();
-        UInt64 in_base = offsets[-1];
+        UInt64 diff = out_offsets.back() - offsets[-1]; // (wrapping overflow is ok)
         size_t prev_count = out_offsets.size();
         out_offsets.resize(prev_count + num_values);
         for (size_t i = 0; i < num_values; ++i)
-            out_offsets[prev_count + i] = out_base + (offsets[i] - in_base);
+            out_offsets[prev_count + i] = offsets[i] + diff; // (wrapping overflow is ok)
     }
     else
     {
-        col_str.getChars().reserve(col_str.getChars().size() + (offsets[static_cast<ssize_t>(num_values) - 1] - offsets[-1]) - separator_bytes * num_values);
+        col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values);
         for (size_t i = 0; i < num_values; ++i)
             col_str.insertData(chars.data() + offsets[ssize_t(i) - 1], offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes);
     }
@@ -2858,7 +2778,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
     if (num_values == 0)
         return;
     col.reserve(col.size() + num_values);
-    chassert(chars.size() >= offsets[static_cast<ssize_t>(num_values) - 1]);
+    chassert(chars.size() >= offsets[num_values - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);

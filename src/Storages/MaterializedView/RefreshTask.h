@@ -195,8 +195,7 @@ public:
     /// Waits for the currently running refresh attempt to complete, either on this replica
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
-    /// If no refresh is running or due (a due refresh may be waiting for its `refresh_coordination_jitter_ms` delay),
-    /// completes immediately, throwing an exception if previous refresh failed.
+    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
     /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
@@ -345,11 +344,6 @@ private:
         /// Redrawn when last_completed_timeslot changes.
         std::chrono::sys_seconds randomness_drawn_for_timeslot {};
         Int64 randomness = 0;
-
-        /// When this replica may start a due coordinated refresh (`refresh_coordination_jitter_ms`),
-        /// and the root znode version it was drawn for. Redrawn when the version changes.
-        int32_t jitter_drawn_for_version = -1;
-        std::chrono::steady_clock::time_point jitter_deadline {};
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.

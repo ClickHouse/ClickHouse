@@ -48,15 +48,13 @@ String getColumnsCachePartName(const String & part_name, const String & parent_p
     return parent_part_name + ":" + part_name;
 }
 
-UInt128 getColumnsCacheColumnIdentity(
-    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part)
+UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
 {
     SipHash hash;
     hash.update(table_uuid);
     hash.update(part_name);
     hash.update(column_name);
     hash.update(schema_identity);
-    hash.update(name_in_part);
     return hash.get128();
 }
 
@@ -689,7 +687,8 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
-    /// No invalidation stamp is advanced here, see the declaration.
+    /// No invalidation stamp is advanced here, see the declaration: the part is removed from
+    /// the cache only once no reader can hold it, so there is no deferred write to reject.
     std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);

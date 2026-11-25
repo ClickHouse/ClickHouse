@@ -1003,12 +1003,7 @@ private:
         appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
-        /// The allocation can shrink after sorting.
-        size_t new_bytes = buffer.data.allocatedBytes();
-        if (new_bytes >= old_bytes)
-            storage.total_writes.bytes += new_bytes - old_bytes;
-        else
-            storage.total_writes.bytes -= old_bytes - new_bytes;
+        storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
     }
 };
 

@@ -13,7 +13,6 @@
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <base/sanitizer_defs.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/TargetSpecific.h>
@@ -45,12 +44,12 @@ struct RadixSortFloatTransform
     /// Is it worth writing the result in memory, or is it better to do calculation every time again?
     static constexpr bool transform_is_simple = false;
 
-    static KeyBits NO_SANITIZE_UNSIGNED_OVERFLOW forward(KeyBits x)
+    static KeyBits forward(KeyBits x)
     {
         return static_cast<KeyBits>(x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1))));
     }
 
-    static KeyBits NO_SANITIZE_UNSIGNED_OVERFLOW backward(KeyBits x)
+    static KeyBits backward(KeyBits x)
     {
         return x ^ (((x >> (sizeof(KeyBits) * 8 - 1)) - 1) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)));
     }

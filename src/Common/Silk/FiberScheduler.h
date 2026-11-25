@@ -25,7 +25,7 @@ namespace Silk
 /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
 inline constexpr uint32_t DEFAULT_FIBER_STACK_SIZE = 320 * 1024;
 
-void initialize(uint32_t fiber_stack_size, int log_level);
+void initializeFiberScheduler(uint32_t fiber_stack_size);
 void destroyFiberScheduler();
 
 bool isFiberSchedulerInitialized();

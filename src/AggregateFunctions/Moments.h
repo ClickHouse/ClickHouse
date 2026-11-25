@@ -11,7 +11,6 @@
 #include <boost/math/distributions/students_t.hpp>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/sanitizer_defs.h>
 #include <Common/NaNUtils.h>
 
 namespace DB
@@ -30,7 +29,6 @@ namespace ErrorCodes
 /// flag, this keeps NaN/Inf values in discarded rows from poisoning the accumulators.
 /// Unlike a branch or a ternary select, it is if-converted and vectorized.
 template <typename T>
-NO_SANITIZE_UNSIGNED_OVERFLOW
 inline T ALWAYS_INLINE maskFloatingPoint(T x, bool keep)
 {
     using EquivalentInteger = std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
@@ -710,17 +708,10 @@ struct OneSampleTTestMoments
 
     void merge(const OneSampleTTestMoments & rhs)
     {
-        /// The population mean is set by the first value a state sees, so a state without values does not
-        /// have it yet. A merge usually starts from such a state (`-Merge`, `finalizeAggregation`,
-        /// `WITH TOTALS`, the results of several shards or parts), which has to take the mean from the
-        /// state it is merged with: otherwise the test is done against zero. It is the same for all the
-        /// states of one aggregation, so a state that already has values keeps its own.
-        if (n == 0 && rhs.n != 0)
-            population_mean = rhs.population_mean;
-
         n += rhs.n;
         x1 += rhs.x1;
         x2 += rhs.x2;
+        // Note: population_mean should be the same for merged data
     }
 
     void write(WriteBuffer & buf) const

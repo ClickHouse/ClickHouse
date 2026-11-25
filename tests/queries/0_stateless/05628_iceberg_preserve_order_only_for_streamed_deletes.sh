@@ -3,7 +3,7 @@
 # Tag no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # Iceberg reads a Parquet data file in order only where the order is needed: a file whose position deletes are
-# streamed. `ALTER TABLE ... DELETE` sorts the positions of every data file before it writes them.
+# streamed, and the read of `ALTER TABLE ... DELETE`, which writes the positions of every data file in read order.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

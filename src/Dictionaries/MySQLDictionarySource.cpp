@@ -158,8 +158,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             else
             {
                 size_t max_addresses = global_context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                addresses = parseRemoteDescriptionForExternalDatabase(
-                    addresses_expr, max_addresses, 3306, globCaller("MySQL dictionary source"));
+                addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
             }
 
             for (auto & address : addresses)

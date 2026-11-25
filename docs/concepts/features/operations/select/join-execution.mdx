@@ -13,7 +13,7 @@ Most JOIN algorithms execute in two phases:
 
 The probe phase starts only after the build phase finishes. The memory that a JOIN needs is therefore determined mostly by the size of the build side.
 
-By default, the right-hand side of the JOIN is the build side, and the left-hand side is the probe side. Some algorithms differ from this model. The [`direct` algorithm](/concepts/features/operations/select/join-algorithms#direct) has no build phase, because the right-hand side already exists as a key-value structure. The [`full_sorting_merge` algorithm](/concepts/features/operations/select/join-algorithms#full-sorting-merge) sorts both inputs and merges them. The [`inequality` algorithm](/concepts/features/operations/select/join-algorithms#inequality) accumulates both inputs before it joins them.
+By default, the right-hand side of the JOIN is the build side, and the left-hand side is the probe side. Some algorithms differ from this model. The [`direct` algorithm](/concepts/features/operations/select/join-algorithms#direct) has no build phase, because the right-hand side already exists as a key-value structure. The [`full_sorting_merge` algorithm](/concepts/features/operations/select/join-algorithms#full-sorting-merge) sorts both inputs and merges them. The [`ie_join` algorithm](/concepts/features/operations/select/join-algorithms#ie-join) accumulates both inputs before it joins them.
 
 ## Query planner behavior {#query-planner-behavior}
 

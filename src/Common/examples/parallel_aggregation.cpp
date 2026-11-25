@@ -23,7 +23,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 
-#include <Common/CacheLine.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
@@ -82,9 +81,9 @@ struct SmallLock
     }
 };
 
-struct alignas(DB::CH_CACHE_LINE_SIZE) AlignedSmallLock : public SmallLock
+struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 {
-    char dummy[DB::CH_CACHE_LINE_SIZE - sizeof(SmallLock)];
+    char dummy[64 - sizeof(SmallLock)];
 };
 
 /// A hash map cell that includes an embedded spinlock for concurrent access

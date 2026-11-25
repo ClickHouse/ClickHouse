@@ -7,7 +7,6 @@
 #include <vector>
 #include <Common/logger_useful.h>
 #include <base/types.h>
-#include <base/sanitizer_defs.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
 namespace DB
@@ -34,7 +33,6 @@ public:
 
         constexpr UInt operator*() const noexcept { return current; }
 
-        NO_SANITIZE_UNSIGNED_OVERFLOW
         constexpr Iterator& operator++() noexcept
         {
             current = (start & (current - start));
@@ -48,7 +46,6 @@ public:
             return temp;
         }
 
-        NO_SANITIZE_UNSIGNED_OVERFLOW
         constexpr bool operator==(const Iterator& other) const noexcept
         {
             return current == other.current;
@@ -57,8 +54,7 @@ public:
         UInt start;
         UInt current;
     };
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW
-    constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
+    [[nodiscard]] constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
     [[nodiscard]] constexpr Iterator end() const noexcept   { return Iterator(start, start); }
 private:
     Bitvector start;

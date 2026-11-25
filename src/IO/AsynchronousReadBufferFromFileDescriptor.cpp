@@ -14,7 +14,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <base/getThreadId.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace ProfileEvents
@@ -236,17 +235,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        if (offset < 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
-        new_pos = static_cast<size_t>(offset);
+        chassert(offset >= 0);
+        new_pos = offset;
     }
     else if (whence == SEEK_CUR)
     {
-        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
-        off_t target = 0;
-        if (common::addOverflow(getPosition(), offset, target) || target < 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", getPosition(), offset);
-        new_pos = static_cast<size_t>(target);
+        new_pos = static_cast<size_t>(getPosition()) + offset;
     }
     else
     {

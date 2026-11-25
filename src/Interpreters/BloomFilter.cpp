@@ -1,6 +1,5 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
-#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnArray.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnNullable.h>
@@ -11,7 +10,6 @@
 
 #include <libdivide-config.h>
 #include <libdivide.h>
-#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -43,7 +41,7 @@ ALWAYS_INLINE size_t fastMod(size_t value, size_t modulus, const BloomDivider & 
 /// `hashes` argument is used. This keeps a single source of truth for both the generic and the
 /// specialized (e.g. the default `k = 3`) code paths.
 template <size_t compile_time_hashes>
-ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void addHashPairToFilter(
+ALWAYS_INLINE void addHashPairToFilter(
     BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
     size_t hashes,
@@ -61,7 +59,7 @@ ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW void addHashPairToFilter(
 }
 
 template <size_t compile_time_hashes>
-ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW bool findHashPairInFilter(
+ALWAYS_INLINE bool findHashPairInFilter(
     const BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
     size_t hashes,
@@ -121,7 +119,7 @@ BloomFilterHashPair BloomFilter::computeHashPair(const char * data, size_t len, 
     return
     {
         CityHash_v1_0_2::CityHash64WithSeed(data, len, seed_),
-        CityHash_v1_0_2::CityHash64WithSeed(data, len, common::addIgnoreOverflow(common::mulIgnoreOverflow(SEED_GEN_A, seed_), SEED_GEN_B))
+        CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed_ + SEED_GEN_B)
     };
 }
 

@@ -278,10 +278,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (const auto & [name, type] : names_and_types)
     {
         if (names_to_types.contains(name))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
-                name);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
 
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
@@ -302,10 +299,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
-                    name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
             names_set.insert(name);
 
             auto it = names_to_types.find(name);
@@ -334,15 +328,8 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result = getStaticNamesAndTypes();
-    NameSet static_names;
-    for (const auto & [name, _] : result)
-        static_names.insert(getColumnMatchingKeyForSchemaInference(name, format_settings));
     for (auto & name : names_order)
     {
-        /// The row reader fills a static column before the row's fields, so a field of the same name is a repeated one.
-        if (format_settings.skip_duplicated_fields && static_names.contains(getColumnMatchingKeyForSchemaInference(name, format_settings)))
-            continue;
-
         auto & type = names_to_types[name];
         /// Don't check/change types from hints.
         if (!hints.contains(name))
