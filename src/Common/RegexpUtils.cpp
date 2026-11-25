@@ -341,6 +341,7 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
 {
     size_t depth = 0;
     bool in_class = false;
+    bool after_range_start = false;
     bool in_quote = false;
     bool top_level_alternation = false;
     bool top_level_multiline = false;
@@ -365,6 +366,13 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
                 in_quote = true;
             trailing_escape = pos + 1 >= regexp.size();
             ++pos;
+            if (in_class && pos < regexp.size())
+            {
+                /// A class such as `\d` or `\p{Greek}` can not start a range, unlike an escaped character.
+                after_range_start = std::string_view("dDsSwWpP").find(regexp[pos]) == std::string_view::npos;
+                if ((regexp[pos] == 'p' || regexp[pos] == 'P') && pos + 1 < regexp.size())
+                    pos = regexp[pos + 1] == '{' ? std::min(regexp.find('}', pos), regexp.size()) : pos + 1;
+            }
         }
         else if (in_class)
         {
@@ -376,11 +384,21 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
                 /// RE2 treats `[:` without a following `:]` as literal characters.
                 if (size_t end_of_named_class = regexp.find(":]", pos + 2); end_of_named_class != String::npos)
                     pos = end_of_named_class + 1;
+                after_range_start = false;
             }
+            else if (c == '-' && after_range_start && pos + 1 < regexp.size() && regexp[pos + 1] != ']')
+            {
+                /// The end of a range is a single character, so RE2 reads `[` in `[!-[:]` as a literal, not as a named class.
+                pos += regexp[pos + 1] == '\\' ? 2 : 1;
+                after_range_start = false;
+            }
+            else
+                after_range_start = true;
         }
         else if (c == '[')
         {
             in_class = true;
+            after_range_start = false;
             /// A `]` right after `[` or `[^` is literal.
             if (pos + 1 < regexp.size() && regexp[pos + 1] == '^')
                 ++pos;
