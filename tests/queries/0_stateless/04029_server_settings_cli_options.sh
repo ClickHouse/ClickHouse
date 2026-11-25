@@ -2,7 +2,11 @@
 # Tags: no-parallel
 # Test that server settings can be passed as direct CLI options (without -- separator)
 
-CLICKHOUSE_PORT_TCP=50222
+# The ports are below the range of ephemeral ports (`net.ipv4.ip_local_port_range`, 32768..60999 by default).
+# A probe that connects to a port from that range while nothing listens on it yet can be assigned the very
+# same port as its source port and connect to itself (TCP simultaneous open). Such a probe hangs, and it
+# also keeps the port busy, so the server fails to listen on it with `Address already in use`.
+CLICKHOUSE_PORT_TCP=19222
 CLICKHOUSE_DATABASE=default
 
 # The test starts short-lived servers on the same port, one after another. Disable the watchdog so
@@ -36,11 +40,13 @@ function wait_for_server()
     local server_log=${2:-}
     # Bound every probe: a connection made while the server is still starting up may never get a reply,
     # and with the default `receive_timeout` (300 s) a single such probe would exceed the test time limit.
+    # The timeouts of the client did not bound a probe that had connected to itself (it took 300 s), so every
+    # probe is also run under `timeout`.
     # Also bound the total wait by wall-clock time (well below the time limit of the test), so that a server
     # that does not become ready is reported with its logs instead of the test being killed without them.
     local deadline=$((SECONDS + 40))
     while (( SECONDS < deadline )); do
-        $CLICKHOUSE_CLIENT --connect_timeout 2 --receive_timeout 5 --send_timeout 5 --query "SELECT 1" >/dev/null 2>&1 && return
+        timeout 10 $CLICKHOUSE_CLIENT --connect_timeout 2 --receive_timeout 5 --send_timeout 5 --query "SELECT 1" >/dev/null 2>&1 && return
         if ! kill -0 "$PID" 2>/dev/null; then
             break
         fi
@@ -92,7 +98,7 @@ function stop_server()
 # - A space-separated value that is an abbreviation of a built-in option (`--co` of `--config-file`) is kept
 #   verbatim: it is not expanded into the full name of that option (`--default_replica_path --co`).
 srv_dir1="${CLICKHOUSE_TMP}/srv1"
-SRV1_HTTP_PORT=50223
+SRV1_HTTP_PORT=19223
 mkdir -p "$srv_dir1"
 $CLICKHOUSE_BINARY server \
     --max_thread_pool_size 999888 \
@@ -174,7 +180,7 @@ fi
 # `prometheus.keeper_metrics_only`) must not look like a change of the mode on every reload, which would
 # needlessly restart the Prometheus listener.
 srv_dir2="${CLICKHOUSE_TMP}/srv2"
-SRV2_PROMETHEUS_PORT=50224
+SRV2_PROMETHEUS_PORT=19224
 mkdir -p "$srv_dir2"
 cfg2="$srv_dir2/custom_config.xml"
 cat > "$cfg2" <<XML
