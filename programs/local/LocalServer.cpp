@@ -182,6 +182,7 @@ namespace ServerSetting
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
     extern const ServerSettingsString text_index_tokens_cache_policy;
     extern const ServerSettingsUInt64 text_index_tokens_cache_size;
+    extern const ServerSettingsUInt64 ai_function_result_cache_size;
     extern const ServerSettingsUInt64 text_index_tokens_cache_max_entries;
     extern const ServerSettingsDouble text_index_tokens_cache_size_ratio;
     extern const ServerSettingsString text_index_header_cache_policy;
@@ -1955,6 +1956,14 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    size_t ai_function_result_cache_size = server_settings[ServerSetting::ai_function_result_cache_size];
+    if (ai_function_result_cache_size > max_cache_size)
+    {
+        ai_function_result_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered AI function result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(ai_function_result_cache_size));
+    }
+    global_context->setAIFunctionResultCache(ai_function_result_cache_size);
 
     /// Initialize a dummy encryption header cache (0 size disables it; still needed so
     /// system.server_settings can report its size).

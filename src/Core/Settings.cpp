@@ -11122,14 +11122,10 @@ Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimi
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA, \
         {"26.8", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."}) \
-    DECLARE(Bool, ai_function_enable_repeated_output_cache, true, R"(
-When enabled, an AI function reuses the response it already received for the same input in the same query instead of sending another request to the provider. The size of the cache is set by `ai_function_repeated_output_cache_size`.
+    DECLARE(Bool, ai_function_enable_result_cache, true, R"(
+When enabled, an AI function reuses a response that the server already received for the same request of the same user, in this or an earlier query, instead of sending the request to the provider again. Requests with a non-zero `temperature` are always sent. The size of the cache is set by the server setting [`ai_function_result_cache_size`](/reference/settings/server-settings/settings/ai-function#ai_function_result_cache_size).
 )", BETA, \
-        {"26.12", false, true, "New setting. AI functions reuse the response to an input that repeats in the same query instead of sending another request."}) \
-    DECLARE(UInt64, ai_function_repeated_output_cache_size, 2_MiB, R"(
-Maximum size in bytes of the cache enabled by `ai_function_enable_repeated_output_cache`, for each AI function in a query. 0 disables the cache.
-)", BETA, \
-        {"26.12", 2_MiB, 2_MiB, "New setting"}) \
+        {"26.12", false, true, "New setting. AI functions reuse the response to a request that the server already sent instead of sending it again."}) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

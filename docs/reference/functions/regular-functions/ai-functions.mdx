@@ -30,7 +30,7 @@ All functions are sharing a common infrastructure that provides:
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 - **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 - **Whitespace trimming**: `aiClassify`, `aiExtract` and `aiFilter` request structured output and strip leading and trailing whitespace from the model reply, so a reply like `\n\nbug` becomes `bug`.
-- **Repeated output cache**: A repeated input reuses the response already received for it instead of sending another request (see [Repeated output cache](#repeated-output-cache)).
+- **Result cache**: A request that the server already sent reuses the response received for it instead of being sent again (see [AI function result cache](#ai-function-result-cache)).
 
 ## Configuration {#configuration}
 
@@ -194,31 +194,33 @@ By default, AI functions reject an `endpoint` that would send data in cleartext 
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
-### Repeated output cache {#repeated-output-cache}
+### AI function result cache {#ai-function-result-cache}
 
-When the same input appears more than once in a query, for example in a low-cardinality column or in rows repeated by a join, an AI function sends it to the provider once and reuses the response for the other rows. A reused response costs no tokens, does not count against the per-query quotas, and does not wait for the provider.
+The server keeps the responses it receives from AI providers in a cache shared by all queries. When an AI function makes a request that the server already sent, for example for a repeated value in a low-cardinality column, for rows repeated by a join, or for the same data in a later query, it reuses the cached response instead of sending the request again. A reused response costs no tokens, does not count against the per-query quotas, and does not wait for the provider.
 
-Each AI function call in a query has its own cache, keyed by the input: the prompt of a chat function, or the text of an embedding function. All other arguments of an AI function are constant, so the same input always makes the same request. The cache lives only while the query runs: a later query, or another AI function call in the same query, sends the input again.
+A request is identified by the user, the function, the named collection with its provider, endpoint and API version, the model, the other parameters (for example `max_tokens` or `dimensions`), the instructions derived from the constant arguments (for example the categories of `aiClassify`), and the input. A request that differs in any of them is sent to the provider. Each user has their own cached responses: a user never receives a response cached for another user's request. `aiEmbed` and `aiSimilarity` send the same request for a text, so they share its cached embedding.
+
+Requests with a non-zero `temperature` are never answered from the cache or stored in it, because a non-zero `temperature` asks the model for a new sample every time. `aiGenerate` (`0.7`) and `aiTranslate` (`0.3`) use a non-zero `temperature` by default. To let them use the cache, set `temperature` to `0` in the parameter map.
 
 The cache does not help, or is not wanted, when:
 
 - All inputs are distinct.
-- Each row should get its own response from a non-zero `temperature`. `aiGenerate` (`0.7`) and `aiTranslate` (`0.3`) use a non-zero `temperature` by default, so with the cache enabled, rows with the same input get the same response from them. Disable the cache if each row should get a separate sample.
-- A request fails, or a row is skipped because a quota is exhausted. Failures are not cached: rows with the same input that share the failed request get the default value too, and later rows send the input again.
-- Several threads process the same input at the same time. A thread does not wait for another one's response, so each of them may send its own request.
+- A request fails, or a row is skipped because a quota is exhausted. Failures are not cached: rows with the same input that share the failed request get the default value too, and later requests send the input again.
+- Several threads make the same request at the same time. A thread does not wait for another one's response, so each of them may send its own request.
 
 The cache is configured with two settings:
 
-- [`ai_function_enable_repeated_output_cache`](/reference/settings/session-settings/ai-function#ai_function_enable_repeated_output_cache) turns the cache on or off. It is enabled by default.
-- [`ai_function_repeated_output_cache_size`](/reference/settings/session-settings/ai-function#ai_function_repeated_output_cache_size) is the maximum size of each cache in bytes, 2 MiB by default. When the cache is full, some responses are dropped to make room, and their inputs are sent again if they repeat. `0` disables the cache.
+- [`ai_function_enable_result_cache`](/reference/settings/session-settings/ai-function#ai_function_enable_result_cache) turns the use of the cache on or off for a query. It is enabled by default.
+- [`ai_function_result_cache_size`](/reference/settings/server-settings/settings/ai-function#ai_function_result_cache_size) is a server setting with the maximum size of the cache in bytes, 64 MiB by default. When the cache is full, some responses are dropped to make room. `0` disables the cache and drops all of its responses. The setting can be changed at runtime.
+
+For example, this query translates each distinct review once, and a later query that translates the same reviews sends no requests:
 
 ```sql
-SELECT aiGenerate(prompt, map('credentials', 'ai_credentials', 'temperature', '0.9'))
-FROM prompts
-SETTINGS ai_function_enable_repeated_output_cache = 0;
+SELECT aiTranslate(review, 'French', map('credentials', 'ai_credentials', 'temperature', '0'))
+FROM reviews;
 ```
 
-`AIRepeatedOutputCacheHits` and `AIRepeatedOutputCacheMisses` (see [Observability](#observability)) show how many inputs reused a response and how many did not.
+`AIFunctionResultCacheHits` and `AIFunctionResultCacheMisses` (see [Observability](#observability)) show how many requests reused a cached response and how many did not. The current metrics `AIFunctionResultCacheBytes` and `AIFunctionResultCacheCells` in [`system.metrics`](/reference/system-tables/metrics) show the size of the cache.
 
 ### Throughput {#throughput}
 
@@ -271,15 +273,15 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
-| `AIRepeatedOutputCacheHits` | Number of inputs that reused the response to the same input instead of sending a request (see [repeated output cache](#repeated-output-cache)). |
-| `AIRepeatedOutputCacheMisses` | Number of inputs that had no response to reuse in the [repeated output cache](#repeated-output-cache). |
+| `AIFunctionResultCacheHits` | Number of requests answered from the [AI function result cache](#ai-function-result-cache). |
+| `AIFunctionResultCacheMisses` | Number of requests not found in the [AI function result cache](#ai-function-result-cache). |
 
 Times are summed across executions and threads, so they can exceed query wall-clock time.
 Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
 These counters are per-query, they do not provide per-request latency information.
 If a query calls multiple AI functions, their counts are added together.
 
-`AICacheReadTokens` and `AICacheWriteTokens` are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not the [repeated output cache](#repeated-output-cache) of ClickHouse. A provider that omits cache usage contributes
+`AICacheReadTokens` and `AICacheWriteTokens` are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not the [AI function result cache](#ai-function-result-cache) of ClickHouse. A provider that omits cache usage contributes
 zero cache tokens.
 
 Query these events:
@@ -299,7 +301,7 @@ SELECT
     ProfileEvents['AIOutputTokens'] AS output_tokens,
     ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
     ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens,
-    ProfileEvents['AIRepeatedOutputCacheHits'] AS repeated_output_cache_hits
+    ProfileEvents['AIFunctionResultCacheHits'] AS result_cache_hits
 FROM system.query_log
 WHERE query_id = 'query_id'
 AND type IN ('QueryFinish', 'ExceptionWhileProcessing')

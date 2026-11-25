@@ -5,7 +5,6 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIFunctionOutputCache.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
@@ -88,12 +87,7 @@ public:
         return std::make_shared<FunctionAiSimilarity>(context);
     }
 
-    explicit FunctionAiSimilarity(ContextPtr context_)
-        : context(context_)
-    {
-        FunctionBaseAI::throwIfNotAllowed(context);
-        output_cache = createAIFunctionOutputCache(context);
-    }
+    explicit FunctionAiSimilarity(ContextPtr context_) : context(context_) { FunctionBaseAI::throwIfNotAllowed(context); }
 
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
@@ -204,7 +198,8 @@ public:
         FunctionBaseAI::EmbeddingResult embedding_result;
         FunctionBaseAI::embedTexts(
             provider, model, dimensions, getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
-            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result, output_cache.get());
+            inputs, max_batch_size, max_concurrent_requests, policy, quota_tracker, embedding_result,
+            FunctionBaseAI::getResultCache(getContext()), params.collection, getContext()->getUserID());
 
         const auto & embeddings = embedding_result.embeddings;
 
@@ -259,8 +254,6 @@ private:
     static constexpr size_t model_arg_index = 2;
 
     ContextPtr context;
-    /// Embeddings of the texts this function has already sent. Null when the cache is disabled.
-    AIFunctionOutputCachePtr output_cache;
     [[nodiscard]] ContextPtr getContext() const { return context; }
 };
 

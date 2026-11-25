@@ -11,6 +11,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
+#include <Functions/AI/AIFunctionResultCache.h>
 #include <IO/MMappedFileCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -235,6 +236,12 @@ Maximum number of idle standby threads to keep in the thread pool for requests t
 )", 0) \
     DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
+)", 0) \
+    DECLARE(UInt64, ai_function_result_cache_size, DEFAULT_AI_FUNCTION_RESULT_CACHE_MAX_SIZE, R"(
+Maximum size in bytes of the cache of AI provider responses shared by all queries, see [`ai_function_enable_result_cache`](/reference/settings/session-settings/ai-function#ai_function_enable_result_cache). 0 disables the cache.
+<Note>
+This setting can be modified at runtime and will take effect immediately.
+</Note>
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -3953,6 +3960,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache(/*only_if_enabled=*/ false)->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"ai_function_result_cache_size", {std::to_string(context->getAIFunctionResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

@@ -151,6 +151,7 @@ struct FileProgress;
 class Clusters;
 class QueryResultCache;
 class QueryConditionCache;
+class AIFunctionResultCache;
 class EncryptionHeaderCache;
 class ISystemLog;
 class QueryLog;
@@ -1892,6 +1893,10 @@ public:
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
+
+    void setAIFunctionResultCache(size_t max_size_in_bytes);
+    void updateAIFunctionResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<AIFunctionResultCache> getAIFunctionResultCache() const;
 
     void setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);

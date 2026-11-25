@@ -419,6 +419,7 @@ namespace ServerSetting
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsUInt64 ai_function_result_cache_size;
     extern const ServerSettingsString encryption_header_cache_policy;
     extern const ServerSettingsUInt64 encryption_header_cache_size;
     extern const ServerSettingsDouble encryption_header_cache_size_ratio;
@@ -2588,6 +2589,14 @@ try
     }
     global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
 
+    size_t ai_function_result_cache_size = server_settings[ServerSetting::ai_function_result_cache_size];
+    if (ai_function_result_cache_size > max_cache_size)
+    {
+        ai_function_result_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered AI function result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(ai_function_result_cache_size));
+    }
+    global_context->setAIFunctionResultCache(ai_function_result_cache_size);
+
     String encryption_header_cache_policy = server_settings[ServerSetting::encryption_header_cache_policy];
     size_t encryption_header_cache_size = server_settings[ServerSetting::encryption_header_cache_size];
     double encryption_header_cache_size_ratio = server_settings[ServerSetting::encryption_header_cache_size_ratio];
@@ -3165,6 +3174,7 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateAIFunctionResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
 #if USE_GPU
                 global_context->updateGPUKernelCacheConfiguration(new_server_settings);

@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The server-wide AI function result cache would answer a test with the responses of earlier tests.
+                 The tests of the cache enable it. -->
+            <ai_function_enable_result_cache>0</ai_function_enable_result_cache>
+        </default>
+    </profiles>
+</clickhouse>

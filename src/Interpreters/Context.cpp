@@ -121,6 +121,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIFunctionResultCache.h>
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -794,6 +795,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
+    mutable AIFunctionResultCachePtr ai_function_result_cache TSA_GUARDED_BY(mutex);  /// Cache of AI provider responses
     mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -6337,6 +6339,38 @@ void Context::clearQueryConditionCache() const
         shared->query_condition_cache->clear();
 }
 
+void Context::setAIFunctionResultCache(size_t max_size_in_bytes)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->ai_function_result_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AI function result cache has been already created.");
+
+    shared->ai_function_result_cache = std::make_shared<AIFunctionResultCache>(max_size_in_bytes);
+}
+
+AIFunctionResultCachePtr Context::getAIFunctionResultCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->ai_function_result_cache;
+}
+
+void Context::updateAIFunctionResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->ai_function_result_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AI function result cache was not created yet.");
+
+    size_t size = config.getUInt64("ai_function_result_cache_size", DEFAULT_AI_FUNCTION_RESULT_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered AI function result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->ai_function_result_cache->setMaxSizeInBytes(size);
+}
+
 void Context::setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -6473,6 +6507,9 @@ void Context::clearCaches() const
 
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
+
+    if (shared->ai_function_result_cache)
+        shared->ai_function_result_cache->clear();
 
     /// Path-keyed like the delete-bitmap cache below; clear it here too (see the note there).
     if (shared->encryption_header_cache)
