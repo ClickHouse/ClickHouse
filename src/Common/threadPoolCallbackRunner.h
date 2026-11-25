@@ -231,16 +231,28 @@ private:
             /// Not run (cancelled, dropped by the pool, or not scheduled): what the callback captured is the query's, so
             /// release it there, unless the thread has no `ThreadStatus` to attach. Then satisfy the promise with an
             /// ordinary error instead of leaving it broken, like `CallbackRunnerTask` does.
+            if (thread_group && hasThreadStatus())
+            {
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+                callback = {};
+            }
+            callback = {};
+
+            /// If making the exception throws, store that one, so that the promise is never left broken.
+            std::exception_ptr eptr;
             try
             {
-                if (thread_group && hasThreadStatus())
-                {
-                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
-                    callback = {};
-                }
-                callback = {};
-                promise.set_exception(std::make_exception_ptr(
-                    Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)")));
+                eptr = std::make_exception_ptr(
+                    Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)"));
+            }
+            catch (...)
+            {
+                eptr = std::current_exception();
+            }
+
+            try
+            {
+                promise.set_exception(eptr);
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
