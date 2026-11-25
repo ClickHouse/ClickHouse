@@ -11,6 +11,8 @@ SET any_join_distinct_right_table_keys = 0;
 -- A swapped join exchanges the sides, so the logged kind would be the mirrored one. The test
 -- harness randomizes the setting.
 SET query_plan_join_swap_table = 'false';
+-- The `LEFT ANY` query does not read the right table, so its join would be removed.
+SET query_plan_remove_unused_joins = 0;
 
 DROP TABLE IF EXISTS bnl_l;
 DROP TABLE IF EXISTS bnl_r;
