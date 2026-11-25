@@ -424,8 +424,7 @@ struct ReadCoverage
     }
 
     /// Whether the predicates are the only possible cause of dropped rows, so that the columns they read decide which
-    /// rows are dropped. Whether a top-K read drops rows depends on the estimated rows, which the predicates decide, so
-    /// with a top-K limit they are not attributed.
+    /// rows are dropped. A top-K read can also drop rows by its sort key.
     [[nodiscard]] bool onlyPredicatesMayDropRows() const { return has_predicates && !may_drop_rows && !top_k_limit; }
 
     /// Records in the column statistics of `stats` what the read may drop or rewrite. `columns_read_by_predicates`, which
@@ -637,8 +636,7 @@ std::optional<NameSet> getColumnsReadByPredicates(const ReadFromMergeTree & read
 ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const RangesInDataParts & parts, FilterAbove filter)
 {
     const auto & query_info = reading.getQueryInfo();
-    /// A predicate that prunes nothing at plan time is accounted for by the `FilterStep` further up. The filters deferred
-    /// after `FINAL` run only with `FINAL`, which drops rows of all columns anyway.
+    /// A predicate that prunes nothing at plan time is accounted for by the `FilterStep` further up.
     const bool has_unattributed_predicates = (filter.predicate && !filter.is_parent && !prunesNothingAtPlanTime(filter.predicate))
         || reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter();
     const bool has_row_selecting_modifiers = query_info.isFinal() || query_info.isStream() || query_info.trivial_limit
@@ -767,7 +765,6 @@ StatsUnderFilter estimateMergeTreeReadStats(const ReadFromMergeTree & reading, F
                 .table_name = table_display_name,
                 .rows_exact = !coverage.mayDropRows(relation_profile.rows),
                 .source = RowEstimateSource::Statistics};
-            /// Only this estimate has column statistics to record the attribution in, so only it walks the predicates.
             std::optional<NameSet> columns_read_by_predicates;
             if (coverage.onlyPredicatesMayDropRows())
                 columns_read_by_predicates = getColumnsReadByPredicates(reading, filter.parentPredicate());
@@ -827,7 +824,7 @@ std::optional<RelationStats> estimateDirectRelationStats(QueryPlan::Node & node,
         const UInt64 rows = *estimate->rows;
 
         /// The manifest statistics describe every row of the remaining files, deleted rows included.
-        /// Its predicates are not attributed to the columns they read, so they count in `may_drop_rows`.
+        /// The predicates of the read are not attributed to columns.
         const ReadCoverage coverage{
             .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
                 || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),

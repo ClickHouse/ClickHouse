@@ -47,7 +47,7 @@ public:
     /// without `metadata`, every statistic is used.
     ///
     /// With predicates, the statistics of every column record `RowSubset`, unless `record_row_subset` is false: a caller
-    /// that records the dropped rows itself (the estimate of a MergeTree read, see `ReadCoverage::recordIn`) passes false.
+    /// that records the dropped rows itself passes false.
     RelationProfile estimateRelationProfile(
         const StorageMetadataPtr & metadata,
         const ActionsDAG::Node * filter,

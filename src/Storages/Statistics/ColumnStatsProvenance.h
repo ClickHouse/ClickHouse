@@ -33,9 +33,6 @@ namespace DB
 ///
 /// The distinct-count guarantees also require the origin `MeasuredStatistics` or `SyntheticOverride`, the value-range
 /// guarantees the origin `MeasuredStatistics`.
-///
-/// A flag records only what happened. An assumption belongs to the guarantee that relies on it, such as the one
-/// `ValueRangeGuarantee::Representative` makes about `FilterOnOtherColumns`.
 
 /// Source of a column fact before the plan transforms it.
 enum class ColumnStatsOrigin : UInt8
@@ -71,9 +68,9 @@ enum ColumnStatsTransformation : UInt16
     /// A step whose effect on the column is not modeled, such as `FINAL` or a join.
     Unmodeled = 1 << 4,
     /// Rows were dropped by predicates that do not read the column; its values are unchanged. Recorded instead of
-    /// `RowSubset` only where the columns the predicates read are known, in the estimate of a MergeTree read. A predicate
-    /// on a column computed by a `DEFAULT` or `MATERIALIZED` expression reads the columns the expression reads, and a
-    /// predicate on those reads the computed column too.
+    /// `RowSubset` only where the columns the predicates read are known. A predicate on a column computed by a `DEFAULT`
+    /// or `MATERIALIZED` expression reads the columns the expression reads, and a predicate on those reads the computed
+    /// column too.
     FilterOnOtherColumns = 1 << 5,
 };
 
