@@ -33,9 +33,10 @@ public:
 };
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
-/// Like `castColumn`, but named tuples are matched by name even when they have no element name in common.
-ColumnPtr castColumnMatchingTupleElementsByName(const ColumnWithTypeAndName & arg, const DataTypePtr & type, bool case_insensitive = false);
+/// For the input format readers, which have no context.
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings);
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const InternalCastSettings & internal_settings);
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
 /// Accurately cast the non-NULL rows of a materialized column to a non-nullable type. The NULL rows are those

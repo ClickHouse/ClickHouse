@@ -74,18 +74,18 @@ select count() from file(currentDatabase() || '_05230_i32n.parquet', Parquet, 'x
 
 -- An Enum orders by its underlying signed integer, so an Enum hint reorders exactly like the native
 -- integer of that width: a UINT_8 column {5, 200} read 8-bit signed gives {5, -56}, and the stored max 200
--- is not an upper bound. A range predicate is served by neither hash filter, so these four need no pinning
--- and all four returned 0 at completely default settings.
+-- is not an upper bound. A range predicate is served by neither hash filter, so these four need no pinning.
+-- The two Enum reads turn the number to Enum check off, because 200 and 40000 are not elements.
 insert into function file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x UInt8')
     select arrayJoin([toUInt8(5), toUInt8(200)]) as x;
 insert into function file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x UInt16')
     select arrayJoin([toUInt16(5), toUInt16(40000)]) as x;
 select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Int8') where x < 0;
 select count() from file(currentDatabase() || '_05230_u8e.parquet', Parquet, 'x Enum8(''lo'' = 5, ''hi'' = -56)')
-    where x < 'lo';
+    where x < 'lo' settings check_conversion_from_numbers_to_enum = 0;
 select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Int16') where x < 0;
 select count() from file(currentDatabase() || '_05230_u16e.parquet', Parquet, 'x Enum16(''lo'' = 5, ''hi'' = -25536)')
-    where x < 'lo';
+    where x < 'lo' settings check_conversion_from_numbers_to_enum = 0;
 
 -- A day number outside the requested date type's window is reinterpreted just like a narrowed integer,
 -- so `Date` and `Date32` hints reorder the same statistics. A plain INT32/INT64 column {65536, 65537}

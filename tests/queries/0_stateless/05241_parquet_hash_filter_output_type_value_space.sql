@@ -76,12 +76,15 @@ select count() from file(currentDatabase() || '_05241_u8.parquet', Parquet, 'x I
     settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0;
 
 -- Enum hints: narrowing into the enum's Int16, and a signedness flip through an Enum8.
+-- 3000000000 and 200 are not elements, so the number to Enum check is turned off.
 select count() from file(currentDatabase() || '_05241_u32big.parquet', Parquet, 'x Enum16(\'a\' = 24064)')
     where x = 'a'
-    settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0;
+    settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0,
+             check_conversion_from_numbers_to_enum = 0;
 select count() from file(currentDatabase() || '_05241_u8.parquet', Parquet, 'x Enum8(\'a\' = -56)')
     where x = 'a'
-    settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0;
+    settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0,
+             check_conversion_from_numbers_to_enum = 0;
 
 -- A unit change, which no width comparison can detect: the integer -> Date32 cast reads a value wider
 -- than 16 bits as a Unix timestamp, so 3000000000 seconds becomes a day number. Which day that is

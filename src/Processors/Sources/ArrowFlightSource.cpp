@@ -25,6 +25,7 @@ namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
     extern const SettingsUInt64 arrow_flight_request_timeout_sec;
+    extern const SettingsBool check_conversion_from_numbers_to_enum;
 }
 
 namespace
@@ -249,8 +250,11 @@ Chunk ArrowFlightSource::generate()
         }
     }
 
+    FormatSettings format_settings;
+    format_settings.check_conversion_from_numbers_to_enum
+        = !context || context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum];
     ArrowColumnToCHColumn converter(sample_block, "Arrow",
-                                    /* format_settings= */ {},
+                                    format_settings,
                                     /* parquet_columns_to_clickhouse= */ std::nullopt,
                                     /* clickhouse_columns_to_parquet= */ std::nullopt,
                                     /* allow_missing_columns = */ true,

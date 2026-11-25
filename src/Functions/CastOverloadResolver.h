@@ -33,6 +33,13 @@ enum class TupleElementsMatching : uint8_t
     ByNameCaseInsensitive,
 };
 
+/// Internal, for the input format readers: a cast without a context takes these from the format settings.
+struct InternalCastSettings
+{
+    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default;
+    bool check_conversion_from_numbers_to_enum = false;
+};
+
 struct CastDiagnostic
 {
     std::string column_from;
@@ -40,7 +47,7 @@ struct CastDiagnostic
 };
 
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
-    ContextPtr context, TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
+    ContextPtr context, const InternalCastSettings & internal_settings = {});
 
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted

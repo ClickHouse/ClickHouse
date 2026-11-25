@@ -19,6 +19,7 @@ struct RequestedTypeCastSettings
     bool tuple_elements_by_name = true;
     /// Otherwise no value is converted: the types may differ only by Nullable, removed with `null_as_default`, and LowCardinality.
     bool allow_types_conversion = true;
+    bool check_conversion_from_numbers_to_enum = true;
 };
 
 /// Convert a column produced by an input format to the type the caller requested in the header.

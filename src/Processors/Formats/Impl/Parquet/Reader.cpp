@@ -5165,10 +5165,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     {
         ColumnWithTypeAndName column{std::move(res), output_info.input_type, output_info.name};
         const auto * null_map = rows_without_values ? &assert_cast<const ColumnUInt8 &>(*rows_without_values).getData() : nullptr;
+        const bool check_enum = options.format.check_conversion_from_numbers_to_enum;
         if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
-            castColumnToRequestedType(column, output_info.output_type, *null_map);
+            castColumnToRequestedType(
+                column, output_info.output_type, *null_map, RequestedTypeCastSettings{.check_conversion_from_numbers_to_enum = check_enum});
         else
-            column.column = castColumn(column, output_info.output_type);
+            column.column = castColumn(
+                column, output_info.output_type, InternalCastSettings{.check_conversion_from_numbers_to_enum = check_enum});
         chassert(column.column->use_count() == 1);
         res = IColumn::mutate(std::move(column.column));
     }

@@ -5370,9 +5370,9 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    TupleElementsMatching tuple_elements_matching)
+    const InternalCastSettings & internal_settings)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, tuple_elements_matching);
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior, internal_settings);
 }
 
 FunctionBasePtr createFunctionBaseCast(

@@ -2153,7 +2153,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 /// that parsed type cannot be ClickHouse Map key type.
                 ColumnWithTypeAndName key{key_column, key_type, "key"};
                 const RequestedTypeCastSettings cast_settings{
-                    .null_as_default = settings.null_as_default, .case_insensitive = settings.case_insensitive_matching};
+                    .null_as_default = settings.null_as_default,
+                    .case_insensitive = settings.case_insensitive_matching,
+                    .check_conversion_from_numbers_to_enum = settings.format_settings.check_conversion_from_numbers_to_enum};
                 castColumnToRequestedType(key, key_type_hint, cast_settings);
                 key_column = key.column;
                 key_type = key_type_hint;
@@ -3036,7 +3038,10 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         if (is_stream)
             dictionary_infos.clear();
 
-        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        const RequestedTypeCastSettings cast_settings{
+            .null_as_default = null_as_default,
+            .case_insensitive = case_insensitive_matching,
+            .check_conversion_from_numbers_to_enum = format_settings.check_conversion_from_numbers_to_enum};
         castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns.push_back(std::move(column.column));
     }

@@ -315,7 +315,8 @@ Block NativeReader::read()
                         {.null_as_default = format_settings && format_settings->null_as_default,
                          .tuple_elements_by_name = false,
                          .allow_types_conversion
-                         = (format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant},
+                         = (format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant,
+                         .check_conversion_from_numbers_to_enum = format_settings && format_settings->check_conversion_from_numbers_to_enum},
                         header.getPositionByName(column.name),
                         block_missing_values);
                 }

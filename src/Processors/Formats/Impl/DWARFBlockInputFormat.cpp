@@ -928,7 +928,10 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     for (const std::string & name : header.getNames())
     {
         ColumnWithTypeAndName column(cols[pos], native_types[getColumnIdx(name)], name);
-        castColumnToRequestedType(column, header.getByName(name).type);
+        castColumnToRequestedType(
+            column,
+            header.getByName(name).type,
+            {.check_conversion_from_numbers_to_enum = format_settings.check_conversion_from_numbers_to_enum});
         cols[pos] = std::move(column.column);
         ++pos;
     }

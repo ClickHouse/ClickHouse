@@ -227,6 +227,7 @@ struct DecodeContext
     const Metadata & metadata;
     size_t max_depth;
     bool escape_dots_in_json_keys;
+    bool check_conversion_from_numbers_to_enum;
 };
 
 void checkDepth(const DecodeContext & context, size_t depth)
@@ -710,7 +711,10 @@ void decodeValueIntoTypedPath(
     const DataTypePtr type = getDataTypesCache().getType(type_name);
     auto value_column = type->createColumn();
     decodeValueIntoColumn(data, pos, context, depth, *value_column);
-    const ColumnPtr casted = castColumn({std::move(value_column), type, ""}, typed_type);
+    const ColumnPtr casted = castColumn(
+        {std::move(value_column), type, ""},
+        typed_type,
+        InternalCastSettings{.check_conversion_from_numbers_to_enum = context.check_conversion_from_numbers_to_enum});
     target.insertFrom(*casted, 0);
 }
 
@@ -1061,7 +1065,8 @@ WrittenTypesOfVariantMembers getWrittenTypesOfVariantMembers(const DataTypeVaria
 
 /// Converts the values read as `Dynamic` to an ordinary `Variant`, putting every value into the member
 /// chosen for its type by `getWrittenTypesOfVariantMembers`.
-ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVariant & type, std::string_view column_name)
+ColumnPtr convertDynamicToVariant(
+    const ColumnPtr & dynamic, const DataTypeVariant & type, std::string_view column_name, const VariantSettings & settings)
 {
     const auto [written_types, member_of_written_type] = getWrittenTypesOfVariantMembers(type, column_name);
     const auto written_variant_type = std::make_shared<DataTypeVariant>(written_types);
@@ -1078,7 +1083,10 @@ ColumnPtr convertDynamicToVariant(const ColumnPtr & dynamic, const DataTypeVaria
         const auto & written_type = written_variant_type->getVariant(
             written_variant.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local)));
         const size_t member = member_of_written_type.at(written_type->getName());
-        variants[local] = castColumnAccurate({written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""}, members[member]);
+        variants[local] = castColumnAccurate(
+            {written_variant.getVariantPtrByLocalDiscriminator(local), written_type, ""},
+            members[member],
+            InternalCastSettings{.check_conversion_from_numbers_to_enum = settings.check_conversion_from_numbers_to_enum});
         local_to_global[local] = static_cast<ColumnVariant::Discriminator>(member);
         member_used[member] = true;
     }
@@ -1571,6 +1579,7 @@ VariantSettings::VariantSettings(const FormatSettings & format_settings)
     : max_depth(format_settings.max_parser_depth)
     , escape_dots_in_json_keys(format_settings.json.json_type_escape_dots_in_keys)
     , use_partial_match_to_skip_paths_by_regexp(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+    , check_conversion_from_numbers_to_enum(format_settings.check_conversion_from_numbers_to_enum)
 {
 }
 
@@ -1604,7 +1613,10 @@ void VariantValueDecoder::decode(std::string_view metadata_blob, std::string_vie
 {
     const Metadata parsed_metadata = parseMetadata(metadata_blob);
     const DecodeContext context{
-        .metadata = parsed_metadata, .max_depth = settings.max_depth, .escape_dots_in_json_keys = settings.escape_dots_in_json_keys};
+        .metadata = parsed_metadata,
+        .max_depth = settings.max_depth,
+        .escape_dots_in_json_keys = settings.escape_dots_in_json_keys,
+        .check_conversion_from_numbers_to_enum = settings.check_conversion_from_numbers_to_enum};
 
     /// `Nullable(JSON)`: values are decoded into the nested column, nulls (of the whole group or a variant
     /// null) get the default of `output_type`, NULL for a nullable column.
@@ -1654,7 +1666,7 @@ void decodeVariantColumn(
         const DataTypePtr dynamic_type = std::make_shared<DataTypeDynamic>();
         auto dynamic = dynamic_type->createColumn();
         decodeVariantColumn(metadata, value, *dynamic, dynamic_type, column_name, num_rows, settings);
-        const ColumnPtr converted = convertDynamicToVariant(std::move(dynamic), *variant_type, column_name);
+        const ColumnPtr converted = convertDynamicToVariant(std::move(dynamic), *variant_type, column_name, settings);
         output.insertRangeFrom(*converted, 0, converted->size());
         return;
     }

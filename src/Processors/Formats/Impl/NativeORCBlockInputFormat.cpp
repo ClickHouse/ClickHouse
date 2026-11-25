@@ -1764,6 +1764,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.case_insensitive_column_matching,
         format_settings.orc.dictionary_as_low_cardinality,
         format_settings.date_time_overflow_behavior,
+        format_settings.check_conversion_from_numbers_to_enum,
         std::move(count_only_fields),
         column_mapper,
         std::move(absent_columns),
@@ -1991,6 +1992,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool case_insensitive_matching_,
     bool dictionary_as_low_cardinality_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+    bool check_conversion_from_numbers_to_enum_,
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
     const ColumnMapper * column_mapper_,
     NameSet absent_columns_,
@@ -2003,6 +2005,7 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
+    , check_conversion_from_numbers_to_enum(check_conversion_from_numbers_to_enum_)
     , count_only_fields(std::move(count_only_fields_))
     , column_mapper(column_mapper_)
     , absent_columns(std::move(absent_columns_))
@@ -3000,7 +3003,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             {
                 /// A value-checking cast (e.g. Int8 -> Enum8) must not inspect the placeholder values ORC leaves at
                 /// null-payload positions: those rows become the Variant NULL discriminator below and are never read.
-                const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+                const RequestedTypeCastSettings cast_settings{
+                    .null_as_default = null_as_default,
+                    .case_insensitive = case_insensitive_matching,
+                    .check_conversion_from_numbers_to_enum = check_conversion_from_numbers_to_enum};
                 if (branch_null_maps[i])
                     castColumnToRequestedType(branch_non_nullable, branch_hints[i], *branch_null_maps[i], cast_settings);
                 else
@@ -3238,7 +3244,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 /// Cast key column to target type, because it can happen
                 /// that parsed type cannot be ClickHouse Map key type.
                 const RequestedTypeCastSettings cast_settings{
-                    .null_as_default = null_as_default && key_type_requested, .case_insensitive = case_insensitive_matching};
+                    .null_as_default = null_as_default && key_type_requested,
+                    .case_insensitive = case_insensitive_matching,
+                    .check_conversion_from_numbers_to_enum = check_conversion_from_numbers_to_enum};
                 castColumnToRequestedType(key_column, key_type_hint, cast_settings);
             }
 
@@ -3666,7 +3674,10 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                 column_mapper ? header_column.name : String{});
         }
 
-        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        const RequestedTypeCastSettings cast_settings{
+            .null_as_default = null_as_default,
+            .case_insensitive = case_insensitive_matching,
+            .check_conversion_from_numbers_to_enum = check_conversion_from_numbers_to_enum};
         castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns_list.push_back(std::move(column.column));
     }

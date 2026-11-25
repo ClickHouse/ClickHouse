@@ -161,6 +161,7 @@ public:
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        bool check_conversion_from_numbers_to_enum_ = true,
         UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
         const ColumnMapper * column_mapper_ = nullptr,
         NameSet absent_columns_ = {},
@@ -198,6 +199,7 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    bool check_conversion_from_numbers_to_enum;
     /// ORC column ids of the struct fields that are read only for the size and the null map of their struct.
     const UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
     /// Iceberg schema of the file, to fill the fields of a struct that the file does not have.

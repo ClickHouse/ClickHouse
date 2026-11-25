@@ -130,4 +130,14 @@ run recent "use_columns_cache = 1"
 events recent
 run recent_no_cache "use_columns_cache = 0"
 
+echo "--- a column read with the number to Enum check off is not served to a read with it on"
+ENUM_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_enum.parquet"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION file('${ENUM_FILE}', Parquet) SELECT [5, 7][number + 1]::Int8 AS e FROM numbers(2) SETTINGS engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${USER_FILES_PATH}/${ENUM_FILE}"
+ENUM_QUERY="SELECT CAST(e, 'Int8') FROM file('${ENUM_FILE}', Parquet, 'e Enum8(''a'' = 5, ''b'' = 6)')"
+$CLICKHOUSE_CLIENT -q "${ENUM_QUERY} SETTINGS use_columns_cache = 1, check_conversion_from_numbers_to_enum = 0"
+$CLICKHOUSE_CLIENT -q "${ENUM_QUERY} SETTINGS use_columns_cache = 1, check_conversion_from_numbers_to_enum = 1" 2>&1 \
+    | grep -q UNKNOWN_ELEMENT_OF_ENUM && echo "UNKNOWN_ELEMENT_OF_ENUM"
+rm -f "${USER_FILES_PATH}/${ENUM_FILE}"
+
 rm -f "${FILE_PATH}"

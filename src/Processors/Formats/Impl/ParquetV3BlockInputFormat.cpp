@@ -139,6 +139,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     /// The format settings that change the values decoded from the file without changing their
     /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
     hash.update(format_settings.null_as_default);
+    hash.update(format_settings.check_conversion_from_numbers_to_enum);
     hash.update(format_settings.parquet.allow_geoparquet_parser);
     hash.update(format_settings.parquet.enable_json_parsing);
     hash.update(format_settings.parquet.local_time_as_utc);

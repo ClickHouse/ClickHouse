@@ -234,11 +234,17 @@ void castImpl(
 {
     column = prepareForCast(column, requested_type, settings, column_i, block_missing_values);
     if (!settings.allow_types_conversion)
+    {
         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, requested_type);
-    else if (settings.tuple_elements_by_name)
-        column.column = castColumnMatchingTupleElementsByName(column, requested_type, settings.case_insensitive);
+    }
     else
-        column.column = castColumn(column, requested_type);
+    {
+        InternalCastSettings internal_settings{.check_conversion_from_numbers_to_enum = settings.check_conversion_from_numbers_to_enum};
+        if (settings.tuple_elements_by_name)
+            internal_settings.tuple_elements_matching
+                = settings.case_insensitive ? TupleElementsMatching::ByNameCaseInsensitive : TupleElementsMatching::ByName;
+        column.column = castColumn(column, requested_type, internal_settings);
+    }
     column.type = requested_type;
 }
 
@@ -331,7 +337,7 @@ void matchTupleElementsByName(ColumnWithTypeAndName & column, const DataTypePtr 
     if (column.type->isNullable())
         target_type = std::make_shared<DataTypeNullable>(target_type);
 
-    column.column = castColumnMatchingTupleElementsByName(column, target_type);
+    column.column = castColumn(column, target_type, InternalCastSettings{.tuple_elements_matching = TupleElementsMatching::ByName});
     column.type = target_type;
 }
 

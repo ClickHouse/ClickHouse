@@ -747,6 +747,7 @@ Chunk ArrowIPC::buildChunk(
         .null_as_default = format_settings.null_as_default,
         .case_insensitive = case_insensitive,
         .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
+        .check_conversion_from_numbers_to_enum = format_settings.check_conversion_from_numbers_to_enum,
     };
 
     Columns columns;

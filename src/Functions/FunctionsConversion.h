@@ -151,7 +151,7 @@ struct FunctionConvertSettings
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_,
-        TupleElementsMatching tuple_elements_matching_ = TupleElementsMatching::Default)
+        const InternalCastSettings & internal_settings = {})
         /// Only use context settings if the overflow behavior was not explicitly via createFromSettings
         : date_time_overflow_behavior(context && datetime_overflow_behavior_ == default_date_time_overflow_behavior ? context->getSettingsRef()[Setting::date_time_overflow_behavior].value : datetime_overflow_behavior_)
         , precise_float_parsing(context && context->getSettingsRef()[Setting::precise_float_parsing])
@@ -160,14 +160,14 @@ struct FunctionConvertSettings
         , cast_string_to_dynamic_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference])
         , input_format_ipv4_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error])
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
-        , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
+        , check_conversion_from_numbers_to_enum(context ? context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum] : internal_settings.check_conversion_from_numbers_to_enum)
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , json_use_optimized_type_conversion(!context || context->getSettingsRef()[Setting::json_use_optimized_type_conversion])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
-        , tuple_elements_matching(tuple_elements_matching_)
+        , tuple_elements_matching(internal_settings.tuple_elements_matching)
     {
     }
 
@@ -6342,7 +6342,7 @@ private:
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
+    const InternalCastSettings & internal_settings = {});
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,

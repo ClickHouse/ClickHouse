@@ -114,7 +114,7 @@ using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    TupleElementsMatching tuple_elements_matching = TupleElementsMatching::Default);
+    const InternalCastSettings & internal_settings = {});
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
@@ -260,7 +260,7 @@ public:
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
         ContextPtr context_,
-        TupleElementsMatching tuple_elements_matching)
+        const InternalCastSettings & internal_settings)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -273,7 +273,7 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, tuple_elements_matching),
+            createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Saturate, internal_settings),
             getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
     }
 
@@ -357,10 +357,10 @@ private:
 
 
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic,
-    ContextPtr context, TupleElementsMatching tuple_elements_matching)
+    ContextPtr context, const InternalCastSettings & internal_settings)
 {
     return CastOverloadResolverImpl::createInternalCast(
-        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, tuple_elements_matching);
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, internal_settings);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
