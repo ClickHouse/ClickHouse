@@ -156,9 +156,6 @@ public:
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
-    bool supportsChmod() const override { return true; }
-    void chmod(const String & path, mode_t mode) override;
-
     ObjectStoragePtr getObjectStorage() override;
 
 protected:
@@ -179,7 +176,7 @@ private:
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
-    static std::mutex reservation_mutex;
+    mutable std::mutex reservation_mutex;
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};

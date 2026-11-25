@@ -2562,6 +2562,59 @@ TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
     }
 }
 
+/// Compaction that removes the active changelog must also drop the locations of records the writer appended to it but has not flushed yet.
+TYPED_TEST(CoordinationChangelogTest, CompactionOfActiveChangelogDropsUnflushedLocations)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Log locations are recorded only for uncompressed changelogs.";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.commit_window_bytes = 1},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 5; ++i)
+    {
+        auto entry = getLogEntry("d", i + 1);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    /// Entry 6 rotates the writer to changelog_6_10.bin. No flush is requested, so its location stays unflushed.
+    auto entry_6 = getLogEntry("d", 6);
+    changelog.append(entry_6);
+    for (size_t i = 0; i < 100 && !fs::exists("./logs/changelog_6_10.bin"); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_TRUE(fs::exists("./logs/changelog_6_10.bin"));
+
+    /// A snapshot past max_log_id (a follower catching up from the leader's snapshot) removes every changelog, the active one included.
+    this->keeper_context->setLastCommitIndex(10);
+    changelog.compact(10);
+
+    auto entry_11 = getLogEntry("d", 11);
+    changelog.append(entry_11);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+    /// Folds the locations published by that flush into the storage.
+    EXPECT_TRUE(changelog.flush());
+
+    ASSERT_EQ(changelog.start_index(), 11);
+    EXPECT_EQ(changelog.size(), 1);
+    EXPECT_EQ(changelog.entry_at(6), nullptr);
+    EXPECT_EQ(changelog.entry_at(11)->get_term(), 11);
+}
+
 
 // write_at never physically overwrites old records on disk (see ChangelogFileDescription::ValidRuns), so a
 // plan built before write_at, served after, can silently decode stale-but-valid old records unless

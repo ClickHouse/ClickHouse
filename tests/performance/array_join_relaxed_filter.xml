@@ -1,0 +1,25 @@
+<test>
+    <!-- An OR over the elements of several arrays. Each ARRAY JOIN gets the part of the OR that it can compute,
+         so the elements of the first arrays are filtered before the next arrays are joined. Without this, only
+         the last ARRAY JOIN has a filter, and the filter runs once for each combination of the elements. -->
+    <create_query>
+        CREATE TABLE array_join_relaxed_filter (id UInt64, A Array(String), B Array(String), C Array(String))
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO array_join_relaxed_filter SELECT number,
+            arrayMap(x -> concat('a', toString(number % 10), '_', toString(x)), range(number % 30)),
+            arrayMap(x -> concat('b', toString(number % 10), '_', toString(x)), range(number % 29)),
+            arrayMap(x -> concat('c', toString(number % 10), '_', toString(x)), range(number % 31))
+        FROM numbers(20000)
+    </fill_query>
+
+    <!-- the function form -->
+    <query>SELECT arrayJoin(A) AS a, arrayJoin(B) AS b, arrayJoin(C) AS c, count() FROM array_join_relaxed_filter WHERE (a = 'a2_5' AND b = 'b2_1' AND c = 'c2_3') OR (a = 'a7_5' AND b = 'b7_2' AND c = 'c7_9') GROUP BY a, b, c FORMAT Null</query>
+    <!-- the clause form -->
+    <query>SELECT a, b, c, count() FROM array_join_relaxed_filter ARRAY JOIN A AS a ARRAY JOIN B AS b ARRAY JOIN C AS c WHERE (a = 'a2_5' AND b = 'b2_1' AND c = 'c2_3') OR (a = 'a7_5' AND b = 'b7_2' AND c = 'c7_9') GROUP BY a, b, c FORMAT Null</query>
+    <!-- regression guard: the parts of the OR for the first arrays keep almost all the elements -->
+    <query>SELECT a, b, c, count() FROM array_join_relaxed_filter ARRAY JOIN A AS a ARRAY JOIN B AS b ARRAY JOIN C AS c WHERE (a != 'a2_5' AND b != 'b2_1' AND c = 'c2_3') OR (a != 'a7_5' AND b != 'b7_2' AND c = 'c7_9') GROUP BY a, b, c FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_relaxed_filter</drop_query>
+</test>

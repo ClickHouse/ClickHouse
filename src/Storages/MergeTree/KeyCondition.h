@@ -916,7 +916,8 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        const DataTypePtr & has_element_type);
+        const DataTypePtr & has_element_type,
+        const Set * source_set);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
@@ -939,7 +940,8 @@ private:
         SetIndexAnalysisResult analysis,
         bool allow_relaxed_pruning,
         AtomGroup & group,
-        const DataTypePtr & has_element_type = nullptr) const;
+        const DataTypePtr & has_element_type = nullptr,
+        const Set * source_set = nullptr) const;
 
     /// Checks that the index can not be used.
     ///
