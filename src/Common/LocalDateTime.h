@@ -78,11 +78,11 @@ public:
     LocalDateTime & operator= (const LocalDateTime &) noexcept = default;
 
     unsigned short year() const { return m_year; } /// NOLINT
-    unsigned char month() const { return m_month; }
-    unsigned char day() const { return m_day; }
-    unsigned char hour() const { return m_hour; }
-    unsigned char minute() const { return m_minute; }
-    unsigned char second() const { return m_second; }
+    [[nodiscard]] unsigned char month() const { return m_month; }
+    [[nodiscard]] unsigned char day() const { return m_day; }
+    [[nodiscard]] unsigned char hour() const { return m_hour; }
+    [[nodiscard]] unsigned char minute() const { return m_minute; }
+    [[nodiscard]] unsigned char second() const { return m_second; }
 
     void year(unsigned short x) { m_year = x; } /// NOLINT
     void month(unsigned char x) { m_month = x; }
@@ -91,12 +91,12 @@ public:
     void minute(unsigned char x) { m_minute = x; }
     void second(unsigned char x) { m_second = x; }
 
-    LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
-    LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
+    [[nodiscard]] LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
+    [[nodiscard]] LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const;
+    [[nodiscard]] time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const;
 
-    std::string toString() const
+    [[nodiscard]] std::string toString() const
     {
         std::string s{"0000-00-00 00:00:00"};
 

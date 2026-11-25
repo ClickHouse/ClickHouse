@@ -1,0 +1,325 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-logs
+title: '使用 ClickHouse Observability 监控 Kafka 日志'
+sidebarTitle: 'Kafka 日志'
+description: '使用 OpenTelemetry 采集 Kafka Broker 日志，并将其发送至 ClickHouse Observability。'
+doc_type: 'guide'
+keywords: ['Kafka', '日志', 'OTEL', 'ClickHouse Observability', 'broker 监控', 'Log4j']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry `filelog` 接收器收集 Kafka Broker 日志，并将其发送到 ClickHouse Observability。即使尚未部署 Kafka，也可以使用[演示数据集](#demo-dataset)试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* Docker 和 `curl`
+* 如需导入您自己的日志，需能够访问符合下述格式的 Kafka broker 日志文件
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → Data → Managed Telemetry**，复制您的 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制配置，或点击 **Reveal key** 查看被遮蔽的私钥。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为运行下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的准确端点 (含端口) 和 API key。请使用不带 `/v1/logs` 后缀的基础 HTTP 端点，导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理">
+    请使用您的采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果您的采集器无需身份验证，请在下文的配置中省略导出器的 `headers` 块。有关设置说明，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+采集器容器必须能够访问该端点。如果目标端采集器运行在本机上，请使用 `http://host.docker.internal:4318`。下文的 Docker 命令已包含主机映射。
+
+## 与现有 Kafka 集成 {#existing-kafka}
+
+<Steps>
+  <Step title="验证 Kafka 日志配置" id="verify-kafka">
+    找到 Broker 日志所在位置。常见路径包括 `$KAFKA_HOME/logs` 和 `/var/log/kafka`，具体取决于您的安装方式和日志配置：
+
+    ```bash
+    ls "$KAFKA_HOME/logs/"
+    ls /var/log/kafka/
+    ```
+
+    常见的日志文件包括 `server.log` (broker 事件) 、`controller.log` (控制器事件) 和 `state-change.log` (分区与副本的状态转换) 。只有在日志 appender 中配置了相应输出时，才会生成这些单独的文件。
+
+    本指南中的解析器要求日志采用以下 Log4j 文本格式：
+
+    ```text
+    [2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+    ```
+
+    如果您的 broker 仅将日志输出到 stdout，请在 broker 的日志配置中添加一个文件 appender，并将相应的日志目录共享给采集器。`filelog` 接收器不会直接读取容器的 stdout。如果您的日志模式与此不同，请相应调整解析器。
+  </Step>
+
+  <Step title="配置采集器" id="configure-collector">
+    将以下内容保存为 `kafka-logs-monitoring.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+          - /var/log/kafka/controller.log
+          - /var/log/kafka/state-change.log
+        start_at: end
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+              location: UTC
+            severity:
+              parse_from: attributes.severity
+          - type: move
+            from: attributes.message
+            to: body
+          - type: add
+            field: attributes.source
+            value: kafka
+          - type: add
+            field: resource["service.name"]
+            value: kafka-service
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/kafka:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors: [memory_limiter, transform/kafka, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    将 `location` 设置为 Broker 日志所使用的时区；本示例假定为 UTC。多行条目会保留完整的堆栈跟踪。采集器通过 `start_at: end` 读取新条目，并将严重级别文本统一转换为小写。
+  </Step>
+
+  <Step title="运行采集器" id="run-collector">
+    设置[连接变量](#connection-details)，然后在配置目录中运行。如有需要，请调整主机上的日志路径。如果日志文件仅对所属组可读，请添加 `--group-add LOG_GROUP_ID`，其中 `LOG_GROUP_ID` 为 `ls -ln /var/log/kafka` 所显示的数字组 ID。
+
+    ```bash
+    docker run --rm --name kafka-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/kafka:/var/log/kafka:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    保持终端处于打开状态，同时在 broker 上产生一些活动，使其写入新的日志条目。测试完成后，按 **Ctrl+C** 停止。
+  </Step>
+
+  <Step title="检查日志" id="verify-logs">
+    打开 **搜索** 页面，选择 **Logs**，按 `ServiceName:kafka-service` 进行过滤，然后选择 **Last 15 minutes**。此时应能看到 broker 消息，且其时间戳和严重级别均已正确解析。
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该样本包含 6,376 条 Kafka broker 日志，时间跨度约 24 小时。采集器会刷新这些日志的时间戳，同时保留原有的消息内容和堆栈跟踪。
+
+<Steps>
+  <Step title="下载样本" id="download-sample">
+    ```bash
+    curl -fL -o server.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo">
+    将以下内容保存为 `kafka-logs-demo.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+        start_at: beginning
+        force_flush_period: 1s
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '(?s)^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+              location: UTC
+            severity:
+              parse_from: attributes.severity
+          - type: move
+            from: attributes.message
+            to: body
+          - type: add
+            field: attributes.source
+            value: kafka-demo
+          - type: add
+            field: resource["service.name"]
+            value: kafka-demo
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      transform/kafka:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.severity_text, ToLowerCase(log.severity_text))
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(log.time, Now() - Duration("2m") - (Time("2026-03-09T23:59:58.180Z", "%Y-%m-%dT%H:%M:%S.%LZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors: [memory_limiter, transform/kafka, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo">
+    先设置好[连接变量](#connection-details)，然后在这两个文件所在的目录中运行：
+
+    ```bash
+    docker run --rm --name kafka-logs-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/server.log:/var/log/kafka/server.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    验证摄取期间请保持终端开启，完成后按 **Ctrl+C** 停止。再次运行该演示时，会使用刷新后的时间戳重新摄取样本。
+  </Step>
+
+  <Step title="验证演示日志" id="verify-demo">
+    打开 **搜索**，选择 **日志**，按 `ServiceName:kafka-demo` 过滤，并选择 **Last 2 days**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 搜索页面中已解析严重级别的 Kafka 演示日志](/images/clickstack/observability-kafka-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json" download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">下载仪表盘配置</TrackedLink>} id="download-dashboard" />
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，然后点击右上角的 **Import**。
+    2. 上传 `kafka-logs-dashboard.json`。
+    3. 将图表映射到您的 **日志** source，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="view-dashboard">
+    如果使用样本数据，可按需筛选 `ServiceName:kafka-demo`，并选择 **Last 2 days**。如果使用您自己的日志，请筛选 `ServiceName:kafka-service`，并选择涵盖这些记录的时间范围。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中的 Kafka 日志仪表盘，展示日志量、严重级别、复制和连接事件](/images/clickstack/observability-kafka-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 未显示日志 {#no-logs}
+
+检查采集器输出中是否有文件权限、解析、身份验证或导出错误。确认 broker 已将日志写入已挂载的目录，且文件名与接收器 `include` 列表中的条目匹配。当前生效的配置仅读取新写入的条目。
+
+### 日志未能正确解析 {#parsing-errors}
+
+将 broker 日志条目与预期格式进行对比：
+
+```bash
+tail -n 20 /var/log/kafka/server.log
+```
+
+如果您的日志格式与此不同，请相应调整正则表达式和多行起始模式。将时间戳解析器的 `location` 设置为 broker 日志所使用的时区。
+
+## 后续步骤 {#next-steps}
+
+* 为 broker 故障或复制错误设置[告警](/zh/clickstack/observability/features/alerts)。
+* 与 [Kafka 指标](/zh/clickstack/observability/integration-examples/kafka-metrics)结合使用。
+* 为控制器事件或分区重新分配创建更多[仪表盘](/zh/clickstack/observability/features/dashboards/overview)。
+* 有关部署指南，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

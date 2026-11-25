@@ -1,13 +1,11 @@
 ---
 slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
-title: '数据仓库'
+title: '数据仓储'
 description: '结合数据湖的灵活性与 ClickHouse Cloud 的高性能，构建现代数据仓库架构'
 keywords: ['数据仓库', '数据湖', '湖仓', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', '开放表格式', '混合架构', '用例']
-sidebarTitle: '数据仓库'
+sidebarTitle: '数据仓储'
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
@@ -23,7 +21,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 通过将开放表格式和 ClickHouse 这类高性能查询引擎引入云对象存储，你就能获得数据库级能力——ACID 事务、schema 约束以及快速分析查询——同时又不牺牲数据湖的开放性。这种组合兼顾高性能与可互操作、成本效益高的存储，可支持传统分析以及现代 AI/ML 工作负载。
 
 <div id="benefits">
-  ## 这种架构提供了什么
+  ## 这种架构提供了什么 {#benefits}
 </div>
 
 通过将开放的对象存储和表格式与 ClickHouse 查询引擎结合使用，你将获得：
@@ -36,15 +34,17 @@ export const ExclusiveGroup = ({ name, children }) => {
 | **治理**        | 目录和表格式可在行级和列级提供细粒度的访问控制和审计能力，从而弥补基础数据湖在安全控制方面的不足。                                          |
 | **存储与计算分离**   | 存储和计算可在通用对象存储上独立扩展，而其成本显著低于专有仓库存储。虽然这种分离在现代云仓库中已是标准做法，但开放格式让你可以选择由 *哪种* 计算引擎随数据一起扩展。       |
 
-<div id="architecture">
-  ## ClickHouse 如何为您的数据仓库赋能
-</div>
+## ClickHouse 如何为您的数据仓库赋能 {#architecture}
 
 数据从流式平台和现有数据仓库，经由对象存储流入 ClickHouse，并在其中完成转换、优化，再提供给您的 BI/AI 工具。
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse 数据仓库架构" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse 数据仓储架构](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+      </Frame>
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">
@@ -75,7 +75,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 </Columns>
 
 <div id="hybrid-architecture-the-best-of-both-worlds">
-  ## 混合架构：两全其美
+  ## 混合架构：两全其美 {#hybrid-architecture-the-best-of-both-worlds}
 </div>
 
 除了查询数据湖之外，你还可以将对性能要求较高的数据摄取到 ClickHouse 原生的 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 存储中，以支持需要超低延迟的用例——例如实时仪表盘、运营分析或交互式应用。

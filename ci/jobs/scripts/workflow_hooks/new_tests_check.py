@@ -5,7 +5,9 @@ from ci.defs.defs import JobNames
 from ci.jobs.scripts.docker_server.docker_library import (
     changed_tests as changed_docker_tests,
 )
+from ci.jobs.scripts.workflow_hooks.can_be_merged import is_draft_only_run
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.review_threads import KV_PIPELINE_LIMITED
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -203,6 +205,13 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
+    # A draft runs only the fast test, so the bug-fix validation jobs are skipped and there
+    # is nothing to check yet. The draft cannot merge (`can_be_merged.py` blocks it); the
+    # validation runs with the full CI once the PR is ready for review.
+    if is_draft_only_run(Info()):
+        print("Draft PR ran only the fast test - the bug-fix validation is deferred")
+        return True
+
     _title, _body, labels, _is_draft = GH.get_pr_title_body_labels()
     if not labels:
         labels = Info().pr_labels
@@ -212,6 +221,12 @@ def check():
     # text that mentions "Bug Fix" must not enable this hook.
     if not any(lb in labels for lb in _BUGFIX_LABELS):
         print("Not a bug fix PR - skip")
+        return True
+
+    if Labels.CI_SKIP_NEW_TESTS_CHECK in labels:
+        print(
+            f"Label `{Labels.CI_SKIP_NEW_TESTS_CHECK}` is set - new tests are not required"
+        )
         return True
 
     changed_files = Info().get_changed_files()
@@ -232,6 +247,17 @@ def check():
     # HEAD and is fixed on the PR). The presence of an additional unit
     # test alongside FT/IT does not relax this requirement either.
     if has_ft or has_it:
+        # The unresolved-review-threads gate skips the per-arch Bugfix Validation
+        # jobs, so there is no result to judge yet. Defer the verdict to the full
+        # run: the gate keeps the merge blocked until it happens. Failing here
+        # would also make `Finish Workflow` fail for another reason than the
+        # gate, which `retry_infra_failures.yml` would then retry.
+        if Info().get_kv_data(KV_PIPELINE_LIMITED):
+            print(
+                "The pipeline was limited by unresolved review threads, so the per-arch "
+                "Bugfix Validation jobs did not run - the check is deferred to the full run"
+            )
+            return True
         states = per_arch_validation_states()
         if any_bugfix_validation_passed(states):
             print(
@@ -294,9 +320,12 @@ def check():
         )
         return True
 
-    # No new tests at all.
-    print("No new tests have been added")
-    return False
+    # No new tests at all. Not every bug fix can be covered by a test (for
+    # example, races, resource exhaustion, or environment-specific failures),
+    # so this is not a reason to fail. Validation is only enforced for the
+    # tests a PR does add.
+    print("No new tests have been added - bugfix validation is not applicable, pass")
+    return True
 
 
 if __name__ == "__main__":

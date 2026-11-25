@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Formats/FormatSettings.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -483,7 +484,8 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     if (params.isSettingsAlter())
     {
-        auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
+        const auto settings_changes_ast = new_metadata.getSettingsChanges();
+        auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>();
         const auto current_settings_snapshot = memory_settings.get();
         const auto & current_settings = *current_settings_snapshot;
         auto changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
@@ -883,6 +885,7 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
+        .supports_temporary = true,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -896,7 +899,7 @@ The Memory engine stores data in RAM, in uncompressed form. Data is stored in ex
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
 Indexes are not supported. Reading is parallelized.
 
-Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/operations/settings/settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. A conjunction of conditions is evaluated in steps, like in `MergeTree` with the [`enable_multiple_prewhere_read_steps`](/operations/settings/settings#enable_multiple_prewhere_read_steps) setting: the columns of each next condition are read only for the rows that passed the previous ones. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
+Reads support `PREWHERE`, including the automatic move of `WHERE` conditions controlled by the [`optimize_move_to_prewhere`](/reference/settings/session-settings#optimize_move_to_prewhere) setting: only the columns of the conditions are read at first, and the remaining columns are read only for the blocks where some rows pass, and only for the passing rows. A conjunction of conditions is evaluated in steps, like in `MergeTree` with the [`enable_multiple_prewhere_read_steps`](/reference/settings/session-settings#enable_multiple_prewhere_read_steps) setting: the columns of each next condition are read only for the rows that passed the previous ones. This is especially beneficial together with `compress = true`, because for a selective condition, most columns are never decompressed. `SELECT count() FROM table` without a filter is served from metadata without reading the data.
 
 Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
 When restarting a server, data disappears from the table and the table becomes empty.

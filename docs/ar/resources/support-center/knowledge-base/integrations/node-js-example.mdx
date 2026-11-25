@@ -6,9 +6,7 @@ tags: ['مكتبات العملاء للغات البرمجة']
 keywords: ['NodeJS']
 ---
 
-<div id="use-nodejs-with-clickhouseclient">
-  ## استخدم NodeJS مع @clickhouse/client
-</div>
+## استخدم NodeJS مع @clickhouse/client {#use-nodejs-with-clickhouseclient}
 
 إليك ملفًا يحتوي على مقتطف شيفرة أساسي `main.ts`.
 
@@ -57,7 +55,7 @@ interface Count {
 }
 
 //Please replace client connection parameters like`host`
-//`username`, `passowrd`, `database` as needed.
+//`username`, `password`, `database` as needed.
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({
@@ -107,7 +105,7 @@ yarn install v1.22.19
 ✨  Done in 0.14s.
 ```
 
-نفّذ التعليمات البرمجية في `main.ts` من `./` باستخدام:
+نفّذ الشيفرة في `main.ts` من `./` باستخدام:
 
 ```
 $ npx ts-node src/main.ts
