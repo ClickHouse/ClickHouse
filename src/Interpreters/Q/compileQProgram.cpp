@@ -298,7 +298,11 @@ std::optional<QType> dataTypeToQType(const DataTypePtr & type)
         case TypeIndex::DateTime:
             return QType::Datetime;
         case TypeIndex::DateTime64:
-            return QType::Timestamp;
+        {
+            /// A datetime of q has milliseconds, and a timestamp has nanoseconds.
+            const auto & datetime64 = typeid_cast<const DataTypeDateTime64 &>(*inner);
+            return datetime64.getScale() > 3 ? QType::Timestamp : QType::Datetime;
+        }
         case TypeIndex::Time:
             return QType::Second;
         case TypeIndex::Time64:
@@ -488,7 +492,7 @@ ASTPtr atomToAST(QType type, const QAtom & atom, size_t offset)
 }
 
 /// The column of each row, for the columns of a table.
-QValue columnValue(const NameAndTypePair & column)
+QValue columnValue(const NameAndTypePair & column, const QTypes & qtypes)
 {
     QValue value;
     value.kind = QValueKind::Column;
@@ -496,8 +500,27 @@ QValue columnValue(const NameAndTypePair & column)
     value.depth = arrayDepth(column.type, value.is_string);
     if (value.depth > 0)
         value.is_string = false;
-    value.qtype = dataTypeToQType(column.type);
+    if (auto it = qtypes.find(column.name); it != qtypes.end())
+        value.qtype = it->second;
+    else
+        value.qtype = dataTypeToQType(column.type);
     return value;
+}
+
+/// The q types that the types of the columns do not tell: a month and a minute.
+QTypes untoldQTypes(const NamesAndTypesList & columns, const QTypes & qtypes)
+{
+    QTypes result;
+    for (const auto & column : columns)
+    {
+        auto it = qtypes.find(column.name);
+        if (it == qtypes.end())
+            continue;
+        auto told = dataTypeToQType(column.type);
+        if ((told == QType::Date && it->second == QType::Month) || (told == QType::Second && it->second == QType::Minute))
+            result.emplace(column.name, it->second);
+    }
+    return result;
 }
 
 bool isAggregateFunctionName(const String & name)
@@ -698,7 +721,7 @@ QValue QCompiler::scalar(ASTPtr ast, size_t depth)
     return value;
 }
 
-QValue QCompiler::makeTable(ASTPtr select_query, Names keys)
+QValue QCompiler::makeTable(ASTPtr select_query, Names keys, const QTypes & qtypes)
 {
     /// The query is analyzed for its structure right here, so it is checked first.
     checkExpandedSize(select_query);
@@ -708,11 +731,27 @@ QValue QCompiler::makeTable(ASTPtr select_query, Names keys)
     table->columns = header->getNamesAndTypesList();
     checkNoReservedNames(table->columns);
     table->keys = std::move(keys);
+    table->qtypes = untoldQTypes(table->columns, qtypes);
 
     QValue value;
     value.kind = QValueKind::Table;
     value.table = std::move(table);
     return value;
+}
+
+QValue QCompiler::withQTypes(const QValue & table, const QTypes & qtypes)
+{
+    QTypes merged = table.table->qtypes;
+    for (const auto & [name, type] : untoldQTypes(table.table->columns, qtypes))
+        merged.emplace(name, type);
+    if (merged == table.table->qtypes)
+        return table;
+
+    auto copy = std::make_shared<QTable>(*table.table);
+    copy->qtypes = std::move(merged);
+    QValue result = table;
+    result.table = std::move(copy);
+    return result;
 }
 
 QValue QCompiler::tableFromSelect(ASTPtr select_query, Names keys)
@@ -761,7 +800,7 @@ QValue QCompiler::toScalar(const QValue & value, size_t offset)
         size_t depth = arrayDepth(column.type, is_string);
         QValue result = scalar(make_intrusive<ASTSubquery>(builder.build()), depth + 1);
         result.is_string = depth == 0 && is_string;
-        result.qtype = dataTypeToQType(column.type);
+        result.qtype = columnValue(column, value.table->qtypes).qtype;
         return result;
     }
     throwQError(ErrorCodes::TYPE_MISMATCH, offset, "A function cannot be used as a value here");
@@ -1046,7 +1085,7 @@ QValue QCompiler::compileName(const QNodePtr & node, QEnvironment & env, QScope 
         {
             if (column.name == name)
             {
-                QValue value = columnValue(column);
+                QValue value = columnValue(column, scope->qtypes);
                 if (value.depth == 0 && !removeLowCardinality(column.type)->isNullable())
                     markNotNull(value.ast);
                 return value;
@@ -1127,7 +1166,7 @@ QValue QCompiler::compileName(const QNodePtr & node, QEnvironment & env, QScope 
             {
                 if (column.name == prefix)
                 {
-                    QValues args{columnValue(column)};
+                    QValues args{columnValue(column, scope->qtypes)};
                     return callBuiltin("." + suffix, std::move(args), env, scope, node->offset);
                 }
             }
@@ -1147,7 +1186,7 @@ QValue QCompiler::compileName(const QNodePtr & node, QEnvironment & env, QScope 
                     QSelectBuilder builder;
                     builder.from = prefix_value->table->table_expression;
                     builder.select.push_back(makeIdentifier(suffix));
-                    return toScalar(makeTable(builder.build()), node->offset);
+                    return toScalar(makeTable(builder.build(), {}, prefix_value->table->qtypes), node->offset);
                 }
             }
         }
@@ -1238,11 +1277,16 @@ QValue QCompiler::compileTableLiteral(const QNode & node, QEnvironment & env, QS
     for (size_t i = 0; i < node.key_columns.size(); ++i)
         keys.push_back(names[i]);
 
+    QTypes qtypes;
+    for (size_t i = 0; i < names.size(); ++i)
+        if (values[i].qtype)
+            qtypes[names[i]] = *values[i].qtype;
+
     if (outer.array_join.empty())
-        return makeTable(inner.build(), keys);
+        return makeTable(inner.build(), keys, qtypes);
 
     outer.from = makeSubqueryTableExpression(inner.build());
-    return makeTable(outer.build(), keys);
+    return makeTable(outer.build(), keys, qtypes);
 }
 
 QValue QCompiler::compileLambdaCall(const QNode & lambda, QValues args, QEnvironment & env, QScope * scope)
@@ -1267,6 +1311,7 @@ QValue QCompiler::compileLambdaCall(const QNode & lambda, QValues args, QEnviron
     {
         body_scope.emplace(*scope);
         body_scope->columns.clear();
+        body_scope->qtypes.clear();
     }
 
     std::optional<QValue> result;
@@ -1378,7 +1423,7 @@ QValue QCompiler::applyValue(const QValue & target, QValues args, QEnvironment &
             QSelectBuilder builder;
             builder.from = target.table->table_expression;
             builder.select.push_back(makeIdentifier(column));
-            return toScalar(makeTable(builder.build()), offset);
+            return toScalar(makeTable(builder.build(), {}, target.table->qtypes), offset);
         }
         throwQError(ErrorCodes::NOT_IMPLEMENTED, offset, "Indexing a table by row is not supported");
     }
@@ -1905,7 +1950,7 @@ QTable QCompiler::applyWhere(const QTable & source, const std::vector<QNodePtr> 
             builder.select.push_back(makeIdentifier(column.name));
         builder.where = conjunction(pending);
         Names keys = current.keys;
-        QValue table = makeTable(builder.build(), keys);
+        QValue table = makeTable(builder.build(), keys, current.qtypes);
         current = *table.table;
         pending.clear();
     };
@@ -1915,6 +1960,7 @@ QTable QCompiler::applyWhere(const QTable & source, const std::vector<QNodePtr> 
         auto compile_constraint = [&](std::vector<std::pair<ASTPtr, String>> & pre, QScope & scope)
         {
             scope.columns = current.columns;
+            scope.qtypes = current.qtypes;
             scope.pre_aggregation = &pre;
             QValue value = toScalar(compile(constraint, env, &scope), constraint->offset);
             if (value.kind == QValueKind::Scalar && value.aggregated)
@@ -1964,7 +2010,7 @@ QTable QCompiler::applyWhere(const QTable & source, const std::vector<QNodePtr> 
             filtered.from = makeSubqueryTableExpression(flagged.build());
         }
         Names keys = current.keys;
-        current = *makeTable(filtered.build(), keys).table;
+        current = *makeTable(filtered.build(), keys, current.qtypes).table;
     }
 
     apply_pending();
@@ -1997,14 +2043,17 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
     std::vector<std::pair<ASTPtr, String>> pre;
     QScope scope;
     scope.columns = filtered.columns;
+    scope.qtypes = filtered.qtypes;
     scope.pre_aggregation = &pre;
 
     /// The by phrase.
     Names key_names;
     ASTs key_asts;
+    std::vector<std::optional<QType>> key_qtypes;
     for (const auto & phrase : sql.by)
     {
         QValue key = toScalar(compile(phrase.expression, env, &scope), phrase.expression->offset);
+        key_qtypes.push_back(key.qtype);
         if (key.kind == QValueKind::Scalar && key.aggregated)
             throwQError(ErrorCodes::TYPE_MISMATCH, phrase.expression->offset, "A phrase of the by phrase cannot be an aggregate");
         if (key.kind != QValueKind::Scalar && key.kind != QValueKind::Column)
@@ -2038,7 +2087,7 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
             if (grouped && keys_set.contains(column.name))
                 continue;
             names.push_back(column.name);
-            QValue value = columnValue(column);
+            QValue value = columnValue(column, filtered.qtypes);
             if (grouped)
             {
                 value.kind = QValueKind::Scalar;
@@ -2141,8 +2190,17 @@ QValue QCompiler::compileSelect(const QSQLTemplate & sql, const QTable & source,
         outer.order_by.emplace_back(makeIdentifier(sql.order_column), sql.order_descending);
     }
 
+    QTypes result_qtypes;
+    if (grouped)
+        for (size_t i = 0; i < output_keys.size(); ++i)
+            if (key_qtypes[i])
+                result_qtypes[output_keys[i]] = *key_qtypes[i];
+    for (size_t i = 0; i < output_names.size(); ++i)
+        if (values[i].qtype)
+            result_qtypes[output_names[i]] = *values[i].qtype;
+
     Names result_keys = grouped ? output_keys : Names{};
-    QValue result = makeTable(outer.build(), result_keys);
+    QValue result = makeTable(outer.build(), result_keys, result_qtypes);
 
     if (sql.limit)
     {
@@ -2157,6 +2215,7 @@ QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source,
     std::vector<std::pair<ASTPtr, String>> pre;
     QScope scope;
     scope.columns = source.columns;
+    scope.qtypes = source.qtypes;
     scope.pre_aggregation = &pre;
 
     /// The where phrase selects the rows to update. Aggregates in a constraint apply to the rows selected by the previous constraints.
@@ -2196,10 +2255,15 @@ QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source,
     main.select.push_back(make_intrusive<ASTAsterisk>());
     std::map<String, String> replaced;
     Names added;
+    QTypes result_qtypes = source.qtypes;
     for (const auto & phrase : sql.columns)
     {
         String name = phrase.name.empty() ? deriveColumnName(phrase.expression) : phrase.name;
         QValue value = toScalar(compile(phrase.expression, env, &scope), phrase.expression->offset);
+        if (value.qtype)
+            result_qtypes[name] = *value.qtype;
+        else
+            result_qtypes.erase(name);
         if (value.kind == QValueKind::Scalar && value.aggregated)
             value = broadcast(value, &scope);
         if (value.kind == QValueKind::Scalar && value.depth > 0)
@@ -2240,7 +2304,7 @@ QValue QCompiler::compileUpdate(const QSQLTemplate & sql, const QTable & source,
     for (const auto & name : added)
         outer.select.push_back(withAlias(makeIdentifier(replaced[name]), name));
 
-    return makeTable(outer.build(), source.keys);
+    return makeTable(outer.build(), source.keys, result_qtypes);
 }
 
 QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source, QEnvironment & env)
@@ -2268,12 +2332,13 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
                 keys.push_back(key);
         if (builder.select.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'delete' cannot delete all the columns of a table");
-        return makeTable(builder.build(), keys);
+        return makeTable(builder.build(), keys, source.qtypes);
     }
 
     std::vector<std::pair<ASTPtr, String>> pre;
     QScope scope;
     scope.columns = source.columns;
+    scope.qtypes = source.qtypes;
     scope.pre_aggregation = &pre;
 
     ASTPtr condition;
@@ -2299,7 +2364,7 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
         for (const auto & column : source.columns)
             empty.select.push_back(makeIdentifier(column.name));
         empty.limit = makeLiteral(Field(static_cast<UInt64>(0)));
-        return makeTable(empty.build(), source.keys);
+        return makeTable(empty.build(), source.keys, source.qtypes);
     }
 
     String flag = newName();
@@ -2315,7 +2380,7 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
     for (const auto & column : source.columns)
         outer.select.push_back(makeIdentifier(column.name));
     outer.where = makeASTFunction("not", makeIdentifier(flag));
-    return makeTable(outer.build(), source.keys);
+    return makeTable(outer.build(), source.keys, source.qtypes);
 }
 
 ASTPtr QCompiler::finalQuery(const QValue & value, const QNodePtr & statement)

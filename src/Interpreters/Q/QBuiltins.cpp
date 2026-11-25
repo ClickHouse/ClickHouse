@@ -570,7 +570,10 @@ ASTPtr temporalToNumber(ASTPtr value, QType type, const Call & call)
 
 QValue castValue(Call & call, const String & type_name, QValue value)
 {
-    if (auto access = accessor(type_name))
+    /// The name of a temporal type (`` `date$x ``) is an accessor of a temporal value (the date of a timestamp), and it is
+    /// the same cast as with the letter of the type (`"d"$x`) for a number, which counts the units of the type.
+    bool number_to_type = !value.is_string && (!value.qtype || isNumberType(*value.qtype)) && castTypeName(type_name);
+    if (auto access = accessor(type_name); access && !number_to_type)
     {
         QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return access->first(asts[0]); }, call.scope);
         result.qtype = access->second;
@@ -2479,7 +2482,20 @@ QValue QCompiler::callBuiltin(const String & name, QValues args, QEnvironment & 
     auto it = handlers().find(name);
     if (it == handlers().end())
         throwQError(ErrorCodes::UNKNOWN_IDENTIFIER, offset, fmt::format("Unknown function '{}'", name));
-    return it->second(call);
+    QValue result = it->second(call);
+
+    /// A table that a function makes of its argument tables (`n#t`, a join, a sort) keeps the q types of their columns
+    /// that the types of ClickHouse do not tell: the columns go to the result under their names.
+    if (result.kind == QValueKind::Table)
+    {
+        QTypes inherited;
+        for (const auto & arg : args)
+            if (arg.kind == QValueKind::Table && arg.table)
+                inherited.insert(arg.table->qtypes.begin(), arg.table->qtypes.end());
+        if (!inherited.empty())
+            result = withQTypes(result, inherited);
+    }
+    return result;
 }
 
 }

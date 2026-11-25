@@ -31,6 +31,9 @@ namespace DB
 namespace QCompilerInternals
 {
 
+/// The q types of columns, by their names.
+using QTypes = std::map<String, QType>;
+
 struct QTable
 {
     /// An `ASTTableExpression` for `FROM`.
@@ -38,6 +41,10 @@ struct QTable
     NamesAndTypesList columns;
     /// The key columns of a keyed table (they come first in `columns`).
     Names keys;
+    /// The q types of the columns that their types in ClickHouse do not tell: a month is a `Date32` like a date,
+    /// and a minute is a `Time` like a second. Without it, a month that has passed through a table would be a date,
+    /// and its casts and arithmetic would count days.
+    QTypes qtypes;
 };
 
 using QTablePtr = std::shared_ptr<const QTable>;
@@ -103,8 +110,9 @@ struct QEnvironment
 /// The table of a q-sql template, in which expressions are compiled.
 struct QScope
 {
-    /// The columns that the expressions can refer to.
+    /// The columns that the expressions can refer to, and their q types where the types do not tell them (see `QTable`).
     NamesAndTypesList columns;
+    QTypes qtypes;
 
     /// Whether aggregations fold groups (`select ... by`): then a column is collected into a list per group.
     bool grouped = false;
@@ -149,7 +157,11 @@ public:
 
     /// Helpers to make values.
     static QValue scalar(ASTPtr ast, size_t depth = 0);
-    QValue makeTable(ASTPtr select_query, Names keys = {});
+    /// `qtypes`: what is known of the q types of the columns; only what the types of the result do not tell is kept.
+    QValue makeTable(ASTPtr select_query, Names keys = {}, const QTypes & qtypes = {});
+
+    /// The table with the q types of its columns inherited from the tables it is made of.
+    static QValue withQTypes(const QValue & table, const QTypes & qtypes);
     QValue tableFromSelect(ASTPtr select_query, Names keys = {});
 
     /// Makes an atomic function: applied to the atoms of lists (through `arrayMap`), row by row to columns.
