@@ -68,7 +68,6 @@ struct ParquetKeptStatistics : private boost::noncopyable
     };
 
     explicit ParquetKeptStatistics(size_t max_bytes_) : max_bytes(max_bytes_) {}
-    ~ParquetKeptStatistics();
 
     /// A copy of `ranges` to `add`, or nothing if ranges are already kept under `column_key` or all kept ranges would
     /// exceed `max_bytes`. `ranges_bytes` is `sizeof(Range)` and the heap bytes of the bounds, for every range.

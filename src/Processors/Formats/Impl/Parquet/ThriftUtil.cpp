@@ -571,14 +571,6 @@ template std::string thriftToString<parq::Type::type>(const parq::Type::type &);
 namespace DB::Parquet
 {
 
-/// Kept offset indexes belong to the cache, not to the query that reads or evicts them.
-KeptOffsetIndexes::~KeptOffsetIndexes()
-{
-    ServerOwnedMemoryScope not_charged_to_query_or_user;
-    UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr>().swap(offset_indexes);
-    UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr>().swap(column_indexes);
-}
-
 KeptOffsetIndexes::OffsetIndexPtr KeptOffsetIndexes::get(size_t row_group_idx, size_t column_idx) const
 {
     std::lock_guard lock(mutex);

@@ -513,17 +513,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
 
     /// The job's own copy of the key outlives the pushing query and is freed on a flush thread that can't
     /// uncharge it, so allocate and release it the same way, charged to neither side.
-    std::shared_ptr<const InsertQuery> job_key;
-    {
-        ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_query;
-        job_key = std::shared_ptr<const InsertQuery>(
-            new InsertQuery(key),
-            [](const InsertQuery * ptr)
-            {
-                ServerOwnedMemoryScope queue_bookkeeping_not_charged_to_the_flush;
-                delete ptr;
-            });
-    }
+    std::shared_ptr<const InsertQuery> job_key = makeServerOwned<InsertQuery>(key);
 
     try
     {

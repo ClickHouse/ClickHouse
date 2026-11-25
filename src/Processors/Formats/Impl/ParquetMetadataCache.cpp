@@ -45,14 +45,10 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(
     /// cache limits still bound the cell. The columns kept first use up this budget for the lifetime of the cell.
     , kept_statistics(
           kept_statistics_ ? std::move(kept_statistics_)
-                           : std::allocate_shared<ParquetKeptStatistics>(
-                                 ServerOwnedAllocator<ParquetKeptStatistics>(),
-                                 std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
+                           : makeServerOwned<ParquetKeptStatistics>(std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
     , kept_offset_indexes(
           kept_offset_indexes_ ? std::move(kept_offset_indexes_)
-                               : std::allocate_shared<Parquet::KeptOffsetIndexes>(
-                                     ServerOwnedAllocator<Parquet::KeptOffsetIndexes>(),
-                                     std::max<size_t>(memory_bytes, MIN_KEPT_OFFSET_INDEXES_BYTES)))
+                               : makeServerOwned<Parquet::KeptOffsetIndexes>(std::max<size_t>(memory_bytes, MIN_KEPT_OFFSET_INDEXES_BYTES)))
 {
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
@@ -105,35 +101,15 @@ size_t ParquetMetadataCacheCell::calculateMemorySize() const
 namespace
 {
 
-void deleteKeptRanges(const ParquetKeptStatistics::Ranges * ranges)
-{
-    ServerOwnedMemoryScope not_charged_to_query_or_user;
-    delete ranges;
-}
-
-template <typename Index>
-void deleteKeptIndex(const Index * index)
-{
-    ServerOwnedMemoryScope not_charged_to_query_or_user;
-    delete index;
-}
-
 /// A copy owned by the cache, or nullptr if `index` is null or already kept.
 template <typename Index>
 std::shared_ptr<const Index> copyIndexToKeep(const std::shared_ptr<const Index> & index, bool kept)
 {
     if (!index || kept)
         return nullptr;
-    return std::shared_ptr<const Index>(new Index(*index), deleteKeptIndex<Index>, ServerOwnedAllocator<Index>());
+    return makeServerOwned<Index>(*index);
 }
 
-}
-
-/// Kept statistics are released like they are allocated, see `ParquetMetadataCache::keepStatistics`.
-ParquetKeptStatistics::~ParquetKeptStatistics()
-{
-    ServerOwnedMemoryScope not_charged_to_query_or_user;
-    UnorderedMapWithMemoryTracking<String, RangesPtr>().swap(ranges_by_column);
 }
 
 std::optional<ParquetKeptStatistics::Column>
@@ -145,7 +121,7 @@ ParquetKeptStatistics::prepare(const String & column_key, const Ranges & ranges,
         if (ranges_by_column.contains(column_key) || total_bytes + bytes > max_bytes)
             return std::nullopt;
     }
-    return Column{column_key, RangesPtr(new Ranges(ranges), deleteKeptRanges, ServerOwnedAllocator<Ranges>()), bytes};
+    return Column{column_key, makeServerOwned<Ranges>(ranges), bytes};
 }
 
 bool ParquetKeptStatistics::add(Column column)

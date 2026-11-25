@@ -127,7 +127,7 @@ size_t chargedBytesOfColumn(const IColumn & column)
 
 std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 {
-    return std::allocate_shared<ColumnsCacheEntry>(ServerOwnedAllocator<ColumnsCacheEntry>{});
+    return makeServerOwned<ColumnsCacheEntry>();
 }
 
 /// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)

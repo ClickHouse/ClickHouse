@@ -20,17 +20,12 @@ namespace DB
 {
 
 
+/// Made with `makeServerOwned`.
 struct UncompressedCacheCell
 {
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
-
-    ~UncompressedCacheCell()
-    {
-        ServerOwnedMemoryScope not_charged_to_query_or_user;
-        data = {};
-    }
 };
 
 struct UncompressedSizeWeightFunction
