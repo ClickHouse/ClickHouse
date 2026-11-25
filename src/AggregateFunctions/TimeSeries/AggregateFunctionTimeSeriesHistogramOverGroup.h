@@ -121,11 +121,11 @@ inline TimeSeriesFloatHistogram readTimeSeriesFloatHistogram(ReadBuffer & buf)
     readBinaryLittleEndian(histogram.sum, buf);
     readBinaryLittleEndian(histogram.zero_count, buf);
 
+    /// The counts are not reserved: they come from the state, and a corrupt one must fail at the end of the data.
     auto read_spans = [&buf](std::vector<TimeSeriesHistogramSpan> & spans) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         UInt64 size = 0;
         readBinaryLittleEndian(size, buf);
-        spans.reserve(size);
         for (UInt64 i = 0; i < size; ++i)
         {
             TimeSeriesHistogramSpan span{};
@@ -138,7 +138,6 @@ inline TimeSeriesFloatHistogram readTimeSeriesFloatHistogram(ReadBuffer & buf)
     {
         UInt64 size = 0;
         readBinaryLittleEndian(size, buf);
-        values.reserve(size);
         for (UInt64 i = 0; i < size; ++i)
         {
             Float64 value = 0;
