@@ -159,8 +159,7 @@ static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
     return false;
 }
 
-/// The unbuilt `MATERIALIZED` CTEs that a plan reads and leaves to the gate of an outer plan, each after the
-/// CTEs its own plan reads.
+/// The unbuilt `MATERIALIZED` CTEs a plan reads and leaves to the gate of an outer plan, dependencies first.
 struct CTEsToMaterialize
 {
     VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
@@ -179,7 +178,6 @@ struct CTEsToMaterialize
             return;
         }
 
-        /// The CTE's plan reads the CTEs it depends on under the same outer gate.
         collect(*cte->plan->getRootNode());
         ctes.push_back(std::move(cte));
     }
@@ -385,8 +383,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.size_limits = settings.network_transfer_limits;
 
     auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan));
-    /// As for the sets that `Planner` makes: an in-place build of the set materializes the CTEs first, and a deferred
-    /// build strips these steps and runs under the outer gate.
+    /// An in-place build of the set materializes these CTEs first; a deferred build strips the steps and uses the outer gate.
     for (auto it = right_ctes.ctes.rbegin(); it != right_ctes.ctes.rend(); ++it)
         in_source->addStep(std::make_unique<DelayedMaterializingCTEsStep>(
             in_source->getCurrentHeader(), VectorWithMemoryTracking<MaterializedCTEPtr>{*it}));
