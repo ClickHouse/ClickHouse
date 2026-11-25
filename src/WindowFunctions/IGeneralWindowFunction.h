@@ -1,11 +1,12 @@
 #pragma once
 
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
+
+#include <Interpreters/WindowDescription.h>
+
 #include <Core/Field.h>
 #include <Core/IResolvedFunction.h>
-#include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/Common/WindowFunctionRequirements.h>
-
-#include <memory>
 
 namespace DB
 {
@@ -39,7 +40,5 @@ protected:
     const Array parameters;
     const DataTypePtr result_type;
 };
-
-using GeneralWindowFunctionPtr = std::shared_ptr<const IGeneralWindowFunction>;
 
 }
