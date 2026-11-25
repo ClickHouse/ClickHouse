@@ -1,5 +1,5 @@
 ---
-description: 'Crea una base de datos de ClickHouse con tablas de una base de datos de PostgreSQL.'
+description: 'Crea una base de datos de ClickHouse con tables de una base de datos de PostgreSQL.'
 sidebarTitle: 'MaterializedPostgreSQL'
 slug: /engines/database-engines/materialized-postgresql
 title: 'MaterializedPostgreSQL'
@@ -19,15 +19,15 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
   Se recomienda a los usuarios de ClickHouse Cloud que utilicen [ClickPipes](/es/integrations/clickpipes/home) para la replicación de PostgreSQL a ClickHouse. Esto ofrece compatibilidad nativa con Change Data Capture (CDC) de alto rendimiento para PostgreSQL.
 </Note>
 
-Crea una base de datos de ClickHouse con tablas de una base de datos de PostgreSQL. En primer lugar, la base de datos con el motor `MaterializedPostgreSQL` crea una instantánea de la base de datos de PostgreSQL y carga las tablas necesarias. Las tablas necesarias pueden incluir cualquier subconjunto de tablas de cualquier subconjunto de esquemas de la base de datos especificada. Junto con la instantánea, el motor de base de datos obtiene el LSN y, una vez completado el volcado inicial de las tablas, empieza a extraer actualizaciones del WAL. Después de crear la base de datos, las tablas que se añadan posteriormente a la base de datos de PostgreSQL no se incorporan automáticamente a la replicación. Deben añadirse manualmente con la consulta `ATTACH TABLE db.table`.
+Crea una base de datos de ClickHouse con tables de una base de datos de PostgreSQL. En primer lugar, la base de datos con el motor `MaterializedPostgreSQL` crea una instantánea de la base de datos de PostgreSQL y carga las tables necesarias. Las tables necesarias pueden incluir cualquier subconjunto de tables de cualquier subconjunto de esquemas de la base de datos especificada. Junto con la instantánea, el motor de base de datos obtiene el LSN y, una vez completado el volcado inicial de las tables, empieza a extraer actualizaciones del WAL. Después de crear la base de datos, las tables que se añadan posteriormente a la base de datos de PostgreSQL no se incorporan automáticamente a la replicación. Deben añadirse manualmente con la consulta `ATTACH TABLE db.table`.
 
-La replicación se implementa mediante el protocolo de replicación lógica de PostgreSQL, que no permite replicar DDL, pero sí detectar si se han producido cambios que rompen la replicación (cambios en el tipo de columna, adición o eliminación de columnas). Estos cambios se detectan y las tablas correspondientes dejan de recibir actualizaciones. En este caso, debe usar las consultas `ATTACH`/ `DETACH PERMANENTLY` para recargar por completo la tabla. Si el DDL no rompe la replicación (por ejemplo, al cambiar el nombre de una columna), la tabla seguirá recibiendo actualizaciones (la inserción se realiza por posición).
+La replicación se implementa mediante el protocolo de replicación lógica de PostgreSQL, que no permite replicar DDL, pero sí detectar si se han producido cambios que rompen la replicación (cambios en el tipo de columna, adición o eliminación de columnas). Estos cambios se detectan y las tables correspondientes dejan de recibir actualizaciones. En este caso, debe usar las consultas `ATTACH`/ `DETACH PERMANENTLY` para recargar por completo la table. Si el DDL no rompe la replicación (por ejemplo, al cambiar el nombre de una columna), la table seguirá recibiendo actualizaciones (la inserción se realiza por posición).
 
 <Note>
-  Este motor de base de datos es experimental. Para usarlo, establezca `allow_experimental_database_materialized_postgresql` en 1 en sus archivos de configuración o mediante el comando `SET`:
+  Este motor de base de datos es experimental. Para usarlo, establezca `enable_database_materialized_postgresql` en 1 en sus archivos de configuración o mediante el comando `SET`:
 
   ```sql
-  SET allow_experimental_database_materialized_postgresql=1
+  SET enable_database_materialized_postgresql=1
   ```
 </Note>
 
