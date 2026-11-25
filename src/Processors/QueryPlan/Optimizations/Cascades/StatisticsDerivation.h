@@ -35,9 +35,10 @@ class SortingStep;
 class LimitStep;
 class DistinctStep;
 
-/// The distinct values that the `uniqExact` states of an aggregation hold. A function with a combinator
-/// (`uniqExactIf`) is not counted: the estimate does not know which values its condition accepts.
-DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
+/// The count of the distinct values that the `uniqExact` states of an aggregation hold, and the bytes of
+/// these values in the hash sets of the states. A function with a combinator (`uniqExactIf`) is not
+/// counted: the estimate does not know which values its condition accepts.
+std::pair<Float64, Float64> estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
 
 /// Derives statistics for groups in the Cascades optimizer.
 /// Statistics are logical properties that describe the data (row counts, NDVs)

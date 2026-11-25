@@ -108,6 +108,15 @@ SELECT '-- 13. the same when an exchange is very expensive: one node reads the t
 SET param__internal_cascades_cost_config = '{"exchange_fixed_overhead": 10000000000}';
 EXPLAIN SELECT count(DISTINCT x) FROM t_distinct_split_narrow;
 
+SELECT '-- 14. a ROLLUP finalizes the states of uniqExact, so its one row holds no values and is broadcast to the nodes of the join';
+-- The network is expensive here. If the row of the ROLLUP had the price of the 1 million values of the state,
+-- its broadcast would cost more than the read of the other table on one node, and the join would be on one node.
+-- The join key of the other table has 10 values, so the join has many rows, and the count above it has two stages.
+SET param__internal_join_table_stat_hints = '{"t_distinct_split_narrow": {"cardinality": 10000000, "avg_row_bytes": 12, "distinct_keys": {"x": 1000000}}, "t_distinct_split": {"cardinality": 214000000, "avg_row_bytes": 40, "distinct_keys": {"k": 10}}}';
+SET param__internal_cascades_cost_config = '{"network_weight": 1000}';
+EXPLAIN SELECT count() FROM t_distinct_split AS d INNER JOIN (SELECT uniqExact(x) AS v FROM t_distinct_split_narrow GROUP BY ALL WITH ROLLUP) AS a ON d.k = a.v % 10
+SETTINGS enable_join_runtime_filters = 0, query_plan_optimize_join_order_randomize = 0;
+
 DROP TABLE t_distinct_split;
 DROP TABLE t_distinct_split_narrow;
 DROP TABLE t_distinct_split_measured;

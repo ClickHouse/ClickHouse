@@ -32,6 +32,8 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
         << " estimated_bytes_per_row: " << estimated_bytes_per_row;
     if (physical_read_bytes > 0)
         out << " physical_read_bytes: " << physical_read_bytes;
+    if (distinct_state_values > 0)
+        out << " distinct_state_values: " << distinct_state_values << " distinct_state_bytes: " << distinct_state_bytes;
     out << "\n";
     for (const auto & column : column_statistics)
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values

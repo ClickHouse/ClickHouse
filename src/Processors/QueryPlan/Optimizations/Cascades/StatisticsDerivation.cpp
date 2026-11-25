@@ -4,6 +4,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -39,6 +40,19 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
+}
+
+/// Whether the rows that the step emits have a column of aggregate states.
+static bool emitsAggregateStates(const IQueryPlanStep & step)
+{
+    if (!step.hasOutputHeader())
+        return false;
+    for (const auto & column : *step.getOutputHeader())
+    {
+        if (typeid_cast<const DataTypeAggregateFunction *>(column.type.get()))
+            return true;
+    }
+    return false;
 }
 
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
@@ -94,6 +108,14 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     {
         group->statistics = deriveAggregatingStatistics(
             aggregating_step->getParams().keys, *aggregating_step->getOutputHeader(), input_statistics(0));
+        /// A non-final aggregation without keys emits one row of states, and its `uniqExact` states hold
+        /// all the distinct values.
+        if (memo.getContext().cascades_distinct_aggregation_split
+            && !aggregating_step->getFinal() && aggregating_step->getParams().keys.empty())
+        {
+            std::tie(group->statistics->distinct_state_values, group->statistics->distinct_state_bytes)
+                = estimateDistinctValuesOfStates(*aggregating_step, input_statistics(0));
+        }
     }
     else if (const auto * merging_step = typeid_cast<const MergingAggregatedStep *>(plan_step))
     {
@@ -174,6 +196,14 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     else
     {
         group->statistics = ExpressionStatistics();
+    }
+
+    /// A step that takes the statistics of its input can finalize the aggregate states, as `ROLLUP`
+    /// does. Its rows then hold no values of states.
+    if (group->statistics->distinct_state_values > 0 && !emitsAggregateStates(*plan_step))
+    {
+        group->statistics->distinct_state_values = 0;
+        group->statistics->distinct_state_bytes = 0;
     }
 
     LOG_TEST(log, "Derived statistics for group #{}:\n{}",
@@ -702,18 +732,19 @@ static std::pair<Float64, Float64> estimateGroupCount(const Names & columns, con
             std::min(ndv_product, input_statistics.max_row_count)};
 }
 
-DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+std::pair<Float64, Float64> estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
 {
-    DistinctValuesOfStates result;
+    Float64 values = 0;
+    Float64 bytes = 0;
     for (const auto & aggregate : aggregating_step.getParams().aggregates)
     {
         if (aggregate.function->getName() != "uniqExact")
             continue;
-        const Float64 values = estimateGroupCount(aggregate.argument_names, input_statistics).first;
-        result.values += values;
-        result.bytes += values * Float64(aggregate.function->getStateBytesPerDistinctInput());
+        const Float64 values_of_state = estimateGroupCount(aggregate.argument_names, input_statistics).first;
+        values += values_of_state;
+        bytes += values_of_state * Float64(aggregate.function->getStateBytesPerDistinctInput());
     }
-    return result;
+    return {values, bytes};
 }
 
 ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(

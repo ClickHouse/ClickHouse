@@ -127,15 +127,6 @@ struct IImplementationStrategy;
 
 struct ExpressionProperties;
 
-/// The distinct values that `uniqExact` states hold in their hash sets, summed over the states. The
-/// statistics do not count them: the states of an aggregation without keys are in one row.
-struct DistinctValuesOfStates
-{
-    Float64 values = 0;
-    /// The memory that the values take in the hash sets.
-    Float64 bytes = 0;
-};
-
 /// Everything the local (single-operator) cost functions may read. Deliberately holds no memo
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
@@ -158,10 +149,10 @@ struct CostInputs
     /// A sorted gather reads the stream layout from it: a sender with several streams per
     /// node merges them before shipping, which costs like a sort's final merge.
     const ExpressionProperties * first_input_properties = nullptr;
-    /// The distinct values in the `uniqExact` states that the operator builds (an aggregation without keys),
-    /// moves (an exchange) or merges (a merge of states). Resolved by the caller: from the statistics of the
-    /// input for an aggregation, from the selected input for an exchange and a merge.
-    DistinctValuesOfStates distinct_state_values = {};
+    /// The distinct values that an aggregation without keys holds in the hash sets of its `uniqExact` states,
+    /// and their bytes. Resolved by the caller from the statistics of the input.
+    Float64 distinct_state_values = 0;
+    Float64 distinct_state_bytes = 0;
     const CostConfig & config;
 };
 

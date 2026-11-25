@@ -168,3 +168,19 @@ Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + Change column names to column identifiers))
       ReadFromMergeTree (default.t_distinct_split_narrow)
+-- 14. a ROLLUP finalizes the states of uniqExact, so its one row holds no values and is broadcast to the nodes of the join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_distinct_split)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              BroadcastExchange
+                Rollup
+                  GatherExchange
+                    Aggregating
+                      Expression ((Before GROUP BY + Change column names to column identifiers))
+                        ReadFromMergeTree (ParallelRead default.t_distinct_split_narrow)

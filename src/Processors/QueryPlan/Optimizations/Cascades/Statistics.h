@@ -42,6 +42,13 @@ struct ExpressionStatistics
     /// for non-read expressions; only the read cost consults it.
     Float64 physical_read_bytes = 0;
 
+    /// The distinct values that the `uniqExact` states in the rows hold, and the bytes of these values
+    /// in the hash sets of the states. The row count and the row width do not include them: an
+    /// aggregation without keys has one row of states. Zero when the rows have no aggregate states.
+    /// An exchange and a merge of such states work for each value.
+    Float64 distinct_state_values = 0;
+    Float64 distinct_state_bytes = 0;
+
     /// Statistics for output columns of the expression
     UnorderedMapWithMemoryTracking<String, ColumnStats> column_statistics;
 
