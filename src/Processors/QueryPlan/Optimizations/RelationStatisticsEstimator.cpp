@@ -674,13 +674,30 @@ StatsUnderFilter estimateMergeTreeReadStats(const ReadFromMergeTree & reading, F
     ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading.getAnalyzedResult();
     if (!analyzed_result)
     {
-        /// Range analysis normally enforces throwing read limits and memoizes its result.
-        /// At this stage, however, later planning may make the executed read exempt from those
-        /// limits. In that case use an estimation-only analysis; execution will analyze again
-        /// after its final read mode is known.
-        analyzed_result = reading.hasThrowingReadRowLimit()
-            ? reading.selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-            : reading.selectRangesToRead();
+        /// A read of the probe plan of automatic parallel replicas has no index conditions, and takes the
+        /// analysis of its single-node read if that plan is chosen. Estimate from that analysis as well, or from
+        /// the one the single-node estimate ran under a throwing read limit, which it does not keep as the read's,
+        /// so that the probe chooses what the single-node plan chose. Without either, leave the read without an
+        /// estimate rather than analyze it here, which would repeat the work and prune nothing.
+        if (options.find_single_node_read && *options.find_single_node_read)
+        {
+            if (const auto * single_node_read = (*options.find_single_node_read)(reading))
+            {
+                analyzed_result = single_node_read->getAnalyzedResult();
+                if (!analyzed_result)
+                    analyzed_result = single_node_read->getAnalyzedResultForEstimation();
+            }
+        }
+        else
+        {
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
+            analyzed_result = reading.hasThrowingReadRowLimit()
+                ? reading.selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                : reading.selectRangesToRead();
+        }
     }
 
     /// An exact empty range selection proves that the relation is empty. Other empty

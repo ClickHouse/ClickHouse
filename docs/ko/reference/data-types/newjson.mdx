@@ -1,9 +1,9 @@
 ---
-description: 'JSON 데이터를 네이티브로 지원하는 ClickHouse의 JSON 데이터 타입 문서'
+description: 'JSON 데이터를 네이티브로 지원하는 ClickHouse의 JSON 데이터 타입(data type) 문서'
 keywords: ['json', 'data type']
 sidebarTitle: 'JSON'
 slug: /sql-reference/data-types/newjson
-title: 'JSON 데이터 타입'
+title: 'JSON 데이터 타입(data type)'
 doc_type: 'reference'
 ---
 
@@ -18,7 +18,7 @@ import WhenToUseJson from '/snippets/ko/_when-to-use-json.mdx';
 `JSON` 타입은 JavaScript Object Notation(JSON) 문서를 단일 컬럼에 저장합니다.
 
 <Note>
-  ClickHouse Open-Source에서는 버전 25.3부터 JSON 데이터 타입이 프로덕션 환경에서 사용 가능한 것으로 표시됩니다. 이전 버전에서는 이 타입을 프로덕션 환경에서 사용하는 것을 권장하지 않습니다.
+  ClickHouse Open-Source에서는 버전 25.3부터 JSON 데이터 타입(data type)이 프로덕션 환경에서 사용 가능한 것으로 표시됩니다. 이전 버전에서는 이 타입을 프로덕션 환경에서 사용하는 것을 권장하지 않습니다.
 </Note>
 
 `JSON` 타입 컬럼을 선언하려면 다음 구문을 사용할 수 있습니다:
@@ -29,6 +29,7 @@ import WhenToUseJson from '/snippets/ko/_when-to-use-json.mdx';
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
+    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
@@ -39,8 +40,9 @@ import WhenToUseJson from '/snippets/ko/_when-to-use-json.mdx';
 | 매개변수                        | 설명                                                                                                                                                                                                                                                                                                                   | 기본값    |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | `max_dynamic_paths`         | 선택적 매개변수로, 별도로 저장되는 단일 데이터 블록 전체에서(예: MergeTree 테이블의 단일 데이터 파트(data part) 전체에서) 몇 개의 경로를 서브컬럼으로 별도 저장할 수 있는지를 나타냅니다. <br /><br />이 한도를 초과하면 나머지 모든 경로는 [공유 데이터](#shared-data-structure)라는 단일 구조에 함께 저장됩니다.<br /><br />또한 이 매개변수를 변경하지 않고도 동적 경로 수 제한을 변경할 수 있는 [방법](#controlling-the-number-of-dynamic-paths)도 있습니다. | `1024` |
-| `max_dynamic_types`         | `1`과 `255` 사이의 선택적 매개변수로, `Dynamic` 타입의 단일 경로 컬럼에서 별도로 저장되는 단일 데이터 블록 전체에 걸쳐(예: MergeTree 테이블의 단일 데이터 파트(data part) 전체에서) 서로 다른 데이터 타입을 몇 개까지 별도로 저장할 수 있는지를 나타냅니다. <br /><br />이 한도를 초과하면 모든 새로운 타입은 `shared variant`라는 단일 구조에 함께 저장됩니다.                                                                            | `32`   |
+| `max_dynamic_types`         | `1`과 `255` 사이의 선택적 매개변수로, `Dynamic` 타입의 단일 경로 컬럼에서 별도로 저장되는 단일 데이터 블록 전체에 걸쳐(예: MergeTree 테이블의 단일 데이터 파트(data part) 전체에서) 서로 다른 데이터 타입(data type)을 몇 개까지 별도로 저장할 수 있는지를 나타냅니다. <br /><br />이 한도를 초과하면 모든 새로운 타입은 `shared variant`라는 단일 구조에 함께 저장됩니다.                                                                            | `32`   |
 | `some.path TypeName`        | JSON의 특정 경로에 대한 선택적 타입 힌트입니다. 이러한 경로는 항상 지정된 타입의 서브컬럼으로 저장됩니다.                                                                                                                                                                                                                                                       |        |
+| `SHARED some.path TypeName` | 해당 경로를 전용 파일에 따로 저장하지 않고, 컬럼의 다른 `SHARED` 경로와 함께 MergeTree 데이터 파트(part) 내의 일정한 수의 파일에 저장하는 타입 힌트입니다. [`SHARED` 타입이 지정된 경로](#shared-typed-paths)를 참조하십시오.                                                                                                                                                             |        |
 | `SKIP path.to.skip`         | JSON 파싱 중 건너뛸 특정 경로에 대한 선택적 힌트입니다. 이러한 경로는 JSON 컬럼에 저장되지 않습니다. 지정한 경로가 중첩된 JSON 객체인 경우, 해당 중첩 객체 전체를 건너뜁니다.                                                                                                                                                                                                          |        |
 | `SKIP REGEXP 'path_regexp'` | JSON 파싱 중 경로를 건너뛰는 데 사용하는 정규식이 포함된 선택적 힌트입니다. 이 정규식과 일치하는 모든 경로는 JSON 컬럼에 저장되지 않습니다.                                                                                                                                                                                                                                 |        |
 
@@ -913,6 +915,28 @@ JSON 컬럼의 내용을 검사하는 데 사용되는 함수에 관한 자세�
 다만 이는 엄격한 제한은 아닙니다. 마지막 청크가 목표 값의 절반보다 작으면 이전 청크와 머지되므로,
 실제 청크 크기는 `target/2`에서 `1.5 * target` 사이가 됩니다.
 
+## `SHARED` 타입이 지정된 경로 {#shared-typed-paths}
+
+[MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 파트에서 타입이 지정된 경로는 모두 각각 독립된 컬럼처럼 저장되며, 해당 타입의 하위 스트림마다 파일이 하나씩 생성됩니다. 따라서 타입이 지정된 경로가 수백 개인 컬럼은 파트마다 수백 개의 파일을 생성하며, 객체 스토리지에서는 파일을 하나 읽을 때마다 별도의 요청이 발생합니다. 타입이 지정된 경로를 `SHARED`로 지정하면 해당 경로는 파트의 타입이 지정된 공유 데이터에 저장됩니다. 즉, 한 컬럼의 `SHARED` 경로는 개수와 관계없이 모두 3개의 파일에 함께 기록됩니다. 데이터는 그래뉼(granule) 단위로, 다시 경로별로 배치되고 각 경로 데이터의 위치가 기록되므로, 경로 하나를 읽을 때에도 해당 경로만 디코딩합니다.
+
+```sql
+CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
+```
+
+여기서 `a`와 `b.c`는 타입이 지정된 공유 데이터에 저장되고, `d`는 별도의 컬럼으로 저장됩니다. 저장 방식을 제외하면 `SHARED` 경로는 다른 타입이 지정된 경로와 다르지 않습니다. 값은 파싱된 후 선언된 타입으로 CAST되고, 경로와 그 서브컬럼은 동일한 구문(`json.a`, `json.b.c`, `json.b.c.size0`)으로 읽으며, 하위 객체 읽기와 combined 서브컬럼 읽기에도 포함됩니다. MergeTree 파트 외부(예: `Memory` 엔진이나 `Native` 포맷)에서는 이 수정자가 아무런 영향을 주지 않습니다.
+
+타입이 지정된 경로가 많은 컬럼에는 `SHARED`를 사용하십시오. 특히 한 경로에서 읽는 바이트 수보다 파트당 파일 수가 더 중요한 객체 스토리지에서 유용합니다. `SHARED` 경로 하나를 읽으면 해당 데이터가 들어 있는 압축 블록을 읽게 되는데, 이 블록은 인접한 경로와 공유될 수 있으므로 자체 파일을 가진 경로보다 데이터를 다소 더 많이 읽을 수 있습니다. 블록은 크기가 `min_compress_block_size`에 도달하면 잘리므로, 초과로 읽는 양은 이 값 이내로 제한됩니다.
+
+이 수정자는 `ALTER TABLE ... MODIFY COLUMN`으로 추가하거나 제거할 수 있습니다:
+
+```sql
+ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
+```
+
+[지연 타입 힌트](#lazy-type-hints)가 활성화되어 있으면 이 작업은 메타데이터 전용 변경이 되며, 기존 파트는 머지될 때까지 기존 레이아웃을 유지합니다. 활성화되어 있지 않으면 파트가 재작성됩니다. 두 레이아웃의 파트는 함께 읽을 수 있습니다.
+
+타입이 지정된 공유 데이터의 디스크 저장 형식(on-disk format) 버전은 MergeTree 설정 `object_typed_shared_data_serialization_version`으로 지정합니다. 현재 사용 가능한 버전은 `v1`뿐입니다.
+
 ## MergeTree 파트 내 JSON의 동적 경로 수 제어하기 {#controlling-the-number-of-dynamic-paths}
 
 JSON에서 동적 경로의 한도를 설정하는 주요 방법은 JSON 타입 선언에서 `max_dynamic_paths` 매개변수를 사용하는 것입니다.
@@ -1377,6 +1401,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 `JSON` 컬럼을 생성하고 데이터를 로드하기 전에 다음 팁을 고려하십시오:
 
 * 데이터를 살펴보고 가능한 한 많은 경로 힌트(path hint)와 타입을 지정하십시오. 이렇게 하면 저장 및 읽기 효율이 훨씬 높아집니다.
+* `MergeTree` 테이블에 타입이 지정된 경로가 많은 경우, 특히 객체 스토리지를 사용할 때는 해당 경로를 `SHARED`로 선언하여 파트당 파일 수를 일정하게 유지하십시오. 자세한 내용은 [`SHARED` 타입이 지정된 경로](#shared-typed-paths)를 참조하십시오.
 * 어떤 경로가 필요하고 어떤 경로가 전혀 필요하지 않은지 미리 판단하십시오. 필요하지 않은 경로는 `SKIP` 섹션에 지정하고, 필요하면 `SKIP REGEXP` 섹션에도 지정하십시오. 이렇게 하면 저장 효율이 향상됩니다.
 * `max_dynamic_paths` 매개변수를 지나치게 큰 값으로 설정하지 마십시오. 저장 및 읽기 효율이 떨어질 수 있습니다.
   이는 메모리, CPU 등 시스템 매개변수에 크게 좌우되지만, 일반적인 경험칙으로는 로컬 파일 시스템 스토리지에서는 `max_dynamic_paths`를 10 000보다 크게 설정하지 않고, 원격 파일 시스템 스토리지에서는 1024보다 크게 설정하지 않는 것이 좋습니다.

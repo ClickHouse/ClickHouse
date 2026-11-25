@@ -1,0 +1,74 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-04-10
+title: '데모 데이 - 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: '2026-04-10 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+## 고정 가능한 데이터 소스 필터 {#pinnable-datasource-filters}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 데이터 소스 필터를 고정하고 팀 전체와 공유할 수 있습니다. 필터의 고정 아이콘을 클릭하면 본인에게만 고정할지, 팀 전체와 공유할지 선택할 수 있습니다. 공유 필터는 필터 목록 상단의 별도 섹션에 표시되므로, 모든 팀 멤버가 정확한 필터 이름을 몰라도 쉽게 찾아 적용할 수 있습니다.
+
+이 기능은 커뮤니티에서 가장 많이 요청된 기능 중 하나입니다. 이제 팀에서 필터 구성을 별도 경로(out-of-band)로 공유할 필요가 없습니다. 공유 필터는 고정하는 즉시 모든 사용자에게 표시되며, 필터 키뿐 아니라 특정 필터 값까지 공유할 수 있으므로 필터의 전체 컨텍스트가 함께 전달됩니다.
+
+**관련 풀 리퀘스트:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] 팀 전체에서 필터를 확인하고 쉽게 찾을 수 있도록 공유 필터 도입
+
+## ClickStack Cloud에서 서비스 깨우기 {#waking-service-from-clickstack-cloud}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack Cloud 사용자는 앱 안에서 바로 절전 상태의 서비스를 깨울 수 있습니다. 이전에는 서비스가 중지되면 &quot;retry&quot; 프롬프트가 표시되었지만, 앱이 실제로 서비스를 깨워 주지는 않았습니다. 사용자가 직접 ClickStack Cloud로 이동해 서비스를 수동으로 깨운 뒤, 다시 돌아와 재시도를 눌러야 했습니다.
+
+이제는 앱이 이 과정 전체를 처리합니다. 서비스가 절전 상태이면 프롬프트에 &quot;wake service&quot;가 표시되며, 현재 화면을 벗어나지 않고도 전체 과정이 자동으로 처리됩니다. 작은 편의성 개선이지만, 여러 단계를 거쳐야 했던 번거로운 작업 중단을 워크플로에서 없애 줍니다. 특히 한동안 사용하지 않다가 ClickStack에 접속해 곧바로 데이터를 확인하려는 경우에 유용합니다.
+
+## 일관된 AI 기능 활성화 {#consistent-enabling-of-ai-features}
+
+*데모 진행자: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack의 AI 기능은 ClickHouse Cloud 컨트롤 플레인에서만 켜고 끌 수 있으며, 이 컨트롤 플레인이 유일한 신뢰할 수 있는 기준 정보 역할을 합니다. 이전에는 ClickStack 컨트롤 플레인과 앱 내부에 서로 연동되지 않는 체크박스가 각각 있었습니다. 한쪽을 활성화해도 다른 쪽과 동기화된다는 보장이 없었기 때문에 AI가 실제로 활성화되어 있는지 혼란이 생겼습니다.
+
+이제 ClickStack 내부의 체크박스는 ClickHouse Cloud로 이동하는 링크 역할만 하며 그 외에는 비활성화되어 있습니다. ClickHouse Cloud에서 토글을 켜면 ClickStack에서도 해당 기능을 자동으로 사용할 수 있습니다. 따라서 AI 활성화 방식이 일관되고 예측 가능해지며, 어떤 설정이 실제로 동작을 제어하는지 추측할 필요가 없습니다.
+
+## 원시 SQL(Raw SQL) 알림 {#raw-sql-alerting}
+
+*데모 진행자: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 원시 SQL 선 차트에서 알림을 사용할 수 있습니다. 기존 원시 SQL 차트 기능이 확장되어 임계값 기반 알림까지 지원합니다. 사용자 정의 SQL 쿼리로 작성한 선 차트에 알림을 연결하고, 다른 차트 알림과 동일한 방식으로 구성할 수 있습니다. 임계값 비교에는 인터벌과 날짜 범위 매개변수가 모두 필요하므로, 현재는 선 차트와 막대 차트에서만 이 기능을 지원합니다.
+
+이 기능을 통해 상당히 강력한 활용 사례를 구현할 수 있습니다. 데모에서는 현재 인터벌의 오류 수를 집계하여 직전 30개 인터벌과 비교하고, 값이 과거 평균보다 표준편차의 2배 이상 높으면 이를 감지하는 쿼리를 보여 줍니다. 이제 이러한 통계적 이상 탐지도 적절한 SQL을 작성하고 임계값만 설정하면 구현할 수 있습니다. 알림 구성은 차트 편집기 안의 접을 수 있는 섹션에 배치되어 있어, 실제로 필요할 때까지 UI가 깔끔하게 유지됩니다.
+
+**관련 풀 리퀘스트:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Create TileAlertEditor component
+
+## HyperDX TUI 개선 사항 {#hyperdx-tui-improvements}
+
+*데모 진행자: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX 터미널 UI를 시작하기가 한층 더 쉬워졌습니다. 이제 `npm install -g @hyperdx/cli`로 전역 설치한 후 `hdx`를 실행하면 바로 사용할 수 있습니다. 대화형 터미널 인터페이스를 바로 열려면 `--tui` 플래그를 사용하십시오. 바이너리는 `npm`을 통해 `hdx`로도 제공되므로, 패키지를 설치하고 나면 별도로 설치할 필요가 없습니다.
+
+이번 주에는 설치 방식 개선과 함께 두 가지 주요 기능이 추가되었습니다. 먼저 터미널의 오류 메시지가 적절한 강조 표시와 함께 구조화된 형태로 렌더링됩니다. 웹 프론트엔드와 동일한 서식 지정 패턴을 따르므로 브라우저에서든 TUI에서든 같은 수준의 세부 정보를 확인할 수 있습니다. 또한 새로운 SQL 프리뷰 기능으로 실제로 실행되는 쿼리를 확인할 수 있습니다. 아울러 이벤트 뷰어에서 `Shift+A`를 누르면 새로운 알림 페이지로 이동할 수 있어, 터미널을 벗어나지 않고도 구성된 모든 알림의 개요와 최근 트리거 이력을 한눈에 확인할 수 있습니다.
+
+**관련 풀 리퀘스트:** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] TUI 오류 메시지 렌더링 개선 및 SQL 프리뷰 추가, [#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] 개요 및 최근 이력을 제공하는 알림 페이지(Shift+A) 추가, [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] @hyperdx/cli 패키지 추가, [#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI: apiUrl에서 appUrl로 전환 및 대화형 로그인 흐름 도입

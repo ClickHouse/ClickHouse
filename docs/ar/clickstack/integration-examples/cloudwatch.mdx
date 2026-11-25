@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 تُعد AWS CloudWatch خدمة مراقبة لموارد AWS وتطبيقاتها. ورغم أن CloudWatch يوفّر تجميع السجلات، فإن توجيه السجلات إلى ClickStack يتيح لك ما يلي:
@@ -28,7 +28,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 يوضّح هذا الدليل كيفية توجيه سجلات CloudWatch إلى ClickStack باستخدام OpenTelemetry Collector.
 
 <div id="existing-cloudwatch">
-  ## التكامل مع مجموعات سجلات CloudWatch الحالية
+  ## التكامل مع مجموعات سجلات CloudWatch الحالية {#existing-cloudwatch}
 </div>
 
 يوضح هذا القسم كيفية تهيئة OpenTelemetry Collector لسحب السجلات من مجموعات سجلات CloudWatch الحالية لديك وتمريرها إلى ClickStack.
@@ -36,7 +36,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا أردت اختبار هذا التكامل قبل تهيئة بيئة الإنتاج لديك، يمكنك استخدام مجموعة البيانات التجريبية الخاصة بنا في [قسم مجموعة البيانات التجريبية](#demo-dataset).
 
 <div id="prerequisites">
-  ### المتطلبات الأساسية
+  ### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -51,19 +51,15 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="الحصول على مفتاح API لـ ClickStack" id="get-api-key">
     يرسل OpenTelemetry Collector البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
 
-    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
+    1. افتح واجهة مستخدم ClickStack على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
     2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
     3. انتقل إلى **إعدادات الفريق → مفاتيح API**
     4. انسخ **مفتاح API للاستيعاب** الخاص بك
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     احفظ هذا في متغير بيئة:
@@ -74,7 +70,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="تهيئة بيانات اعتماد AWS" id="configure-aws">
-    صدِّر بيانات اعتماد AWS كمتغيرات بيئة. وتعتمد الطريقة على نوع authentication المستخدم لديك:
+    صدِّر بيانات اعتماد AWS كمتغيرات بيئة. وتعتمد الطريقة على نوع authentication المستخدم لديك:
 
     **لمستخدمي AWS SSO (موصى به لمعظم organizations):**
 
@@ -279,35 +275,31 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
           - "host.docker.internal:host-gateway"
     ```
 
-    ثم شغّل المجمِّع:
+    ثم شغّل المجمِّع:
 
     ```bash
     docker compose up -d
     ```
 
-    اعرض سجلات المجمِّع:
+    اعرض سجلات المجمِّع:
 
     ```bash
     docker compose logs -f otel-collector
     ```
   </Step>
 
-  <Step title="تحقّق من السجلات في HyperDX" id="verify-logs">
+  <Step title="تحقّق من السجلات في واجهة مستخدم ClickStack" id="verify-logs">
     بمجرد تشغيل الـ collector:
 
-    1. افتح HyperDX على http://localhost:8080 (أو على عنوان URL الخاص بـ ClickStack)
+    1. افتح واجهة مستخدم ClickStack على http://localhost:8080 (أو على عنوان URL الخاص بـ ClickStack)
     2. انتقل إلى عرض **السجلات**
     3. انتظر دقيقة إلى دقيقتين حتى تظهر السجلات (بحسب فترة الاستطلاع لديك)
     4. ابحث عن السجلات القادمة من مجموعات سجلات CloudWatch الخاصة بك
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض البحث في السجلات](/images/clickstack/cloudwatch/log-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض البحث في السجلات](/images/clickstack/cloudwatch/log-search-view.webp)
+      </Frame>
     </div>
 
     ابحث عن هذه السمات الأساسية في السجلات:
@@ -318,22 +310,18 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * `Body`: المحتوى الفعلي لرسالة السجل
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![قيم عمود سجل الخطأ](/images/clickstack/cloudwatch/error-log-column-values.webp)
-
-    </Frame>
-
+      <Frame>
+        ![قيم عمود سجل الخطأ](/images/clickstack/cloudwatch/error-log-column-values.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
+  ## مجموعة البيانات التجريبية {#demo-dataset}
 </div>
 
-للمستخدمين الذين يرغبون في اختبار تكامل سجلات CloudWatch قبل تهيئة بيئة AWS الإنتاجية، نوفر مجموعة بيانات تجريبية تحتوي على سجلات مُولَّدة مسبقًا تعرض أنماطًا واقعية من عدة خدمات AWS.
+للمستخدمين الذين يرغبون في اختبار تكامل سجلات CloudWatch قبل تهيئة بيئة AWS الإنتاجية، نوفر مجموعة بيانات تجريبية تحتوي على سجلات مُولَّدة مسبقًا تعرض أنماطًا واقعية من عدة خدمات AWS.
 
 <Steps>
   <Step title="تنزيل مجموعة البيانات التجريبية" id="download-sample">
@@ -373,7 +361,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="التحقق من البيانات التجريبية" id="verify-demo-logs">
     بعد الاستيراد:
 
-    1. افتح HyperDX على http://localhost:8080 وسجّل الدخول (أنشئ حسابًا إذا لزم الأمر)
+    1. افتح واجهة مستخدم ClickStack على http://localhost:8080 وسجّل الدخول (أنشئ حسابًا إذا لزم الأمر)
     2. انتقل إلى عرض **Logs**
     3. اضبط النطاق الزمني على **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
     4. ابحث عن `cloudwatch-demo` أو رشّح باستخدام `LogAttributes['source'] = 'cloudwatch-demo'`
@@ -381,26 +369,20 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     من المفترض أن ترى سجلات من عدة مجموعات سجلات CloudWatch.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![عرض البحث التجريبي](/images/clickstack/cloudwatch/demo-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![عرض البحث التجريبي](/images/clickstack/cloudwatch/demo-search-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-12-06 00:00:00 - 2025-12-09 00:00:00** لضمان ظهور السجلات التجريبية بغض النظر عن موقعك. بعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-12-06 00:00:00 - 2025-12-09 00:00:00** لضمان ظهور السجلات التجريبية بغض النظر عن موقعك. بعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصورات {#dashboards}
 
 لمساعدتك في مراقبة سجلات CloudWatch باستخدام ClickStack، نوفر لوحة معلومات مُعدّة مسبقًا تتضمن التصورات الأساسية.
 
@@ -410,29 +392,21 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="استورد لوحة المعلومات" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة المعلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. ارفع الملف `cloudwatch-logs-dashboard.json` ثم انقر على **إنهاء الاستيراد**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![مربع حوار إنهاء الاستيراد](/images/clickstack/cloudwatch/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مربع حوار إنهاء الاستيراد](/images/clickstack/cloudwatch/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -440,13 +414,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ستُنشأ لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![لوحة معلومات CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![لوحة معلومات CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -456,12 +426,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### عدم ظهور أي سجلات في HyperDX
-</div>
+### عدم ظهور أي سجلات في واجهة مستخدم ClickStack {#no-logs}
 
 **تحقق من تهيئة بيانات اعتماد AWS:**
 
@@ -474,7 +442,7 @@ aws sts get-caller-identity
 **تحقق من أذونات IAM:**
 تأكد من أن بيانات اعتماد AWS لديك تتضمن أذونات `logs:DescribeLogGroups` و`logs:FilterLogEvents` المطلوبة.
 
-**تحقق من سجلات الـ مجمِّع بحثًا عن أخطاء:**
+**تحقق من سجلات الـ مجمِّع بحثًا عن أخطاء:**
 
 ```bash
 # If using Docker directly, logs appear in stdout
@@ -489,7 +457,7 @@ docker compose logs otel-collector
 * `failed to refresh cached credentials, no EC2 IMDS role found`: متغيرات بيئة بيانات اعتماد AWS غير مضبوطة
 * `connection refused`: يتعذر الوصول إلى endpoint الخاص بـ ClickStack
 
-**تحقق من وجود مجموعات سجلات CloudWatch وأنها تحتوي على logs حديثة:**
+**تحقق من وجود مجموعات سجلات CloudWatch وأنها تحتوي على سجلات حديثة:**
 
 ```bash
 # List your log groups
@@ -504,7 +472,7 @@ aws logs filter-log-events \
 ```
 
 <div id="missing-recent">
-  ### لا تظهر إلا السجلات القديمة أو لا تظهر السجلات الحديثة
+  ### لا تظهر إلا السجلات القديمة أو لا تظهر السجلات الحديثة {#missing-recent}
 </div>
 
 **يبدأ مستقبِل CloudWatch من &quot;الآن&quot; افتراضيًا:**
@@ -526,7 +494,7 @@ docker run --rm ...
 سيُنشئ المستقبِل نقطة تحقّق جديدة، ثم يبدأ بجلب السجلات من الوقت الحالي فصاعدًا.
 
 <div id="expired-credentials">
-  ### رمز الأمان غير صالح / انتهت صلاحية بيانات الاعتماد
+  ### رمز الأمان غير صالح / انتهت صلاحية بيانات الاعتماد {#expired-credentials}
 </div>
 
 إذا كنت تستخدم بيانات اعتماد مؤقتة (AWS SSO أو دورًا مفترضًا)، فستنتهي صلاحيتها بعد مدة من الزمن.
@@ -547,7 +515,7 @@ docker restart <container-id>
 ```
 
 <div id="latency">
-  ### ارتفاع زمن الكمون أو فقدان السجلات الحديثة
+  ### ارتفاع زمن الكمون أو فقدان السجلات الحديثة {#latency}
 </div>
 
 **قلّل فاصل الاستقصاء:**
@@ -561,7 +529,7 @@ logs:
 **ملاحظة:** تؤدي الفواصل الزمنية الأقصر بين عمليات الاستقصاء إلى زيادة عدد استدعاءات واجهة برمجة تطبيقات AWS، وقد تترتب عليها تكاليف أعلى لواجهة برمجة تطبيقات CloudWatch.
 
 <div id="memory">
-  ### يستهلك المجمِّع ذاكرةً كبيرة جدًا
+  ### يستهلك المجمِّع ذاكرةً كبيرة جدًا {#memory}
 </div>
 
 **قلّل حجم الدفعة أو زِد المهلة:**
@@ -582,16 +550,14 @@ groups:
 ```
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) للأحداث الحرجة (إخفاقات الاتصال وازدياد الأخطاء)
 * خفّض تكاليف CloudWatch عبر ضبط فترات الاحتفاظ أو الأرشفة إلى S3، بعد أن أصبحت السجلات لديك في ClickStack
 * رشّح مجموعات السجلات كثيرة الضوضاء بإزالتها من إعدادات المجمّع لتقليل حجم الإدخال
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يوضح هذا الدليل كيفية تشغيل OpenTelemetry Collector محليًا باستخدام Docker Compose لأغراض الاختبار. أما لعمليات النشر في بيئة الإنتاج، فشغّل مجمِّع على بنية تحتية لديها وصول إلى AWS ‏(EC2 مع IAM roles، أو EKS مع IRSA، أو ECS مع task roles) للاستغناء عن إدارة مفاتيح الوصول. انشر مجمِّعات في منطقة AWS نفسها التي توجد فيها مجموعات سجلات CloudWatch لتقليل زمن الوصول والتكاليف.
 
