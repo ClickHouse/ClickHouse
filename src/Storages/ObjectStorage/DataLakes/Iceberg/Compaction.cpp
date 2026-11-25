@@ -583,7 +583,7 @@ CommitOutcome commitCompactedMetadata(
     const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
     if (!catalog_writes_metadata_file)
     {
-        /// A non-transactional catalog swaps its pointer unconditionally, so a commit made since planning is checked here.
+        /// A commit made since planning is detected before the metadata file is written for a stale base.
         if (catalog)
         {
             const auto current_metadata_file = getCatalogCurrentMetadataFile(
@@ -621,8 +621,12 @@ CommitOutcome commitCompactedMetadata(
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
         if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata_object))
         {
+            /// Glue rejects only an update that did not land, so nothing references the metadata file written for it.
             if (!catalog_writes_metadata_file)
-                return CommitOutcome::Unknown;
+            {
+                removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
+                return CommitOutcome::Conflict;
+            }
 
             /// The HTTP client re-sends the commit, so a rejection is checked against the catalog's snapshots.
             try
