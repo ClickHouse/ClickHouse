@@ -225,13 +225,19 @@ def test_metadata_refuses_a_table_filter_on_the_table():
     assert "additional_table_filters" in data["error"]
 
 
-def test_metadata_requires_select_on_the_table():
-    node.query("CREATE USER IF NOT EXISTS metadata_no_select IDENTIFIED BY 'pass'")
-    node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO metadata_no_select")
+# The endpoint reads the metric families through `timeSeriesMetricFamilies` as the user of the request,
+# so it needs `SHOW COLUMNS` on the TimeSeries table, which `SELECT` on the table implies.
+def test_metadata_requires_show_columns():
+    node.query("DROP USER IF EXISTS metadata_reader")
+    node.query("CREATE USER metadata_reader IDENTIFIED BY 'password'")
     try:
-        data = get_bad_data_from_api(
-            "/api/v1/metadata", params={"user": "metadata_no_select", "password": "pass"}
-        )
-        assert "Not enough privileges" in data["error"]
+        node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO metadata_reader")
+        params = {"user": "metadata_reader", "password": "password"}
+        error = get_bad_data_from_api("/api/v1/metadata", params=params)["error"]
+        assert "Not enough privileges" in error, error
+        assert "SHOW COLUMNS ON default.prometheus" in error, error
+        node.query("GRANT SELECT ON default.prometheus TO metadata_reader")
+        data = get_json_from_api("/api/v1/metadata", params=params)["data"]
+        assert data == ALL_METADATA
     finally:
-        node.query("DROP USER metadata_no_select")
+        node.query("DROP USER IF EXISTS metadata_reader")
