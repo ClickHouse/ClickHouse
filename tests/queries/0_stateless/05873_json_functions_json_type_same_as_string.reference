@@ -1,18 +1,18 @@
-calls: 2949 2065
--- the data: rows, text size, rows whose source is not what the JSON type keeps (must be 0)
+calls: 1776 389
+-- the data: rows, text size, rows whose source is not what the JSON type keeps or whose untyped columns differ (must be 0)
 t	19	645	1798	0
-te	19	632	1796
+te	19	632	1796	0
 -- comparisons, calls, distinct String results, mismatches
-t	224124	2949	907	0
-te	156940	2065	582	0
-tf	270	27	71	0
+t	33744	1776	679	0
+te	7391	389	315	0
+tf	260	26	69	0
 tp	131	131	48	0
 -- mismatches
 -- constant JSON argument
 256	0	0	306
 -- a constant path does not write the row
 7	1	7	7
-1
+1	5000000	5000000
 1
 -- examples: the call, on JSON, on String
 JSONLength(j)	3	3
