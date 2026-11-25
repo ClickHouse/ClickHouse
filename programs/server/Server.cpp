@@ -3291,6 +3291,7 @@ try
             return global_context->getConfigRef();
         };
 
+        /// `updateServers` does not recreate Keeper listeners, so a config reload must not stop them.
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -3317,7 +3318,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 false),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -3344,7 +3346,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 true),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3381,7 +3384,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
             }
 
@@ -3418,7 +3422,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");

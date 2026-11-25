@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -39,6 +40,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char file_read_corrupt_data_without_direct_io[];
+}
 
 namespace ErrorCodes
 {
@@ -176,6 +182,15 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     }
     else
         return false;
+
+    if (FailPointInjection::hasAnyFailPointBeenRegistered())
+    {
+        fiu_do_on(FailPoints::file_read_corrupt_data_without_direct_io,
+        {
+            if (getFileName().ends_with(".bin") && !(fcntl(fd, F_GETFL) & O_DIRECT))
+                working_buffer.begin()[0] = static_cast<char>(~working_buffer.begin()[0]);
+        });
+    }
 
     return true;
 }

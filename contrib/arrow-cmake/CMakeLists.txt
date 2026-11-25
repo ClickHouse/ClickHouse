@@ -23,7 +23,7 @@ endif()
 # and `ArrowStream` formats (`src/Processors/Formats/Impl/ArrowIPC`) need only the Thrift-generated
 # Parquet structures and the FlatBuffers-generated Arrow IPC bindings defined below. The Apache Arrow
 # C++ library and parquet-cpp are needed for the rest: the `ParquetMetadata` format,
-# Hive, the legacy Delta Lake reader, delta-kernel-rs, and Arrow Flight.
+# Hive, the legacy Delta Lake reader, and delta-kernel-rs.
 option (ENABLE_ARROW_LIBRARY "Enable the Apache Arrow C++ library and parquet-cpp (not needed for the Parquet and Arrow formats)" ${ENABLE_LIBRARIES})
 if (NOT ENABLE_ARROW_LIBRARY)
     message(STATUS "Not using the Apache Arrow C++ library")
@@ -162,6 +162,10 @@ add_library(ch_contrib::parquet_format ALIAS _parquet_format)
 # rewritten copy first, so that no translation unit sees the other declaration of the enums (that would violate the
 # ODR), whatever the order of the libraries a consumer links.
 target_include_directories(_arrow_ipc_metadata SYSTEM BEFORE INTERFACE "${PARQUET_FORMAT_INCLUDE_DIR}")
+
+# === Arrow Flight protocol
+
+include(flight.cmake)
 
 if (NOT ENABLE_ARROW_LIBRARY)
     return()
@@ -487,10 +491,6 @@ target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${PARQUET_FORMAT_INCLUDE
 add_dependencies(_arrow _arrow_ipc_generated)
 
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
-
-# === arrow flight
-
-include(flight.cmake)
 
 # === parquet
 
