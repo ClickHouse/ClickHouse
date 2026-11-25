@@ -1,7 +1,11 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/VarInt.h>
 
 namespace DB
 {
@@ -188,10 +192,17 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
             temp_size,
             max_data_size);
 
-    cur_data.checkAndUpdateSize(temp_size, arena);
-
-    buf.readStrict(cur_data.data, temp_size);
-    cur_data.data_size = temp_size;
+    /// Grown as the payload arrives (the buffer doubles), so that a huge size in a malformed state does not allocate
+    /// before the data proves it.
+    static constexpr UInt64 max_chunk_size = UInt64{1} << 20;
+    cur_data.data_size = 0;
+    while (cur_data.data_size < temp_size)
+    {
+        const UInt64 chunk_size = std::min(max_chunk_size, temp_size - cur_data.data_size);
+        cur_data.checkAndUpdateSize(chunk_size, arena);
+        buf.readStrict(cur_data.data + cur_data.data_size, chunk_size);
+        cur_data.data_size += chunk_size;
+    }
 
     if constexpr (has_limit)
     {
@@ -200,17 +211,21 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
         if (cur_data.num_rows > std::numeric_limits<UInt64>::max() / 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid groupConcat state: num_rows ({}) is too large and would overflow the offsets array.", cur_data.num_rows);
 
-        cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-
-        for (size_t i = 0; i < cur_data.offsets.size(); ++i)
+        /// The offsets are appended as they are read, so that a huge `num_rows` in a malformed state does not allocate
+        /// before the payload proves it.
+        cur_data.offsets.clear();
+        const size_t num_offsets = cur_data.num_rows * 2;
+        for (size_t i = 0; i < num_offsets; ++i)
         {
-            readVarUInt(cur_data.offsets[i], buf);
+            UInt64 offset = 0;
+            readVarUInt(offset, buf);
+            cur_data.offsets.push_back(offset, arena);
 
             if (cur_data.offsets[i] > cur_data.data_size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);
 
-            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
+            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[static_cast<ssize_t>(i) - 1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[static_cast<ssize_t>(i) - 1]);
         }
 
         if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
@@ -353,7 +368,7 @@ John, Jane
     /// Register every alias from `getNameAndAliases` (index 0 is the canonical name).
     /// `string_agg` is the PostgreSQL/SQL-standard alias; its argument order matches `groupConcat(expr, sep)`.
     /// The alias names must also be present in `getNameAndAliases` so the analyzer rewrites
-    /// the 2-argument form into the parameterized form (see `QueryTreeBuilder::setSecondArgumentAsParameter`).
+    /// the 2-argument form into the parameterized form (see `getGroupConcatArgumentsCountWithSeparator`).
     const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
     for (size_t i = 1; i < aliases.size(); ++i)
         factory.registerAlias(aliases.at(i), aliases.at(0), AggregateFunctionFactory::Case::Insensitive);

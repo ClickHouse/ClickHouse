@@ -18,6 +18,7 @@ doc_type: 'reference'
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `enable_read_write_grants`                      | 为 `S3`、`HDFS`、`Kafka` 等外部数据源启用 `READ` 和 `WRITE` 特权的分离。此功能从 25.7 版本开始提供。设置为 `true` 后，可以分别为数据源授予 `READ` 和 `WRITE` 特权，而不必通过单项授权同时授予两者。                                                                                                                                       | `false` |
 | `on_cluster_queries_require_cluster_grant`      | 设置 `ON CLUSTER` 查询是否需要 `CLUSTER` 授权。                                                                                                                                                                                                                                      | `true`  |
+| `readonly_restricts_set_role`                   | 设置当会话或查询处于 readonly 模式时，是否拒绝执行 `SET ROLE` 语句。设置为 `false` 时，`readonly` 不会限制 `SET ROLE`。`role` HTTP 查询参数不受影响。                                                                                                                                                               | `false` |
 | `role_cache_expiration_time_seconds`            | 设置角色在上次访问后可在 Role Cache 中保留的秒数。                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者是否允许任意用户执行。如果设置为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                  | `true`  |
 | `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者是否允许任意用户执行。如果设置为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及 `one`、`contributors` 等常量表) 仍然对所有人开放；此外，如果已授予 `SHOW` 权限 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
@@ -37,6 +38,7 @@ doc_type: 'reference'
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
+    <readonly_restricts_set_role>false</readonly_restricts_set_role>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
