@@ -28,9 +28,14 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --query "SELECT x, count() FROM t_forg
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT distributed_plan_delay_failed_task_release"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+RECENT="event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE"
 echo "coordinator stopped waiting for a task: $($CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND query_id = '$QUERY_ID'
-        AND message LIKE '%did not reach a terminal state after cancellation%'")"
+    WHERE $RECENT AND query_id = '$QUERY_ID' AND message LIKE '%did not reach a terminal state after cancellation%'")"
+# The worker knows the tasks by `<unique id>::<task>` and keeps the forgotten running one until it ends.
+UNIQUE_ID=$($CLICKHOUSE_CLIENT --query "SELECT extract(any(message), 'unique id: (\\S+)') FROM system.text_log
+    WHERE $RECENT AND query_id = '$QUERY_ID' AND message LIKE 'Starting distributed query, unique id: %'")
+echo "worker kept the running task until it ended: $($CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM system.text_log
+    WHERE $RECENT AND position(message, '$UNIQUE_ID') > 0 AND message LIKE 'Task % is forgotten while running%'")"
 
 # The held task ends about 5 s after it failed; earlier tests can leave controllers, so compare with the value before.
 for _ in {1..200}
