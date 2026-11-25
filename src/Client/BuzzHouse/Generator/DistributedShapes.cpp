@@ -2,6 +2,7 @@
 #include <fmt/ranges.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 
 /// Rules that steer a query to where its distributed plan is built differently from the local one. The replicas get
 /// the query tree rewritten and shipped as text, and the initiator then pairs objects of the two plans: sets by the
@@ -142,7 +143,7 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
     const bool automatic = rg.nextBool();
 
     add("enable_parallel_replicas", automatic || rg.nextSmallNumber() < 8 ? "1" : "2");
-    add("cluster_for_parallel_replicas", "'" + rg.pickRandomly(fc.parallel_replicas_clusters) + "'");
+    add("cluster_for_parallel_replicas", DB::quoteString(rg.pickRandomly(fc.parallel_replicas_clusters)));
     add("max_parallel_replicas", std::to_string(rg.randomInt<uint32_t>(2, 3)));
     add("parallel_replicas_for_non_replicated_merge_tree", "1");
     add("parallel_replicas_local_plan", automatic || rg.nextSmallNumber() < 8 ? "1" : "0");
@@ -591,13 +592,16 @@ private:
         if (pick < 88)
         {
             virtuals = true;
-            return fmt::format("merge('{}', '^{}$'){}", t.database, t.table, as);
+            /// Both arguments are compiled as regular expressions, even a plain database name
+            const auto exact = [](const String & name) { return DB::quoteString("^" + re2::RE2::QuoteMeta(name) + "$"); };
+            return fmt::format("merge(REGEXP({}), {}){}", exact(t.database), exact(t.table), as);
         }
         if (pick < 94)
         {
             return fmt::format("view(SELECT {} FROM {}){}", fmt::join(t.cols, ", "), t.name(), as);
         }
-        return fmt::format("cluster('{}', '{}', '{}'){}", rg.pickRandomly(clusters), t.database, t.table, as);
+        return fmt::format(
+            "cluster({}, {}, {}){}", DB::quoteString(rg.pickRandomly(clusters)), DB::quoteString(t.database), DB::quoteString(t.table), as);
     }
 
     /// `SELECT <key> AS k FROM ...` of a table
