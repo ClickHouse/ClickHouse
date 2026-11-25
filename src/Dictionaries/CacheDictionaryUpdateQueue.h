@@ -166,9 +166,14 @@ public:
     void waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const;
 
 private:
-    void updateThreadFunction();
+    using Batch = VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>>;
+
+    void updateThreadFunction(Batch & batch);
 
     using UpdateQueue = ConcurrentBoundedQueue<CacheDictionaryUpdateUnitPtr<dictionary_key_type>>;
+
+    static constexpr size_t max_units_in_batch = dictionary_key_type == DictionaryKeyType::Simple ? 1024 : 1;
+    static constexpr size_t max_keys_in_batch = 8192;
 
     String dictionary_name_for_logs;
 
@@ -176,6 +181,10 @@ private:
     UpdateFunction update_func;
 
     UpdateQueue update_queue;
+
+    /// One per update thread, reserved in the constructor: an update thread must not allocate outside its try block.
+    /// Declared before update_pool, so it is destroyed after the threads stop.
+    std::vector<Batch> batches;
     ThreadPool update_pool;
 
     /// Number of update threads that are updating a batch (the others wait for a unit in the queue).

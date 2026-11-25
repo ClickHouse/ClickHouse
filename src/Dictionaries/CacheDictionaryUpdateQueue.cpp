@@ -1,6 +1,7 @@
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 
 namespace CurrentMetrics
@@ -13,8 +14,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char cache_dictionary_update_queue_throw_on_reserve[];
+}
+
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
@@ -36,8 +43,17 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
 {
     try
     {
+        fiu_do_on(FailPoints::cache_dictionary_update_queue_throw_on_reserve,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while reserving the update batches");
+        });
+
+        batches.resize(configuration.max_threads_for_updates);
+        for (auto & batch : batches)
+            batch.reserve(max_units_in_batch);
+
         for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
-            update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });
+            update_pool.scheduleOrThrowOnError([this, i] { updateThreadFunction(batches[i]); });
     }
     catch (...)
     {
@@ -132,7 +148,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
+void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction(Batch & batch)
 {
     setThreadName(ThreadName::CACHE_DICTIONARY_UPDATE_QUEUE);
 
@@ -143,13 +159,8 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
     /// The key limit sums the distinct keys of each unit, so a key requested by several units is counted several times.
     /// It is an upper bound of the keys of one source request, but the last unit taken and a single large unit can go above it.
     static constexpr size_t probe_period = 32;
-    static constexpr size_t max_units_in_batch = 1024;
-    static constexpr size_t max_keys_in_batch = 8192;
 
-    /// Reserved once, so collecting a batch does not allocate: an exception there would lose the units taken from the queue.
-    VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> batch;
-    batch.reserve(max_units_in_batch);
-
+    /// The batch is reserved, so collecting it does not allocate: an exception there would lose the units taken from the queue.
     while (!update_queue.isFinished())
     {
         batch.clear();
