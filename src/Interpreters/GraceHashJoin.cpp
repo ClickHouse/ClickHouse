@@ -170,7 +170,7 @@ public:
         }
     }
 
-    size_t depth(size_t bucket_index) const { return nodes[leaves[bucket_index]].depth; }
+    [[nodiscard]] size_t depth(size_t bucket_index) const { return nodes[leaves[bucket_index]].depth; }
 
     void split(size_t bucket_index)
     {
@@ -184,7 +184,7 @@ public:
         nodes[leaf].first_child = first_child;
     }
 
-    Blocks scatter(const Names & keys, const Block & block) const
+    [[nodiscard]] Blocks scatter(const Names & keys, const Block & block) const
     {
         auto hashes = JoinCommon::computeJoinKeyHashes(keys, block);
         auto selector = JoinCommon::hashToSelector(
