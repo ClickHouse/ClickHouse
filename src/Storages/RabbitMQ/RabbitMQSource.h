@@ -100,7 +100,6 @@ private:
 
     Chunk generateImpl();
 
-    /// True if the view dependencies changed since streaming_views_version (always false without it).
     bool viewsChanged() const;
 
     /// Budget of driveLoopUntilMessage: for a REFRESH cycle the flush interval when set, else a finite
