@@ -2855,6 +2855,8 @@ Possible values:
     DECLARE(Bool, log_query_plans_time, false, R"(
 When [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans) captures a query, also collect the work intervals of its processors, the same as the `time` setting of [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze-concurrency). The plan stored in `system.query_log.query_plan` then has `Time` and `Concurrency` groups on its steps, with the wall-clock time and the concurrency level of each step and of its branch, and an `ExecutionTimeBreakdown` at its root, which splits the execution time into the time spent in the steps of the plan, outside them, and with no thread running anything.
 
+Collecting them costs memory and CPU in proportion to the number of processor tasks the query runs, so they grow with the length of the query, and processing them once the query has finished adds to its duration.
+
 Has no effect unless `log_query_plans` is enabled and the query is captured.
 )", EXPERIMENTAL, \
         {"26.12", false, false, "New setting to collect per-step wall-clock time and concurrency levels for the query plan written to `system.query_log`."}) \

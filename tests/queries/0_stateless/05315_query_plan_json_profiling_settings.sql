@@ -20,6 +20,13 @@ SET log_query_plans = 1;
 SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
 SETTINGS log_comment = '05315_default', join_algorithm = 'hash', enable_parallel_replicas = 0 FORMAT Null;
 
+-- Each setting alone turns on only its own collection.
+SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
+SETTINGS log_comment = '05315_time', join_algorithm = 'hash', log_query_plans_time = 1, enable_parallel_replicas = 0 FORMAT Null;
+
+SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
+SETTINGS log_comment = '05315_matches', join_algorithm = 'hash', log_query_plans_join_matches = 1, enable_parallel_replicas = 0 FORMAT Null;
+
 SELECT count() FROM p_left ALL INNER JOIN p_right USING (k)
 SETTINGS log_comment = '05315_both', join_algorithm = 'hash', log_query_plans_time = 1, log_query_plans_join_matches = 1, enable_parallel_replicas = 0 FORMAT Null;
 
@@ -52,7 +59,7 @@ FROM
             arrayFilter(n -> JSONExtractString(n, 'NodeType') = 'Join', JSONExtractArrayRaw(plan, 'Nodes'))[1],
             'Statistics') AS join_stats
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05315_default', '05315_both')
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05315_default', '05315_time', '05315_matches', '05315_both')
 )
 ORDER BY log_comment;
 
