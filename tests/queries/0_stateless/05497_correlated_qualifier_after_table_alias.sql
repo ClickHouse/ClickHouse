@@ -220,12 +220,6 @@ ORDER BY x;
 DROP TABLE squality_alias_scope_db_t;
 
 SET allow_correlated_subqueries = 0;
-SELECT (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
-        FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
-FROM squality_alias_scope_wildcard LIMIT 1;
-SELECT count(), (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
-                 FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
-FROM squality_alias_scope_wildcard;
 
 DROP TABLE squality_alias_scope;
 DROP TABLE squality_alias_scope_wildcard;

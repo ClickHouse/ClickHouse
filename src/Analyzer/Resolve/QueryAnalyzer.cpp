@@ -1479,11 +1479,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             identifier_resolve_context.allow_to_resolve_niladic_functions);
     }
 
-    const auto * previous_defer_matcher_alias_query_scope = defer_matcher_alias_query_scope;
-    if (identifier_resolve_context.defer_matcher_correlation)
-        defer_matcher_alias_query_scope = scope_to_resolve_alias_expression->getNearestQueryScope();
-    SCOPE_EXIT({ defer_matcher_alias_query_scope = previous_defer_matcher_alias_query_scope; });
-
     QueryTreeNodePtr alias_node = *it;
 
     if (!alias_node)
@@ -1770,23 +1765,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (identifier_lookup.isFunctionLookup())
         return resolve_result;
 
-    if (!identifier_resolve_context.defer_matcher_correlation)
+    CorrelatedColumnsCollector correlated_columns_collector{
+        resolved_identifier,
+        identifier_resolve_context.scope_to_resolve_alias_expression,
+        node_to_scope_map};
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
     {
-        CorrelatedColumnsCollector correlated_columns_collector{
-            resolved_identifier,
-            identifier_resolve_context.scope_to_resolve_alias_expression,
-            node_to_scope_map,
-            defer_matcher_alias_query_scope};
-        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-                " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                resolved_identifier->formatASTForErrorMessage(),
-                fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
-                scope.scope_node->formatASTForErrorMessage());
-        }
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
+            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+            identifier_lookup.identifier.getFullName(),
+            resolved_identifier->formatASTForErrorMessage(),
+            fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     return resolve_result;
@@ -1843,9 +1834,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
 {
-    if (defer_matcher_alias_query_scope && defer_matcher_alias_query_scope == scope.getNearestQueryScope())
-        identifier_resolve_context.defer_matcher_correlation = true;
-
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -2584,9 +2572,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     expression_identifier_lookup.is_matcher_qualifier = true;
-    IdentifierResolveContext matcher_resolve_context;
-    matcher_resolve_context.defer_matcher_correlation = true;
-    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope, matcher_resolve_context);
+    auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
     auto * expression_scope = expression_query_tree_node ? findMatcherExpressionScope(expression_query_tree_node, scope) : &scope;
 
@@ -3683,18 +3669,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    /// The qualifier lookup deferred correlation: only transformed output expressions may
-    /// register outer columns. This also covers a tuple assembled from several scopes.
-    if (!defer_matcher_alias_query_scope || defer_matcher_alias_query_scope != scope.getNearestQueryScope())
-    {
-        CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map, defer_matcher_alias_query_scope};
-        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} resolved to correlated columns"
-                " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
-                matcher_node_typed.formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-    }
+    CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map};
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Qualified matcher {} resolved to correlated columns"
+            " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
+            matcher_node_typed.formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
 
     auto original_ast = matcher_node->getOriginalAST();
     matcher_node = std::move(list);

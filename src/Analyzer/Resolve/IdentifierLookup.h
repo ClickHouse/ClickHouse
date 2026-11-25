@@ -251,10 +251,6 @@ struct IdentifierResolveContext
     /// Disable resolve of niladic functions without parentheses. Example: SELECT now; instead of SELECT now();
     bool allow_to_resolve_niladic_functions = true;
 
-    /// A matcher qualifier is inspected before its `EXCEPT` and `REPLACE` transformers run.
-    /// Register only the columns that survive those transformers as correlated.
-    bool defer_matcher_correlation = false;
-
     /// Initial scope where identifier resolution started.
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
@@ -276,7 +272,6 @@ struct IdentifierResolveContext
             && allow_to_check_database_catalog
             && allow_to_resolve_subquery_during_identifier_resolution
             && allow_to_resolve_niladic_functions
-            && !defer_matcher_correlation
             && scope_to_resolve_alias_expression == nullptr;
     }
 
