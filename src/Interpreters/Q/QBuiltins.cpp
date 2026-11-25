@@ -1422,6 +1422,26 @@ QValue xbar(Call & call)
     bool temporal = value.qtype == QType::Timestamp || value.qtype == QType::Datetime || value.qtype == QType::Date || value.qtype == QType::Month;
     bool clock = value.qtype == QType::Minute || value.qtype == QType::Second || value.qtype == QType::Time || value.qtype == QType::Timespan;
 
+    /// A month, a date, and a timestamp are rounded as the counts of their units since 2000.01.01, like in q:
+    /// `7 xbar 2000.01m` is 2000.01m, the month zero. (`toStartOfInterval` counts the months from 1900 and the days and
+    /// the nanoseconds from 1970, so its buckets are other ones when the width does not divide those offsets.)
+    bool step_is_clock = step.qtype == QType::Timespan || step.qtype == QType::Minute || step.qtype == QType::Second || step.qtype == QType::Time;
+    bool counted = value.qtype == QType::Timestamp || ((value.qtype == QType::Month || value.qtype == QType::Date) && !step_is_clock);
+    if (counted)
+    {
+        QType temporal_type = *value.qtype;
+        return binary(call,
+            [&](ASTPtr width, ASTPtr x)
+            {
+                /// A width that is a time is a number of nanoseconds for a timestamp.
+                if (step_is_clock)
+                    width = fn("toInt64", fn("multiply", fn("toFloat64", std::move(width)), lit(Field(static_cast<UInt64>(1'000'000'000)))));
+                ASTPtr count = temporalToNumber(std::move(x), temporal_type, call);
+                return numberToTemporal(fn("minus", count, fn("positiveModulo", count, std::move(width))), temporal_type, call);
+            },
+            temporal_type);
+    }
+
     if (temporal)
     {
         ASTPtr interval;
