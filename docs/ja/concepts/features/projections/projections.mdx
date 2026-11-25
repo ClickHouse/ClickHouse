@@ -7,11 +7,10 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## はじめに
+  ## はじめに {#introduction}
 </div>
 
 ClickHouse には、リアルタイムなシナリオで大量のデータに対する分析クエリを高速化するための、さまざまな仕組みがあります。そうしたクエリ高速化の仕組みの 1 つが、*プロジェクション* の利用です。プロジェクションは、着目する属性に基づいてデータを並べ替えたものを作成することで、クエリの最適化に役立ちます。具体的には、次のいずれかの形を取ります。
@@ -29,8 +28,8 @@ ClickHouse には、リアルタイムなシナリオで大量のデータに対
 
 ## プロジェクションはどのように機能しますか？ {#how-do-projections-work}
 
-実際のところ、PROJECTION は元のテーブルに追加される
-非表示テーブルのようなものと考えられます。PROJECTION は元のテーブルとは
+実際のところ、プロジェクション は元のテーブルに追加される
+非表示テーブルのようなものと考えられます。プロジェクション は元のテーブルとは
 異なる行順序、したがって異なるプライマリインデックスを持つことができ、
 さらに集計値を自動的かつ段階的に事前計算できます。その結果、プロジェクション を使うことで、
 クエリ実行を高速化するための 2 つの「調整手段」が得られます。
@@ -48,10 +47,14 @@ ClickHouse は自動的に主キーをサンプリングし、
 同じ正しい結果を生成でき、かつ読み取る必要があるデータ量が最も少ないテーブルを
 以下の図に示すように選択します。
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse における プロジェクション" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse のプロジェクション](/images/data-modeling/projections_1.webp)
+  </Frame>
+</div>
 
 <div id="smarter_storage_with_part_offset">
-  ### `_part_offset` によるより効率的なストレージ
+  ### `_part_offset` によるより効率的なストレージ {#smarter_storage_with_part_offset}
 </div>
 
 バージョン 25.5 以降、ClickHouse はプロジェクション内の仮想カラム `_part_offset` をサポートしており、
@@ -72,7 +75,7 @@ ClickHouse は自動的に主キーをサンプリングし、
 ほかのカラムは `_part_offset` を介して間接的に扱えます。
 
 <div id="when-to-use-projections">
-  ## Projections を使用すべきケース
+  ## Projections を使用すべきケース {#when-to-use-projections}
 </div>
 
 Projections は、データの挿入に応じて自動的に維持されるため、新規ユーザーにとって魅力的な機能です。さらに、クエリは単一のテーブルに送るだけでよく、可能な場合は projections が活用されて応答時間の短縮につながります。
@@ -102,11 +105,11 @@ Projections は、データの挿入に応じて自動的に維持されるた�
   [ストレージのオーバーヘッドを評価してください](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
 
 <div id="examples">
-  ## 例
+  ## 例 {#examples}
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### 主キーに含まれていないカラムでのフィルタリング
+  ### 主キーに含まれていないカラムでのフィルタリング {#filtering-without-using-primary-keys}
 </div>
 
 この例では、テーブルにプロジェクションを追加する方法を紹介します。
@@ -300,7 +303,11 @@ SETTINGS mutations_sync = 1
 以下の図は、メインテーブル `uk_price_paid_with_projections`
 と、その 2 つのPROJECTIONを可視化したものです。
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="メインテーブル uk_price_paid_with_projections とその 2 つのPROJECTIONの可視化" />
+<div className="ch-image-md">
+  <Frame>
+    ![メインテーブル uk_price_paid_with_projections とその 2 つのPROJECTIONの可視化](/images/data-modeling/projections_2.webp)
+  </Frame>
+</div>
 
 ここで、ロンドンの county のうち価格が最も高い 3 件を
 一覧表示するクエリを再度実行すると、クエリパフォーマンスが改善していることがわかります。
@@ -388,7 +395,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### さらに例を見ていきます
+  ### さらに例を見ていきます {#further-examples}
 </div>
 
 以下の例では、同じ英国の価格データセットを使用し、projections を使用する場合としない場合のクエリを比較します。
@@ -439,7 +446,7 @@ SETTINGS mutations_sync = 1
 以下のクエリでは、PROJECTIONありの場合となしの場合で、パフォーマンスを比較します。PROJECTIONの使用を無効にするには、デフォルトで有効になっている設定 [`optimize_use_projections`](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) を使用します。
 
 <div id="average-price-projections">
-  #### クエリ 1. 年ごとの平均価格
+  #### クエリ 1. 年ごとの平均価格 {#average-price-projections}
 </div>
 
 <RunnableCode>
@@ -471,7 +478,7 @@ SETTINGS mutations_sync = 1
 結果は同じですが、後者の例のほうがパフォーマンスは向上します。
 
 <div id="average-price-london-projections">
-  #### クエリ 2. ロンドンの年別平均価格
+  #### クエリ 2. ロンドンの年別平均価格 {#average-price-london-projections}
 </div>
 
 <RunnableCode>
@@ -502,7 +509,7 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### クエリ 3. 最も高額な地域
+  #### クエリ 3. 最も高額な地域 {#most-expensive-neighborhoods-projections}
 </div>
 
 2020 年以降の行に対するフィルタは、PROJECTION に保存されている 次元 `year` を直接参照します。
@@ -556,7 +563,7 @@ SETTINGS mutations_sync = 1
 </Note>
 
 <div id="combining-projections">
-  ### 1つのクエリで複数のプロジェクションを組み合わせる
+  ### 1つのクエリで複数のプロジェクションを組み合わせる {#combining-projections}
 </div>
 
 バージョン 25.6 以降、前バージョンで導入された `_part_offset` サポートを基盤として、ClickHouse では複数のフィルターを含む1つのクエリの高速化に複数のプロジェクションを利用できるようになりました。

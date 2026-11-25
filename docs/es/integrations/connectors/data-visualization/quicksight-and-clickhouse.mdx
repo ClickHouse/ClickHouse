@@ -10,16 +10,14 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-QuickSight puede conectarse a una implementación on-premise de ClickHouse (23.11+) a través de la interfaz MySQL, mediante el origen de datos oficial de MySQL y el modo Direct Query.
+QuickSight puede conectarse a una implementación on-premise de ClickHouse (23.11+) a través de la Interfaz de MySQL, mediante el origen de datos oficial de MySQL y el modo Consulta Directa.
 
 <div id="on-premise-clickhouse-server-setup">
-  ## Configuración del servidor ClickHouse on-premise
+  ## Configuración del servidor ClickHouse on-premise {#on-premise-clickhouse-server-setup}
 </div>
 
 Consulta [la documentación oficial](/es/concepts/features/interfaces/mysql) sobre cómo configurar un servidor ClickHouse con la interfaz MySQL habilitada.
@@ -112,57 +110,83 @@ mysql> show databases;
 Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
-<div id="connecting-quicksight-to-clickhouse">
-  ## Conectar QuickSight con ClickHouse
+## Conectar QuickSight a ClickHouse {#connecting-quicksight-to-clickhouse}
+
+En primer lugar, vaya a [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), abra la sección Datasets y haga clic en «New dataset»:
+
+<div className="ch-image-md">
+  <Frame>
+    ![Panel de control de Amazon QuickSight que muestra el botón New dataset en la sección Datasets](/images/integrations/data-visualization/quicksight_01.webp)
+  </Frame>
 </div>
 
-En primer lugar, ve a [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), navega hasta Datasets y haz clic en &quot;New dataset&quot;:
+<br />
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Panel de Amazon QuickSight que muestra el botón New dataset en la sección Datasets" border />
+Busque el conector oficial de MySQL incluido en QuickSight (llamado simplemente **MySQL**):
+
+<div className="ch-image-md">
+  <Frame>
+    ![Pantalla de selección del origen de datos de QuickSight con MySQL resaltado en los resultados de búsqueda](/images/integrations/data-visualization/quicksight_02.webp)
+  </Frame>
+</div>
 
 <br />
 
-Busca el conector oficial de MySQL incluido en QuickSight (llamado simplemente **MySQL**):
+Especifique los datos de conexión. Tenga en cuenta que el puerto de la Interfaz de MySQL es 9004 de forma predeterminada,
+aunque puede variar según la configuración del servidor.
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Pantalla de selección de origen de datos de QuickSight con MySQL resaltado en los resultados de búsqueda" border />
-
-<br />
-
-Especifica los detalles de la conexión. Ten en cuenta que el puerto de la interfaz MySQL es 9004 de forma predeterminada
-y puede ser distinto según la configuración del servidor.
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulario de configuración de la conexión MySQL de QuickSight con campos para hostname, puerto, base de datos y credenciales" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Formulario de configuración de la conexión MySQL de QuickSight con los campos de nombre del host, puerto, base de datos y credenciales](/images/integrations/data-visualization/quicksight_03.webp)
+  </Frame>
+</div>
 
 <br />
 
-Ahora tienes dos opciones para obtener los datos de ClickHouse. Primero, puedes seleccionar una tabla de la lista:
+Ahora dispone de dos opciones para recuperar los datos de ClickHouse. La primera es seleccionar una tabla de la lista:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Interfaz de selección de tablas de QuickSight que muestra las tablas de la base de datos disponibles en ClickHouse" border />
-
-<br />
-
-Como alternativa, puedes especificar una consulta SQL personalizada para obtener tus datos:
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Editor de consulta SQL personalizada de QuickSight para obtener datos de ClickHouse" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Interfaz de selección de tablas de QuickSight que muestra las tablas de la base de datos disponibles en ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
+  </Frame>
+</div>
 
 <br />
 
-Al hacer clic en &quot;Edit/Preview data&quot;, deberías poder ver la estructura de la tabla detectada o ajustar tu consulta SQL personalizada, si decidiste acceder a los datos de ese modo:
+La otra es especificar una consulta SQL personalizada para recuperar los datos:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Vista previa de datos de QuickSight que muestra la estructura de la tabla con columnas y datos de muestra" border />
-
-<br />
-
-Asegúrate de tener seleccionado el modo &quot;Direct Query&quot; en la esquina inferior izquierda de la UI:
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Interfaz de QuickSight con la opción del modo Direct Query resaltada en la esquina inferior" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Editor de consultas SQL personalizadas de QuickSight para recuperar datos de ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
+  </Frame>
+</div>
 
 <br />
 
-Ahora puedes continuar publicando tu dataset y creando una nueva visualización.
+Al hacer clic en «Edit/Preview data», podrá ver la estructura de la tabla inspeccionada o ajustar su consulta SQL personalizada, si ha optado por ese método para acceder a los datos:
+
+<div className="ch-image-md">
+  <Frame>
+    ![Vista previa de datos de QuickSight que muestra la estructura de la tabla con columnas y datos de muestra](/images/integrations/data-visualization/quicksight_06.webp)
+  </Frame>
+</div>
+
+<br />
+
+Asegúrese de tener seleccionado el modo «Consulta Directa» en la esquina inferior izquierda de la interfaz de usuario:
+
+<div className="ch-image-md">
+  <Frame>
+    ![Interfaz de QuickSight con la opción del modo Consulta Directa resaltada en la esquina inferior](/images/integrations/data-visualization/quicksight_07.webp)
+  </Frame>
+</div>
+
+<br />
+
+¡Ya puede publicar su conjunto de datos y crear una nueva visualización!
 
 <div id="known-limitations">
-  ## Limitaciones conocidas
+  ## Limitaciones conocidas {#known-limitations}
 </div>
 
 * La importación de SPICE no funciona como se espera; utilice en su lugar el modo Direct Query. Consulte [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553).

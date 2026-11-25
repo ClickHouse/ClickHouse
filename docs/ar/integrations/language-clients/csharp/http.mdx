@@ -11,17 +11,15 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 العميل الرسمي المكتوب بلغة C# للاتصال بـ ClickHouse.
 تتوفر الشيفرة المصدرية للعميل في [مستودع GitHub](https://github.com/ClickHouse/clickhouse-cs).
 طوّره في الأصل [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
 
 توفّر المكتبة واجهتَي برمجة تطبيقات رئيسيتين:
 
-* **`ClickHouseClient`** (موصى به): عميل عالي المستوى وآمن للاستخدام عبر خيوط تنفيذ متعددة، ومصمّم للاستخدام بوصفه نسخة واحدة مشتركة. يوفّر واجهة برمجة تطبيقات بسيطة وغير متزامنة لتنفيذ الاستعلامات والإدراج المجمّع. وهو الأنسب لمعظم التطبيقات.
+* **`ClickHouseClient`** (موصى به): عميل عالي المستوى وآمن للاستخدام عبر خيوط تنفيذ متعددة، ومصمّم للاستخدام بوصفه مثيلًا واحدًا مشتركًا. يوفّر واجهة برمجة تطبيقات بسيطة وغير متزامنة لتنفيذ الاستعلامات والإدراج المجمّع. وهو الأنسب لمعظم التطبيقات.
 
-* **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): تجريدات قياسية لقواعد البيانات في .NET. وهي ضرورية للتكامل مع أدوات ربط الكائنات بقواعد البيانات (Dapper وLinq2db)، أو عند الحاجة إلى التوافق مع ADO.NET. تُعدّ `ClickHouseBulkCopy` فئة مساعدة لإدراج البيانات بكفاءة عبر اتصال ADO.NET. تم إهمال `ClickHouseBulkCopy` وستُزال في إصدار مستقبلي؛ استخدم `ClickHouseClient.InsertBinaryAsync` بدلًا منها.
+* **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): تجريدات قياسية لقواعد البيانات في .NET. وهي ضرورية للتكامل مع أدوات ربط الكائنات بقواعد البيانات (Dapper وLinq2db)، أو عند الحاجة إلى التوافق مع ADO.NET. تُعدّ `ClickHouseBulkCopy` صنفًا مساعدًا لإدراج البيانات بكفاءة عبر اتصال ADO.NET. تم إهمال `ClickHouseBulkCopy` وستُزال في إصدار مستقبلي؛ استخدم `ClickHouseClient.InsertBinaryAsync` بدلًا منها.
 
 تشترك الواجهتان في مجمّع اتصالات HTTP نفسه، ويمكن استخدامهما معًا في التطبيق ذاته.
 
@@ -310,11 +308,19 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
 
 حدّد خدمة، ثم انقر على **Connect**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر الاتصال بخدمة ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![زر الاتصال بخدمة ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 اختر **C#**. ستظهر بيانات الاتصال أدناه.
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="بيانات الاتصال بخدمة ClickHouse Cloud للغة C#" border />
+<div className="ch-image-md">
+  <Frame>
+    ![بيانات الاتصال بخدمة ClickHouse Cloud للغة C#](/images/_snippets/connection-details-csharp.webp)
+  </Frame>
+</div>
 
 إذا كنت تستخدم ClickHouse مُدارًا ذاتيًا، فيحدّد مسؤول ClickHouse بيانات الاتصال.
 
@@ -1909,13 +1915,13 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 | نوع ClickHouse | أنواع .NET المقبولة                                                           | ملاحظات                                                                                            |
 | -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Date           | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | تُحوَّل إلى عدد الأيام منذ بداية حقبة Unix بصيغة UInt16؛ النطاق المدعوم `[1970-01-01, 2149-06-06]` |
-| Date32         | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | تُحوَّل إلى عدد الأيام منذ بداية حقبة Unix بصيغة Int32؛ النطاق المدعوم `[1900-01-01, 2299-12-31]`  |
+| Date           | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | تُحوَّل إلى عدد الأيام منذ بداية حقبة Unix بصيغة UInt16؛ النطاق المدعوم `[1970-01-01, 2149-06-06]` |
+| Date32         | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | تُحوَّل إلى عدد الأيام منذ بداية حقبة Unix بصيغة Int32؛ النطاق المدعوم `[1900-01-01, 2299-12-31]`  |
 | DateTime       | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | انظر التفاصيل أدناه؛ النطاق المدعوم `[1970-01-01, 2106-02-07 06:28:15]` بتوقيت UTC                 |
 | DateTime32     | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | مثل DateTime                                                                                       |
 | DateTime64     | `DateTime`, `DateTimeOffset`, `DateOnly`، أنواع NodaTime                      | تتحدد الدقة وفق معامل المقياس                                                                      |
-| Time           | `TimeSpan`, `TimeOnly`, `int`                                                 | تُقيَّد القيمة بالنطاق ±999:59:59؛ وتُفسَّر قيم int على أنها ثوانٍ                                 |
-| Time64         | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | تُحلَّل السلسلة وفق الصيغة `[-]HHH:MM:SS[.fraction]`؛ وتُقيَّد القيمة بالنطاق ±999:59:59.999999999 |
+| Time           | `TimeSpan`, `TimeOnly`, `int`                                                 | تُقيَّد القيمة بالنطاق ±999:59:59؛ وتُفسَّر قيم int على أنها ثوانٍ                                 |
+| Time64         | `TimeSpan`, `TimeOnly`, `decimal`, `double`, `float`, `int`, `long`, `string` | تُحلَّل السلسلة وفق الصيغة `[-]HHH:MM:SS[.fraction]`؛ وتُقيَّد القيمة بالنطاق ±999:59:59.999999999 |
 
 <Note>
   **القيم الخارجة عن النطاق**
@@ -1927,13 +1933,13 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 | DateTime.Kind | معلمات HTTP                                                                 | الكتابة المجمّعة                                      |
 | ------------- | --------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Utc           | تُحفَظ اللحظة الزمنية نفسها                                                 | تُحفَظ اللحظة الزمنية نفسها                           |
-| Local         | تُحفَظ اللحظة الزمنية نفسها                                                 | تُحفَظ اللحظة الزمنية نفسها                           |
-| Unspecified   | تُفسَّر على أنها وقت الساعة في المنطقة الزمنية لنوع المعلمة (UTC افتراضيًا) | تُفسَّر على أنها وقت الساعة في المنطقة الزمنية للعمود |
+| Utc           | تم الحفاظ على اللحظة الزمنية                                                 | تم الحفاظ على اللحظة الزمنية                           |
+| Local         | تم الحفاظ على اللحظة الزمنية                                                 | تم الحفاظ على اللحظة الزمنية                           |
+| Unspecified   | تُفسَّر على أنها زمن الساعة الفعلي في المنطقة الزمنية لنوع المعلمة (UTC افتراضيًا) | تُفسَّر على أنها زمن الساعة الفعلي في المنطقة الزمنية للعمود |
 
 تحافظ قيم `DateTimeOffset` دائمًا على اللحظة الزمنية نفسها بدقة.
 
-**مثال: DateTime بتوقيت UTC (مع الحفاظ على اللحظة الزمنية نفسها)**
+**مثال: DateTime بتوقيت UTC (تم الحفاظ على اللحظة الزمنية)**
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
@@ -1942,7 +1948,7 @@ var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);
 // Read from DateTime('UTC') column: 12:00 UTC
 ```
 
-**مثال: DateTime غير محدّد (الوقت بحسب الساعة المحلية)**
+**مثال: DateTime غير محدّد (زمن الساعة الفعلي)**
 
 ```csharp
 var wallClock = new DateTime(2024, 1, 15, 14, 30, 0, DateTimeKind.Unspecified);

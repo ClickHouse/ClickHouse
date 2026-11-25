@@ -19,10 +19,10 @@ using ContextPtr = std::shared_ptr<const Context>;
 namespace DeltaLake
 {
 
-/// EnginePredicate used in ffi::scan.
+/// EnginePredicate used in ::scan.
 /// A predicate which allows to implement internal delta-kernel-rs filtering
 /// based on statistics and partitions pruning.
-class EnginePredicate : public ffi::EnginePredicate
+class EnginePredicate : public ::EnginePredicate
 {
     friend struct EngineIteratorData;
 public:
@@ -39,7 +39,7 @@ public:
         visitor = &visitPredicate;
     }
 
-    bool hasException() const { return exception != nullptr; }
+    [[nodiscard]] bool hasException() const { return exception != nullptr; }
 
     void setException(std::exception_ptr exception_)
     {
@@ -48,8 +48,8 @@ public:
             exception = exception_;
     }
 
-    DB::ContextPtr getContext() const { return context; }
-    const DB::FormatSettings & getFormatSettings() const { return format_settings; }
+    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
+    [[nodiscard]] const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
@@ -64,7 +64,7 @@ private:
     DB::ContextPtr context;
     const DB::FormatSettings format_settings;
 
-    static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
+    static uintptr_t visitPredicate(void * data, ::KernelExpressionVisitorState * state);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(

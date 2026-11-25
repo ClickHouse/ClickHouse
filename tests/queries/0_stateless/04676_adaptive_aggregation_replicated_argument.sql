@@ -32,19 +32,13 @@ INSERT INTO t_adaptive_repl_right SELECT number FROM numbers(400000) WHERE intDi
 OPTIMIZE TABLE t_adaptive_repl_right FINAL;
 
 -- The two external-aggregation thresholds stay off, so every staged record reaches the merge
--- from memory. A two-level conversion is incompatible with the frozen path, and the size hint can
--- divert the table before the freeze. All four are randomized by the test runner, as is
--- enable_lazy_columns_replication, which is what produces the mixed argument representations in
--- the first place.
+-- from memory. The size hint can divert the table before the freeze. The test runner randomizes
+-- both thresholds, as well as enable_lazy_columns_replication, which is what produces the mixed
+-- argument representations in the first place.
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
-SET group_by_two_level_threshold = 10000000;
-SET group_by_two_level_threshold_bytes = 500000000;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET enable_lazy_columns_replication = 1;
--- The free-memory cap of the thread count is off, so the queries keep their four streams on a loaded server.
-SET max_threads = 4;
-SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 4096;
 SET query_plan_join_swap_table = 0;
 SET log_queries = 1;
