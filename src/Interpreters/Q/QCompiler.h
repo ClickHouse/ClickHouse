@@ -231,6 +231,15 @@ private:
     void checkExpandedSize(const ASTPtr & ast);
     void checkExpandedSize(const QValue & value);
 
+    /// The limit of the depth of the lists nested in a value (the setting `max_parser_depth`), or zero for no limit.
+    ///
+    /// The depth of a value grows across the statements: `a:,a` makes the list one level deeper every time, while
+    /// every statement is shallow. The functions that go down the levels of a list recurse once per level (an atomic
+    /// function maps over them), so the depth of a value is bounded like the depth of the program is.
+    size_t max_list_depth = 0;
+
+    void checkListDepth(const QValue & value) const;
+
     /// See `markNotNull`. The ASTs are held, so that an address is not reused.
     std::unordered_map<const IAST *, ASTPtr> not_null_asts;
 

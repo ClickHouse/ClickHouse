@@ -45,6 +45,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
@@ -674,8 +675,17 @@ void checkNoReservedNames(const NamesAndTypesList & columns)
 }
 
 QCompiler::QCompiler(ContextPtr context_)
-    : context(std::move(context_)), max_expanded_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
+    : context(std::move(context_))
+    , max_expanded_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
+    , max_list_depth(context->getSettingsRef()[Setting::max_parser_depth])
 {
+}
+
+void QCompiler::checkListDepth(const QValue & value) const
+{
+    if (max_list_depth && value.depth > max_list_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "A list in the q program is nested deeper than {} levels (the setting 'max_parser_depth')", max_list_depth);
 }
 
 void QCompiler::checkExpandedSize(const ASTPtr & ast)
@@ -960,6 +970,9 @@ QValue QCompiler::atomic(const String & q_name, QValues args, const std::functio
     /// Recursively maps the function over the atoms of the lists, broadcasting the atoms.
     std::function<ASTPtr(ASTs, std::vector<size_t>)> map = [&](ASTs asts, std::vector<size_t> depths) -> ASTPtr
     {
+        /// One call for every level of the lists: see `checkListDepth`.
+        checkStackSize();
+
         bool any_list = false;
         for (size_t depth : depths)
             any_list |= depth > 0;
@@ -1361,6 +1374,7 @@ QValue QCompiler::apply(const QFunctionPtr & function, QValues args, QEnvironmen
     checkStackSize();
     QValue result = applyFunction(function, std::move(args), env, scope, offset);
     checkExpandedSize(result);
+    checkListDepth(result);
     return result;
 }
 
@@ -1627,6 +1641,7 @@ QValue QCompiler::compile(const QNodePtr & node, QEnvironment & env, QScope * sc
     checkStackSize();
     QValue result = compileNode(node, env, scope);
     checkExpandedSize(result);
+    checkListDepth(result);
     return result;
 }
 
