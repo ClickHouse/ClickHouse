@@ -366,6 +366,64 @@ ASTPtr reduceInRanges(QCompiler & compiler, const String & function, const ASTPt
         fn("arrayMap", makeLambda({index}, range(ident(index))), fn("arrayEnumerate", list)), list});
 }
 
+/// The running products of a list: each of them is the previous one times the item, the order in which q multiplies,
+/// with a null taken for one. ClickHouse has no cumulative product, and the product of the prefix of every item makes
+/// all the prefixes at once: `n^2` items. So the list is cut into blocks. The products at the ends of the blocks are
+/// folded over the blocks, and the products inside of a block are folded from the product before the block. A fold
+/// holds an array of the size of a block or of the number of the blocks, so nothing of the size `n^2` is made.
+ASTPtr runningProducts(QCompiler & compiler, ASTPtr list)
+{
+    const UInt64 block_size = 256;
+    auto one_float = [] { return fn("toFloat64", one()); };
+    auto last = [](const String & array) { return fn("arrayElement", ident(array), lit(Field(static_cast<Int64>(-1)))); };
+    auto no_products = [] { return fn("emptyArrayFloat64", ASTs{}); };
+
+    /// The list with ones in place of the nulls, and its blocks.
+    String items = compiler.newLambdaParameter();
+    String blocks = compiler.newLambdaParameter();
+
+    /// The product at the end of every block: the product at the end of the previous one times the items of the block.
+    String ends = compiler.newLambdaParameter();
+    String block_of_end = compiler.newLambdaParameter();
+    String product = compiler.newLambdaParameter();
+    String factor = compiler.newLambdaParameter();
+    ASTPtr end_of_block = fn("arrayFold", makeLambda({product, factor}, fn("multiply", ident(product), ident(factor))),
+        ident(block_of_end), fn("if", fn("empty", ident(ends)), one_float(), last(ends)));
+    ASTPtr block_ends = fn("arrayFold", makeLambda({ends, block_of_end}, fn("arrayPushBack", ident(ends), end_of_block)),
+        ident(blocks), no_products());
+
+    /// The product before every block: one, and then the ends of the previous blocks.
+    ASTPtr block_starts = fn("arraySlice", fn("arrayPushFront", block_ends, one_float()), one(), fn("length", ident(blocks)));
+
+    /// The products inside of every block.
+    String block = compiler.newLambdaParameter();
+    String start = compiler.newLambdaParameter();
+    String products = compiler.newLambdaParameter();
+    String item = compiler.newLambdaParameter();
+    ASTPtr products_of_block = fn("arrayFold",
+        makeLambda({products, item},
+            fn("arrayPushBack", ident(products), fn("multiply", fn("if", fn("empty", ident(products)), ident(start), last(products)), ident(item)))),
+        ident(block), no_products());
+    ASTPtr all_products = fn("arrayFlatten", fn("arrayMap", makeLambda({block, start}, products_of_block), ident(blocks), block_starts));
+
+    /// `arrayMap(name -> body, [value])[1]` gives a name to a value that the body uses several times.
+    auto bind = [](const String & name, ASTPtr value, ASTPtr body)
+    {
+        return fn("arrayElement", fn("arrayMap", makeLambda({name}, std::move(body)), fn("array", std::move(value))), one());
+    };
+
+    /// A block starts at the items 1, 1 + block_size, 1 + 2 * block_size, and so on.
+    String value = compiler.newLambdaParameter();
+    String position = compiler.newLambdaParameter();
+    ASTPtr split = fn("arraySplit",
+        makeLambda({value, position}, fn("equals", fn("modulo", ident(position), lit(Field(block_size))), one())),
+        ident(items), fn("arrayEnumerate", ident(items)));
+
+    String nullable_item = compiler.newLambdaParameter();
+    ASTPtr without_nulls = fn("arrayMap", makeLambda({nullable_item}, fn("ifNull", ident(nullable_item), one())), std::move(list));
+    return bind(items, without_nulls, bind(blocks, split, all_products));
+}
+
 /// A uniform function: a column becomes a window function, a list an array function.
 QValue uniform(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column, const std::function<ASTPtr(ASTPtr)> & over_list)
 {
@@ -2192,11 +2250,7 @@ const std::unordered_map<String, Handler> & handlers()
                 {
                     return fn("arrayProduct", c.compiler.makeWindowFunction("groupArray", {column}, c.scope, std::nullopt, 0));
                 },
-                [&](ASTPtr list)
-                {
-                    return mapWithIndex(c.compiler, list,
-                        [&](ASTPtr, ASTPtr index) { return fn("arrayProduct", withoutNulls(c.compiler, fn("arraySlice", list, one(), index))); });
-                });
+                [&](ASTPtr list) { return runningProducts(c.compiler, std::move(list)); });
         };
         auto lag = [](Call & c, ASTPtr column, UInt64 n)
         {
