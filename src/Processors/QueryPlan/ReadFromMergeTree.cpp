@@ -3436,14 +3436,7 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 
 }
 
-/// Returns the skip index if it can prune granules by the `IN` set or the range predicate a JOIN runtime filter
-/// builds on one of the index columns (see `buildRuntimeRangePredicate`), and nullptr otherwise.
-///
-/// A text index qualifies only if every value of the indexed column is a single token: the `array` tokenizer
-/// without a preprocessor or postprocessor (the same configuration that lets the text index answer `equals`
-/// exactly). Then each value of the runtime filter is one dictionary lookup, and its posting list gives the rows,
-/// hence the granules, that contain it. Other text index configurations would still prune soundly, but every
-/// value would expand into several tokens, which costs more than it saves for a filter built on the fly.
+/// Can a skip index be used for pruning with join runtime filters?
 static MergeTreeIndexPtr tryGetSkipIndexPrunableByJoinRuntimeFilter(
     const IndexDescription & index_description, const StorageMetadataPtr & metadata, const MergeTreeSettings & settings)
 {
@@ -3486,7 +3479,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
         return;
     }
 
-    /// Prunable only if in the primary key or has a skip index that `tryGetSkipIndexPrunableByJoinRuntimeFilter` accepts.
+    /// Prunable only if in the primary key or if it has a skip index that `tryGetSkipIndexPrunableByJoinRuntimeFilter` accepts.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     const bool is_primary_key_column
         = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
@@ -6463,15 +6456,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
                 };
 
-        /// A `bloom_filter` or `text` index is only worth checking for a small `IN` set: both check every value of
-        /// the set for each granule or range they consider, so the cost grows with the number of values times the
-        /// number of granules, and with many values it exceeds the cost of reading the granules. Neither can use the
-        /// range predicate of a filter that did not keep the exact values.
-        ///
-        /// The pruning predicate combines all runtime filters (see `buildRuntimeRangePredicate`), so every filter on
-        /// the columns of the index is checked: several JOIN conditions on the same column, e.g.
-        /// `f.s = d.a AND f.s = d.b`, give several filters, and the index would analyze an over-cap set of one of
-        /// them even if another is small.
+        /// Join runtime filters can use `bloom` or `text` indexes if the runtime filter has exact-set representation
+        /// and contains only few values.
         const UInt64 in_set_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
             [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), in_set_cap]
