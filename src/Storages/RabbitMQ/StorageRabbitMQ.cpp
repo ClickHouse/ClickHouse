@@ -1377,11 +1377,14 @@ void StorageRabbitMQ::threadFunc()
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
                     bool views_changed = false;
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views_version, views_changed);
-                    /// A REFRESH cycle that ended unconsumed on a view change gives its permit back, so the refresh runs for the new views.
-                    if (drive_loop_on_worker && views_changed)
-                        last_seen_refresh_epoch = refresh_epoch_before_claim;
                     /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
                     milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
+                    /// A REFRESH cycle that ended unconsumed on a view change returns its permit and ends the run (claimCycle retakes it).
+                    if (drive_loop_on_worker && views_changed)
+                    {
+                        last_seen_refresh_epoch = refresh_epoch_before_claim;
+                        break;
+                    }
                     if (!continue_reading)
                         break;
 
