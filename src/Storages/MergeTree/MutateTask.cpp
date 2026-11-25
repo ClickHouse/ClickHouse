@@ -2773,6 +2773,10 @@ private:
         auto part_compression_codec = ctx->data->getCompressionCodecForPart(
             ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
         ctx->compression_codec = std::move(part_compression_codec.codec);
+        /// Record the chosen codec on the new part before writing: `MergeTextIndexesTask` compresses
+        /// the text index files with `new_data_part->default_codec`, which is otherwise set only in
+        /// `MergedBlockOutputStream::finalizePart`, so they would fall back to `LZ4`.
+        ctx->new_data_part->default_codec = ctx->compression_codec;
         const bool is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
         NameSet entries_to_hardlink;
@@ -3353,6 +3357,9 @@ private:
 
         /// Column-only mutations keep the source part's codec, only the explicitness of a due `RECOMPRESS` is consulted.
         ctx->compression_codec = ctx->source_part->default_codec;
+        /// As in `MutateAllPartColumnsTask::prepare`: rebuilt text indexes read the codec from the new part,
+        /// which is otherwise set only in `finalizeMutatedPart`.
+        ctx->new_data_part->default_codec = ctx->compression_codec;
         const bool is_explicit_recompression = isExplicitRecompression(
             ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
 
