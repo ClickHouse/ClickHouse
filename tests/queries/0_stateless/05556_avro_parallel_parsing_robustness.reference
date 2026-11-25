@@ -1,0 +1,6 @@
+marker-in-payload: OK
+negative-count-metadata: OK
+oversized-length rejected: OK
+too-long-varint rejected: OK
+negative-object-count rejected: OK
+truncated-sync rejected: OK
