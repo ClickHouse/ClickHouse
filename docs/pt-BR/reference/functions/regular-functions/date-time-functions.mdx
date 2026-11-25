@@ -1411,7 +1411,7 @@ A coluna de exemplo na tabela abaixo mostra o resultado da formatação para `20
 
 **Campos de substituição:**
 
-| Placeholder | Description                                                        | Example    |
+| marcador | Descrição                                                        | Example    |
 | ----------- | ------------------------------------------------------------------ | ---------- |
 | %a          | nome abreviado do dia da semana (Mon-Sun)                          | Mon        |
 | %b          | nome abreviado do mês (Jan-Dec)                                    | Jan        |
@@ -1528,7 +1528,7 @@ LIMIT 10
 
 ## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
-Introduzido em: v20.1.0
+Introduzido em: v23.1.0
 
 Semelhante a `formatDateTime`, mas formata data e hora no estilo Joda em vez do estilo MySQL. Consulte a [documentação do Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
@@ -4724,10 +4724,12 @@ Esta função generaliza outras funções `toStartOf*()` usando a sintaxe `toSta
 
 Por exemplo,
 
-* `toStartOfInterval(t, INTERVAL 1 YEAR)` retorna o mesmo que `toStartOfYear(t)`,
-* `toStartOfInterval(t, INTERVAL 1 MONTH)` retorna o mesmo que `toStartOfMonth(t)`,
-* `toStartOfInterval(t, INTERVAL 1 DAY)` retorna o mesmo que `toStartOfDay(t)`,
-* `toStartOfInterval(t, INTERVAL 15 MINUTE)` retorna o mesmo que `toStartOfFifteenMinutes(t)`.
+* `toStartOfInterval(t, INTERVAL 1 YEAR)` arredonda para o mesmo limite que `toStartOfYear(t)`,
+* `toStartOfInterval(t, INTERVAL 1 MONTH)` arredonda para o mesmo limite que `toStartOfMonth(t)`,
+* `toStartOfInterval(t, INTERVAL 1 DAY)` arredonda para o mesmo limite que `toStartOfDay(t)`,
+* `toStartOfInterval(t, INTERVAL 15 MINUTE)` arredonda para o mesmo limite que `toStartOfFifteenMinutes(t)`.
+
+O tipo de resultado pode ser diferente do tipo retornado por essas funções (veja abaixo).
 
 O cálculo é feito em relação a pontos específicos no tempo:
 
@@ -4751,6 +4753,13 @@ Se a unidade `WEEK` for especificada, `toStartOfInterval` assume que as semanas 
 
 A segunda sobrecarga emula a função `time_bucket()` do TimescaleDB e a função `date_bin()` do PostgreSQL, respectivamente.
 
+O resultado tem o mesmo tipo do argumento `value`: `Date` para `Date`, `Date32` para `Date32`, `DateTime` para `DateTime` e `DateTime64` com a mesma escala para `DateTime64`.
+A única exceção é uma unidade de subsegundo mais fina que a escala de um argumento `DateTime64` (por exemplo, `INTERVAL 1500 MILLISECOND` para um `DateTime64(0)`): nesse caso, o resultado assume a escala da unidade, capaz de representar os limites dos buckets.
+Um resultado abaixo do intervalo de `Date` ou `DateTime` (por exemplo, ao arredondar `1970-01-01` para baixo até o início da semana) é limitado ao seu valor mínimo.
+Com a configuração [`to_start_of_interval_preserves_argument_type`](/pt-BR/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) desabilitada, o tipo de resultado passa a depender da unidade do intervalo,
+como nas versões anteriores à 26.11: `Date` para `WEEK` e unidades maiores, `DateTime` de `DAY` até `SECOND` e `DateTime64` com a escala da unidade para as unidades de subsegundo.
+Isso se aplica à sobrecarga sem `origin`: a sobrecarga com `origin` mantém o tipo do argumento também nesse caso, exceto quando o argumento é `DateTime64` e a unidade é de subsegundo, situação em que o resultado tem a escala da unidade.
+
 **Sintaxe**
 
 ```sql
@@ -4762,12 +4771,12 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 
 **Argumentos**
 
-* `value` — Valor de data ou data com horário a ser arredondado para baixo. [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `value` — Valor de data ou data com hora a ser arredondado para baixo. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 * `x` — Número que representa o comprimento do intervalo. - `unit` — Unidade do intervalo: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — Opcional. Nome do fuso horário como string. - `origin` — Opcional. Ponto de origem para o cálculo (apenas na segunda sobrecarga).
 
 **Valor retornado**
 
-Retorna o início do intervalo que contém o valor informado. [`DateTime`](/pt-BR/reference/data-types/datetime)
+Retorna o início do intervalo que contém o valor de entrada, do mesmo tipo que o valor de entrada. [`Date`](/pt-BR/reference/data-types/date) ou [`Date32`](/pt-BR/reference/data-types/date32) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4779,7 +4788,7 @@ SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
 
 ```response title=Response
 ┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                               2023-01-01 │
+│                                                      2023-01-01 00:00:00 │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -5370,9 +5379,10 @@ int32samoa: 1546300800
 
 ## toUTCTimestamp {#toUTCTimestamp}
 
-Introduzido na versão: v23.8.0
+Introduzido em: v23.8.0
 
 Converte um valor de data ou data com hora de um fuso horário para um timestamp em UTC. Esta função é incluída principalmente para compatibilidade com o Apache Spark e frameworks semelhantes.
+Um horário local que ocorre duas vezes, ou que não existe devido à mudança do horário de verão, é convertido da mesma forma que em `toDateTime`.
 
 **Sintaxe**
 

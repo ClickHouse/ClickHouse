@@ -10,58 +10,52 @@ keywords: ['ClickPipes', '監視', 'メトリクス', 'Prometheus', 'オブザ�
 
 Console での監視に加えて、ClickPipes はスクレイピング用に [Prometheus 互換エンドポイント](/ja/products/cloud/features/monitoring/prometheus) へメトリクスを公開しています。これらのメトリクスは、他の ClickHouse Cloud サービスのメトリクスとあわせて公開されるため、既存のオブザーバビリティスタック (例: [Grafana](/ja/products/cloud/features/monitoring/prometheus#integrating-with-grafana)、[Datadog](/ja/products/cloud/features/monitoring/prometheus#integrating-with-datadog)) に ClickPipes の監視を統合できます。
 
-<div id="metric-labels">
-  ## メトリクスラベル
-</div>
+## メトリクスラベル {#metric-labels}
 
 ClickPipes のメトリクスでは、[標準のサービスレベルラベル](/ja/products/cloud/features/monitoring/prometheus#metric-labels) (`clickhouse_org`、`clickhouse_service`、`clickhouse_service_name`) に加えて、以下の ClickPipes 固有のラベルを使用します。
 
-| Label              | Description                                            |
-| ------------------ | ------------------------------------------------------ |
-| `clickpipe_id`     | ClickPipe の一意な識別子                                      |
-| `clickpipe_name`   | ClickPipe の名前                                          |
-| `clickpipe_source` | ソースの種類 (例: `kafka`、`postgres`、`s3`)                    |
-| `clickpipe_state`  | ClickPipe の状態 (例: `Stopped`、`Provisioning`、`Running`)  |
+| ラベル              | 説明                                           |
+| ------------------ | ----------------------------------------------------- |
+| `clickpipe_id`     | ClickPipe の一意な識別子                                     |
+| `clickpipe_name`   | ClickPipe の名前                                         |
+| `clickpipe_source` | ソースの種類 (例: `kafka`、`postgres`、`s3`)                   |
+| `clickpipe_status` | ClickPipe の状態 (例: `Stopped`、`Provisioning`、`Running`) |
 
-<div id="sample-response">
-  ### レスポンス例
-</div>
+### レスポンス例 {#sample-response}
 
 以下は、Kafka ClickPipe の Prometheus のスクレイプレスポンスにおける ClickPipes のメトリクスの例です。公開されるメトリクスはパイプタイプによって異なります。どのメトリクスがどのパイプタイプに適用されるかについては、[利用可能なメトリクス](#available-metrics)を参照してください。
 
 ```response
-# HELP ClickPipes_Info 常に1に等しい。ラベル "clickpipe_state" にはパイプの現在の状態が含まれる: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
-ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_state="Running"} 1
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
-# HELP ClickPipes_FetchedEvents_Total ソースから取得したレコードの総数。
+# HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
 # TYPE ClickPipes_FetchedEvents_Total counter
 ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 5535376
 
-# HELP ClickPipes_SentEvents_Total ClickHouse に送信したレコードの総数
+# HELP ClickPipes_SentEvents_Total Total number of records sent to ClickHouse
 # TYPE ClickPipes_SentEvents_Total counter
 ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 5534250
 
-# HELP ClickPipes_FetchedBytes_Total ソースから取得した非圧縮バイトの総数。
+# HELP ClickPipes_FetchedBytes_Total Total uncompressed bytes fetched from the source.
 # TYPE ClickPipes_FetchedBytes_Total counter
 ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 873286202
 
-# HELP ClickPipes_SentBytes_Total ClickHouse に送信した非圧縮バイトの総数。
+# HELP ClickPipes_SentBytes_Total Total uncompressed bytes sent to ClickHouse.
 # TYPE ClickPipes_SentBytes_Total counter
 ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 477187967
 
-# HELP ClickPipes_Errors_Total データ取り込み時のエラーの総数。
+# HELP ClickPipes_Errors_Total Total errors ingesting data.
 # TYPE ClickPipes_Errors_Total counter
 ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 0
 
-# HELP ClickPipes_Latency レコードが生成されてから ClickHouse に書き込まれるまでの時間（ミリ秒）。
+# HELP ClickPipes_Latency Time in milliseconds between when the record was produced to when it was written to ClickHouse.
 # TYPE ClickPipes_Latency gauge
 ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 340
 ```
 
-<div id="available-metrics">
-  ## 利用可能なメトリクス
-</div>
+## 利用可能なメトリクス {#available-metrics}
 
 すべてのパイプタイプで、すべてのメトリクスが出力されるわけではありません。特に、CDC ClickPipes で公開されるメトリクスのサブセットは、ストリーミング、オブジェクトストレージ ClickPipes とは異なります。
 
@@ -69,9 +63,7 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 * **CDC** — Postgres, MySQL, MongoDB and BigQuery
 * **All** — すべてのパイプタイプ
 
-<div id="metrics-data-transfer">
-  ### データ転送
-</div>
+### データ転送 {#metrics-data-transfer}
 
 | メトリクス                                      | 種類    | 利用可能対象              | 説明                                                                                                                                                                                                 |
 | ------------------------------------------ | ----- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -81,27 +73,20 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_SentBytes_Total`               | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信した非圧縮バイト数の合計。                                                                                                                                                                        |
 | `ClickPipes_SentBytesCompressed_Total`     | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信した圧縮バイト数の合計。                                                                                                                                                                         |
 
-<div id="metrics-events">
-  ### イベントとレコード
-</div>
+### イベントとレコード {#metrics-events}
 
-| メトリクス                               | タイプ   | 利用可能対象                    | 説明                                                                             |
-| ----------------------------------- | ----- | ------------------------- | ------------------------------------------------------------------------------ |
-| `ClickPipes_FetchedEvents_Total`    | カウンター | ストリーミング、オブジェクトストレージ | ソースから取得したレコードの総数。                                                              |
-| `ClickPipes_SentEvents_Total`       | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信されたレコードの総数。                                                      |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge | CDC                       | 宛先テーブルおよびイベントタイプごとに取得したレコード数。追加の `destination_table` と `event_type` ラベルを使用します。 |
+| メトリクス                            | 種別   | 利用可能対象              | 説明                        |
+| -------------------------------- | ----- | ------------------- | ------------------------- |
+| `ClickPipes_FetchedEvents_Total` | カウンター | ストリーミング、オブジェクトストレージ | ソースから取得したレコードの総数。         |
+| `ClickPipes_SentEvents_Total`    | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信されたレコードの総数。 |
 
-<div id="metrics-errors">
-  ### エラー
-</div>
+### エラー {#metrics-errors}
 
 | メトリクス                     | 型     | 利用対象 | 説明                                                                   |
 | ------------------------- | ----- | ---- | -------------------------------------------------------------------- |
 | `ClickPipes_Errors_Total` | カウンター | すべて  | インジェスト中に発生した[エラー](/ja/integrations/clickpipes/home#error-reporting)の総数。 |
 
-<div id="metrics-latency">
-  ### レイテンシ
-</div>
+### レイテンシ {#metrics-latency}
 
 | メトリクス                                     | 型             | 利用可能対象            | 説明                                                         |
 | ----------------------------------------- | ------------- | ----------------- | ---------------------------------------------------------- |
@@ -110,9 +95,7 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC               | ソースイベントのタイムスタンプから ClickPipes での処理までのラグ (ミリ秒) 。             |
 | `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC               | ClickPipe でイベントを受信してから ClickHouse テーブルに書き込むまでのラグ (ミリ秒) 。   |
 
-<div id="metrics-resources">
-  ### リソース使用状況
-</div>
+### リソース使用状況 {#metrics-resources}
 
 `ClickPipes_Replica_*` メトリクスは、ストリーミングおよびオブジェクトストレージ向け ClickPipes のリソース使用状況を示します。各 ClickPipe には**専用のコンピュート**が割り当てられているため、これらの値は個々の ClickPipes の使用状況を反映します。
 
@@ -133,19 +116,15 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC           | 設定済みメモリ制限 (バイト単位) 。サービス内のすべての CDC ClickPipes で共有されます。                   |
 | `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC           | 受信ネットワーク帯域幅 (バイト単位、スクレイプウィンドウごとの差分) 。サービス内のすべての CDC ClickPipes で共有されます。 |
 
-<div id="metrics-state">
-  ### 状態と進捗
-</div>
+### 状態と進捗 {#metrics-state}
 
-| メトリクス                           | 型     | 利用可能対象 | 説明                                                              |
-| ------------------------------- | ----- | ------ | --------------------------------------------------------------- |
-| `ClickPipes_Info`               | Gauge | All    | 常に `1` です。`clickpipe_state` ラベルを使用して、パイプの状態に基づいて絞り込みやアラートを行います。 |
-| `ClickPipes_LastFetchedBatchId` | Gauge | CDC    | ソースから最後に取得されたバッチの ID。                                           |
-| `ClickPipes_LastSentBatchId`    | Gauge | CDC    | ClickHouse に最後に送信されたバッチの ID。                                    |
+| メトリクス                           | 種別     | 利用可能対象 | 説明                                                               |
+| ------------------------------- | ----- | ------ | ---------------------------------------------------------------- |
+| `ClickPipes_Info`               | Gauge | All    | 常に `1` です。`clickpipe_status` ラベルを使用して、パイプの状態に基づいて絞り込みやアラートを行います。 |
+| `ClickPipes_LastFetchedBatchId` | Gauge | CDC    | ソースから最後に取得されたバッチの ID。                                            |
+| `ClickPipes_LastSentBatchId`    | Gauge | CDC    | ClickHouse に最後に送信されたバッチの ID。                                     |
 
-<div id="related">
-  ## 関連ページ
-</div>
+## 関連ページ {#related}
 
 * [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — 外部ツール (Grafana、Datadog など) 向けのエンドポイント リファレンス、認証、設定
 * [エラー報告](/ja/integrations/clickpipes/home#error-reporting) — レコードエラーとシステムエラーの保存先
