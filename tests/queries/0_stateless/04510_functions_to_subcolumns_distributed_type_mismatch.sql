@@ -8,8 +8,6 @@
 -- StorageDistributed now returns supportsOptimizationToSubcolumns() = false, so the rewrite no
 -- longer fires on the initiator; the shard re-analyzes the query against the real table.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_users_108299;
 DROP TABLE IF EXISTS t_users_dist_108299;
 

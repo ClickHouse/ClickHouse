@@ -7,13 +7,16 @@ keywords: ['ClickHouse Cloud', 'クラウドアーキテクチャ', 'ストレ�
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud のアーキテクチャ" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Cloudのアーキテクチャ](/images/cloud/reference/architecture.webp)
+  </Frame>
+</div>
 
 <div id="storage-backed-by-object-store">
-  ## オブジェクトストアをバックエンドとするストレージ
+  ## オブジェクトストアをバックエンドとするストレージ {#storage-backed-by-object-store}
 </div>
 
 * 事実上無制限のストレージ
@@ -21,7 +24,7 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 * データの保存コストを大幅に抑えられ、特にアクセス頻度の低いデータに適しています
 
 <div id="compute">
-  ## コンピュート
+  ## コンピュート {#compute}
 </div>
 
 * 自動スケーリングとアイドル化: 事前にサイジングする必要がなく、ピーク時の利用に備えて過剰にプロビジョニングする必要もありません
@@ -29,40 +32,40 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 * デフォルトでセキュアかつ高可用性を確保
 
 <div id="administration">
-  ## 管理
+  ## 管理 {#administration}
 </div>
 
 * セットアップ、監視、バックアップ、請求は当社が行います。
 * コスト管理機能はデフォルトで有効になっており、Cloud Console から調整できます。
 
 <div id="service-isolation">
-  ## サービス分離
+  ## サービス分離 {#service-isolation}
 </div>
 
 <div id="network-isolation">
-  ### ネットワーク分離
+  ### ネットワーク分離 {#network-isolation}
 </div>
 
 すべてのサービスは、ネットワークレイヤーで分離されています。
 
 <div id="compute-isolation">
-  ### コンピュート分離
+  ### コンピュート分離 {#compute-isolation}
 </div>
 
 すべてのサービスは、それぞれの Kubernetes 名前空間内の別々のポッドにデプロイされ、ネットワークレベルで分離されています。
 
 <div id="storage-isolation">
-  ### ストレージ分離
+  ### ストレージ分離 {#storage-isolation}
 </div>
 
-すべてのサービスは、共有バケット (AWS、GCP) またはストレージコンテナー (Azure) 内の個別のサブパスを使用します。
+AWS では、各インスタンスは共有バケット内の個別のプレフィックスを使用します。
 
 AWS では、ストレージへのアクセスは AWS IAM によって制御され、各 IAMロールはサービスごとに固有です。Enterprise サービスでは、保存データの高度な分離を実現するために [CMEK](/ja/products/cloud/guides/security/cmek) を有効にできます。現時点で CMEK がサポートされているのは AWS サービスのみです。
 
-GCP と Azure では、サービスごとにオブジェクトストレージレベルで分離されます (すべてのサービスがそれぞれ専用のバケットまたはストレージコンテナーを持ちます) 。
+GCP では、各インスタンスがそれぞれ個別のバケットを使用します。Azure では、各インスタンスがそれぞれ個別のストレージコンテナーを使用します。
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation
+  ## Compute-compute separation {#compute-compute-separation}
 </div>
 
 [Compute-compute separation](/ja/products/cloud/features/infrastructure/warehouses) を使用すると、共有のオブジェクトストレージを利用しながら、それぞれが独自のサービスURLを持つ複数のコンピュートノードグループを作成できます。これにより、同じデータを共有したまま、書き込みと読み取りのように異なるユースケースごとにコンピュートを分離できます。また、必要に応じて各コンピュートグループを個別にスケーリングできるため、リソースの利用効率も向上します。

@@ -1,0 +1,290 @@
+---
+slug: /clickstack/observability/integration-examples/redis-metrics
+title: 'Monitorización de métricas de Redis con ClickHouse Observability'
+sidebarTitle: 'Métricas de Redis'
+description: 'Recopile y visualice métricas de Redis en ClickHouse Observability mediante un recolector de OpenTelemetry.'
+doc_type: 'guide'
+keywords: ['Redis', 'métricas', 'OTEL', 'ClickHouse Observability']
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Recopile métricas de Redis con el receptor de Redis de OpenTelemetry y envíelas a ClickHouse Observability. Use el [conjunto de datos de demostración](#demo-dataset) para probar la integración sin necesidad de instalar Redis.
+
+## Requisitos previos {#prerequisites}
+
+* Un servicio de ClickHouse Observability
+* Docker para ejecutar los ejemplos del recolector, o una implementación existente de OpenTelemetry Collector Contrib
+* Para sus propias métricas, una instancia de Redis accesible desde el recolector y las credenciales correspondientes si Redis requiere autenticación
+* Para la demo, `curl` para descargar y enviar los datos de muestra
+
+### Datos de conexión {#connection-details}
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta Beta" />
+
+    Abra ClickHouse Observability y vaya a **Team Settings → Data → Managed Telemetry**. Copie su endpoint OTLP HTTP y su clave de API. Puede usar **Copy connection details** para copiar la configuración o **Reveal key** para ver la clave enmascarada.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Datos de conexión de Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Para los ejemplos del exportador OTLP que se muestran a continuación, defina estas variables en el terminal donde vaya a ejecutar el recolector:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Reemplace los marcadores de posición por el endpoint exacto de su servicio, incluido el puerto, y por su clave de API. Use el endpoint HTTP base sin el sufijo `/v1/metrics`; el exportador añade automáticamente la ruta de cada señal.
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Use un endpoint OTLP HTTP de su recolector que sea accesible (por ejemplo, `http://YOUR_COLLECTOR_HOST:4318`) y la configuración de autenticación correspondiente. Si su recolector no requiere autenticación, omita el bloque `headers` del exportador en las configuraciones siguientes. Consulte la [guía de introducción para la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) para obtener instrucciones de configuración.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+El endpoint debe ser accesible desde el contenedor del recolector. Si el recolector de destino se ejecuta en este mismo equipo, use `http://host.docker.internal:4318`. Los comandos de Docker que se muestran a continuación ya incluyen la correspondencia del host.
+
+## Integración con un Redis existente {#existing-redis}
+
+<Steps>
+  <Step title="Verificar la conexión con Redis" id="verify-redis">
+    Desde un host con acceso a la CLI de Redis, compruebe su instancia de Redis:
+
+    ```bash
+    redis-cli -h YOUR_REDIS_HOST -p 6379 ping
+    redis-cli -h YOUR_REDIS_HOST -p 6379 INFO server
+    ```
+
+    El primer comando debería devolver `PONG` y el segundo, información del servidor. Si Redis requiere contraseña, defina `REDISCLI_AUTH` en su terminal antes de ejecutar estos comandos. Si usa usuarios de ACL de Redis, pase también `--user YOUR_REDIS_USER`.
+  </Step>
+
+  <Step title="Configurar el recolector" id="configure-collector">
+    Guarde lo siguiente como `redis-metrics.yaml`:
+
+    ```yaml
+    receivers:
+      redis:
+        endpoint: ${env:REDIS_ENDPOINT}
+        collection_interval: 10s
+        # Descomente si Redis requiere autenticación:
+        # username: ${env:REDIS_USERNAME}
+        # password: ${env:REDIS_PASSWORD}
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      resource/redis:
+        attributes:
+          - key: service.name
+            value: redis-service
+            action: upsert
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        metrics/redis:
+          receivers: [redis]
+          processors: [memory_limiter, resource/redis, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    El receptor recopila métricas de Redis cada 10 segundos, entre ellas el uso de memoria, los clientes, los comandos procesados, los aciertos y fallos del keyspace, y las claves expiradas o desalojadas. El procesador de recursos establece `service.name` en `redis-service` para facilitar el filtrado.
+
+    Si Redis requiere autenticación, descomente los campos correspondientes del receptor y defina `REDIS_USERNAME` o `REDIS_PASSWORD`, o ambos. Estas credenciales sirven para conectarse a Redis, mientras que el valor de autorización de OTLP sirve para autenticarse ante su recolector de destino. Si Redis tiene TLS habilitado, configure los ajustes `tls` del receptor según se describe en la [documentación del receptor de Redis](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/redisreceiver).
+  </Step>
+
+  <Step title="Ejecutar el recolector" id="run-collector">
+    Defina las [variables de conexión](#connection-details) y la dirección de Redis accesible desde el contenedor del recolector. Si Redis se ejecuta en este equipo:
+
+    ```bash
+    export REDIS_ENDPOINT='host.docker.internal:6379'
+    ```
+
+    Si Redis es remoto, use su nombre de host y puerto. Si Redis se ejecuta en otro contenedor, use el nombre de ese contenedor y añada `--network YOUR_NETWORK` al siguiente comando.
+
+    Desde el directorio que contiene `redis-metrics.yaml`, ejecute:
+
+    ```bash
+    docker run --rm --name redis-metrics-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e REDIS_ENDPOINT \
+      -e REDIS_USERNAME \
+      -e REDIS_PASSWORD \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-metrics.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Mantenga esta terminal abierta mientras se recopilan las métricas. Espere al menos dos intervalos de recopilación antes de revisar la interfaz de usuario.
+  </Step>
+
+  <Step title="Verificar las métricas" id="verify-metrics">
+    Importe el [panel de control](#dashboards), asigne sus gráficos a su fuente **Metrics** y filtre por `ServiceName:redis-service`. Seleccione **Last 15 minutes** y ejecute el panel de control. En una instancia de Redis en buen estado, es normal que los desalojos y las conexiones rechazadas se mantengan en cero.
+  </Step>
+</Steps>
+
+## Conjunto de datos de demostración {#demo-dataset}
+
+Pruebe la integración con 6,912 puntos de datos de tipo gauge y sum muestreados cada cinco minutos durante 24 horas. La muestra conserva los patrones de calentamiento de caché, picos de tráfico y presión de memoria del conjunto de datos original. Necesita Docker, `curl` y los datos de conexión HTTP OTLP del recolector de destino.
+
+Defina las [variables de conexión](#connection-details) antes de empezar.
+
+<Steps>
+  <Step title="Descargar las métricas de muestra" id="download-sample">
+    ```bash
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-metrics-demo-5m.json
+    ```
+  </Step>
+
+  <Step title="Configurar el recolector de demostración" id="configure-demo-collector">
+    Guarde lo siguiente como `redis-metrics-demo.yaml`:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: redis-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-10-21T04:59:30Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      La transformación `transform`, exclusiva de la demostración, actualiza las marcas de tiempo y conserva los valores de las métricas y el intervalo entre las marcas de tiempo de inicio y fin de cada punto. Omítala para métricas reales de Redis. El límite de `batch` mantiene las cargas lo bastante pequeñas para el recolector de destino.
+    </Note>
+  </Step>
+
+  <Step title="Ejecutar el recolector de demostración" id="run-demo-collector">
+    Desde el directorio que contiene la configuración, ejecute el recolector y deje esta terminal abierta:
+
+    ```bash
+    docker run --rm --name redis-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/redis-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="Enviar la muestra" id="load-metrics">
+    En otra terminal, ejecute este comando desde el directorio de descarga:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @redis-metrics-demo-5m.json
+    ```
+
+    Una respuesta como `{}` o `{"partialSuccess":{}}` indica que el recolector local aceptó la solicitud. Compruebe si hay errores de exportación en la terminal del recolector y espere unos segundos a que se reenvíen los datos. Una vez verificados los datos, deténgalo con **Ctrl+C**. Si vuelve a enviar la muestra, pueden generarse puntos duplicados.
+  </Step>
+
+  <Step title="Verificar las métricas" id="verify-demo-metrics">
+    Importe el panel de control de la [siguiente sección](#dashboards), filtre por `ServiceName:redis-demo` y seleccione **Last 2 days**. La muestra incluye métricas de tipo gauge y sum; no se necesita acceso directo a la base de datos.
+  </Step>
+</Steps>
+
+## Paneles de control y visualización {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json" download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">Descargue la configuración del panel de control</TrackedLink>} id="download" />
+
+  <Step title="Importe el panel de control preconfigurado" id="import-dashboard">
+    1. Abra **Paneles de control** en ClickHouse Observability.
+    2. Haga clic en **Import** en la esquina superior derecha.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Botón para importar el panel de control](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+
+    3. Cargue `redis-metrics-dashboard.json`, asigne los gráficos a su fuente **Metrics** y haga clic en **Finish Import**.
+  </Step>
+
+  <Step title="Consulte el panel de control" id="created-dashboard">
+    Filtre por `ServiceName:redis-demo` y seleccione **Last 2 days** para la demo, o filtre por `ServiceName:redis-service` y seleccione un intervalo de tiempo que abarque sus propias métricas de Redis.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panel de control de Métricas de Redis](/images/clickstack/observability-redis-metrics-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Resolución de problemas {#troubleshooting}
+
+### El recolector no se inicia {#collector-fails-to-start}
+
+Revise la terminal del recolector en busca de errores de configuración. Confirme que el archivo YAML esté montado en la ruta indicada en la documentación y que el endpoint y las variables de autenticación obligatorias estén definidos en la terminal donde ejecuta Docker.
+
+### No aparecen métricas {#no-metrics}
+
+* Revise la salida del recolector en busca de errores de conexión con Redis o de exportación OTLP.
+* Verifique que Redis sea accesible desde el contenedor del recolector. Si usa contenedores, compruebe que compartan la red de Docker prevista.
+* Verifique las credenciales de Redis y que el usuario pueda ejecutar los comandos que requiere el [receptor de Redis](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/redisreceiver).
+* Revise la fuente **Metrics**, el filtro por nombre de servicio y el intervalo de tiempo. Para la demo, seleccione **Last 2 days** y confirme que la transformación de la marca de tiempo esté incluida en la canalización.
+* En el caso de servicios gestionados, compare el endpoint OTLP HTTP y la clave de API Bearer con los indicados en **Managed Telemetry**. Para recolectores autogestionados, utilice sus propios ajustes de autenticación.
+
+## Próximos pasos {#next-steps}
+
+* Configure [alertas](/es/clickstack/observability/features/alerts) sobre el uso de memoria, los límites de conexiones o la tasa de aciertos de la caché.
+* Cree [dashboards](/es/clickstack/observability/features/dashboards/overview) adicionales.
+* Consulte [Envío de datos de OpenTelemetry](/es/clickstack/observability/ingesting-data/opentelemetry) para obtener más información sobre la configuración del recopilador.

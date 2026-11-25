@@ -69,7 +69,8 @@ HTTPSessionPtr makeHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     const ProxyConfiguration & proxy_config = {},
-    UInt64 * connect_time = nullptr
+    UInt64 * connect_time = nullptr,
+    HTTPConnectionTransport transport = HTTPConnectionTransport::FiberUnaware
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
@@ -91,6 +92,10 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveResponse(
 /// from an error response that reflects it back. A `Basic` header is not decoded, so a password
 /// is not scrubbed. Empty when there is no bearer token.
 Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
+
+/// Replaces the credentials of a request, the presigned-URL ones carried by `uri` and `request_secrets`, with `[HIDDEN]`
+/// in a text its server sent back, as `HTTPException` does with the reason phrase and the body.
+std::string scrubRequestCredentials(std::string_view text, const std::string & uri, const Strings & request_secrets);
 
 /// `response_secrets` are credential strings to scrub from the reflected reason phrase and body (see
 /// `requestCredentialSecrets`): a remote error response can echo the request's own credentials.

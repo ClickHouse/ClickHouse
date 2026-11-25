@@ -3,7 +3,6 @@
 -- deep in buildBestPlan). The budget is overridable for tests via the
 -- `_internal_cascades_task_limit` query parameter; the default is large.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

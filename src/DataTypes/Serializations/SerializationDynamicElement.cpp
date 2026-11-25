@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NullableUtils.h>
@@ -50,11 +51,11 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant{};
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
-        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -207,7 +208,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         IColumn * non_nullable_variant_column = variant_column.get();
         NullMap * null_map = nullptr;
         bool is_low_cardinality_nullable = isColumnLowCardinalityNullable(*variant_column);
-        /// Resulting subolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
+        /// Resulting subcolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
         /// Extract non-nullable column and remember the null map to fill it during deserialization.
         if (isColumnNullable(*variant_column))
         {
@@ -292,23 +293,19 @@ size_t SerializationDynamicElement::allocatedBytes() const
     return sizeof(*this) + dynamic_element_name.capacity() + nested_subcolumn.capacity();
 }
 
-MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationDynamicElement::createColumnForDeserialization(const IDataType & type) const
 {
     /// The null map subcolumn is a UInt8 column read through SerializationVariantElementNullMap;
     /// nested_serialization serializes the requested type, which is not what is read here.
     if (is_null_map_subcolumn)
-        return column;
+        return type.createColumn();
 
     /// Same level ownership as in SerializationVariantElement, which this delegates to at read time.
-    if (isColumnNullable(*column))
-    {
-        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
         return ColumnNullable::create(
-            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
-            nullable.getNullMapColumnPtr()->cloneEmpty());
-    }
+            nested_serialization->createColumnForDeserialization(*nullable_type->getNestedType()), ColumnUInt8::create());
 
-    return nested_serialization->wrapColumnForDeserialization(std::move(column));
+    return nested_serialization->createColumnForDeserialization(type);
 }
 
 }

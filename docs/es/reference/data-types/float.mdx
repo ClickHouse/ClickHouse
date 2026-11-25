@@ -54,13 +54,9 @@ En ClickHouse, los tipos Float tienen los siguientes alias:
 
 Al crear tablas, se pueden establecer parámetros numéricos para números de coma flotante (p. ej., `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), pero ClickHouse los ignora.
 
-<div id="using-floating-point-numbers">
-  ## Uso de números de coma flotante
-</div>
+## Uso de números de coma flotante {#using-floating-point-numbers}
 
 * Los cálculos con números de coma flotante pueden producir errores de redondeo.
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -74,15 +70,11 @@ SELECT 1 - 0.9
 * Los cálculos en coma flotante pueden dar lugar a valores como infinito (`Inf`) y &quot;no es un número&quot; (`NaN`). Esto debe tenerse en cuenta al procesar los resultados de los cálculos.
 * Al interpretar números de coma flotante a partir de texto, es posible que el resultado no sea el número representable por la máquina más cercano.
 
-<div id="nan-and-inf">
-  ## NaN e Inf
-</div>
+## NaN e Inf {#nan-and-inf}
 
 A diferencia del SQL estándar, ClickHouse admite las siguientes categorías de números de coma flotante:
 
 * `Inf` – Infinito.
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — Infinito negativo.
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — No es un número.
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 Consulte las reglas de ordenación de `NaN` en la sección [cláusula ORDER BY](/es/reference/statements/select/order-by).
 
-<div id="nan-values-in-set-semantics">
-  ## Valores `NaN` en la semántica de conjuntos
-</div>
+## Valores `NaN` en la semántica de conjuntos {#nan-values-in-set-semantics}
 
 El estándar IEEE 754 define `NaN` de modo que la comparación escalar `NaN = NaN` devuelve `false`.
 ClickHouse sigue esa regla para el operador `=`.
@@ -161,9 +147,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 El mismo enfoque también se aplica a las claves de `DISTINCT`, `GROUP BY` y `JOIN`.
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16` es un tipo de dato de coma flotante de 16 bits con exponente de 8 bits, bit de signo y mantisa de 7 bits.
 Es útil para aplicaciones de aprendizaje automático e IA.
