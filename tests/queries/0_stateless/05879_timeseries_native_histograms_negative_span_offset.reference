@@ -1,0 +1,5 @@
+-- exponential schema: a negative offset on a later span is rejected on both sides, even on an empty span
+-- custom buckets: a negative offset on any span is rejected
+-- the accepted histograms
+1970-01-01 00:00:01.000	0	[(-3,1),(0,1)]	[(-3,1),(0,1)]	[]
+1970-01-01 00:00:02.000	-53	[(0,1),(1,1)]	[]	[1,2,3]
