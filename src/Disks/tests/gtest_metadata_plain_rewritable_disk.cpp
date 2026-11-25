@@ -33,6 +33,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
 namespace ProfileEvents
@@ -2080,6 +2081,105 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateDirectoryFromVirtualNode)
             "./CreateDirectoryFromVirtualNode/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
             "./CreateDirectoryFromVirtualNode/ykwvvchguqasvfnkikaqtiebknfzafwv/file",
         }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveAndHardLinkIntoVirtualDirectory)
+{
+    for (const bool enabled : {true, false})
+    {
+        hard_links_enabled = enabled;
+        const std::string test = enabled ? "MoveAndHardLinkIntoVirtualDirectory" : "MoveAndHardLinkIntoVirtualDirectoryWithoutHardLinks";
+        auto metadata = getMetadataStorage(test);
+        auto object_storage = getObjectStorage(test);
+
+        /// `A` and `C` exist only as the parents of `A/B` and `C/D`.
+        {
+            auto tx = metadata->createTransaction();
+            tx->createDirectoryRecursive("A/B");
+            tx->createDirectoryRecursive("C/D");
+            for (const std::string path : {"A/B/f", "C/D/f"})
+            {
+                const auto key = tx->generateObjectKeyForPath(path).serialize();
+                size_t size = writeObject(object_storage, key, "data");
+                tx->createMetadataFile(path, {StoredObject(key, path, size)});
+            }
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->replaceFile("A/B/f", "A/f");
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->createHardLink("C/D/f", "C/g");
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        metadata = restartMetadataStorage(test);
+        EXPECT_FALSE(metadata->existsFile("A/B/f"));
+        EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f").front().remote_path), "data");
+        EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("C/g").front().remote_path), "data");
+        EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    }
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveAndCopyIntoReplacedVirtualDirectory)
+{
+    const std::string test = "MoveAndCopyIntoReplacedVirtualDirectory";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    /// `Y` gets the explicit form while hard links are enabled; `C` exists only as the parent of `C/D`.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("X");
+        tx->createDirectory("Y");
+        tx->createDirectoryRecursive("C/D");
+        for (const std::string path : {"X/f", "X/m"})
+        {
+            size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), "data");
+            tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        }
+        tx->createHardLink("X/f", "Y/f");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    hard_links_enabled = false;
+    metadata = restartMetadataStorage(test);
+
+    /// A move and a copy are planned into `C` as an implicit directory, then `C` is replaced by one in the explicit form.
+    auto tx_move = metadata->createTransaction();
+    tx_move->moveFile("X/m", "C/m");
+    auto tx_copy = metadata->createTransaction();
+    tx_copy->createHardLink("X/f", "C/g");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("C", /*should_remove_blob=*/nullptr);
+        tx->moveDirectory("Y", "C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    for (auto * tx : {tx_move.get(), tx_copy.get()})
+    {
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+            FAIL() << "A transaction planned for the virtual directory was committed into its replacement";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::DIRECTORY_ALREADY_EXISTS) << e.message();
+        }
+    }
+
+    EXPECT_TRUE(metadata->existsFile("X/m"));
+    EXPECT_FALSE(metadata->existsFile("C/m"));
+    EXPECT_FALSE(metadata->existsFile("C/g"));
+    EXPECT_TRUE(metadata->existsFile("C/f"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkUndoInCaseOfNetworkError)
