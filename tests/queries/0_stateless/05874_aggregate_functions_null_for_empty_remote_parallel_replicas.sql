@@ -29,7 +29,7 @@ SELECT sumIf(number, number > 5), sumIf(number, number > 100) FROM remote('127.0
 SELECT sumOrNullIf(number, number > 5) FROM remote('127.0.0.1,127.0.0.1', numbers(10));
 SELECT finalizeAggregation(sumState(number)) FROM remote('127.0.0.1,127.0.0.1', numbers(10));
 SELECT sumMerge(s), finalizeAggregation(sumMergeState(s)) FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_null_for_empty_states);
-SELECT sumOrNullMerge(s) FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_null_for_empty_double);
+SELECT sumOrNullMerge(s), finalizeAggregation(sumOrNullMergeState(s)) FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_null_for_empty_double);
 SELECT k % 2 AS g, sumIf(k, k > 2) FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), t_null_for_empty) GROUP BY g ORDER BY g;
 
 -- Without the local plan every parallel replica is a remote one.

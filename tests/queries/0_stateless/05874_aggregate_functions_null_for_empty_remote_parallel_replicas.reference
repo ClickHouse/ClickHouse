@@ -5,7 +5,7 @@ AggregateFunction(sumOrNull, UInt64)	AggregateFunction(sumOrNull, UInt64)
 60
 90
 90	90
-180
+180	180
 0	36
 1	48
 18
