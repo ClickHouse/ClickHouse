@@ -7927,6 +7927,31 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+
+        /// Positional sort keys were copied from the unresolved projection. Match
+        /// them to the expanded projection instead of retaining an obsolete offset.
+        if (query_node_typed.hasOrderBy())
+        {
+            const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+            {
+                auto & sort = sort_node->as<SortNode &>();
+                if (!sort.getProjectionIndex())
+                    continue;
+
+                const auto & expression = sort.getExpression();
+                const auto old_index = *sort.getProjectionIndex();
+                if (old_index < projection_nodes.size() && projection_nodes[old_index]->isEqual(*expression))
+                    continue;
+
+                auto it = std::ranges::find_if(projection_nodes,
+                    [&](const auto & projection) { return projection->isEqual(*expression); });
+                if (it == projection_nodes.end())
+                    sort.clearProjectionIndex();
+                else
+                    sort.setProjectionIndex(std::distance(projection_nodes.begin(), it));
+            }
+        }
     }
 
     if (query_node_typed.hasOrderBy())

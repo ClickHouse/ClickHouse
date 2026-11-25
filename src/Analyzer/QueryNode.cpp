@@ -114,7 +114,8 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             if (auto projection_index = sort_node_typed.getProjectionIndex())
             {
                 auto it = old_to_new_projection_index.find(*projection_index);
-                chassert(it != old_to_new_projection_index.end());
+                if (it == old_to_new_projection_index.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} was removed", *projection_index);
                 sort_node_typed.setProjectionIndex(it->second);
             }
         }

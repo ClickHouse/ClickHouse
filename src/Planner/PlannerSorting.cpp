@@ -29,6 +29,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -156,7 +157,9 @@ SortDescription extractSortDescription(
         if (projection_node && sort_node_typed.getProjectionIndex())
         {
             const auto & projection_nodes = projection_node->as<ListNode &>().getNodes();
-            chassert(*sort_node_typed.getProjectionIndex() < projection_nodes.size());
+            if (*sort_node_typed.getProjectionIndex() >= projection_nodes.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} is out of bounds for {} columns",
+                    *sort_node_typed.getProjectionIndex(), projection_nodes.size());
             sort_expression = &projection_nodes[*sort_node_typed.getProjectionIndex()];
         }
 

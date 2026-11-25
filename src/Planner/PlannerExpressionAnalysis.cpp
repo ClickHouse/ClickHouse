@@ -609,6 +609,9 @@ SortAnalysisResult analyzeSort(
 
         if (projection_index)
         {
+            if (*projection_index >= projection_column_names.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} is out of bounds for {} columns",
+                    *projection_index, projection_column_names.size());
             const auto & projection_column_name = projection_column_names[*projection_index];
             const auto & inputs = before_sort_actions->dag.getInputs();
             auto projection_input = std::ranges::find_if(inputs, [&](const auto * input)
