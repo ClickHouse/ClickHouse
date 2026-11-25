@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-async-insert
+-- Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-async-insert
 -- no-fasttest: a UNIQUE KEY insert writes the dense-index SST, which needs RocksDB.
--- no-object-storage, no-s3-storage: UNIQUE KEY requires a storage policy of local disks.
 -- no-ordinary-database, no-replicated-database, no-shared-merge-tree: UNIQUE KEY is only supported on plain MergeTree
 --                       in an Atomic database.
 -- no-async-insert: the second INSERT into `t2` must stay its own part (a coalesced batch repeating a key is rejected).
