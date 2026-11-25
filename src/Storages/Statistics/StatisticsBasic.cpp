@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorWriteBinary.h>
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <mutex>
@@ -84,7 +85,7 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
         const auto & offsets = s->getOffsets();
         UInt64 bytes = 0;
         for (size_t i = 0; i < column_size; ++i)
-            bytes += (offsets[i] - offsets[i - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
+            bytes += (offsets[i] - offsets[static_cast<ssize_t>(i) - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
         return bytes;
     }
     return 0;
@@ -196,9 +197,25 @@ void StatisticsBasic::build(const ColumnPtr & column)
 
     if (sum)
     {
+        /// The function sums the type without `Nullable`, so a `Nullable` column is fed as its nested column and
+        /// null map. A `Sparse` column of a `Nullable` type has NULL as its default, so only its values after the
+        /// default at index 0 are summed, and none of them is NULL.
         auto values = column->convertToFullColumnIfConst();
         const IColumn * values_ptr = values.get();
-        if (typeid_cast<const ColumnSparse *>(values_ptr))
+        const auto * sparse = typeid_cast<const ColumnSparse *>(values_ptr);
+        if (is_nullable && sparse)
+        {
+            const auto & nullable_values = assert_cast<const ColumnNullable &>(sparse->getValuesColumn());
+            const IColumn * nested_ptr = &nullable_values.getNestedColumn();
+            sum->function.function->addBatchSinglePlace(1, nullable_values.size(), sum->state, &nested_ptr, nullptr);
+        }
+        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(values_ptr))
+        {
+            const IColumn * nested_ptr = &nullable->getNestedColumn();
+            sum->function.function->addBatchSinglePlaceNotNull(
+                0, column_size, sum->state, &nested_ptr, nullable->getNullMapData().data(), nullptr);
+        }
+        else if (sparse)
             sum->function.function->addBatchSparseSinglePlace(0, column_size, sum->state, &values_ptr, nullptr);
         else
             sum->function.function->addBatchSinglePlace(0, column_size, sum->state, &values_ptr, nullptr);
