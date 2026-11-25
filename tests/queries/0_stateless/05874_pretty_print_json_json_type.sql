@@ -92,4 +92,5 @@ SELECT prettyPrintJSON('{"a":1}'::JSON, 33); -- { serverError BAD_ARGUMENTS }
 
 SELECT toTypeName(prettyPrintJSON('{}'::JSON)), toTypeName(prettyPrintJSON(('{"d":[1]}'::JSON).d));
 SELECT toTypeName(prettyPrintJSON('{"a":1}'::Dynamic)), prettyPrintJSON('{"a":1}'::Dynamic);
+SELECT dynamicElement(prettyPrintJSON('{"a":1}'::Dynamic), 'String');
 -- { echoOff }

@@ -85,11 +85,6 @@ public:
     [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{

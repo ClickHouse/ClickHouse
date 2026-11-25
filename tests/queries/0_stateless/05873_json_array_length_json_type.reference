@@ -77,4 +77,6 @@ Nullable(JSON)	\N
 SELECT JSONArrayLength('{"a":[1,2]}'::JSON), JSONArrayLength(materialize('{"a":[1,2]}'::JSON));
 \N	\N
 SELECT toTypeName(JSONArrayLength('{}'::JSON)), toTypeName(JSONArrayLength([1])), toTypeName(JSONArrayLength(('{"d":[1]}'::JSON).d));
-Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)
+Nullable(UInt64)	Nullable(UInt64)	Dynamic
+SELECT dynamicElement(JSONArrayLength('[1,2]'::Dynamic), 'UInt64');
+2

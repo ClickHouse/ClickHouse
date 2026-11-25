@@ -78,11 +78,6 @@ namespace
             return "(Any) -> Nullable(UInt64)";
         }
 
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-        {
-            return makeNullable(std::make_shared<DataTypeUInt64>());
-        }
-
         [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const auto & type = arguments[0].type;

@@ -63,5 +63,6 @@ SELECT toTypeName(x), JSONArrayLength(x) FROM (SELECT arrayJoin([NULL, '{"a":1}'
 SELECT JSONArrayLength('{"a":[1,2]}'::JSON), JSONArrayLength(materialize('{"a":[1,2]}'::JSON));
 
 SELECT toTypeName(JSONArrayLength('{}'::JSON)), toTypeName(JSONArrayLength([1])), toTypeName(JSONArrayLength(('{"d":[1]}'::JSON).d));
+SELECT dynamicElement(JSONArrayLength('[1,2]'::Dynamic), 'UInt64');
 
 -- { echoOff }
