@@ -76,6 +76,10 @@ struct QValue
     bool windowed = false;
     /// The q type of the atoms, when known (for literals and temporal columns).
     std::optional<QType> qtype;
+    /// The q type is the type that the value has in q: of a literal, and of the arithmetic on such values. The q type of
+    /// a column is told by its type in ClickHouse, which does not keep the width of an integer of a q literal
+    /// (`([] x:1 2 3)` is a column of `UInt8`), so it is not exact. Match (`~`) is strict only about the exact types.
+    bool qtype_is_exact = false;
 
     QTablePtr table;
     QFunctionPtr function;

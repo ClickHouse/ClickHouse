@@ -1337,6 +1337,8 @@ QValue QCompiler::compileList(const QNodePtr & node, QEnvironment & env, QScope 
     result.ast = array;
     result.depth = depth + 1;
     result.qtype = items.front().qtype;
+    result.qtype_is_exact = std::all_of(items.begin(), items.end(),
+        [&](const QValue & item) { return item.qtype_is_exact && item.qtype == items.front().qtype; });
     (void)all_strings;
     return result;
 }
@@ -1711,7 +1713,11 @@ QValue QCompiler::compileNode(const QNodePtr & node, QEnvironment & env, QScope 
     switch (node->kind)
     {
         case QNodeKind::Literal:
-            return compileLiteral(*node);
+        {
+            QValue value = compileLiteral(*node);
+            value.qtype_is_exact = true;
+            return value;
+        }
         case QNodeKind::Name:
             return compileName(node, env, scope, false);
         case QNodeKind::Verb:

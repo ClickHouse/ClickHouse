@@ -209,6 +209,7 @@ QValue unary(Call & call, const String & function, std::optional<QType> qtype = 
         result.qtype = call.args[0].qtype;
     else
         result.qtype = qtype;
+    result.qtype_is_exact = result.qtype && (!keep_qtype || call.args[0].qtype_is_exact);
     result.is_string = string_result || (keep_qtype && call.args[0].is_string);
     return result;
 }
@@ -255,6 +256,8 @@ QValue binary(Call & call, const std::function<ASTPtr(ASTPtr, ASTPtr)> & make, s
         result.qtype = promoteNumbers(*left.qtype, *right.qtype);
     else
         result.qtype = std::nullopt;
+    /// The type is exact when the function gives it, or when it follows from the exact types of both arguments.
+    result.qtype_is_exact = result.qtype && (qtype || (left.qtype_is_exact && right.qtype_is_exact));
     return result;
 }
 
@@ -1708,6 +1711,21 @@ const std::unordered_map<String, Handler> & handlers()
             c.expectArgs(2);
             QValue a = c.scalarArg(0);
             QValue b = c.scalarArg(1);
+
+            /// Match is strict about the types, unlike `=`: `1~1h` is false. So when the q types of both values are known
+            /// exactly and differ, or the values are lists of different depths, they do not match, whatever the values
+            /// are. A column matches as the list of its values, and by the values alone: its q type is not exact
+            /// (see `QValue::qtype_is_exact`).
+            size_t depth_of_a = a.depth + (a.kind == QValueKind::Column ? 1 : 0);
+            size_t depth_of_b = b.depth + (b.kind == QValueKind::Column ? 1 : 0);
+            bool types_differ = a.qtype && b.qtype && a.qtype_is_exact && b.qtype_is_exact && *a.qtype != *b.qtype;
+            if (types_differ || depth_of_a != depth_of_b)
+            {
+                QValue result = QCompiler::scalar(lit(Field(static_cast<UInt64>(0))));
+                result.qtype = QType::Boolean;
+                return result;
+            }
+
             if (a.kind == QValueKind::Column || b.kind == QValueKind::Column)
             {
                 ASTPtr left = a.kind == QValueKind::Column ? c.compiler.collectColumn(c.compiler.columnForAggregation(a, c.scope)) : a.ast;
