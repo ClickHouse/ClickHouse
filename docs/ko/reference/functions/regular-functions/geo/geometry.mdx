@@ -3,12 +3,12 @@ description: 'Geometry 함수에 대한 문서'
 sidebarTitle: 'Geometry'
 slug: /sql-reference/functions/geo/geometry
 title: 'Geometry를 다루는 함수'
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 ## Geometry {#geometry}
 
-Geometry 함수는 POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, POINT와 같은 기하 타입의 둘레와 면적을 계산할 수 있습니다. 기하 객체는 Geometry 타입으로 사용하십시오. 입력 값이 `NULL`이면 아래의 모든 함수는 0을 반환합니다.
+Geometry 함수는 POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, POINT와 같은 기하 타입의 둘레, 면적 및 길이를 계산할 수 있습니다. 기하 객체는 Geometry 타입으로 사용하십시오. 입력 값이 `NULL`이면 아래의 모든 함수는 0을 반환합니다.
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -136,4 +136,108 @@ SELECT areaSpherical(geom) FROM geo_dst;
 ┌─areaSpherical(geom)────┐
 │ -0.0003046096848622019 │
 └────────────────────────┘
+```
+
+## lengthCartesian {#lengthcartesian}
+
+데카르트(평면) 좌표계에서 Geometry 객체에 포함된 선의 길이, 즉 연속된 Point 사이 거리의 합을 계산합니다.
+`MultiLineString`은 포함된 모든 선의 길이를 합한 값이 되며, `Ring`은 해당 Point들을 잇는 선으로 간주하여 측정합니다. 타입 이름이 없는 Point 배열도 `Ring` 타입이 되므로 같은 방식으로 측정합니다.
+Point, 다각형, multipolygon에는 길이가 없으므로 이 함수는 0을 반환합니다. 다각형의 둘레를 구하려면 [perimeterCartesian](#perimetercartesian)을 사용하십시오.
+Point 배열의 배열을 측정하려면 `MultiLineString`으로 변환(CAST)하십시오. 타입 이름이 없으면 `Polygon` 타입이 됩니다.
+
+별칭: `ST_Length`.
+
+**구문**
+
+```sql
+lengthCartesian(geom)
+```
+
+**인수**
+
+* `geom` — Geometry 객체. [Geometry](/ko/reference/data-types/geo).
+
+**반환값**
+
+* 숫자 — 좌표계 단위로 나타낸 선의 길이입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT lengthCartesian(readWKT('LINESTRING(0 0,3 4,3 10)')) AS length;
+```
+
+```response title="Response"
+┌─length─┐
+│     11 │
+└────────┘
+```
+
+## lengthSpherical {#lengthspherical}
+
+구 표면에서 Geometry 객체에 포함된 선의 길이를 계산합니다. Point는 도 단위의 (경도, 위도)로 지정합니다.
+결과는 라디안 단위의 각도이며, [perimeterSpherical](#perimeterspherical)의 결과와 마찬가지로 반지름이 1인 구에서의 길이에 해당합니다.
+미터 단위의 근사 길이를 구하려면 지구의 평균 반지름인 6371008.8미터를 곱하고, 정확한 길이가 필요하면 [lengthSpheroid](#lengthspheroid)를 사용하세요.
+[lengthCartesian](#lengthcartesian)과 마찬가지로 Point, 다각형, multipolygon에 대해서는 0을 반환합니다.
+
+**구문**
+
+```sql
+lengthSpherical(geom)
+```
+
+**인수**
+
+* `geom` — Geometry 객체. [Geometry](/ko/reference/data-types/geo).
+
+**반환값**
+
+* 숫자 — 선의 길이(라디안 단위). [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
+```
+
+```response title="Response"
+┌───────────────length─┐
+│ 0.017453292519943292 │
+└──────────────────────┘
+```
+
+## lengthSpheroid {#lengthspheroid}
+
+GPS에서 사용하는 지구 모델인 WGS84 회전타원체에서 Geometry 객체에 포함된 선의 길이를 미터 단위로 계산합니다. 이때 Point는 도 단위의 (경도, 위도)로 지정합니다.
+각 세그먼트는 회전타원체 위에서 두 Point를 잇는 최단 경로(측지선)이며, GeographicLib와 마찬가지로 Karney 알고리즘으로 계산합니다.
+[lengthCartesian](#lengthcartesian)과 마찬가지로 Point, 다각형, multipolygon에 대해서는 0을 반환합니다.
+DuckDB의 `ST_Length_Spheroid` 입력처럼 좌표가 (위도, 경도) 순서로 저장되어 있다면 먼저 [flipCoordinates](/ko/reference/functions/regular-functions/geo/flipCoordinates)로 좌표를 스왑하십시오. 스왑하지 않으면 다른 선의 길이가 결과로 반환됩니다.
+좌표가 NaN 또는 무한이거나 위도가 [-90, 90] 범위를 벗어나면 결과는 NaN입니다.
+
+**구문**
+
+```sql
+lengthSpheroid(geom)
+```
+
+**인수**
+
+* `geom` — Geometry 객체. [Geometry](/ko/reference/data-types/geo).
+
+**반환값**
+
+* 숫자 — 선의 길이(미터 단위). [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+런던에서 파리를 거쳐 베를린까지 이어지는 선의 길이:
+
+```sql title="Query"
+SELECT lengthSpheroid(readWKT('LINESTRING(-0.1276 51.5072,2.3522 48.8566,13.405 52.52)')) AS length;
+```
+
+```response title="Response"
+┌─────────────length─┐
+│ 1223596.2073957825 │
+└────────────────────┘
 ```
