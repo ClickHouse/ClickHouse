@@ -43,10 +43,9 @@ SETTINGS prefer_column_name_to_alias = 1, enable_positional_arguments = 1,
 
 SELECT o.number IN
     (SELECT number AS k
-     FROM remote('127.0.0.1', numbers(3))
+     FROM numbers(3)
      ORDER BY 1 DESC LIMIT 1)
 FROM numbers(3) AS o
 SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1,
     transform_null_in = 0, enable_add_distinct_to_in_subqueries = 0,
-    enable_positional_arguments = 1, serialize_query_plan = 0,
-    prefer_localhost_replica = 0;
+    enable_positional_arguments = 1;
