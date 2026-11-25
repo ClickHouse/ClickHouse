@@ -1,6 +1,7 @@
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include <Common/checkStackSize.h>
 #include <fmt/ranges.h>
+#include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 
 /// Rules that steer a query to where its distributed plan is built differently from the local one. The replicas get
 /// the query tree rewritten and shipped as text, and the initiator then pairs objects of the two plans: sets by the
@@ -213,8 +214,13 @@ std::vector<std::pair<String, String>> StatementGenerator::parallelReplicasSetti
             add(name, rg.pickRandomly(values));
         }
     }
-    /// Without the local replica the automatic mode has no local branch to match with the single-node plan
-    if (!automatic && rg.nextMediumNumber() < 16)
+    /// Without the local replica the automatic mode has no local branch to match with the single-node plan. Set it
+    /// either way in that mode, as the session may have set it to 0
+    if (automatic)
+    {
+        add("parallel_replicas_prefer_local_replica", "1");
+    }
+    else if (rg.nextMediumNumber() < 16)
     {
         add("parallel_replicas_prefer_local_replica", rg.nextBool() ? "0" : "1");
     }
@@ -260,9 +266,7 @@ static DB::Strings shapeColumns(const SQLTable & t)
             case SQLTypeClass::NULLABLE:
             case SQLTypeClass::LOWCARDINALITY:
             case SQLTypeClass::ARRAY:
-            case SQLTypeClass::TUPLE:
-                res.emplace_back("`" + col.getColumnName() + "`");
-                break;
+            case SQLTypeClass::TUPLE: res.emplace_back(DB::backQuote(col.getColumnName())); break;
             default:
                 break;
         }
@@ -282,7 +286,7 @@ struct ShapeTable
     /// Known for the tables the shapes create themselves
     String sorting_key;
 
-    [[nodiscard]] String name() const { return "`" + database + "`.`" + table + "`"; }
+    [[nodiscard]] String name() const { return DB::backQuote(database) + "." + DB::backQuote(table); }
 };
 
 /// Builds the text of a shaped query. Every key is `cityHash64(<column>) % M`, so both sides of a comparison have one
@@ -626,13 +630,14 @@ private:
         depth++;
         const String from = source(t, "", virtuals);
         String res = fmt::format("SELECT {} FROM {}", key(column(t, "", virtuals), m), from);
-        if (rg.nextMediumNumber() < 61)
+        const bool has_long_constant = rg.nextMediumNumber() < 61;
+        if (has_long_constant)
         {
             res += " WHERE " + longConstant();
         }
         if (depth < max_depth && rg.nextSmallNumber() < 4)
         {
-            res += (rg.nextMediumNumber() < 61 ? " AND " : " WHERE ") + predicate(t, "", virtuals);
+            res += (has_long_constant ? " AND " : " WHERE ") + predicate(t, "", virtuals);
         }
         depth--;
         return res;
