@@ -1,0 +1,281 @@
+---
+slug: /clickstack/observability/integration-examples/kubernetes
+description: 'Сбор журналов контейнеров Kubernetes, метрик инфраструктуры и событий с помощью OpenTelemetry и их отправка в ClickHouse Observability.'
+title: 'Мониторинг Kubernetes с помощью ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['kubernetes', 'журналы', 'метрики', 'обсервабилити', 'мониторинг контейнеров']
+sidebarTitle: 'Kubernetes'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+Собирайте журналы контейнеров, метрики узлов и кластера, а также события Kubernetes с помощью двух коллекторов OpenTelemetry: ДемонСета, работающего на каждом узле, и одного Развертывания для сбора данных в масштабе всего кластера.
+
+## Предварительные требования {#prerequisites}
+
+* Сервис ClickHouse Observability
+* Кластер Kubernetes с узлами Linux и разрешениями на создание рабочих нагрузок, ролей кластера (ClusterRole) и монтирований типа host-path
+* `kubectl`, настроенный для нужного кластера, и установленный Helm 3
+* Сетевой доступ от коллекторов к конечной точке OTLP по HTTP вашего сервиса, к API Kubernetes и к кубелетам
+
+Эти коллекторы собирают данные об инфраструктуре. Метрики и трассировки приложений требуют отдельного инструментирования приложений; см. [интеграции OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry).
+
+## Сведения о подключении {#connection-details}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Сервис в стадии бета-тестирования" />
+
+    Откройте ClickHouse Observability и перейдите в **Team Settings → Data → управляемая телеметрия**. Скопируйте конечную точку OTLP по HTTP и ключ API.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сведения о подключении в разделе управляемой телеметрии](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Задайте в терминале следующие переменные:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Укажите конечную точку точно в том виде, в каком она приведена, включая порт и без суффикса `/v1/logs` или `/v1/metrics`.
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    Используйте конечную точку OTLP по HTTP вашего коллектора, доступную из кластера, и соответствующие настройки аутентификации. Если аутентификация отключена, задайте для `OTEL_EXPORTER_OTLP_AUTHORIZATION` пустую строку и не указывайте блок `headers` экспортера, приведённый ниже. Подробнее см. в [руководстве по настройке самоуправляемого развёртывания](/ru/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+## Развертывание коллекторов {#deploy-collectors}
+
+<Steps>
+  <Step title="Создайте пространство имён и настройте соединение" id="connection-settings">
+    Убедитесь, что `kubectl` указывает на нужный кластер:
+
+    ```bash
+    kubectl config current-context
+    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create configmap observability-connection -n observability \
+      --from-literal=endpoint="$OTEL_EXPORTER_OTLP_ENDPOINT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create secret generic observability-connection -n observability \
+      --from-literal=authorization="$OTEL_EXPORTER_OTLP_AUTHORIZATION" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+    Оба коллектора используют эти настройки в пространстве имён `observability`.
+  </Step>
+
+  <Step title="Сохраните общую конфигурацию" id="shared-configuration">
+    Сохраните следующую конфигурацию в файл `k8s_common.yaml`:
+
+    ```yaml
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.161.0"
+    command:
+      name: otelcol-contrib
+    resources:
+      limits:
+        memory: 512Mi
+    presets:
+      kubernetesAttributes:
+        enabled: true
+    extraEnvs:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        valueFrom:
+          configMapKeyRef:
+            name: observability-connection
+            key: endpoint
+      - name: OTEL_EXPORTER_OTLP_AUTHORIZATION
+        valueFrom:
+          secretKeyRef:
+            name: observability-connection
+            key: authorization
+    service:
+      enabled: false
+    ports:
+      otlp:
+        enabled: false
+      otlp-http:
+        enabled: false
+      jaeger-compact:
+        enabled: false
+      jaeger-thrift:
+        enabled: false
+      jaeger-grpc:
+        enabled: false
+      zipkin:
+        enabled: false
+    config:
+      receivers:
+        otlp: null
+        jaeger: null
+        zipkin: null
+        prometheus: null
+      exporters:
+        debug: null
+        otlp_http/observability:
+          endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+          headers:
+            authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+          compression: gzip
+      processors:
+        batch:
+          timeout: 5s
+          send_batch_size: 500
+          send_batch_max_size: 500
+      service:
+        pipelines:
+          logs:
+            receivers: []
+            exporters: [otlp_http/observability]
+          metrics:
+            receivers: []
+            exporters: [otlp_http/observability]
+          traces: null
+    ```
+
+    Предустановки Helm-чарта добавляют приёмники, процессор метаданных Kubernetes, правила RBAC и точки монтирования, необходимые каждому коллектору. Общая конфигурация пересылает журналы и метрики в ваш сервис и отключает неиспользуемые приёмники для ингестии данных приложений.
+  </Step>
+
+  <Step title="Настройте сбор данных с узлов" id="daemonset-configuration">
+    Сохраните этот манифест в файл `k8s_daemonset.yaml`:
+
+    ```yaml
+    mode: daemonset
+    presets:
+      logsCollection:
+        enabled: true
+        storeCheckpoints: true
+      hostMetrics:
+        enabled: true
+      kubeletMetrics:
+        enabled: true
+    config:
+      receivers:
+        kubeletstats:
+          insecure_skip_verify: true
+    ```
+
+    ДемонСет считывает журналы контейнеров и собирает метрики хоста и Кубелета. Контрольные точки сохраняют позиции чтения журналов при перезапусках коллектора. В этой предустановке коллектор запускается от имени root, чтобы записывать контрольные точки на узел, поэтому настройки безопасности подов в вашем кластере должны разрешать монтирование каталогов хоста.
+
+    В примере проверка сертификата Кубелета отключена для кластеров, в которых коллектор не доверяет сертификатам Кубелета. Если ваш кластер предоставляет доверенные сертификаты Кубелета, задайте для `insecure_skip_verify` значение `false` и настройте соответствующий CA.
+  </Step>
+
+  <Step title="Настройте сбор данных кластера" id="deployment-configuration">
+    Сохраните следующий манифест в файл `k8s_deployment.yaml`:
+
+    ```yaml
+    mode: deployment
+    replicaCount: 1
+    presets:
+      kubernetesEvents:
+        enabled: true
+      clusterMetrics:
+        enabled: true
+    ```
+
+    Оставьте одну реплику, чтобы избежать дублирования метрик и событий кластера.
+  </Step>
+
+  <Step title="Установите релизы Helm" id="install-collectors">
+    Выполните эти команды в каталоге, где находятся три файла конфигурации. В этих примерах используются чарт OpenTelemetry Collector версии `0.175.1` и Collector Contrib версии `0.161.0`:
+
+    ```bash
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update open-telemetry
+
+    helm upgrade --install observability-nodes open-telemetry/opentelemetry-collector \
+      --version 0.175.1 --namespace observability \
+      -f k8s_common.yaml -f k8s_daemonset.yaml --wait
+
+    helm upgrade --install observability-cluster open-telemetry/opentelemetry-collector \
+      --version 0.175.1 --namespace observability \
+      -f k8s_common.yaml -f k8s_deployment.yaml --wait
+    ```
+
+    Проверьте коллекторы:
+
+    ```bash
+    kubectl get pods -n observability
+    kubectl logs -n observability -l app.kubernetes.io/instance=observability-nodes --tail=50
+    kubectl logs -n observability -l app.kubernetes.io/instance=observability-cluster --tail=50
+    ```
+
+    Если на ваших узлах заданы taints, влияющие на планирование, добавьте в `k8s_daemonset.yaml` соответствующие `tolerations` для узлов, которые нужно мониторить.
+  </Step>
+
+  <Step title="Проверьте данные" id="verify-data">
+    Подождите несколько интервалов сбора данных, затем откройте ClickHouse Observability:
+
+    * В разделе **Поиск** выберите источник **Logs** и период **Last 15 minutes**. Разверните запись журнала контейнера и проверьте такие атрибуты, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
+    * В разделе **Обозреватель диаграмм** выберите источник **Metrics** и найдите метрики, имена которых начинаются с `k8s.` или `system.`.
+    * События Kubernetes появляются в источнике **Logs** по мере их возникновения. Количество событий зависит от активности кластера.
+  </Step>
+</Steps>
+
+## Метаданные приложения {#application-metadata}
+
+Для инструментированных приложений добавьте метаданные пода с помощью Kubernetes downward API. Добавьте этот список `env` в существующую конфигурацию контейнера вашего приложения, сохранив все уже заданные атрибуты ресурса:
+
+```yaml
+env:
+  - name: OTEL_SERVICE_NAME
+    value: my-app
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_UID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.uid
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+  - name: NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  - name: OTEL_RESOURCE_ATTRIBUTES
+    value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+```
+
+Процессор метаданных Kubernetes обогащает собранные журналы контейнеров метаданными рабочей нагрузки. Эти переменные приложения привязывают идентификационные данные пода к телеметрии, которую отправляет OpenTelemetry SDK вашего приложения.
+
+## Устранение неполадок {#troubleshooting}
+
+### Коллекторы не запускаются {#collectors-not-starting}
+
+Просмотрите события пода с помощью команды `kubectl describe pod -n observability POD_NAME`. Проверьте загрузку образов, ограничения планирования и ограничения безопасности подов, а также убедитесь, что ConfigMap и Secret находятся в том же пространстве имён, что и релизы.
+
+### Журналы и метрики не отображаются {#no-data}
+
+Проверьте журналы коллектора на наличие ошибок аутентификации или экспорта. Убедитесь, что конечная точка пункта назначения доступна из кластера. При ошибках Кубелета проверьте подключение к порту `10250`, настройки сертификатов и сгенерированные разрешения RBAC. Для сбора журналов контейнеров требуется доступ к каталогу `/var/log/pods` на узле; в средах с ограниченными правами или с бессерверными узлами монтирование каталогов хоста может не поддерживаться.
+
+### Изменились настройки соединения {#connection-settings-changed}
+
+После обновления ConfigMap или Secret перезапустите коллекторы, чтобы они заново загрузили переменные окружения:
+
+```bash
+kubectl rollout restart daemonset -n observability -l app.kubernetes.io/instance=observability-nodes
+kubectl rollout restart deployment -n observability -l app.kubernetes.io/instance=observability-cluster
+```
+
+## Дальнейшие шаги {#next-steps}
+
+* Создайте [панели мониторинга](/ru/clickstack/observability/features/dashboards/overview) для отслеживания работоспособности кластера и рабочих нагрузок.
+* Настройте [оповещения](/ru/clickstack/observability/features/alerts).
+* Дополнительные параметры развертывания описаны в [Helm-чарте OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/opentelemetry-collector-0.175.1/charts/opentelemetry-collector).

@@ -1483,7 +1483,13 @@ def get_all_server_pids(args):
        Tie-breaker only: if it leaves nothing, keep the matches.
     """
     binary = getattr(args, "binary", "clickhouse")
-    matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
+    # With `filesystem_isolation` and `CAP_SYS_ADMIN`, the supervisor outside of the isolation and the init of its PID
+    # namespace keep the argv of the server.
+    matches = [
+        p
+        for p in pgrep()
+        if _is_server_cmdline(p[3], binary) and _process_comm(p[0]) not in ("clickhouse-isol", "clickhouse-init")
+    ]
     match_pids = {p[0] for p in matches}
     parents = {p[1] for p in matches}
     survivors = [p for p in matches if p[0] not in parents]
@@ -2168,6 +2174,7 @@ class SettingsRandomizer:
         "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_joins": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
         "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
         "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
@@ -2394,8 +2401,12 @@ class MergeTreeSettingsRandomizer:
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
             ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
-        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
+        "object_shared_data_serialization_version_for_small_parts": lambda: random.choice(
             ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
+        "min_bytes_for_object_shared_data_main_serialization_version": threshold_generator(
+            0.3, 0.3, 0, 100 * 1024 * 1024
+        ),
+        "use_object_shared_data_serialization_version_for_small_parts_on_insert": lambda: random.randint(0, 1),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
