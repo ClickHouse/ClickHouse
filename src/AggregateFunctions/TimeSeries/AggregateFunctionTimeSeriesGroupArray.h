@@ -16,6 +16,7 @@
 #include <base/sort.h>
 
 #include <algorithm>
+#include <cstring>
 
 
 namespace DB
@@ -66,6 +67,142 @@ public:
         Elements elements;
         /// Cleared by an out-of-order `add`; while set, timestamps in `elements` are strictly increasing.
         bool sorted = true;
+
+        static constexpr size_t MAX_SHIFT_ELEMENTS = 256;
+        static constexpr size_t MAX_SHIFT_FACTOR = 16;
+
+        static bool isStrictlySorted(const TimestampType * __restrict timestamp_ptr, size_t n)
+        {
+            size_t i = 1;
+            for (; i + 8 <= n; i += 8)
+            {
+                const unsigned ok = static_cast<unsigned>(timestamp_ptr[i - 1] < timestamp_ptr[i])
+                    & static_cast<unsigned>(timestamp_ptr[i] < timestamp_ptr[i + 1])
+                    & static_cast<unsigned>(timestamp_ptr[i + 1] < timestamp_ptr[i + 2])
+                    & static_cast<unsigned>(timestamp_ptr[i + 2] < timestamp_ptr[i + 3])
+                    & static_cast<unsigned>(timestamp_ptr[i + 3] < timestamp_ptr[i + 4])
+                    & static_cast<unsigned>(timestamp_ptr[i + 4] < timestamp_ptr[i + 5])
+                    & static_cast<unsigned>(timestamp_ptr[i + 5] < timestamp_ptr[i + 6])
+                    & static_cast<unsigned>(timestamp_ptr[i + 6] < timestamp_ptr[i + 7]);
+                if (!ok) [[unlikely]]
+                    return false;
+            }
+            for (; i < n; ++i)
+            {
+                if (!(timestamp_ptr[i - 1] < timestamp_ptr[i])) [[unlikely]]
+                    return false;
+            }
+            return true;
+        }
+
+        static void copyPairs(Element * __restrict dst, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t n)
+        {
+            for (size_t i = 0; i < n; ++i)
+                dst[i] = Element{.timestamp = timestamp_ptr[i], .value = value_ptr[i]};
+        }
+
+        void addManyPresorted(const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t n, Arena * arena)
+        {
+            if (n == 0)
+                return;
+
+            if (elements.empty())
+            {
+                if (isStrictlySorted(timestamp_ptr, n)) [[likely]]
+                {
+                    elements.resize_exact(n, arena);
+                    copyPairs(elements.data(), timestamp_ptr, value_ptr, n);
+                    sorted = true;
+                    return;
+                }
+            }
+            else if (sorted) [[likely]]
+            {
+                while (n > 0 && timestamp_ptr[0] == elements.back().timestamp) [[unlikely]]
+                {
+                    elements.back().value = timeseriesMaxValueForDuplicateTimestamp(elements.back().value, value_ptr[0]);
+                    ++timestamp_ptr;
+                    ++value_ptr;
+                    --n;
+                }
+                if (n == 0)
+                    return;
+
+                if (elements.back().timestamp < timestamp_ptr[0])
+                {
+                    if (isStrictlySorted(timestamp_ptr, n)) [[likely]]
+                    {
+                        const size_t old_size = elements.size();
+                        elements.resize(old_size + n, arena);
+                        copyPairs(elements.data() + old_size, timestamp_ptr, value_ptr, n);
+                        return;
+                    }
+                }
+                else if ((elements.size() <= MAX_SHIFT_ELEMENTS || elements.size() <= MAX_SHIFT_FACTOR * n) && isStrictlySorted(timestamp_ptr, n))
+                {
+                    const size_t old_size = elements.size();
+                    if (timestamp_ptr[n - 1] < elements.front().timestamp)
+                    {
+                        elements.resize(old_size + n, arena);
+                        Element * dst = elements.data();
+                        memmove(dst + n, dst, old_size * sizeof(Element));
+                        copyPairs(dst, timestamp_ptr, value_ptr, n);
+                        return;
+                    }
+
+                    const size_t max_merged_size = old_size + n;
+                    elements.resize(max_merged_size, arena);
+                    Element * dst = elements.data();
+
+                    ssize_t i = static_cast<ssize_t>(old_size) - 1;
+                    ssize_t j = static_cast<ssize_t>(n) - 1;
+                    ssize_t w = static_cast<ssize_t>(max_merged_size) - 1;
+
+                    while (i >= 0 && j >= 0)
+                    {
+                        const TimestampType lhs_ts = dst[i].timestamp;
+                        const TimestampType rhs_ts = timestamp_ptr[j];
+                        if (rhs_ts < lhs_ts)
+                        {
+                            dst[w--] = dst[i--];
+                        }
+                        else if (lhs_ts < rhs_ts)
+                        {
+                            dst[w--] = Element{.timestamp = rhs_ts, .value = value_ptr[j]};
+                            --j;
+                        }
+                        else
+                        {
+                            dst[w--] = Element{
+                                .timestamp = lhs_ts,
+                                .value = timeseriesMaxValueForDuplicateTimestamp(dst[i].value, value_ptr[j])};
+                            --i;
+                            --j;
+                        }
+                    }
+
+                    while (j >= 0)
+                    {
+                        dst[w--] = Element{.timestamp = timestamp_ptr[j], .value = value_ptr[j]};
+                        --j;
+                    }
+
+                    const size_t num_duplicates = static_cast<size_t>(w - i);
+                    if (num_duplicates > 0)
+                    {
+                        const size_t tail_elements = max_merged_size - 1 - static_cast<size_t>(w);
+                        if (tail_elements > 0)
+                            memmove(dst + i + 1, dst + w + 1, tail_elements * sizeof(Element));
+                        elements.resize_assume_reserved(max_merged_size - num_duplicates);
+                    }
+                    return;
+                }
+            }
+
+            elements.reserve(elements.size() + n, arena);
+            for (size_t i = 0; i < n; ++i)
+                add(timestamp_ptr[i], value_ptr[i], arena);
+        }
 
         void add(TimestampType timestamp, ValueType value, Arena * arena)
         {
@@ -249,11 +386,55 @@ public:
         data.elements.reserve(data.elements.size() + num_elements_to_add, arena);
     }
 
+    void unpackArrayColumns(
+        const IColumn ** columns,
+        const ColumnArray::Offset *& timestamp_offsets,
+        const ColumnArray::Offset *& value_offsets,
+        const TimestampType *& timestamp_data,
+        const ValueType *& value_data) const
+    {
+        if (array_of_pairs_argument)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+
+            /// The timestamps and the values are stored in the same array, so they share the offsets.
+            timestamp_offsets = array_column.getOffsets().data();
+            value_offsets = timestamp_offsets;
+            timestamp_data = typeid_cast<const TimestampColumnType &>(tuple_column.getColumn(0)).getData().data();
+            value_data = typeid_cast<const ValueColumnType &>(tuple_column.getColumn(1)).getData().data();
+        }
+        else
+        {
+            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
+
+            timestamp_offsets = timestamp_array_column.getOffsets().data();
+            value_offsets = value_array_column.getOffsets().data();
+            timestamp_data = typeid_cast<const TimestampColumnType &>(timestamp_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
+        }
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (array_of_pairs_argument || array_arguments)
+        if (array_of_pairs_argument)
         {
-            addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
+            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const ColumnArray::Offset * offsets = array_column.getOffsets().data();
+            const size_t prev_offset = (row_num == 0 ? 0 : offsets[row_num - 1]);
+            const size_t array_size = offsets[row_num] - prev_offset;
+            if (array_size == 0)
+                return;
+
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+            const TimestampType * timestamp_data = typeid_cast<const TimestampColumnType &>(tuple_column.getColumn(0)).getData().data();
+            const ValueType * value_data = typeid_cast<const ValueColumnType &>(tuple_column.getColumn(1)).getData().data();
+            this->data(place).addManyPresorted(timestamp_data + prev_offset, value_data + prev_offset, array_size, arena);
+        }
+        else if (array_arguments)
+        {
+            addBatchSinglePlaceWithFlags<true>(row_num, row_num + 1, place, columns, arena, nullptr);
         }
         else
         {
@@ -263,11 +444,83 @@ public:
         }
     }
 
+    template <bool check_null_places>
+    void addBatchArrayImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const
+    {
+        const ColumnArray::Offset * timestamp_offsets = nullptr;
+        const ColumnArray::Offset * value_offsets = nullptr;
+        const TimestampType * timestamp_data = nullptr;
+        const ValueType * value_data = nullptr;
+        unpackArrayColumns(columns, timestamp_offsets, value_offsets, timestamp_data, value_data);
+
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            const size_t next_timestamp_offset = timestamp_offsets[i];
+            const size_t next_value_offset = value_offsets[i];
+            if (!check_null_places || places[i])
+            {
+                const size_t timestamp_array_size = next_timestamp_offset - previous_timestamp_offset;
+                const size_t value_array_size = next_value_offset - previous_value_offset;
+                if (timestamp_array_size != value_array_size)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                        i, timestamp_array_size, value_array_size);
+
+                if (timestamp_array_size > 0)
+                    this->data(places[i] + place_offset).addManyPresorted(
+                        timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, timestamp_array_size, arena);
+            }
+            previous_timestamp_offset = next_timestamp_offset;
+            previous_value_offset = next_value_offset;
+        }
+    }
+
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if ((!array_of_pairs_argument && !array_arguments) || if_argument_pos >= 0)
+        {
+            Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+        addBatchArrayImpl<true>(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
+    void addBatchWithNonNullPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if ((!array_of_pairs_argument && !array_arguments) || if_argument_pos >= 0)
+        {
+            Base::addBatchWithNonNullPlaces(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+        addBatchArrayImpl<false>(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
     void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end, Arena * arena) const
     {
-        reserveAdd(place, end - start, arena);
-        for (size_t i = start; i < end; ++i)
-            add(place, timestamp_ptr[i], value_ptr[i], arena);
+        if (start < end)
+            this->data(place).addManyPresorted(timestamp_ptr + start, value_ptr + start, end - start, arena);
     }
 
     void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena) const
@@ -340,35 +593,14 @@ public:
         const ColumnArray::Offset * value_offsets = nullptr;
         const TimestampType * timestamp_data = nullptr;
         const ValueType * value_data = nullptr;
+        unpackArrayColumns(columns, timestamp_offsets, value_offsets, timestamp_data, value_data);
 
-        if (array_of_pairs_argument)
-        {
-            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
 
-            /// The timestamps and the values are stored in the same array, so they share the offsets.
-            timestamp_offsets = array_column.getOffsets().data();
-            value_offsets = timestamp_offsets;
-            timestamp_data = typeid_cast<const TimestampColumnType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ValueColumnType &>(tuple_column.getColumn(1)).getData().data();
-        }
-        else
-        {
-            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
-
-            timestamp_offsets = timestamp_array_column.getOffsets().data();
-            value_offsets = value_array_column.getOffsets().data();
-            timestamp_data = typeid_cast<const TimestampColumnType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
-        }
-
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
-
-        /// Reserve memory for all the samples at once if no rows are skipped.
-        if (!flags_data && row_end > row_begin)
-            reserveAdd(place, timestamp_offsets[static_cast<ssize_t>(row_end) - 1] - previous_timestamp_offset, arena);
+        /// Reserve memory for all the samples at once if multiple rows are added and none are skipped.
+        if (!flags_data && row_end - row_begin > 1)
+            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
