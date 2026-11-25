@@ -14,6 +14,18 @@ $CLICKHOUSE_CLIENT --send_logs_level fatal -q "
     SETTINGS rabbitmq_host_port = '127.0.0.1:1', rabbitmq_username = 'u', rabbitmq_password = 'p',
         rabbitmq_exchange_name = 'e', rabbitmq_format = 'JSONEachRow'"
 
+# The native protocol sends the data after the query, so the INSERT pipeline built for it is cancelled without running.
+reply=$(echo '{"c0": 1}' | timeout 60 $CLICKHOUSE_CLIENT --async_insert 1 --wait_for_async_insert 1 \
+    -q "INSERT INTO rmq FORMAT JSONEachRow" 2>&1)
+if [ $? -eq 124 ]; then
+    # A stuck insert: the cases below would block the asynchronous insert queue for good,
+    # and a synchronous DROP would wait for the stuck insert.
+    echo "native insert: stuck"
+    $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously 0 -q "DROP TABLE rmq"
+    exit 1
+fi
+echo "native insert: $(grep -o -m1 'CANNOT_CONNECT_RABBITMQ' <<< "$reply")"
+
 # An asynchronous insert whose batch has no rows is flushed without starting the producer.
 echo -n '' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT%20INTO%20rmq%20FORMAT%20JSONEachRow" --data-binary @-
 echo "empty insert: done"

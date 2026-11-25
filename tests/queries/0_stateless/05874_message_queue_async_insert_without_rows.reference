@@ -1,3 +1,4 @@
+native insert: CANNOT_CONNECT_RABBITMQ
 empty insert: done
 1
 flush: 0
