@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
+#include <Processors/QueryPlan/ReadFromDictionaryStep.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -329,7 +330,7 @@ std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQuer
     /// These reads have no `clone` support, and the Cascades plan builder clones every step of
     /// the winning plan; reject them up front instead of failing in the middle of optimization.
     /// (`ReadFromStorageStep`, e.g. a `viewExplain` read, derives from `ReadFromPreparedSource`.)
-    if (dynamic_cast<const ReadFromPreparedSource *>(&step))
+    if (dynamic_cast<const ReadFromPreparedSource *>(&step) || typeid_cast<const ReadFromDictionaryStep *>(&step))
         return PreformattedMessage::create(
             "make_distributed_plan with enable_cascades_optimizer does not support the '{}' step", step.getName());
 

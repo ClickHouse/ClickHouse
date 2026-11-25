@@ -14,7 +14,8 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromDictionaryStep.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -22,6 +23,8 @@
 #include <Dictionaries/SystemDictionaryUUIDs.h>
 #endif
 #include <Storages/AlterCommands.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
@@ -206,17 +209,21 @@ void StorageDictionary::checkTableCanBeDetached() const
     checkTableCanBeDropped(getContext());
 }
 
-Pipe StorageDictionary::read(
+void StorageDictionary::readImpl(
+    QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
-    SelectQueryInfo & /*query_info*/,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const size_t threads)
+    const size_t num_streams)
 {
     auto dictionary = getDictionary(local_context);
-    return dictionary->read(column_names, max_block_size, threads);
+    auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+
+    query_plan.addStep(std::make_unique<ReadFromDictionaryStep>(
+        std::move(header), shared_from_this(), std::move(dictionary), column_names, max_block_size, num_streams, query_info.storage_limits, local_context));
 }
 
 void StorageDictionary::checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context)
