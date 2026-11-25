@@ -580,6 +580,8 @@ public:
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Column type mismatch for simple key expected UInt64");
+
+            simple_keys = vector_col->getData().data();
         }
 
         keys_size = key_columns.front()->size();
@@ -601,10 +603,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            const auto & column_vector = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]);
-            const auto & data = column_vector.getData();
-
-            auto key = data[current_key_index];
+            auto key = simple_keys[current_key_index];
             ++current_key_index;
             return key;
         }
@@ -632,16 +631,14 @@ public:
     }
 
     /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
-    /// Hot loops use it instead of `extractCurrentKey` per key: a simple key is then read through one
-    /// hoisted data pointer, where `extractCurrentKey` goes through `key_columns[0]`, the column and its
-    /// data pointer every time, and the store of `current_key_index` keeps clang-23 with libc++ 23 (whose
-    /// `std::vector` keeps a `size_t` size) from hoisting those loads and their bounds checks out of the loop.
+    /// Hot loops use it instead of `extractCurrentKey` per key: the store of `current_key_index` for every
+    /// key keeps the compiler from hoisting loads out of the loop.
     template <typename Callback>
     void forEachKey(Callback && callback)
     {
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            const UInt64 * __restrict keys = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]).getData().data();
+            const UInt64 * __restrict keys = simple_keys;
             for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
                 callback(key_index, keys[key_index]);
             current_key_index = keys_size;
@@ -677,6 +674,8 @@ public:
     }
 private:
     Columns key_columns;
+    /// Data of the simple key column, which is kept alive by `key_columns`.
+    const UInt64 * simple_keys = nullptr;
 
     size_t keys_size = 0;
     size_t current_key_index = 0;
