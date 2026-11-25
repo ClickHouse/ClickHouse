@@ -827,6 +827,18 @@ void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp
     }
 }
 
+void ObjectStorageQueueMetadata::removePipelineLagMetrics(const StorageID & storage_id)
+{
+    /// Under the same mutex as the updates, so that a concurrent update either is removed here or
+    /// starts from an empty watermark and sets the gauge again.
+    std::lock_guard lock(pipeline_lag_watermarks_mutex);
+    pipeline_lag_watermarks.erase(storage_id.getFullTableName());
+    DimensionalMetrics::remove(
+        DimensionalMetrics::ObjectStorageQueueNewestSeenTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
+    DimensionalMetrics::remove(
+        DimensionalMetrics::ObjectStorageQueueNewestCommittedTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
+}
+
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);

@@ -4,8 +4,10 @@
 #include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 
+#include <atomic>
 #include <exception>
 #include <mutex>
 
@@ -40,6 +42,7 @@ public:
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
+        const StorageID & storage_id_,
         ObjectStorageQueueAction after_processing_,
         AfterProcessingSettings settings_,
         String keeper_identity_);
@@ -111,21 +114,32 @@ private:
     void reportMoveCollision(const StoredObject & source, const StoredObject & destination) const;
     void reportSelfMove(const StoredObject & source) const;
 
+    /// Add to the `after_processing` stage of the failures metric of the table.
+    /// Must be called from a `catch` block: the error code is taken from the current exception.
+    void countFailedObjects(size_t count) const;
+
     /// Move processed objects to another prefix. Each of the three rethrows the first
     /// `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ` once the whole batch is handled (see `process`).
-    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
+    void moveWithinBucket(
+        const StoredObjects & objects,
+        const String & move_prefix,
+        bool preserve_path,
+        StoredObjects & successful_objects,
+        std::atomic<size_t> & counted_failed_objects) const;
     /// Deletes each object that has a read version by that version and returns the others, left to the `ETag` delete.
     /// The first failed version delete goes to `versioned_error`, so the others are still handled.
     StoredObjects deleteVersionedS3Objects(
         const StoredObjects & objects, StoredObjects & successful_objects, std::exception_ptr & versioned_error) const;
 
     /// Move processed S3 objects, possibly to another S3 storage
-    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
-    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const;
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
+    /// The table that owns the processed objects, used for the labels of the metrics.
+    const StorageID storage_id;
     const ObjectStorageQueueAction after_processing;
     const AfterProcessingSettings settings;
     const String keeper_identity;

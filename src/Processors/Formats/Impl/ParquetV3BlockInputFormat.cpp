@@ -170,7 +170,10 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     , object_with_metadata(object_with_metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
-    read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    /// Saturate: `min_bytes_for_seek` comes from an unrestricted setting.
+    read_options.bytes_per_read_task = min_bytes_for_seek > std::numeric_limits<size_t>::max() / 4
+        ? std::numeric_limits<size_t>::max()
+        : min_bytes_for_seek * 4;
     read_options.is_remote_fs = is_remote_fs_;
 
     if (!format_filter_info)
@@ -251,7 +254,8 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
             if (footer_cache_hit && key_identifies_content)
             {
                 new_reader->reader.max_read_offset_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingBytes();
-                if (new_reader->reader.max_read_offset_indexes_bytes)
+                new_reader->reader.max_read_column_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingColumnIndexBytes();
+                if (new_reader->reader.max_read_offset_indexes_bytes || new_reader->reader.max_read_column_indexes_bytes)
                     offset_indexes_cache_cell = footer_cache_cell;
             }
         }
