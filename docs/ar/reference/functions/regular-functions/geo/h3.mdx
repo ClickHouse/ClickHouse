@@ -53,7 +53,7 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 
 يحدّد مستوى الدقة لفهرس [H3](#h3-index) المُعطى.
 
-**البنية**
+**الصيغة**
 
 ```sql
 h3GetResolution(h3index)
@@ -65,8 +65,8 @@ h3GetResolution(h3index)
 
 **القيم المُعادة**
 
-* دقة الفهرس. النطاق: `[0, 15]`. [UInt8](/ar/reference/data-types/int-uint).
-* إذا كان الفهرس غير صالح، فستُرجع الدالة قيمة عشوائية. استخدم [h3IsValid](#h3isvalid) للتحقق من صحة الفهرس. [UInt8](/ar/reference/data-types/int-uint).
+* مستوى دقة الفهرس. النطاق: `[0, 15]`. [UInt8](/ar/reference/data-types/int-uint).
+* إذا كان الفهرس غير صالح، فإن الدالة تُطلق استثناءً بشكل افتراضي، أو تُرجع `0` عندما يكون الإعداد [`functions_h3_default_if_invalid`](/ar/reference/settings/session-settings/other#functions_h3_default_if_invalid) مفعّلًا. استخدم [h3IsValid](#h3isvalid) للتحقق من صحة الفهرس. [UInt8](/ar/reference/data-types/int-uint).
 
 **مثال**
 
@@ -644,13 +644,14 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 h3GetResolution(index)
 ```
 
-**المعامل**
+**المعلمة**
 
 * `index` — رقم فهرس الخلية السداسية. [UInt64](/ar/reference/data-types/int-uint).
 
 **القيمة المُعادة**
 
 * مستوى دقة الفهرس. النطاق: `[0, 15]`. [UInt8](/ar/reference/data-types/int-uint).
+* تؤدي الفهارس غير الصالحة افتراضيًا إلى رفع استثناء، أو تُعاد القيمة `0` عند تفعيل `functions_h3_default_if_invalid`.
 
 **مثال**
 

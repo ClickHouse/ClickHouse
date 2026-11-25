@@ -2,8 +2,8 @@
 sidebarTitle: 'Compartilhamento e acesso'
 slug: /agents/sharing-and-access
 title: 'Compartilhamento e controle de acesso'
-description: 'Modelo de permissões e controle de acesso do ClickHouse Agents'
-keywords: ['AI', 'ClickHouse Cloud', 'agents', 'compartilhamento', 'controle de acesso', 'permissões', 'RBAC']
+description: 'Modelo de permissões e controle de acesso dos ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agentes', 'compartilhamento', 'controle de acesso', 'permissões', 'RBAC']
 doc_type: 'reference'
 ---
 
@@ -11,96 +11,74 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-O Agents usa um modelo de permissões em camadas: as funções controlam quais funcionalidades os usuários podem usar, as listas de acesso em nível de recurso controlam quem pode usar um agente específico ou outro recurso, e as permissões de Admin controlam quem gerencia tudo.
+O Agents usa um modelo de permissões em camadas: as funções controlam quais funcionalidades os usuários podem acessar, as listas de acesso no nível do recurso controlam quem pode usar um agente específico ou outro recurso, e as permissões de administrador controlam quem gerencia tudo.
 
-<div id="roles">
-  ## Funções
-</div>
+## Funções {#roles}
 
-Uma função é um conjunto de permissões por funcionalidade atribuído a um ou mais usuários. Os padrões são:
+Uma função é um pacote de permissões de funcionalidades atribuído a um ou mais usuários. As funções padrão são:
 
-* **User** - pode executar agentes e usar o chat. A possibilidade de criar agentes, criar skills, compartilhar recursos etc. depende das opções por funcionalidade definidas na função.
-* **Admin** - tudo o que o User pode fazer, além de controles no nível da organização: gerenciar usuários, configurar o marketplace e conceder permissões.
+* **Usuário** - pode executar agentes e iniciar conversas. A possibilidade de criar agentes, criar habilidades, compartilhar recursos etc. depende dos botões de alternância por funcionalidade definidos na sua função.
+* **Administrador** - tudo o que a função Usuário permite, além de controles no nível da organização: gerenciar usuários, configurar o marketplace e conceder permissões.
 
-Admins podem criar funções personalizadas com suas próprias opções para um controle mais granular.
+Administradores podem criar funções personalizadas com seus próprios botões de alternância para um controle mais granular.
 
-<div id="resource-sharing">
-  ## Compartilhamento de recursos
-</div>
+## Compartilhamento de recursos {#resource-sharing}
 
-Agentes, prompts e skills têm, cada um, uma lista de acesso. Há três níveis de acesso por principal:
+Agentes, prompts e habilidades têm, cada um, sua própria lista de acesso. Há três níveis de acesso por principal:
 
-* **visualizador** - pode usar o recurso, mas não pode modificá-lo.
+* **Visualizador** - pode usar o recurso, mas não pode modificá-lo.
 * **Editor** - pode alterar a configuração do recurso (instruções, ferramentas anexadas, modelo etc.).
-* **proprietário** - Editor, além da capacidade de excluir o recurso ou alterar seu compartilhamento.
+* **Proprietário** - tem as mesmas permissões do Editor, além de poder excluir o recurso ou alterar seu compartilhamento.
 
-Quando você cria um recurso, por padrão, é o proprietário dele. Tudo o que você não compartilhar explicitamente ficará privado para você.
+Ao criar um recurso, você se torna o proprietário dele por padrão. Tudo o que você não compartilhar explicitamente fica restrito a você.
 
-<div id="principals">
-  ## Principais
-</div>
+## Principais {#principals}
 
 Você pode conceder acesso a:
 
-* **Usuários individuais** - um usuário por vez.
-* **Grupos** - equipes ou unidades organizacionais. Se um usuário entrar ou sair do grupo depois, o acesso dele será atualizado automaticamente.
-* **Toda a organização** - todos na organização veem o recurso. Isso depende da opção no nível da função que permite esse acesso.
+* **Usuários individuais** - um usuário de cada vez.
+* **Grupos** - equipes ou unidades organizacionais. Se um usuário entrar no grupo ou sair dele posteriormente, o acesso dele será atualizado automaticamente.
+* **Em toda a organização** - todos na organização veem o recurso. Depende do botão de alternância no nível da função que permite essa opção.
 
-A visibilidade em toda a organização é o que torna um recurso localizável no [marketplace](/pt-BR/agents/marketplace).
+É a visibilidade em toda a organização que permite que um recurso seja descoberto no [marketplace](/pt-BR/agents/marketplace).
 
-<div id="share-an-agent">
-  ## Compartilhar um agente
-</div>
+## Compartilhar um agente {#share-an-agent}
 
-Clique no ícone de **compartilhar** na parte inferior do Agent Builder. Um indicador no ícone mostra quantos usuários ou grupos têm acesso no momento.
+Clique no ícone de **compartilhar** na parte inferior do Criador de agentes. Um selo no ícone mostra quantos usuários ou grupos têm acesso no momento.
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Parte inferior do painel do Agent Builder com o ícone de compartilhar destacado e um indicador mostrando um principal com quem foi compartilhado](/images/cloud/agent-builder/sharing/sharing.webp)
-
-</Frame>
-
+  <Frame>
+    ![Parte inferior do painel do Criador de agentes com o ícone de compartilhar destacado e um selo indicando um principal com acesso compartilhado](/images/cloud/agent-builder/sharing/sharing.webp)
+  </Frame>
 </div>
 
-O modal **Compartilhar** é aberto. Procure um usuário ou grupo por nome ou e-mail, escolha o nível de acesso (**Visualizador**, **Editor** ou **Proprietário**) e clique em **Salvar alterações**. Para compartilhar com toda a organização, habilite a opção **Compartilhar com todos no ClickHouse**.
+O modal **Compartilhar** será aberto. Busque um usuário ou grupo pelo nome ou e-mail, escolha o nível de acesso (**Visualizador**, **Editor** ou **Proprietário**) e clique em **Salvar Alterações**. Para compartilhar com toda a organização, ative o botão de alternância **Compartilhar com todos no ClickHouse**.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Modal Compartilhar com a seção Permissões de usuário e grupo, um campo de busca, um usuário existente com a função de Proprietário, uma opção Compartilhar com todos no ClickHouse e os botões Cancelar e Salvar alterações](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
-
-</Frame>
-
+  <Frame>
+    ![Modal Compartilhar com a seção de permissões de usuários e grupos, um campo de busca, um usuário existente com a função de proprietário, o botão de alternância Compartilhar com todos no ClickHouse e os botões Cancelar e Salvar Alterações](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+  </Frame>
 </div>
 
-O destinatário verá o agente na lista de agentes disponíveis na próxima vez que atualizar. Para revogar o acesso, remova a linha no mesmo modal. O destinatário perde o acesso imediatamente; as conversas em andamento terminam, mas não será possível iniciar novas.
+O destinatário verá o agente na lista de agentes disponíveis na próxima vez que atualizar a página. Para revogar o acesso, remova a linha correspondente no mesmo modal. O destinatário perde o acesso imediatamente: as conversas in-flight são concluídas, mas não será possível abrir novas.
 
-<div id="default-agent">
-  ## Agente padrão
-</div>
+## Agente padrão {#default-agent}
 
-Você pode marcar um agente como padrão. Novas conversas são abertas com esse agente, a menos que você escolha outro. Admins também podem definir um padrão para toda a organização para os usuários que ainda não escolheram o seu.
+Você pode definir um agente como padrão. Novas conversas são abertas com esse agente, a menos que você escolha outro. Os Administradores também podem definir um padrão para toda a organização, que vale para os usuários que ainda não escolheram o seu.
 
-<div id="admin-operations">
-  ## Operações de Admin
-</div>
+## Operações de administrador {#admin-operations}
 
-As operações exclusivas de Admin incluem:
+As operações exclusivas de administradores incluem:
 
 * Criar e editar funções.
-* Configurar categorias do marketplace e selecionar agentes em destaque.
-* Habilitar ou desabilitar recursos no nível da organização (Memory, Web search, Code interpreter, marketplace etc.).
-* Conceder permissões de Admin a outros usuários.
+* Configurar categorias do marketplace e selecionar os agentes em destaque.
+* Habilitar ou desabilitar funcionalidades no nível da organização (memória, busca na web, interpretador de código, marketplace etc.).
+* Conceder permissões de administrador a outros usuários.
 
-No ClickHouse Cloud, o painel de administração está disponível para os admins da organização. Se você não conseguir vê-lo, entre em contato com o admin da sua organização ou com o suporte do ClickHouse Cloud para solicitar acesso.
+No ClickHouse Cloud, o painel administrativo fica disponível para os administradores da organização. Se ele não aparecer para você, entre em contato com o administrador da sua organização ou com o Suporte do ClickHouse Cloud para solicitar acesso.
 
-<div id="gotchas">
-  ## Pontos de atenção
-</div>
+## Pontos de atenção {#gotchas}
 
-* **Excluir um agente interrompe todo o compartilhamento.** Os destinatários perdem o acesso; as conversas salvas deles com o agente continuam legíveis, mas não podem ter continuidade.
-* **Editar um agente compartilhado afeta todos que o usam.** Use uma cópia se precisar fazer testes sem atrapalhar os outros.
-* **Revogar a role de um usuário não exclui os recursos que ele criou.** Os agentes, prompts e skills dele continuam nas listas de acesso; transfira a propriedade antes de concluir o desligamento.
+* **Excluir um agente desfaz todo o compartilhamento.** Os destinatários perdem o acesso; as conversas salvas com o agente continuam disponíveis para leitura, mas não podem ser retomadas.
+* **Editar um agente compartilhado afeta todos que o utilizam.** Use uma cópia se precisar fazer testes sem atrapalhar os outros.
+* **Revogar a função de um usuário não exclui os recursos que ele criou.** Os agentes, prompts e habilidades desse usuário permanecem nas listas de acesso dele; transfira a propriedade antes de concluir o desligamento.
