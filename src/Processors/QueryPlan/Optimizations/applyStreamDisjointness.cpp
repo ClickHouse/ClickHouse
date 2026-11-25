@@ -183,7 +183,7 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         /// when another step requested per-partition reading. Hash scatters choose their stream counts
         /// independently of the table partitions and do not need this reading-specific check.
         if (property && settings.window_partitions_independently && !sorting->getSettings().size_limits.hasLimits()
-            && partitionDeterminedByKeys(*property, partition_by_names)
+            && !sorting->partitionKeysNeedOwnScatter() && partitionDeterminedByKeys(*property, partition_by_names)
             && (!property->reading || settings.force_window_partitions_independently
                 || property->reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Window)))
         {

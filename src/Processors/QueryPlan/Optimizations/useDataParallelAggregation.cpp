@@ -265,7 +265,7 @@ static ReadFromMergeTree * findReadingForWindowPerPartition(QueryPlan::Node & no
     /// sorting merges the streams read in order and is not matched here. `optimizeReadInOrder` leaves the
     /// sorting alone when `canOptimizeWindowPerPartition` holds, so the per-partition plan wins.
     if (sorting_step->getType() != SortingStep::Type::Full || !sorting_step->hasPartitions()
-        || sorting_step->isSortingForMergeJoin())
+        || sorting_step->isSortingForMergeJoin() || sorting_step->partitionKeysNeedOwnScatter())
         return nullptr;
 
     /// `max_rows_to_sort` / `max_bytes_to_sort` are enforced per stream by the checking transforms of

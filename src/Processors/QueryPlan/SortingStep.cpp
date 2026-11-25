@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -324,6 +325,13 @@ Names SortingStep::getPartitionByColumnNames() const
     return names;
 }
 
+bool SortingStep::partitionKeysNeedOwnScatter() const
+{
+    const auto & header = *getInputHeaders().front();
+    return std::ranges::any_of(partition_by_description, [&](const auto & column)
+        { return QueryPlanOptimizations::keyTypeBreaksHashSharding(*header.getByName(column.column_name).type); });
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
     /// The input streams already carry disjoint sets of the partition key values (each stream holds whole
@@ -353,7 +361,9 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        scatterByPartition(pipeline, threads, key_columns);
+        scatterByPartition(
+            pipeline, threads, key_columns, /*hash_cast_types=*/{}, /*scattered_stream_transform=*/{},
+            /*canonicalize_float_keys=*/is_window_sorting);
     }
 }
 

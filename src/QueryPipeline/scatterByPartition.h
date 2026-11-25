@@ -15,12 +15,14 @@ class QueryPipelineBuilder;
 /// `scattered_stream_transform` works like the getter of `addSimpleTransform`: it is applied to every
 /// scattered stream before the streams of a partition are merged into one, so its work runs on all
 /// streams in parallel. It may return nullptr for no transform.
+/// `canonicalize_float_keys`: see `ScatterByPartitionTransform`.
 void scatterByPartition(
     QueryPipelineBuilder & pipeline,
     size_t num_partitions,
     const ColumnNumbers & key_columns,
     const DataTypes & hash_cast_types = {},
-    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform = {});
+    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform = {},
+    bool canonicalize_float_keys = false);
 
 /// Spreads whole chunks round-robin over num_partitions streams: stream i carries the chunks of
 /// partition i. The scatter of input stream s starts at partition start_bucket + s.

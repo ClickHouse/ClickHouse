@@ -1,16 +1,24 @@
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/MapToRange.h>
+#include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
 #include <Common/randomSeed.h>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
@@ -19,7 +27,52 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_)
+namespace
+{
+
+/// `-0.` and `0.`, and all NaNs, compare equal (`compareAt`, which a window uses to find its partitions) but have
+/// different bits, so the hash is computed over a copy holding one representation of each.
+template <typename T>
+ColumnPtr canonicalizeFloats(const ColumnPtr & column)
+{
+    const auto & data = assert_cast<const ColumnVector<T> &>(*column).getData();
+    bool has_non_canonical = false;
+    for (T x : data)
+        has_non_canonical |= isNaN(x) || (x == 0 && std::signbit(x));
+    if (!has_non_canonical)
+        return column;
+
+    auto result = ColumnVector<T>::create(data.size());
+    auto & result_data = result->getData();
+    for (size_t i = 0; i < data.size(); ++i)
+        result_data[i] = isNaN(data[i]) ? std::numeric_limits<T>::quiet_NaN() : (data[i] == 0 ? T(0) : data[i]);
+    return result;
+}
+
+ColumnPtr canonicalizeFloatKey(ColumnPtr column)
+{
+    column = column->convertToFullIfWrapped();
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        ColumnPtr nested = canonicalizeFloatKey(nullable->getNestedColumnPtr());
+        if (nested.get() == &nullable->getNestedColumn())
+            return column;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+
+    if (typeid_cast<const ColumnFloat64 *>(column.get()))
+        return canonicalizeFloats<Float64>(column);
+    if (typeid_cast<const ColumnFloat32 *>(column.get()))
+        return canonicalizeFloats<Float32>(column);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "ScatterByPartitionTransform: unexpected column {} of a float key", column->getName());
+}
+
+}
+
+ScatterByPartitionTransform::ScatterByPartitionTransform(
+    SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_, bool canonicalize_float_keys)
     : IProcessor(InputPorts{header}, OutputPorts{output_size_, header})
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
@@ -34,6 +87,21 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
     hash_input_types.reserve(key_columns.size());
     for (const auto & column_number : key_columns)
         hash_input_types.push_back(header->getByPosition(column_number).type);
+
+    if (canonicalize_float_keys)
+    {
+        canonical_float_keys.reserve(key_columns.size());
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            const auto & hashed_type = hash_cast_types.empty() || !hash_cast_types[i] ? hash_input_types[i] : hash_cast_types[i];
+            canonical_float_keys.push_back(canonicalizesKeyType(*hashed_type));
+        }
+    }
+}
+
+bool ScatterByPartitionTransform::canonicalizesKeyType(const IDataType & type)
+{
+    return WhichDataType(removeNullable(type)).isNativeFloat();
 }
 
 std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
@@ -232,15 +300,13 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     for (size_t i = 0; i < key_columns.size(); ++i)
     {
-        const auto & column = columns[key_columns[i]];
+        ColumnPtr column = columns[key_columns[i]];
         const auto & cast_type = hash_cast_types.empty() ? nullptr : hash_cast_types[i];
         if (cast_type && !cast_type->equals(*hash_input_types[i]))
-        {
-            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
-            casted->computeHashInto(0, num_rows, hash.data(), false);
-        }
-        else
-            column->computeHashInto(0, num_rows, hash.data(), false);
+            column = castColumn({column, hash_input_types[i], ""}, cast_type);
+        if (!canonical_float_keys.empty() && canonical_float_keys[i])
+            column = canonicalizeFloatKey(std::move(column));
+        column->computeHashInto(0, num_rows, hash.data(), false);
     }
 
     selector.resize(num_rows);

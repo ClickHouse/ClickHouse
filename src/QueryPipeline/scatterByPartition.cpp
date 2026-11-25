@@ -87,12 +87,14 @@ void scatterByPartition(
     size_t num_partitions,
     const ColumnNumbers & key_columns,
     const DataTypes & hash_cast_types,
-    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform)
+    const Pipe::ProcessorGetterSharedHeader & scattered_stream_transform,
+    bool canonicalize_float_keys)
 {
     auto stream_header = pipeline.getSharedHeader();
     auto make_scatter = [&](size_t)
     {
-        return std::make_shared<ScatterByPartitionTransform>(stream_header, num_partitions, key_columns, hash_cast_types);
+        return std::make_shared<ScatterByPartitionTransform>(
+            stream_header, num_partitions, key_columns, hash_cast_types, canonicalize_float_keys);
     };
     scatterStreams(pipeline, num_partitions, make_scatter, scattered_stream_transform);
 }
