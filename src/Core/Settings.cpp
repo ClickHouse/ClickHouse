@@ -12324,6 +12324,7 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     }
 #endif
 
+    size_t compatibility_index = static_cast<size_t>(-1);
     if (name == "compatibility")
     {
         /// Applying compatibility can replace storage from which the caller borrowed the name.
@@ -12340,11 +12341,12 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     else if (num_settings_changed_by_compatibility_setting != 0)
     {
         const auto & accessor = Traits::Accessor::instance();
-        if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
-            unmarkChangedByCompatibility(index);
+        compatibility_index = accessor.find(SettingsTraits::resolveName(name));
     }
 
     BaseSettings::set(name, value);
+    if (compatibility_index != static_cast<size_t>(-1))
+        unmarkChangedByCompatibility(compatibility_index);
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
@@ -12355,15 +12357,15 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
     const auto & accessor = Traits::Accessor::instance();
     for (size_t word = 0; word < num_setting_bitmap_words; ++word)
     {
-        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        UInt64 bits = settings_changed_by_compatibility_setting[word];
         while (bits)
         {
-            accessor.resetValueToDefault(*this, word * 64 + std::countr_zero(bits));
+            const size_t index = word * 64 + std::countr_zero(bits);
+            accessor.resetValueToDefault(*this, index);
+            unmarkChangedByCompatibility(index);
             bits &= bits - 1;
         }
     }
-
-    num_settings_changed_by_compatibility_setting = 0;
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility(const std::function<bool(std::string_view, const Field &)> & is_allowed)
@@ -12469,15 +12471,15 @@ void SettingsImpl::markSettingsChangedByCompatibilityAsUnchanged()
     const auto & accessor = Traits::Accessor::instance();
     for (size_t word = 0; word < num_setting_bitmap_words; ++word)
     {
-        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        UInt64 bits = settings_changed_by_compatibility_setting[word];
         while (bits)
         {
-            accessor.setValueChanged(*this, word * 64 + std::countr_zero(bits), false);
+            const size_t index = word * 64 + std::countr_zero(bits);
+            accessor.setValueChanged(*this, index, false);
+            unmarkChangedByCompatibility(index);
             bits &= bits - 1;
         }
     }
-
-    num_settings_changed_by_compatibility_setting = 0;
 }
 
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)

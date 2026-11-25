@@ -12,6 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
 
@@ -207,6 +208,32 @@ GTEST_TEST(SettingsSnapshot, IndependentConcurrentDescendants)
         worker.join();
     EXPECT_EQ(failures.load(), 0);
     EXPECT_EQ(serialize(parent, SettingsWriteFormat::DEFAULT), expected);
+}
+
+GTEST_TEST(SettingsSnapshot, WorkerLifecycleWithConcurrentSessionSettings)
+{
+    std::thread([]
+    {
+        ThreadStatus owner_thread;
+        auto context = Context::createCopy(getMutableContext().context);
+        context->makeQueryContext();
+        auto group = ThreadGroup::createForQuery(context);
+        std::barrier<> start(2);
+        std::jthread worker([&]
+        {
+            ThreadStatus worker_thread;
+            start.arrive_and_wait();
+            for (size_t iteration = 0; iteration < 1000; ++iteration)
+            {
+                /// Attach, initialize counters, and finalize them while the client receives updates.
+                ThreadGroupSwitcher switcher(group, ThreadName::UNKNOWN);
+                EXPECT_EQ(CurrentThread::getGroup(), group);
+            }
+        });
+        start.arrive_and_wait();
+        for (size_t iteration = 0; iteration < 1000; ++iteration)
+            context->setSetting("session_timezone", String(iteration % 2 ? "UTC" : "Europe/Amsterdam"));
+    }).join();
 }
 
 namespace
@@ -428,6 +455,77 @@ GTEST_TEST(SettingsSnapshot, FailedProfileResolutionPreservesContextAndPrincipal
 
 /// Like the allocation-interceptor tests, this requires tracked `new` and `delete`.
 #if !defined(SANITIZER)
+namespace
+{
+template <typename Mutate>
+void checkCompatibilityMutationRetry(Mutate mutate)
+{
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, false);
+    std::thread(
+        [&]
+        {
+            ThreadStatus thread_status;
+            thread_status.memory_tracker.setParent(&query_tracker);
+            thread_status.untracked_memory_limit = 0;
+            Settings parent;
+            parent.set("compatibility", "22.8");
+            parent.set(Setting::max_threads, UInt64(8));
+            Settings expected(parent);
+            mutate(expected);
+            Settings child(parent);
+
+            const auto previous_throw_threshold = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+            SCOPE_EXIT({ CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(previous_throw_threshold); });
+            /// The shared snapshot must detach before the first compatibility field can be modified.
+            /// A zero threshold disables allocation-limit exceptions.
+            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+            query_tracker.setHardLimit(query_tracker.get() + 1);
+            int exception_code = 0;
+            try
+            {
+                mutate(child);
+            }
+            catch (const Exception & exception)
+            {
+                exception_code = exception.code();
+            }
+            query_tracker.setHardLimit(0);
+            EXPECT_EQ(exception_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+            EXPECT_TRUE(child.hasSettingsChangedByCompatibility());
+            EXPECT_EQ(child, parent);
+            EXPECT_TRUE(child.sharesSnapshotWith(parent));
+
+            mutate(child);
+            EXPECT_FALSE(child.hasSettingsChangedByCompatibility());
+            EXPECT_EQ(child, expected);
+            for (const auto name : child.getAllRegisteredNames())
+                EXPECT_EQ(child.isChanged(name), expected.isChanged(name)) << name;
+            EXPECT_TRUE(parent.hasSettingsChangedByCompatibility());
+            EXPECT_EQ(child[Setting::max_threads].value, 8);
+        })
+        .join();
+}
+}
+
+GTEST_TEST(SettingsSnapshot, FailedCompatibilityResetCanBeRetried)
+{
+    checkCompatibilityMutationRetry([](Settings & settings) { settings.resetSettingsChangedByCompatibility(); });
+}
+
+GTEST_TEST(SettingsSnapshot, FailedCompatibilityFlagResetCanBeRetried)
+{
+    checkCompatibilityMutationRetry([](Settings & settings) { settings.markSettingsChangedByCompatibilityAsUnchanged(); });
+}
+
+GTEST_TEST(SettingsSnapshot, FailedExplicitCompatibilityOverrideCanBeRetried)
+{
+    checkCompatibilityMutationRetry([](Settings & settings)
+    {
+        settings.set("use_concurrency_control", true);
+        settings.resetSettingsChangedByCompatibility();
+    });
+}
+
 GTEST_TEST(SettingsSnapshot, FailedCachedProfileCopyPreservesContext)
 {
     auto global_context = getMutableContext().context;

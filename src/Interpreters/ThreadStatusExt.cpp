@@ -373,7 +373,7 @@ void ThreadStatus::applyGlobalSettings()
     if (!global_context_ptr)
         return;
 
-    const Settings & settings = global_context_ptr->getSettingsRef();
+    const auto settings = global_context_ptr->getSettingsCopy();
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 }
@@ -384,7 +384,8 @@ void ThreadStatus::applyQuerySettings()
     if (!query_context_ptr)
         return;
 
-    const Settings & settings = query_context_ptr->getSettingsRef();
+    /// The client can update its session settings while an input pipeline is running.
+    const auto settings = query_context_ptr->getSettingsCopy();
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
@@ -616,7 +617,7 @@ void ThreadStatus::initPerformanceCounters()
 
     if (auto query_context_ptr = query_context.lock())
     {
-        const Settings & settings = query_context_ptr->getSettingsRef();
+        const auto settings = query_context_ptr->getSettingsCopy();
         if (settings[Setting::metrics_perf_events_enabled])
         {
             try
@@ -655,14 +656,14 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
-    // We want to close perf file descriptors if the perf events were enabled for
-    // one query.
-    bool close_perf_descriptors = true;
-    if (auto global_context_ptr = global_context.lock())
-        close_perf_descriptors = !global_context_ptr->getSettingsRef()[Setting::metrics_perf_events_enabled];
-
     try
     {
+        // We want to close perf file descriptors if the perf events were enabled for
+        // one query.
+        bool close_perf_descriptors = true;
+        if (auto global_context_ptr = global_context.lock())
+            close_perf_descriptors = !global_context_ptr->getSettingsCopy()[Setting::metrics_perf_events_enabled];
+
         current_thread_counters.finalizeProfileEvents(performance_counters);
         if (close_perf_descriptors)
             current_thread_counters.closeEventDescriptors();
@@ -678,7 +679,7 @@ void ThreadStatus::finalizePerformanceCounters()
         auto query_context_ptr = query_context.lock();
         if (global_context_ptr && query_context_ptr)
         {
-            const auto & settings = query_context_ptr->getSettingsRef();
+            const auto settings = query_context_ptr->getSettingsCopy();
             if (settings[Setting::log_queries] && settings[Setting::log_query_threads])
             {
                 Int64 query_duration_ms = thread_attach_time.elapsedMilliseconds();
@@ -749,10 +750,10 @@ void ThreadStatus::initQueryProfiler()
 
     auto query_context_ptr = query_context.lock();
     chassert(query_context_ptr);
-    const auto & settings = query_context_ptr->getSettingsRef();
 
     try
     {
+        const auto settings = query_context_ptr->getSettingsCopy();
         if (settings[Setting::query_profiler_real_time_period_ns] > 0)
         {
             if (!query_profiler_real)
@@ -826,7 +827,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         {
             element.client_info = query_context_ptr->getClientInfo();
 
-            if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
+            if (query_context_ptr->getSettingsCopy()[Setting::log_profile_events] != 0)
             {
                 /// NOTE: Here we are in the same thread, so we can make memcpy()
                 element.profile_counters = performance_counters.getPartiallyAtomicSnapshot();
