@@ -2503,7 +2503,7 @@ Possible values:
 )", 0, \
         {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
-For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -2822,7 +2822,7 @@ Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the def
 
 The plan is masked with the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) of the server, like the `query` column. A query in which a rule matches, in its text or in a query parameter, stores no plan, because constant folding can carry the masked text into the plan in a form no rule matches. Otherwise every text the plan holds, such as filter conditions, `IN` lists and output column names, is masked before it is stored. A query with secret arguments, such as the key of `encrypt`, stores no plan either, because they cannot be reliably hidden inside it.
 
-Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected. Use [`log_query_plans_probability`](/reference/settings/session-settings/log-query#log_query_plans_probability) to capture only a random sample of queries.
 
 That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
 
@@ -2834,6 +2834,22 @@ See also:
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
+    DECLARE(Float, log_query_plans_probability, 1., R"(
+Captures the query plan, as enabled by [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), only for a sample of queries selected randomly with the specified probability. A query that is not selected does not pay the profiling cost of [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), and its `system.query_log` rows are still written, with an empty `query_plan` column.
+
+The choice is made per query, once it is known that the plan of the query can be captured, so queries that are never captured (for example, queries other than `SELECT`) do not take part in the sampling.
+
+It applies on top of [`log_queries_probability`](/reference/settings/session-settings/log-queries#log_queries_probability): a query whose rows are not written has no plan captured either, so with both settings at `0.5` about a quarter of the queries have their plan captured.
+
+The choice is made before the query runs, so it cannot depend on how long the query takes. With [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms), every slow query still writes its row, but only the given share of those rows carry a plan, while the same share of all queries, fast ones included, pay the profiling cost.
+
+Possible values:
+
+- 0 — No query plans are captured.
+- Positive floating-point number in the range [0..1]. For example, if the setting value is `0.1`, the plans of about one in ten queries are captured.
+- 1 — The plan of every query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
