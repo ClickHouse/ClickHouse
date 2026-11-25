@@ -74,7 +74,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     output = ANSI.sub("", result.stdout).replace("\r", "")
-    warnings = [line.strip() for line in output.splitlines() if "warning - " in line]
+    warnings = [
+        line[line.index("warning - "):].strip()
+        for line in output.splitlines()
+        if "warning - " in line
+    ]
     terminal_error = re.search(r"error Build validation failed with \d+ warning\(s\)\. See above for details\.", output)
     if warnings and terminal_error and all(is_known_false_positive(docs_root, warning) for warning in warnings):
         print("OK: Mintlify reported only existing localized navigation and snippet paths.")
