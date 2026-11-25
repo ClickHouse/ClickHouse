@@ -2,10 +2,6 @@
 1
 1
 1
--- a function that is not cheap but cannot throw goes into the step too
-1
-1
-[4,14,24,34,44,54]
 -- two arrays: each step gets its conjunct
 2
 -- the conjunct above still filters: it is the same as id % 2 = 0
