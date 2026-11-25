@@ -16,6 +16,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -486,6 +487,32 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The hosts of `RESTORE ... ON CLUSTER` create the tables without the user, so the engines they will
+                /// create are checked here. Only a value in the query reaches every host: a host may drop a session value.
+                if (mode == Mode::CHECK_ACCESS_ONLY)
+                {
+                    const bool hosts_replace_external_engines_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                    auto add_engine = [&](const ASTStorage & storage)
+                    {
+                        if (!storage.engine)
+                            return;
+                        if (hosts_replace_external_engines_to_null
+                            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, "Null");
+                        else
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, storage.engine->name);
+                    };
+                    if (create.storage)
+                        add_engine(*create.storage);
+                    if (create.targets)
+                    {
+                        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+                            add_engine(*inner_engine);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)
@@ -859,8 +886,11 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         if (table_infos.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Table exists and it already exists
-        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+        /// Only a database with its own tables answers from memory. Any other one resolves a name on access, and checking
+        /// it reaches the data (a path, a remote server), which can be unavailable or not allowed.
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+        const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
+        if (!database || (database_with_own_tables && !database_with_own_tables->isTableExist(table_id.table_name, context)))
         {
             LOG_WARNING(
                 log,

@@ -31,6 +31,14 @@ Número total de endereços usados para criar conexões com pools de conexões
 
 Número total de endereços banidos por apresentarem falha na criação de conexões com pools de conexões
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Memória aproximada, em bytes, usada pelo cache de localizações no código-fonte já resolvidas (file:line:column), utilizado na simbolização de rastreamentos de pilha.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Número de endereços de código no cache de localizações resolvidas no código-fonte (file:line:column) usadas para simbolizar rastreamentos de pilha em system.trace&#95;log, system.errors e system.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Número de threads no pool de threads do Aggregator.
@@ -358,6 +366,10 @@ Número total de slots de CPU adquiridos
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 Número total de slots de CPU adquiridos que não são considerados concorrentes (a primeira thread, caso o escalonador `fair_round_robin` esteja em uso)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Número atual de threads que estacionaram (liberaram) seu slot de CPU durante uma espera não relacionada à CPU, como E/S bloqueante ou falta de tarefas para executar
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -711,6 +723,14 @@ Número de threads no pool de threads de handshake do servidor de exchange distr
 
 Número de jobs na fila ou ativos no pool de threads de handshake do servidor de exchange distribuído.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Tamanho total, em bytes, dos blocos mantidos nos caches de conjuntos `IN` em memória externa
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Número total de blocos mantidos nos caches dos conjuntos `IN` em memória externa
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Soma dos tamanhos das pilhas de fibras atualmente alocadas.
@@ -834,6 +854,14 @@ Número de threads no pool global de threads que estão executando uma tarefa.
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 Número de jobs na fila ou ativos no pool global de threads.
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Tamanho, em bytes, do cache dos tipos de campo do schema atual do Iceberg em catálogos Glue
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Número de entradas no cache dos tipos de campo do schema atual do Iceberg em catálogos Glue
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1099,6 +1127,10 @@ Número de nós de contêiner atualmente armazenados no Keeper.
 
 Número de solicitações pendentes
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Número de threads do loop de eventos do Raft que aguardam o pré-processamento das entradas de log locais após a inicialização. O loop de eventos do Raft também executa o listener, os temporizadores de eleição e de heartbeat e o tratamento de todas as conclusões de RPC; por isso, esse valor deve permanecer em zero ou um.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Número de threads no pool de threads para leituras do servidor Keeper.
@@ -1170,6 +1202,10 @@ Número total de bytes atualmente alocados (aprovados) em reservas de memória
 ### MemoryReservationDemand {#memoryreservationdemand}
 
 Número total de bytes referentes a solicitações pendentes de aumento de reservas de memória
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Quantidade total de memória recuperável
 
 ### MemoryTracking {#memorytracking}
 
@@ -1363,6 +1399,10 @@ Número de threads no pool de threads do AzureObjectStorage executando uma taref
 
 Número de jobs na fila ou ativos no pool de threads do AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Número de concessões exclusivas (como a compactação de uma tabela Iceberg) mantidas atualmente por este servidor no armazenamento de objetos.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Tamanho, em bytes, do cache de metadados do ObjectStorageQueue.
@@ -1399,6 +1439,10 @@ Número de threads no thread pool do S3ObjectStorage executando uma tarefa.
 
 Número de jobs na fila ou ativos no pool de threads do S3ObjectStorage.
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Número de chaves, como snapshots do Iceberg sendo lidos, atualmente alocadas no armazenamento de objetos pelas consultas deste servidor.
+
 ### OpenFileForRead {#openfileforread}
 
 Número de arquivos abertos para leitura
@@ -1430,6 +1474,10 @@ Número de threads ativas no threadpool para carregar partes de dados marcadas c
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Número de jobs enfileirados ou ativos no pool de threads para carregar partes de dados desatualizadas.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Quantidade de memória (bytes) alocada para os dados armazenados em buffer das partes de dados empacotadas em processo de gravação. Os dados movidos para arquivos temporários não são contabilizados.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1963,6 +2011,14 @@ Número de threads no pool de threads worker sem estado que executam uma tarefa.
 
 Número de jobs na fila ou ativos no pool de threads de worker sem estado.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Tamanho total, em bytes, do cache de estatísticas. Armazena as estatísticas de coluna das partes de dados de tabelas MergeTree, com uma entrada por parte e por coluna.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Número total de entradas (uma por parte de dados e por coluna) no cache de estatísticas
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Número de bytes nos buffers das tabelas Buffer
@@ -2127,6 +2183,14 @@ Número de arquivos temporários criados para o JOIN
 
 Número de arquivos temporários para a mesclagem vertical
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Número de arquivos temporários com dados armazenados em buffer de partes de dados empacotadas em processo de gravação
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Número de arquivos temporários criados para conjuntos `IN` em memória externa
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 Número de arquivos temporários criados durante a ordenação externa
@@ -2246,6 +2310,10 @@ Número de entradas no cache do índice de similaridade vetorial
 ### VersionInteger {#versioninteger}
 
 Versão do servidor em um único número inteiro na base 1000. Por exemplo, a versão 11.22.33 é representada como 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Número de consultas aguardando a conclusão do carregamento assíncrono ou da inicialização, limitado pela configuração do servidor &#39;max&#95;waiting&#95;queries&#39;
 
 ### Escrita {#write}
 
