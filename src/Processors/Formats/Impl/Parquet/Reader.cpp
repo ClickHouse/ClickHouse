@@ -1999,6 +1999,8 @@ void Reader::initializePrefetches()
         || (format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows && top_k_column_is_read)
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
+    /// The bytes of the column indexes registered below that `max_read_column_indexes_bytes` can keep.
+    size_t column_indexes_to_keep_bytes = 0;
 
     for (RowGroup & row_group : row_groups)
     {
@@ -2139,14 +2141,26 @@ void Reader::initializePrefetches()
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
             {
+                const size_t column_index_bytes = KeptOffsetIndexes::columnIndexEntryBytes(size_t(column.meta->column_index_length));
+                const bool can_keep = column_indexes_to_keep_bytes + column_index_bytes <= max_read_column_indexes_bytes;
                 column.kept_column_index = kept_offset_indexes
                     ? kept_offset_indexes->getColumnIndex(row_group.row_group_idx, primitive_columns[column_idx].column_idx) : nullptr;
                 if (column.kept_column_index)
                     ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheColumnIndexHits);
+                /// With the offset index taken from the cache, this column index would be a read of its own on every read of the file.
+                else if (!can_keep && !column.offset_index_prefetch && !format_filter_info->join_runtime_filter_reads_uncached_column_index
+                         && std::ranges::all_of(
+                             primitive_columns[column_idx].column_index_conditions,
+                             &PrimitiveColumnInfo::ColumnIndexCondition::from_join_runtime_filter))
+                    column.use_column_index = false;
                 else
+                {
+                    if (can_keep)
+                        column_indexes_to_keep_bytes += column_index_bytes;
                     column.column_index_prefetch = prefetcher.registerRange(
                         size_t(column.meta->column_index_offset),
                         size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+                }
             }
 
             /// Data pages.

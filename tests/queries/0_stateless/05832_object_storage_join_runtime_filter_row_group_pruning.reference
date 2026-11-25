@@ -36,6 +36,12 @@ w3_off	0	0
 x2_on	0	99
 x2_off	0	0
 1	1
+--- Y a read after a scan, of a column index the metadata cache cannot keep ---
+2
+2
+y_on	0	0
+y_off	0	0
+1	1	1	1
 --- H a Hive partition column read from the file ---
 1600
 1600

@@ -103,7 +103,7 @@ echo '--- X a read after a scan that filled the room of the offset indexes ---'
 ${CLICKHOUSE_CLIENT} --query "
 INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/fact_x.parquet', format = Parquet, structure = 'k Int64')
 SELECT number FROM numbers(10000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 10000,
-    output_format_parquet_batch_size = 100, output_format_parquet_data_page_size = 1;
+    output_format_parquet_row_group_size_bytes = 1000000000, output_format_parquet_batch_size = 100, output_format_parquet_data_page_size = 1;
 " < /dev/null
 X_FILE="s3(s3_conn, filename = '${DIR}/fact_x.parquet', format = Parquet, structure = 'k Int64')"
 ${CLICKHOUSE_CLIENT} --query "
@@ -116,6 +116,37 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT ProfileEvents['ParquetMetadataCacheOffsetIndexHits'] > 0, ProfileEvents['ParquetMetadataCacheColumnIndexHits'] > 0
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_x2_on'
+    SETTINGS enable_parallel_replicas = 0"
+
+# The offset index of `k` (70 pages) fits into the 4 KiB of a small footer, its column index (64 characters per bound)
+# does not. A read that finds the offset index in the cache then does not read that column index for the runtime filter.
+echo '--- Y a read after a scan, of a column index the metadata cache cannot keep ---'
+${CLICKHOUSE_CLIENT} --query "
+INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/fact_y.parquet', format = Parquet, structure = 'k String')
+SELECT hex(SHA256(toString(number))) FROM numbers(7000) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 10000,
+    output_format_parquet_row_group_size_bytes = 1000000000, output_format_parquet_batch_size = 100, output_format_parquet_data_page_size = 1,
+    output_format_parquet_max_dictionary_size = 0;
+CREATE TABLE dim_y (k String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO dim_y SELECT hex(SHA256(toString(number))) FROM numbers(100, 2);
+" < /dev/null
+Y_FILE="s3(s3_conn, filename = '${DIR}/fact_y.parquet', format = Parquet, structure = 'k String')"
+# A scan served from the columns cache would not read the offset index.
+Y_SETTINGS="${W_SETTINGS}, use_columns_cache = 0"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${Y_SETTINGS} FORMAT Null;
+    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${Y_SETTINGS} FORMAT Null;"
+probe y "SELECT count() FROM ${Y_FILE} AS f INNER JOIN dim_y AS d ON f.k = d.k" "$Y_SETTINGS"
+report y
+# The same bytes and reads with the pruning on as off.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        uniqExact(ProfileEvents['ParquetPrefetcherReadBytes']) = 1,
+        uniqExact(ProfileEvents['ParquetPrefetcherReadRandomRead'] + ProfileEvents['ParquetPrefetcherReadSeekAndRead']) = 1,
+        minIf(ProfileEvents['ParquetMetadataCacheOffsetIndexHits'], log_comment LIKE '%_on') > 0,
+        maxIf(ProfileEvents['ParquetMetadataCacheColumnIndexHits'], log_comment LIKE '%_on') = 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+        AND log_comment IN ('${CLICKHOUSE_DATABASE}_y_on', '${CLICKHOUSE_DATABASE}_y_off')
     SETTINGS enable_parallel_replicas = 0"
 
 # With a structure of only Hive partition columns the format reads `key` from the file (1000 .. 2599), while the
@@ -193,4 +224,5 @@ ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS dim SYNC;
     DROP TABLE IF EXISTS dim_h SYNC;
     DROP TABLE IF EXISTS dim_kv SYNC;
-    DROP TABLE IF EXISTS dim_f SYNC;"
+    DROP TABLE IF EXISTS dim_f SYNC;
+    DROP TABLE IF EXISTS dim_y SYNC;"

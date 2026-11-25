@@ -656,7 +656,12 @@ size_t KeptOffsetIndexes::entryBytes(const parq::OffsetIndex & offset_index)
 
 size_t KeptOffsetIndexes::entryBytes(std::span<const char> column_index)
 {
-    return sizeof(StringWithMemoryTracking) + KEPT_INDEX_ENTRY_OVERHEAD + column_index.size();
+    return columnIndexEntryBytes(column_index.size());
+}
+
+size_t KeptOffsetIndexes::columnIndexEntryBytes(size_t column_index_size)
+{
+    return sizeof(StringWithMemoryTracking) + KEPT_INDEX_ENTRY_OVERHEAD + column_index_size;
 }
 
 }

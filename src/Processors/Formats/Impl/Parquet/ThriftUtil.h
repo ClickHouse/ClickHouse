@@ -103,6 +103,7 @@ public:
     size_t remainingColumnIndexBytes() const;
     static size_t entryBytes(const parq::OffsetIndex & offset_index);
     static size_t entryBytes(std::span<const char> column_index);
+    static size_t columnIndexEntryBytes(size_t column_index_size);
 
 private:
     static UInt64 makeKey(size_t row_group_idx, size_t column_idx) { return (UInt64(row_group_idx) << 32) | column_idx; }

@@ -358,9 +358,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
     {
         format_filter_info->join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+        /// Outside Iceberg a runtime filter that skips nothing must not add a read to every read of a file.
+        format_filter_info->join_runtime_filter_reads_uncached_column_index = configuration->isIcebergConfiguration();
         if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
-            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate
-                = format_join_runtime_filter_predicate;
+        {
+            auto & tracking_best_values = *top_k_query_condition_cache_key->format_filter_info_tracking_best_values;
+            tracking_best_values.join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+            tracking_best_values.join_runtime_filter_reads_uncached_column_index
+                = format_filter_info->join_runtime_filter_reads_uncached_column_index;
+        }
     }
 
     auto file_iterator = iterator_wrapper;
