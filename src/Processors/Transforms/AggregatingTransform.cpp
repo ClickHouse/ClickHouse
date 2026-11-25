@@ -2042,9 +2042,16 @@ void AggregatingTransform::initGenerate()
             /// adaptive bucket merge is not bound by the tables: its sources claim the buckets one by one,
             /// and each takes its table and its arena per bucket. Its work is the staged records, and a
             /// single aggregating stream can stage nearly every row it reads, so it takes the merge threads
-            /// of the step, up to one per bucket.
-            const size_t merge_threads
-                = std::min(max_threads, bucket_merge ? ADAPTIVE_AGGREGATION_NUM_BUCKETS : many_data->num_producers);
+            /// of the step, up to one per bucket. The merge by cell index is not bound by the tables either: its
+            /// workers claim the partitions of the indexes one by one (see
+            /// `ConvertingAggregatedToChunksTransform::planPartitionMerge`), so it takes the merge threads of the
+            /// step, up to one per partition.
+            size_t merge_threads = many_data->num_producers;
+            if (bucket_merge)
+                merge_threads = ADAPTIVE_AGGREGATION_NUM_BUCKETS;
+            else if (!prepared_data_ptr->empty() && params->aggregator.mergesByCellIndex(*prepared_data_ptr))
+                merge_threads = prepared_data_ptr->front()->cellIndex().numPartitions();
+            merge_threads = std::min(max_threads, merge_threads);
             /// The producers of the session estimated the merge work, also when none of them froze and the tables merge
             /// partition by partition.
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
