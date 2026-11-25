@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -42,9 +38,26 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - Отключено
 * 1 - Включено
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, позволяющая кэшу условий запроса обслуживать условия с текущим временем (например, `WHERE time >= now() - INTERVAL 10 DAY`): из них выводится детерминированное условие, в котором временная константа округляется по сетке; включена по умолчанию. previous_value=false, поэтому при `compatibility` с более ранней версией такие условия, как и прежде, не кэшируются."}]}]} />
+
+Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для условий с текущим временем, например `WHERE time >= now() - INTERVAL 10 DAY`, при чтении из таблиц `MergeTree`. При чтении из файлов и объектного хранилища (`file`, `s3` и т. п.) кэш условий запроса используется только для детерминированных условий, и эта настройка на них не влияет.
+
+Такие условия недетерминированы (они меняются с течением времени), поэтому кэшировать их напрямую нельзя. Вместо этого из них выводится детерминированное условие: свёрнутая константа текущего времени округляется по временной сетке. Например, `WHERE time >= '2026-08-09 12:34:56'` превращается в `WHERE time >= '2026-08-09 00:00:00'` (при чтении из кэша округление выполняется вниз, при записи в кэш — вверх, что гарантирует корректность кэша). Шаг сетки пропорционален расстоянию между константой и текущим временем (см. [`query_condition_cache_time_condition_grid_factor`](/ru/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)) и ограничен диапазоном от одной секунды до одного дня.
+
+Если константа уже выровнена по сетке (например, `WHERE time >= today() - 10` или `WHERE time >= toStartOfDay(now())`), кэш действует в течение всей ячейки сетки, например до конца дня. В противном случае кэш используется повторно только для нижних границ времени, например `WHERE time >= now() - INTERVAL 10 DAY`: записи, помещённые в кэш в течение одной ячейки сетки, используются в течение следующей. Невыровненная верхняя граница, например `WHERE time < now()`, — сама по себе или в составе скользящего окна вида `WHERE time >= now() - INTERVAL 10 DAY AND time < now()` — повторно последующими запросами не используется, поскольку их условие не содержится в условии предыдущих запросов.
+
+Эта настройка действует, только если также включена настройка `use_query_condition_cache`.
+
+Возможные значения:
+
+* 0 - Отключено
+* 1 - Включено
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -52,7 +65,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Включает [кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache) для запросов, использующих оптимизацию `ORDER BY <column> LIMIT n` (TopK) на основе динамической фильтрации или индекса пропуска. Если настройка отключена, такие операции чтения не обращаются к кэшу и не заполняют его.
 
-Во время выполнения такие запросы могут отбрасывать гранулы в зависимости от текущего порога, поэтому записи кэша для них разделяются по параметрам плана TopK и набору прочитанных частей. Эта настройка не действует, если также не включена настройка `use_query_condition_cache`.
+Во время выполнения такие запросы могут отбрасывать гранулы в зависимости от текущего порога, поэтому записи кэша для них разделяются по параметрам плана TopK и набору прочитанных частей (для таблицы `File` — по набору прочитанных файлов и их версиям; для таблицы озера данных — по её снимку). Эта настройка не действует, если также не включена настройка `use_query_condition_cache`.
 
 Возможные значения:
 

@@ -1,4 +1,5 @@
 #include <memory>
+#include <numeric>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <optional>
@@ -169,7 +170,10 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     , object_with_metadata(object_with_metadata_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
-    read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    /// Saturate: `min_bytes_for_seek` comes from an unrestricted setting.
+    read_options.bytes_per_read_task = min_bytes_for_seek > std::numeric_limits<size_t>::max() / 4
+        ? std::numeric_limits<size_t>::max()
+        : min_bytes_for_seek * 4;
     read_options.is_remote_fs = is_remote_fs_;
 
     if (!format_filter_info)
@@ -234,11 +238,25 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
             /// The cell may have been evicted and replaced since the split, then share nothing.
             if (has_bucket_footer && footer_cache_cell->footer != buckets_to_read->file_footer)
                 shared_column_chunks = nullptr;
-            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks, shared_column_chunks);
+            /// Offset indexes lie outside the footer: use and keep them only under a key that identifies the file content.
+            const bool key_identifies_content = object_with_metadata->metadata->getContentCacheToken().has_value();
+            new_reader->reader.setFileFooter(
+                footer_cache_cell->footer,
+                footer_cache_cell->column_chunks,
+                shared_column_chunks,
+                key_identifies_content ? footer_cache_cell->kept_offset_indexes : nullptr);
             if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
             {
                 metadata_cache_cell = footer_cache_cell;
                 metadata_cache_key = *footer_cache_key;
+            }
+            /// Only a hit may add to the cell.
+            if (footer_cache_hit && key_identifies_content)
+            {
+                new_reader->reader.max_read_offset_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingBytes();
+                new_reader->reader.max_read_column_indexes_bytes = footer_cache_cell->kept_offset_indexes->remainingColumnIndexBytes();
+                if (new_reader->reader.max_read_offset_indexes_bytes || new_reader->reader.max_read_column_indexes_bytes)
+                    offset_indexes_cache_cell = footer_cache_cell;
             }
         }
         else if (has_bucket_footer)
@@ -483,6 +501,11 @@ Chunk ParquetV3BlockInputFormat::read()
         return chunk;
     }
     auto res = reader->read();
+    if (!res.chunk && offset_indexes_cache_cell)
+    {
+        metadata_cache->keepOffsetIndexes(*footer_cache_key, offset_indexes_cache_cell, reader->reader.takeReadOffsetIndexes());
+        offset_indexes_cache_cell.reset();
+    }
     previous_block_missing_values = res.block_missing_values;
     previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
     return std::move(res.chunk);
@@ -498,6 +521,13 @@ std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3Bloc
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
+            continue;
+
+        /// A row group skipped by a threshold that also filters rows holds no row of the result: its whole
+        /// range of the sort column sorts strictly beyond the threshold, which only tightens. It may have been
+        /// skipped only when delivered, after its rows were read and counted in `rows_pass` (see
+        /// `ReadManager::read`), and then it never updates `top_k_best_value`, so it must not count as matched.
+        if (!top_k_statistics_only && row_group.skipped_by_top_k.load())
             continue;
 
         bool produced_rows = false;
@@ -533,6 +563,12 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
     return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
         && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
+}
+
+bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
+{
+    return reader
+        && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
 }
 
 Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
@@ -593,6 +629,7 @@ void ParquetV3BlockInputFormat::resetParser()
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
+        offset_indexes_cache_cell.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
@@ -848,11 +885,35 @@ VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitForParal
         bucket->is_split_for_parallel_reading = true;
         bucket->row_group_ids.reserve(row_groups.size() / num_buckets + 1);
     }
+    VectorWithMemoryTracking<double> bucket_rows(num_buckets);
+    VectorWithMemoryTracking<double> bucket_bytes(num_buckets);
+    double total_rows = 0;
+    double total_bytes = 0;
     for (size_t i = 0; i < row_groups.size(); ++i)
+    {
+        const auto & row_group = metadata.row_groups[row_groups[i]];
+        const double rows = static_cast<double>(row_group.num_rows);
+        const double bytes = static_cast<double>(std::max<Int64>(row_group.total_byte_size, 0));
         buckets[i % num_buckets]->row_group_ids.push_back(row_groups[i]);
-    buckets.front()->keeps_filter_column_statistics = true;
+        bucket_rows[i % num_buckets] += rows;
+        bucket_bytes[i % num_buckets] += bytes;
+        total_rows += rows;
+        total_bytes += bytes;
+    }
 
-    return {buckets.begin(), buckets.end()};
+    VectorWithMemoryTracking<double> bucket_sizes(num_buckets);
+    for (size_t b = 0; b < num_buckets; ++b)
+        bucket_sizes[b] = std::max(bucket_rows[b] / total_rows, total_bytes > 0 ? bucket_bytes[b] / total_bytes : 0.0);
+    VectorWithMemoryTracking<size_t> order(num_buckets);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return bucket_sizes[a] > bucket_sizes[b]; });
+
+    VectorWithMemoryTracking<FileBucketInfoPtr> result;
+    result.reserve(num_buckets);
+    for (size_t b : order)
+        result.push_back(buckets[b]);
+    buckets[order.front()]->keeps_filter_column_statistics = true;
+    return result;
 }
 
 VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets_)
@@ -946,7 +1007,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::nullopt,
             is_remote_fs
         );
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings &)
     {
@@ -1053,9 +1114,11 @@ ClickHouse reads columns stored in the Parquet [`VARIANT`](https://github.com/ap
 
 Each value keeps its own type. Variant primitive types are read as the matching ClickHouse types (for example, `int32` as `Int32`, `decimal8` as `Decimal(18, S)`, `timestamp` as `DateTime64(6, 'UTC')`, `timestamp_ntz` as `DateTime64(6)`, `binary` and `string` as `String`, `uuid` as `UUID`), the variant `null` is read as `NULL`, variant objects are read as [`JSON`](/reference/data-types/newjson) with nested objects flattened into dot-separated paths (a `null` field is treated as absent), variant arrays whose elements are all objects are read as `Array(JSON)`, and other variant arrays are read as `Array(Dynamic)`. The top-level type is `Dynamic` rather than `JSON`, because a variant value is not necessarily an object.
 
-A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped.
+A variant column can also be read as [`JSON`](/reference/data-types/newjson) by requesting that type explicitly, for example in the table structure or in the structure argument of the `file` table function. Then every value must be an object, otherwise an exception is thrown. A variant `null` and a `null` of the whole column are read as an empty object. Typed paths of the requested `JSON` type are converted to their types, and paths listed in `SKIP` and `SKIP REGEXP` are skipped. A variant column can also be read as an ordinary [`Variant`](/reference/data-types/variant) type by requesting it explicitly. Each value goes to the member that values of its variant type are written from (for example, `UInt8` for `int16`, `Date` for `date`, `Decimal(5, 2)` for `decimal4`, an `Array` for an array) and is converted to the member type; a value that matches no member throws an exception. When several members are written the same way, their values are all read into the member of exactly the type they are read as, so the member of a value can change on a round trip: in `Variant(UInt32, Int64)` both members are written as `int64`, and a `UInt32` value is read back as an `Int64` value. A `Variant` can be written only if this restores its values: its members are scalar types, `JSON` or arrays of them, and every group of members written the same way has such a member, otherwise an exception is thrown. For example, `Variant(UInt32, UInt64)` (both are read as `Int64`), `Variant(Array(UInt8), Array(Int64))` (all arrays are read as `Array(Dynamic)`) and `Variant(Map(String, Int64), String)` cannot be written, use `Dynamic` instead.
 
-Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled. Writing `Dynamic` or `JSON` columns to Parquet as `VARIANT` is not supported either.
+Shredded variants (groups with a `typed_value` field) are not supported yet: reading such a column throws an exception, while the other columns of the file can still be read, and schema inference skips the column if `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` is enabled.
+
+Columns of type [`Dynamic`](/reference/data-types/dynamic) and ordinary [`Variant`](/reference/data-types/variant) (but not `Geometry`), including such columns nested in `Array`, `Map` and `Tuple`, are written as unshredded `VARIANT` groups of specification version 1. A `NULL` is written as a null of the whole group, except for a map key, which must be present and gets the variant `null` instead. `JSON` values are written as variant objects: with the setting `json_type_escape_dots_in_keys` enabled, the escaped dots in keys are restored on write and escaped again on read, so a key containing a dot is distinct from a nested path. The nesting depth of the written objects is limited by the setting `max_parser_depth` (`0` means no limit). Strings that are not valid UTF-8 are written as variant `binary` values. Object keys must be valid UTF-8, otherwise an exception is thrown. Writing `JSON` columns themselves as `VARIANT` is not supported.
 
 ## File references {#file-type}
 
@@ -1160,6 +1223,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |
+| `output_format_parquet_data_page_row_limit`                                    | Maximum number of rows in a data page; a page also ends at `output_format_parquet_data_page_size`. 0 means no limit.                                                                                                                | `20000`     |
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |

@@ -39,12 +39,18 @@
           "item": "عمليات النشر"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
           "pages": [
             "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "item": "Private",
+          "pages": [
+            "ar/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
         },
         {
@@ -56,11 +62,16 @@
           "$ref": "./clickstack/navigation.json"
         },
         {
+          "$ref": "./agents/navigation.json"
+        },
+        {
           "href": "https://langfuse.com/docs",
+          "icon": "/images/icons/logo-langfuse.svg",
           "item": "هندسة الذكاء الاصطناعي"
         },
         {
           "href": "https://docs.runreveal.com/",
+          "icon": "/images/integrations/logos/runreveal.webp",
           "item": "الأمان"
         },
         {

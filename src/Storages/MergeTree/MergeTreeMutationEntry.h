@@ -77,7 +77,7 @@ struct MergeTreeMutationEntry
     /// `fsync_part_directory`: it fsyncs the mutations directory after the rename.
     void writeCSN(CSN csn_, bool sync_directory);
 
-    std::shared_ptr<const IBackupEntry> backup() const;
+    [[nodiscard]] std::shared_ptr<const IBackupEntry> backup() const;
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);

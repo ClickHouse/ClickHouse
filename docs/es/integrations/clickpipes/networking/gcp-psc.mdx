@@ -11,8 +11,6 @@ integration:
   - category: "clickpipes"
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Puede usar [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) de GCP para establecer una conexión segura entre ClickPipes y una fuente de datos alojada en GCP. ClickPipes crea un **endpoint privado inverso (RPE)** en su VPC y lo vincula a un servicio de endpoint privado publicado para su fuente de datos, de modo que el tráfico nunca queda expuesto a Internet público.
 
 <Check>
@@ -140,6 +138,25 @@ La información detallada del endpoint privado inverso se muestra en el panel la
 Para cambiar las asignaciones personalizadas de DNS privado de un endpoint, use la [Cloud API](/es/integrations/clickpipes/programmatic-access/openapi) o [Terraform](/es/integrations/clickpipes/programmatic-access/terraform). La actualización reemplaza la lista completa de asignaciones en lugar de añadir elementos a ella.
 
 Si un endpoint muestra `Rejected` o `Failed`, lea el mensaje que aparece bajo su estado: distingue entre una conexión rechazada por el productor y otra que se cerró o requiere atención. Ambos casos suelen indicar que la lista de aceptación del service attachment no incluye el proyecto consumidor de ClickPipes. Para ver el estado que GCP informa para el endpoint, describa los `connectedEndpoints` del service attachment.
+
+## Eliminación automática de puntos de conexión inactivos {#automatic-cleanup}
+
+Los puntos de conexión privados inversos que permanecen en un estado terminal se eliminan automáticamente una vez transcurrido un período de gracia definido.
+Así se evita que los puntos de conexión sin usar o mal configurados persistan indefinidamente.
+
+Los períodos de gracia varían según el estado del endpoint:
+
+| Estado                   | Período de gracia | Descripción                                                                                                                                                                                |
+| ------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Fallido**              | 7 días            | Se produjo un error durante el aprovisionamiento del endpoint.                                                                                                                             |
+| **Aceptación pendiente** | 1 día             | El propietario del servicio no ha aceptado la conexión del endpoint. Esto se aplica principalmente a PSC gestionado por el productor. Los Endpoints de PSC nativos se aceptan automáticamente. |
+| **Rechazado**            | 1 día             | El propietario del servicio rechazó la conexión del endpoint.                                                                                                                              |
+
+Una vez transcurrido el período de gracia, el endpoint y todos sus recursos asociados se eliminan automáticamente.
+
+Para evitar la eliminación automática, resuelva el problema subyacente antes de que venza el período de gracia.
+Por ejemplo, agregue el proyecto consumidor de ClickPipes a la lista de aceptación del adjunto de servicio, como se describe en [Aprobación de conexiones gestionadas por el productor](#producer-owned),
+o vuelva a crear el endpoint si ha pasado al estado fallido.
 
 ## Limitaciones conocidas {#limitations}
 

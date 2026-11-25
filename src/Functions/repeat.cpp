@@ -62,7 +62,7 @@ struct RepeatImpl
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
-            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[static_cast<ssize_t>(i) - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -71,9 +71,9 @@ struct RepeatImpl
         for (UInt64 i = 0; i < res_offsets.size(); ++i)
         {
             process(
-                data.data() + offsets[i - 1],
-                res_data.data() + res_offsets[i - 1],
-                offsets[i] - offsets[i - 1],
+                data.data() + offsets[static_cast<ssize_t>(i) - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
+                offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
                 static_cast<UInt64>(repeat_time));
         }
     }
@@ -94,7 +94,7 @@ struct RepeatImpl
             /// Bound the multiplier before multiplying: an unbounded one overflows the product and
             /// slips past `checkStringSize`, which would then under-size `res_data`.
             checkRepeatTime(repeat_time);
-            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[i - 1]) * repeat_time);
+            size_t repeated_size = static_cast<size_t>((offsets[i] - offsets[static_cast<ssize_t>(i) - 1]) * repeat_time);
             checkStringSize(repeated_size);
             data_size += repeated_size;
             res_offsets[i] = data_size;
@@ -106,9 +106,9 @@ struct RepeatImpl
             T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             checkRepeatTime(repeat_time);
             process(
-                data.data() + offsets[i - 1],
-                res_data.data() + res_offsets[i - 1],
-                offsets[i] - offsets[i - 1],
+                data.data() + offsets[static_cast<ssize_t>(i) - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
+                offsets[i] - offsets[static_cast<ssize_t>(i) - 1],
                 static_cast<UInt64>(repeat_time));
         }
     }
@@ -142,7 +142,7 @@ struct RepeatImpl
             checkRepeatTime(repeat_time);
             process(
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
-                res_data.data() + res_offsets[i - 1],
+                res_data.data() + res_offsets[static_cast<ssize_t>(i) - 1],
                 str_size,
                 static_cast<UInt64>(repeat_time));
         }
@@ -207,29 +207,29 @@ public:
     static constexpr auto name = "repeat";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRepeat>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, Integer) -> String";
     }
 
     /// `repeat` throws `TOO_LARGE_STRING_SIZE` when the number of repetitions or the size of the
     /// resulting string exceeds the limit, and both of them depend on the data of a single row.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const auto & col_str = arguments[0].column;
         const auto & col_num = arguments[1].column;
