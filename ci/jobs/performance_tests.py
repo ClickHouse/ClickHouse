@@ -3077,6 +3077,9 @@ def rebuild_database(port, database):
     if not tables:
         raise RuntimeError(f"rebuild_database: no tables in {database}")
     for table in tables:
+        # An interrupted rebuild_table leaves these behind. The rebuild of their base table drops them.
+        if table.endswith(("_rebuild", "_old")):
+            continue
         rebuild_table(port, f"{database}.{table}", f"{database}.{table}")
 
 
