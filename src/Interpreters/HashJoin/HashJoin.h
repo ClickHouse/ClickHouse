@@ -871,7 +871,7 @@ public:
     /// Called by `SpillingHashJoin` before the first insert, see `JoinGrowthBudget::setSpillThreshold`.
     void setSpillThreshold(size_t max_bytes_before_external_join) { data->growth_budget.setSpillThreshold(max_bytes_before_external_join); }
 
-    /// The bytes that `halveHashTables` would free now, 0 unless `enable_robin_hood_hash_for_joins` is `'auto'`.
+    /// The bytes that `halveHashTables` would free now, 0 with `enable_robin_hood_hash_for_joins = 1`.
     /// Call it while no build thread inserts.
     size_t bytesFreedByHalvingHashTables() const;
 

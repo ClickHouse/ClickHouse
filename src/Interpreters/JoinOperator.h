@@ -8,8 +8,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -135,7 +133,7 @@ struct JoinSettings
 
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
-    /// `enable_robin_hood_hash_for_joins`: 0 is `Never`, 1 is `Always` and `'auto'` is `OnMemoryPressure`.
+    /// `enable_robin_hood_hash_for_joins`: 1 is `Always`, 0 is `OnMemoryPressure`.
     RobinHoodMode robin_hood_mode;
     bool join_runtime_filter_from_fixed_hash_table;
     /// A deserialized plan without these names compares `String` keys exactly.
@@ -174,11 +172,9 @@ struct JoinSettings
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
 
-    static RobinHoodMode getRobinHoodMode(std::optional<bool> enable_robin_hood_hash_for_joins)
+    static RobinHoodMode getRobinHoodMode(bool enable_robin_hood_hash_for_joins)
     {
-        if (!enable_robin_hood_hash_for_joins)
-            return RobinHoodMode::OnMemoryPressure;
-        return *enable_robin_hood_hash_for_joins ? RobinHoodMode::Always : RobinHoodMode::Never;
+        return enable_robin_hood_hash_for_joins ? RobinHoodMode::Always : RobinHoodMode::OnMemoryPressure;
     }
 
     /// Whether `grace_hash` in `join_algorithms` is an algorithm the join pickers run on every node rather than

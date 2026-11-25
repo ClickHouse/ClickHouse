@@ -8,14 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The spill threshold is out of reach, so any spill comes from the scheduler. One build stream reads the right
 # side as one block, so the scheduler first sees a non-empty join after the whole right side is in, and the join
 # is not polled again after the switch: a switch that does not spill leaves nothing on disk. With
-# `enable_robin_hood_hash_for_joins = 'auto'` the join would halve its hash tables instead, so the mode is `0`.
+# `enable_robin_hood_hash_for_joins = 0` the join would halve its hash tables instead. With `1` it does not, and its hash
+# tables stay far below the size at which `1` switches them to the Robin Hood mode.
 settings=(
     --join_algorithm=parallel_hash --max_threads=1 --max_block_size=1000000
     --max_bytes_before_external_join=100Gi --max_bytes_ratio_before_external_join=0
     --grace_hash_join_initial_buckets=1 --collect_hash_table_stats_during_joins=0
     --max_rows_in_join=0 --max_bytes_in_join=0 --enable_parallel_replicas=0
     --query_plan_join_swap_table=false --query_plan_optimize_join_order_randomize=0
-    --enable_robin_hood_hash_for_joins=0
+    --enable_robin_hood_hash_for_joins=1
     --max_memory_usage=105Mi
 )
 
@@ -40,7 +41,7 @@ parallel_settings=(
     --grace_hash_join_initial_buckets=1 --collect_hash_table_stats_during_joins=0
     --max_rows_in_join=0 --max_bytes_in_join=0 --enable_parallel_replicas=0
     --query_plan_join_swap_table=false --query_plan_optimize_join_order_randomize=0
-    --enable_robin_hood_hash_for_joins=0
+    --enable_robin_hood_hash_for_joins=1
     --max_memory_usage=120Mi
 )
 

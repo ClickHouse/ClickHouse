@@ -85,7 +85,7 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
-    extern const SettingsBoolAuto enable_robin_hood_hash_for_joins;
+    extern const SettingsBool enable_robin_hood_hash_for_joins;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const SettingsBool enable_packed_string_keys_in_hash_join;
 }
@@ -236,7 +236,7 @@ TableJoin::TableJoin(
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
-    , robin_hood_mode(JoinSettings::getRobinHoodMode(settings[Setting::enable_robin_hood_hash_for_joins].valueOrNullopt()))
+    , robin_hood_mode(JoinSettings::getRobinHoodMode(settings[Setting::enable_robin_hood_hash_for_joins]))
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , enable_packed_string_keys_in_hash_join(settings[Setting::enable_packed_string_keys_in_hash_join])
     , max_memory_usage(settings[Setting::max_memory_usage])

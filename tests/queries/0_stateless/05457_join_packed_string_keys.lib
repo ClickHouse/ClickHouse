@@ -114,8 +114,9 @@ function settings_of()
         parallel1) echo "join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 1, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0" ;;
         # With the packed keys, a join that keeps every right row starts below the threshold and crosses it after a
         # few right blocks. The other settings keep the size of the build as it is measured here. With
-        # `enable_robin_hood_hash_for_joins = 'auto'` the join can stay below the threshold and not spill, so the mode is `0`.
-        spill) echo "join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 2, max_bytes_before_external_join = 8000000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 2, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, collect_hash_table_stats_during_joins = 0, enable_hash_join_row_store = 0, query_plan_join_swap_table = 'false', enable_robin_hood_hash_for_joins = 0" ;;
+        # `enable_robin_hood_hash_for_joins = 0` the join can stay below the threshold and not spill, so the mode is `1`, which
+        # does not switch hash tables this small.
+        spill) echo "join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 2, max_bytes_before_external_join = 8000000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 2, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, collect_hash_table_stats_during_joins = 0, enable_hash_join_row_store = 0, query_plan_join_swap_table = 'false', enable_robin_hood_hash_for_joins = 1" ;;
         fsm) echo "join_algorithm = 'full_sorting_merge'" ;;
     esac
 }

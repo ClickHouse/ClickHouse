@@ -1,17 +1,16 @@
 result: 1000000	3001933641821
 --- the join spills at 0.8 of the peak memory
+mode 1: the same result
 mode 0: the same result
-mode auto: the same result
-mode 0: spilled 1, switched 0
-mode auto: spilled 0, switched 1
+mode 1: spilled 1, switched 0
+mode 0: spilled 0, switched 1
 --- max_memory_usage is at 0.8 of the peak memory
-mode 0: MEMORY_LIMIT_EXCEEDED
 mode 1: MEMORY_LIMIT_EXCEEDED
-mode auto: the same result
-mode auto: switched 1
+mode 0: the same result
+mode 0: switched 1
 --- max_memory_usage is at 1.15 of the peak memory
-mode auto: the same result
-mode auto: switched 0
+mode 0: the same result
+mode 0: switched 0
 --- two runs with the hash table statistics on
 the same result in both runs: 1
 spilled: 0 0

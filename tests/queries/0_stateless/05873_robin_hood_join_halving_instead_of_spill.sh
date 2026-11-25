@@ -4,9 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# With `enable_robin_hood_hash_for_joins = 'auto'` a hash join that reaches the spill threshold, or that the memory spill
-# scheduler asks to free memory, first rebuilds its hash tables in the Robin Hood mode in half their cells. When that is
-# enough, the join stays in memory where `0` spills.
+# By default a hash join that reaches the spill threshold, or that the memory spill scheduler asks to free memory, first
+# rebuilds its hash tables in the Robin Hood mode in half their cells. When that is enough, the join stays in memory.
+# `enable_robin_hood_hash_for_joins = 1` does not halve, and switches only hash tables much larger than these, so a join
+# with `1` spills as a join that never switches does.
 
 # Prints whether the query with that label switched to `GraceHashJoin` and whether it halved hash tables.
 events()
@@ -30,19 +31,18 @@ SETTINGS="join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', paral
     max_bytes_ratio_before_external_join = 0, max_memory_usage = 0, max_bytes_in_join = 0, max_rows_in_join = 0,
     grace_hash_join_initial_buckets = 1, enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0"
 
-EXPECTED=$($CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = 0")
+EXPECTED=$($CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = 1")
 echo "result: $EXPECTED"
 # `SpillingHashJoin` logs the bytes of the join when they fit in memory.
-FULL=$($CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = 0,
+FULL=$($CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = 1,
     max_bytes_before_external_join = 100000000000, send_logs_level = 'debug'" 2>&1 \
     | grep -oE 'All blocks fit in memory \([0-9]+ bytes' | grep -oE '[0-9]+' | head -n 1)
 # The join spills once its bytes reach half of the threshold, here 0.93 of the bytes it ends with. Halving saves more.
 THRESHOLD=$((FULL * 2 * 93 / 100))
-for mode in 0 auto
+for mode in 1 0
 do
-    value=$([ "$mode" = auto ] && echo "'auto'" || echo "$mode")
     result=$($CLICKHOUSE_CLIENT --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_threshold_$mode" \
-        --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = $value, max_bytes_before_external_join = $THRESHOLD")
+        --query "$QUERY SETTINGS $SETTINGS, enable_robin_hood_hash_for_joins = $mode, max_bytes_before_external_join = $THRESHOLD")
     echo "mode $mode: $([ "$result" = "$EXPECTED" ] && echo 'the same result' || echo "$result")"
     echo "mode $mode: $(events "threshold_$mode")"
 done
@@ -60,7 +60,7 @@ scheduler_settings=(
 )
 scheduler_query="SELECT count(), sum(t2.number) FROM numbers(100) AS t1
     INNER JOIN (SELECT number FROM numbers(600000)) AS t2 ON t1.number = t2.number"
-for mode in 0 auto
+for mode in 1 0
 do
     $CLICKHOUSE_CLIENT "${scheduler_settings[@]}" --enable_robin_hood_hash_for_joins="$mode" \
         --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_scheduler_$mode" --query "$scheduler_query"
@@ -76,7 +76,7 @@ parallel_settings=(
     --grace_hash_join_initial_buckets=1 --collect_hash_table_stats_during_joins=0
     --max_rows_in_join=0 --max_bytes_in_join=0 --enable_parallel_replicas=0
     --query_plan_join_swap_table=false --query_plan_optimize_join_order_randomize=0
-    --max_memory_usage=120Mi --enable_adaptive_memory_spill_scheduler=1 --enable_robin_hood_hash_for_joins=auto
+    --max_memory_usage=120Mi --enable_adaptive_memory_spill_scheduler=1 --enable_robin_hood_hash_for_joins=0
 )
 $CLICKHOUSE_CLIENT "${parallel_settings[@]}" --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_parallel" --query "SELECT count(), sum(t2.number)
     FROM numbers(1000000) AS t1 INNER JOIN (SELECT number FROM numbers(1000000)) AS t2 ON t1.number = t2.number"
