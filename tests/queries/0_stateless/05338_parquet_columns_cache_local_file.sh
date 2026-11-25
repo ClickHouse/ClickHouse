@@ -137,8 +137,13 @@ touch -d "1 minute ago" "${USER_FILES_PATH}/${ENUM_FILE}"
 ENUM_QUERY="SELECT CAST(e, 'Int8') FROM file('${ENUM_FILE}', Parquet, 'e Enum8(''a'' = 5, ''b'' = 6)')"
 $CLICKHOUSE_CLIENT -q "${ENUM_QUERY} SETTINGS use_columns_cache = 1, check_conversion_from_numbers_to_enum = 0"
 $CLICKHOUSE_CLIENT -q "SELECT column, count() FROM system.columns_cache WHERE endsWith(part, '/${ENUM_FILE}') GROUP BY column"
-$CLICKHOUSE_CLIENT -q "${ENUM_QUERY} SETTINGS use_columns_cache = 1, check_conversion_from_numbers_to_enum = 1" 2>&1 \
+$CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_enum_checked" -q "${ENUM_QUERY} SETTINGS use_columns_cache = 1, check_conversion_from_numbers_to_enum = 1" 2>&1 \
     | grep -q UNKNOWN_ELEMENT_OF_ENUM && echo "UNKNOWN_ELEMENT_OF_ENUM"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT 'enum_checked', ProfileEvents['ColumnsCacheHits'] AS hits, ProfileEvents['ColumnsCacheMisses'] AS misses
+    FROM system.query_log
+    WHERE log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_enum_checked' AND type = 'ExceptionWhileProcessing' AND current_database = currentDatabase()"
 rm -f "${USER_FILES_PATH}/${ENUM_FILE}"
 
 rm -f "${FILE_PATH}"

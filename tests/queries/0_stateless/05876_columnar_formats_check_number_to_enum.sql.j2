@@ -32,6 +32,7 @@ SELECT id, CAST(nv, 'Nullable(Int8)') FROM file(currentDatabase() || '_05876.{{ 
 SELECT id, CAST(nv, 'Int8') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv {{ E }}') ORDER BY id SETTINGS input_format_null_as_default = 1, check_conversion_from_numbers_to_enum = 0;
 SELECT id, CAST(nv, 'Nullable(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, nv Nullable({{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
 SELECT id, CAST(e, 'Int8'), CAST(a, 'Array(Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, e {{ E }}, a Array({{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT id, CAST(m, 'Map(Int8, String)'), CAST(t, 'Tuple(x Int8)') FROM file(currentDatabase() || '_05876.{{ format }}', '{{ format }}', 'id UInt64, m Map({{ E }}, String), t Tuple(x {{ E }})') ORDER BY id SETTINGS check_conversion_from_numbers_to_enum = 0;
 
 DROP TABLE IF EXISTS t_05876_{{ format }};
 CREATE TABLE t_05876_{{ format }} (e {{ E_DDL }}) ENGINE = MergeTree ORDER BY tuple();
