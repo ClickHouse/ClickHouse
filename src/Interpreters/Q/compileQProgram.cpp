@@ -1118,9 +1118,11 @@ QValue QCompiler::compileList(const QNodePtr & node, QEnvironment & env, QScope 
     if (node->children.empty())
         return scalar(makeASTFunction("array"), 1);
 
-    QValues items;
-    for (const auto & child : node->children)
-        items.push_back(toScalar(compile(child, env, scope), child->offset));
+    /// The items are evaluated from the last one to the first one, as everything in q:
+    /// `x:10; (x+5; x:20; x-5)` is `25 20 5`.
+    QValues items(node->children.size());
+    for (size_t i = node->children.size(); i-- > 0;)
+        items[i] = toScalar(compile(node->children[i], env, scope), node->children[i]->offset);
 
     bool has_column = false;
     size_t depth = 0;
@@ -1398,9 +1400,9 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
         if (!scope)
             throwQError(ErrorCodes::NOT_IMPLEMENTED, node->offset, "'fby' is supported only in q-sql templates");
 
-        QValue aggregate = compile(pair->children[0], env, scope);
-        QValue column = compile(pair->children[1], env, scope);
         QValue group = compile(node->children[2], env, scope);
+        QValue column = compile(pair->children[1], env, scope);
+        QValue aggregate = compile(pair->children[0], env, scope);
         if (group.kind != QValueKind::Column)
             throwQError(ErrorCodes::TYPE_MISMATCH, node->offset, "The right argument of 'fby' must be a column");
 
@@ -1419,10 +1421,10 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
     if (function_node->kind == QNodeKind::Name && function_node->name == "within" && node->children.size() == 3
         && node->children[2] && node->children[2]->kind == QNodeKind::List && node->children[2]->children.size() == 2)
     {
-        QValues args{
-            compile(node->children[1], env, scope),
-            compile(node->children[2]->children[0], env, scope),
-            compile(node->children[2]->children[1], env, scope)};
+        QValue high = compile(node->children[2]->children[1], env, scope);
+        QValue low = compile(node->children[2]->children[0], env, scope);
+        QValue value = compile(node->children[1], env, scope);
+        QValues args{std::move(value), std::move(low), std::move(high)};
         return atomic("within", std::move(args),
             [](const ASTs & asts)
             {
@@ -1431,30 +1433,30 @@ QValue QCompiler::compileApply(const QNodePtr & node, QEnvironment & env, QScope
             scope);
     }
 
+    /// q evaluates from right to left: the arguments from the last one to the first one, and then the function.
+    /// It matters when an argument assigns a variable that another one reads: `a:0; a+(a:2)` is 4.
+    QValues args(node->children.size() - 1);
+    std::vector<bool> elided(args.size(), false);
+    bool any_elided = false;
+    for (size_t i = node->children.size(); i-- > 1;)
+    {
+        const auto & child = node->children[i];
+        if (child)
+        {
+            args[i - 1] = compile(child, env, scope);
+        }
+        else
+        {
+            elided[i - 1] = true;
+            any_elided = true;
+        }
+    }
+
     QValue function;
     if (function_node->kind == QNodeKind::Name)
         function = compileName(function_node, env, scope, true);
     else
         function = compile(function_node, env, scope);
-
-    QValues args;
-    std::vector<bool> elided;
-    bool any_elided = false;
-    for (size_t i = 1; i < node->children.size(); ++i)
-    {
-        const auto & child = node->children[i];
-        if (child)
-        {
-            args.push_back(compile(child, env, scope));
-            elided.push_back(false);
-        }
-        else
-        {
-            args.emplace_back();
-            elided.push_back(true);
-            any_elided = true;
-        }
-    }
 
     /// `f[]` calls a function without arguments.
     if (args.size() == 1 && elided[0])
