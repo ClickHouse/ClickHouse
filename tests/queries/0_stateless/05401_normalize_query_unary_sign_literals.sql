@@ -7,11 +7,12 @@ FROM values('a String, b String',
     ('SELECT x FROM t WHERE a IN (1, 2)', 'SELECT x FROM t WHERE a IN (1, -2)'),
     ('SELECT x FROM t WHERE a IN (1, 2)', 'SELECT x FROM t WHERE a IN (-1, +2)'),
     ('SELECT f(1, 2)', 'SELECT f(-1, - 2)'),
+    ('SELECT f(1)', 'SELECT f(- 1)'),
     ('SELECT x FROM t WHERE a = 1 AND b = 2', 'SELECT x FROM t WHERE a = -1 AND b = -2'),
     ('SELECT a / 2 FROM t', 'SELECT a / -2 FROM t'))
 FORMAT TSV;
 
--- a binary sign stays, also after a wildcard
+-- a binary sign stays, also after a wildcard, and so does a sign before a name
 SELECT a, b,
     normalizeQuery(a) = normalizeQuery(b) AS text,
     normalizedQueryHash(a) = normalizedQueryHash(b) AS hash
@@ -24,7 +25,8 @@ FROM values('a String, b String',
     ('SELECT TOP 1 * - 1 FROM numbers(1)', 'SELECT TOP 1 * + 1 FROM numbers(1)'),
     ('SELECT TOP (1) * - 1 FROM numbers(1)', 'SELECT TOP (1) * + 1 FROM numbers(1)'),
     ('SELECT DISTINCT ON (number) * - 1 FROM numbers(1)', 'SELECT DISTINCT ON (number) * + 1 FROM numbers(1)'),
-    ('SELECT TOP 1 WITH TIES * - 1 FROM numbers(1) ORDER BY number', 'SELECT TOP 1 WITH TIES * + 1 FROM numbers(1) ORDER BY number'))
+    ('SELECT TOP 1 WITH TIES * - 1 FROM numbers(1) ORDER BY number', 'SELECT TOP 1 WITH TIES * + 1 FROM numbers(1) ORDER BY number'),
+    ('SELECT (1, -x) FROM t', 'SELECT (1, x) FROM t'))
 FORMAT TSV;
 
 -- normalizedQueryHashUnordered keeps the sign, so the order of the projections does not change it

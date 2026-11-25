@@ -3,7 +3,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
-#include <utility>
+#include <optional>
 
 
 namespace DB
@@ -14,9 +14,9 @@ namespace
 
 /// a sign after these tokens cannot be binary
 /// `*` is not one of them, because it can be a wildcard, as in `SELECT TOP 1 * - 1`
-bool canPrecedeUnarySign(const Token & prev)
+bool canPrecedeUnarySign(TokenType prev)
 {
-    switch (prev.type)
+    switch (prev)
     {
         case TokenType::Whitespace: /// no previous token
         case TokenType::OpeningRoundBracket:
@@ -45,39 +45,62 @@ bool canPrecedeUnarySign(const Token & prev)
     }
 }
 
-/// a unary sign is part of the number it precedes, so that `-1` normalizes like `1`
-bool isUnarySignOfNumber(const Token & token, const Token & prev, Lexer lexer)
+/// gives a unary sign and the number after it as one `Number` token, so that `-1` normalizes like `1`
+class SignedNumberLexer
 {
-    if ((token.type != TokenType::Plus && token.type != TokenType::Minus) || !canPrecedeUnarySign(prev))
-        return false;
+public:
+    SignedNumberLexer(const char * begin, const char * end) : lexer(std::in_place, begin, end) {}
 
-    /// lexer is a copy, so looking ahead does not move the caller
-    Token next = lexer.nextToken();
-    while (!next.isSignificant())
-        next = lexer.nextToken();
-    return next.type == TokenType::Number;
-}
+    ALWAYS_INLINE Token nextToken()
+    {
+        Token token = lexer->nextToken();
+        if (!token.isSignificant())
+            return token;
+
+        if ((token.type == TokenType::Plus || token.type == TokenType::Minus) && canPrecedeUnarySign(prev))
+            takeNumber(token);
+
+        prev = token.type;
+        return token;
+    }
+
+private:
+    /// kept out of the per-token path
+    NO_INLINE void takeNumber(Token & sign)
+    {
+        Lexer ahead = *lexer;
+        Token next = ahead.nextToken();
+        while (!next.isSignificant())
+            next = ahead.nextToken();
+
+        if (next.type == TokenType::Number)
+        {
+            lexer.emplace(ahead);
+            sign = Token(TokenType::Number, sign.begin, next.end);
+        }
+    }
+
+    /// `Lexer` has no assignment
+    std::optional<Lexer> lexer;
+    TokenType prev = TokenType::Whitespace;
+};
 
 }
 
 UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
 {
     SipHash hash;
-    Lexer lexer(begin, end);
+    SignedNumberLexer lexer(begin, end);
 
     /// Coalesce a list of comma separated literals.
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
-    Token prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
         Token token = lexer.nextToken();
 
         if (!token.isSignificant())
-            continue;
-
-        if (isUnarySignOfNumber(token, std::exchange(prev_token, token), lexer))
             continue;
 
         /// Literals.
@@ -260,7 +283,7 @@ UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
 
 void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArray<UInt8> & res_data, bool keep_names)
 {
-    Lexer lexer(begin, end);
+    SignedNumberLexer lexer(begin, end);
     /// Coalesce whitespace characters and comments to a single whitespace.
     bool prev_insignificant = false;
 
@@ -268,7 +291,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
     size_t num_literals_in_sequence = 0;
     bool prev_comma = false;
     bool prev_whitespace = false;
-    Token prev_token(TokenType::Whitespace, begin, begin);
 
     while (true)
     {
@@ -296,10 +318,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             continue;
         }
 
-        /// skipped before prev_insignificant is reset, so the spaces around the sign collapse into one
-        if (isUnarySignOfNumber(token, std::exchange(prev_token, token), lexer))
-            continue;
-
         prev_insignificant = false;
 
         /// Literals.
@@ -320,8 +338,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
                 continue;
             }
         }
-        else if (prev_comma && (token.type == TokenType::Plus || token.type == TokenType::Minus))
-            continue;
         else
         {
             if (num_literals_in_sequence > 1)
