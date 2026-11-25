@@ -4978,6 +4978,12 @@ void MergeTreeData::dropAllData()
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+        {
+            LOG_INFO(log, "dropAllData: the table directory is the root of disk {}, it is kept", disk->getName());
+            continue;
+        }
+
         try
         {
             if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path)
