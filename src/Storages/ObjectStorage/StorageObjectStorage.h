@@ -80,11 +80,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    /// Requires `updateExternalDynamicMetadataIfExists` to have run for `context` before `storage_snapshot` was taken.
-    StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override;
-
-    void setHasClusterVariant() { has_cluster_variant = true; }
-
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -108,8 +103,6 @@ public:
         TableExclusiveLockHolder &) override;
 
     void drop() override;
-
-    void checkTableCanBeDropped(ContextPtr query_context) const override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -181,19 +174,12 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
-    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
-    static void dropTable(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageID & storage_id);
-
     /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
     /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
     bool isTransactionalRefreshTarget();
     CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     bool optimize(
@@ -253,15 +239,6 @@ public:
     }
 
 protected:
-    void addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context);
-
-    /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
-    void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
-
-    /// Whether this table is the whole FROM of a query that a replica runs for the initiator's cluster read,
-    /// so the replica reads only the files the initiator gives it. Only `IStorageCluster` sends such a query.
-    bool isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const;
-
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
@@ -291,14 +268,6 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
-    bool has_cluster_variant = false;
-
-    /// `PARTITION BY` and `ORDER BY` of a data lake table as in its stored definition. The partitioning and the sorting
-    /// of a data lake are in its own metadata, which refers to the columns by id, so they are not in the in-memory
-    /// metadata of the table, but the stored definition names the columns and has to follow their renames.
-    /// Accessed under the alter lock.
-    ASTPtr data_lake_partition_by;
-    ASTPtr data_lake_order_by;
 
     struct HivePartitioningColumns
     {
@@ -311,7 +280,6 @@ protected:
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;
     std::mutex hive_partitioning_resolution_mutex;
-    std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 

@@ -33,7 +33,7 @@ public:
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
         String marks_file_extension_,
-        const MergeTreeSettings & storage_settings);
+        MergeTreeSettingsPtr storage_settings_);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -61,6 +61,7 @@ private:
     MergeTreeWriterSettings writer_settings;
     CompressionCodecPtr default_codec;
     String marks_file_extension;
+    MergeTreeSettingsPtr storage_settings;
 
     /// Number of rows in blocks processed by the transform.
     size_t num_processed_rows = 0;
@@ -104,14 +105,14 @@ public:
 private:
     void finalize();
     void cancelImpl() noexcept;
-    [[nodiscard]] Block getHeader() const;
+    Block getHeader() const;
     void initializeTokensQueue();
 
     /// Cursor over the single String sort column with statically dispatched comparisons.
     using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    [[nodiscard]] bool isNewToken(const TokenSortCursor & cursor) const;
+    bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
     /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
@@ -205,16 +206,12 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
 
 /// Opens a substream of a text index.
 /// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
-/// Callers that use `seekToMark` out of file order (e.g. by token cardinality) must pass
-/// `use_page_cache_lookahead = false`, so the page cache looks ahead by one block instead of
-/// abandoning a wider request.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead = true);
+    std::optional<size_t> expected_buffer_size);
 
 /// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -222,8 +219,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead = true);
+    std::optional<size_t> expected_buffer_size);
 
 /// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);

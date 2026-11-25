@@ -1,8 +1,5 @@
 #pragma once
 #include <Core/Joins.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -15,6 +12,7 @@ class SipHash;
 namespace DB
 {
 
+class AggregatingStep;
 class JoinStepLogical;
 class ReadFromMergeTree;
 
@@ -60,7 +58,6 @@ struct Optimization
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
         bool use_top_k_dynamic_filtering_for_variable_length_types{};
-        bool use_top_k_dynamic_filtering_for_single_string_sort_column{};
         size_t max_limit_for_top_k_optimization{};
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};
@@ -76,6 +73,8 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        /// The heap refuses it, and `MergingAggregatedStep` does not carry it.
+        UInt64 max_rows_to_group_by{};
         bool enable_group_by_top_k_dynamic_filtering{};
         bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
@@ -119,15 +118,12 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// Lower an `arrayJoin` function inside an Expression/Filter into a real ArrayJoinStep.
 size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-/// Plans each `arrayJoin` function in Expression/Filter steps as a real ArrayJoinStep. Runs also without plan optimizations.
-void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
-
 /// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// When an aggregation feeds ORDER BY <its lone count() output> LIMIT n, let every two-level
 /// bucket of the aggregation output materialize only its n best groups by that count.
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings);
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
@@ -159,7 +155,7 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 /// it, which is what `tryPushDownVolumeReducingFunction` requires to be worth doing.
 /// `tryExecuteFunctionsAfterSorting` uses the same set to avoid lifting those functions back above
 /// a `SortingStep` they have been pushed below.
-UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
 collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions);
 
 /// Volume-reducing function nodes of `actions` (and their aliases among the outputs) that must stay
@@ -174,7 +170,7 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
 /// lifting them loses nothing. `low_part_root` identifies nodes that a caller already keeps below
 /// its barrier (for example, a `FilterStep` predicate) and which therefore do not make the
 /// argument flow through that barrier.
-UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
+std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
     const ActionsDAG & actions, const ActionsDAG::Node * low_part_root = nullptr);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
@@ -252,6 +248,19 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
+void applyGroupByTopKOfInitiator(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
+
+/// When plan-based parallel replicas split the aggregation of `GROUP BY ... ORDER BY ... LIMIT n` below `limit_node`, gives
+/// the partial aggregation the heap `tryOptimizeGroupByTopK` would give the whole one, so that the shipped fragment runs it.
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    QueryPlan::Nodes & nodes,
+    const Optimization::ExtraSettings & settings);
+
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -280,7 +289,6 @@ inline const auto & getOptimizations()
         {tryShortCircuitConstantFalseJoin,
          "shortCircuitConstantFalseJoin",
          &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
-        /// the steps that other optimizations create after `lowerArrayJoinFunctions`
         {tryLowerArrayJoinFunction, "lowerArrayJoinFunction", &QueryPlanOptimizationSettings::lower_array_join_function},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
@@ -318,7 +326,7 @@ struct Frame
     size_t next_child = 0;
 };
 
-using Stack = VectorWithMemoryTracking<Frame>;
+using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
@@ -331,15 +339,9 @@ void processAndOptimizeTextIndexFunctions(
     const FindSingleNodeRead & find_single_node_read,
     const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-/// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
-/// reach it keeps its default stream count.
-void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool before_projections);
-/// Splits the read of a single `uniqExact` in order (see `optimizeAggregationInOrder`) into layers by its key, or gives up
-/// the order if the read has several streams that would have to be merged into one.
-void optimizeUniqExactInOrderLayers(QueryPlan::Node & node);
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 
 /// Lazy materialization over joins, decided on one merged `ActionsDAG` for the whole subtree below the
@@ -355,10 +357,8 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 /// primary key range pruning (see SealGatedReadTransform).
 void markSealGatedReading(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
-void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
-/// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
-void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -375,14 +375,14 @@ bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stac
 /// `FutureSetFromSubquery` source can be claimed only once; the caller attaches one builder for them
 /// above a node that dominates every copy.
 void materializeQueryPlanReferences(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- this is `PreparedSets::Subqueries`; naming it here would need the full PreparedSets header
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
@@ -396,8 +396,8 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes);
+    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
+    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
@@ -422,13 +422,10 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Lets an offset based parallel replicas read use several replicas of a shard only if no consumer needs stream order.
-void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
-
 struct UseProjectionsResult
 {
     std::optional<String> applied_projection;
-    UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
+    std::unordered_map<String, String> projection_reject_reasons;
 };
 
 UseProjectionsResult optimizeUseAggregateProjections(
@@ -445,7 +442,6 @@ UseProjectionsResult optimizeUseNormalProjections(
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
-void removeSetsOfAlwaysFalseScope(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
 /// Must be called after the second optimization pass so that is_planned flags

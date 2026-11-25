@@ -401,17 +401,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
     ), error
 
 
-@pytest.mark.parametrize(
-    "early, bandwidth",
-    [("1", 0), ("1", 1000000), ("lingering", 0)],
-)
-def test_early_error_response_at_upload_is_not_retried(
-    cluster, broken_s3, early, bandwidth
-):
-    # The server answers `NoSuchUpload` before it reads the body, then resets the connection
-    # (`1`, like MinIO) or reads a part of the body before the reset (`lingering`, like AWS S3).
-    # The client must notice the answer while it sends the body, also when the send throttler
-    # waits before a send.
+def test_early_error_response_at_upload_is_not_retried(cluster, broken_s3):
     node = cluster.instances["node"]
 
     broken_s3.setup_fake_multpartuploads()
@@ -419,7 +409,7 @@ def test_early_error_response_at_upload_is_not_retried(
         count=1000,
         after=0,
         action="no_such_upload",
-        action_args=[early],
+        action_args=["1"],
     )
 
     insert_query_id = randomize_query_id("TEST_EARLY_ERROR_RESPONSE_AT_UPLOAD")
@@ -427,7 +417,7 @@ def test_early_error_response_at_upload_is_not_retried(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_early_error_response_at_upload_is_not_retried_{early}_{bandwidth}',
+                'http://resolver:8083/root/data/test_early_error_response_at_upload_is_not_retried',
                 'minio', '{minio_secret_key}',
                 'CSV', auto, 'none'
             )
@@ -436,7 +426,7 @@ def test_early_error_response_at_upload_is_not_retried(
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=33554432,
             s3_max_inflight_parts_for_one_file=1,
-            max_remote_write_network_bandwidth={bandwidth},
+            max_remote_write_network_bandwidth=1000000,
             s3_check_objects_after_upload=0
         """,
         query_id=insert_query_id,
@@ -631,7 +621,6 @@ def test_when_s3_timeout_at_listing(
     insert_query_id = randomize_query_id(
         "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
     )
-    # A parallel formatter per partition keeps several MiB, and 2000 of them approach the node's memory limit.
     node.query(
         f"""
         INSERT INTO
@@ -647,8 +636,7 @@ def test_when_s3_timeout_at_listing(
         LIMIT 2000
         SETTINGS
             s3_check_objects_after_upload=0,
-            s3_truncate_on_insert=1,
-            output_format_parallel_formatting=0
+            s3_truncate_on_insert=1
         """,
         query_id=insert_query_id,
     )

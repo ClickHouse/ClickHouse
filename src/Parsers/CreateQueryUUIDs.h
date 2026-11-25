@@ -22,14 +22,14 @@ struct CreateQueryUUIDs
     /// (re)generated randomly.
     explicit CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random = false, bool for_restore = false);
 
-    [[nodiscard]] bool empty() const;
+    bool empty() const;
     explicit operator bool() const { return !empty(); }
 
-    [[nodiscard]] String toString() const;
+    String toString() const;
     static CreateQueryUUIDs fromString(const String & str);
 
     void setTargetInnerUUID(ViewTarget::Kind kind, const UUID & new_inner_uuid);
-    [[nodiscard]] UUID getTargetInnerUUID(ViewTarget::Kind kind) const;
+    UUID getTargetInnerUUID(ViewTarget::Kind kind) const;
 
     /// Copies UUIDs to ASTCreateQuery.
     void copyToQuery(ASTCreateQuery & query) const;

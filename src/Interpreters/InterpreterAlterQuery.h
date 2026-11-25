@@ -35,19 +35,21 @@ public:
     /// `context_` resolves the source table of `ATTACH`/`REPLACE PARTITION ... FROM`, so that a session
     /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database. Pass null
     /// to keep the source as written (e.g. for `ON CLUSTER`, where temporary tables are not visible).
+    /// `engine` is the engine of the table, empty for `ON CLUSTER`.
     static AccessRightsElements getRequiredAccessForCommand(
         const ASTAlterCommand & command,
         const String & database,
         const String & table,
         RowExistsColumnKind row_exists_column_kind,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        const String & engine = {});
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
     /// Skip this query's own access check. Set only for the internal `ATTACH PARTITION` that fills the
     /// temporary table of a `CREATE OR REPLACE TABLE ... CLONE AS` (see `fillTableIfNeeded`): the query
@@ -57,7 +59,7 @@ public:
     void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
 
 private:
-    [[nodiscard]] AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+    AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
 
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.

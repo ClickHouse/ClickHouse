@@ -31,19 +31,22 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return makeNullable(arguments[0]);
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
