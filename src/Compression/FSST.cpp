@@ -1,6 +1,7 @@
 #include <Compression/FSST.h>
 
 #include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
 
@@ -49,7 +50,7 @@ constexpr size_t HASH_TABLE_SIZE = 1 << HASH_TABLE_SIZE_LOG2;
 
 size_t hashPrefix(UInt64 word)
 {
-    return ((word & 0xFFFFFF) * 0x9E3779B97F4A7C15ULL) >> (64 - HASH_TABLE_SIZE_LOG2);
+    return common::mulIgnoreOverflow(word & 0xFFFFFF, 0x9E3779B97F4A7C15ULL) >> (64 - HASH_TABLE_SIZE_LOG2);
 }
 
 /// Finds the longest symbol at a position of the data.
@@ -143,7 +144,7 @@ public:
     void add(UInt64 symbol, size_t length, UInt64 gain)
     {
         const UInt64 key = symbol ^ (UInt64(length) << 56);
-        size_t i = (key * 0x9E3779B97F4A7C15ULL) >> (64 - CAPACITY_LOG2);
+        size_t i = common::mulIgnoreOverflow(key, 0x9E3779B97F4A7C15ULL) >> (64 - CAPACITY_LOG2);
         while (true)
         {
             Candidate & cell = cells[i];

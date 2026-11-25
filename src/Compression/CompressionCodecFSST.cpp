@@ -160,10 +160,11 @@ bool CompressionCodecFSST::parseBlock(
         {
             UInt64 difference = 0;
             pos = readVarUInt(difference, pos, end - pos);
-            position += difference;
             /// The positions of the boundaries increase, because every value between them has at least one code.
-            if (difference == 0 || position > codes_size)
+            /// The check is done before the addition, so a malformed difference cannot wrap the position around.
+            if (difference == 0 || difference > codes_size - position)
                 throw Exception(error_code, "Cannot decompress FSST-encoded data: malformed index of the values");
+            position += difference;
             block.boundary_code_positions.push_back(static_cast<UInt32>(position));
         }
     }
