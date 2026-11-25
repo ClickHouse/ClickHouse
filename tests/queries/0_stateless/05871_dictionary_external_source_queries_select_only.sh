@@ -55,6 +55,7 @@ while [ "$rejected" != "1" ] && [ $SECONDS -lt 120 ]; do
         SYSTEM FLUSH LOGS text_log;
         SELECT count() > 0 FROM system.text_log
         WHERE event_date >= yesterday()
+            AND event_time >= now() - INTERVAL 10 MINUTE
             AND message LIKE '%Could not check if dictionary%${CLICKHOUSE_DATABASE}.dict_invalidate%Only SELECT query can be used as a dictionary invalidate query%'")
     [ "$rejected" = "1" ] || sleep 0.5
 done
