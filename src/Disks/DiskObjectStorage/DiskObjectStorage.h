@@ -139,7 +139,7 @@ public:
 
     time_t getLastChanged(const String & path) const override;
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const override;
 
     void shutdown() override;
 

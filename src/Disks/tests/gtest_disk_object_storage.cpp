@@ -220,7 +220,7 @@ public:
             getContext().context,
             initialized_disks,
             /*attach*/ false,
-            /*custom_disk*/ true,
+            /*custom_disk*/ false,
             /*skip_types*/ {});
 
         initialized_disks.emplace(name, disk);

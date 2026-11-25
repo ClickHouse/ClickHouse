@@ -109,6 +109,11 @@ public:
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURLWithoutQuery()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
+    String getConnectionURLWithoutQuery() const
+    {
+        return connection_params.endpoint.sas_auth.empty() ? connection_params.getConnectionURLWithoutQuery() : connection_params.endpoint.storage_account_url;
+    }
+
     void check(ContextPtr context) override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;

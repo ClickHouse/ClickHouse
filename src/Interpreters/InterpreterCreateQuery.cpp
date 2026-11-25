@@ -41,7 +41,9 @@
 
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -50,6 +52,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -1728,7 +1732,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         checkExportAccess(create);
+        checkDictionaryEngineAccess(create);
+    }
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
@@ -2551,6 +2558,9 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
+            if (!is_create_database)
+                checkDictionaryEngineAccess(create);
+
             /// This branch returns before setEngine, and the worker processes AS src without the user's access.
             if (!create.as_table.empty())
             {
@@ -2584,6 +2594,7 @@ BlockIO InterpreterCreateQuery::execute()
 
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkExportAccess(inherited);
+                checkDictionaryEngineAccess(inherited);
 
                 /// A worker copies the source's indices with no user, so declare their transforms here.
                 if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
@@ -2713,6 +2724,67 @@ void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) co
         return;
 
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
+}
+
+void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything. A replay of `ON CLUSTER` or of a
+    /// `Replicated` database was checked before it was enqueued, while it still ran as the user, and runs without the user.
+    if (internal || getContext()->isDDLOrOnClusterInternal())
+        return;
+
+    /// An unqualified dictionary name is resolved against the current database of the query that creates the storage
+    /// and loads the dictionary, so check the dictionary that this query resolves to.
+    const String & server_default_database = getContext()->getGlobalContext()->getCurrentDatabase();
+    String execution_database;
+    if (!create.cluster.empty())
+    {
+        /// A replay of `ON CLUSTER` runs in the default database of the server.
+        execution_database = server_default_database;
+    }
+    else
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        /// A replay in a `Replicated` database runs in that database.
+        execution_database = database && database->shouldReplicateQuery(getContext(), query_ptr) ? database_name : getContext()->getCurrentDatabase();
+    }
+
+    auto check = [&](ASTs & arguments, const String & current_database)
+    {
+        /// A wrong number of arguments is reported when the storage is created.
+        if (arguments.size() != 1)
+            return;
+
+        /// Keep the name that is checked in the query, so that a replica executing it does not evaluate the argument
+        /// to another dictionary.
+        arguments[0] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], getContext());
+        auto dictionary_name = checkAndGetLiteralArgument<String>(arguments[0], "dictionary_name");
+        const auto & external_loader = getContext()->getExternalDictionariesLoader();
+        StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, current_database, getContext()).id, getContext());
+    };
+
+    auto check_engine = [&](ASTStorage & storage)
+    {
+        if (storage.engine && storage.engine->name == "Dictionary" && storage.engine->arguments)
+            check(storage.engine->arguments->children, execution_database);
+    };
+
+    if (create.storage)
+        check_engine(*create.storage);
+    if (create.targets)
+    {
+        for (ASTStorage * inner_engine : create.targets->getInnerEngines())
+            check_engine(*inner_engine);
+    }
+
+    /// `CREATE TABLE ... AS dictionary(...)` creates the storage with the global context, see `doCreateTable`.
+    if (create.as_table_function)
+    {
+        auto & function = create.as_table_function->as<ASTFunction &>();
+        if (function.name == "dictionary" && function.arguments)
+            check(function.arguments->children, server_default_database);
+    }
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

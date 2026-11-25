@@ -235,7 +235,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
+    /// The grants of some settings depend on the engine. A table that is not loaded yet is a stand-in without its name.
+    const String engine = table ? resolveStorageProxyLoading(table)->getName() : String{};
+    getContext()->checkAccess(getRequiredAccess(engine));
     checkNoRowPolicyForExport(alter, getContext());
 
     if (!table_id)
@@ -569,17 +571,19 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const String & engine) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     for (const auto & child : alter.command_list->children)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
+        boost::range::push_back(required_access, getRequiredAccessForCommand(
+            child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), engine));
     return required_access;
 }
 
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table)
+AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
+    const ASTAlterCommand & command, const String & database, const String & table, const String & engine)
 {
     AccessRightsElements required_access;
 
@@ -733,11 +737,14 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
 
             /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
             /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
-            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
-            /// of `ON CLUSTER` can check them without the table.
+            /// so the reading part is `SELECT` on the table. For `ON CLUSTER`, `engine` is empty, so the grants can be checked
+            /// without the table.
             if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
             {
-                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+                auto export_access = engine.empty()
+                    ? StorageFactory::instance().getExportAccessOfAnyEngine(changes)
+                    : StorageFactory::instance().getExportAccess(changes, engine);
                 if (!export_access.empty())
                 {
                     required_access.append_range(std::move(export_access));
