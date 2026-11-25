@@ -2909,19 +2909,41 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
-`ZXC` is a codec of the same kind as `LZ4`, made for the compress-once, decompress-many pattern: it spends more CPU time on compression and decompresses faster than `LZ4`. Higher levels mean better compression and slower compression, while decompression stays fast. To choose a level, see the [comparison with `LZ4`](#zxc-comparison-with-lz4).
+`ZXC` is a codec of the same kind as `LZ4`, made for the compress-once, decompress-many pattern: it spends more CPU time on compression and decompresses faster than `LZ4`. Higher levels mean better compression and slower compression, while decompression stays fast. For a comparison with `LZ4` and `ZSTD` and for the choice of a level, see [Choosing between LZ4, ZXC and ZSTD](#choosing-between-lz4-zxc-and-zstd).
 
 <Note>
 This codec is in beta and requires `SET enable_zxc_codec = 1` to use.
 </Note>
 
-#### Comparison of ZXC with LZ4 {#zxc-comparison-with-lz4}
+### GDeflate {#gdeflate}
 
-With the default level 3, `ZXC` makes the data 1% to 22% smaller than `LZ4`, compresses it about three times slower (up to seven times on data like the Bluesky table below) and decompresses it 1.3 to 2.4 times faster. The levels form three groups:
+<ExperimentalBadge/>
 
-- Level 1 compresses at 0.7 to 2.4 of the speed of `LZ4`, and level 2 at 0.6 to 0.9 of it, but the data is larger than with `LZ4`: by 7% to 42% with level 1 and by up to 13% with level 2. They are useful only for the decompression speed.
-- Levels 3, 4 and 5 compress better than `LZ4`, typically at a third, a quarter and a seventh of its speed. With `LZ4HC`, the data is 4% to 12% smaller than with level 5, but it is compressed 1.5 to 7 times slower.
-- Levels 6 and 7 add entropy coding. Level 6 compresses better than `LZ4HC`, and level 7 about as well as `ZSTD(1)`, while both decompress 2 to 4 times faster than `ZSTD(1)`. Their compression is the slowest among these codecs: 6 to 50 MB/s per CPU core, which is slower than `LZ4HC` and 20 to 90 times slower than `ZSTD(1)`.
+`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
+
+A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`.
+
+<Note>
+This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
+</Note>
+
+### Obsolete: ZSTD_QAT {#zstd_qat}
+
+<CloudNotSupportedBadge/>
+
+### Obsolete: DEFLATE_QPL {#deflate_qpl}
+
+<CloudNotSupportedBadge/>
+
+### Choosing between LZ4, ZXC and ZSTD {#choosing-between-lz4-zxc-and-zstd}
+
+- `LZ4` is the default codec. It compresses and decompresses fast, with a moderate compression ratio.
+- `ZSTD` (the default codec in ClickHouse Cloud) is a good combination of compression ratio and speed when the size of the data matters. With `ZSTD(1)`, the data is 33% to 47% smaller than with `LZ4`, while the `hits` table below is compressed 1.5 to 1.7 times slower and decompressed about two times slower.
+- `ZXC` with the default level 3 has a compression ratio close to `LZ4`: the data is 1% to 22% smaller. It is compressed about three times slower than with `LZ4` and decompressed 1.3 to 2.4 times faster, which suits data that is written once and read many times.
+
+These numbers are from the measurements below. They depend on the data, so try a codec on your own tables before switching to it.
+
+#### Detailed comparison on five tables {#detailed-comparison-on-five-tables}
 
 The compression ratio of five tables, where every column is compressed with the same codec:
 
@@ -2973,7 +2995,9 @@ Decompression speed on the `hits` table, in the same units:
 | `ZSTD(1)` | 2006 | 2502 | 2010 | 1742 |
 | `ZSTD(3)` | 2579 | 3188 | 2447 | 2081 |
 
-On the other four tables, level 3 decompresses 1.3 to 2.1 times faster than `LZ4` on x86-64 and 1.5 to 2.4 times faster on ARM.
+On the other four tables, `ZXC(3)` decompresses 1.3 to 2.1 times faster than `LZ4` on x86-64 and 1.5 to 2.4 times faster on ARM.
+
+<Accordion title="The effect on a table as a whole">
 
 The effect on the `hits` table as a whole, relative to the same table with `LZ4`, as the range over the four machines. `INSERT` is `INSERT ... SELECT` of the whole table in 16 threads, merges are the merges of the parts it wrote (not measured for every level), the scan reads all the columns in one thread, and the time of the ClickBench queries is the sum over the 43 queries with a warm page cache:
 
@@ -2990,32 +3014,24 @@ The effect on the `hits` table as a whole, relative to the same table with `LZ4`
 | `ZSTD(1)` | 0.67 | 1.15–1.21 | 1.36–1.44 | 1.52–1.70 | 1.07–1.13 |
 | `ZSTD(3)` | 0.62 | 1.22–1.27 | 1.34–1.42 | 1.32–1.40 | 1.07–1.13 |
 
+</Accordion>
+
+<Accordion title="The levels of ZXC and other details">
+
+The levels of `ZXC` form three groups:
+
+- Level 1 compresses at 0.7 to 2.4 of the speed of `LZ4`, and level 2 at 0.6 to 0.9 of it, but the data is larger than with `LZ4`: by 7% to 42% with level 1 and by up to 13% with level 2. They are useful only for the decompression speed.
+- Levels 3, 4 and 5 compress better than `LZ4`, typically at a third, a quarter and a seventh of its speed. With `LZ4HC`, the data is 4% to 12% smaller than with level 5, but it is compressed 1.5 to 7 times slower.
+- Levels 6 and 7 add entropy coding. Level 6 compresses better than `LZ4HC`, and level 7 about as well as `ZSTD(1)`, while both decompress 2 to 4 times faster than `ZSTD(1)`. Their compression is the slowest among these codecs: 6 to 50 MB/s per CPU core, which is slower than `LZ4HC` and 20 to 90 times slower than `ZSTD(1)`.
+
 Take into account:
 
-- Decompression is only a part of the work of a query. A query that reads all the columns of `hits` in one thread uses 11% to 18% less CPU time with level 3 than with `LZ4`, and the 43 queries of ClickBench take 1% to 5% less time. When all the CPU cores read all the columns at once, the difference shrinks: between 9% less and 3% more CPU time than with `LZ4`.
+- Decompression is only a part of the work of a query. A query that reads all the columns of `hits` in one thread uses 11% to 18% less CPU time with `ZXC(3)` than with `LZ4`, and the 43 queries of ClickBench take 1% to 5% less time. When all the CPU cores read all the columns at once, the difference shrinks: between 9% less and 3% more CPU time than with `LZ4`.
 - `ZXC` has a fixed cost per compressed block: about 35 bytes, one to three microseconds on compression and about half a microsecond on decompression. It is negligible for the blocks of 64 KiB to 1 MiB that `MergeTree` writes for large parts. For blocks below 16 KiB, `ZXC` has no advantage over `LZ4`, and blocks below 1 KiB are compressed worse and several times slower than with `LZ4`. Such blocks appear in small parts and in the sparse subcolumns of `JSON`.
-- The Bluesky table is the worst case among the five: more than half of it are identifiers and content hashes, and level 3 compresses it five to seven times slower than `LZ4`, to the same size. On the hashes, which are a third of the table and are written in base32, level 3 is six to nine times slower than `LZ4`.
+- The Bluesky table is the worst case among the five: more than half of it are identifiers and content hashes, and `ZXC(3)` compresses it five to seven times slower than `LZ4`, to the same size. On the hashes, which are a third of the table and are written in base32, `ZXC(3)` is six to nine times slower than `LZ4`.
 - The numbers were obtained with ClickHouse 26.12 and `zxc` 1.0.1 on AWS `m8i`, `m8a`, `m8g` and `r7g` instances, on the blocks of data as `MergeTree` compresses them. They depend on the data, so try the codec on your own tables before switching to it.
 
-### GDeflate {#gdeflate}
-
-<ExperimentalBadge/>
-
-`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
-
-A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`.
-
-<Note>
-This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
-</Note>
-
-### Obsolete: ZSTD_QAT {#zstd_qat}
-
-<CloudNotSupportedBadge/>
-
-### Obsolete: DEFLATE_QPL {#deflate_qpl}
-
-<CloudNotSupportedBadge/>
+</Accordion>
 
 ## Specialized Codecs {#specialized-codecs}
 
