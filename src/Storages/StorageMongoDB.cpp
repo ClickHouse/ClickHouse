@@ -112,6 +112,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
