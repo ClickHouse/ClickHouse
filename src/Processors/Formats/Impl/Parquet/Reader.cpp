@@ -3962,12 +3962,12 @@ static void expandNullRows(MutableColumnPtr & column, const PaddedPODArray<UInt8
         return;
     }
 
-    IColumn::Offsets offsets;
-    offsets.reserve(column->size());
+    column->expand(null_map, /*inverted*/ true);
+    auto default_row = null_default_type->createColumn();
+    null_default_type->insertDefaultInto(*default_row);
     for (size_t i = 0; i < null_map.size(); ++i)
-        if (!null_map[i])
-            offsets.push_back(i);
-    column = column->createWithOffsets(offsets, *null_default_type->createColumnConstWithDefaultValue(1), null_map.size(), 0)->assumeMutable();
+        if (null_map[i])
+            column->updateAt(*default_row, i, 0);
 }
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
