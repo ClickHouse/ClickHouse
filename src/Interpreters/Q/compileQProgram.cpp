@@ -683,11 +683,37 @@ QCompiler::QCompiler(ContextPtr context_)
 {
 }
 
-void QCompiler::checkListDepth(const QValue & value) const
+size_t QCompiler::functionNesting(const QFunctionPtr & function)
 {
-    if (max_list_depth && value.depth > max_list_depth)
+    if (auto it = function_nestings.find(function.get()); it != function_nestings.end())
+        return it->second.second;
+
+    /// The functions inside were counted when they were made, so this does not go deep.
+    checkStackSize();
+    size_t inside = 0;
+    if (function->operand)
+        inside = functionNesting(function->operand);
+    for (const auto & slot : function->bound)
+        if (slot && slot->function)
+            inside = std::max(inside, functionNesting(slot->function));
+
+    /// A function with nothing inside is not a link of a chain.
+    if (inside)
+        function_nestings.emplace(function.get(), std::make_pair(function, inside + 1));
+    return inside + 1;
+}
+
+void QCompiler::checkListDepth(const QValue & value)
+{
+    if (!max_list_depth)
+        return;
+    if (value.depth > max_list_depth)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
             "A list in the q program is nested deeper than {} levels (the setting 'max_parser_depth')", max_list_depth);
+    if (value.kind == QValueKind::Function && value.function && functionNesting(value.function) > max_list_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "A function in the q program is made of more than {} functions one inside of another (the setting 'max_parser_depth')",
+            max_list_depth);
 }
 
 void QCompiler::checkExpandedSize(const ASTPtr & ast)

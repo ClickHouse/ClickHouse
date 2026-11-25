@@ -238,7 +238,17 @@ private:
     /// function maps over them), so the depth of a value is bounded like the depth of the program is.
     size_t max_list_depth = 0;
 
-    void checkListDepth(const QValue & value) const;
+    /// The same limit is for the function values made one of another: `f:f'` wraps the function into a new one every
+    /// time, and so does a projection that fixes a function as an argument. Such a chain has no AST and no depth of
+    /// a list, but applying it recurses once per link, and so does destroying it.
+    ///
+    /// The number of the links of every function value that has other function values inside. The functions are held
+    /// here, so that an address is not reused, and so that the links of a chain are not destroyed one from another.
+    std::unordered_map<const QFunction *, std::pair<QFunctionPtr, size_t>> function_nestings;
+
+    size_t functionNesting(const QFunctionPtr & function);
+
+    void checkListDepth(const QValue & value);
 
     /// See `markNotNull`. The ASTs are held, so that an address is not reused.
     std::unordered_map<const IAST *, ASTPtr> not_null_asts;
