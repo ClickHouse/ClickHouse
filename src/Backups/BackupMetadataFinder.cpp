@@ -8,6 +8,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/insertAtEnd.h>
@@ -33,6 +35,40 @@ namespace ErrorCodes
 extern const int BACKUP_ENTRY_NOT_FOUND;
 extern const int CANNOT_RESTORE_TABLE;
 extern const int CANNOT_RESTORE_DATABASE;
+}
+
+namespace
+{
+
+/// An older server accepted the `disk` of a BigLake catalog together with Google credentials, which `CREATE` refuses:
+/// the data files would be read with the credentials of the disk, not of the catalog. Without `disk` the definition
+/// is the one `CREATE` accepts, and the credentials of the catalog read the data files.
+void removeDiskOfBigLakeCatalogWithGoogleCredentials(ASTCreateQuery & create, const String & database_name, const LoggerPtr & log)
+{
+    if (!create.storage || !create.storage->engine || !create.storage->settings)
+        return;
+    if (create.storage->engine->name != "DataLakeCatalog" && create.storage->engine->name != "Iceberg")
+        return;
+
+    auto & changes = create.storage->settings->as<ASTSetQuery &>().changes;
+    const Field * catalog_type = changes.tryGet("catalog_type");
+    if (!catalog_type || SettingFieldDatabaseDataLakeCatalogType(*catalog_type).value != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+        return;
+
+    const bool has_google_credentials = std::ranges::any_of(
+        std::array{"google_service_account_key", "google_adc_client_id", "google_adc_client_secret", "google_adc_refresh_token"},
+        [&](const char * name)
+        {
+            const Field * value = changes.tryGet(name);
+            return value && value->getType() == Field::Types::String && !value->safeGet<String>().empty();
+        });
+
+    if (has_google_credentials && changes.removeSetting("disk"))
+        LOG_WARNING(log, "The `disk` setting of the BigLake catalog {} in the backup is combined with Google credentials. "
+            "It is restored without `disk`, so its data files are read with the credentials of the catalog",
+            backQuoteIfNeed(database_name));
+}
+
 }
 
 BackupMetadataFinder::BackupMetadataFinder(
@@ -423,6 +459,9 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
                 "The definition of database {} in the backup is of another object: {}",
                 backQuoteIfNeed(database_name_in_backup),
                 create_database_query->formatForErrorMessage());
+
+        removeDiskOfBigLakeCatalogWithGoogleCredentials(
+            create_database_query->as<ASTCreateQuery &>(), database_name_in_backup, log);
 
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
         String create_database_query_str = create_database_query->formatWithSecretsOneLine();
