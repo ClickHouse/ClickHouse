@@ -212,6 +212,7 @@ public:
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context) override { getNested()->deleteByUniqueKey(query_ptr, context); }
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override { return getNested()->updateLightweight(commands, context); }
 
     bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
