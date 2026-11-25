@@ -715,6 +715,66 @@ TEST(Statistics, LikeSelectivity)
     /// notILike function directly: 0.9 * 10000 = 9000 rows.
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
+
+    /// Patterns estimated from statistics: `s` has 10000 distinct values, `f` the same as `FixedString(4)`, and `n` is
+    /// NULL in 99% of the rows.
+    tryRegisterAggregateFunctions();
+    const DataTypePtr nullable_type = std::make_shared<DataTypeNullable>(data_type);
+    const DataTypePtr fixed_type = std::make_shared<DataTypeFixedString>(4);
+    MutableColumnPtr s_col = data_type->createColumn();
+    MutableColumnPtr n_col = nullable_type->createColumn();
+    MutableColumnPtr f_col = fixed_type->createColumn();
+    for (Int32 i = 0; i < 10000; ++i)
+    {
+        s_col->insert(toString(i));
+        f_col->insert(toString(i));
+        if (i % 100 == 0)
+            n_col->insert(toString(i));
+        else
+            n_col->insertDefault();
+    }
+
+    ConditionSelectivityEstimatorBuilder pattern_builder(getContext().context);
+    auto add_statistics = [&](const String & name, const DataTypePtr & type, MutableColumnPtr column)
+    {
+        auto column_stats = createTestStats({StatisticsType::Basic, StatisticsType::Uniq}, type);
+        column_stats->build(std::move(column));
+        pattern_builder.addStatistics(name, column_stats);
+    };
+    add_statistics("s", data_type, std::move(s_col));
+    add_statistics("n", nullable_type, std::move(n_col));
+    add_statistics("f", fixed_type, std::move(f_col));
+    pattern_builder.incrementRowCount(10000);
+    auto pattern_estimator = pattern_builder.getEstimator();
+    NamesAndTypesList pattern_columns{{"s", data_type}, {"n", nullable_type}, {"f", fixed_type}};
+    auto estimate_pattern = [&](const String & expression) { return estimateRowsFor(pattern_estimator, expression, pattern_columns); };
+
+    /// A pattern without wildcards is an equality: for `ILIKE` only when empty, for a `FixedString` only at its length.
+    EXPECT_EQ(estimate_pattern("s like '1234'"), estimate_pattern("s = '1234'"));
+    EXPECT_EQ(estimate_pattern("s like '12#%' escape '#'"), estimate_pattern("s = '12%'"));
+    EXPECT_EQ(estimate_pattern("s not like '1234'"), estimate_pattern("s != '1234'"));
+    EXPECT_EQ(estimate_pattern("s ilike ''"), estimate_pattern("s = ''"));
+    EXPECT_EQ(estimate_pattern("s ilike 'abc'"), 1000u);
+    EXPECT_EQ(estimate_pattern("f like '1234'"), estimate_pattern("f = '1234'"));
+    EXPECT_EQ(estimate_pattern("f like '12'"), 1000u);
+
+    /// `%` matches every non-NULL value.
+    EXPECT_EQ(estimate_pattern("n like '%'"), estimate_pattern("n is not null"));
+    EXPECT_EQ(estimate_pattern("not (n like '%')"), 0u);
+    EXPECT_EQ(estimate_pattern("n not ilike '%'"), 0u);
+
+    /// Other patterns get the default share of the non-NULL rows.
+    EXPECT_EQ(estimate_pattern("n like '%12%'"), 10u);
+    EXPECT_EQ(estimate_pattern("n not like '%12%'"), 90u);
+    EXPECT_EQ(estimate_pattern("not (n like '%12%')"), 90u);
+
+    for (const char * name : {"startsWith", "startsWithUTF8", "startsWithCaseInsensitive", "startsWithCaseInsensitiveUTF8",
+                              "endsWith", "endsWithUTF8", "endsWithCaseInsensitive", "endsWithCaseInsensitiveUTF8"})
+    {
+        EXPECT_EQ(estimate_pattern(String(name) + "(s, '12')"), 1000u) << name;
+        EXPECT_EQ(estimate_pattern(String(name) + "(n, '12')"), 10u) << name;
+        EXPECT_EQ(estimate_pattern(String(name) + "(n, '')"), 100u) << name;
+    }
 }
 
 /// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared

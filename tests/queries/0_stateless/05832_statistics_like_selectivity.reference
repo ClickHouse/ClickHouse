@@ -1,6 +1,8 @@
 exact LIKE	1
 exact LIKE ESCAPE	1
 exact NOT LIKE	1
+exact ILIKE empty	1
+exact FixedString LIKE	1
 LIKE %	1
 LIKE % lower bound	1
 ILIKE %	1
@@ -9,6 +11,10 @@ prefix LIKE	1
 prefix LIKE lower bound	1
 suffix LIKE	1
 suffix LIKE lower bound	1
+prefix LIKE on NULLs	1
+prefix LIKE on NULLs lower bound	1
+NOT LIKE on NULLs	1
+startsWithUTF8	1
 startsWith empty	1
 startsWith empty lower bound	1
 FixedString LIKE %	1

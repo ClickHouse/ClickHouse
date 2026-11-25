@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/likePatternToRegexp.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -321,66 +322,77 @@ bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
         || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
 
-/// `s LIKE 'abc'` is `s = 'abc'`, and `s LIKE '%'` or `startsWith(s, '')` holds for every non-NULL `s`: estimated as
-/// these conditions, from the statistics of the column.
-static bool tryExtractStringPatternAtom(
-    const StorageMetadataPtr & metadata,
-    const RPNBuilderFunctionTreeNode & func,
-    const String & func_name,
-    ConditionSelectivityEstimator::RPNElement & out)
+namespace
+{
+
+/// `LIKE` and the `startsWith`/`endsWith` family, which `LIKE 'p%'`/`'%s'` are rewritten to.
+struct StringPatternFunction
+{
+    bool negated = false;
+    bool case_insensitive = false;
+    bool affix = false;
+};
+
+const std::unordered_map<std::string_view, StringPatternFunction> string_pattern_functions{
+    {"like", {}},
+    {"notLike", {.negated = true}},
+    {"ilike", {.case_insensitive = true}},
+    {"notILike", {.negated = true, .case_insensitive = true}},
+    {"startsWith", {.affix = true}},
+    {"startsWithUTF8", {.affix = true}},
+    {"startsWithCaseInsensitive", {.case_insensitive = true, .affix = true}},
+    {"startsWithCaseInsensitiveUTF8", {.case_insensitive = true, .affix = true}},
+    {"endsWith", {.affix = true}},
+    {"endsWithUTF8", {.affix = true}},
+    {"endsWithCaseInsensitive", {.case_insensitive = true, .affix = true}},
+    {"endsWithCaseInsensitiveUTF8", {.case_insensitive = true, .affix = true}},
+};
+
+/// The constant pattern or needle, with the `ESCAPE` character of `LIKE` folded in as `KeyCondition` does.
+std::optional<String> tryGetStringPattern(const RPNBuilderFunctionTreeNode & func, const StringPatternFunction & fn)
 {
     const size_t num_args = func.getArgumentsSize();
-    if (num_args != 2 && num_args != 3)
-        return false;
-
     Field pattern;
     DataTypePtr pattern_type;
-    if (!func.getArgumentAt(1).tryGetConstant(pattern, pattern_type) || !isString(pattern_type))
-        return false;
+    if ((num_args != 2 && (fn.affix || num_args != 3)) || !func.getArgumentAt(1).tryGetConstant(pattern, pattern_type)
+        || !isString(pattern_type))
+        return {};
+    if (num_args == 2)
+        return pattern.safeGet<String>();
 
-    const auto haystack = func.getArgumentAt(0);
-    const String column_name = haystack.getColumnName();
-    if (metadata && !metadata->getColumns().tryGet(column_name))
-        return false;
-    const DataTypePtr haystack_type = removeLowCardinalityAndNullable(haystack.getDAGNode()->result_type);
+    Field escape;
+    DataTypePtr escape_type;
+    if (!func.getArgumentAt(2).tryGetConstant(escape, escape_type) || !isString(escape_type))
+        return {};
+    const String & escape_str = escape.safeGet<String>();
+    if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+        return {};
+    return likePatternWithCustomEscapeToLikePattern(pattern.safeGet<String>(), escape_str[0]);
+}
+
+/// The values the pattern matches, when they form a range: `s LIKE 'abc'` is `s = 'abc'`, and `s LIKE '%'` or
+/// `startsWith(s, '')` holds for every non-NULL `s`.
+std::optional<Range> getStringPatternRange(const StringPatternFunction & fn, const String & pattern, const DataTypePtr & haystack_type)
+{
     if (!isStringOrFixedString(haystack_type) && !isEnum(haystack_type))
-        return false;
+        return {};
+    if (fn.affix)
+        return pattern.empty() ? std::optional<Range>(Range::createWholeUniverseWithoutNull()) : std::nullopt;
 
-    String pattern_value = pattern.safeGet<String>();
-    if (num_args == 3)
-    {
-        /// `LIKE pattern ESCAPE 'c'`: fold the escape character into the pattern, as `KeyCondition` does.
-        Field escape;
-        DataTypePtr escape_type;
-        if (!func.getArgumentAt(2).tryGetConstant(escape, escape_type) || !isString(escape_type))
-            return false;
-        const String & escape_str = escape.safeGet<String>();
-        if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
-            return false;
-        pattern_value = likePatternWithCustomEscapeToLikePattern(pattern_value, escape_str[0]);
-    }
-    Range range = Range::createWholeUniverseWithoutNull();
-    if (func_name == "startsWith" || func_name == "endsWith")
-    {
-        if (!pattern_value.empty())
-            return false;
-    }
-    else
-    {
-        auto fixed_prefix = extractFixedPrefixFromLikePattern(pattern_value, /*requires_perfect_prefix*/ true);
-        /// Only a `String` is compared like `=`: `=` pads a `FixedString`, `LIKE` does not.
-        if (fixed_prefix.is_exact && (func_name == "like" || func_name == "notLike") && isString(haystack_type))
-            range = Range(fixed_prefix.prefix);
-        else if (!fixed_prefix.is_perfect || !fixed_prefix.prefix.empty())
-            return false;
-    }
+    const auto fixed_prefix = extractFixedPrefixFromLikePattern(pattern, /*requires_perfect_prefix*/ true);
+    const bool matches_every_string = fixed_prefix.is_perfect && fixed_prefix.prefix.empty();
+    if (matches_every_string)
+        return Range::createWholeUniverseWithoutNull();
 
-    out.function = ConditionSelectivityEstimator::RPNElement::FUNCTION_IN_RANGE;
-    if (func_name == "notLike" || func_name == "notILike")
-        out.column_not_ranges.emplace(column_name, range);
-    else
-        out.column_ranges.emplace(column_name, range);
-    return true;
+    /// `ILIKE` is `=` only for ''. `=` pads a `FixedString` and `LIKE` does not, so they agree only at its full length.
+    if (!fixed_prefix.is_exact || (fn.case_insensitive && !fixed_prefix.prefix.empty()))
+        return {};
+    if (isString(haystack_type)
+        || (isFixedString(haystack_type) && fixed_prefix.prefix.size() == assert_cast<const DataTypeFixedString &>(*haystack_type).getN()))
+        return Range(fixed_prefix.prefix);
+    return {};
+}
+
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -434,27 +446,39 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
-            const bool is_like = func_name == "like" || func_name == "ilike" || func_name == "notLike" || func_name == "notILike";
-            const bool is_affix = func_name == "startsWith" || func_name == "endsWith";
-            if (is_affix)
+            if (const auto pattern_fn = string_pattern_functions.find(func_name); pattern_fn != string_pattern_functions.end())
             {
+                const StringPatternFunction & fn = pattern_fn->second;
+                const auto haystack = func.getArgumentAt(0);
+                const DataTypePtr haystack_type = removeLowCardinalityAndNullable(haystack.getDAGNode()->result_type);
+                const auto pattern = tryGetStringPattern(func, fn);
                 /// Only the shape of a LIKE: the `Array` overload and a non-constant needle stay unknown.
-                Field needle;
-                DataTypePtr needle_type;
-                if (num_args != 2 || !func.getArgumentAt(1).tryGetConstant(needle, needle_type) || !isString(needle_type)
-                    || !isStringOrFixedString(removeLowCardinalityAndNullable(func.getArgumentAt(0).getDAGNode()->result_type)))
+                if (fn.affix && (!pattern || !isStringOrFixedString(haystack_type)))
                     return false;
-            }
-            if ((is_like || is_affix) && tryExtractStringPatternAtom(metadata, func, func_name, out))
-                return true;
 
-            /// LIKE patterns the statistics cannot answer, and the `startsWith`/`endsWith` that `LIKE 'p%'`/`'%s'` are
-            /// rewritten to, get a tighter default than `default_unknown_cond_factor`.
-            if (func_name == "like" || func_name == "ilike" || is_affix)
-                out.selectivity.true_sel = default_like_factor;
-            else if (func_name == "notLike" || func_name == "notILike")
-                out.selectivity.true_sel = 1.0 - default_like_factor;
-            else if (func_name == "__applyFilter")
+                column_name = haystack.getColumnName();
+                if (pattern && (!metadata || metadata->getColumns().tryGet(column_name)))
+                {
+                    if (auto range = getStringPatternRange(fn, *pattern, haystack_type))
+                    {
+                        out.function = RPNElement::FUNCTION_IN_RANGE;
+                        (fn.negated ? out.column_not_ranges : out.column_ranges).emplace(column_name, *range);
+                        return true;
+                    }
+                }
+
+                /// Other patterns match `default_like_factor` of the non-NULL rows.
+                Selectivity non_null{1.0, 0.0};
+                if (const auto it = column_estimators.find(column_name);
+                    it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+                    non_null = it->second.estimateRanges(PlainRanges(Range::createWholeUniverseWithoutNull()));
+                const Float64 factor = fn.negated ? 1.0 - default_like_factor : default_like_factor;
+                out.selectivity = {factor * non_null.true_sel, non_null.null_sel};
+                out.finalized = true;
+                return false;
+            }
+
+            if (func_name == "__applyFilter")
             {
                 /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
                 /// (after cheaper column predicates) and neutral for join reorder estimates.
