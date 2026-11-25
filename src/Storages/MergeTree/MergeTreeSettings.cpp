@@ -102,29 +102,29 @@ In `Parquet` format, all columns of a data part are stored in a single `data.par
 external applications. The granules of such a part are the row groups of the Parquet file, and their size is
 controlled by `parquet_row_group_granularity_rows` and `parquet_row_group_granularity_bytes`.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New setting"}) \
+        {"26.12", 0, 0, "New setting"}) \
     DECLARE(UInt32, min_level_for_parquet_part, 0, R"(
 Minimal part level to create a data part in `Parquet` format instead of `Wide` or `Compact`.
 See `min_bytes_for_parquet_part`.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New setting"}) \
+        {"26.12", 0, 0, "New setting"}) \
     DECLARE(UInt64, min_rows_for_parquet_part, 0, R"(
 Minimal number of rows to create a data part in `Parquet` format instead of `Wide` or `Compact`.
 See `min_bytes_for_parquet_part`.
 )", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New setting"}) \
+        {"26.12", 0, 0, "New setting"}) \
     DECLARE(UInt64, parquet_row_group_granularity_rows, 1024 * 1024, R"(
 Maximum number of rows in a row group of a data part in `Parquet` format.
 The row groups of such a part act as its granules: there is one mark and one primary key value for each row group,
 and `index_granularity` does not apply.
 )", 0, \
-        {"26.11", 1024 * 1024, 1024 * 1024, "New setting"}) \
+        {"26.12", 1024 * 1024, 1024 * 1024, "New setting"}) \
     DECLARE(UInt64, parquet_row_group_granularity_bytes, 128 * 1024 * 1024, R"(
 Maximum uncompressed size in bytes of a row group of a data part in `Parquet` format.
 Acts for row groups as `index_granularity_bytes` acts for granules. `0` means that the size of row groups is
 restricted only by `parquet_row_group_granularity_rows`.
 )", 0, \
-        {"26.11", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting"}) \
+        {"26.12", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting"}) \
     DECLARE(UInt64, max_merge_delayed_streams_for_parallel_write, 40, R"(
 The maximum number of streams (columns) that can be flushed in parallel
 (analog of max_insert_delayed_streams_for_parallel_write for merges). Works
