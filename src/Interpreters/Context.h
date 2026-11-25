@@ -206,6 +206,7 @@ class Block;
 /// Defined in Context.cpp, where `Block` is complete; here `std::map` only needs the forward
 /// declaration, the same way `Scalars` is a `std::map` over the forward-declared `Block`.
 struct ScalarEntry;
+class ActionLock;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -1436,6 +1437,10 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries() const;
+    /// For `SYSTEM STOP RELOAD DICTIONARIES`: does not create the embedded dictionaries, whose creation loads them.
+    ActionLock stopEmbeddedDictionariesReload();
+    /// For `SYSTEM START RELOAD DICTIONARIES`: loads them if a load was skipped while stopped, if they are created.
+    void reloadEmbeddedDictionariesSkippedWhileStopped();
     /// Registers the dictionaries from the configuration files without loading them, so the tables referring to them can be attached.
     void registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);

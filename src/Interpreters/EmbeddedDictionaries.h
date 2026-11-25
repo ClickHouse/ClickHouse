@@ -74,12 +74,12 @@ public:
     EmbeddedDictionaries(
         std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader,
         ContextPtr context,
+        ActionBlocker reload_blocker_,
         bool throw_on_error);
 
     /// Forcibly reloads all dictionaries.
     void reload();
 
-    ActionLock getActionLock();
 
     /// Makes the load skipped while reloads were stopped, if any, without waiting for the next periodic one.
     void reloadSkippedWhileStopped();

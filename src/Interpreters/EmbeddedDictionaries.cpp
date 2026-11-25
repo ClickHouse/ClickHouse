@@ -140,11 +140,13 @@ void EmbeddedDictionaries::reloadPeriodically()
 EmbeddedDictionaries::EmbeddedDictionaries(
     std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader_,
     ContextPtr context_,
+    ActionBlocker reload_blocker_,
     const bool throw_on_error)
     : WithContext(context_)
     , log(getLogger("EmbeddedDictionaries"))
     , geo_dictionaries_loader(std::move(geo_dictionaries_loader_))
     , reload_period(getContext()->getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
+    , reload_blocker(std::move(reload_blocker_))
 {
     reloadImpl(throw_on_error);
     reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
@@ -161,11 +163,6 @@ void EmbeddedDictionaries::reload()
 {
     if (!reloadImpl(true, true))
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
-}
-
-ActionLock EmbeddedDictionaries::getActionLock()
-{
-    return reload_blocker.cancel();
 }
 
 void EmbeddedDictionaries::reloadSkippedWhileStopped()

@@ -7,7 +7,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-# The geo files are missing at startup, so the embedded dictionaries keep retrying with a growing delay.
+# The geo files are missing at startup.
 instance = cluster.add_instance("instance", main_configs=["configs/geo.xml"])
 
 
@@ -21,6 +21,16 @@ def started_cluster():
 
 
 def test_start_reload_loads_embedded_dictionaries_skipped_while_stopped(started_cluster):
+    # The embedded dictionaries are loaded lazily and are still unused: neither STOP nor START loads them.
+    instance.query("SYSTEM STOP RELOAD DICTIONARIES")
+    instance.query("SYSTEM START RELOAD DICTIONARIES")
+    assert not instance.contains_in_log("EmbeddedDictionaries")
+
+    # The first use loads them; it fails without the geo files, so they keep retrying with a growing delay.
+    assert "Embedded dictionaries were not loaded" in instance.query_and_get_error(
+        "SELECT regionToCountry(toUInt32(3))"
+    )
+
     instance.query("SYSTEM STOP RELOAD DICTIONARIES")
     instance.exec_in_container(["mkdir", "-p", "/etc/clickhouse-server/geo"])
     for name in ["regions_hierarchy.txt", "regions_names_en.txt"]:

@@ -717,6 +717,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<LongConnectionLimit> long_connection_limit; /// Bounds source connections held open by ReaderExecutor for sequential-read reuse
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
+    /// Here rather than in `embedded_dictionaries`, so that `SYSTEM STOP RELOAD DICTIONARIES` does not create (and load) them.
+    ActionBlocker embedded_dictionaries_reload_blocker;
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
 
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository TSA_GUARDED_BY(external_dictionaries_mutex) = nullptr;
@@ -4893,10 +4895,29 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
         shared->embedded_dictionaries = std::make_unique<EmbeddedDictionaries>(
             std::move(geo_dictionaries_loader),
             getGlobalContext(),
+            shared->embedded_dictionaries_reload_blocker,
             throw_on_error);
     }
 
     return *shared->embedded_dictionaries;
+}
+
+ActionLock Context::stopEmbeddedDictionariesReload()
+{
+    return shared->embedded_dictionaries_reload_blocker.cancel();
+}
+
+void Context::reloadEmbeddedDictionariesSkippedWhileStopped()
+{
+    EmbeddedDictionaries * embedded_dictionaries = nullptr;
+    {
+        std::lock_guard lock(shared->embedded_dictionaries_mutex);
+        embedded_dictionaries = shared->embedded_dictionaries.get();
+    }
+    /// Not under `embedded_dictionaries_mutex`, which would block their other users while they load.
+    /// They are destroyed only on shutdown.
+    if (embedded_dictionaries)
+        embedded_dictionaries->reloadSkippedWhileStopped();
 }
 
 

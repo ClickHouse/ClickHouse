@@ -412,7 +412,7 @@ void InterpreterSystemQuery::startStopReloadDictionaries(bool start)
         /// they won't be retried on their own since the periodic updater only reacts to a changed config.
         getContext()->getExternalDictionariesLoader().reloadBlockedObjects();
         /// The periodic reload of embedded dictionaries can be up to `builtin_dictionaries_reload_interval` away.
-        getContext()->getEmbeddedDictionaries().reloadSkippedWhileStopped();
+        getContext()->reloadEmbeddedDictionariesSkippedWhileStopped();
         return;
     }
 
@@ -420,7 +420,7 @@ void InterpreterSystemQuery::startStopReloadDictionaries(bool start)
                  getContext()->getExternalDictionariesLoader().getActionLock());
 
     manager->add(ActionLocks::ReloadEmbeddedDictionaries,
-                 getContext()->getEmbeddedDictionaries().getActionLock());
+                 getContext()->stopEmbeddedDictionariesReload());
 }
 
 static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
