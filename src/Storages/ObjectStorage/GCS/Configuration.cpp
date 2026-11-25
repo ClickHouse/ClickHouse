@@ -74,8 +74,16 @@ void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
 
     /// The object key of the query is the disk's own prefix followed by the path the query asked for.
     const String key = String(fs::path(disk_settings->key_prefix) / fs::path(parsing_result.path_suffix));
-    const String endpoint
-        = disk_settings->endpoint_override.empty() ? String("https://storage.googleapis.com") : disk_settings->endpoint_override;
+    /// Only the scheme and the authority of the endpoint: an `endpoint_override` may have a path (a gateway in front of
+    /// the JSON API), and `S3::URI` would take its first component for the bucket. The native client takes the endpoint
+    /// and the bucket from `disk_settings`; the URI provides the namespace of the table (`getNamespace`, the locations
+    /// written into Iceberg metadata), which must be the bucket the disk actually reads and writes.
+    String endpoint = "https://storage.googleapis.com";
+    if (!disk_settings->endpoint_override.empty())
+    {
+        const Poco::URI endpoint_uri(disk_settings->endpoint_override);
+        endpoint = endpoint_uri.getScheme() + "://" + endpoint_uri.getAuthority();
+    }
     /// The URI only carries the endpoint and the bucket here. A GCS object name may contain characters
     /// that are URL syntax (`#`, `?`), so the key is percent-encoded for parsing and then restored
     /// verbatim: reading `url.key` back from the parsed URI would address a different object.
