@@ -129,6 +129,14 @@ protected:
     /// The body of the above, run exactly once under `columns_cache_estimate_committed`.
     void chargeStagedColumnsCacheWriteEstimate() const;
 
+    /// Whether the readers of this pool are expected to write to the columns cache: the writes are enabled
+    /// and the staged estimate of the pool fits the budget of the query. Unlike `commitColumnsCacheWriteEstimate`,
+    /// it charges nothing, so a pool can ask in its constructor, before the read ranges refiner is installed.
+    /// It is a prediction for decisions that affect only the performance: a pool that gets a refiner
+    /// writes to the cache even if its estimate is over the budget, and another pool of the query can
+    /// exhaust the budget later.
+    bool areColumnsCacheWritesExpected() const;
+
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
 

@@ -700,6 +700,27 @@ void MergeTreeReadPoolBase::chargeStagedColumnsCacheWriteEstimate() const
         budget->writes_disabled.store(true, std::memory_order_relaxed);
 }
 
+bool MergeTreeReadPoolBase::areColumnsCacheWritesExpected() const
+{
+    if (!owned_columns_cache || !reader_settings.enable_columns_cache_writes)
+        return false;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget)
+        return true;
+    if (budget->writes_disabled.load(std::memory_order_relaxed))
+        return false;
+    if (staged_columns_cache_estimate_bytes == 0)
+        return true;
+
+    /// The same comparison as in `chargeStagedColumnsCacheWriteEstimate`, without charging anything.
+    const size_t estimate_budget = columns_cache_estimate_budget != 0
+        ? columns_cache_estimate_budget
+        : owned_columns_cache->maxSizeInBytes() / 2;
+    const size_t charged = budget->estimated_bytes.load(std::memory_order_relaxed);
+    return charged <= estimate_budget && staged_columns_cache_estimate_bytes <= estimate_budget - charged;
+}
+
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
     std::vector<std::shared_ptr<MergeTreeReadTaskInfo>> infos;

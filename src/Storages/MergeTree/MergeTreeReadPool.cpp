@@ -82,12 +82,24 @@ MergeTreeReadPool::MergeTreeReadPool(
         const size_t threads = std::max<size_t>(1, pool_settings.threads);
         const size_t marks_per_thread = (pool_settings.sum_marks + threads - 1) / threads;
 
+        /// A read that is over the estimate budget of the query (see `stageColumnsCacheWriteEstimate`) writes
+        /// nothing to the cache, so its aligned tasks pay off only for the parts the cache already has entries of.
+        /// For the other parts the alignment only makes the tasks larger: a scan of large compact parts that fits
+        /// no cache got twice slower from it.
+        const bool writes_expected = areColumnsCacheWritesExpected();
+
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
             /// Only the parts the reader caches, see `IMergeTreeReader::initColumnsCache`: for the others an aligned
             /// cut only moves the boundaries of the tasks.
             const auto & part = parts_ranges[i].data_part;
-            if (!canUseColumnsCacheForPart(part->storage.getStorageID().uuid))
+            const auto table_uuid = part->storage.getStorageID().uuid;
+            if (!canUseColumnsCacheForPart(table_uuid))
+                continue;
+
+            if (!writes_expected
+                && !(reader_settings.enable_columns_cache_reads
+                    && owned_columns_cache->containsPart(table_uuid, getColumnsCachePartName(part->name, part->getParentPartName()))))
                 continue;
 
             const size_t stripe_marks = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
