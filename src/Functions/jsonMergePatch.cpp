@@ -639,11 +639,10 @@ namespace
                 {
                     ops.replaced.emplace_back(std::string_view(path));
                 }
-                else if (auto typed = typed_paths.find(path);
-                         typed != typed_paths.end() && !(descend_into_typed_paths && hasTypedPathWithPrefix(path + ".")))
+                else if (const auto * path_type = findTypedValuePath(path))
                 {
                     /// The text form merges the patch into the object stored at this path.
-                    if (canHoldObject(typed->second))
+                    if (canHoldObject(*path_type))
                         return false;
                     ops.replaced.emplace_back(std::string_view(path));
                 }
@@ -703,6 +702,23 @@ namespace
             return std::ranges::any_of(typed_paths, [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
         }
 
+        /// The type of the typed path `path` if the parser of the type reads an object at it as the value of the path;
+        /// nullptr if `path` is not typed or the parser descends into the object to reach typed sub-paths.
+        [[nodiscard]] const DataTypePtr * findTypedValuePath(const String & path) const
+        {
+            auto typed = typed_paths.find(path);
+            if (typed == typed_paths.end() || (descend_into_typed_paths && hasTypedPathWithPrefix(path + ".")))
+                return nullptr;
+            return &typed->second;
+        }
+
+        /// Whether an object at `path` is the value of a typed path that can hold one.
+        [[nodiscard]] bool isObjectValuePath(const String & path) const
+        {
+            const auto * path_type = findTypedValuePath(path);
+            return path_type && canHoldObject(*path_type);
+        }
+
         static bool canHoldObject(const DataTypePtr & path_type)
         {
             const auto nested_type = removeLowCardinality(removeNullable(path_type));
@@ -711,8 +727,8 @@ namespace
 
         /// Merges a patch into the text form of a stored row as mergeObjects does, except that a key with a dot sets the
         /// nested path, as the parser of the type reads it, and that a value stored at both `x` and `x.y` is two members
-        /// named `x`, a literal and an object: the member of the other kind than the patch value is dropped. The value of
-        /// a typed path that can hold an object is merged by mergeObjects.
+        /// named `x`, a literal and an object: the member of the other kind than the patch value is dropped. An object
+        /// that is the value of a typed path is merged by mergeObjects.
         void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, String & path, bool is_root, TrackedPoolAllocator & allocator) const
         {
             for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
@@ -772,7 +788,7 @@ namespace
                     path += '.';
                 String key(name);
                 path += escape_dots_in_keys ? escapeDotInJSONKey(key) : key;
-                if (auto typed = typed_paths.find(path); typed != typed_paths.end() && canHoldObject(typed->second))
+                if (isObjectValuePath(path))
                     mergeObjects(target->value, value, allocator);
                 else
                     mergeIntoStoredRow(target->value, value, path, false, allocator);
@@ -793,19 +809,19 @@ namespace
             }
         }
 
-        /// Whether the path of a key with dots passes through a typed path that can hold an object, whose text form is ambiguous.
+        /// Whether the path of a key with dots passes through the object value of a typed path, whose text form is ambiguous.
         [[nodiscard]] bool crossesTypedPath(const String & parent, bool is_root, std::string_view key) const
         {
             String full = parent;
             if (!is_root)
                 full += '.';
             full += key;
-            return std::ranges::any_of(typed_paths, [&](const auto & typed_path)
+            for (size_t dot = full.find('.'); dot != String::npos; dot = full.find('.', dot + 1))
             {
-                const auto & prefix = typed_path.first;
-                return prefix.size() < full.size() && full[prefix.size()] == '.' && full.starts_with(prefix)
-                    && canHoldObject(typed_path.second);
-            });
+                if (isObjectValuePath(full.substr(0, dot)))
+                    return true;
+            }
+            return false;
         }
 
         static std::string_view memberName(const TrackedValue::Member & member)
