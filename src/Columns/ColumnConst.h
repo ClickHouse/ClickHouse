@@ -82,11 +82,6 @@ public:
         return data->getDataAt(0);
     }
 
-    bool supportsGetDataAt() const override
-    {
-        return data->supportsGetDataAt();
-    }
-
     UInt64 get64(size_t) const override
     {
         return data->get64(0);
@@ -133,11 +128,7 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
-        /// `data` is shared with `ColumnConst` instances cloned via `cut`, etc.,
-        /// so dereferencing the non-const `WrappedPtr` would fail the
-        /// `use_count() == 1` assertion. `compareAt` is a const method, so
-        /// access via the underlying immutable pointer.
-        chassert(!typeid_cast<const ColumnConst *>(&src) || std::as_const(*this).data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -227,6 +218,11 @@ public:
         ++s;
     }
 
+    void skipSerializedInArena(ReadBuffer & in) const override
+    {
+        data->skipSerializedInArena(in);
+    }
+
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -250,7 +246,6 @@ public:
                         size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     size_t byteSize() const override
     {
@@ -336,11 +331,6 @@ public:
         return data->isDefaultAt(0) ? s : 0;
     }
 
-    bool hasOnlyTypeDefaults() const override
-    {
-        return s == 0 || data->hasOnlyTypeDefaults();
-    }
-
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         if (!data->isDefaultAt(0))
@@ -360,8 +350,6 @@ public:
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
     std::string_view getRawData() const override { return data->getRawData(); }
-    /// `getRawData` holds one row, not `size()` rows, so there are no planes to read by number.
-    ColumnPlanes getPlanes() const override { return ColumnPlanes(ColumnPlanes::Shape::Rows, this); }
 
     /// Not part of the common interface.
 

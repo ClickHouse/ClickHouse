@@ -39,24 +39,7 @@ FROM a JOIN b ON a.k = b.k AND a.t = b.t LEFT JOIN c ON b.x = c.x AND b.t = c.t
 WHERE c.v = 'x' ORDER BY ALL
 SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1, enable_join_transitive_predicates = 1,
     query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0,
-    query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_randomize = 13,
-    query_plan_optimize_join_order_conflict_detector = '';
-
-SELECT a.v, b.x, c.x, c.v
-FROM a JOIN b ON a.k = b.k AND a.t = b.t LEFT JOIN c ON b.x = c.x AND b.t = c.t
-WHERE c.v = 'x' ORDER BY ALL
-SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1, enable_join_transitive_predicates = 1,
-    query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0,
-    query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_randomize = 13,
-    query_plan_optimize_join_order_conflict_detector = 'a';
-
-SELECT a.v, b.x, c.x, c.v
-FROM a JOIN b ON a.k = b.k AND a.t = b.t LEFT JOIN c ON b.x = c.x AND b.t = c.t
-WHERE c.v = 'x' ORDER BY ALL
-SETTINGS join_use_nulls = 1, query_plan_convert_outer_join_to_inner_join = 1, enable_join_transitive_predicates = 1,
-    query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0,
-    query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_randomize = 13,
-    query_plan_optimize_join_order_conflict_detector = 'c';
+    query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_randomize = 13;
 
 SELECT ab.v, ab.x, c.x, c.v
 FROM c RIGHT JOIN (SELECT a.v AS v, a.t AS t, b.x AS x FROM a JOIN b ON a.k = b.k AND a.t = b.t) AS ab ON ab.x = c.x AND ab.t = c.t

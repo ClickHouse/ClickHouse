@@ -33,7 +33,7 @@ struct ContingencyData : CrossTabAggregateData
     *   = sqrt(φ² / (φ² + 1)).
     **/
 
-    [[nodiscard]] Float64 getResult() const
+    Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -51,7 +51,7 @@ struct ContingencyWindowData : CrossTabPhiSquaredWindowData
         return ContingencyData::getName();
     }
 
-    [[nodiscard]] Float64 getResult() const
+    Float64 getResult() const
     {
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -94,9 +94,9 @@ FROM
 );
         )",
         R"(
-┌─────cramersV(a, b)─┬─contingency(a, b)─┐
-│ 0.5798088336225178 │ 0.708607540104077 │
-└────────────────────┴───────────────────┘
+┌─────cramersV(a, b)─┬──contingency(a, b)─┐
+│ 0.5798088336225178 │ 0.708607540104077  │
+└────────────────────┴────────────────────┘
         )"
     }
     };

@@ -1,4 +1,3 @@
-#include <base/sanitizer_defs.h>
 #include <Common/VectorQuantizer.h>
 
 #include <Common/Exception.h>
@@ -81,7 +80,7 @@ size_t projectionWorkingDim(size_t dimensions)
 /// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Hadamard transform,
 /// replacing a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated
 /// sign-flip diagonals (PROJECTION_ROUNDS * working_dim entries, each +-1), generated deterministically from the seed.
-std::vector<float> NO_SANITIZE_UNSIGNED_OVERFLOW generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
+std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
 {
     const size_t working_dim = projectionWorkingDim(dimensions);
     std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * working_dim);
@@ -119,9 +118,7 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
     if (kron_m)
         HadamardTransform::buildHmMasks<float>(hm, kron_m);
 #if defined(__aarch64__)
-    const bool is_optimized = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Neon;
-#elif defined(__AVX2__)
-    const bool is_optimized = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Avx2;
+    const bool neon = HadamardTransform::selectKernel() == HadamardTransform::FwhtKernel::Neon;
 #endif
 
     for (int round = 0; round < PROJECTION_ROUNDS; ++round)
@@ -133,13 +130,8 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
         if (kron_m)
         {
 #if defined(__aarch64__)
-            if (is_optimized)
+            if (neon)
                 HadamardTransform::kroneckerNeon(work, kron_blocks, kron_m, hm);
-            else
-                HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
-#elif defined(__AVX2__)
-            if (is_optimized)
-                HadamardTransform::kroneckerAvx2(work, kron_blocks, kron_m, hm);
             else
                 HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
 #else
@@ -149,13 +141,8 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
         else
         {
 #if defined(__aarch64__)
-            if (is_optimized)
+            if (neon)
                 HadamardTransform::fwhtNeon(work, working_dim);
-            else
-                HadamardTransform::fwhtScalar(work, working_dim);
-#elif defined(__AVX2__)
-            if (is_optimized)
-                HadamardTransform::fwhtAvx2(work, working_dim);
             else
                 HadamardTransform::fwhtScalar(work, working_dim);
 #else
@@ -578,11 +565,7 @@ void VectorQuantizer::encode(Encoder & encoder, const float * vec, char * dst)
             {
                 UInt32 u = 0;
                 std::memcpy(&u, &vec[i], sizeof(float));
-                /// A NaN is kept as a quiet NaN of the same sign: rounding its payload could turn it into an infinity, and
-                /// overflows 32 bits for a negative NaN. Rounding any other value stays within 32 bits.
-                const UInt16 b = (u & 0x7FFFFFFFu) > 0x7F800000u
-                    ? static_cast<UInt16>((u >> 16) | 0x0040u)
-                    : static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
+                const UInt16 b = static_cast<UInt16>((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
                 std::memcpy(dst + i * 2, &b, sizeof(UInt16));
             }
             return;

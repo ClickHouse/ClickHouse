@@ -13,6 +13,7 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
             with_nginx=True,
+            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
@@ -20,12 +21,14 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
+            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
             with_nginx=True,
             with_zookeeper=True,
+            use_old_analyzer=True,
         )
 
         cluster.add_instance(
@@ -45,6 +48,7 @@ def cluster():
                 "configs/http_forbid_headers.xml",
             ],
             with_nginx=True,
+            use_old_analyzer=True,
         )
 
         cluster.start()
@@ -361,7 +365,7 @@ def test_page_cache(cluster):
 
         def get_profile_events(query_name):
             text = node.query(
-                f"SELECT ProfileEvents.keys, ProfileEvents.values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
+                f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
             )
             res = {}
             for line in text.split("\n"):

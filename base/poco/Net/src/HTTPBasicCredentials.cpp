@@ -38,7 +38,7 @@ HTTPBasicCredentials::HTTPBasicCredentials()
 }
 
 
-HTTPBasicCredentials::HTTPBasicCredentials(std::string_view username, std::string_view password):
+HTTPBasicCredentials::HTTPBasicCredentials(const std::string& username, const std::string& password):
 	_username(username),
 	_password(password)
 {
@@ -76,13 +76,13 @@ void HTTPBasicCredentials::clear()
 }
 
 
-void HTTPBasicCredentials::setUsername(std::string_view username)
+void HTTPBasicCredentials::setUsername(const std::string& username)
 {
 	_username = username;
 }
 
 
-void HTTPBasicCredentials::setPassword(std::string_view password)
+void HTTPBasicCredentials::setPassword(const std::string& password)
 {
 	_password = password;
 }

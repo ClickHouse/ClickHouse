@@ -95,7 +95,7 @@ public:
             peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
     }
 
-    [[nodiscard]] bool supportsWritingException() const override { return true; }
+    bool supportsWritingException() const override { return true; }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
 

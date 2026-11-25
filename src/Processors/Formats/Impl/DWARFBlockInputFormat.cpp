@@ -2,13 +2,12 @@
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRnglists.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -100,10 +99,10 @@ static NamesAndTypesList getHeaderForDWARF()
     return NamesAndTypesList(cols.begin(), cols.end());
 }
 
-static const UnorderedMapWithMemoryTracking<std::string, size_t> & getColumnNameToIdx()
+static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
 {
     static std::once_flag once;
-    static UnorderedMapWithMemoryTracking<std::string, size_t> name_to_idx;
+    static std::unordered_map<std::string, size_t> name_to_idx;
     std::call_once(once, [&] {
         size_t i = 0;
         for (const auto & c : getHeaderForDWARF())
@@ -514,11 +513,11 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             col_offset->insertValue(die_offset);
         if (need[COL_ANCESTOR_TAGS])
         {
-            for (auto it = unit.stack.rbegin(); it != unit.stack.rend(); ++it)
+            for (size_t i = unit.stack.size() - 1; i != UINT64_MAX; --i)
             {
-                col_ancestor_tags->insertValue(it->tag);
+                col_ancestor_tags->insertValue(unit.stack[i].tag);
                 if (need[COL_ANCESTOR_OFFSETS])
-                    col_ancestor_dwarf_offsets->insertValue(it->offset);
+                    col_ancestor_dwarf_offsets->insertValue(unit.stack[i].offset);
             }
             col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
         }
@@ -1095,6 +1094,22 @@ Chunk DWARFBlockInputFormat::read()
     }
 }
 
+void DWARFBlockInputFormat::resetParser()
+{
+    stopThreads();
+
+    runner.reset();
+    background_exception = nullptr;
+    is_stopped = false;
+    units_queue.clear();
+    delivery_queue.clear();
+    units_in_progress = 0;
+    elf.reset();
+    extractor.reset();
+
+    IInputFormat::resetParser();
+}
+
 DWARFSchemaReader::DWARFSchemaReader(ReadBuffer & in_)
     : ISchemaReader(in_)
 {
@@ -1148,7 +1163,7 @@ It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting 
 It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
 and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
 
-<Info>
+:::info
 `.debug_info` consists of *units*, which correspond to compilation units:
 - Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
 - Each DIE has a *tag* and a list of *attributes*.
@@ -1162,7 +1177,7 @@ The DIEs represent things from the source code, and their *tag* tells you what k
 - function arguments (`formal_parameter`).
 
 The tree structure mirrors the corresponding source code. For example, a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
-</Info>
+:::
 
 The `DWARF` format outputs the following columns:
 

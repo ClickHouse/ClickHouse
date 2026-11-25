@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Formats/FormatSettings.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -104,7 +103,7 @@ struct KeyFixed
         value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
     }
 
-    [[nodiscard]] bool less(const KeyFixed & other) const
+    bool less(const KeyFixed & other) const
     {
         // For floating-point types, use nan_direction_hint = -1 to treat NaN as the minimum value
         // (same as argMax / IColumn::compareAt semantics): finite sort keys always beat NaN.
@@ -129,7 +128,7 @@ struct KeyString
         value = column.getDataAt(row);
     }
 
-    [[nodiscard]] bool less(const KeyString & other) const { return value < other.value; }
+    bool less(const KeyString & other) const { return value < other.value; }
 
     void serialize(WriteBuffer & buffer) const { writeStringBinary(value, buffer); }
 
@@ -143,7 +142,7 @@ struct KeyGeneric
 
     void set(const IColumn & column, size_t row) { column.get(row, value); }
 
-    [[nodiscard]] bool less(const KeyGeneric & other) const
+    bool less(const KeyGeneric & other) const
     {
         // Field::operator< uses nan_direction_hint = 1 (NaN is maximum), but we need NaN to be
         // the minimum (same as argMax / IColumn::compareAt semantics) so finite keys always win.
@@ -175,7 +174,7 @@ struct AggregateFunctionMergedJSONPatchData
         String value_blob;
         KeyData sort_key;
 
-        [[nodiscard]] std::string_view pathView() const { return path; }
+        std::string_view pathView() const { return path; }
     };
 
     VectorWithMemoryTracking<Entry> entries;
@@ -307,17 +306,13 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertResultInto(
         IColumn & to,
-        const IDataType & result_type,
         const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
         if (entries.empty())
         {
-            if (result_type.isDefaultInsertTrivial())
-                result_column.insertDefault();
-            else
-                result_type.insertDefaultInto(result_column);
+            result_column.insertDefault();
             return;
         }
 
@@ -392,9 +387,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "mergedJSONPatch"; }
+    String getName() const override { return "mergedJSONPatch"; }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -433,7 +428,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to, *this->result_type, typed_path_serializations);
+        this->data(place).insertResultInto(to, typed_path_serializations);
     }
 };
 
@@ -618,8 +613,8 @@ SELECT mergedJSONPatch(json, sort_key) FROM
             )",
             R"(
 ┌─mergedJSONPatch(json, sort_key)─┐
-│ {"a":3,"b":2,"c":4}             │
-└─────────────────────────────────┘
+│ {"a":3,"b":2,"c":4}              │
+└──────────────────────────────────┘
             )"
         }
     };

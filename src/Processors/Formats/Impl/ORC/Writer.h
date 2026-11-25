@@ -4,7 +4,6 @@
 #include <Processors/Formats/Impl/ORC/Stream.h>
 #include <Processors/Formats/Impl/ORC/Type.h>
 #include <Columns/IColumn.h>
-#include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
 
 #include <memory>
@@ -39,12 +38,6 @@ struct WriterOptions
 
 class ColumnWriter;
 struct WriterContext;
-
-/// The column with the `DateTime64` values that ORC stores as the epoch (between -1 and 0 seconds, see `TimestampColumnWriter`)
-/// replaced by the epoch, for the code that derives metadata from the values, like the Iceberg partitions and bounds.
-/// Handles `DateTime64`, `Nullable(DateTime64)` and their constants; returns the other columns as is.
-ColumnPtr replaceTimestampsStoredAsEpoch(const ColumnPtr & column);
-void replaceTimestampsStoredAsEpoch(Chunk & chunk);
 
 class Writer
 {

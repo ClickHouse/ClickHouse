@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -28,11 +27,6 @@ public:
     static FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context, Array parameters = {});
 
     static bool has(const String & function_name, ContextPtr context);
-
-    /// Returns the `deterministic` flag from the configuration of a loaded function, or `std::nullopt`
-    /// if there is no such function. Unlike `tryGet`, it does not construct the function, so it works
-    /// for a function that declares command parameters without knowing their values.
-    static std::optional<bool> tryGetIsDeterministic(const String & function_name, ContextPtr context);
 
     static VectorWithMemoryTracking<String> getRegisteredNames(ContextPtr context);
 

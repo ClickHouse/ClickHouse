@@ -8,7 +8,6 @@
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
-#include <Storages/RabbitMQ/RabbitMQPublisherPool.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
@@ -25,9 +24,6 @@ using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 class StorageRabbitMQ final: public IStreamingStorage, WithContext
 {
 public:
-    /// SYSTEM STOP/PAUSE blocks future cycles; the source checks it to end an idle wait early.
-    bool isConsumeBlocked() const { return stream_control.isBlocked(); }
-
     StorageRabbitMQ(
             const StorageID & table_id_,
             ContextPtr context_,
@@ -126,9 +122,6 @@ private:
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
 
-    /// Connections with an open channel for insert queries, reused across them.
-    RabbitMQPublisherPoolPtr publisher_pool;
-
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
@@ -151,14 +144,15 @@ private:
     BackgroundSchedulePoolTaskHolder streaming_task;
     BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
-    /// Closes idle producer connections of `publisher_pool`, which are expired or lost.
-    BackgroundSchedulePoolTaskHolder publisher_cleanup_task;
 
     uint64_t milliseconds_to_wait;
 
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
+    /// Counter for producers, needed for channel id.
+    /// Needed to generate unique producer identifiers.
+    std::atomic<size_t> producer_id = 1;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
@@ -175,6 +169,7 @@ private:
     /// started.
     std::mutex loop_mutex;
 
+    size_t read_attempts = 0;
     mutable bool drop_table = false;
 
     RabbitMQConsumerPtr createConsumer();
@@ -186,7 +181,6 @@ private:
     void threadFunc();
     void loopingFunc();
     void connectionFunc();
-    void publisherCleanupFunc();
 
     void startLoop();
     void stopLoop();
@@ -202,7 +196,6 @@ private:
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
-    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);

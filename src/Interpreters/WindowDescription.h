@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <WindowFunctions/IGeneralWindowFunction_fwd.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
@@ -10,26 +8,23 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <memory>
-
 namespace DB
 {
+
+class ASTFunction;
 
 class ActionsDAG;
 
 struct WindowFunctionDescription
 {
     std::string column_name;
+    const ASTFunction * function_node = nullptr;
     AggregateFunctionPtr aggregate_function;
-    GeneralWindowFunctionPtr general_function;
     Array function_parameters;
     DataTypes argument_types;
     Names argument_names;
 
-public:
-    [[nodiscard]] String getFunctionName() const;
-    [[nodiscard]] const DataTypePtr & getResultType() const;
-    [[nodiscard]] std::string dump() const;
+    std::string dump() const;
 };
 
 struct WindowFrame
@@ -64,7 +59,7 @@ struct WindowFrame
     // the frame start comes later than the frame end.
     void checkValid() const;
 
-    [[nodiscard]] std::string toString() const;
+    std::string toString() const;
     void toString(WriteBuffer & buf) const;
 
     bool operator == (const WindowFrame & other) const
@@ -103,16 +98,14 @@ struct WindowDescription
     WindowFrame frame;
 
     // The window functions that are calculated for this window.
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
+    std::vector<WindowFunctionDescription> window_functions;
 
-    [[nodiscard]] std::string dump() const;
+    std::string dump() const;
 
     void checkValid() const;
 };
 
-using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
-
-void validateWindowFunctions(const WindowDescription & window);
+using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
 
