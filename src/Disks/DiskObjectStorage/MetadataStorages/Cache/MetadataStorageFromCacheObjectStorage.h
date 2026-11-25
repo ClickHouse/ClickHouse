@@ -45,7 +45,6 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override;
     bool supportsStat() const override;
     struct stat stat(const String & path) const override;
 
@@ -120,9 +119,6 @@ public:
     void writeStringToFile(const std::string & path, const std::string & data) override;
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
-
-    [[nodiscard]] bool supportsChmod() const override;
-    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 
