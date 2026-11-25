@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorWriteBinary.h>
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <mutex>
@@ -25,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_STATISTICS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -83,7 +85,7 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
         const auto & offsets = s->getOffsets();
         UInt64 bytes = 0;
         for (size_t i = 0; i < column_size; ++i)
-            bytes += (offsets[i] - offsets[i - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
+            bytes += (offsets[i] - offsets[static_cast<ssize_t>(i) - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
         return bytes;
     }
     return 0;
@@ -195,9 +197,25 @@ void StatisticsBasic::build(const ColumnPtr & column)
 
     if (sum)
     {
+        /// The function sums the type without `Nullable`, so a `Nullable` column is fed as its nested column and
+        /// null map. A `Sparse` column of a `Nullable` type has NULL as its default, so only its values after the
+        /// default at index 0 are summed, and none of them is NULL.
         auto values = column->convertToFullColumnIfConst();
         const IColumn * values_ptr = values.get();
-        if (typeid_cast<const ColumnSparse *>(values_ptr))
+        const auto * sparse = typeid_cast<const ColumnSparse *>(values_ptr);
+        if (is_nullable && sparse)
+        {
+            const auto & nullable_values = assert_cast<const ColumnNullable &>(sparse->getValuesColumn());
+            const IColumn * nested_ptr = &nullable_values.getNestedColumn();
+            sum->function.function->addBatchSinglePlace(1, nullable_values.size(), sum->state, &nested_ptr, nullptr);
+        }
+        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(values_ptr))
+        {
+            const IColumn * nested_ptr = &nullable->getNestedColumn();
+            sum->function.function->addBatchSinglePlaceNotNull(
+                0, column_size, sum->state, &nested_ptr, nullable->getNullMapData().data(), nullptr);
+        }
+        else if (sparse)
             sum->function.function->addBatchSparseSinglePlace(0, column_size, sum->state, &values_ptr, nullptr);
         else
             sum->function.function->addBatchSinglePlace(0, column_size, sum->state, &values_ptr, nullptr);
@@ -216,6 +234,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     {
         StatisticsUtils::updateMin(min, other->min);
         StatisticsUtils::updateMax(max, other->max);
+        /// The merged bounds miss whatever the bounds of either side miss.
+        min_max_covers_all_values = min_max_covers_all_values && other->min_max_covers_all_values;
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -224,6 +244,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     {
         default_count += other->default_count;
     }
+    /// The merged NULL count misses whatever the NULL count of either side misses.
+    null_count_covers_all_rows = null_count_covers_all_rows && other->null_count_covers_all_rows;
 
     if (sum && other->sum)
         sum->function.function->merge(sum->state, other->sum->state, nullptr);
@@ -233,25 +255,36 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
-void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, std::optional<UInt64> null_count)
 {
     row_count = rows;
     if (tracks_numeric)
     {
         min = min_value;
         max = max_value;
+        /// Unlike a bound built from a column, a NULL bound of a summary is unknown: it misses the values of the rows
+        /// unless all of them are NULL. A column whose default is not NULL has a value in every row.
+        min_max_covers_all_values = (!min.isNull() && !max.isNull()) || (is_nullable && null_count && *null_count >= rows);
     }
     /// A summary has no byte lengths.
     tracks_string = false;
-    /// For any other type the default count would count zeros, which a summary does not give.
+    /// For any other type the default count would count zeros, which a summary does not give. A summary without a NULL
+    /// count keeps the structure of one, so that it merges with the summaries that have it, but counts none of its NULLs.
     has_default_count = is_nullable;
-    default_count = is_nullable ? null_count : 0;
+    default_count = is_nullable ? null_count.value_or(0) : 0;
+    null_count_covers_all_rows = !is_nullable || null_count.has_value();
     /// Nor the sum.
     sum.reset();
 }
 
-void StatisticsBasic::serialize(WriteBuffer & buf)
+void StatisticsBasic::serialize(WriteBuffer & buf, StatisticsFileVersion version)
 {
+    /// Bounds and NULL counts read back would be taken to cover every row.
+    if (!min_max_covers_all_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize Basic statistics whose min/max miss some values");
+    if (!null_count_covers_all_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize Basic statistics whose NULL count misses some rows");
+
     writeIntBinary(row_count, buf);
 
     UInt8 mask = 0;
@@ -267,8 +300,15 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
 
     if (tracks_numeric)
     {
-        writeFieldBinary(min, buf);
-        writeFieldBinary(max, buf);
+        if (version >= StatisticsFileVersion::V5)
+        {
+            StatisticsUtils::serializeBounds(min, max, *data_type, buf);
+        }
+        else
+        {
+            writeFieldBinary(min, buf);
+            writeFieldBinary(max, buf);
+        }
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
@@ -278,11 +318,16 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         sum->function.function->serialize(sum->state, buf);
 }
 
-std::optional<UInt64> StatisticsBasic::getSerializedSize() const
+std::optional<UInt64> StatisticsBasic::getSerializedSize(StatisticsFileVersion version) const
 {
     UInt64 size = sizeof(row_count) + sizeof(UInt8);
     if (tracks_numeric)
-        size += getFieldBinarySize(min) + getFieldBinarySize(max);
+    {
+        if (version >= StatisticsFileVersion::V5)
+            size += StatisticsUtils::getSerializedBoundsSize(min, max, *data_type);
+        else
+            size += getFieldBinarySize(min) + getFieldBinarySize(max);
+    }
     if (tracks_string)
         size += sizeof(string_total_bytes);
     if (has_default_count)
@@ -292,7 +337,7 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
     return size;
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     readIntBinary(row_count, buf);
 
@@ -301,8 +346,27 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
 
     if (mask & BasicFeatureMask::NumericMinMax)
     {
-        min = readFieldBinary(buf);
-        max = readFieldBinary(buf);
+        if (version < StatisticsFileVersion::V5)
+        {
+            min = readFieldBinary(buf);
+            max = readFieldBinary(buf);
+            /// The bounds of the `Field` encoding have to be written again with the serialization of the column type.
+            if (tracks_numeric && (!StatisticsUtils::isBoundOfType(min, *data_type) || !StatisticsUtils::isBoundOfType(max, *data_type)))
+                is_unusable = true;
+        }
+        else if (tracks_numeric)
+        {
+            StatisticsUtils::deserializeBounds(min, max, *data_type, buf);
+        }
+        else
+        {
+            /// Only the types that track the bounds write them, and they are read with the type.
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS,
+                "Basic statistics of type {} have bounds. The statistics file may be corrupted. "
+                "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
+                data_type->getName());
+        }
     }
 
     if (mask & BasicFeatureMask::StringLengthSum)

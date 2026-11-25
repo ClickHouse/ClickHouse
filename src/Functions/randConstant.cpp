@@ -13,12 +13,12 @@ class ExecutableFunctionRandomConstant final : public IExecutableFunction
 public:
     explicit ExecutableFunctionRandomConstant(UInt32 value_) : value(value_) {}
 
-    String getName() const override { return "randConstant"; }
+    [[nodiscard]] String getName() const override { return "randConstant"; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeNumber<UInt32>().createColumnConst(input_rows_count, value);
     }
