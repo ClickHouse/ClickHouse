@@ -1603,16 +1603,21 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
+    /// Skip decisions of the rows below `skip_bitmap_end`; reset when the boundary moves.
+    [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
+    [[maybe_unused]] size_t skip_bitmap_end = 0;
+
+    auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result) ALWAYS_INLINE
     {
         if constexpr (top_k)
         {
             if (emplace_result.isInserted())
             {
-                if (state.isNullAt(row))
-                    method.top_k_heap.push(heap_key_cols, row);
-                else
-                    method.top_k_heap.push(heap_key_cols, row, emplace_result.getKey());
+                const bool new_boundary = state.isNullAt(row)
+                    ? method.top_k_heap.push(heap_key_cols, row)
+                    : method.top_k_heap.push(heap_key_cols, row, emplace_result.getKey());
+                if (new_boundary)
+                    skip_bitmap_end = 0;
             }
         }
     };
@@ -1640,13 +1645,6 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         return;
     }
 
-    [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-    if constexpr (top_k)
-    {
-        if (method.top_k_heap.hasBoundary())
-            skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
-    }
-
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
     static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
@@ -1665,10 +1663,9 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         if constexpr (top_k)
         {
-            if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.hasBoundary()
-                               && (has_typed_key ? method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)
-                                                 : method.top_k_heap.shouldSkip(heap_key_cols, i))))
+            if (i >= skip_bitmap_end)
+                std::tie(skip_bitmap, skip_bitmap_end) = method.top_k_heap.fillSkipBitmap(heap_key_cols, typed_key_data, i, row_end);
+            if (skip_bitmap[i])
             {
                 ++top_k_rows_skipped;
                 continue;
@@ -1682,7 +1679,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             if (method.top_k_heap.needsTrim())
             {
                 trimHeapAndPruneHashTable(method, nullptr, i);
-                skip_bitmap = nullptr;
+                skip_bitmap_end = 0;
                 state.resetCache();
             }
         }
@@ -1821,17 +1818,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
-    {
-        /// Without a typed key `shouldSkipTyped` always falls through to `shouldSkip`; calling it directly keeps the numeric
-        /// dispatch out of the loop, so the check stays small enough to be inlined.
-        if constexpr (top_k && has_typed_key)
-            return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
-        else if constexpr (top_k)
-            return method.top_k_heap.shouldSkip(heap_key_cols, row);
-        return false;
-    };
-
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
     if (is_simple_count)
@@ -1908,11 +1894,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         else if (!no_more_keys)
         {
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-            if constexpr (top_k)
-            {
-                if (method.top_k_heap.hasBoundary())
-                    skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
-            }
+            [[maybe_unused]] size_t skip_bitmap_end = 0;
 
             static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
             ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(row_begin);
@@ -1929,8 +1911,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
-                    if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
+                    if (i >= skip_bitmap_end)
+                        std::tie(skip_bitmap, skip_bitmap_end) = method.top_k_heap.fillSkipBitmap(heap_key_cols, typed_key_data, i, row_end);
+                    if (skip_bitmap[i])
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1943,10 +1926,11 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (emplace_result.isInserted())
                     {
-                        if (state.isNullAt(i))
-                            method.top_k_heap.push(heap_key_cols, i);
-                        else
-                            method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                        const bool new_boundary = state.isNullAt(i)
+                            ? method.top_k_heap.push(heap_key_cols, i)
+                            : method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                        if (new_boundary)
+                            skip_bitmap_end = 0;
                     }
                 }
 
@@ -1960,7 +1944,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     if (method.top_k_heap.needsTrim())
                     {
                         trimHeapAndPruneHashTable(method, nullptr, i);
-                        skip_bitmap = nullptr;
+                        skip_bitmap_end = 0;
                         state.resetCache();
                     }
                 }
@@ -2026,12 +2010,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
+        [[maybe_unused]] size_t skip_bitmap_end = 0;
         if constexpr (top_k)
-        {
             destroyed_states.clear();
-            if (method.top_k_heap.hasBoundary())
-                skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
-        }
 
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;
         ColumnsHashing::LookAheadKeysFor<prefetch_cells, KeyHolder> look_ahead_keys(key_start);
@@ -2052,9 +2033,9 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_k)
             {
-                if (skip_bitmap
-                    ? static_cast<bool>(skip_bitmap[i])
-                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
+                if (i >= skip_bitmap_end)
+                    std::tie(skip_bitmap, skip_bitmap_end) = method.top_k_heap.fillSkipBitmap(heap_key_cols, typed_key_data, i, key_end);
+                if (skip_bitmap[i])
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;
@@ -2068,10 +2049,11 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (emplace_result.isInserted())
                 {
-                    if (state.isNullAt(i))
-                        method.top_k_heap.push(heap_key_cols, i);
-                    else
-                        method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                    const bool new_boundary = state.isNullAt(i)
+                        ? method.top_k_heap.push(heap_key_cols, i)
+                        : method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                    if (new_boundary)
+                        skip_bitmap_end = 0;
                 }
             }
 
@@ -2105,7 +2087,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (method.top_k_heap.needsTrim())
                 {
                     trimHeapAndPruneHashTable(method, &destroyed_states, i);
-                    skip_bitmap = nullptr;
+                    skip_bitmap_end = 0;
                     state.resetCache();
                 }
             }

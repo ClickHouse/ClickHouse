@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <Common/VectorWithMemoryTracking.h>
@@ -58,10 +59,6 @@ struct SharedTopKBoundary
   * instantiates a comparator, an `nth_element` and a `partition` for each of the eleven
   * numeric heap column types, so leaving the algorithms in the header multiplied them by
   * the number of methods and dominated the cost of `Aggregator.cpp`.
-  *
-  * The per-row typed skip test stays inline: it is the innermost check of the aggregation
-  * loop, and being key-independent it is instantiated once per translation unit instead of
-  * once per method.
   */
 struct TopKAggregationHeapBase
 {
@@ -118,35 +115,12 @@ struct TopKAggregationHeapBase
     /// tightenings of a thread's last block still reach the threads that keep running.
     void exchangeSharedBoundary();
 
-    /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
-    /// anything the numeric dispatch rejects), hence inline. The libc++ hardening checks make it too big for the
-    /// inliner, so it is forced.
-    [[nodiscard]] ALWAYS_INLINE bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
-    {
-        chassert(!frozen);
-        chassert(hasBoundary());
-        if (is_composite)
-            return sourceAboveBoundaryComposite(source_columns, source_row);
-        return sourceAboveBoundary(*source_columns[0], source_row);
-    }
-
-    /// The innermost check of the aggregation loop, hence inline.
-    bool shouldSkipTyped(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
-    {
-        if (source_typed_data)
-        {
-            bool skip = false;
-            const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
-            {
-                skip = shouldSkipNumeric<T>(source_typed_data, source_row);
-            });
-            if (typed)
-                return skip;
-        }
-        return shouldSkip(source_columns, source_row);
-    }
-
-    const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end);
+    /// Decides for a chunk of rows from `begin` whether each ranks below the boundary, so that it cannot reach the
+    /// result. Returns the bitmap, indexed by row, and the end of the chunk. The decisions stay valid until the
+    /// boundary moves: after a trim, or a `push` that returns true, the caller must refill. Without a boundary
+    /// no row is skipped.
+    std::pair<const UInt8 *, size_t> fillSkipBitmap(
+        const ColumnRawPtrs & source_columns, const void * source_typed_data, size_t begin, size_t end);
 
 protected:
     static constexpr size_t invalid_row = static_cast<size_t>(-1);
@@ -172,7 +146,7 @@ protected:
     /// Ranking configuration.
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
-    TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
+    TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the typed comparators; `Nothing` means `compareAt`/`compareColumn`
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
 
@@ -193,7 +167,11 @@ protected:
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
-    std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
+    std::vector<UInt8> skip_bitmap;         /// per-row skip decisions of the current batch
+    size_t skip_chunk_end = 0;              /// chunk end of the last `fillSkipBitmap`
+    size_t skip_chunk_rows = 0;             /// rows the last `fillSkipBitmap` decided; doubles while the fills are contiguous
+    PaddedPODArray<UInt64> skip_compare_rows;   /// `compareColumn` scratch: rows still tied with the boundary
+    PaddedPODArray<Int8> skip_compare_results;  /// `compareColumn` scratch: per-row comparison with the boundary
     std::vector<size_t> evicted_rows;       /// `heap_column` rows dropped by the last `trimToK`
     IColumn::Filter trim_filter;            /// which `heap_column` rows survive a trim
     std::vector<size_t> trim_old_to_new;    /// old row index -> compacted row index, to remap `heap_indices`
@@ -213,9 +191,10 @@ protected:
 
     /// Appends the row to `heap_column` and admits it to the set. The derived class must
     /// append the matching hash-table key first, so that the two arrays stay index-aligned.
+    /// Returns true when the row filled the set to `k`, which sets the local boundary.
     /// Runs once per admitted row, hence inline; the one-shot boundary search it triggers when
     /// the set first fills is not, which keeps the comparators out of the including unit.
-    void pushHeapRow(const ColumnRawPtrs & source_columns, size_t source_row)
+    bool pushHeapRow(const ColumnRawPtrs & source_columns, size_t source_row)
     {
         size_t new_idx = 0;
 
@@ -238,8 +217,10 @@ protected:
 
         heap_indices.push_back(new_idx);
 
-        if (boundary_row == invalid_row && heap_indices.size() >= k)
-            initBoundary();
+        if (boundary_row != invalid_row || heap_indices.size() < k)
+            return false;
+        initBoundary();
+        return true;
     }
 
     /// Ranks the set, moves the boundary to the k-th best key and drops everything below it.
@@ -344,15 +325,6 @@ private:
             f(GenericComparator{this});
     }
 
-    template <typename T>
-    ALWAYS_INLINE bool shouldSkipNumeric(const void * source_data, size_t source_row) const
-    {
-        chassert(hasBoundary());
-        const auto * src = reinterpret_cast<const T *>(source_data);
-        const auto & boundary_data = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData();
-        return directions[0] * CompareHelper<T>::compare(src[source_row], boundary_data[boundaryRow()], nulls_directions[0]) > 0;
-    }
-
     /// The effective skip boundary: the shared one when it is strictly tighter than the local.
     [[nodiscard]] const IColumn & boundaryColumn() const { return boundary_is_shared ? *shared_cache_column : *heap_column; }
     [[nodiscard]] size_t boundaryRow() const { return boundary_is_shared ? 0 : boundary_row; }
@@ -388,25 +360,6 @@ private:
     /// them is a valid bound on its own, since the stream has already seen `k` keys not worse
     /// than it.
     void publishBoundary();
-
-    [[nodiscard]] bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const
-    {
-        const int cmp = compareColumns(source_column, source_row, boundaryColumn(), boundaryRow(), 0);
-        return directions[0] * cmp > 0;
-    }
-
-    [[nodiscard]] bool sourceAboveBoundaryComposite(const ColumnRawPtrs & source_columns, size_t source_row) const
-    {
-        const auto & tuple = assert_cast<const ColumnTuple &>(boundaryColumn());
-        const size_t boundary_idx = boundaryRow();
-        for (size_t i = 0; i < source_columns.size(); ++i)
-        {
-            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), boundary_idx, i);
-            if (cmp != 0)
-                return directions[i] * cmp > 0;
-        }
-        return false;
-    }
 
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 
@@ -462,16 +415,17 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         hash_table_keys = {};
     }
 
-    void push(const ColumnRawPtrs & source_columns, size_t source_row) { push(source_columns, source_row, Key{}); }
+    /// Returns true when the row set the local boundary, which moves the skip boundary.
+    bool push(const ColumnRawPtrs & source_columns, size_t source_row) { return push(source_columns, source_row, Key{}); }
 
-    void push(const ColumnRawPtrs & source_columns, size_t source_row, const Key & hash_table_key)
+    bool push(const ColumnRawPtrs & source_columns, size_t source_row, const Key & hash_table_key)
     {
         if constexpr (keys_hold_pointers)
             hash_table_keys.push_back(persistHashTableKey(hash_table_key, keyArena()));
         else
             hash_table_keys.push_back(hash_table_key);
 
-        pushHeapRow(source_columns, source_row);
+        return pushHeapRow(source_columns, source_row);
     }
 
     template <typename EvictCallback>
