@@ -233,6 +233,12 @@ void IcebergBitmapPositionDeleteTransform::initialize()
                 bitmap.add(position_column.get64(i));
         }
     }
+
+    /// The bitmap holds all the deletes now, so release the readers of the delete files (the formats first, as they read
+    /// from the buffers). A small delete file is prefetched as a whole, and a compaction merge has a transform per data
+    /// file: many data files referencing the same delete file would otherwise hold a copy of it each until the merge ends.
+    position_delete_files.clear();
+    delete_read_buffers.clear();
 }
 
 

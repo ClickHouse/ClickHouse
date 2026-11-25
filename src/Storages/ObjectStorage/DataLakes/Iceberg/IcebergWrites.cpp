@@ -1469,6 +1469,7 @@ void IcebergStorageSink::readLatestMetadata()
             persistent_table_components.path_resolver.getTableLocation(),
             /* use_uuid_in_metadata */ catalog != nullptr, metadata_compression_method, write_format);
     filename_generator.setBaseMetadataFile(last_version, metadata_path);
+    filename_generator.setCompressionMethod(metadata_compression_method);
 
     /// A change of the schema between the attempts conflicts with this insert.
     const auto schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);

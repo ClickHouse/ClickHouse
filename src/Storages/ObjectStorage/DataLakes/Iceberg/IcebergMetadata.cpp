@@ -739,8 +739,9 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
+    /// The codec of each metadata file is in its name: a writer may change it, e.g. compaction writes uncompressed metadata.
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, getCompressionMethodFromMetadataFile(metadata_path), persistent_components.table_uuid);
 
     insertRowToLogTable(
         local_context,
@@ -1187,7 +1188,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
@@ -1556,7 +1557,7 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
 
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot->metadata_file_path, object_storage, persistent_components.metadata_cache, context, log,
-        persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        getCompressionMethodFromMetadataFile(table_state_snapshot->metadata_file_path), persistent_components.table_uuid);
     /// Reading in order merges files with NULLs placed the ClickHouse way; files sorted with the other null order
     /// are only in that order if they have no NULLs.
     const auto mismatched_null_order_source_ids = getSourceIdsWithMismatchedNullOrder(metadata_object, *sorting_key.sort_order_id);
@@ -2291,7 +2292,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
