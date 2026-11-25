@@ -1,0 +1,235 @@
+---
+slug: /clickstack/observability/features/session-replay
+title: 'إعادة تشغيل الجلسة'
+sidebarTitle: 'إعادة تشغيل الجلسة'
+description: 'التقط جلسات المستخدمين وأعد تشغيلها في ClickHouse Observability لتصحيح أخطاء الواجهة الأمامية وفهم سلوك المستخدمين وربط نشاط المتصفح بسجلات الواجهة الخلفية وعمليات التتبّع فيها.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'إعادة تشغيل الجلسة', 'SDK للمتصفح', 'إمكانية مراقبة الواجهة الأمامية', 'جلسات المستخدمين', 'تصحيح الأخطاء']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+تلتقط ميزة إعادة تشغيل الجلسة في ClickHouse Observability تفاعلات المستخدمين في تطبيق الويب الخاص بك وتعيد بناءها، مما يتيح لك أن تعيد تشغيل ما رآه المستخدم وما فعله بالضبط خلال جلسته، وتشاهده بصريًا. وبدلًا من التسجيل بالفيديو، تسجّل حزمة SDK تغييرات DOM وحركات الفأرة والنقرات وعمليات التمرير وإدخالات لوحة المفاتيح وسجلات وحدة التحكم وطلبات الشبكة (XHR وFetch) واستثناءات JavaScript، ثم تعيد بناء التجربة داخل المتصفح.
+
+ولأن إعادات تشغيل الجلسات تُخزَّن في ClickHouse جنبًا إلى جنب مع السجلات والتتبّعات والمقاييس، يمكنك الانتقال من مشاهدة تجربة المستخدم إلى فحص تتبعات الخدمات الخلفية واستعلامات قاعدة البيانات التي تقف وراءها، وكل ذلك ببضع نقرات. وهذا ما يجعل إعادة تشغيل الجلسة أداة مفيدة لتصحيح الأخطاء في بيئة الإنتاج، وفهم سلوك المستخدمين، وتحديد مواطن الصعوبة في تجربة المستخدم، والتحقق بصريًا من المشكلات التي يُبلَّغ عنها فريق الدعم.
+
+## تزويد تطبيقك بأدوات جمع بيانات الرصد {#instrumentation}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="عرض تجريبي" />
+
+    يتوافق ClickHouse Observability توافقًا كاملًا مع OpenTelemetry، لذا يمكنك إرسال بيانات القياس عن بُعد من المتصفح (التتبّعات والاستثناءات) باستخدام OpenTelemetry JavaScript SDK القياسي أو أيٍّ من [حِزم SDK الخاصة باللغات](/ar/clickstack/observability/ingesting-data/sdks). غير أنّ **إعادة تشغيل الجلسة تتطلب SDK للمتصفح** (`@clickhouse/clickstack-browser`)، الذي يوسّع OpenTelemetry SDK بإمكانات تسجيل الجلسات والتقاط مخرجات وحدة التحكم والتقاط طلبات الشبكة. وإذا كنت تحتاج إلى التتبّعات فقط دون إعادة تشغيل الجلسة، فسيعمل أي SDK للمتصفح متوافق مع OTel مع الخدمة.
+
+    تستخدم الأمثلة أدناه SDK للمتصفح. في خدمة ClickHouse Observability الخاصة بك، افتح **Team Settings → Data → Managed Telemetry** وانسخ **نقطة نهاية OTLP عبر HTTP** و**مفتاح API**، ثم استبدل بهما `YOUR_OTEL_ENDPOINT` و`YOUR_API_KEY` في الأمثلة.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![قسم Managed Telemetry يعرض نقطة نهاية OTLP عبر HTTP ومفتاح API بشكل مُقنَّع](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    استخدم نقطة نهاية HTTPS الكاملة كما تظهر في Managed Telemetry، دون مسارات الإشارات مثل `/v1/traces`. ومرِّر مفتاح API عبر `apiKey` مسبوقًا بالبادئة `Bearer ` كما هو موضح أدناه. بعد ذلك، ثبّت SDK وهيّئه في تطبيقك.
+
+    <Tip>
+      هيّئ SDK مرة واحدة في المستوى الأعلى من وحدة نقطة الدخول الخاصة بجانب العميل، مثل `src/main.ts` في Vite أو `instrumentation-client.ts` في Next.js. ونظرًا إلى أن التهيئة غير متزامنة، فقد لا تُلتقط الطلبات المُرسلة مباشرةً بعد `init` في الدورة نفسها.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+          apiKey: 'Bearer YOUR_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="وسم Script">
+        للتطبيقات التي لا تستخدم أداة تجميع (bundler)، ضمّن SDK مباشرةً عبر وسم script. يتيح ذلك المتغير العام `ClickStack`، الذي يمكن استخدامه بالطريقة نفسها التي تُستخدم بها حزمة NPM.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'https://YOUR_OTEL_ENDPOINT:4318',
+            apiKey: 'Bearer YOUR_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      يُعدّ الخيار `traceOrigins` أساسيًا لربط إعادات تشغيل الجلسات بتتبعات الخدمات الخلفية؛ اضبطه على نطاق واجهة برمجة التطبيقات الخاصة بك لتفعيل التتبّع الموزّع الكامل من الواجهة الأمامية إلى الخدمات الخلفية. وللاطلاع على خيارات SDK المشتركة، بما فيها عناصر التحكم في الخصوصية والإبلاغ عن الأخطاء، راجع [مرجع SDK للمتصفح](/ar/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy). استخدم بيانات الاتصال المُدارة الواردة أعلاه عند تهيئة SDK.
+    </Note>
+
+    يُقنِّع SDK للمتصفح المدخلات والنصوص افتراضيًا. راجع [عناصر التحكم في الخصوصية](/ar/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) للتطبيقات التي تتعامل مع بيانات حساسة، و[إرفاق معلومات المستخدم](/ar/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) لتتمكن من البحث في الجلسات وتصفيتها حسب المستخدم في UI.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا" id="self-managed">
+    تتوافق Self-managed ClickHouse Observability توافقًا تامًّا مع OpenTelemetry، ولذلك يمكنك إرسال بيانات القياس عن بُعد الخاصة بالمتصفح (التتبّع والاستثناءات) باستخدام حزمة OpenTelemetry JavaScript SDK القياسية أو أيٍّ من [حزم SDK للغات البرمجة](/ar/clickstack/observability/ingesting-data/sdks). غير أنّ **إعادة تشغيل الجلسة تتطلب SDK للمتصفح** (`@clickhouse/clickstack-browser`)، التي توسّع OpenTelemetry SDK بإضافة تسجيل الجلسات والتقاط مخرجات وحدة التحكم والتقاط طلبات الشبكة. وإذا كنت تحتاج إلى التتبّع فقط دون إعادة تشغيل الجلسة، فستعمل مع الخدمة أيُّ حزمة SDK للمتصفح متوافقة مع OTel.
+
+    قبل تزويد تطبيقك بأدوات جمع بيانات الرصد، يجب أن يكون لديك مُجمِّع OpenTelemetry الخاص بـ ClickStack قيد التشغيل ومتصلًا بخدمة ClickHouse Cloud الخاصة بك. اتبع دليل [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) لتهيئة الاتصال، أو [دليل النشر](/ar/clickstack/self-configured/deployment/managed#start-a-collector-existing) لتشغيل جامع البيانات.
+
+    استخدم نقطة نهاية OTLP عبر HTTP الخاصة بجامع البيانات، والتي يمكن الوصول إليها من المتصفح، بدلاً من `http://your-otel-collector:4318` في الأمثلة أدناه. اضبط `apiKey` على مفتاح الاستيعاب الخاص بجامع البيانات دون البادئة `Bearer`، أو احذفه إذا كان المستقبِل لا يتطلب المصادقة. أضِف مصدر تطبيقك إلى قائمة المصادر المسموح بها في تهيئة CORS الخاصة بجامع البيانات. بعد ذلك، ثبّت SDK للمتصفح وهيّئه.
+
+    <Tip>
+      هيّئ SDK مرة واحدة في المستوى الأعلى من وحدة نقطة الدخول الخاصة بالعميل، مثل `src/main.ts` في Vite أو `instrumentation-client.ts` في Next.js. ونظرًا لأن التهيئة غير متزامنة، فقد لا تُلتقط الطلبات المُرسلة مباشرةً بعد `init` ضمن الـ tick نفسه.
+    </Tip>
+
+    <Tabs>
+      <Tab title="NPM">
+        ```shell
+        npm install @clickhouse/clickstack-browser
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="Yarn">
+        ```shell
+        yarn add @clickhouse/clickstack-browser @opentelemetry/api@~1.9.1 @opentelemetry/browser-sdk@^0.6.0
+        ```
+
+        ```javascript
+        import { init } from '@clickhouse/clickstack-browser';
+
+        init({
+          endpoint: 'http://your-otel-collector:4318',
+          apiKey: 'YOUR_INGESTION_API_KEY',
+          serviceName: 'my-frontend-app',
+          traceOrigins: ['https://api.myapp.domain'],
+          console: 'debug',
+        });
+        ```
+      </Tab>
+
+      <Tab title="وسم Script">
+        في التطبيقات التي لا تستخدم أداة تجميع (bundler)، ضمِّن SDK مباشرةً عبر وسم script. يتيح ذلك المتغير العام `ClickStack`، الذي يمكن استخدامه بالطريقة نفسها التي تُستخدم بها حزمة NPM.
+
+        ```html
+        <script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+        <script>
+          window.ClickStack.init({
+            endpoint: 'http://your-otel-collector:4318',
+            apiKey: 'YOUR_INGESTION_API_KEY',
+            serviceName: 'my-frontend-app',
+            traceOrigins: ['https://api.myapp.domain'],
+            console: 'debug',
+          });
+        </script>
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      يُعدّ الخيار `traceOrigins` أساسيًا لربط إعادات تشغيل الجلسات بتتبعات الخدمات الخلفية، لذا اضبطه على نطاق واجهة برمجة التطبيقات الخاصة بك لتمكين التتبّع الموزّع الكامل من الواجهة الأمامية إلى الواجهة الخلفية. للاطلاع على القائمة الكاملة لخيارات SDK، بما فيها إعدادات الخصوصية والإبلاغ عن الأخطاء، راجع [مرجع SDK للمتصفح](/ar/clickstack/observability/ingesting-data/sdks/browser).
+    </Note>
+
+    يُخفي SDK للمتصفح المدخلات والنصوص افتراضيًا. راجع [عناصر التحكم في الخصوصية](/ar/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) للتطبيقات التي تتعامل مع بيانات حساسة، وكذلك [إرفاق معلومات المستخدم](/ar/clickstack/observability/ingesting-data/sdks/browser#users-and-errors) لتتمكن من البحث في الجلسات وتصفيتها حسب المستخدم في UI.
+
+    <Note>
+      يستخدم SDK للمتصفح من ClickStack الـ attribute القياسي `session.id`. لذا استخدم إصدارًا من ClickStack يدعم هذا الـ attribute في صفحة الجلسات (Sessions)؛ وللمزيد، راجع [متطلبات التوافق الخاصة بـ SDK](https://github.com/ClickHouse/clickstack-browser#clickstack-versions).
+    </Note>
+
+### طريقة تخزين بيانات الـ session {#data-storage}
+
+    <Note>
+      تنطبق تفاصيل التخزين هذه على Self-managed ClickHouse Observability فقط. أما الخدمات المُدارة بالكامل، فتتولى عنك إدارة تخزين بيانات إعادة تشغيل الجلسة والمخططات.
+    </Note>
+
+    تُخزَّن بيانات إعادة تشغيل الجلسة في جدول مخصص [`hyperdx_sessions`](/ar/clickstack/self-configured/ingesting-data/schemas#sessions) في ClickHouse، بشكل منفصل عن السجلات وبيانات التتبّع. ويُمثَّل كل حدث من أحداث الجلسة بصفّ يحتوي على حقل `Body` يتضمن حمولة الحدث، وخريطة `LogAttributes` تخزّن البيانات الوصفية للحدث. ويضم العمودان `Body` و`LogAttributes` معًا تفاصيل أحداث الجلسة الفعلية التي تُستخدم لإعادة بناء التسجيل وتشغيله.
+
+    للاطلاع على معلومات مخطط الجدول كاملةً، راجع [الجداول والمخططات](/ar/clickstack/self-configured/ingesting-data/schemas).
+  </Tab>
+</Tabs>
+
+## عرض إعادات تشغيل الجلسات {#viewing-replays}
+
+انتقل إلى **جلسات العميل** من الشريط الجانبي الأيسر في UI. تعرض هذه الواجهة جميع جلسات المتصفح التي جرى التقاطها، مع مدة كل جلسة وعدد الأحداث فيها.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![واجهة البحث في إعادات تشغيل الجلسات](/images/clickstack/session-replay/observability-client-sessions.png)
+  </Frame>
+</div>
+
+افتح جلسة، ثم اختر **تشغيل** لإعادة تشغيل التفاعلات المسجَّلة. تعرض واجهة إعادة التشغيل تجربة المستخدم بعد إعادة بنائها على اليمين، وعلى اليسار خطًا زمنيًا لأحداث المتصفح، مثل طلبات الشبكة وسجلات وحدة التحكم والأخطاء.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![تشغيل إعادة تشغيل الجلسة](/images/clickstack/session-replay/observability-session-replay.png)
+  </Frame>
+</div>
+
+بدّل بين وضعَي **Highlighted** و**All Events** لضبط مستوى التفاصيل المعروضة على الخط الزمني. تُميَّز الأخطاء باللون الأحمر، ويؤدي النقر على أي حدث إلى الانتقال بإعادة التشغيل إلى تلك اللحظة من الجلسة.
+
+### من الجلسة إلى التتبّع {#session-to-trace}
+
+عند تحديد طلب شبكة أو خطأ في الخط الزمني للجلسة، يمكنك الانتقال إلى علامة التبويب **تتبّع** لتتبّع مسار الطلب عبر خدماتك الخلفية، والاطلاع على السجلات ومقاطع التتبّع واستعلامات قاعدة البيانات المرتبطة التي أطلقها تفاعل المستخدم هذا.
+
+يتحقق ذلك لأن إعدادات `traceOrigins` تربط مقاطع التتبّع في المتصفح بمقاطع span الخادم عبر الترويسة `traceparent`، مما يُنشئ تتبّعًا موزّعًا متصلًا يمتد من نقرة المستخدم وصولًا إلى قاعدة البيانات. للاطلاع على شرح تفصيلي لتطبيق ذلك عمليًا، بما في ذلك تزويد كلٍّ من الواجهة الأمامية والواجهة الخلفية بأدوات جمع بيانات الرصد، راجع [إضافة أدوات الرصد إلى تطبيق NextJS باستخدام OpenTelemetry وClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+
+<div className="ch-image-lg">
+  <Frame>
+    ![فتح إعادة تشغيل جلسة ومتابعة حدث وصولًا إلى التتبّع الخاص به](/images/clickstack/session-replay/observability-session-to-trace.gif)
+  </Frame>
+</div>
+
+### من التتبّع إلى الجلسة {#trace-to-session}
+
+يعمل الربط في الاتجاه المعاكس أيضًا. عند استعراض تتبّع في واجهة **بحث**، انقر عليه لفتح تفاصيله، ثم اختر علامة التبويب **إعادة تشغيل الجلسة** لترى بالضبط ما كان المستخدم يواجهه لحظة حدوث ذلك التتبّع. ويفيد ذلك بشكل خاص عند تقصّي الأخطاء أو الطلبات البطيئة، إذ يمكنك الانطلاق من المشكلة في الواجهة الخلفية والاطلاع فورًا على ما رآه المستخدم.
+
+## جرّبه بنفسك {#try-it-out}
+
+اتبع [العرض التوضيحي لإعادة تشغيل الجلسة](/ar/clickstack/observability/example-datasets/session-replay) لتزويد تطبيق تفاعلي بأدوات جمع بيانات الرصد، وإرسال بيانات الجلسة إلى خدمة ClickHouse Observability الخاصة بك، ثم إعادة تشغيل تفاعلاتك ومشاهدتها.
+
+## مزيد من المعلومات {#learn-more}
+
+* [عرض توضيحي لإعادة تشغيل الجلسة](/ar/clickstack/observability/example-datasets/session-replay) — تزويد تطبيق تفاعلي بأدوات جمع بيانات الرصد باستخدام بيانات الاتصال الخاصة بخدمتك المُدارة
+* [مرجع SDK للمتصفح](/ar/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) — خيارات SDK المشتركة والإعدادات المتقدمة
+* [البحث](/ar/clickstack/observability/features/search) — صيغة البحث لتصفية الجلسات والأحداث
+* [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview) — إنشاء التمثيلات المرئية ولوحات المعلومات من بيانات الجلسات وبيانات التتبع
+* [التنبيهات](/ar/clickstack/observability/features/alerts) — إعداد التنبيهات بشأن الأخطاء وزمن الانتقال والإشارات الأخرى
+* [المعمارية](/ar/clickstack/observability/architecture) — كيفية تكامل مكوّنات الخدمة معًا

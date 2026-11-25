@@ -1416,22 +1416,29 @@ String KeeperStorage::generateDigest(const String & userdata)
     return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
-bool KeeperStorage::containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type) const
+bool KeeperStorage::containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type, int64_t session_id) const
 {
     using enum Coordination::CheckWatchRequest::CheckWatchType;
+
+    const auto has_session = [&](const auto & watch_map)
+    {
+        auto it = watch_map.find(path);
+        return it != watch_map.end() && it->second.contains(session_id);
+    };
+
     switch (check_type)
     {
         case ANY:
-            return containsWatch(path, DATA) || containsWatch(path, CHILDREN) || containsWatch(path, PERSISTENT)
-                || containsWatch(path, PERSISTENT_RECURSIVE);
+            return containsWatch(path, DATA, session_id) || containsWatch(path, CHILDREN, session_id)
+                || containsWatch(path, PERSISTENT, session_id) || containsWatch(path, PERSISTENT_RECURSIVE, session_id);
         case DATA:
-            return watches.contains(path);
+            return has_session(watches);
         case CHILDREN:
-            return list_watches.contains(path) || list_with_data_watches.contains(path);
+            return has_session(list_watches) || has_session(list_with_data_watches);
         case PERSISTENT:
-            return persistent_watches.contains(path) || persistent_list_watches.contains(path);
+            return has_session(persistent_watches) || has_session(persistent_list_watches);
         case PERSISTENT_RECURSIVE:
-            return persistent_recursive_watches.contains(path);
+            return has_session(persistent_recursive_watches);
     }
 }
 
