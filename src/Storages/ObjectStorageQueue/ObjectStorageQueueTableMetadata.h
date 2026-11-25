@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -20,20 +19,6 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
-    /// Where the queue reads files from, without credentials. Tables with the same `keeper_path` must have the same
-    /// source, because processed files are tracked only by their path.
-    struct Source
-    {
-        String type;
-        String endpoint;
-        String bucket;
-        String path_pattern;
-        bool from_named_collection = false;
-
-        [[nodiscard]] bool empty() const { return endpoint.empty(); }
-        [[nodiscard]] String getHash() const;
-    };
-
     /// Non-changeable settings.
     const String format_name;
     const String columns;
@@ -47,18 +32,17 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
     std::atomic<UInt64> processing_threads_num;
+    std::atomic<bool> parallel_inserts;
     std::atomic<UInt64> tracked_files_limit;
     std::atomic<UInt64> tracked_files_ttl_sec;
     std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
-    String source_hash;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,
         const ColumnsDescription & columns_,
-        const std::string & format_,
-        const Source & source);
+        const std::string & format_);
 
     ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
         : format_name(other.format_name)
@@ -72,25 +56,20 @@ struct ObjectStorageQueueTableMetadata
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
+        , parallel_inserts(other.parallel_inserts.load())
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
-        , source_hash(other.source_hash)
     {
     }
 
-    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other, const NameSet & names)
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
     {
-        if (names.contains("after_processing"))
-            after_processing = other.after_processing.load();
-        if (names.contains("loading_retries"))
-            loading_retries = other.loading_retries.load();
-        if (names.contains("processing_threads_num"))
-            processing_threads_num = other.processing_threads_num.load();
-        if (names.contains("tracked_files_limit"))
-            tracked_files_limit = other.tracked_files_limit.load();
-        if (names.contains("tracked_file_ttl_sec"))
-            tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
+        after_processing = other.after_processing.load();
+        loading_retries = other.loading_retries.load();
+        processing_threads_num = other.processing_threads_num.load();
+        tracked_files_limit = other.tracked_files_limit.load();
+        tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
     }
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
@@ -126,6 +105,7 @@ struct ObjectStorageQueueTableMetadata
             "after_processing",
             "loading_retries",
             "processing_threads_num",
+            "parallel_inserts",
             "tracked_files_limit",
             "tracked_file_ttl_sec",
             "tracked_files_ttl_sec",

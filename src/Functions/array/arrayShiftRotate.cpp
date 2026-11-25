@@ -1,9 +1,6 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -34,7 +31,7 @@ enum class ShiftRotateDirection : uint8_t
 };
 
 template <typename Impl, typename Name>
-class FunctionArrayShiftRotate final : public IFunction
+class FunctionArrayShiftRotate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -42,39 +39,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShiftRotate>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
+    size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Declarative signature for `Rotate` (preserves the element type);
-    /// docs-only for `Shift` because its optional default-value uses a
-    /// more permissive "must not widen past the element type" rule that
-    /// the current DSL doesn't capture.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (strategy == ShiftRotateStrategy::Rotate)
-            return "(Array(T : Any), NativeInteger) -> Array(T)";
-        else
-            return "(Array(T : Any), NativeInteger, [Any]) -> Array(T)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// Authoritative for `Rotate` (DSL drives the result); bypass for
-        /// `Shift` so the legacy `getReturnTypeImpl(DataTypes)` runs.
-        if constexpr (strategy == ShiftRotateStrategy::Rotate)
-            return IFunction::getReturnTypeImpl(arguments);
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
@@ -83,10 +54,6 @@ public:
 
             if (arguments.size() > 3)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at most three arguments.", getName());
-
-            if (arguments[0]->onlyNull() || arguments[1]->onlyNull()
-                || (arguments.size() == 3 && arguments[2]->onlyNull()))
-                return makeNullable(std::make_shared<DataTypeNothing>());
         }
 
         const DataTypePtr & first_arg = arguments[0];
@@ -97,7 +64,7 @@ public:
                 arguments[0]->getName(),
                 getName());
 
-        if (!isNativeInteger(removeNullable(arguments[1])))
+        if (!isNativeInteger(arguments[1]))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}, expected Native Integer",
@@ -107,11 +74,7 @@ public:
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*first_arg).getNestedType();
         if (arguments.size() == 3)
         {
-            auto default_type = arguments[2];
-            if (!elem_type->isNullable())
-                default_type = removeNullable(default_type);
-
-            auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
+            auto ret = tryGetLeastSupertype(DataTypes{elem_type, arguments[2]});
             // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
             // In this case array should be converted to Array(UInt64) explicitly.
             if (!ret || !ret->equals(*elem_type))
@@ -126,11 +89,8 @@ public:
         return std::make_shared<DataTypeArray>(elem_type);
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (result_type->onlyNull())
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
         ColumnPtr column_array_ptr = arguments[0].column;
         const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
@@ -145,14 +105,6 @@ public:
         }
 
         ColumnPtr shift_num_column = arguments[1].column;
-        if (arguments[1].type->isNullable())
-        {
-            auto materialized_shift_num_column = shift_num_column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-            if (const auto * nullable_shift_num_column = checkAndGetColumn<ColumnNullable>(materialized_shift_num_column.get()))
-                shift_num_column = nullable_shift_num_column->getNestedColumnWithDefaultOnNull();
-            else
-                shift_num_column = columnGetNested(arguments[1]).column;
-        }
 
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
@@ -160,20 +112,7 @@ public:
             const auto elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
             if (arguments.size() == 3)
-            {
-                auto default_argument = arguments[2];
-                if (!elem_type->isNullable() && default_argument.type->isNullable())
-                {
-                    auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-                    if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
-                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
-
-                    default_argument.column = std::move(materialized_default_column);
-                    default_argument.type = removeNullable(default_argument.type);
-                }
-
-                default_column = castColumn(default_argument, elem_type);
-            }
+                default_column = castColumn(arguments[2], elem_type);
             else
                 default_column = elem_type->createColumnConstWithDefaultValue(input_rows_count);
 
@@ -217,16 +156,12 @@ struct ArrayRotateImpl
             }
 
             size_t shift_num = static_cast<size_t>(shift_num_value);
-            /// An empty array is rotated by nothing at all: the loop below does not run, and
-            /// `nested_size - shift_num` would underflow here, having had no size to reduce against.
-            if (nested_size > 0)
-            {
+            if (nested_size > 0 && shift_num >= nested_size)
                 shift_num %= nested_size;
 
-                // Rotating left to N is the same as shifting right to (size - N).
-                if (actual_direction == ShiftRotateDirection::Right)
-                    shift_num = nested_size - shift_num;
-            }
+            // Rotating left to N is the same as shifting right to (size - N).
+            if (actual_direction == ShiftRotateDirection::Right)
+                shift_num = nested_size - shift_num;
 
             for (size_t j = 0; j < nested_size; ++j)
                 permutation[current_offset + j] = current_offset + (j + shift_num) % nested_size;
@@ -330,8 +265,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateleft =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateleft = {
@@ -348,8 +283,8 @@ REGISTER_FUNCTION(ArrayShiftOrRotate)
     FunctionDocumentation::Syntax syntax_rotateright = "arrayRotateRight(arr, n)";
     FunctionDocumentation::Arguments arguments_rotateright =
     {
-        {"arr", "The array for which to rotate the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)."}
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};
     FunctionDocumentation::Examples examples_rotateright =
@@ -380,8 +315,8 @@ If the number of elements is negative, the array is shifted to the right.
     FunctionDocumentation::Syntax syntax_shiftleft = "arrayShiftLeft(arr, n[, default])";
     FunctionDocumentation::Arguments arguments_shiftleft =
     {
-        {"arr", "The array for which to shift the elements.[`Array(T)`](/reference/data-types/array)."},
-        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/reference/data-types/int-uint)."},
+        {"arr", "The array for which to shift the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
         {"default", "Optional. Default value for new elements."}
     };
     FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};
@@ -425,9 +360,9 @@ If the number of elements is negative, the array is shifted to the left.
     };
     FunctionDocumentation::Examples examples_shiftright =
     {
-        {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0,0,1,2,3,4]"},
-        {"Negative value of n", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;", "[3,4,5,6,0,0]"},
-        {"Using a default value", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[42,42,1,2,3,4]"}
+        {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0, 0, 1, 2, 3, 4]"},
+        {"Negative value of n", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;", "[3, 4, 5, 6, 0, 0]"},
+        {"Using a default value", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[42, 42, 1, 2, 3, 4]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
     FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;

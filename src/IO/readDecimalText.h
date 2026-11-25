@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitorToString.h>
+#include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
 #include <base/arithmeticOverflow.h>
 
@@ -136,7 +137,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
 
                 digits += places;
                 if (after_point)
-                    exponent -= static_cast<int32_t>(places);
+                    exponent -= places;
 
                 if (check_overflow)
                 {
@@ -242,7 +243,7 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
         return ReturnType(true);
     }
 
-    scale = static_cast<uint32_t>(static_cast<int32_t>(scale) + exponent);
+    scale += exponent;
     return ReturnType(true);
 }
 

@@ -17,7 +17,6 @@ namespace Setting
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool optimize_if_chain_to_multiif;
     extern const SettingsBool use_variant_as_common_type;
-    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -124,12 +123,8 @@ public:
 
         /// Ignore if returned type changed.
         /// Example : SELECT now64(if(Null, NULL, if(Null, nan, toFloat64(number))), Null) FROM numbers(2)
-        if (!multi_if_function->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
+        if (!multi_if_function->getResultType()->equals(*function_node->getResultType()))
             return;
-
-        /// A `group_by_use_nulls` copy of a GROUP BY key is the key made Nullable: rewrite it like the key and keep it Nullable.
-        if (function_node->isConvertedToNullable())
-            multi_if_function->convertToNullable();
 
         node = std::move(multi_if_function);
     }
@@ -152,21 +147,10 @@ private:
 void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    /// Build the synthesized `multiIf` without the `optimize_if_transform_const_strings_to_lowcardinality`
-    /// optimization so its result type matches the `if` chain it replaces. The outer `if` of a chain has
-    /// a nested `if` (not a constant) as its else-branch, so - because `FunctionIf` strips
-    /// `LowCardinality` from its arguments before inferring the return type - it always resolves to a
-    /// plain (non-`LowCardinality`) `String`. If the `multiIf` were built with the optimization it would
-    /// instead see all the constant string leaves and resolve to `LowCardinality(String)`; the type would
-    /// then differ from the original `if`, the type-equality guard in the visitor would reject the rewrite,
-    /// and enabling the setting would silently disable `optimize_if_chain_to_multiif` for exactly the
-    /// constant-string chains this optimization targets.
     auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
-        settings[Setting::allow_execute_multiif_columnar],
-        settings[Setting::use_variant_as_common_type],
-        settings[Setting::allow_lossy_numeric_supertype],
-        /*optimize_if_transform_const_strings_to_lowcardinality=*/false);
+        settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }
+
 }

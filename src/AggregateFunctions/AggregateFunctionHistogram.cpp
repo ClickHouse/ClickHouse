@@ -26,7 +26,6 @@
 #include <queue>
 #include <cmath>
 #include <cstddef>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -104,10 +103,10 @@ private:
 
         void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
-        [[nodiscard]] T * end() const { return data_ptr + size; }
-        [[nodiscard]] bool empty() const { return size == 0; }
+        T * end() const { return data_ptr + size; }
+        bool empty() const { return size == 0; }
         T & front() { return *data_ptr; }
-        [[nodiscard]] const T & front() const { return *data_ptr; }
+        const T & front() const { return *data_ptr; }
 
         using value_type = T;
         using reference = T&;
@@ -118,9 +117,11 @@ private:
     /**
      * Repeatedly fuse most close values until max_bins bins left
      */
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void compress(UInt32 max_bins)
     {
+        if (size <= max_bins)
+            return;
+
         auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
         if (sorted_prefix == 0)
         {
@@ -132,12 +133,6 @@ private:
             ::sort(points + sorted_prefix, points + size, cmp);
             std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
-        sorted_prefix = size;
-        last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
-
-        if (size <= max_bins)
-            return;
-
         auto new_size = size;
 
         // Maintain doubly-linked list of "active" points
@@ -342,7 +337,7 @@ public:
     {
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return Data::structSize(max_bins);
     }
@@ -363,7 +358,7 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -371,7 +366,7 @@ public:
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), max_bins);
     }
@@ -402,7 +397,7 @@ public:
         offsets_to.push_back(to_tuple.size());
     }
 
-    [[nodiscard]] String getName() const override { return "histogram"; }
+    String getName() const override { return "histogram"; }
 };
 
 
@@ -435,10 +430,9 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 
 }
 
-void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {.description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {}});
 }
 
 }

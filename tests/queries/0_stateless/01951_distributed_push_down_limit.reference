@@ -13,8 +13,7 @@ Expression
   Limit
     Sorting
       Union
-        Limit
-          Sorting
-            Expression
-              ReadFromSystemNumbers
+        Sorting
+          Expression
+            ReadFromSystemNumbers
         ReadFromRemote

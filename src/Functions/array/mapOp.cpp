@@ -12,9 +12,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <cassert>
 
 namespace DB
 {
@@ -36,7 +35,7 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = VectorWithMemoryTracking<TupArg>;
+using TupleMaps = std::vector<TupArg>;
 
 enum class OpTypes : uint8_t
 {
@@ -44,7 +43,7 @@ enum class OpTypes : uint8_t
     SUBTRACT = 1
 };
 
-class FunctionMapOp final : public IFunction
+class FunctionMapOp : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }
@@ -53,30 +52,12 @@ public:
 private:
     const OpTypes op_type;
 
-    [[nodiscard]] String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
+    String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Documentation-only — combines maps (or pairs of `Array(K)`+`Array(V)`)
-    /// element-wise on matching keys, summing or subtracting the values.
-    /// Value-type promotion follows the same rule as the underlying numeric
-    /// op (e.g. `Map(K, UInt8) + Map(K, UInt8)` → `Map(K, UInt64)`), which
-    /// isn't expressible in the DSL.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(Map(K : Any, Any), ...) -> Map(K, Any)";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
@@ -99,7 +80,7 @@ private:
         }
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
+    DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -107,8 +88,8 @@ private:
 
         for (const auto & arg : arguments)
         {
-            const DataTypeArray * k = nullptr;
-            const DataTypeArray * v = nullptr;
+            const DataTypeArray * k;
+            const DataTypeArray * v;
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
@@ -145,7 +126,7 @@ private:
         return res;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
+    DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
     {
         DataTypePtr key_type;
         DataTypePtr val_type;
@@ -176,7 +157,7 @@ private:
         return res;
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
@@ -192,9 +173,9 @@ private:
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
-        IColumn *to_keys_data = nullptr;
-        IColumn *to_vals_data = nullptr;
-        ColumnArray::Offsets * to_keys_offset = nullptr;
+        IColumn *to_keys_data;
+        IColumn *to_vals_data;
+        ColumnArray::Offsets * to_keys_offset;
         ColumnArray::Offsets * to_vals_offset = nullptr;
 
         // prepare output destinations
@@ -211,7 +192,7 @@ private:
         }
         else
         {
-            chassert(res_type->getTypeId() == TypeIndex::Map);
+            assert(res_type->getTypeId() == TypeIndex::Map);
 
             auto * to_map = assert_cast<ColumnMap *>(res_column.get());
             auto & to_wrapper_arr = to_map->getNestedColumn();
@@ -222,7 +203,7 @@ private:
             to_vals_data = &to_map_tuple.getColumn(1);
         }
 
-        MapWithMemoryTracking<KeyType, ValType> summing_map;
+        std::map<KeyType, ValType> summing_map;
 
         for (size_t i = 0; i < row_count; ++i)
         {
@@ -234,7 +215,7 @@ private:
 
                 if (!arg.is_const)
                 {
-                    offset = arg.key_offsets[static_cast<ssize_t>(i) - 1];
+                    offset = arg.key_offsets[i - 1];
                     len = arg.key_offsets[i] - offset;
 
                     if (arg.val_offsets[i] != arg.key_offsets[i])
@@ -244,7 +225,7 @@ private:
                 Field temp_val;
                 for (size_t j = 0; j < len; ++j)
                 {
-                    KeyType key{};
+                    KeyType key;
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
@@ -274,12 +255,7 @@ private:
                     {
                         const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
-                        {
-                            if (first)
-                                it->second = common::addIgnoreOverflow(it->second, value);
-                            else
-                                it->second = common::subIgnoreOverflow(it->second, value);
-                        }
+                            it->second = common::subIgnoreOverflow(it->second, value);
                     }
                 }
 
@@ -333,10 +309,10 @@ private:
         }
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         DataTypePtr key_type;
-        size_t row_count = 0;
+        size_t row_count;
         const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((arguments[0]).type.get());
         DataTypePtr res_type;
         DataTypePtr res_value_type;
@@ -356,7 +332,7 @@ private:
 
             for (const auto & col : arguments)
             {
-                const ColumnTuple * tup = nullptr;
+                const ColumnTuple * tup;
                 bool is_const = isColumnConst(*col.column);
                 if (is_const)
                 {
@@ -391,7 +367,7 @@ private:
 
                 for (const auto & col : arguments)
                 {
-                    const ColumnMap * map = nullptr;
+                    const ColumnMap * map;
                     bool is_const = isColumnConst(*col.column);
                     if (is_const)
                     {
@@ -485,7 +461,7 @@ Collect all the keys and sum corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapAdd = {"Returns a map or returns a tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapAdd = {
         {"With Map type", "SELECT mapAdd(map(1, 1), map(1, 1))", "{1:2}"},
-        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1,2],[2,2])"}
+        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1, 2], [2, 2])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
@@ -503,7 +479,7 @@ Collect all the keys and subtract corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapSubtract = {"Returns one map or tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapSubtract = {
         {"With Map type", "SELECT mapSubtract(map(1, 1), map(1, 1))", "{1:0}"},
-        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1,2],[-1,0])"}
+        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1, 2], [-1, 0])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;

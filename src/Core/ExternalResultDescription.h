@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 
@@ -21,7 +20,6 @@ struct ExternalResultDescription
         vtInt16,
         vtInt32,
         vtInt64,
-        vtInt256,
         vtFloat32,
         vtFloat64,
         vtEnum8,
@@ -41,11 +39,10 @@ struct ExternalResultDescription
         vtArray,
         vtFixedString,
         vtPoint,
-        vtGeometry,
     };
 
     Block sample_block;
-    VectorWithMemoryTracking<std::pair<ValueType, bool /* is_nullable */>> types;
+    std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
 
     ExternalResultDescription() = default;
     explicit ExternalResultDescription(const Block & sample_block_);
