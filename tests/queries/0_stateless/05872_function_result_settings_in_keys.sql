@@ -31,6 +31,7 @@ DROP TABLE IF EXISTS t_json_overflow;
 DROP TABLE IF EXISTS t_bool_cast;
 DROP TABLE IF EXISTS t_json_inferred_time;
 DROP TABLE IF EXISTS t_time_array_text;
+DROP TABLE IF EXISTS t_unrelated_setting;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -113,6 +114,13 @@ CREATE TABLE t_time_array_text (dt DateTime) ENGINE = MergeTree ORDER BY toStrin
 INSERT INTO t_time_array_text SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
+
+-- A setting that the function does not declare keeps the key usable, e.g. a format setting for `toUInt64`.
+CREATE TABLE t_unrelated_setting (s String) ENGINE = MergeTree ORDER BY toUInt64(s);
+INSERT INTO t_unrelated_setting SELECT toString(number) FROM numbers(1000);
+SELECT 'unrelated setting reads in order', countIf(explain LIKE '%Read type: InOrder%')
+FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_unrelated_setting ORDER BY toUInt64(s) LIMIT 10
+      SETTINGS optimize_read_in_order = 1, output_format_csv_crlf_end_of_line = 1);
 
 SELECT 'declared', name, result_settings FROM system.functions WHERE name IN ('locate', 'DATE_FORMAT') ORDER BY name;
 
@@ -224,6 +232,7 @@ DROP TABLE t_json_overflow;
 DROP TABLE t_bool_cast;
 DROP TABLE t_json_inferred_time;
 DROP TABLE t_time_array_text;
+DROP TABLE t_unrelated_setting;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

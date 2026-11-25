@@ -32,14 +32,12 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 /// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
-/// Two functions of one name compute other values when they captured other settings, see `IFunctionBase::updateHash`.
-static bool sameFunctionState(const IFunctionBase & lhs, const IFunctionBase & rhs)
+/// Two functions of one name compute other values when a result setting that applies to them differs, see `FunctionResultSetting`.
+/// The rest of `IFunctionBase::updateHash` is not compared: a conversion hashes all format settings there, most of which do not
+/// change its result.
+static bool sameResultSettings(const IFunctionBase & lhs, const IFunctionBase & rhs)
 {
-    SipHash lhs_hash;
-    SipHash rhs_hash;
-    lhs.updateHash(lhs_hash);
-    rhs.updateHash(rhs_hash);
-    return lhs_hash.get128() == rhs_hash.get128();
+    return lhs.getResultSettingsHash() == rhs.getResultSettingsHash();
 }
 
 static bool hasNullConstantArgument(const ActionsDAG::Node & node)
@@ -398,7 +396,7 @@ static MatchedTrees::Matches matchTreesImpl(
                             /// the DAG was built with, and differently-typed results are not one calculation.
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
                                 && parent->result_type->equals(*frame.node->result_type)
-                                && sameFunctionState(*parent->function_base, *frame.node->function_base))
+                                && sameResultSettings(*parent->function_base, *frame.node->function_base))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
