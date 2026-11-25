@@ -231,7 +231,7 @@ public:
 
             size_t num_index_arguments = TImpl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
 
-            /// The subcolumn of a path is the value of the key lookup only for non-empty, non-special keys without `.`, `%` or a backtick.
+            /// The value at a path is the value of the key lookup only for non-empty keys without `.` or `%`.
             bool use_subcolumn = num_index_arguments != 0 && !case_insensitive && std::string_view(TName::name) != "JSONKey";
             Strings keys;
             for (size_t i = 1; use_subcolumn && i <= num_index_arguments; ++i)
@@ -239,8 +239,7 @@ public:
                 const auto * key_column = typeid_cast<const ColumnConst *>(arguments[i].column.get());
                 if (!key_column || !isString(arguments[i].type))
                     use_subcolumn = false;
-                else if (String key = key_column->getValue<String>(); key.empty() || key.find_first_of(".%`") != String::npos
-                         || key == DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
+                else if (String key = key_column->getValue<String>(); key.empty() || key.find_first_of(".%") != String::npos)
                     use_subcolumn = false;
                 else
                     keys.push_back(std::move(key));
@@ -266,21 +265,21 @@ public:
             ColumnsWithTypeAndName text_arguments;
             if (use_subcolumn)
             {
-                /// The combined subcolumn holds the literal at the path, else the sub-object, else NULL.
+                /// The literal at the path, else the sub-object, else NULL, read by path and not by subcolumn name.
                 const String & path = prefixes.back();
                 const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
-                const bool always_present = data_type_object.getTypedPaths().contains(path) && !skip_null;
-                String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
-                auto value = skip_null
-                    ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
-                    : data_type_object.getSubcolumn(combined_name, object_column);
-                auto value_type = skip_null ? data_type_object.getDynamicType() : data_type_object.getSubcolumnType(combined_name);
+                const auto typed_it = data_type_object.getTypedPaths().find(path);
+                const bool always_present = typed_it != data_type_object.getTypedPaths().end() && !skip_null;
+                auto value = always_present
+                    ? data_type_object.extractLiteralSubcolumn(path, object_column)
+                    : data_type_object.extractCombinedSubcolumn(path, object_column, skip_null);
+                auto value_type = always_present ? typed_it->second : data_type_object.getDynamicType();
                 auto value_serialization = value_type->getDefaultSerialization();
 
                 /// The text has a literal at a shorter prefix before the object with the path, and the lookup stops at it.
                 Columns prefix_literals;
                 for (size_t k = 0; k + 1 < prefixes.size(); ++k)
-                    prefix_literals.push_back(data_type_object.getSubcolumn(prefixes[k], object_column));
+                    prefix_literals.push_back(data_type_object.extractLiteralSubcolumn(prefixes[k], object_column));
 
                 auto present = ColumnUInt8::create(num_rows);
                 auto & present_data = present->getData();

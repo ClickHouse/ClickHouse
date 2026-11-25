@@ -239,6 +239,30 @@ INSERT INTO tk SELECT id, j_dyn, j_shared, j_typed, s, j_typed::String FROM tk_0
     for ty in Int64 String Dynamic; do printf 'JSONExtract|, %s|%s\n' "'$K', 'b'" "$ty"; done
 } | build_queries tk "" "j_dyn j_shared j_typed" "o_dyn o_dyn o_typed" | $CLICKHOUSE_CLIENT
 
+# Neither a typed path named like the combined subcolumn `@\`a\`` of the key `a` nor a root SKIP rule changes the lookup of a key.
+$CLICKHOUSE_CLIENT <<'EOF'
+CREATE TABLE tc_0 (id UInt32, j_dyn JSON, j_typed JSON(`@\`a\`` Int64, `@\`a.b\`` Int64)) ENGINE = Memory;
+INSERT INTO tc_0 SELECT id, s, s FROM values('id UInt32, s String', (1, '{"a":42,"@`a`":999}'), (2, '{"@`a`":5}'),
+    (3, '{"a":{"b":3},"@`a.b`":8}'), (4, '{"x":1}'));
+CREATE TABLE tc (id UInt32, j_dyn JSON, j_typed JSON(`@\`a\`` Int64, `@\`a.b\`` Int64), o_dyn String, o_typed String) ENGINE = Memory;
+INSERT INTO tc SELECT id, j_dyn, j_typed, j_dyn::String, j_typed::String FROM tc_0;
+CREATE TABLE ts_0 (id UInt32, j_skip JSON(a.b UInt32, SKIP b, SKIP REGEXP '^c$')) ENGINE = Memory;
+INSERT INTO ts_0 VALUES (1, '{"a":{"b":1},"b":5,"c":6}'), (2, '{"a":{"b":2,"x":"y"},"c":{"d":1}}');
+CREATE TABLE ts (id UInt32, j_skip JSON(a.b UInt32, SKIP b, SKIP REGEXP '^c$'), o_skip String) ENGINE = Memory;
+INSERT INTO ts SELECT id, j_skip, j_skip::String FROM ts_0;
+EOF
+{
+    for f in JSONHas JSONLength JSONType JSONExtractInt JSONExtractString JSONExtractRaw JSONExtractKeys; do
+        for p in "'a'" "'a', 'b'" "'@\`a\`'" "materialize('a')" "'a', materialize('b')"; do printf '%s|, %s|\n' "$f" "$p"; done
+    done
+    for ty in Int64 String Dynamic; do printf 'JSONExtract|, %s|%s\n' "'a'" "$ty"; done
+} | build_queries tc "" "j_dyn j_typed" "o_dyn o_typed" | $CLICKHOUSE_CLIENT
+{
+    for f in JSONHas JSONLength JSONType JSONExtractInt JSONExtractRaw JSONExtractKeys JSONExtractKeysAndValuesRaw; do
+        for p in "'a'" "'a', 'b'" "'a', 'x'" "materialize('a')"; do printf '%s|, %s|\n' "$f" "$p"; done
+    done
+} | build_queries ts "" j_skip o_skip | $CLICKHOUSE_CLIENT
+
 $CLICKHOUSE_CLIENT -q "
 SELECT '-- comparisons, calls, distinct String results, mismatches';
 SELECT tbl, count(), uniqExact(call), uniqExact(e), countIf(r != e) FROM res GROUP BY tbl ORDER BY tbl;

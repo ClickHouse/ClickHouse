@@ -114,6 +114,9 @@ public:
     /// always Dynamic (including the empty-sub-object early return).
     ColumnPtr extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const;
 
+    /// Extracts the literal at the given path: the column of a typed path, otherwise a Dynamic column.
+    ColumnPtr extractLiteralSubcolumn(const String & path, const ColumnPtr & column) const;
+
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
 

@@ -1110,6 +1110,11 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
         skip_null_typed_paths, literal_type);
 }
 
+ColumnPtr DataTypeObject::extractLiteralSubcolumn(const String & path, const ColumnPtr & column) const
+{
+    return extractLiteralColumn(assert_cast<const ColumnObject &>(*column), path, max_dynamic_types);
+}
+
 UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
 {
     UnorderedMapWithMemoryTracking<String, SerializationPtr> result;
