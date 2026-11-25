@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the order of rows returned without `ORDER BY`, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- A persistent table over `loop` would hold the source table's storage object forever,
 -- so `DROP TABLE s_05493 SYNC` would never return. https://github.com/ClickHouse/ClickHouse/issues/119647
 

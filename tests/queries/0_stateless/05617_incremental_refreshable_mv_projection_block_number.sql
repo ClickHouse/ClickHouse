@@ -1,4 +1,6 @@
 -- Tags: atomic-database
+-- Disable force_primary_key_reverse_order: the reference pins `_block_offset` values, which depend on the physical order of the rows
+SET force_primary_key_reverse_order = 0;
 -- A normal projection does not store `_block_number` and `_block_offset`. Reading them through it must not
 -- return the projection part's own values: the incremental refresh filters the source by these columns, so
 -- wrong values make it skip rows and advance its cursor past them.

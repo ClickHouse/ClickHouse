@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- Two lambdas with the same signature and the same captured columns are one calculation only if
 -- their bodies are, whether or not JIT compiled them. Each case pins its optimization on the
 -- outermost query.

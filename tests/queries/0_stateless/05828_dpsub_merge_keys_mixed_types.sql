@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: the reference pins the choice of a merge join over inputs sorted by an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- A sort-merge join chosen by DPsub must not use a class of columns of different types as a merge key:
 -- equality of `Date` and `DateTime` in two time zones is not transitive.
 -- https://github.com/ClickHouse/ClickHouse/issues/130142
