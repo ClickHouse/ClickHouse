@@ -138,7 +138,8 @@ public:
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size,
         bool with_tags_,
-        const std::optional<std::string> & start_after_)
+        const std::optional<std::string> & start_after_,
+        const std::string & version_id_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -147,6 +148,7 @@ public:
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
+        , reads_explicit_version(!version_id_.empty())
         , start_after_set(start_after_.has_value() && !start_after_->empty())
         , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
@@ -200,6 +202,15 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
+                /// The listing describes the current version of each object, but the objects are read at the version
+                /// selected by `?versionId=`, whose size can differ (and the size bounds the read). So the metadata
+                /// is left unset, to be requested with a `HEAD` of the selected version where it is needed.
+                if (reads_explicit_version)
+                {
+                    batch.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey())));
+                    continue;
+                }
+
                 ObjectMetadata metadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
@@ -225,6 +236,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
+    const bool reads_explicit_version;
     bool start_after_set;
     const std::string description;
 };
@@ -380,7 +392,7 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after, uri.version_id);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -430,7 +442,9 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (max_keys)
         {
-            ssize_t keys_left = static_cast<ssize_t>(max_keys) - children.size();
+            /// `children.size()` is unsigned, so casting only the left operand would leave the
+            /// subtraction in `size_t` and the `<= 0` test below would depend on the wrap.
+            ssize_t keys_left = static_cast<ssize_t>(max_keys) - static_cast<ssize_t>(children.size());
             if (keys_left <= 0)
                 break;
             request.SetMaxKeys(static_cast<int>(keys_left));
@@ -598,7 +612,9 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 {
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    /// The metadata must describe the version that `readObject` reads (`?versionId=`), not the current one:
+    /// its size bounds the read (e.g. with the small-file prefetch).
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, uri.version_id, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -619,9 +635,10 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
     S3::ObjectInfo object_info;
+    /// Of the version that `readObject` reads (`?versionId=`), see `tryGetObjectMetadata`.
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+        object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -632,7 +649,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
             if (new_client)
             {
                 client.set(std::move(new_client));
-                object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
                 updated = true;
             }
         }
