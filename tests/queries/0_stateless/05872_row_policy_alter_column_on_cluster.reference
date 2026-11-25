@@ -1,0 +1,9 @@
+-- a host of ON CLUSTER does not analyze a policy with the full access of the server
+ACCESS_DENIED
+-- also not for a user that has the grants
+ACCESS_DENIED
+-- ON CLUSTER of a table without a policy, or of a command that does not drop, rename or modify a column
+plain	id
+tfn	id
+tfn	other
+tfn	added
