@@ -6,8 +6,6 @@ description: '使用 ClickStack 监控 Nginx'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -17,14 +15,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-nginx">
-  ## 与现有 Nginx 集成
+  ## 与现有 Nginx 集成 {#existing-nginx}
 </div>
 
 本节介绍如何通过修改 ClickStack OTel collector 配置，将您现有的 Nginx 安装配置为向 ClickStack 发送日志。
 如果您想先测试此集成，再配置自己现有的环境，可以使用我们预先配置的设置以及[下一节](/zh/clickstack/integration-examples/nginx-logs#demo-dataset)中的样本数据进行测试。
 
 <div id="prerequisites">
-  ##### 前置条件
+  ##### 前置条件 {#prerequisites}
 </div>
 
 * 正在运行的 ClickStack 实例
@@ -68,7 +66,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="创建自定义 OTel collector 配置" id="custom-otel">
-    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 ClickStack 用户界面通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 nginx-monitoring.yaml 的文件，内容如下：
 
@@ -107,7 +105,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 从 Nginx 的标准位置读取日志
     * 解析 JSON 日志记录
     * 提取并保留原始日志时间戳
-    * 添加 `source: Nginx` 属性，以便在 HyperDX 中进行过滤
+    * 添加 `source: Nginx` 属性，以便在 ClickStack 用户界面中进行过滤
     * 通过专用管道将日志发送到 ClickHouse exporter
 
     <Note>
@@ -125,7 +123,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     2. 设置环境变量 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml
     3. 挂载 Nginx 日志目录，以便 collector 能够读取这些日志
 
-    ##### 选项 1：Docker Compose
+##### 选项 1：Docker Compose {#docker-compose}
 
     更新您的 ClickStack 部署配置：
 
@@ -142,9 +140,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-    ##### 选项 2：Docker Run (All-in-One 镜像)
+##### 选项 2：Docker Run (All-in-One 镜像) {#all-in-one}
 
-    如果使用 all-in-one 镜像并通过 `docker run` 运行：
+    如果使用 all-in-one 镜像并通过 docker run 运行：
 
     ```bash
     docker run --name clickstack \
@@ -160,25 +158,31 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
-    配置完成后，登录 HyperDX，确认日志已正常流入：
+  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
+    配置完成后，登录 ClickStack 用户界面，确认日志已正常流入：
 
     1. 进入搜索视图
-    2. 将 source 设为日志，并确认你能看到包含 `request`、`request&#95;time`、`upstream&#95;response&#95;time` 等字段的日志条目。
+    2. 将 source 设为日志，并确认你能看到包含 request、request&#95;time、upstream&#95;response&#95;time 等字段的日志条目。
 
     你应会看到类似下面的内容：
 
-    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## 演示数据集
-</div>
+## 演示数据集 {#demo-dataset}
 
-对于想在配置生产系统之前先测试 nginx 集成的用户，我们提供了一份预先生成的 nginx 访问日志演示数据集，其中包含逼真的流量模式。
+对于想在配置生产系统之前先测试 nginx 集成的用户，我们提供了一份预先生成的 nginx 访问日志样本数据集，其中包含逼真的流量模式。
 
 <Steps>
   <Step title="下载样本数据集" id="download-sample">
@@ -243,10 +247,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
+  <Step title="在 ClickStack 用户界面中验证日志" id="verify-demo-logs">
     ClickStack 运行后：
 
-    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建账户)
+    1. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录你的账户 (你可能需要先创建账户)
     2. 进入搜索视图，并将数据源设置为 `Logs`
     3. 将时间范围设置为 **2025-10-19 11:00:00 - 2025-10-22 11:00:00**
 
@@ -255,18 +259,24 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间范围为 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC。较大的时间范围可确保无论你位于何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据的时间范围为 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC。较大的时间范围可确保无论你位于何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
-    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/nginx-logs-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志视图](/images/clickstack/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 仪表盘与可视化
-</div>
+## 仪表盘与可视化 {#dashboards}
 
 为帮助你快速开始使用 ClickStack 监控 nginx，我们提供了 Nginx 日志所需的核心可视化内容。
 
@@ -276,14 +286,22 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="导入预构建仪表盘" id="import-dashboard">
-    1. 打开 HyperDX，进入 Dashboards 部分。
+    1. 打开 ClickStack 用户界面，进入仪表盘部分。
     2. 点击右上角省略号菜单下的“导入仪表盘”。
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
     3. 上传 nginx-logs-dashboard.json 文件，然后点击完成导入。
 
-    <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="完成导入" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![完成导入](/images/clickstack/finish-nginx-logs-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="系统将创建一个已预先配置好所有可视化内容的仪表盘" id="created-dashboard">
@@ -291,16 +309,20 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       对于演示数据集，请将时间范围设置为 **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (请根据你的本地时区调整) 。导入的仪表盘默认不会预设时间范围。
     </Note>
 
-    <Image img="/images/clickstack/nginx-logs-dashboard.webp" alt="示例仪表盘" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![示例仪表盘](/images/clickstack/nginx-logs-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 自定义配置未加载
+  ### 自定义配置未加载 {#troubleshooting-not-loading}
 </div>
 
 * 验证环境变量 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE 是否已正确设置
@@ -321,9 +343,7 @@ docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-logs">
-  ### HyperDX 中未显示日志
-</div>
+### ClickStack 用户界面中未显示日志 {#no-logs}
 
 * 确保 nginx 正在输出 JSON 日志
 
@@ -337,7 +357,7 @@ tail -f /var/log/nginx/access.log
 docker exec `<container>` cat /var/log/nginx/access.log
 ```
 
-* 验证当前生效的配置中包含 filelog receiver
+* 验证当前生效的配置中包含 filelog 接收器
 
 ```bash
 docker exec `<container>` cat /etc/otel/supervisor-data/effective.yaml | grep filelog
@@ -350,14 +370,12 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 ```
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 * 为关键指标 (错误率、延迟阈值) 配置[告警](/zh/clickstack/features/alerts)
 * 针对特定场景 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
-<div id="going-to-production">
-  ## 面向生产环境
-</div>
+## 面向生产环境 {#going-to-production}
 
 本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

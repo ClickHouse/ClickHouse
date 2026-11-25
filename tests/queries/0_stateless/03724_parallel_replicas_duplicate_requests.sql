@@ -8,8 +8,6 @@ CREATE TABLE t(a UInt64, s String) ENGINE = MergeTree ORDER BY a SETTINGS ratio_
 
 INSERT INTO t SELECT *, randomString(100) FROM numbers_mt(3_000_000);
 
-SET enable_analyzer = 1;
-
 SET max_threads = 3, merge_tree_min_read_task_size = 1;
 
 SET automatic_parallel_replicas_mode = 0;

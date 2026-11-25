@@ -1,0 +1,8 @@
+NOT (-5 <=> moduloOrNull(7, x))	15	15
+NOT (moduloOrNull(7, x) IS NOT DISTINCT FROM 0)	13	13
+NOT (nullIf(x, 0) <=> 5)	14	14
+NOT ((moduloOrNull(7, x) = -5) IS TRUE)	15	15
+Parts: 15/15
+Partition
+Parts: 13/15
+1

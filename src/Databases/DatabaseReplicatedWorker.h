@@ -1,7 +1,11 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/QueryFlags.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/QualifiedTableName.h>
+#include <Poco/Event.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -27,11 +31,24 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, QueryFlags flags);
 
     void shutdown() override;
 
+    /// Returns false on timeout or if the worker is stopped before or during the wait.
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
+
+    /// The worker was shut down. A stopped worker is never restarted, the database replaces it with a new one.
+    bool isStopped() const { return stop_flag; }
+
+    /// Makes `tryEnqueueAndExecuteEntry` reject new initial queries (as if the worker was stopped),
+    /// while the worker itself keeps running. Irreversible: the database replaces such a worker afterwards.
+    void stopInitialQueries();
+
+    /// Waits until the initial queries that `tryEnqueueAndExecuteEntry` admitted for execution finish.
+    /// They execute and commit on the submitting threads, so `shutdown` (which joins only the worker's
+    /// own threads) does not wait for them. Requires `stopInitialQueries` or `shutdown` to be called before.
+    void waitForForegroundTasks();
 
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                    DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
@@ -57,6 +74,7 @@ private:
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
+    static bool isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep);
 
     bool checkParentTableExists(const UUID & uuid) const;
 
@@ -68,6 +86,15 @@ private:
     std::condition_variable wait_current_task_change;
 
     String current_task;
+    /// The number of initial queries being executed by `tryEnqueueAndExecuteEntry` on the submitting threads.
+    /// Protected by `mutex`, see `waitForForegroundTasks`.
+    size_t foreground_tasks = 0;
+    std::condition_variable foreground_tasks_finished;
+    /// Set by `stopInitialQueries`. Protected by `mutex`.
+    bool initial_queries_stopped = false;
+    /// Events of `waitForReplicaToProcessAllEntries` waiting for our `log_ptr` in Keeper to change.
+    /// `shutdown` sets them, so that the waiters return without waiting for the timeout.
+    std::unordered_set<std::shared_ptr<Poco::Event>> log_ptr_waiters;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
     std::atomic_bool unsynced_after_recovery = false;
 

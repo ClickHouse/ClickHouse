@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -185,12 +186,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
 
     writeIntBinary(flags, ctx.out);
 
-    serializeAggregateDescriptions(aggregates, ctx.out);
+    serializeAggregateDescriptions(aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     if (actions_dag)
     {
-        writeStringBinary(filter_column_name, ctx.out);
-        actions_dag->serialize(ctx.out, ctx.registry);
+        ctx.writeColumnName(filter_column_name);
+        actions_dag->serialize(ctx.out, ctx.registry, ctx.input_header);
     }
 }
 
@@ -209,6 +210,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedFinalizedAggregates(aggregates, *ctx.input_headers.front());
 
     std::optional<ActionsDAG> actions_dag;
     String filter_column_name;

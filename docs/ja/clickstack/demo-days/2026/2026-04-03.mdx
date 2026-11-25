@@ -8,7 +8,7 @@ keywords: ['ClickStack', 'デモデイズ']
 ---
 
 <div id="new-dashboard-and-saved-search-listing-pages">
-  ## 新しいダッシュボードと保存済み検索の一覧ページ
+  ## 新しいダッシュボードと保存済み検索の一覧ページ {#new-dashboard-and-saved-search-listing-pages}
 </div>
 
 *[@pulpdrew](https://github.com/pulpdrew) によるデモ*
@@ -26,7 +26,7 @@ keywords: ['ClickStack', 'デモデイズ']
 **関連 PR:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) ダッシュボード一覧ページを追加, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) 保存済み検索の一覧ページを追加, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) ダッシュボードと保存済み検索のお気に入り機能を追加, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) ダッシュボードと検索をタグでグループ化, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) 作成者/更新者メタデータを表示, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) ダッシュボード一覧ページにアラートアイコンを追加, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) ダッシュボードテンプレートギャラリーを追加
 
 <div id="filters-for-filters">
-  ## フィルタ用のフィルタ
+  ## フィルタ用のフィルタ {#filters-for-filters}
 </div>
 
 *デモ: [@pulpdrew](https://github.com/pulpdrew)*
@@ -42,13 +42,13 @@ keywords: ['ClickStack', 'デモデイズ']
 **関連 PR:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Dashboard フィルタに条件を追加; フィルタの複数選択をサポート
 
 <div id="rbac-for-predefined-dashboards">
-  ## プリセットダッシュボード向けのRBAC
+  ## プリセットダッシュボード向けのRBAC {#rbac-for-predefined-dashboards}
 </div>
 
 *[@pulpdrew](https://github.com/pulpdrew) によるデモ*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 ClickStack のプリセットダッシュボードにも、ロールベースのアクセス制御が適用されるようになりました。以前は、これらの組み込みダッシュボードは RBAC がまったく効かず、割り当てられたロールに関係なく、どのユーザーでもアクセスできていました。この問題は現在解消されています。
@@ -56,7 +56,7 @@ ClickStack のプリセットダッシュボードにも、ロールベースの
 きめ細かな読み取り権限も、期待どおりに機能します。特定の service に対する read-only アクセスが設定されたロールでは、ユーザーが表示できるのは、その service に関連するプリセットダッシュボードのみに制限されます。そのロールのユーザーはダッシュボードとそのフィルターを表示できますが、フィルターの操作は編集できないようロックされます。デモでは、名前付き service にスコープされた &quot;services&quot; の読み取り権限を持つカスタムロールを設定し、そのロールでログインしたユーザーに、アクセス可能なダッシュボードとフィルター状態だけが正確に表示される様子を確認できます。
 
 <div id="optimizations-for-searching">
-  ## 検索の最適化
+  ## 検索の最適化 {#optimizations-for-searching}
 </div>
 
 *[@knudtty](https://github.com/knudtty) によるデモ*
@@ -72,7 +72,7 @@ ClickHouse の &quot;Read in Order&quot; 最適化では、ORDER BY がテーブ
 **関連 PR:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) 検索に 1 分ウィンドウを使用, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) otel&#95;traces 向け ORDER BY 最適化の不備を修正
 
 <div id="copy-row-and-configurable-filter-sizes">
-  ## 行のコピーとフィルター数の設定対応
+  ## 行のコピーとフィルター数の設定対応 {#copy-row-and-configurable-filter-sizes}
 </div>
 
 *[@knudtty](https://github.com/knudtty) によるデモ*
@@ -88,7 +88,7 @@ ClickHouse の &quot;Read in Order&quot; 最適化では、ORDER BY がテーブ
 **関連 PR:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) 行を JSON としてコピーするボタンを追加, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) 取得するフィルター数の新しいチーム設定, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) ネストされたフィルターグループの仮想化
 
 <div id="tabs-and-groups-in-dashboards">
-  ## ダッシュボードのタブとグループ
+  ## ダッシュボードのタブとグループ {#tabs-and-groups-in-dashboards}
 </div>
 
 *[@alex-fedotyev](https://github.com/alex-fedotyev) によるデモ*
@@ -104,17 +104,17 @@ ClickHouse の &quot;Read in Order&quot; 最適化では、ORDER BY がテーブ
 **関連 PR:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) タブと折りたたみ／枠線オプション付きのダッシュボードグループ, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) section/group を単一のグループに統合
 
 <div id="clickstack-cli">
-  ## ClickStack CLI
+  ## ClickStack CLI {#clickstack-cli}
 </div>
 
-*デモ: [@wrn14897](https://github.com/wrn14897)*
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="YouTube動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-ClickStack CLI (`hdx`) は、ターミナルを離れることなく、ログやトレースの検索、tail、調査を行える新しいターミナル TUI です。ブラウザと同じ Web セッションの仕組みを使って HyperDX インスタンスに接続するため、個別に管理する API キーは必要ありません。インスタンス URL とメールアドレスを使って一回限り `hdx auth login` を実行すれば、その後は認証状態が維持されます。
+ClickStack CLI (`hdx`) は、ターミナルを離れることなく、ログやトレースの検索、tail、調査を行える新しいターミナル TUI です。ブラウザと同じ Web セッションの仕組みを使って ClickStack UI インスタンスに接続するため、個別に管理する API キーは必要ありません。インスタンス URL とメールアドレスを使って一回限り `hdx auth login` を実行すれば、その後は認証状態が維持されます。
 
-この TUI の画面は、Web アプリと同じ検索インターフェイスになっています。クエリ構文も同じで、ログソースの選択も同様に行え、個々のログエントリを掘り下げて確認することもできます。特に注目すべきなのが、トレースのウォーターフォールビューです。ログエントリをクリックすると、完全な分散トレースがターミナル内に直接表示されます。このデモでは、エージェント的な利用に関する初期段階の実験も紹介されています。AI エージェントに、CLI のスキーマ introspection 出力へのアクセスと、ClickHouse プロキシ経由でクエリを実行する権限を与えることで、エージェントが自律的に問題を調査できるようになります。さらにデモでは、エージェントが Web セッションを使って Playwright 経由で HyperDX UI を操作し、表示されたチャートからメトリクスを取得して、ログで見つけた内容と照合する様子も示されています。
+この TUI の画面は、Web アプリと同じ検索インターフェイスになっています。クエリ構文も同じで、ログソースの選択も同様に行え、個々のログエントリを掘り下げて確認することもできます。特に注目すべきなのが、トレースのウォーターフォールビューです。ログエントリをクリックすると、完全な分散トレースがターミナル内に直接表示されます。このデモでは、エージェント的な利用に関する初期段階の実験も紹介されています。AI エージェントに、CLI のスキーマ introspection 出力へのアクセスと、ClickHouse プロキシ経由でクエリを実行する権限を与えることで、エージェントが自律的に問題を調査できるようになります。さらにデモでは、エージェントが Web セッションを使って Playwright 経由で ClickStack UI を操作し、表示されたチャートからメトリクスを取得して、ログで見つけた内容と照合する様子も示されています。
 
 **関連 PR:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) @hyperdx/cli パッケージを追加 — イベントの検索と tail を行うためのターミナル TUI

@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Logger.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
@@ -10,6 +11,7 @@
 namespace DB
 {
 struct KafkaSettings;
+class NamedCollection;
 class VirtualColumnsDescription;
 
 struct KafkaConfigLoader
@@ -28,6 +30,7 @@ struct KafkaConfigLoader
         String & collection_name;
         const Names & topics;
         LoggerPtr & log;
+        ContextPtr context;
     };
 
     struct ConsumerConfigParams : public LoadConfigParams
@@ -51,5 +54,10 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// Throws if a named collection created with SQL sets a librdkafka property that is not explicitly allowed.
+    /// The same check is done when the configuration of a consumer or a producer is loaded, because the named
+    /// collection can change while the table exists.
+    static void checkNamedCollection(const NamedCollection & collection);
 };
 }

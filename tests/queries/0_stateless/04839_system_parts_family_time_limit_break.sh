@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-parallel
+# Tags: no-ordinary-database, no-parallel, no-fasttest
 # - no-ordinary-database: `system.dropped_tables_parts` is filled only for Atomic databases,
 #   where a dropped table is kept for `database_atomic_delay_before_drop_table_sec`.
 # - no-parallel: the test switches the `slowdown_system_parts_enumeration` failpoint, which is

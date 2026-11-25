@@ -58,6 +58,10 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_depth = command.max_parser_depth;
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
+    /// The rewritten command keeps the partition scope resolved on the original one, so that
+    /// `MutationsInterpreter` reads the resolved ids instead of the partition expression.
+    res.has_partition = command.has_partition;
+    res.partition_ids = command.partition_ids;
 
     auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
@@ -121,6 +125,8 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
     /// `DELETE` would be applied before its predicate is evaluated.
     mutation_command->mutation_version = command.mutation_version;
+    /// Same for the partition scope resolved on the original command.
+    mutation_command->partition_ids = command.partition_ids;
 
     return *mutation_command;
 }
@@ -181,12 +187,41 @@ bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
         || type == MutationCommand::DROP_COLUMN;
 }
 
+void AlterConversions::addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns)
+{
+    using enum MutationCommand::Type;
+
+    if (command.type == READ_COLUMN)
+    {
+        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
+        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
+        if (command.data_type)
+            updated_columns.insert(command.column_name);
+    }
+    else if (command.type == UPDATE || command.type == DELETE)
+    {
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+                updated_columns.insert(child->as<ASTAssignment &>().column_name);
+        }
+    }
+}
+
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
 {
     using enum MutationCommand::Type;
 
     if (command.type == RENAME_COLUMN)
     {
+        columns_touched_by_metadata_mutations.insert(command.column_name);
+        columns_touched_by_metadata_mutations.insert(command.rename_to);
+
+        /// A rename changes which column a name reads, so an index over that name is stale whatever its
+        /// granules were typed - the type record certifies the type, never the column identity.
+        value_updated_columns.insert(command.column_name);
+        value_updated_columns.insert(command.rename_to);
+
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
@@ -204,6 +239,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
+        columns_touched_by_metadata_mutations.insert(command.column_name);
+
         /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
         /// record the drop under A, and erase the mapping of A to B.
         auto dropped_column_name = command.column_name;
@@ -214,17 +251,15 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             rename_map.erase(it);
         }
 
+        /// The reader returns the replacement column's defaults instead of the stored values.
+        value_updated_columns.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
     {
         ++number_of_alter_mutations;
         version_of_alter_mutation = command.mutation_version;
-
-        /// This is needed to ignore skip indices that use the column as it's changing its type and no longer applies
-        /// Note that data_type is only set on ADD_COLUMN and MODIFY_COLUMN commands
-        if (command.data_type)
-            all_updated_columns.insert(command.column_name);
+        addUpdatedColumns(command, all_updated_columns);
     }
     else if (command.type == UPDATE || command.type == DELETE)
     {
@@ -238,12 +273,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        if (auto alter = command.ast(); alter && alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
-        }
-
+        addUpdatedColumns(command, all_updated_columns);
+        addUpdatedColumns(command, value_updated_columns);
         mutation_commands.push_back(command);
     }
 }
@@ -265,6 +296,7 @@ void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
             updated_column_name = patch_conversions->getColumnNewName(column.name);
 
         all_updated_columns.insert(updated_column_name);
+        value_updated_columns.insert(updated_column_name);
         columns_updated_in_patches.insert(updated_column_name);
     }
 
@@ -317,6 +349,17 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
             return name_from;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
+}
+
+NameSet AlterConversions::getColumnsInvalidatingIndexes() const
+{
+    /// `rename_map` and `dropped_columns` are normalized (chained renames are collapsed, a drop after
+    /// a rename is recorded under the original name), so they lose the intermediate names. Those names
+    /// can be reused as well, so the raw names of the commands are collected separately.
+    NameSet res = all_updated_columns;
+    res.insert(columns_touched_by_metadata_mutations.begin(), columns_touched_by_metadata_mutations.end());
+    res.insert(dropped_columns.begin(), dropped_columns.end());
+    return res;
 }
 
 bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const

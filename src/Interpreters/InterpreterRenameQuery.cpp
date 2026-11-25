@@ -8,6 +8,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -26,6 +27,12 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int UNFINISHED;
+}
+
+namespace FailPoints
+{
+    extern const char rename_table_pause_after_locks[];
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -89,8 +96,39 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
+    /// `DROP`, `DETACH` and `TRUNCATE DATABASE` hold this lock exclusively from listing the tables of the database
+    /// until they have dropped them by name, so none of these tables may be renamed or exchanged meanwhile.
+    std::vector<std::shared_lock<SharedMutex>> database_locks;
+    if (!skip_database_locks)
+    {
+        std::set<String> database_names;
+        for (const auto & elem : descriptions)
+            database_names.insert({elem.from_database_name, elem.to_database_name});
+        for (const auto & database_name : database_names)
+        {
+            auto lock = database_catalog.tryGetLockForRestartReplica(database_name);
+            if (!lock)
+                throw Exception(ErrorCodes::UNFINISHED, "Database {} is being dropped, detached or truncated, cannot rename or exchange its tables",
+                    backQuoteIfNeed(database_name));
+            database_locks.push_back(std::move(*lock));
+        }
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::rename_table_pause_after_locks);
+
     for (const auto & elem : descriptions)
     {
+        /// With the asynchronous loading of tables, a table is attached only by its load job, so wait
+        /// for the source and the destination before the existence checks below, the same way
+        /// `tryGetTable` does: otherwise a table that is still loading is treated as nonexistent.
+        auto wait_table_started = [&](const String & database_name, const String & table_name)
+        {
+            if (auto database = database_catalog.tryGetDatabase(database_name))
+                database->waitTableStarted(table_name);
+        };
+        wait_table_started(elem.from_database_name, elem.from_table_name);
+        wait_table_started(elem.to_database_name, elem.to_table_name);
+
         if (elem.if_exists)
         {
             chassert(!rename.exchange);
@@ -135,7 +173,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
+            database_locks.clear();
+            return database->tryEnqueueReplicatedDDL(query_ptr->clone(), getContext(), {}, std::move(ddl_guards[from]));
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
@@ -168,7 +207,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
-            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
+            if (!keep_source_view_dependencies)
+                from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
         {
@@ -249,6 +289,14 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     if (db)
     {
+        /// The database-level `DDLGuard` taken above only serializes this query against other
+        /// database-level DDL (`CREATE`, `DROP`, `RENAME DATABASE`). Table-level DDL takes the shared
+        /// side of `database_ddl_mutex`, so the exclusive side is what excludes a concurrent
+        /// `CREATE TABLE` / `ATTACH TABLE`: the rename re-keys every table of the database, and
+        /// `renameDatabase` validates and rewrites the exact set of tables it sees under this lock.
+        /// The same lock is held by `CREATE DATABASE` and `DROP DATABASE`.
+        auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
+
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
     }

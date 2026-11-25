@@ -11,7 +11,6 @@ SET prefer_localhost_replica = 0;
 -- repetitive without-`DISTINCT` stream is entropy-coded almost as small as the tiny with-`DISTINCT`
 -- payload, so the strict comparison becomes flaky. `LZ4` restores the deterministic margin.
 SET network_compression_method = 'LZ4';
-SET allow_experimental_analyzer = 1;
 SET distributed_product_mode = 'allow';
 SET prefer_global_in_and_join = 1;
 SET max_rows_to_read = 100000000;

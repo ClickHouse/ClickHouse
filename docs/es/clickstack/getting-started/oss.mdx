@@ -1,26 +1,24 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
 title: 'Primeros pasos con ClickStack Open Source'
-sidebarTitle: 'Código abierto'
+sidebarTitle: 'Primeros pasos'
 description: 'Ejecute ClickStack Open Source localmente, envíe datos de prueba y confirme que la ingestión funciona'
 doc_type: 'guide'
 keywords: ['ClickStack Open Source', 'primeros pasos', 'despliegue con Docker', 'OpenTelemetry', 'despliegue local']
 ---
-
-import { Image } from "/snippets/es/components/Image.jsx";
 
 Ejecute ClickStack Open Source de forma local, envíe un evento de prueba a través de su OpenTelemetry Collector y confirme que el evento está disponible en la UI de ClickStack.
 
 Con ClickStack Open Source, puede ejecutar y administrar el backend de ClickHouse, la UI de ClickStack y el pipeline de ingestión. La imagen todo en uno incluye estos componentes junto con MongoDB en un único contenedor Docker para realizar evaluaciones y pruebas locales.
 
 <Tip>
-  También está disponible una versión administrada de ClickStack; consulte [Managed ClickStack](/es/clickstack/getting-started/managed).
+  Explore logs, métricas y trazas sin tener que administrar la infraestructura con [ClickHouse Observability](/es/clickstack/observability). [Regístrese en ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-oss-inline) para empezar.
 </Tip>
 
 Los pasos siguientes utilizan la imagen todo en uno autenticada. Si desea una UI local sin crear una cuenta, siga la [guía del modo local con Docker](/es/clickstack/deployment/local-mode-only).
 
 <div id="before-you-begin">
-  ## Antes de empezar
+  ## Antes de empezar {#before-you-begin}
 </div>
 
 Instala [Docker](https://docs.docker.com/get-docker/) y confirma que los siguientes puertos estén disponibles:
@@ -32,9 +30,7 @@ Instala [Docker](https://docs.docker.com/get-docker/) y confirma que los siguien
 
 Para cargas de trabajo sostenidas o en producción, consulta las [opciones de implementación de código abierto](/es/clickstack/deployment/oss) y [Pasar a producción](/es/clickstack/managing/production).
 
-<div id="set-up-clickstack-open-source">
-  ## Configura ClickStack Open Source con la imagen todo en uno
-</div>
+## Configura ClickStack Open Source con la imagen todo en uno {#set-up-clickstack-open-source}
 
 <Steps titleSize="h3">
   <Step title="Inicia ClickStack" id="deploy-stack-with-docker">
@@ -77,7 +73,7 @@ Para cargas de trabajo sostenidas o en producción, consulta las [opciones de im
 
     ClickStack se conecta automáticamente a la instancia de ClickHouse incluida y crea fuentes de datos para logs, trazas, métricas y sesiones.
 
-    #### Copia el API key de ingestión
+#### Copia el API key de ingestión {#copy-ingestion-api-key}
 
     En la sección **Primeros pasos** del menú izquierdo, selecciona **Agregar datos** y copia el **API key de ingestión**. La telemetría enviada al OpenTelemetry Collector incluido debe incluir esta clave en el header `authorization`.
   </Step>
@@ -127,18 +123,22 @@ Para cargas de trabajo sostenidas o en producción, consulta las [opciones de im
 
     El resultado debería incluir el evento de prueba con el nombre de servicio `clickstack-docs-test`.
 
-    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="Vista de logs de ClickStack Open Source que muestra el evento de prueba de ingestión de ClickStack" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Vista de logs de ClickStack Open Source que muestra el evento de prueba de ingestión de ClickStack](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 Ahora tienes una instancia local de ClickStack, un endpoint de ingestión operativo y un evento de prueba que puedes inspeccionar en ClickStack.
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Próximos pasos {#next-steps}
 </div>
 
 <div id="send-application-and-infrastructure-data">
-  ### Envíe datos de aplicaciones e infraestructura
+  ### Envíe datos de aplicaciones e infraestructura {#send-application-and-infrastructure-data}
 </div>
 
 Elija una guía según los datos que desee enviar a ClickStack:
@@ -162,7 +162,7 @@ Elija una guía según los datos que desee enviar a ClickStack:
 </CardGroup>
 
 <div id="explore-sample-data">
-  ### Explorar datos de ejemplo
+  ### Explorar datos de ejemplo {#explore-sample-data}
 </div>
 
 Use un conjunto de datos de ejemplo para explorar ClickStack con telemetría más completa:
@@ -184,7 +184,7 @@ Use un conjunto de datos de ejemplo para explorar ClickStack con telemetría má
 Para explorar datos precargados sin instalar Docker, use la [demo alojada de ClickStack](/es/clickstack/example-datasets/remote-demo-data).
 
 <div id="generate-synthetic-data">
-  ### Generar datos sintéticos
+  ### Generar datos sintéticos {#generate-synthetic-data}
 </div>
 
 Use un generador para probar la ingestión sin necesidad de una aplicación o un conjunto de datos existentes:
@@ -202,7 +202,7 @@ Use un generador para probar la ingestión sin necesidad de una aplicación o un
 Consulte [todos los datos de ejemplo y las demos de ClickStack](/es/clickstack/example-datasets/index).
 
 <div id="prepare-for-production">
-  ### Preparación para producción
+  ### Preparación para producción {#prepare-for-production}
 </div>
 
 Revise las recomendaciones de implementación y producción antes de usar ClickStack con cargas de trabajo sostenidas:
