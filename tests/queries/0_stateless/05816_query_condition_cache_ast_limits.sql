@@ -7,6 +7,9 @@
 
 SET use_query_condition_cache = 1;
 SET parallel_replicas_local_plan = 1;
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner estimate the rows to read first,
+-- and that estimate consults the query condition cache too, which changes the profile event counters.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 DROP TABLE IF EXISTS t_qcc_ast_limits;
 CREATE TABLE t_qcc_ast_limits (k UInt64, q String, j String, i String) ENGINE = MergeTree ORDER BY k

@@ -21,6 +21,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/131463
 SET parallel_replicas_plan_based = 0;
 
+-- A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner build one more plan
+-- to estimate the rows to read, and that plan hits the query result cache for the subquery one more time.
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
+
 DROP TABLE IF EXISTS t_qrc_in;
 CREATE TABLE t_qrc_in (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_qrc_in SELECT number FROM numbers(1000);
