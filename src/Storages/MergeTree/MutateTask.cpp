@@ -1595,8 +1595,7 @@ getColumnsForNewDataPart(
     const bool rechoose_kinds = commands_for_interpreter.hasRewritePartsCommand()
         && std::ranges::all_of(commands_for_interpreter, [](const MutationCommand & command)
         {
-            /// `REWRITE PARTS` with nothing but column reads writes the values of the source part,
-            /// so its counts still describe them.
+            /// Column reads alone keep the values of the source part, so its counts still describe them.
             return command.type == MutationCommand::REWRITE_PARTS
                 || (command.type == MutationCommand::READ_COLUMN && !command.read_for_patch);
         });
@@ -1663,7 +1662,6 @@ getColumnsForNewDataPart(
             continue;
         }
 
-        /// The values are those of the source part, so its counts choose the kinds, as in a merge.
         if (rechoose_kinds && old_type->equals(*new_type))
         {
             new_info = new_type->createSerializationInfo(rechoose_settings);
