@@ -716,6 +716,127 @@ void executeDistanceConstMixed(
 }
 
 
+/// `distance_unroll_count` lanes, one per partial sum of the loops above.
+template <typename T>
+using DistanceLanes = T __attribute__((ext_vector_type(distance_unroll_count)));
+
+/// `lanes` is an output parameter: returning a vector wider than 128 bits from this helper, which has no target
+/// attribute, to the `_x86_64_v3`/`_x86_64_v4` bodies is rejected by clang (`-Wpsabi`, it changes the ABI).
+template <typename ResultType, typename T>
+ALWAYS_INLINE inline void loadDistanceLanes(DistanceLanes<ResultType> & lanes, const T * __restrict data)
+{
+    if constexpr (std::is_same_v<T, BFloat16>)
+    {
+        /// A `BFloat16` is the upper half of the `Float32` with the same value.
+        DistanceLanes<UInt16> raw{};
+        __builtin_memcpy(&raw, data, sizeof(raw));
+        const auto as_float32 = __builtin_bit_cast(DistanceLanes<Float32>, __builtin_convertvector(raw, DistanceLanes<UInt32>) << 16);
+        lanes = __builtin_convertvector(as_float32, DistanceLanes<ResultType>);
+    }
+    else
+    {
+        DistanceLanes<T> raw{};
+        __builtin_memcpy(&raw, data, sizeof(raw));
+        lanes = __builtin_convertvector(raw, DistanceLanes<ResultType>);
+    }
+}
+
+/// `CosineDistance` against a constant `x`, for floating-point elements only: `x_squared` is computed once per call,
+/// and the partial sums are vector lanes, combined in the same order as in `executeDistanceConstImpl`.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename ResultType, typename LeftType, typename RightType>
+    void NO_INLINE
+), executeCosineDistanceConstImpl, MULTITARGET_FUNCTION_BODY((
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count)
+{
+    constexpr size_t unroll_count = distance_unroll_count;
+    const size_t unrolled_end = array_size / unroll_count * unroll_count;
+
+    ResultType x_squared{};
+    {
+        DistanceLanes<ResultType> x_squared_partial{};
+        for (size_t i = 0; i < unrolled_end; i += unroll_count)
+        {
+            DistanceLanes<ResultType> x{};
+            loadDistanceLanes<ResultType>(x, data_x + i);
+            x_squared_partial += x * x;
+        }
+        for (size_t s = 0; s < unroll_count; ++s)
+            x_squared += x_squared_partial[s];
+        for (size_t i = unrolled_end; i < array_size; ++i)
+        {
+            const auto x = static_cast<ResultType>(data_x[i]);
+            x_squared += x * x;
+        }
+    }
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        chassert(offsets[row] - prev == array_size);
+        const RightType * __restrict data_y_row = data_y + prev;
+
+        DistanceLanes<ResultType> dot_prod_partial{};
+        DistanceLanes<ResultType> y_squared_partial{};
+        for (size_t i = 0; i < unrolled_end; i += unroll_count)
+        {
+            DistanceLanes<ResultType> x{};
+            DistanceLanes<ResultType> y{};
+            loadDistanceLanes<ResultType>(x, data_x + i);
+            loadDistanceLanes<ResultType>(y, data_y_row + i);
+            dot_prod_partial += x * y;
+            y_squared_partial += y * y;
+        }
+
+        CosineDistance::State<ResultType> state;
+        state.x_squared = x_squared;
+        for (size_t s = 0; s < unroll_count; ++s)
+        {
+            state.dot_prod += dot_prod_partial[s];
+            state.y_squared += y_squared_partial[s];
+        }
+        for (size_t i = unrolled_end; i < array_size; ++i)
+        {
+            const auto x = static_cast<ResultType>(data_x[i]);
+            const auto y = static_cast<ResultType>(data_y_row[i]);
+            state.dot_prod += x * y;
+            state.y_squared += y * y;
+        }
+
+        result[row] = CosineDistance::finalize(state, CosineDistance::ConstParams{});
+        prev = offsets[row];
+    }
+}))
+
+template <typename ResultType, typename LeftType, typename RightType>
+void executeCosineDistanceConst(
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count)
+{
+#if USE_X86_64_MULTITARGET_CODE
+    if constexpr (is_native_distance_type<ResultType, LeftType, RightType> || is_common_mixed_pair<LeftType, RightType>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return executeCosineDistanceConstImpl_x86_64_v4<ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count);
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return executeCosineDistanceConstImpl_x86_64_v3<ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count);
+    }
+#endif
+    executeCosineDistanceConstImpl<ResultType, LeftType, RightType>(data_x, array_size, data_y, offsets, result, row_count);
+}
+
 template <typename Kernel>
 class FunctionArrayDistance : public IFunction
 {
@@ -974,7 +1095,10 @@ private:
         }
 #endif
 
-        if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
+        if constexpr (std::is_same_v<Kernel, CosineDistance> && is_floating_point<LeftType> && is_floating_point<RightType>)
+            executeCosineDistanceConst<ResultType, LeftType, RightType>(
+                data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count);
+        else if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
             executeDistanceConst<Kernel, ResultType>(
                 data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
         else
