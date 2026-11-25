@@ -29,12 +29,12 @@ for column_kind in 'EPHEMERAL' 'ALIAS c'; do
     $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_register_mutation PAUSE"
 
     # The earlier mutation has a version but is not visible in `system.mutations` yet.
-    # Conversion must wait for registration rather than publish an incompatible schema.
+    # Conversion must time out on the `ALTER` lock held through mutation registration.
     if result=$($CLICKHOUSE_CLIENT --lock_acquire_timeout 1 -q "ALTER TABLE t_pending_registration MODIFY COLUMN a UInt64 $column_kind" 2>&1); then
         echo "conversion overtook an unregistered mutation"
         exit 1
     fi
-    if ! echo "$result" | grep -o -m1 TIMEOUT_EXCEEDED; then
+    if ! echo "$result" | grep -o -m1 DEADLOCK_AVOIDED; then
         printf '%s\n' "$result" >&2
         exit 1
     fi

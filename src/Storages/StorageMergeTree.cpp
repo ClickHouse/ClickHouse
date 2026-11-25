@@ -828,45 +828,6 @@ void StorageMergeTree::alter(
             });
 
         const bool replay_makes_columns_nonphysical = makes_columns_nonphysical && isSecondaryDDLReplay(local_context);
-        if (makes_columns_nonphysical)
-        {
-            /// Mutation versions are allocated under the alter lock, but registered after releasing it.
-            /// Drain previously prepared entries before choosing the barrier's last mutation version.
-            Int64 last_prepared_mutation = 0;
-            for (const auto & block : getCommittingBlocks())
-            {
-                if (block.op == CommittingBlock::Op::Mutation)
-                    last_prepared_mutation = std::max(last_prepared_mutation, block.number);
-            }
-            if (last_prepared_mutation != 0)
-            {
-                const bool reacquire = ddl_guard != nullptr;
-                ddl_guard.reset();
-                waitForCommittingInsertsAndMutations(
-                    last_prepared_mutation + 1,
-                    saturatedMilliseconds(query_settings[Setting::lock_acquire_timeout].totalMilliseconds()).count());
-                if (auto process_list_element = local_context->getProcessListElementSafe())
-                    process_list_element->checkTimeLimit();
-                if (reacquire)
-                {
-                    ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
-                        shared_from_this(), query_settings[Setting::lock_acquire_timeout]);
-                    table_id = getStorageID();
-                }
-            }
-        }
-
-        if (makes_columns_nonphysical && !replay_makes_columns_nonphysical)
-        {
-            /// The eligibility check could not see an entry that was still being registered.
-            const auto unfinished_mutations = getUnfinishedMutationCommands();
-            for (const auto & command : commands)
-            {
-                if (isColumnMadeNonPhysical(command, old_metadata.columns, new_metadata.columns))
-                    checkAlterCommandDoesntAffectInProgressMutations(
-                        command, unfinished_mutations, local_context, /*makes_column_nonphysical=*/true);
-            }
-        }
 
         if (replay_makes_columns_nonphysical
             || (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand()))
@@ -884,7 +845,7 @@ void StorageMergeTree::alter(
             }
 
             /// Secondary replay must finish earlier consumers before publishing the nonphysical schema.
-            /// The alter lock excludes new mutation preparation while registration and execution can finish.
+            /// The `ALTER` lock guarantees earlier mutations are registered and excludes new preparation while execution can finish.
             for (Int64 version : mutations_to_wait)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", version);
@@ -1582,26 +1543,25 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         }
     }
 
-    std::optional<PreparedMutationEntry> prepared;
+    Int64 version = 0;
     {
-        /// It's important to serialize order of mutations with alter queries because
+        /// It's important to serialize order of mutations with `ALTER` queries because
         /// they can depend on each other.
-        /// The lock is held through `prepareMutationEntry`, which resolves the partitions of scoped
-        /// commands and allocates the mutation version. The registration of the prepared entry does
-        /// not need it: a mutation or `ALTER` that gets a higher version in the meantime handles a
-        /// version that is allocated but not registered yet.
+        /// Hold the lock through `prepareMutationEntry` and `startMutation` so that a later `ALTER`
+        /// sees every preceding mutation registered, including when checking column dependencies.
         auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (alter_lock == std::nullopt)
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) "
+                "is currently executing or another mutation is currently starting. "
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
-        prepared.emplace(prepareMutationEntry(commands, query_context));
+        auto prepared = prepareMutationEntry(commands, query_context);
+        version = startMutation(std::move(prepared), query_context);
     }
-    Int64 version = startMutation(std::move(*prepared), query_context);
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
     {
