@@ -16,16 +16,18 @@ b_off	0	0
 2	1415
 p_on	1	7
 p_off	0	0
---- W a read that finds the offset index in the metadata cache ---
+--- W a read that finds the page index in the metadata cache ---
+2	1415
+2	1415
 2	1415
 2	1415
 2	1415
 2	1415
 w1_on	1	7
 w1_off	0	0
-w2_on	1	0
-w2_off	0	0
-1
+w3_on	1	7
+w3_off	0	0
+1	1
 --- H a Hive partition column read from the file ---
 1600
 1600

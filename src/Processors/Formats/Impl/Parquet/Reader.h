@@ -394,6 +394,8 @@ struct Reader
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle top_k_dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
+        /// If not null, the column index is taken from it instead of `column_index_prefetch`.
+        KeptOffsetIndexes::ColumnIndexPtr kept_column_index;
         PrefetchHandle offset_index_prefetch;
         PrefetchHandle data_pages_prefetch;
         size_t data_pages_bytes = 0;
@@ -741,9 +743,9 @@ struct Reader
     VectorWithMemoryTracking<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
 
-    /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
+    /// If non-zero before `init`, the offset and column indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
     size_t max_read_offset_indexes_bytes = 0;
-    /// The offset indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
+    /// The offset and column indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
     VectorWithMemoryTracking<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
 

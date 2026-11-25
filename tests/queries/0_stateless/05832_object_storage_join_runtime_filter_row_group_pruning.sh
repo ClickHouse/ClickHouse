@@ -75,9 +75,9 @@ probe p "SELECT count(), sum(v) FROM s3(s3_conn, filename = '${DIR}/fact_p.parqu
     INNER JOIN dim AS d ON f.k = d.k" "input_format_parquet_page_filter_push_down = 1"
 report p
 
-# The first read inserts the footer into the metadata cache, the second keeps the offset indexes with it. The third
-# finds the offset index of `k` there and does not read its column index for the runtime filter alone: no page pruned.
-echo '--- W a read that finds the offset index in the metadata cache ---'
+# The first read inserts the footer into the metadata cache, the next two keep the offset indexes and the column index
+# of `k` with it. The fifth finds both there and prunes the same pages.
+echo '--- W a read that finds the page index in the metadata cache ---'
 ${CLICKHOUSE_CLIENT} --query "
 INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/fact_w.parquet', format = Parquet, structure = 'k Int64, v Int64')
 SELECT number, number FROM numbers(1600) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 800,
@@ -88,11 +88,13 @@ W_QUERY="SELECT count(), sum(v) FROM s3(s3_conn, filename = '${DIR}/fact_w.parqu
 W_SETTINGS="input_format_parquet_page_filter_push_down = 1, use_parquet_metadata_cache = 1, input_format_parquet_use_offset_index = 1"
 probe w1 "$W_QUERY" "$W_SETTINGS"
 probe w2 "$W_QUERY" "$W_SETTINGS"
+probe w3 "$W_QUERY" "$W_SETTINGS"
 report w1
-report w2
+report w3
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['ParquetMetadataCacheOffsetIndexHits'] > 0 FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_w2_on'
+    SELECT ProfileEvents['ParquetMetadataCacheOffsetIndexHits'] > 0, ProfileEvents['ParquetMetadataCacheColumnIndexHits'] > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '${CLICKHOUSE_DATABASE}_w3_on'
     SETTINGS enable_parallel_replicas = 0"
 
 # With a structure of only Hive partition columns the format reads `key` from the file (1000 .. 2599), while the
