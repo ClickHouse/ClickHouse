@@ -33,6 +33,12 @@ uint64_t rotl64(uint64_t value, unsigned int count)
 }
 
 
+/// The whole algorithm is built on wrapping addition of 64-bit words, so the check for unsigned
+/// integer overflow (enabled in UBSan builds, which build this tool natively) has to be switched off.
+#if defined(__clang__)
+#pragma clang attribute push (__attribute__((__no_sanitize__("unsigned-integer-overflow"))), apply_to = function)
+#endif
+
 /// Standalone SipHash implementation (SipHash 2-4 variant with 128-bit output).
 /// This is a simplified version of ClickHouse's SipHash, producing identical results.
 class SipHash
@@ -146,6 +152,10 @@ public:
         hi = v2 ^ v3;
     }
 };
+
+#if defined(__clang__)
+#pragma clang attribute pop
+#endif
 
 
 template <typename Ehdr, typename Phdr>
