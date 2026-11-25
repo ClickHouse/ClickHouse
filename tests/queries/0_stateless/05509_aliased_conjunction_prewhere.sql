@@ -7,7 +7,8 @@ CREATE TABLE aliased_conjunction
 (
     id UInt64, g UInt8, z String,
     PROJECTION p (SELECT id, g, z ORDER BY (id, g))
-) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1024, ratio_of_defaults_for_sparse_serialization = 1;
+) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1024, index_granularity_bytes = 10485760, ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO aliased_conjunction SELECT number, number % 2,
     if(number % 16 = 1, 'hit', repeat('z', 200)) FROM numbers(32768);
 
@@ -25,7 +26,8 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT count() FROM aliased_conjunction PREWHERE nullIf(g, 1) AND intDiv(1, 1 - g) > 0
 SETTINGS force_optimize_projection_name = 'p', short_circuit_function_evaluation = 'enable'; -- { serverError ILLEGAL_DIVISION }
 
--- The row numbers must refer to the block before filtering g.
+-- The row numbers must refer to the block before filtering g. Granules of exactly 1024 rows
+-- make every block start at an even id, so the rows with g = 1 have odd row numbers.
 SELECT count() FROM aliased_conjunction PREWHERE g = 1 AND rowNumberInBlock() % 2 = 0
 SETTINGS force_optimize_projection_name = 'p';
 DROP TABLE aliased_conjunction;

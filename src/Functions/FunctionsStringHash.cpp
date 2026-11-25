@@ -157,7 +157,7 @@ struct Hash
     template <bool CaseInsensitive>
     static ALWAYS_INLINE inline UInt64 shingleHash(const VectorWithMemoryTracking<BytesRef> & shingle, size_t offset = 0)
     {
-        UInt64 crc = -1ULL;
+        UInt64 crc = ~0ULL;
 
         for (size_t i = offset; i < shingle.size(); ++i)
             crc = shingleHash<CaseInsensitive>(crc, shingle[i].data, shingle[i].size);
@@ -205,14 +205,14 @@ struct SimHashImpl
     static ALWAYS_INLINE inline UInt64 ngramHashASCII(const UInt8 * data, size_t size, size_t shingle_size)
     {
         if (size < shingle_size)
-            return Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+            return Hash::shingleHash<CaseInsensitive>(~0ULL, data, size);
 
         Int64 finger_vec[64] = {};
         const UInt8 * end = data + size;
 
         for (const UInt8 * pos = data; pos + shingle_size <= end; ++pos)
         {
-            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, pos, shingle_size);
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, pos, shingle_size);
             updateFingerVector(finger_vec, hash_value);
         }
 
@@ -230,7 +230,7 @@ struct SimHashImpl
         for (size_t i = 0; i < shingle_size; ++i)
         {
             if (word_end >= end)
-                return Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+                return Hash::shingleHash<CaseInsensitive>(~0ULL, data, size);
 
             ExtractStringImpl::readOneUTF8Code(word_end, end);
         }
@@ -243,7 +243,7 @@ struct SimHashImpl
             ExtractStringImpl::readOneUTF8Code(word_end, end);
 
             size_t length = word_end - word_start;
-            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, word_start, length);
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, word_start, length);
             updateFingerVector(finger_vec, hash_value);
         }
 
@@ -321,8 +321,8 @@ struct SimHashImpl
     {
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * one_data = &data[offsets[i - 1]];
-            const size_t data_size = offsets[i] - offsets[i - 1];
+            const UInt8 * one_data = &data[offsets[static_cast<ssize_t>(i) - 1]];
+            const size_t data_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             if constexpr (Ngram)
             {
@@ -412,7 +412,7 @@ struct MinHashImpl
     {
         if (size < shingle_size)
         {
-            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, data, size);
             min_heap.update(hash_value, BytesRef{data, size}, heap_size);
             max_heap.update(hash_value, BytesRef{data, size}, heap_size);
             return;
@@ -422,7 +422,7 @@ struct MinHashImpl
 
         for (const UInt8 * pos = data; pos + shingle_size <= end; ++pos)
         {
-            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, pos, shingle_size);
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, pos, shingle_size);
 
             // insert the new hash value into array used to store K minimum value
             // and K maximum value
@@ -449,7 +449,7 @@ struct MinHashImpl
         {
             if (word_end >= end)
             {
-                auto hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+                auto hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, data, size);
                 min_heap.update(hash_value, BytesRef{data, size}, heap_size);
                 max_heap.update(hash_value, BytesRef{data, size}, heap_size);
                 return;
@@ -464,7 +464,7 @@ struct MinHashImpl
             ExtractStringImpl::readOneUTF8Code(word_end, end);
 
             size_t length = word_end - word_start;
-            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, word_start, length);
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(~0ULL, word_start, length);
 
             min_heap.update(hash_value, BytesRef{word_start, length}, heap_size);
             max_heap.update(hash_value, BytesRef{word_start, length}, heap_size);
@@ -553,8 +553,8 @@ struct MinHashImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * one_data = &data[offsets[i - 1]];
-            const size_t data_size = offsets[i] - offsets[i - 1];
+            const UInt8 * one_data = &data[offsets[static_cast<ssize_t>(i) - 1]];
+            const size_t data_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             min_heap.values.clear();
             max_heap.values.clear();

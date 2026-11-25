@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['loom', 'agent memory', 'mcp', 'ai agents', 'rag', 'claude code', 'codex', 'cursor']
 ---
 
-This guide installs [ClickHouse Loom](https://github.com/ClickHouse/loom), an open-source (Apache-2.0) MCP server and HTTP API that gives AI agents shared long-term memory, document search with citations, and a code index of your repositories. By the end, Loom runs against ClickHouse, holds a first memory, and serves a connected coding agent.
+This guide installs [ClickHouse Loom](https://loom.clickhouse.com/), an open-source (Apache-2.0) MCP server and HTTP API that gives AI agents shared long-term memory, document search with citations, and a code index of your repositories. By the end, Loom runs against ClickHouse, holds a first memory, and serves a connected coding agent.
 
 ## Before you begin {#before-you-begin}
 
@@ -159,6 +159,8 @@ Yes. A new deployment can choose Postgres at its first boot as the authority for
 
 ## Next steps {#next-steps}
 
+- [Loom documentation](https://loom.clickhouse.com/docs) for deployment, clients, and operations.
+- [Evaluate shared memory for coding agents](https://loom.clickhouse.com/docs/use-cases/agent-memory) across sessions and tools.
 - [Loom quickstart](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/quickstart.md)
 - [Connect a coding agent](https://github.com/ClickHouse/loom/blob/v1.2.0/docs/getting-started/connect-a-coding-agent.md)
 - [Use ClickHouse with MCP](/guides/use-cases/ai-ml/MCP/index)
