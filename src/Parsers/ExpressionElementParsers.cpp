@@ -550,7 +550,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     while (true)
     {
         ASTPtr element;
-        if (!element_parser->parse(pos, element, expected))
+        if (!element_parser->parse(pos, element, expected)
+            || (last_special_delimiter != SpecialDelimiter::NONE && element->as<ASTIdentifier>()->isParam()))
         {
             if (is_first)
                 return false;
@@ -565,14 +566,14 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         else
         {
             parts.push_back(getIdentifierName(element));
+            if (parts.back().empty())
+                params.push_back(element->as<ASTIdentifier>()->getParam());
+
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
             if (!is_first && array_of_json_identifier_addition.check(pos, expected))
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
         }
-
-        if (parts.back().empty())
-            params.push_back(element->as<ASTIdentifier>()->getParam());
 
         is_first = false;
         begin = pos;

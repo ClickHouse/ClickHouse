@@ -1,0 +1,6 @@
+[1,2]	[1,2]
+[[1],[2,3]]	[[1],[2,3]]
+SELECT j.{p:Identifier}.:`Array(JSON)`.b
+[1,2]	[1,2]
+ALTER TABLE t_json_path_param (DROP COLUMN IF EXISTS j.{p:Identifier}.:`Array(JSON)`)
+{"x":1}	1	{"x":1}
