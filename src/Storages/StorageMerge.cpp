@@ -2507,7 +2507,7 @@ void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, Context
 
         addBuildSubqueriesForSetsStepIfNeeded(plan, SelectQueryOptions{}, planner_context, UsefulSets(subqueries.begin(), subqueries.end()));
 
-        /// Gate the CTE readers here: a set built at run time loses the safety net of its own plan.
+        /// `DelayedCreatingSetsStep::makePlansForSets` strips the set plan's own CTE gate, so plant one here.
         for (const auto & tree : subquery_trees)
             addBuildSubqueriesForMaterializedCTEsIfNeeded(plan, SelectQueryOptions{}, collectMaterializedCTEs(tree, SelectQueryOptions{}));
         return;
@@ -2541,10 +2541,13 @@ FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
     if (!canPushDownRowPolicyFilter(storage, columns, required_columns))
         return nullptr;
 
-    /// The policy DAG does not compute `ALIAS` or `EPHEMERAL` columns, and the read cannot produce them.
-    for (const auto & column_name : required_columns)
-        if (!columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            return nullptr;
+    /// The old branch's policy DAG does not compute `ALIAS` or `EPHEMERAL` columns, and the read cannot produce them.
+    if (!planner_context)
+    {
+        for (const auto & column_name : required_columns)
+            if (!columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+                return nullptr;
+    }
 
     auto row_level_filter = std::make_shared<FilterDAGInfo>();
     row_level_filter->do_remove_column = true;
