@@ -402,6 +402,8 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
         /// can throw while the already inserted keys remain visible.
         if (transform_null_in && keys_size == 1 && key_columns[0]->isNullAt(i))
             contains_null_row.store(true);
+        else if (transform_null_in && keys_size == 1)
+            contains_non_null_row.store(true);
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
@@ -580,13 +582,16 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
         {
             disk_set_builder->add(std::move(keys));
             has_input_rows.store(true);
-            if (transform_null_in && keys_size == 1 && !contains_null_row.load())
+            if (transform_null_in && keys_size == 1)
+            {
                 for (size_t row = 0; row < rows; ++row)
+                {
                     if (holder.key_columns[0]->isNullAt(row))
-                    {
                         contains_null_row.store(true);
-                        break;
-                    }
+                    else
+                        contains_non_null_row.store(true);
+                }
+            }
         }
         else if (rows != 0)
             has_input_rows.store(true);
@@ -852,6 +857,12 @@ bool Set::hasNull() const
     /// Observe the marker and inserted keys after the same critical section.
     std::shared_lock lock(rwlock);
     return transform_null_in && contains_null_row.load();
+}
+
+bool Set::hasOnlyNull() const
+{
+    std::shared_lock lock(rwlock);
+    return transform_null_in && contains_null_row.load() && !contains_non_null_row.load();
 }
 
 bool Set::empty() const

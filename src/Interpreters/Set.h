@@ -143,6 +143,7 @@ public:
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
     bool hasNull() const;
+    bool hasOnlyNull() const;
     void markContainsNull() { contains_null_row.store(true); }
     bool sourceIsEmpty() const { return !has_input_rows.load(); }
     void markSourceNonempty() { has_input_rows.store(true); }
@@ -240,6 +241,7 @@ private:
     /// Whether the original single-column input contained a top-level `NULL`, independently of
     /// whether conversion to the key type could retain that row.
     std::atomic<bool> contains_null_row = false;
+    std::atomic<bool> contains_non_null_row = false;
 
     /// Whether the original input contained at least one row, independently of whether conversion
     /// or deduplication retained a key.
