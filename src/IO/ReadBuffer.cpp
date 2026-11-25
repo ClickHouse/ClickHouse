@@ -78,7 +78,7 @@ void ReadBuffer::readBigStrict(char * to, size_t n)
     size_t read_bytes = readBig(to, n);
     if (n != read_bytes)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Cannot read all data with readBig. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
+                        "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
 }
 
 void ReadBuffer::throwReadAfterEOF()

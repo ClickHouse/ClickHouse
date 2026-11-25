@@ -311,14 +311,14 @@ size_t CompressedReadBufferBase::readCompressedData(
         /// including the header and checksum again as it's simpler than regenerating it
         resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->position() -= size_header_plus_checksum;
-        compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
+        compressed_in->readBigStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
         own_compressed_buffer_header_init = true;
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
     else
     {
         resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
-        compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
+        compressed_in->readBigStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
 

@@ -65,6 +65,9 @@ public:
 
     void prefetch(Priority priority) override;
 
+    /// Reads whole internal buffers of the request straight into `to`.
+    [[nodiscard]] size_t readBig(char * to, size_t n) override;
+
     int getFD() const
     {
         return fd;
@@ -99,6 +102,9 @@ private:
     }
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
+
+    /// Accounts a completed read request and returns the number of bytes it read.
+    size_t finishRead(const IAsynchronousReader::Result & result);
 
     const std::string query_id;
     const std::string current_reader_id;
