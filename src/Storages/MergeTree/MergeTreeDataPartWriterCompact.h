@@ -80,10 +80,10 @@ private:
         /// Releases all complete granules and the incomplete one, if any.
         ColumnsAndGranules flushAll();
 
-        size_t getNumBytes() const;
-        size_t getNumCompleteGranules() const { return complete_granules.size(); }
-        size_t getNumRowsInLastIncompleteGranule() const;
-        bool empty() const { return complete_granules.empty() && getNumRowsInLastIncompleteGranule() == 0; }
+        [[nodiscard]] size_t getNumBytes() const;
+        [[nodiscard]] size_t getNumCompleteGranules() const { return complete_granules.size(); }
+        [[nodiscard]] size_t getNumRowsInLastIncompleteGranule() const;
+        [[nodiscard]] bool empty() const { return complete_granules.empty() && getNumRowsInLastIncompleteGranule() == 0; }
 
     private:
         /// Columns of the added blocks that hold complete granules.
@@ -98,7 +98,7 @@ private:
     ColumnsBuffer columns_buffer;
 
     /// Blocks with the header of the part from the columns released by `columns_buffer`.
-    BlocksAndGranules makeBlocksAndGranules(ColumnsBuffer::ColumnsAndGranules && columns_and_granules) const;
+    [[nodiscard]] BlocksAndGranules makeBlocksAndGranules(ColumnsBuffer::ColumnsAndGranules && columns_and_granules) const;
 
     /// hashing_buf -> compressed_buf -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;

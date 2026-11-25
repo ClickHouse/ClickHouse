@@ -7,6 +7,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 
 namespace DB
 {
@@ -73,7 +74,7 @@ void FunctionNameNormalizer::visit(IAST * ast)
     if (auto * node_func = ast->as<ASTFunction>())
     {
         const String & canonical_name
-            = getAggregateFunctionCanonicalNameIfAny(getFunctionCanonicalNameIfAny(node_func->name));
+            = getWindowFunctionCanonicalNameIfAny(getAggregateFunctionCanonicalNameIfAny(getFunctionCanonicalNameIfAny(node_func->name)));
         if (canonicalNameCanReparseShape(canonical_name, *node_func))
             node_func->name = canonical_name;
     }

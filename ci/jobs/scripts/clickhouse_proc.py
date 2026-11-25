@@ -4,6 +4,7 @@ import io
 import os
 import platform
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -368,7 +369,16 @@ class ClickHouseProc:
         self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
-        Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
+        # Empty the directory in place rather than recreate it: with `DBReplicated`, the replicas share it, and a
+        # server that isolates its filesystem (`filesystem_isolation`) keeps a bind mount of the directory it saw at
+        # startup, so it could not write its profiles into a directory removed and recreated by a later start.
+        jemalloc_profiles = p_temp_dir / "jemalloc_profiles"
+        jemalloc_profiles.mkdir(parents=True, exist_ok=True)
+        for entry in jemalloc_profiles.iterdir():
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
 
         replicas = 3 if self.is_db_replicated else 1
         tsan_memory_limit_mb = (
@@ -533,6 +543,16 @@ class ClickHouseProc:
                 if not res:
                     return False
         return True
+
+    def _stop_thread_fuzzer(self):
+        for proc, port in zip(
+            (self.proc, self.proc_1, self.proc_2), (self.port, self.port_1, self.port_2)
+        ):
+            if proc:
+                Shell.check(
+                    f'clickhouse-client --port {port} --receive_timeout=5 --query "SYSTEM STOP THREAD FUZZER"',
+                    verbose=True,
+                )
 
     # Grace period between the TERM the bound sends and the KILL that follows,
     # so a client that ignores TERM is still bounded.
@@ -774,6 +794,8 @@ fi
             except subprocess.TimeoutExpired:
                 self.kafka_proc.kill()
 
+        # ThreadFuzzer (enabled in flaky check) makes the flush and shutdown many times slower.
+        self._stop_thread_fuzzer()
         self._flush_system_logs()
 
         self.save_system_metadata_files_from_remote_database_disk()

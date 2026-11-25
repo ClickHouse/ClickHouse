@@ -39,12 +39,18 @@
           "item": "Déploiements"
         },
         {
-          "$ref": "./products/cloud/navigation.json"
+        "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
           "pages": [
             "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+          ]
+        },
+        {
+          "item": "Private",
+          "pages": [
+            "fr/products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
           ]
         },
         {
@@ -54,6 +60,9 @@
         },
         {
           "$ref": "./clickstack/navigation.json"
+        },
+        {
+          "$ref": "./agents/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",

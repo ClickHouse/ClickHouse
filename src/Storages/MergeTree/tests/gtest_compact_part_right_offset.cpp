@@ -65,13 +65,13 @@ public:
             marks[num_granules * num_positions + position] = {.offset_in_compressed_file = compressed_offset, .offset_in_decompressed_block = 0};
     }
 
-    size_t getFileSize() const { return compressed_offset; }
-    size_t getMarksCount() const { return num_granules + 1; }
-    size_t getFirstPositionOfColumn(size_t position) const { return first_position_of_column[position]; }
-    MergeTreeMarksGetter getMarksGetter() const { return MergeTreeMarksGetter(MarksInCompressedFile::create(marks), num_positions); }
+    [[nodiscard]] size_t getFileSize() const { return compressed_offset; }
+    [[nodiscard]] size_t getMarksCount() const { return num_granules + 1; }
+    [[nodiscard]] size_t getFirstPositionOfColumn(size_t position) const { return first_position_of_column[position]; }
+    [[nodiscard]] MergeTreeMarksGetter getMarksGetter() const { return MergeTreeMarksGetter(MarksInCompressedFile::create(marks), num_positions); }
 
     /// The end of the block with the last byte of the piece.
-    size_t getNeededEnd(size_t granule, size_t position) const
+    [[nodiscard]] size_t getNeededEnd(size_t granule, size_t position) const
     {
         const auto & end = piece_ends[granule * num_positions + position];
         if (end.offset_in_decompressed_block == 0)
@@ -80,7 +80,7 @@ public:
     }
 
     /// The right offset by a scan of all marks, which is what the binary searches must find.
-    size_t getRightOffsetByAllMarks(size_t right_mark_non_included, size_t position) const
+    [[nodiscard]] size_t getRightOffsetByAllMarks(size_t right_mark_non_included, size_t position) const
     {
         if (right_mark_non_included == 0)
             return marks[position].offset_in_compressed_file;

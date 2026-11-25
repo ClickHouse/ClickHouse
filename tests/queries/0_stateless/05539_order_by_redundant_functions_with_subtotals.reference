@@ -1,0 +1,44 @@
+	a	a
+	b	b
+	c	c
+A	a	a
+C	c	c
+a	a	a
+b	b	b
+	a	a
+	b	b
+	c	c
+A	a	a
+C	c	c
+a	a	a
+b	b	b
+0	0	1
+0	0	1
+1	-1	1
+1	0	1
+2	-2	1
+2	0	1
+0	0	1
+0	0	1
+0	0	3
+1	0	1
+1	-1	1
+2	0	1
+2	-2	1
+0	0	1
+0	0	1
+0	0	1
+0	0	3
+0	-1	1
+0	-2	1
+1	0	1
+1	-1	1
+2	0	1
+2	-2	1
+positional arguments with aliases
+0	0
+0	0
+1	-1
+[-1,-1,0]
+self join
+4

@@ -1,0 +1,6 @@
+a	Nullable(String)					
+b	Nullable(Int64)					
+c	Nullable(Float64)					
+d	Nullable(Int64)					
+43
+hello world	42	3.5	1
