@@ -1380,8 +1380,91 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     sq2.CopyFrom(sq1);
 }
 
+/// A column of a scalar type, the only kind a literal of its type compares with
+static bool isComparableColumn(const SQLColumn & col)
+{
+    const SQLType * tp = col.tp.get();
+
+    while (tp && (tp->getTypeClass() == SQLTypeClass::NULLABLE || tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY))
+    {
+        tp = tp->getTypeClass() == SQLTypeClass::NULLABLE ? dynamic_cast<const Nullable *>(tp)->subtype.get()
+                                                          : dynamic_cast<const LowCardinality *>(tp)->subtype.get();
+    }
+    if (!tp)
+    {
+        return false;
+    }
+    switch (tp->getTypeClass())
+    {
+        case SQLTypeClass::BOOL:
+        case SQLTypeClass::INT:
+        case SQLTypeClass::FLOAT:
+        case SQLTypeClass::DATE:
+        case SQLTypeClass::TIME:
+        case SQLTypeClass::DATETIME:
+        case SQLTypeClass::DECIMAL:
+        case SQLTypeClass::STRING:
+        case SQLTypeClass::UUID:
+        case SQLTypeClass::ENUM:
+        case SQLTypeClass::IPV4:
+        case SQLTypeClass::IPV6: return true;
+        default: return false;
+    }
+}
+
+/// Sets `expr` to one to three comparisons of a column of `t` with a literal of its type. Most random predicates fail
+/// on the types of their arguments, and a round of the concurrent write oracle needs three statements to succeed.
+/// Returns false when `t` has no column to compare.
+static bool setColumnLiteralPredicate(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, Expr * expr)
+{
+    std::vector<const SQLColumn *> cols;
+
+    for (const auto & [_, col] : t.cols)
+    {
+        if (isComparableColumn(col))
+        {
+            cols.push_back(&col);
+        }
+    }
+    if (cols.empty())
+    {
+        return false;
+    }
+    static const auto comparisons
+        = {BinaryOperator::BINOP_LE,
+           BinaryOperator::BINOP_LEQ,
+           BinaryOperator::BINOP_GR,
+           BinaryOperator::BINOP_GREQ,
+           BinaryOperator::BINOP_EQ,
+           BinaryOperator::BINOP_NOTEQ};
+    const uint32_t nclauses = rg.randomInt<uint32_t>(1, 3);
+    Expr * next = expr;
+
+    for (uint32_t i = 0; i < nclauses; i++)
+    {
+        Expr * clause = next;
+
+        if (i + 1 < nclauses)
+        {
+            BinaryExpr * connector = next->mutable_comp_expr()->mutable_binary_expr();
+
+            connector->set_op(rg.nextBool() ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
+            clause = connector->mutable_lhs();
+            next = connector->mutable_rhs();
+        }
+        const SQLColumn & col = *rg.pickRandomly(cols);
+        BinaryExpr * comparison = clause->mutable_comp_expr()->mutable_binary_expr();
+
+        /// Not `<=>` or `IS DISTINCT FROM`: they do not convert a string literal to the type of the column
+        comparison->set_op(rg.pickRandomly(comparisons));
+        setColumnRef(comparison->mutable_lhs(), col.cname);
+        comparison->mutable_rhs()->mutable_lit_val()->set_no_quote_str(col.tp->appendRandomRawValue(rg, gen));
+    }
+    return true;
+}
+
 /// Concurrent write oracle
-/// Before:     INSERT INTO TABLE FUNCTION file(...) SELECT <columns or count()> FROM t [FINAL] [WHERE pred = TRUE] ORDER BY ...
+/// Before:     INSERT INTO TABLE FUNCTION file(...) SELECT <columns or count()> FROM t [FINAL] [WHERE pred] ORDER BY ...
 /// Concurrent: <write to t> PARALLEL WITH <the same read>
 /// After:      <the same read>
 /// The concurrent read has to see `t` as one of the other two did. `PARALLEL WITH` rejects a statement that returns a
@@ -1419,36 +1502,67 @@ void QueryOracle::generateConcurrentWriteQueries(
     {
         /// The index analysis of a filter is made on the snapshot of the table the read takes. Virtual columns are left
         /// out: the names and offsets of the parts change with every merge, with or without the write.
-        gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-        gen.addTableRelation(rg, false, "", t);
-        generateTruePredicate(rg, gen, ssc->mutable_where()->mutable_expr()->mutable_expr());
-        gen.levels.clear();
+        Expr * where = ssc->mutable_where()->mutable_expr()->mutable_expr();
+
+        if (rg.nextSmallNumber() < 3 || !setColumnLiteralPredicate(rg, gen, t, where))
+        {
+            gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+            gen.addTableRelation(rg, false, "", t);
+            generateTruePredicate(rg, gen, where);
+            gen.levels.clear();
+        }
     }
     SettingValues * svs = sel->mutable_setting_values();
     finishSettings(svs);
+    /// Session settings the fuzzer sets that make most reads fail, none of which changes what the read returns
+    StatementGenerator::appendSetting(svs, "make_distributed_plan", "0");
+    StatementGenerator::appendSetting(svs, "force_optimize_projection", "0");
+    StatementGenerator::appendSetting(svs, "force_optimize_projection_name", "''");
+    StatementGenerator::appendSetting(svs, "force_primary_key", "0");
+    StatementGenerator::appendSetting(svs, "force_index_by_date", "0");
+    /// A read without `ORDER BY` is not stable, which throws with `deduplicate_insert_select = 'force_enable'`
+    StatementGenerator::appendSetting(svs, "deduplicate_insert_select", "'disable'");
     /// A mutation is executed part by part, and a read that does not apply it on the fly can see it half done
     StatementGenerator::appendSetting(svs, "apply_mutations_on_fly", "1");
     /// The rows go to the `file` of this server, which a distributed `INSERT SELECT` would leave to other ones
     StatementGenerator::appendSetting(svs, "parallel_distributed_insert_select", "0");
 
+    /// Most of the time the write gets the simple predicate as well
+    const auto maybe_simple_where = [&](Expr * where)
+    {
+        if (rg.nextSmallNumber() < 8)
+        {
+            Expr simple;
+
+            if (setColumnLiteralPredicate(rg, gen, t, &simple))
+            {
+                where->Swap(&simple);
+            }
+        }
+    };
+    /// A lightweight write throws on a table with projections, with the default `lightweight_mutation_projection_mode`
+    const uint32_t lightweight = t.proj_counter == 0 ? 1 : 0;
+
     /// Only writes that change the table at once: an `INSERT` commits its blocks one by one. A lightweight `UPDATE`
     /// needs the table to have `_block_number`, which few have. None is sent `ON CLUSTER`, which returns a status table
     /// that `PARALLEL WITH` rejects, and would change other servers than the one the read is made on.
     rg.pickWeighted(
-        {{10,
+        {{10 * lightweight,
           [&]()
           {
               LightUpdate * upt = write->mutable_upt();
               gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
               upt->clear_cluster();
+              maybe_simple_where(upt->mutable_upt()->mutable_where()->mutable_expr()->mutable_expr());
               write_settings = upt->mutable_setting_values();
           }},
-         {20,
+         {20 * lightweight,
           [&]()
           {
               LightDelete * del = write->mutable_del();
               gen.generateNextUpdateOrDeleteOnTable<LightDelete>(rg, t, del);
               del->clear_cluster();
+              maybe_simple_where(del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr());
               write_settings = del->mutable_setting_values();
           }},
          {30,
@@ -1460,11 +1574,15 @@ void QueryOracle::generateConcurrentWriteQueries(
               t.setName(at->mutable_object()->mutable_est(), false);
               if (rg.nextBool())
               {
-                  gen.generateNextUpdate(rg, t, at->mutable_alter()->mutable_update());
+                  Update * upt = at->mutable_alter()->mutable_update();
+                  gen.generateNextUpdate(rg, t, upt);
+                  maybe_simple_where(upt->mutable_where()->mutable_expr()->mutable_expr());
               }
               else
               {
-                  gen.generateNextDelete(rg, t, at->mutable_alter()->mutable_del());
+                  Delete * del = at->mutable_alter()->mutable_del();
+                  gen.generateNextDelete(rg, t, del);
+                  maybe_simple_where(del->mutable_where()->mutable_expr()->mutable_expr());
               }
               write_settings = at->mutable_setting_values();
           }},
