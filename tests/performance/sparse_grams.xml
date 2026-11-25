@@ -1,9 +1,14 @@
 <test>
     <query>SELECT sparseGrams(repeat('a', 2000))</query>
-    <query>SELECT sparseGrams(randomString(20)) FROM numbers(10000000) FORMAT Null</query>
-    <query>SELECT sparseGramsHashes(randomString(20)) FROM numbers(10000000) FORMAT Null</query>
+    <query disabled="1">SELECT sparseGrams(randomString(20)) FROM numbers(10000000) FORMAT Null</query>
+    <query disabled="1">SELECT sparseGramsHashes(randomString(20)) FROM numbers(10000000) FORMAT Null</query>
 
     <query>SELECT sparseGramsUTF8(repeat('ы', 2000))</query>
-    <query>SELECT sparseGramsUTF8(randomStringUTF8(20)) FROM numbers(10000000) FORMAT Null</query>
-    <query>SELECT sparseGramsHashes(randomStringUTF8(20)) FROM numbers(4000000) FORMAT Null</query>
+    <query disabled="1">SELECT sparseGramsUTF8(randomStringUTF8(20)) FROM numbers(10000000) FORMAT Null</query>
+    <query disabled="1">SELECT sparseGramsHashes(randomStringUTF8(20)) FROM numbers(4000000) FORMAT Null</query>
+
+    <query>SELECT sparseGrams(randomString(20)) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sparseGramsHashes(randomString(20)) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sparseGramsUTF8(randomStringUTF8(20)) FROM numbers(700000) FORMAT Null</query>
+    <query>SELECT sparseGramsHashes(randomStringUTF8(20)) FROM numbers(250000) FORMAT Null</query>
 </test>

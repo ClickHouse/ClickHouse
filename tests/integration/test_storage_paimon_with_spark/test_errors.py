@@ -90,8 +90,8 @@ def test_unsupported_schema_version(started_cluster_paimon_with_spark):
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_table_without_snapshots(started_cluster_paimon_with_spark, storage_type):
-    """A Paimon table with a schema but no committed snapshot must produce a
-    clean error or an empty result — never a hang or a server-side abort."""
+    """A Paimon table with a schema but no committed snapshot must read as an
+    empty table."""
     started_cluster = started_cluster_paimon_with_spark
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -103,12 +103,7 @@ def test_table_without_snapshots(started_cluster_paimon_with_spark, storage_type
     table_expr = get_creation_expression(
         storage_type, table_name, started_cluster, table_function=True
     )
-    stdout, stderr = instance.query_and_get_answer_with_error(
-        f"SELECT count() FROM {table_expr}"
-    )
-    # Either an empty result or a clean DB::Exception is acceptable.
-    assert stdout == "0\n" or "DB::Exception" in stderr
-    assert instance.query("SELECT 1") == "1\n"
+    assert instance.query(f"SELECT count() FROM {table_expr}") == "0\n"
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])

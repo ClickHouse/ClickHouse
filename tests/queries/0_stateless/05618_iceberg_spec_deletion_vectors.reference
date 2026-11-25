@@ -1,0 +1,27 @@
+--- small-alternating-values-position-index.bin
+file:///data/small-alternating-values-position-index.bin.parquet	5	[1,3,5,7,9]
+--- small-and-large-values-position-index.bin
+file:///data/small-and-large-values-position-index.bin.parquet	4	[100,101,2147483747,2147483748]
+--- empty-position-index.bin
+file:///data/empty-position-index.bin.parquet	0	[]
+--- all-container-types-position-index.bin
+132561	5	7	65537	4295163902	283601083008633	1	0	1	1	1	0
+--- 64mapempty.bin
+file:///data/64mapempty.bin.parquet	0	[]
+--- 64map32bitvals.bin
+file:///data/64map32bitvals.bin.parquet	10	[0,1,2,3,4,5,6,7,8,9]
+--- 64mapspreadvals.bin
+100	1932735283650	1
+--- 64maphighvals.bin
+BAD_ARGUMENTS
+--- iceberg-go/single-blob-dv.puffin
+deletion-vector-v1	-1	-1	[2147483645]	4	50		{'cardinality':'5','referenced-data-file':'s3://warehouse/db/table/data/00000-0-abc.parquet'}
+s3://warehouse/db/table/data/00000-0-abc.parquet	[1,3,5,7,9]
+--- iceberg-go/multi-blob-dv.puffin
+deletion-vector-v1	-1	-1	[2147483645]	4	46		{'cardinality':'3','referenced-data-file':'s3://warehouse/db/table/data/file-001.parquet'}
+deletion-vector-v1	-1	-1	[2147483645]	50	44		{'cardinality':'2','referenced-data-file':'s3://warehouse/db/table/data/file-002.parquet'}
+s3://warehouse/db/table/data/file-001.parquet	[0,100,200]
+s3://warehouse/db/table/data/file-002.parquet	[50,150]
+--- iceberg-go/deletion-vector-v1.puffin
+deletion-vector-v1	-1	-1	[]	4	50		{'cardinality':'5','referenced-data-file':'data/test.parquet'}
+data/test.parquet	[1,3,5,7,9]
