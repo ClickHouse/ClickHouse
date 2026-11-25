@@ -89,8 +89,6 @@ Float64 calculateStatistic(PhiSquaredStatistic statistic, const CrossTabPhiSquar
         case PhiSquaredStatistic::Contingency:
             return contingency(data);
     }
-
-    UNREACHABLE();
 }
 
 const char * statisticName(PhiSquaredStatistic statistic)
@@ -104,22 +102,11 @@ const char * statisticName(PhiSquaredStatistic statistic)
         case PhiSquaredStatistic::Contingency:
             return "contingency";
     }
-
-    UNREACHABLE();
 }
 
 UInt64 hashArgument(const ArgumentsSegment & segment, size_t argument, size_t row)
 {
     return UniqVariadicHash<false, false>::apply(1, const_cast<const IColumn **>(segment.columns.data()) + argument, row);
-}
-
-Int64 equalFrameEndRun(const WindowBounds & bounds, Int64 from)
-{
-    for (Int64 to = from + 1; to < bounds.rows; ++to)
-        if (bounds.frame_end[to] != bounds.frame_end[from])
-            return to;
-
-    return bounds.rows;
 }
 
 class AggregateWindowFunctionPhiSquared final : public IAggregateWindowFunction
@@ -145,7 +132,7 @@ public:
 
         for (Int64 from = 0; from < bounds.rows;)
         {
-            const Int64 to = equalFrameEndRun(bounds, from);
+            const Int64 to = findNextFrameChange(bounds, from, /*account_start=*/ false, /*account_end=*/ true);
             const Int64 frame_end = bounds.frame_end[from];
             while (covered_end < frame_end)
             {
@@ -193,7 +180,7 @@ public:
 
         for (Int64 from = 0; from < bounds.rows;)
         {
-            const Int64 to = equalFrameEndRun(bounds, from);
+            const Int64 to = findNextFrameChange(bounds, from, /*account_start=*/ false, /*account_end=*/ true);
             const Int64 frame_end = bounds.frame_end[from];
             while (covered_end < frame_end)
             {
