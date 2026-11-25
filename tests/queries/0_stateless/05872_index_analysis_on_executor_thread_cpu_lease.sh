@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # no-parallel: the server allows only one MASTER THREAD / WORKER THREAD resource at a time
-# no-fasttest: inserts into a table with index_granularity = 1
 
 # `mergeTreeAnalyzeIndexes` analyzes indexes on a thread of the pipeline executor, which already runs on a CPU lease.
 # The analysis must not wait for one more CPU slot: in a workload with one slot it is the slot that this thread holds.
@@ -23,16 +22,17 @@ cleanup()
 }
 trap cleanup EXIT
 
-# With index_granularity = 1 and a filter on the second column of the key, the generic exclusion search of a part
-# takes more CPU than the quantum of a CPU slot, so the lease of the analysis is renewed.
+# With a filter on the second column of the key, the generic exclusion search checks every mark, so the analysis takes
+# more CPU than the quantum of a CPU slot. The parts are copies of one part: inserts of that many marks are slow.
 $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b)
-        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+        SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
     SYSTEM STOP MERGES t;
-    INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
-    INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
-    INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
-    INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
+    INSERT INTO t SELECT number % 12500, number FROM numbers(125000);
+    ALTER TABLE t ATTACH PARTITION tuple() FROM t;
+    ALTER TABLE t ATTACH PARTITION tuple() FROM t;
+    ALTER TABLE t ATTACH PARTITION tuple() FROM t;
+    ALTER TABLE t ATTACH PARTITION tuple() FROM t;
 
     DROP RESOURCE IF EXISTS ${RESOURCE}_worker;
     CREATE OR REPLACE RESOURCE ${RESOURCE} (MASTER THREAD, WORKER THREAD);
@@ -43,7 +43,7 @@ analyze()
 {
     timeout 60 $CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_analysis_$1" -q "
         SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t,
-            b IN (1, 15626, 31251, 46876, 62501, 78126, 93751, 109376, 125001, 140626, 156251, 171876, 187501, 203126, 218751, 234376))
+            b IN (1, 15626, 31251, 46876, 62501, 78126, 93751, 109376))
         SETTINGS workload = '${WORKLOAD}', max_threads = 8, max_threads_for_indexes = 0, use_concurrency_control = 1,
             use_query_condition_cache = 0, merge_tree_generic_exclusion_search_max_steps = 0" \
         || echo "The analysis has not finished"
