@@ -204,11 +204,13 @@ namespace
     }
 
     /// The hosts of `RESTORE ON CLUSTER` open the base backups with no user, so the initiator opens the chain, authorizing each base.
-    void checkAccessToBaseBackupChain(const BackupPtr & backup)
+    void checkAccessToBaseBackupChain(const BackupPtr & backup, const QueryStatusPtr & process_list_element)
     {
         SetWithMemoryTracking<UUID> seen_uuids{backup->getUUID()};
         for (auto base_backup = backup->getBaseBackup(); base_backup; base_backup = base_backup->getBaseBackup())
         {
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
             if (!seen_uuids.insert(base_backup->getUUID()).second)
                 throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: Its chain of base backups returns to {}",
                     backup->getNameForLogging(), base_backup->getNameForLogging());
@@ -1356,7 +1358,7 @@ void BackupsWorker::doRestore(
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
 
-        checkAccessToBaseBackupChain(backup);
+        checkAccessToBaseBackupChain(backup, context->getProcessListElement());
     }
 
     /// Do RESTORE.
