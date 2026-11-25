@@ -3,13 +3,15 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <create_query>CREATE TABLE cosine_distance_const (bf16 Array(BFloat16), f32 Array(Float32)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE cosine_distance_const (id UInt64, bf16 Array(BFloat16), f32 Array(Float32)) ENGINE = MergeTree ORDER BY id</create_query>
 
     <fill_query>
         INSERT INTO cosine_distance_const
-        SELECT CAST(v AS Array(BFloat16)), CAST(v AS Array(Float32))
-        FROM (SELECT arrayMap(i -> sin(number * 0.001 + i * 0.37), range(768)) AS v FROM numbers(600000))
+        SELECT number, CAST(v AS Array(BFloat16)), CAST(v AS Array(Float32))
+        FROM (SELECT number, arrayMap(i -> sin(number * 0.001 + i * 0.37), range(768)) AS v FROM numbers(300000))
+        SETTINGS max_block_size = 8192, max_insert_block_size = 65536, min_insert_block_size_rows = 65536
     </fill_query>
+    <fill_query>OPTIMIZE TABLE cosine_distance_const FINAL</fill_query>
 
     <query>SELECT sum(cosineDistance(bf16, arrayMap(i -> cos(i), range(768)))) FROM cosine_distance_const</query>
     <query>SELECT sum(cosineDistance(bf16, CAST(arrayMap(i -> cos(i), range(768)) AS Array(BFloat16)))) FROM cosine_distance_const</query>
