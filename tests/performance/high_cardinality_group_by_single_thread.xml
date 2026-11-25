@@ -1,4 +1,4 @@
-<test run_all_queries="1">
+<test>
     <!-- The high-cardinality GROUP BY queries of the ClickBench set (Q12-Q16, Q18 and Q30-Q35) on one thread.
          One thread gives the aggregation a single input stream. Its hash table grows far past the cache, and
          the adaptive aggregator freezes it at the freeze threshold and stages the rows of new keys, which its
