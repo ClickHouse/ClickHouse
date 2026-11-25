@@ -75,6 +75,8 @@ private:
     /// Runtime information
     ReadState read_state;
     int64_t finished_rounds = 0;
+    /// The read has counted itself in the holder of the cursor (`StreamingCursor::onReadStarted`) and has not reported the cursor yet.
+    bool cursor_read_started = false;
 
     /// Reconfiguration
     std::optional<ReadRound> pending_round;

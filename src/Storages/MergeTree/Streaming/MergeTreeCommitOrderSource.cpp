@@ -69,11 +69,6 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
-    /// A bounded read reports the cursor when it finishes, see `surfaceFinalCursor`. Count it from the start,
-    /// so that a read which is closed earlier is noticed by the one who waits for the cursor.
-    if (!stream_settings.subscribe_for_updates)
-        if (auto cursor = reading_context.context->getStreamingCursor())
-            cursor->onReadStarted();
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
@@ -200,7 +195,8 @@ void MergeTreeCommitOrderSource::surfaceFinalCursor()
         return;
 
     cursor->merge(mergeTreeCursorToCursorTree(read_state.getPartitionCursors()));
-    cursor->onReadFinished();
+    if (std::exchange(cursor_read_started, false))
+        cursor->onReadFinished();
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)
@@ -278,6 +274,17 @@ void MergeTreeCommitOrderSource::work()
 
     auto [safe_block_numbers, was_updated] = subscription->snapshot();
     auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+
+    /// A bounded read reports the cursor when it finishes, see `surfaceFinalCursor`. Count it from its first read
+    /// round, so that a read which is closed before the end is noticed by the one who waits for the cursor.
+    if (!stream_settings.subscribe_for_updates && !cursor_read_started)
+    {
+        if (auto cursor = reading_context.context->getStreamingCursor())
+        {
+            cursor->onReadStarted();
+            cursor_read_started = true;
+        }
+    }
 
     read_state.updatePartitionSet(classification);
     pending_round = {
