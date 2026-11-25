@@ -34,7 +34,11 @@
 
 
 #if !defined(XML_API)
-#    define XML_API
+#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
+#        define XML_API __attribute__((visibility("default")))
+#    else
+#        define XML_API
+#    endif
 #endif
 
 

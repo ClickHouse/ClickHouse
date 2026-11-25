@@ -25,8 +25,8 @@ function check()
     [ $unexpected -eq 0 ] && echo "$name: OK"
 }
 
-check window "SELECT count() FROM (SELECT flameGraphOrDefaultResample(0, 100, 1)(['a'], 99) OVER (PARTITION BY number) AS r FROM numbers(5000))" 5000
-check argMax "SELECT length(flameGraphResampleArgMax(0, 100, 1)(['a'], 99, number)) FROM numbers(3000)" 100
+check window "SELECT count() FROM (SELECT flameGraphOrDefaultResample(0, 100, 1)([toUInt64(1)], 99) OVER (PARTITION BY number) AS r FROM numbers(5000))" 5000
+check argMax "SELECT length(flameGraphResampleArgMax(0, 100, 1)([toUInt64(1)], 99, number)) FROM numbers(3000)" 100
 
 # The server is alive.
 $CLICKHOUSE_CLIENT -q "SELECT 1"

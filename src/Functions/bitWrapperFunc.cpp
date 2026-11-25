@@ -21,7 +21,6 @@ struct BitWrapperFuncImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_string_or_fixed_string = false;
-    static constexpr auto signature = "(Integer) -> UInt8";
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
     {
@@ -43,14 +42,12 @@ struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
 /// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
 /// produce Nullable(UInt8) instead of Dynamic. This is needed for set index evaluation
 /// where the result column must be UInt8.
-class FunctionBitWrapperFunc final : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, false>
+class FunctionBitWrapperFunc : public FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>
 {
 public:
-    using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitWrapperFunc>(); }
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitWrapperFunc>(context_); }
-
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

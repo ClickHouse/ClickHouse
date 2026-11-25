@@ -183,7 +183,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
             const IColumn & nested_column = column_array.getData();
             const ColumnArray::Offsets & offsets = column_array.getOffsets();
-            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
+            size_t offset = offsets[row_num - 1];
             size_t size = offsets[row_num] - offset;
             packer.pack_array(static_cast<unsigned>(size));
             for (size_t i = 0; i < size; ++i)
@@ -228,7 +228,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             const auto & offsets = nested_column.getOffsets();
-            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
+            size_t offset = offsets[row_num - 1];
             size_t size = offsets[row_num] - offset;
             packer.pack_map(static_cast<unsigned>(size));
             for (size_t i = 0; i < size; ++i)
@@ -299,7 +299,6 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 }
 
 
-void registerOutputFormatMsgPack(FormatFactory & factory);
 void registerOutputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerOutputFormat("MsgPack", [](
@@ -322,7 +321,6 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatMsgPack(FormatFactory &);
 void registerOutputFormatMsgPack(FormatFactory &)
 {
 }

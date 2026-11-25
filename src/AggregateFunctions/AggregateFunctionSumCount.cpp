@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -45,7 +44,7 @@ public:
             this->data(place).denominator);
     }
 
-    [[nodiscard]] String getName() const final { return "sumCount"; }
+    String getName() const final { return "sumCount"; }
 
     /// Keep the legacy nullable behavior/state layout for sumCount.
     /// After `Nullable(Tuple)` was introduced, for Nullable arguments in the
@@ -57,7 +56,7 @@ public:
     /// So we force the legacy adapter for sumCount to preserve compatibility.
     /// The extra null-flag is also redundant for sumCount: "has non-NULL rows"
     /// can be inferred from `count` (`count > 0` means at least one row was seen).
-    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
+    AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,
@@ -68,7 +67,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         return false;
     }
@@ -120,7 +119,6 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 }
 
-void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_sumCount = R"(
@@ -128,7 +126,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 
 **See also**
 
-- [`optimize_syntax_fuse_functions`](/reference/settings/session-settings/optimize#optimize_syntax_fuse_functions) setting.
+- [`optimize_syntax_fuse_functions`](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
     )";
     FunctionDocumentation::Syntax syntax_sumCount = R"(
 sumCount(x)
@@ -149,7 +147,7 @@ SELECT sumCount(x) FROM s_table;
         )",
         R"(
 ┌─sumCount(x)─┐
-│ (190,21)    │
+│ (190,20)    │
 └─────────────┘
         )"
     }
@@ -158,7 +156,7 @@ SELECT sumCount(x) FROM s_table;
     FunctionDocumentation::Category category_sumCount = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sumCount = {description_sumCount, syntax_sumCount, arguments_sumCount, parameters_sumCount, returned_value_sumCount, examples_sumCount, introduced_in_sumCount, category_sumCount};
 
-    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, documentation_sumCount, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, documentation_sumCount});
 }
 
 }

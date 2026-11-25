@@ -76,7 +76,7 @@ struct EntropyData
         }
     }
 
-    [[nodiscard]] Float64 get() const
+    Float64 get() const
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
@@ -107,14 +107,14 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "entropy"; }
+    String getName() const override { return "entropy"; }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -130,7 +130,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -175,7 +175,6 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 }
 
-void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

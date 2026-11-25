@@ -5,8 +5,8 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Core/Defines.h>
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/IStorage_fwd.h>
@@ -23,14 +23,7 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    /// Serialized text of the command (output of `formatWithSecretsOneLine`),
-    /// used for on-disk / ZooKeeper persistence.
-    String ast_text = {};
-
-    /// Parser limits used when `ast_text` was produced. Re-applied if the
-    /// AST has to be reparsed from `ast_text`.
-    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
-    UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+    ASTPtr ast = {}; /// The AST of the whole command
 
     enum Type
     {
@@ -56,50 +49,20 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// Parses `ast_text` and returns the resulting alter command (shareable,
-    /// const). The parsed AST is *not* cached on the `MutationCommand`, so
-    /// callers that access several sub-trees of the same command should hoist
-    /// the result into a local. Returns nullptr if `ast_text` is empty.
-    [[nodiscard]] boost::intrusive_ptr<const ASTAlterCommand> ast() const;
+    /// WHERE part of mutation
+    ASTPtr predicate = {};
 
-    /// RAII handle for editing the AST of a `MutationCommand` in place. The
-    /// constructor parses a mutable copy of `ast_text`. To publish edits, call
-    /// `commit` (it serializes the AST back into `ast_text` and may throw);
-    /// otherwise the destructor discards them.
-    /// Neither copyable nor movable.
-    class MutableAst
-    {
-    public:
-        explicit MutableAst(MutationCommand & owner);
-        ~MutableAst() noexcept;
-
-        MutableAst(const MutableAst &) = delete;
-        MutableAst & operator=(const MutableAst &) = delete;
-        MutableAst(MutableAst &&) = delete;
-        MutableAst & operator=(MutableAst &&) = delete;
-
-        ASTAlterCommand & operator*() const { return *ast; }
-        ASTAlterCommand * operator->() const { return ast.get(); }
-        [[nodiscard]] ASTAlterCommand * get() const { return ast.get(); }
-
-        /// Serialize the (possibly modified) AST back into `owner.ast_text`.
-        /// May throw.
-        void commit();
-
-    private:
-        MutationCommand & owner;
-        boost::intrusive_ptr<ASTAlterCommand> ast;
-        bool committed = false;
-    };
-
-    /// Open a mutating scope on the AST. See `MutableAst` for the semantics.
-    MutableAst mutateAst() { return MutableAst(*this); }
+    /// Columns with corresponding actions
+    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
 
     /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};
     String projection_name = {};
     std::vector<String> statistics_columns = {};
     std::vector<String> statistics_types = {};
+
+    /// For MATERIALIZE INDEX, UPDATE and DELETE.
+    ASTPtr partition = {};
 
     /// For reads, drops and etc.
     String column_name = {};
@@ -118,74 +81,36 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// Whether the command names specific partitions (`... IN PARTITION p`), which scopes it to those
-    /// partitions alone. Recorded at parse time so that a caller which has to respect the scope can
-    /// find the few commands that have one without re-parsing `ast_text` for every command.
-    bool has_partition = false;
-
-    /// The ids of the partitions the command is scoped to, resolved from the partition expression once,
-    /// when the mutation entry is created (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
-    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path. The
-    /// resolution also rewrites the expression in `ast_text` to `ID '...'`, so the persisted entry pins
-    /// the same partitions and resolving them again when the entry is read back evaluates nothing.
-    /// Stays `std::nullopt` for a command with no partition, and for a scoped command whose expression
-    /// could not be resolved - a consumer that has to respect the scope then applies the command to no
-    /// partition at all rather than to the ones it does not name.
-    std::optional<NameSet> partition_ids = {};
-
-    /// If `parse_alter_commands` is true, more alter commands are accepted as
-    /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
-    /// captured into the returned command so subsequent on-demand re-parsing
-    /// uses the same limits as this initial parse.
-    static std::optional<MutationCommand> parse(
-        const ASTAlterCommand & command,
-        bool parse_alter_commands = false,
-        bool with_pure_metadata_commands = false,
-        UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    /// If parse_alter_commands, than consider more Alter commands as mutation commands
+    static std::optional<MutationCommand> parse(const ASTAlterCommand & command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
 
     /// This command shouldn't stick with other commands
-    [[nodiscard]] bool isBarrierCommand() const;
-    [[nodiscard]] bool isPureMetadataCommand() const;
-    [[nodiscard]] bool isEmptyCommand() const;
-    [[nodiscard]] bool isDropOrRename() const;
-    [[nodiscard]] bool affectsAllColumns() const;
+    bool isBarrierCommand() const;
+    bool isPureMetadataCommand() const;
+    bool isEmptyCommand() const;
+    bool isDropOrRename() const;
+    bool affectsAllColumns() const;
 };
-
-/// Whether the command is scoped to specific partitions (`... IN PARTITION p`, or the multi-partition
-/// `... IN PARTITION p1, p2` of `DELETE`/`UPDATE`), so that it applies to the parts of those partitions
-/// alone. `IN PARTITION ALL` names no specific partition and is not a scope.
-bool isCommandScopedToPartitions(const ASTAlterCommand & command);
-
-/// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
-/// command into a `column -> expression` map. The returned `ASTPtr`s point
-/// into the assignment subtrees of `alter`, so the map is valid for as long
-/// as `alter` is.
-std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter);
 
 /// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    [[nodiscard]] boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);
-    [[nodiscard]] std::string toString(bool with_pure_metadata_commands) const;
-    [[nodiscard]] bool hasNonEmptyMutationCommands() const;
+    std::string toString(bool with_pure_metadata_commands) const;
+    bool hasNonEmptyMutationCommands() const;
 
-    [[nodiscard]] bool hasAnyUpdateCommand() const;
-    [[nodiscard]] bool hasOnlyUpdateCommands() const;
-
-    /// True if the set contains `ALTER TABLE ... REWRITE PARTS`, which rewrites every column of
-    /// the part from scratch and therefore may also change the part format.
-    [[nodiscard]] bool hasRewritePartsCommand() const;
+    bool hasAnyUpdateCommand() const;
+    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
-    [[nodiscard]] bool containBarrierCommand() const;
-    [[nodiscard]] NameSet getAllUpdatedColumns() const;
+    bool containBarrierCommand() const;
+    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

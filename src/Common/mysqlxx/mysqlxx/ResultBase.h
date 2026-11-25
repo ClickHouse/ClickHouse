@@ -27,12 +27,11 @@ public:
 
     Connection * getConnection() { return conn; }
     MYSQL_FIELDS getFields() { return fields; }
-    [[nodiscard]] unsigned getNumFields() const { return num_fields; }
+    unsigned getNumFields() const { return num_fields; }
     MYSQL_RES * getRes() { return res; }
-    [[nodiscard]] const Query * getQuery() const { return query; }
+    const Query * getQuery() const { return query; }
 
-    [[nodiscard]] MYSQL_FIELD & getField(size_t n) const;
-    [[nodiscard]] std::string getFieldName(size_t n) const;
+    std::string getFieldName(size_t n) const;
 
     virtual ~ResultBase();
 

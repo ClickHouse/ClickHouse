@@ -17,8 +17,8 @@ public:
 
     BlockIO execute() override;
 
-    [[nodiscard]] bool ignoreQuota() const override { return true; }
-    [[nodiscard]] bool ignoreLimits() const override { return true; }
+    bool ignoreQuota() const override { return true; }
+    bool ignoreLimits() const override { return true; }
 
     static void updateQuotaFromQuery(Quota & quota, const ASTCreateQuotaQuery & query);
 

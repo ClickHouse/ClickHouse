@@ -1,3 +1,0 @@
-<clickhouse>
-    <allow_experimental_transactions>42</allow_experimental_transactions>
-</clickhouse>
