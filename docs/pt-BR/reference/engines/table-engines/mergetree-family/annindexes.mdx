@@ -149,8 +149,8 @@ ORDER BY [...]
 Os seguintes parâmetros específicos do HNSW estão disponíveis:
 
 * `<quantization>` controla a quantização dos vetores no grafo de proximidade. Os valores possíveis são `f64`, `f32`, `f16`, `bf16`, `i8` ou `b1`. O valor padrão é `bf16`. Observe que esse parâmetro não afeta a representação dos vetores na coluna subjacente.
-* `<hnsw_max_connections_per_layer>` controla o número de vizinhos por nó do grafo, também conhecido como o hiperparâmetro HNSW `M`. O valor padrão é `32`. O valor `0` significa usar o valor padrão.
-* `<hnsw_candidate_list_size_for_construction>` controla o tamanho da lista dinâmica de candidatos durante a construção do grafo HNSW, também conhecido como o hiperparâmetro HNSW `ef_construction`. O valor padrão é `128`. O valor `0` significa usar o valor padrão.
+* `<hnsw_max_connections_per_layer>` controla o número de vizinhos por nó do grafo, também conhecido como o hiperparâmetro HNSW `M`. O valor padrão é `32`. O valor `0` significa usar o valor padrão. O valor máximo é `512`.
+* `<hnsw_candidate_list_size_for_construction>` controla o tamanho da lista dinâmica de candidatos durante a construção do grafo HNSW, também conhecido como o hiperparâmetro HNSW `ef_construction`. O valor padrão é `128`. O valor `0` significa usar o valor padrão. O valor máximo é `3200`.
 
 Os valores padrão de todos os parâmetros específicos do HNSW funcionam razoavelmente bem na maioria dos casos de uso.
 Portanto, não recomendamos personalizar os parâmetros específicos do HNSW.
@@ -162,6 +162,7 @@ Aplicam-se as seguintes restrições adicionais:
 * Índices de similaridade vetorial podem ser criados em expressões calculadas (por exemplo, `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`), mas esses índices não podem ser usados posteriormente para busca aproximada de vizinhos.
 * Índices de similaridade vetorial exigem que todos os arrays na coluna subjacente tenham `<dimension>` elementos — isso é verificado durante a criação do índice. Para detectar violações desse requisito o mais cedo possível, os usuários podem adicionar uma [restrição](/pt-BR/reference/statements/create/table#constraints) à coluna vetorial, por exemplo, `CONSTRAINT same_length CHECK length(vectors) = 256`.
 * Da mesma forma, os valores de array na coluna subjacente não podem estar vazios (`[]`) nem ter o valor padrão (também `[]`).
+* Índices de similaridade vetorial só podem ser criados em tabelas com o motor `MergeTree` ou `ReplicatedMergeTree`. Outros motores da família, como `ReplacingMergeTree` ou `CollapsingMergeTree`, são recusados porque `SELECT ... FINAL` pode retornar resultados incorretos com o índice. A configuração do MergeTree `allow_vector_similarity_index_in_specialized_merge_tree` permite criá-los mesmo assim.
 
 **Estimando o consumo de armazenamento e memória**
 
@@ -178,7 +179,7 @@ Storage consumption = Number of vectors * Dimension * Size of column data type
 Exemplo com o [conjunto de dados dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
 
 ```text
-Storage consumption = 1 milhão * 1536 * 4 (para Float32) = 6,1 GB
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 ```
 
 O índice de similaridade vetorial deve ser totalmente carregado do disco na memória principal para realizar as buscas.
@@ -187,19 +188,19 @@ Da mesma forma, o índice vetorial também é construído integralmente na memó
 Consumo de memória necessário para carregar um índice vetorial:
 
 ```text
-Memória para vetores no índice (mv) = Número de vetores * Dimensão * Tamanho do tipo de dado quantizado
-Memória para o grafo em memória (mg) = Número de vetores * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
-Consumo de memória: mv + mg
+Memory consumption: mv + mg
 ```
 
 Exemplo com o [conjunto de dados dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
 
 ```text
-Memória para vetores no índice (mv) = 1 milhão * 1536 * 2 (para BFloat16) = 3072 MB
-Memória para o grafo em memória (mg) = 1 milhão * 64 * 2 * 4 = 512 MB
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 
-Consumo de memória = 3072 + 512 = 3584 MB
+Memory consumption = 3072 + 512 = 3584 MB
 ```
 
 A fórmula acima não considera a memória adicional exigida pelos índices de similaridade vetorial para alocar estruturas de dados em tempo de execução, como buffers pré-alocados e caches.
@@ -276,7 +277,7 @@ Nesse caso, o índice de similaridade vetorial descartou dois dos quatro grânul
 Quanto mais grânulos puderem ser descartados, mais eficaz será o uso do índice.
 
 <Tip>
-  Para forçar o uso do índice, você pode executar a consulta SELECT com a configuração [force&#95;data&#95;skipping&#95;indices](/pt-BR/reference/settings/session-settings/force#force_data_skipping_indices) (informe o nome do índice como valor da configuração).
+  Para forçar o uso do índice, você pode executar a consulta SELECT com a configuração [force&#95;data&#95;skipping&#95;indices](/pt-BR/reference/settings/session-settings/force#force_data_skipping_indexes) (informe o nome do índice como valor da configuração).
 </Tip>
 
 **Pós-filtragem e Pré-filtragem**

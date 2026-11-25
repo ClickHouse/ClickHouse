@@ -1,0 +1,412 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-kubernetes-serverless
+title: 'مراقبة Kubernetes باستخدام OpenTelemetry'
+sidebarTitle: 'مراقبة Kubernetes'
+description: 'ثبّت جامعَي البيانات OpenTelemetry باستخدام Helm لإرسال سجلات الحاويات ومقاييس العُقد والعنقود وأحداث Kubernetes مباشرةً إلى ClickHouse Observability، ثم استكشفها في لوحة معلومات Kubernetes.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Kubernetes', 'k8s', 'OpenTelemetry collector', 'Helm', 'DaemonSet', 'kubeletstats', 'container logs', 'Kubernetes events', 'Kubernetes dashboard']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **باختصار**
+
+  خزّن نقطة نهاية خدمتك ومفتاح API الخاص بها في العنقود، وثبّت جامعَي البيانات OpenTelemetry من مخطط Helm الرسمي باستخدام ملفات القيم أدناه، ثم افتح لوحة معلومات Kubernetes. ستتدفق سجلات الحاويات ومقاييس العُقد والعنقود وأحداث Kubernetes مباشرةً إلى ClickHouse Observability، دون تشغيل أي مكوّن آخر في العنقود.
+
+  الوقت المطلوب: 15 دقيقة تقريبًا
+</Info>
+
+بعد أن أنشأت خدمة ClickHouse Observability، يتناول هذا الدليل الحالة التي تعمل فيها أحمال العمل لديك على Kubernetes وتريد مراقبة العنقود نفسه: سجلات الحاويات، واستهلاك المعالج والذاكرة لكل pod وعقدة، وأحداث Kubernetes، موسومةً بمساحة الأسماء والـ pod والعقدة التي صدرت منها، لتُعرض بشكل متّسق في لوحة معلومات Kubernetes المدمجة.
+
+يعتمد هذا النمط على أسلوب OpenTelemetry القياسي، إذ تنشر جامعَين للبيانات من [مخطط Helm الخاص بـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector): **مجموعة العمليات الخلفية** (DaemonSet) على كل عقدة لجمع سجلات الحاويات ومقاييس العُقد، و**نشر** (Deployment) بنسخة متماثلة واحدة لجمع أحداث Kubernetes ومقاييس العنقود. ويُرسل كلاهما البيانات مباشرةً إلى نقطة نهاية OTLP الخاصة بخدمتك.
+
+<Note>
+  **هل لديك جامعو البيانات OpenTelemetry يعملون بالفعل في العنقود؟**
+
+  احتفظ بها وأضف إليها المُصدِّر فقط، كما هو موضح في [ربط مُجمِّع OpenTelemetry](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless).
+</Note>
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability. إذا لم تكن لديك خدمة بعد، فاتبع [دليل بدء الاستخدام](/ar/clickstack/observability/getting-started).
+* عنقود Kubernetes يحتوي على أحمال عمل تريد مراقبتها، مع تهيئة `kubectl` للاتصال به بصلاحية إنشاء مساحات الأسماء وكائنات Secret وConfigMap وأدوار العنقود.
+* [Helm](https://helm.sh/). يشير ملف README الخاص بمخطط Helm إلى أن Helm 4.0 أو أحدث متطلب مسبق.
+* السماح بالوصول الصادر عبر HTTPS على المنفذ `4318` من وحدات pod الخاصة بجامع البيانات إلى نقطة نهاية بيانات القياس عن بُعد في خدمتك.
+
+## نشر جامعي البيانات {#deploy-the-collectors}
+
+<Steps>
+  <Step title="انسخ بيانات الاتصال الخاصة بك" id="copy-connection-details">
+    افتح خدمة ClickHouse Observability الخاصة بك. وإلى حين وصول البيانات، تعرض الخدمة صفحة **Start sending telemetry**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![صفحة Start sending telemetry تعرض الخدمة الحالية دون أي بيانات بعد، مع ثلاثة خيارات: Use an existing OpenTelemetry setup وInstrument with AI وFollow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    ضمن **Use an existing OpenTelemetry setup**، اختر **View connection details**، ثم افتح علامة التبويب **Collector config**. تعرض علامة التبويب هذه كتلة المُصدِّر الخاصة بخدمتك، وتتضمن عنوان URL لنقطة النهاية وترويسة `authorization` تحمل مفتاح API الخاص بك. اختر **Reveal key** لإظهار المفتاح كاملاً.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![مربع حوار Set up OpenTelemetry مع تحديد علامة التبويب Collector config، ويعرض مُصدِّر otlphttp مع نقطة نهاية مُقنَّعة وترويسة تفويض من نوع Bearer](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    ستحتاج في الخطوة التالية إلى كل قيمة من القيمتين على حدة: نقطة النهاية متضمنةً نظام المصادقة `https://` والمنفذ، ومفتاح API وحده دون البادئة `Bearer`، إذ تتولى ملفات القيم أدناه إضافة هذه البادئة.
+
+    يمكنك العثور على القيم نفسها في أي وقت ضمن **Team Settings → Managed Telemetry**.
+  </Step>
+
+  <Step title="خزّنها في عنقودك" id="store-connection-details">
+    أنشئ مساحة أسماء لجامعي البيانات، وSecret يحتوي على مفتاح API، وConfigMap يحتوي على نقطة النهاية. يقرأ كلا جامعَي البيانات هذه القيم عبر `extraEnvs`، وبذلك لا يظهر المفتاح أبدًا في ملف القيم. استبدل العنصرين النائبين بقيمك:
+
+    ```shell
+    kubectl create namespace otel-collectors
+
+    kubectl create secret generic hyperdx-secret \
+      --namespace otel-collectors \
+      --from-literal=HYPERDX_API_KEY='<your-api-key>'
+
+    kubectl create configmap otel-config-vars \
+      --namespace otel-collectors \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    ```
+
+    اترك نقطة النهاية بصيغة عنوان URL الأساسي، ولا تُلحق بها `/v1/logs` أو `/v1/traces` أو `/v1/metrics`، لأن المُصدِّر يضيف مسار الإشارة تلقائيًا. وإذا كنت تفضّل استخدام مساحة أسماء أخرى، فاستخدمها على نحو متّسق في جميع الأوامر أدناه؛ إذ يجب أن يكون الـ Secret والـ ConfigMap في مساحة الأسماء نفسها التي تقع فيها إصدارات Helm.
+  </Step>
+
+  <Step title="أضف مستودع helm الخاص بـ OpenTelemetry" id="add-helm-repository">
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update open-telemetry
+    ```
+  </Step>
+
+  <Step title="نشر جامع بيانات العنقود" id="deploy-cluster-collector">
+    يجمع هذا الـ Deployment (النشر) أحادي النسخة المتماثلة **أحداث Kubernetes** و**المقاييس على مستوى العنقود بأكمله**: شروط العُقد، ومراحل الـ pod، وحالة عمليات النشر والنسخ المتماثلة. تكفي نسخة متماثلة واحدة، فإضافة نسخة ثانية ستؤدي إلى بيانات مكررة.
+
+    نزّل ملف القيم وثبّته:
+
+    ```shell
+    curl -fSL -o k8s_deployment.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_deployment.yaml
+
+    helm install --namespace otel-collectors k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_deployment.yaml
+    ```
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # نريد نسخة واحدة فقط من جامع البيانات هذا، إذ ستؤدي أي نسخ إضافية إلى إنتاج بيانات مكررة
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # عند التفعيل، يستخرج المعالج جميع الوسوم الخاصة بالـ pod المرتبط ويضيفها بوصفها سمات موارد.
+          # ويكون الاسم الدقيق للوسم هو المفتاح.
+          extractAllPodLabels: true
+          # عند التفعيل، يستخرج المعالج جميع التعليقات التوضيحية الخاصة بالـ pod المرتبط ويضيفها بوصفها سمات موارد.
+          # ويكون الاسم الدقيق للتعليق التوضيحي هو المفتاح.
+          extractAllPodAnnotations: true
+        # يهيئ جامع البيانات لجمع أحداث Kubernetes.
+        # يضيف k8sobject receiver إلى مسار السجلات ويجمع أحداث Kubernetes افتراضيًا.
+        # مزيد من المعلومات: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # يهيئ Kubernetes Cluster Receiver لجمع المقاييس على مستوى العنقود.
+        # يضيف k8s_cluster receiver إلى مسار المقاييس ويضيف القواعد اللازمة إلى ClusterRole.
+        # مزيد من المعلومات: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    تُفعّل `presets` المستقبِلات الجاهزة المضمّنة في الـ chart مع قواعد RBAC التي تحتاج إليها. ويضيف القسم `config` مُصدِّرًا واحدًا من نوع `otlp_http` يقرأ نقطة النهاية والمفتاح من متغيرات البيئة، ويعيّنه مُصدِّرًا لمساري `logs` و`metrics`. أما سائر الإعدادات، بما فيها المعالجان `memory_limiter` و`batch`، فمصدرها القيم الافتراضية للـ chart.
+  </Step>
+
+  <Step title="نشر جامع بيانات العقدة" id="deploy-node-collector">
+    تُشغِّل مجموعة العمليات الخلفية هذه جامع بيانات واحدًا لكل عقدة لجمع **سجلات الحاويات** من `/var/log/pods`، و**مقاييس المضيف** الخاصة بالعقدة، و**مقاييس كيوبليت**: استهلاك CPU والذاكرة لكل pod وحاوية، بما في ذلك نسبة الاستخدام مقارنةً بالطلبات (requests) والحدود (limits).
+
+    ```shell
+    curl -fSL -o k8s_daemonset.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_daemonset.yaml
+
+    helm install --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # Required to use the kubeletstats cpu/memory utilization metrics
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
+          extractAllPodLabels: true
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
+          extractAllPodAnnotations: true
+        # Configures the collector to collect node, pod, and container metrics from the kubelet API.
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          kubeletstats:
+            insecure_skip_verify: true
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    يُوسِم الإعداد المسبق `kubernetesAttributes` كل سطر سجل ومقياس بالـ pod ومساحة الأسماء والعقدة وعبء العمل الذي صدر عنه، إضافةً إلى وسوم الـ pod وتعليقاته التوضيحية. وهذه السمات هي ما تعتمد عليه لوحة معلومات Kubernetes في التصفية.
+
+    يضبط هذا الملف `insecure_skip_verify: true` لاتصال جامع البيانات بكيوبليت المحلي، لأن كثيرًا من العناقيد تُصدر شهادات كيوبليت لا تشمل عنوان العقدة. ولا يؤثر ذلك في التحقق من TLS لنقطة نهاية خدمتك. أما في بيئة الإنتاج، فهيّئ شهادات كيوبليت موثوقة وأزِل هذا الإعداد.
+
+    تحقّق من أن جامعي البيانات قيد التشغيل، ثم اطّلع على سجلاتها:
+
+    ```shell
+    kubectl get pods --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector
+    kubectl logs --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector --prefix --tail=50
+    ```
+
+    يُفترض أن ترى pod واحدًا لعملية النشر (Deployment) وpod واحدًا لمجموعة العمليات الخلفية (DaemonSet) على كل عقدة، وجميعها في حالة `Running`. غير أن تشغيل الـ pod وحده لا يعني أن البيانات تُسلَّم فعليًا، لذا ابحث عن أخطاء التصدير في السجلات:
+
+    * تعني الاستجابات `401` أو `403` أن مفتاح API المخزَّن في Secret غير صحيح، أو أنه خُزِّن مسبوقًا بالبادئة `Bearer` التي يضيفها ملف القيم مرة أخرى.
+    * تعني الاستجابات `404` عادةً أن مسار إشارة مثل `/v1/logs` قد أُلحق بنقطة النهاية في ConfigMap.
+    * تشير أخطاء `no such host` أو أخطاء TLS إلى خطأ إملائي في نقطة النهاية، أو إلى حظر الوصول الصادر عبر المنفذ `4318`.
+  </Step>
+</Steps>
+
+## التأكد من وصول البيانات {#confirm-data-is-arriving}
+
+ارجع إلى صفحة **Start sending telemetry** في خدمتك وانقر على **Check for data**. بمجرد وصول بيانات القياس عن بُعد، تتغير حالة الخدمة إلى **Data received** ويصبح الزر **Start exploring** متاحًا.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![صفحة Start sending telemetry تعرض حالة الخدمة Data received، مع تأكيد بأنك جاهز للاستكشاف، وزر Start exploring مفعّل](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+انقر على **Start exploring** لفتح صفحة **بحث**، ثم اختر المصدر **السجلات**، واضبط النطاق الزمني على **Last 15 minutes**. ستظهر سجلات الحاويات من مختلف أنحاء العنقود خلال بضع ثوانٍ، وستجد مكوّنات العنقود مثل `kube-proxy` و`coredns` مدرجة ضمن `ServiceName` إلى جانب أحمال العمل الخاصة بك. وسّع أي صف للاطلاع على **ResourceAttributes** الخاصة به: `k8s.namespace.name` و`k8s.pod.name` و`k8s.node.name` ووسوم الـ pod.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![صفحة البحث تعرض سجلات الحاويات من عنقود Kubernetes، مع ظهور الخدمات kindnet وkube-proxy وsample-logs في عامل التصفية ServiceName](/images/clickstack/getting-started/observability-kubernetes-logs.png)
+  </Frame>
+</div>
+
+أما المقاييس، فافتح **مستكشف المخططات**، واختر **Time Series** والمصدر **المقاييس**، ثم أنشئ مخططًا لقيمة **Average** للمقياس `k8s.pod.memory.usage` مجمّعة حسب `ResourceAttributes['k8s.pod.name']`. اترك الخيار **Delta** دون تحديد وانقر على **Run** لمقارنة استخدام الذاكرة بين وحدات الـ pod. إذا ظهرت فجوات في المخطط، فاختر مستوى تجزئة لا يقل عن الفاصل الزمني للجمع.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![مستكشف المخططات يعرض متوسط استخدام الذاكرة لوحدات pod في Kubernetes مجمّعًا حسب اسم الـ pod](/images/clickstack/getting-started/observability-kubernetes-metrics.png)
+  </Frame>
+</div>
+
+بعد ذلك، افتح **لوحات المعلومات** من الشريط الجانبي واختر **Kubernetes** ضمن **Preset Dashboards**. حدّد مصدري **السجلات** و**المقاييس** في أعلى الصفحة. تعرض علامات التبويب **Pods** و**Nodes** و**مساحات الأسماء** استخدام CPU والذاكرة، وحالة وحدات الـ pod مع أعداد مرات إعادة التشغيل، وأحدث أحداث التحذير في Kubernetes. ويمكنك تضييق نطاق العرض باستخدام عوامل التصفية الخاصة بالـ pod والنشر والعقدة ومساحة الأسماء والعنقود.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![لوحة معلومات Kubernetes تعرض استخدام CPU والذاكرة لوحدات الـ pod، وجدولًا بوحدات الـ pod يتضمن الحالة وأعداد مرات إعادة التشغيل، وأحدث أحداث التحذير في Kubernetes](/images/clickstack/getting-started/observability-kubernetes-dashboard.png)
+  </Frame>
+</div>
+
+## إذا لم يظهر أي شيء {#if-nothing-shows-up}
+
+* ابدأ بقراءة سجلات جامع البيانات باستخدام الأمر `kubectl logs` المذكور أعلاه، إذ تظهر فيها جميع مشكلات المصادقة ونقطة النهاية وTLS مصحوبةً برموز الخطأ المذكورة أعلاه.
+* إذا علق pod في الحالة `CreateContainerConfigError`، فهذا يعني أن الـ Secret أو الـ ConfigMap مفقود أو موجود في مساحة أسماء غير مساحة أسماء إصدار Helm. ويحدد الأمر `kubectl describe pod` الكائن المفقود.
+* إذا علق pod مجموعة العمليات الخلفية في الحالة `CreateContainerError` مع الرسالة `path "/" is mounted on "/" but it is not a shared or slave mount`، فهذا يعني أن نظام الملفات الجذري للعقدة ليس ربطًا مشتركًا، وهو ما يتطلبه الإعداد المسبق لمقاييس المضيف. ويحدث ذلك في العناقيد المحلية التي تعمل عُقدها داخل حاويات. شغّل `mount --make-rshared /` على العقدة، ثم احذف الـ pod ليُعاد إنشاؤه.
+* إذا وصلت السجلات دون المقاييس، فابحث عن أخطاء `kubeletstats` في سجلات مجموعة العمليات الخلفية. إذ يحتاج المستقبِل إلى قاعدة دور العنقود `nodes/proxy` الواردة في ملف القيم، وإلى الوصول إلى كيوبليت عبر المنفذ `10250`.
+* إذا وصلت المقاييس دون السجلات، فانتظر دقيقة. يبدأ مستقبِل السجلات القراءة من نهاية كل ملف، لذا لا تظهر إلا الأسطر المكتوبة بعد بدء تشغيل جامع البيانات، أما الـ pods التي لا تكتب أي سجلات فلن يظهر لها شيء.
+* وسّع النطاق الزمني في صفحة **بحث** وأزل أي عوامل تصفية، فقد يكون المصدر الافتراضي مضبوطًا على **Traces** بدلًا من **السجلات**.
+* لاستبعاد الخدمة نفسها كسبب للمشكلة، انتقل إلى **إعدادات الفريق ← بيانات القياس عن بُعد المُدارة** واستخدم **Send a Test Log**. فإذا ظهر ذلك السجل في **بحث**، فهذا يعني أن الخدمة تستقبل البيانات وأن المشكلة تقع بين عنقودك ونقطة النهاية.
+
+## إضافة بيانات القياس عن بُعد للتطبيقات {#add-application-telemetry}
+
+يغطي جامعا البيانات العنقودَ بأكمله. أما التتبّعات، وأي سجلات أو مقاييس تُصدرها تطبيقاتك عبر OpenTelemetry SDK، فيجب أن يتولى التطبيق تصديرها بنفسه. ويمكن ذلك بإحدى طريقتين.
+
+<Tabs>
+  <Tab title="مباشرةً إلى خدمتك" id="directly-to-your-service">
+    زوّد التطبيق بأدوات جمع بيانات الرصد وصدّر البيانات مباشرةً إلى نقطة النهاية المُدارة، كما هو موضح في [تزويد تطبيقك بأدوات جمع بيانات الرصد باستخدام OpenTelemetry](/ar/clickstack/managed-onboarding/instrument-application-serverless). خزّن قيمتي `OTEL_EXPORTER_OTLP_ENDPOINT` و`OTEL_EXPORTER_OTLP_HEADERS` من علامة التبويب **Env vars** في Secret، ثم مرّرهما إلى الـ pod بوصفهما متغيرات بيئة.
+
+    أضف سمات Kubernetes من downward API لكي ترتبط بيانات القياس عن بُعد ببيانات البنية التحتية في لوحة معلومات Kubernetes:
+
+    ```yaml
+    env:
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+    ```
+  </Tab>
+
+  <Tab title="عبر جامع البيانات على العقدة" id="through-the-node-collector">
+    بدلاً من ذلك، أرسل البيانات عبر مجموعة العمليات الخلفية (DaemonSet)، التي تستقبل OTLP أصلاً على كل عقدة عبر منفذَي المضيف `4317` لـ gRPC و`4318` لـ HTTP. ولهذا الأسلوب ميزتان: يضيف جامع البيانات مفتاح API بنفسه، فلا تحتاج الـ pods إلى الاحتفاظ به إطلاقاً، كما يضيف المعالج `k8s_attributes` إلى كل span وسجل وسوماً تتضمن مساحة الأسماء والعقدة وعبء العمل ووسوم الـ pod المُرسِلة، فتتطابق تتبّعات التطبيقات مع بيانات البنية التحتية.
+
+    لا يوجّه ملف القيم الذي نزّلته سوى السجلات والمقاييس. أضف المُصدِّر إلى مسار التنفيذ `traces` أيضاً، ثم رقِّ الإصدار:
+
+    ```yaml
+    # أضف إلى قسم service.pipelines في k8s_daemonset.yaml
+          traces:
+            exporters:
+              - otlp_http
+    ```
+
+    ```shell
+    helm upgrade --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    بعد ذلك، وجّه كل تطبيق إلى جامع البيانات الموجود على العقدة نفسها. ويوفّر downward API عنوان العقدة وUID الخاص بالـ pod:
+
+    ```yaml
+    env:
+      - name: HOST_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://$(HOST_IP):4318
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: http/protobuf
+      - name: OTEL_SERVICE_NAME
+        value: <your-service-name>
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.uid=$(POD_UID)
+    ```
+
+    لا حاجة إلى مفتاح API داخل العنقود. إذ يبحث جامع البيانات عن الـ pod باستخدام UID الموجود في `OTEL_RESOURCE_ATTRIBUTES`، ثم يضيف بنفسه `k8s.pod.name` و`k8s.namespace.name` و`k8s.node.name` وعبء العمل المالك ووسوم الـ pod. ويمكنه أيضاً مطابقة الـ pods حسب عنوان مصدر الاتصال، لكن ذلك يتوقف على احتفاظ شبكة العنقود بعنوان IP الخاص بالـ pod على مسار منفذ المضيف، لذا يُفضَّل تمرير UID.
+  </Tab>
+</Tabs>
+
+## الخطوات التالية {#next-steps}
+
+* [التنبيهات](/ar/clickstack/observability/features/alerts): أنشئ تنبيهات عند إعادة تشغيل pod أو تعطّلها، أو عند الارتفاعات المفاجئة في الأخطاء ضمن البيانات التي تجمعها الآن.
+* [لوحات المعلومات](/ar/clickstack/observability/features/dashboards/overview): انطلق من الإعداد المسبق الخاص بـ Kubernetes، أو احفظ استعلامًا من مستكشف المخططات في لوحة معلومات خاصة بك.
+* [بحث](/ar/clickstack/observability/features/search): استعلم في السجلات حسب `k8s.namespace.name` و`k8s.pod.name` باستخدام صيغة على نمط Lucene أو SQL.
+* [السجلات والمقاييس المحلية](/ar/clickstack/observability/example-datasets/local-data): اجمع مقاييس المضيف وملفات السجل نفسها من أجهزة خارج Kubernetes.
+* [مكوّنات مُجمِّع OpenTelemetry لـ Kubernetes](https://opentelemetry.io/docs/platforms/kubernetes/collector/components/): المستقبِلات والمعالجات التي يقوم عليها كل إعداد مسبق، مع جميع خياراتها.

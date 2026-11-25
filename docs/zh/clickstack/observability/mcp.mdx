@@ -1,0 +1,147 @@
+---
+slug: /clickstack/observability/mcp
+title: 'ClickStack MCP 服务器'
+sidebarTitle: 'MCP 服务器'
+description: '通过 ClickStack Model Context Protocol (MCP) 服务器将 AI 助手连接到 ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'ClickStack UI', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+ClickStack MCP 服务器基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)，让 AI 助手能够与您的 ClickHouse Observability 数据交互。连接完成后，AI 助手即可通过自然语言查询日志、链路追踪和指标，管理仪表盘和告警，探索数据源，并使用保存的搜索。
+
+借助该服务器，您可以在 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/) 或任何兼容 MCP 的客户端中排查事件、构建仪表盘并管理可观测性配置，无需离开开发环境。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+## 连接到 ClickHouse Observability {#managed-clickstack}
+
+ClickHouse Observability 通过云端 MCP 端点 `https://mcp.clickhouse.cloud/clickstack` 进行连接，并使用 OAuth 2.0 进行身份验证。该端点不支持 API key 身份验证。
+
+### 前置条件 {#managed-prerequisites}
+
+* 一个正在运行且[已启用可观测性](/zh/clickstack/observability/getting-started)的 ClickHouse Cloud 服务
+* 已在该服务上[启用 MCP](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)：打开 Cloud 控制台，点击 **Connect**，选择 **Connect with MCP**，然后打开对应开关
+
+### 端点 {#managed-endpoint}
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+身份验证采用 OAuth 2.0。MCP 客户端首次连接时，会打开一个浏览器窗口，供您使用 ClickHouse Cloud 凭证登录，无需 API key。
+
+### 连接 MCP 客户端 {#managed-connecting-a-client}
+
+在 ClickHouse Observability 服务中打开 **Team Settings → API &amp; Agents**，即可复制适用于 MCP 客户端的配置。生成的配置包含服务 ID，确保请求发送到该服务。
+
+您也可以使用下方任一示例。连接时，客户端会提示您完成 OAuth 身份验证。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    启动 Claude Code 并运行 `/mcp`，然后选择 `clickstack` 以完成 OAuth 流程。
+  </Tab>
+
+  <Tab title="Cursor">
+    将以下内容添加到 `.cursor/mcp.json`：
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    将以下内容添加到 `.vscode/mcp.json`：
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    将以下内容添加到 `opencode.json`：
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    将以下内容添加到 `librechat.yaml`：
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="其他">
+    任何支持基于 OAuth 的 **Streamable HTTP** 的 MCP 客户端均可连接。配置如下：
+
+    * **URL：** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+### 指定特定服务作为目标 {#managed-service-override}
+
+如果未提供 `x-service-id` 请求头，请求将默认发送到您账户中第一个已预配并投入使用的可观测性服务。如需更改默认服务，请在 ClickStack 中打开 **User Preferences**，然后选择默认服务。
+
+如需让某个 MCP 客户端指向特定服务，请在其配置中将 `x-service-id: <YOUR_SERVICE_ID>` 作为请求头传入。该请求头会覆盖默认服务。
+
+## MCP 能做什么？ {#capabilities}
+
+连接后，您的 AI 助手即可使用一系列工具，覆盖该服务的各个核心领域，包括：
+
+* **查询数据** — 使用查询构建器、搜索语法或原始 SQL 搜索并聚合日志、链路追踪和指标。
+* **数据源** — 列出可用的数据源、数据库连接、列 schema 和属性键。
+* **仪表盘** — 创建、更新、删除和查看仪表盘及其内容块。
+* **告警** — 创建、更新和查看告警及其评估历史记录。
+* **保存的搜索** — 创建、更新和查看可复用的已保存搜索定义。
+* **Webhook** — 列出可用于告警通知的 Webhook 目标端。
+* **团队** — 列出当前用户所属的团队，并确定当前活跃的团队。
+
+具体的工具集可能会逐步扩充。您的 MCP 客户端在连接时会自动发现可用的工具。
+
+## 故障排查 {#troubleshooting}
+
+<Accordion title="OAuth 流程无法完成">
+  * 确认您的 MCP 客户端支持 OAuth 2.0。仅支持 Bearer 令牌或 stdio 传输的客户端无法通过 Cloud 端点完成身份验证。
+  * 检查浏览器是否拦截了 OAuth 弹出窗口或重定向。
+  * 确认您的 ClickHouse Cloud 账户有权访问相应的组织和服务。
+</Accordion>
+
+<Accordion title="MCP 已启用，但客户端无法连接">
+  * 确认您使用的是可观测性端点 (`https://mcp.clickhouse.cloud/clickstack`) ，而非通用的云端 MCP 端点 (`https://mcp.clickhouse.cloud/mcp`) 。
+  * 确认已在 Cloud 控制台中为该服务[启用 MCP](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)。
+</Accordion>
+
+<Accordion title="请求被发送到错误的服务">
+  如果未提供 `x-service-id` 请求头，请求将默认发送到您的账户最先预配并使用的可观测性服务。您可以在 ClickStack 的 **User Preferences** 中更改默认服务，也可以传递该请求头来指定目标服务。请参阅[指定特定服务作为目标](#managed-service-override)。
+</Accordion>
