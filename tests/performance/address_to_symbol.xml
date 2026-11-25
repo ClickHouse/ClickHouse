@@ -1,0 +1,16 @@
+<test>
+    <!-- Resolving symbol names for a set of addresses that repeats, as the frames of stack traces do.
+         Release builds resolve the names from the compact symbol table (the `.clickhouse.symbols`
+         section) through a cache of decoded names, so the queries measure lookups in that cache. -->
+    <settings>
+        <allow_introspection_functions>1</allow_introspection_functions>
+    </settings>
+
+    <create_query>CREATE TABLE symbol_addresses (address UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO symbol_addresses SELECT address_begin FROM system.symbols ORDER BY sipHash64(address_begin), address_begin LIMIT 1000</fill_query>
+
+    <query>WITH (SELECT groupArray(address) FROM symbol_addresses) AS addresses SELECT count() FROM numbers(3000000) WHERE NOT ignore(addressToSymbol(addresses[1 + cityHash64(number) % 1000])) SETTINGS max_threads = 1</query>
+    <query>WITH (SELECT groupArray(address) FROM symbol_addresses) AS addresses SELECT count() FROM numbers_mt(24000000) WHERE NOT ignore(addressToSymbol(addresses[1 + cityHash64(number) % 1000])) SETTINGS max_threads = 8</query>
+
+    <drop_query>DROP TABLE IF EXISTS symbol_addresses</drop_query>
+</test>

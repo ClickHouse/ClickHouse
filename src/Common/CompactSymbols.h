@@ -58,6 +58,8 @@ class NameGranuleDecoder
 public:
     bool next(std::string & name);
     void reset();
+    /// The size of the granule after decompression.
+    [[nodiscard]] size_t decodedSize() const { return static_cast<size_t>(end - begin); }
 
 private:
     friend class Reader;

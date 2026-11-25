@@ -1,5 +1,6 @@
 #include <Common/CompactSymbolLookup.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include <new>
 #include <stdexcept>
@@ -8,6 +9,12 @@ namespace CurrentMetrics
 {
     extern const Metric SymbolNameCacheEntries;
     extern const Metric SymbolNameCacheBytes;
+}
+
+namespace ProfileEvents
+{
+    extern const Event SymbolNameCacheMisses;
+    extern const Event SymbolNameDecompressedBytes;
 }
 
 namespace DB
@@ -185,6 +192,7 @@ std::string_view CompactNameWorkspace::getName(
     }
 
     prepareDecoder(maximum_granule_size);
+    uint32_t previous_granule_index = granule_index;
     std::string_view name;
     try
     {
@@ -210,6 +218,10 @@ std::string_view CompactNameWorkspace::getName(
         return name_buffer;
     }
     buffered_name_index = name_index;
+
+    ProfileEvents::increment(ProfileEvents::SymbolNameCacheMisses);
+    if (granule_index != previous_granule_index)
+        ProfileEvents::increment(ProfileEvents::SymbolNameDecompressedBytes, decoder->decodedSize());
 
     if (!name_cache_read_only)
     {
