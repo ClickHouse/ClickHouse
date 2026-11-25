@@ -499,9 +499,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
     else
     {
-        /// no `WHERE`: the part stores the columns it reads as they are, or the column that gives the number of rows
-        result.sample_block = makeEmptyBlock(
-            source_columns.empty() ? columns.getByNames(GetColumnsOptions::AllPhysical, result.required_columns) : source_columns);
+        /// no `WHERE`: the part stores the columns it reads as they are
+        result.sample_block = makeEmptyBlock(source_columns);
     }
 
     StorageInMemoryMetadata metadata;
