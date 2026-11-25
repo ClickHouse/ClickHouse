@@ -159,6 +159,10 @@ FROM (SELECT CAST('{"a":{"b":1},"m":{"x":1}}', 'JSON(a UInt32, `a.b` UInt32, m M
 SELECT p, JSONMergePatch(c, p) AS r, toString(r) = toString(JSONMergePatch(c, replaceOne(p, ',"m":{"y":2}', ''), '{"m":{"y":2}}'))
 FROM (SELECT CAST('{"a":1,"a.b":7,"m":{"x":1}}', 'JSON(a UInt32, m Map(String, UInt8))') AS c) AS src,
     (SELECT arrayJoin(['{"a.b":5,"m":{"y":2}}', '{"a.b":null,"m":{"y":2}}', '{"a.b":{"z":1},"m":{"y":2}}']) AS p) AS patches ORDER BY p;
+SELECT JSONMergePatch(c, '{"a":{"b.c":5},"m":{"y":2}}') AS r, toString(r) = toString(JSONMergePatch(c, '{"a":{"b.c":5}}', '{"m":{"y":2}}'))
+FROM (SELECT CAST('{"a":{"b":{"c":1}},"m":{"x":1}}', 'JSON(a UInt32, `a.b.c` UInt32, m Map(String, UInt8))') AS c);
+SELECT JSONMergePatch(c, '{"a":{"b.c":5},"m":{"y":2}}') AS r, toString(r) = toString(JSONMergePatch(c, '{"a":{"b.c":5}}', '{"m":{"y":2}}'))
+FROM (SELECT CAST('{"a":{"b":{"c":1}},"m":{"x":1}}', 'JSON(a UInt32, `a.b.c` UInt32, m Map(String, UInt8))') AS c) SETTINGS type_json_skip_duplicated_paths = 1;
 
 SELECT 'literal and nested object under the same key';
 SELECT JSONMergePatch(c, '{"a":{"b":"x"}}') AS r, JSONMergePatch(c, '{"c":1}') AS r2,

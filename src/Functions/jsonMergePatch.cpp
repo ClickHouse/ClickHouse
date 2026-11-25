@@ -712,7 +712,7 @@ namespace
         /// Merges a patch into the text form of a stored row as mergeObjects does, except that a key with a dot sets the
         /// nested path, as the parser of the type reads it, and that a value stored at both `x` and `x.y` is two members
         /// named `x`, a literal and an object: the member of the other kind than the patch value is dropped. The value of
-        /// a typed path is merged by mergeObjects.
+        /// a typed path that can hold an object is merged by mergeObjects.
         void mergeIntoStoredRow(TrackedValue & dest, const TrackedValue & src, String & path, bool is_root, TrackedPoolAllocator & allocator) const
         {
             for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
@@ -772,7 +772,7 @@ namespace
                     path += '.';
                 String key(name);
                 path += escape_dots_in_keys ? escapeDotInJSONKey(key) : key;
-                if (typed_paths.contains(path))
+                if (auto typed = typed_paths.find(path); typed != typed_paths.end() && canHoldObject(typed->second))
                     mergeObjects(target->value, value, allocator);
                 else
                     mergeIntoStoredRow(target->value, value, path, false, allocator);
