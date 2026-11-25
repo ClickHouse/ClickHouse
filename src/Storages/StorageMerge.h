@@ -315,7 +315,15 @@ private:
     class RowPolicyData
     {
     public:
-        RowPolicyData(RowPolicyFilterPtr, StorageMetadataPtr, ContextPtr);
+        /// `parent_planner_context` is null without the analyzer.
+        RowPolicyData(
+            RowPolicyFilterPtr row_policy_filter_ptr,
+            const StoragePtr & storage,
+            const TableLockHolder & storage_lock,
+            const StorageSnapshotPtr & storage_snapshot,
+            StorageMetadataPtr storage_metadata,
+            const PlannerContextPtr & parent_planner_context,
+            ContextMutablePtr local_context);
 
         /// Add to data stream columns that are needed only for row policies
         ///  SELECT x from T  if  T has row policy  y=42
@@ -343,6 +351,8 @@ private:
         StorageMetadataPtr storage_metadata_snapshot;
         /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
         PreparedSetsPtr prepared_sets;
+        /// Set on the analyzer path; owns the sets of the policy's subqueries.
+        PlannerContextPtr planner_context;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;

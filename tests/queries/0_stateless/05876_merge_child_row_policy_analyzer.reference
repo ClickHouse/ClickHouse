@@ -1,0 +1,18 @@
+qualified	3
+part	3
+table	3
+table grouped	t_rpa_a	3
+alias over virtual	3
+two children	a	5
+two children	a	20
+two children	a	30
+two children	a	40
+old analyzer	4
+same expression	3
+or chain	3
+or chain plan	1
+lambda	3
+nested sets	3
+materialized cte	3
+join subcolumn	1
+memory table	1

@@ -12,6 +12,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -63,6 +64,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerSteps.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1483,7 +1485,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     for (const auto & row_policy : row_policy_filter_ptr->policies)
                         modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-                row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, modified_context);
+                row_policy_data_opt = RowPolicyData(
+                    row_policy_filter_ptr, storage, std::get<2>(table), nested_storage_snapshot, storage_metadata_snapshot,
+                    query_info.table_expression ? query_info.planner_context : nullptr, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
@@ -2346,70 +2350,110 @@ void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const Columns
 
 }
 
-ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
+ReadFromMerge::RowPolicyData::RowPolicyData(
+    RowPolicyFilterPtr row_policy_filter_ptr,
+    const StoragePtr & storage,
+    const TableLockHolder & storage_lock,
+    const StorageSnapshotPtr & storage_snapshot,
     StorageMetadataPtr storage_metadata,
-    ContextPtr local_context)
+    const PlannerContextPtr & parent_planner_context,
+    ContextMutablePtr local_context)
     : storage_metadata_snapshot(std::move(storage_metadata))
 {
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
-    /// `RowPolicyFilter::expression` is the parsed policy condition owned by `RowPolicyCache`. That AST is
-    /// shared: every query of every user reading this table gets the same nodes, and a policy defined on a
-    /// whole database is shared by all its tables. `TreeRewriter` and `ExpressionAnalyzer` rewrite the AST
-    /// they are given in place - they normalize identifiers, substitute the results of scalar subqueries for
-    /// the subqueries themselves, and record `ASTLiteral::unique_column_name` - so they must be handed a
-    /// private copy. Analyzing the shared AST is both a data race against concurrent readers of the same
-    /// policy and a correctness bug: a scalar subquery such as `USING x <= (SELECT max(v) FROM limits)` gets
-    /// replaced by its value in the cache and is then frozen for the rest of the server's lifetime.
-    /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
-    ASTPtr expr = row_policy_filter_ptr->expression->clone();
-
-    /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column.
-    TreeRewriterResultPtr syntax_result;
-    if (!storage_columns.getAliases().empty())
+    const ActionsDAG::Node * filter_node = nullptr;
+    if (parent_planner_context)
     {
-        ColumnsDescription columns_with_virtuals = storage_columns;
-        for (const auto & virtual_column : storage_metadata_snapshot->virtuals)
-            if (!columns_with_virtuals.has(virtual_column.name))
-                columns_with_virtuals.add(ColumnDescription(virtual_column.name, virtual_column.type));
+        planner_context = std::make_shared<PlannerContext>(local_context, parent_planner_context);
+        /// No alias: the policy must not see the alias of the `Merge` table.
+        auto table_node = std::make_shared<TableNode>(storage, storage_lock, storage_snapshot);
 
-        ASTPtr expanded_expr = expr->clone();
-        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(expanded_expr, storage_columns, {});
-        replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
+        auto filter_query_tree = buildFilterQueryTree(
+            row_policy_filter_ptr->expression->clone(), table_node, local_context, planner_context->isViewSourceInSubqueries());
 
-        syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);
-        if (syntax_result)
-            expr = std::move(expanded_expr);
+        LogicalExpressionOptimizerPass().run(filter_query_tree, local_context);
+        /// Not `collectSourceColumns`: it registers column identifiers the outer query already owns.
+        collectSets(filter_query_tree, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        auto [nodes, correlated_subtrees] = actions_visitor.visit(actions_dag, filter_query_tree);
+        correlated_subtrees.assertEmpty("in row-policy and additional table filters");
+        if (nodes.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filter actions must return single output node. Actual {}", nodes.size());
+
+        filter_node = nodes.front();
     }
+    else
+    {
+        /// `RowPolicyFilter::expression` is the parsed policy condition owned by `RowPolicyCache`. That AST is
+        /// shared: every query of every user reading this table gets the same nodes, and a policy defined on a
+        /// whole database is shared by all its tables. `TreeRewriter` and `ExpressionAnalyzer` rewrite the AST
+        /// they are given in place - they normalize identifiers, substitute the results of scalar subqueries for
+        /// the subqueries themselves, and record `ASTLiteral::unique_column_name` - so they must be handed a
+        /// private copy. Analyzing the shared AST is both a data race against concurrent readers of the same
+        /// policy and a correctness bug: a scalar subquery such as `USING x <= (SELECT max(v) FROM limits)` gets
+        /// replaced by its value in the cache and is then frozen for the rest of the server's lifetime.
+        /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
+        ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    if (!syntax_result)
-        syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
-    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
+        /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column.
+        TreeRewriterResultPtr syntax_result;
+        if (!storage_columns.getAliases().empty())
+        {
+            ColumnsDescription columns_with_virtuals = storage_columns;
+            for (const auto & virtual_column : storage_metadata_snapshot->virtuals)
+                if (!columns_with_virtuals.has(virtual_column.name))
+                    columns_with_virtuals.add(ColumnDescription(virtual_column.name, virtual_column.type));
 
-    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+            ASTPtr expanded_expr = expr->clone();
+            replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(expanded_expr, storage_columns, {});
+            replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
 
-    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
-    /// and addFilterTransform needs it to plant the step that builds them.
-    prepared_sets = expression_analyzer.getPreparedSets();
+            syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);
+            if (syntax_result)
+                expr = std::move(expanded_expr);
+        }
+
+        if (!syntax_result)
+            syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
+        auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
+
+        actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+
+        /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
+        /// and addFilterTransform needs it to plant the step that builds them.
+        prepared_sets = expression_analyzer.getPreparedSets();
+
+        filter_node = &actions_dag.findInOutputs(expr->getColumnName());
+    }
 
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
     /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
     /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
     /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
-    const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
-
     filter_column_name = makeUniqueRowPolicyFilterColumnName(actions_dag, needed_columns);
-    const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
+    const auto & alias_node = actions_dag.addAlias(*filter_node, filter_column_name);
 
     /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
     /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
     /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
     ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : actions_dag.getOutputs())
-        if (output->type == ActionsDAG::ActionType::INPUT)
-            new_outputs.push_back(output);
+    if (planner_context)
+    {
+        /// The planner's DAG has no outputs yet.
+        for (const auto * input : actions_dag.getInputs())
+            new_outputs.push_back(input);
+    }
+    else
+    {
+        for (const auto * output : actions_dag.getOutputs())
+            if (output->type == ActionsDAG::ActionType::INPUT)
+                new_outputs.push_back(output);
+    }
     new_outputs.push_back(&alias_node);
     actions_dag.getOutputs() = std::move(new_outputs);
 
@@ -2452,6 +2496,13 @@ void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, Context
 {
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
+    if (planner_context)
+    {
+        const auto subqueries = planner_context->getPreparedSets().getSubqueries();
+        addBuildSubqueriesForSetsStepIfNeeded(plan, SelectQueryOptions{}, planner_context, UsefulSets(subqueries.begin(), subqueries.end()));
+        return;
+    }
+
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
 }
 
