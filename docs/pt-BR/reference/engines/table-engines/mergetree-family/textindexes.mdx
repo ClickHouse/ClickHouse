@@ -638,7 +638,7 @@ As posições armazenadas podem ser inspecionadas na coluna `positions` da funç
 
   O parâmetro opcional `posting_list_block_size` (padrão: 1048576) especifica o tamanho dos blocos da posting list em linhas.
 
-  O parâmetro opcional `posting_list_codec` (padrão: `none`) especifica o codec da posting list:
+  O parâmetro opcional `posting_list_codec` (padrão: `pfor`) especifica o codec da posting list:
 
   * `none` - as posting lists são armazenadas sem compressão adicional.
   * `bitpacking` - aplica [codificação diferencial (delta)](https://en.wikipedia.org/wiki/Delta_encoding), seguida de [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (cada um em blocos de tamanho fixo). Deixa as consultas SELECT mais lentas e, no momento, não é recomendado.
@@ -914,6 +914,16 @@ Exemplo:
 ```sql
 SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
+```
+
+#### `arrayJoin` {#functions-example-arrayjoin}
+
+Uma condição sobre um elemento do array indexado usa o índice da mesma forma que `has` e `hasAny`: `arrayJoin(tags) = 'clickhouse'` usa o índice como `has(tags, 'clickhouse')`, e `arrayJoin(tags) IN (set)` o usa como `hasAny(tags, set)`. O mesmo vale para `GLOBAL IN`, para `IN` com `transform_null_in = 1` quando o conjunto não contém `NULL` e para a cláusula `ARRAY JOIN`. O índice serve apenas para ignorar grânulos; o ClickHouse continua verificando a condição em cada elemento. `LEFT ARRAY JOIN` não usa o índice.
+
+Exemplo:
+
+```sql
+SELECT arrayJoin(tags) AS tag FROM table WHERE tag IN ('clickhouse', 'olap');
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -1630,7 +1640,10 @@ No momento, o índice de texto tem as seguintes limitações:
 A versão do formato em disco dos índices de texto é controlada pela configuração de tabela [`text_index_serialization_version`](/pt-BR/reference/settings/merge-tree-settings/text-index) (padrão: `v2_with_positions`).
 A configuração é uma preferência, não uma restrição rígida: se a versão configurada não puder representar um índice, uma versão mais recente capaz de representá-lo será escolhida automaticamente. Portanto, a gravação de um índice de texto nunca falhará devido a essa configuração.
 Durante uma atualização gradual, fixe o formato com a configuração [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) nos servidores já atualizados: quando definida como uma versão anterior à que introduziu o formato correspondente, `text_index_serialization_version` reverte automaticamente para um valor mais antigo, e os servidores mais recentes continuam gravando em um formato que os servidores mais antigos ainda conseguem ler.
-O codec da lista de postings não é regido por essa versão: uma parte gravada com `posting_list_codec = 'pfor'` (ou com a configuração `text_index_posting_list_codec`) não pode ser lida por servidores anteriores ao codec, e nem `text_index_serialization_version` nem `compatibility` impedem seu uso, porque um codec indicado no índice tem precedência sobre a preferência de versão, da mesma forma que `support_phrase_search`. Não habilite `pfor` até que todos os servidores que possam ler a tabela tenham passado por upgrade.
+
+O codec de lista de ocorrências não é controlado por `text_index_serialization_version`. Partes gravadas com o codec `pfor` não podem ser lidas por servidores anteriores à versão 26.10.
+
+A partir da versão 26.11, `pfor` é o padrão da configuração [`text_index_posting_list_codec`](/pt-BR/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec). Durante uma atualização gradual, defina [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) como uma versão anterior à 26.11 nos servidores já atualizados. Assim, o padrão reverte para `none`, e esses servidores continuam gravando partes que os servidores mais antigos conseguem ler.
 
 ## Índices de texto vs. índices baseados em filtro de Bloom {#text-index-vs-bloom-filter-indexes}
 
@@ -1647,20 +1660,20 @@ Predicados sobre strings podem ser acelerados com índices de texto e índices b
 **Índices de texto**
 
 * Constroem um índice invertido determinístico sobre tokens. O próprio índice não pode gerar falsos positivos.
-* São especificamente otimizados para cargas de trabalho de pesquisa de texto.
+* São especificamente otimizados para cargas de trabalho de busca textual.
 * Armazenam informações no nível da linha, o que permite a busca eficiente de termos.
 * São relativamente grandes (de dezenas a centenas de megabytes por parte).
 
-Os índices baseados em filtro de Bloom oferecem suporte à pesquisa de texto completo apenas como um &quot;efeito colateral&quot;:
+Os índices baseados em filtro de Bloom oferecem suporte à busca textual completa apenas como um &quot;efeito colateral&quot;:
 
 * Eles não oferecem suporte a tokenização e preprocessamento avançados.
 * Eles não oferecem suporte à pesquisa por múltiplos tokens.
 * Eles não fornecem as características de desempenho esperadas de um índice invertido.
 
-Os índices de texto, em contraste, são criados especificamente para pesquisa de texto completo:
+Os índices de texto, em contraste, são criados especificamente para busca textual completa:
 
 * Eles oferecem tokenização e preprocessamento
-* Eles oferecem suporte eficiente a `hasAllTokens`, `LIKE`, `match` e funções semelhantes de pesquisa de texto.
+* Eles oferecem suporte eficiente a `hasAllTokens`, `LIKE`, `match` e funções semelhantes de busca textual.
 * Eles têm escalabilidade significativamente melhor para grandes corpora de texto.
 
 ## Detalhes de implementação {#implementation}

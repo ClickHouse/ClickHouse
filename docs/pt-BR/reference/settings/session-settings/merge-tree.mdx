@@ -184,9 +184,9 @@ Valores possíveis:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o prefetch de subfluxos de dados compartilhados JSON lidos por meio de uma busca até uma marca em partes Wide."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o prefetch de subfluxos de dados compartilhados JSON lidos por meio de um reposicionamento até uma marca em partes Wide."}]}]} />
 
-Habilita o prefetch de subfluxos de dados compartilhados JSON em partes Wide lidos por meio de uma busca até uma marca. Esse prefetch lê desde o início do grânulo, que geralmente não é a posição a partir da qual o subfluxo é lido, podendo ser desnecessário. Desabilite-o para ignorar esses prefetches.
+Habilita o prefetch de subfluxos de dados compartilhados JSON em partes Wide lidos por meio de um reposicionamento até uma marca, incluindo o subfluxo de dados dos caminhos tipados `SHARED`. Esse prefetch lê desde o início do grânulo, que geralmente não é a posição a partir da qual o subfluxo é lido, podendo ser desnecessário. Desabilite-o para ignorar esses prefetches.
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 

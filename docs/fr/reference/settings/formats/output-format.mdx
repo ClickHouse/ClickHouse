@@ -53,6 +53,18 @@ Utilise le type Arrow FIXED&#95;SIZE&#95;BINARY au lieu de Binary pour les colon
 
 Active la sortie du type LowCardinality sous forme de type Dictionary d’Arrow
 
+## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="2147483646" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "Nouveau paramètre limitant la taille d’un lot d’enregistrements dans les sorties `Arrow` et `ArrowStream`. La valeur par défaut correspond à la limite d’adressage propre à Arrow ; le comportement reste donc inchangé."}]}]} />
+
+Borne supérieure des tampons `Utf8`, `Binary` et `List` d’un même lot d’enregistrements dans les formats de sortie `Arrow` et `ArrowStream`, ainsi que dans les lots d’enregistrements Arrow à partir desquels le format de sortie `Vortex` est écrit. Un bloc dont les chaînes de caractères, valeurs binaires ou éléments de liste dépassent cette valeur est écrit sous forme de plusieurs lots d’enregistrements.
+
+Contrairement à [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/fr/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes), qui définit une cible servant à regrouper les petits blocs, ce paramètre fixe une limite qui divise les blocs volumineux. La valeur par défaut est la plus grande valeur qu’Arrow peut adresser, car il référence ces tampons au moyen de décalages codés sur des entiers 32 bits ; une valeur plus élevée n’a aucun effet.
+
+Seuls les tampons mentionnés ci-dessus sont limités : une colonne de type à largeur fixe n’a pas de décalages susceptibles de provoquer un dépassement de capacité et reste dans un seul batch. Une ligne n’est jamais divisée non plus : une ligne dépassant la limite produit donc malgré tout un batch qui la dépasse.
+
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -141,9 +153,18 @@ Toujours utiliser des entiers sur 64 bits pour les index de dictionnaire au form
 
 Utiliser des entiers signés pour les index de dictionnaire au format Arrow
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d'écrire les UUID sous forme de simple FixedSizeBinary(16), sans le type d'extension `arrow.uuid`."}]}]} />
+
+Écrit les valeurs `UUID` sous forme de simple `FixedSizeBinary(16)` Arrow, sans le type d&#39;extension `arrow.uuid` dans les métadonnées du champ.
+À utiliser avec les lecteurs Arrow qui ne prennent pas en charge le type d&#39;extension `arrow.uuid`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
-Codec de compression utilisé pour la sortie. Valeurs possibles : &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
+Codec de compression utilisé pour la sortie. Valeurs possibles : &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;.
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -1202,6 +1223,14 @@ Si ce paramètre est défini sur true, la fin de ligne au format TSV sera \r\n a
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si true, échappe ' par '', sinon avec \\'"}]}]} />
 
 Si true, échappe &#39; par &#39;&#39;, sinon avec \&#39;
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d'écrire les colonnes `String` du format `Vortex` sous forme de `Utf8`, que Vortex compresse mieux que `Binary`."}]}]} />
+
+Écrit les colonnes `String` du format `Vortex` sous forme de `Utf8` plutôt que de `Binary`, car Vortex compresse mieux `Utf8`. Une valeur `Utf8` doit être en UTF-8 valide, et le module d&#39;écriture de Vortex ne le vérifie pas : ClickHouse vérifie donc chaque valeur et lève une exception si l&#39;une d&#39;elles n&#39;est pas en UTF-8 valide. Pour écrire ce type de données sous forme de `Binary`, désactivez ce paramètre. Les colonnes `FixedString` sont toujours écrites sous forme de `Binary`. À la lecture, les deux types sont restitués en `String`.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

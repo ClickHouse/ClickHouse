@@ -15,22 +15,18 @@ Cette page constitue la référence de sécurité du ClickHouse Connector : ses 
 ## Identities {#identities}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Modèle d’identity du ClickHouse Connector](/images/cloud/reference/byoc-connector-identity-model.svg)
-
-</Frame>
-
+  <Frame>
+    ![Modèle d’identity du ClickHouse Connector](/images/cloud/reference/byoc-connector-identity-model.svg)
+  </Frame>
 </div>
 
 * **Le certificat client mTLS du connector**, dont le nom commun est votre organization ID, authentifie chaque démon auprès de votre connector endpoint. `clicklink clctl instances create` utilise le même certificat et la même clé HMAC lorsqu’il appelle l’endpoint.
-* **`pcm_scraper` et `pcm_troubleshooter`** sont les ClickHouse users en lecture seule sous lesquels se connectent le scraper et le troubleshooter. L’executor, lui, n’a pas de ClickHouse user.
-* **Les ServiceAccounts du Troubleshooter**, un par deployment provisionné, portent les vues Kubernetes en lecture seule utilisables lors d’une session d’assistance.
+* **`pcm_scraper` et `pcm_troubleshooter`** sont les users en lecture seule sous lesquels se connectent le scraper et l’outil de dépannage. L’executor, lui, n’a pas de user.
+* **Les ServiceAccounts de l’outil de dépannage**, un par deployment provisionné, portent les vues Kubernetes en lecture seule utilisables lors d’une session d’assistance.
 * **`pcm-executor`** est le ServiceAccount Kubernetes de l’executor pour le cycle de vie des services managés. Une ValidatingAdmissionPolicy restreint ses écritures aux namespaces de service.
 * **`pcm-platform`** est l’identity de l’executor pour les mises à jour de plateforme. Votre commande `clicklink clctl platform approve` émet son jeton pour 2 heures et ne le renouvelle jamais ; entre deux approbations, l’executor n’a aucun accès en écriture à la couche plateforme.
 * **Le rôle IAM propre à chaque service** (`CH-S3-<service>-<region>-00-Role` par défaut) est créé par `clicklink clctl executor prepare` avec vos identifiants. Sa portée se limite aux buckets de données et de sauvegarde de ce service, et seul le ServiceAccount Kubernetes de ce service lui est approuvé : ni l’executor ni ClickHouse ne peuvent donc l’assumer.
-* **Le profil d’instance de la VM EC2 du connector** assume le rôle ECR puller en lecture seule de votre environnement pour l’accès direct à la plateforme, à la fois pour la connexion aux charts et pour les vérifications d’image. La CLI d’approbation emprunte le même chemin de profil d’instance ; les profils AWS du poste de travail ou les identifiants SSO ne s’y substituent pas. Les autres registries de charts ECR utilisent les identifiants AWS ambient. Les image pulls s’effectuent sur vos nodes sous leur propre rôle de pull. L’executor ne détient aucun identifiant pour vos buckets ni pour IAM et n’effectue aucun appel S3 ou IAM. Voir [registry credentials](/fr/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
+* **Le profil d’instance de la VM EC2 du connector** assume le rôle ECR puller en lecture seule de votre environnement pour l’accès direct à la plateforme, à la fois pour la connexion aux charts et pour les vérifications d’image. La CLI d’approbation emprunte le même chemin de profil d’instance ; les profils AWS du poste de travail ou les identifiants SSO ne s’y substituent pas. Les autres registres de charts ECR utilisent les identifiants AWS implicites. Les téléchargements d’images s’effectuent sur vos nodes sous leur propre rôle de pull. L’executor ne détient aucun identifiant pour vos buckets ni pour IAM et n’effectue aucun appel S3 ou IAM. Voir [registre credentials](/fr/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 * **Vos propres identifiants** appliquent chaque grant : le grant d’accès de l’executor lors de `init --managed`, les buckets et le rôle lors de `prepare`, le volet permissions de chaque mise à jour de plateforme lors de `approve`, et le nettoyage lors de `teardown`.
 
 ## Fonctionnalités du connecteur {#what-the-connector-can-do}
