@@ -16,6 +16,10 @@ PartsRanges TrivialMergeSelector::select(
     const size_t max_total_size_to_merge = merge_constraints[0].max_size_bytes;
     const size_t max_rows_in_part = merge_constraints[0].max_size_rows;
 
+    /// This selector merges a fixed number of parts, but not more than the constraint affords: otherwise it would
+    /// keep selecting the same too-wide merge of a very wide table on a server with little memory.
+    const size_t num_parts_to_merge = std::min(settings.num_parts_to_merge, merge_constraints[0].max_parts);
+
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
         return {};
@@ -24,7 +28,7 @@ PartsRanges TrivialMergeSelector::select(
     std::vector<size_t> sorted_partition_indices;
     sorted_partition_indices.reserve(num_partitions);
     for (size_t i = 0; i < num_partitions; ++i)
-        if (parts_ranges[i].size() >= settings.num_parts_to_merge)
+        if (parts_ranges[i].size() >= num_parts_to_merge)
             sorted_partition_indices.emplace_back(i);
 
     if (sorted_partition_indices.empty())
@@ -42,7 +46,7 @@ PartsRanges TrivialMergeSelector::select(
     {
         const PartsRange & partition = parts_ranges[sorted_partition_indices[partition_idx]];
 
-        if (1 + right - left == settings.num_parts_to_merge)
+        if (1 + right - left == num_parts_to_merge)
         {
             ++right;
 
@@ -70,7 +74,7 @@ PartsRanges TrivialMergeSelector::select(
             left = right;
         }
 
-        if (partition.size() - left < settings.num_parts_to_merge)
+        if (partition.size() - left < num_parts_to_merge)
         {
             ++partition_idx;
             if (partition_idx == sorted_partition_indices.size())

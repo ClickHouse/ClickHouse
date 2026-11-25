@@ -161,7 +161,9 @@ public:
             const auto [range_it, range_begin, range_end, bytes, rows, _] = std::move(ranges.back());
             ranges.pop_back();
 
-            if (bytes <= constraint.max_size_bytes && rows <= constraint.max_size_rows && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
+            const size_t parts = range_end - range_begin;
+
+            if (bytes <= constraint.max_size_bytes && rows <= constraint.max_size_rows && parts <= constraint.max_parts && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
                 return PartsRange(range_begin, range_end);
         }
 
@@ -214,7 +216,8 @@ bool allow(
     PartsIterator begin,
     PartsIterator end,
     const IMergeSelector::RangeFilter & range_filter,
-    const SimpleMergeSelector::Settings & settings)
+    const SimpleMergeSelector::Settings & settings,
+    double min_lowered_base)
 {
     if (range_filter && !range_filter({begin, end}))
         return false;
@@ -253,8 +256,8 @@ bool allow(
     /// The ratio should be within [0, 1]
     double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
 
-    double lowered_base = interpolateLinear(settings.base, settings.min_lowered_base, combined_ratio);
-    /// A base of 1 accepts any merge, and a normal distribution needs a positive standard deviation.
+    double lowered_base = interpolateLinear(settings.base, min_lowered_base, combined_ratio);
+    /// A base of 1 accepts any merge of two or more parts, and a normal distribution needs a positive standard deviation.
     if (settings.use_blurry_base && lowered_base > 1)
     {
         double partition_fill_factor = std::max(0., 1 - partition_size / static_cast<double>(settings.parts_to_throw_insert));
@@ -294,6 +297,7 @@ void selectWithinPartsRange(
     const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
+    double min_lowered_base,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log)
 {
@@ -447,7 +451,8 @@ void selectWithinPartsRange(
                     range_begin,
                     range_end,
                     range_filter,
-                    settings))
+                    settings,
+                    min_lowered_base))
                 estimator.consider(
                     range_it,
                     range_begin,
@@ -475,9 +480,42 @@ PartsRanges SimpleMergeSelector::select(
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
     const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
 
+    /// The constraints are sorted from the widest to the narrowest, so the first one bounds all candidates.
+    const size_t affordable_parts = merge_constraints[0].max_parts;
+    chassert(affordable_parts >= 2, "A merge of fewer than two parts makes no progress");
+
+    /// `base` is a ratio of sizes, not a number of parts: a range is accepted when the sum of the sizes of its
+    /// parts is at least `base` times the size of the largest of them. The selector lowers the base for old parts
+    /// and for partitions with many parts, down to this value. A range always has at least two parts.
+    double min_lowered_base = 2;
+
+    /// Narrow the settings to what the constraint affords. A value of 0 in `max_parts_to_merge_at_once` means "no limit".
+    Settings narrowed_settings = settings;
+    if (affordable_parts != MergeConstraint::unlimited_parts
+        && (settings.max_parts_to_merge_at_once == 0 || settings.max_parts_to_merge_at_once > affordable_parts))
+    {
+        narrowed_settings.max_parts_to_merge_at_once = affordable_parts;
+
+        /// With a ratio of 2, a range of a few parts of unequal size is never accepted: two parts give less
+        /// than 2, and parts that grow geometrically, like `[1 KiB, 16 MiB, 1 KiB, 64 MiB]` repeated, give
+        /// less than 1.5 with up to four parts. That is fine as long as a range may take the many small parts
+        /// that raise the ratio, but a narrowed range cannot, so no merge would ever be accepted in the
+        /// background, and the table would accumulate parts until inserts are rejected. Lower the floor
+        /// to 1, which accepts any range (of two or more parts), so that old parts and partitions with
+        /// many parts are eventually merged regardless of how uneven the parts are.
+        min_lowered_base = 1;
+    }
+
+    /// A minimum above what is affordable would stop the table from compacting at all, or, for
+    /// `small_parts_min_count`, until the small parts age.
+    narrowed_settings.min_parts_to_merge_at_once = std::min(settings.min_parts_to_merge_at_once, affordable_parts);
+    narrowed_settings.small_parts_min_count = std::min(settings.small_parts_min_count, affordable_parts);
+
     /// Using max size constraint to create more merge candidates
     for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
-        selectWithinPartsRange(range_it, merge_constraints[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+        selectWithinPartsRange(
+            range_it, merge_constraints[0], range_filter, estimator, narrowed_settings, min_lowered_base,
+            min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     PartsRanges result;
     for (const auto & constraint : merge_constraints)

@@ -46,7 +46,8 @@ UInt64 getMaxSourcePartsBytesForMerge(
   */
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment = nullptr);
 
-/** Get the maximum number of parts to merge at once that fits the memory limit of this server; 0 means no cap.
+/** Get the maximum number of parts to merge at once that fits the memory limit of this server, to be passed
+  * to the merge selector as `MergeConstraint::max_parts`; `MergeConstraint::unlimited_parts` means no cap.
   *
   * A merge keeps one block from every source part alive at the same time, and every column of every one
   * of those blocks costs at least a minimum allocation, even when the block holds a handful of rows. That

@@ -57,8 +57,6 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
-    /// See `MergeSelectorApplier::max_parts_to_merge_at_once`.
-    const size_t max_parts_to_merge_at_once;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
@@ -160,31 +158,6 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         simple_merge_settings.small_parts_min_count = 0;
     }
 
-    if (const size_t affordable = ctx.max_parts_to_merge_at_once)
-    {
-        /// A value of 0 means "no limit".
-        const bool narrowed = simple_merge_settings.max_parts_to_merge_at_once == 0
-            || simple_merge_settings.max_parts_to_merge_at_once > affordable;
-        if (narrowed)
-            simple_merge_settings.max_parts_to_merge_at_once = affordable;
-
-        /// A minimum above the cap would stop the table from compacting at all, or, for
-        /// `small_parts_min_count`, until the small parts age.
-        simple_merge_settings.min_parts_to_merge_at_once = std::min(simple_merge_settings.min_parts_to_merge_at_once, affordable);
-        simple_merge_settings.small_parts_min_count = std::min(simple_merge_settings.small_parts_min_count, affordable);
-
-        /// The selector lowers the base for old parts and for partitions with many parts, but not below 2. A merge
-        /// is accepted when the sum of its parts is at least the base times the largest of them, and for a few
-        /// parts of unequal size that ratio stays below 2: two parts give less than 2, and parts that grow
-        /// geometrically, like `[1 KiB, 16 MiB, 1 KiB, 64 MiB]` repeated, give less than 1.5 with up to four parts.
-        /// The narrowed merge cannot take the many small parts that would raise the ratio, so no merge would ever
-        /// be accepted in the background, and the table would accumulate parts until inserts are rejected.
-        /// When the merge width is narrowed, lower the floor to 1, which accepts any merge, so that old parts
-        /// and partitions with many parts are eventually merged regardless of how uneven the parts are.
-        if (narrowed)
-            simple_merge_settings.min_lowered_base = 1;
-    }
-
     return simple_merge_settings;
 }
 
@@ -214,16 +187,8 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
             selector = std::make_shared<SimpleMergeSelector>(fillSimpleStochasticSettings(ctx));
             break;
         case MergeSelectorAlgorithm::TRIVIAL:
-        {
-            /// The trivial selector merges a fixed number of parts and ignores the `max_parts_to_merge_at_once`
-            /// setting, but the cap passed by the caller has to reach it too: otherwise it would keep selecting
-            /// the same too-wide merge of a very wide table on a small server.
-            TrivialMergeSelector::Settings trivial_merge_settings;
-            if (const size_t affordable = ctx.max_parts_to_merge_at_once)
-                trivial_merge_settings.num_parts_to_merge = std::min(trivial_merge_settings.num_parts_to_merge, affordable);
-            selector = std::make_shared<TrivialMergeSelector>(trivial_merge_settings);
+            selector = std::make_shared<TrivialMergeSelector>();
             break;
-        }
         case MergeSelectorAlgorithm::MANUAL:
             selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
             break;
@@ -241,17 +206,13 @@ MergeSelectorApplier::MergeSelectorApplier(
     bool merge_with_ttl_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
-    StorageID storage_id_,
-    size_t max_parts_to_merge_at_once_)
+    StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
-    , max_parts_to_merge_at_once(max_parts_to_merge_at_once_)
 {
-    chassert(max_parts_to_merge_at_once == 0 || max_parts_to_merge_at_once >= 2, "A merge of fewer than two parts makes no progress");
-
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
     chassert(std::ranges::is_sorted(
@@ -284,7 +245,6 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
-        .max_parts_to_merge_at_once = max_parts_to_merge_at_once,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

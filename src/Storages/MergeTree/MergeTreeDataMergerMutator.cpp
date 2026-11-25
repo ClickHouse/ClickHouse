@@ -168,7 +168,10 @@ std::string convertMergeConstraintsToString(const MergeConstraints & constraints
     {
         if (i != 0)
             res += ", ";
-        res += fmt::format("(max bytes: {}, max rows: {})", constraints[i].max_size_bytes, constraints[i].max_size_rows);
+        res += fmt::format("(max bytes: {}, max rows: {}", constraints[i].max_size_bytes, constraints[i].max_size_rows);
+        if (constraints[i].max_parts != MergeConstraint::unlimited_parts)
+            res += fmt::format(", max parts: {}", constraints[i].max_parts);
+        res += ")";
     }
     res += "]";
     return res;

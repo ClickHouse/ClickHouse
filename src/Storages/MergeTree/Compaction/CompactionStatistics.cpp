@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
 
 #include <Common/MemoryTracker.h>
 
@@ -152,11 +153,11 @@ size_t getMaxPartsToMergeAtOnceForMemory(const MergeTreeData & data)
 {
     const size_t bytes_per_source_part_column = (*data.getSettings())[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
     if (bytes_per_source_part_column == 0)
-        return 0;
+        return MergeConstraint::unlimited_parts;
 
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
     if (memory_limit <= 0)
-        return 0;
+        return MergeConstraint::unlimited_parts;
 
     auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     size_t num_columns = metadata_snapshot->getColumns().getAllPhysical().size();
@@ -169,7 +170,7 @@ size_t getMaxPartsToMergeAtOnceForMemory(const MergeTreeData & data)
 size_t getMaxPartsToMergeAtOnceForMemory(Int64 memory_limit, size_t num_columns, size_t bytes_per_source_part_column)
 {
     if (memory_limit <= 0 || bytes_per_source_part_column == 0)
-        return 0;
+        return MergeConstraint::unlimited_parts;
 
     num_columns = std::max<size_t>(1, num_columns);
 
