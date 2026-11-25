@@ -16,6 +16,10 @@
 #include <Common/Exception.h>
 
 #include <functional>
+#include <limits>
+#include <map>
+#include <optional>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -53,6 +57,10 @@ struct Call
     QEnvironment & env;
     QScope * scope;
     size_t offset;
+
+    /// Set by a function that gives other names to the columns of its argument table. It moves their q types to the new
+    /// names itself, so they are not inherited by the names: see `QCompiler::callBuiltin`.
+    bool renames_columns = false;
 
     [[noreturn]] void fail(int code, const String & message) const
     {
@@ -2303,6 +2311,7 @@ const std::unordered_map<String, Handler> & handlers()
             QSelectBuilder builder;
             builder.from = table.table_expression;
             Names keys;
+            QTypes qtypes;
             size_t i = 0;
             for (const auto & column : table.columns)
             {
@@ -2310,9 +2319,12 @@ const std::unordered_map<String, Handler> & handlers()
                 builder.select.push_back(withAlias(ident(column.name), name));
                 if (std::find(table.keys.begin(), table.keys.end(), column.name) != table.keys.end())
                     keys.push_back(name);
+                if (auto it = table.qtypes.find(column.name); it != table.qtypes.end())
+                    qtypes[name] = it->second;
                 ++i;
             }
-            return tableValue(c.compiler, builder.build(), keys);
+            c.renames_columns = true;
+            return QCompiler::withQTypes(tableValue(c.compiler, builder.build(), keys), qtypes);
         };
         h["xcols"] = [](Call & c)
         {
@@ -2485,13 +2497,32 @@ QValue QCompiler::callBuiltin(const String & name, QValues args, QEnvironment & 
     QValue result = it->second(call);
 
     /// A table that a function makes of its argument tables (`n#t`, a join, a sort) keeps the q types of their columns
-    /// that the types of ClickHouse do not tell: the columns go to the result under their names.
-    if (result.kind == QValueKind::Table)
+    /// that the types of ClickHouse do not tell: the columns go to the result under their names. If the argument tables
+    /// do not agree about a name (a month in one of them and a date in another), it is not known whose column the result
+    /// has, and the type of ClickHouse tells its q type.
+    if (result.kind == QValueKind::Table && !call.renames_columns)
     {
-        QTypes inherited;
+        std::map<String, std::optional<QType>> seen;
+        std::set<String> disagreed;
         for (const auto & arg : args)
-            if (arg.kind == QValueKind::Table && arg.table)
-                inherited.insert(arg.table->qtypes.begin(), arg.table->qtypes.end());
+        {
+            if (arg.kind != QValueKind::Table || !arg.table)
+                continue;
+            for (const auto & column : arg.table->columns)
+            {
+                std::optional<QType> hint;
+                if (auto found = arg.table->qtypes.find(column.name); found != arg.table->qtypes.end())
+                    hint = found->second;
+                auto [position, inserted] = seen.emplace(column.name, hint);
+                if (!inserted && position->second != hint)
+                    disagreed.insert(column.name);
+            }
+        }
+
+        QTypes inherited;
+        for (const auto & [column_name, hint] : seen)
+            if (hint && !disagreed.contains(column_name))
+                inherited.emplace(column_name, *hint);
         if (!inherited.empty())
             result = withQTypes(result, inherited);
     }
