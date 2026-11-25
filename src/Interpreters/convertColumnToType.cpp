@@ -4,6 +4,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -471,6 +474,32 @@ bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePt
     return false;
 }
 
+/// `CAST` keeps a `Bool` it does not convert byte for byte, so clamp it to 0/1 as `retagBoolInField` does.
+void clampBoolBytes(IColumn & column, const DataTypePtr & type)
+{
+    if (isBool(type))
+    {
+        for (auto & byte : assert_cast<ColumnUInt8 &>(column).getData())
+            byte = static_cast<UInt8>(byte != 0);
+    }
+    else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnNullable &>(column).getNestedColumn(), nullable->getNestedType());
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnArray &>(column).getData(), array->getNestedType());
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnMap &>(column).getNestedColumn(), map->getNestedType());
+    else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            clampBoolBytes(assert_cast<ColumnTuple &>(column).getColumn(i), tuple->getElements()[i]);
+    }
+    else if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        for (size_t i = 0; i < variant->getVariants().size(); ++i)
+            clampBoolBytes(assert_cast<ColumnVariant &>(column).getVariantByGlobalDiscriminator(i), variant->getVariants()[i]);
+    }
+}
+
 /// A `Field` cannot express a `Variant` result: `convertFieldToType` returns the value unchanged, and the
 /// alternative is then chosen on insertion into a `ColumnVariant`, by the first one that accepts it (so
 /// `1 :: UInt64` lands in `Date` for `Variant(Date, UInt64)`). `CAST` chooses it by type.
@@ -489,7 +518,13 @@ std::optional<ColumnPtr> tryConvertVariantColumnNative(
 
     /// The value keeps its own type here, so it stays representable, and neither `strict` nor
     /// `convert_inexact_floats` applies.
-    return castColumn({value.getPtr(), from, ""}, to)->convertToFullColumnIfConst();
+    ColumnPtr result = castColumn({value.getPtr(), from, ""}, to)->convertToFullColumnIfConst();
+    if (!containsBool(*to))
+        return result;
+
+    auto clamped = IColumn::mutate(std::move(result));
+    clampBoolBytes(*clamped, to);
+    return ColumnPtr(std::move(clamped));
 }
 
 /// Whether a converted `DateTime` value - of `type`, looking through `Nullable`/`LowCardinality` - fits the

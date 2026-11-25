@@ -48,5 +48,9 @@ lc-constant-or-chain-unrewritten	1
 lc-constant-values	2
 lc-constant-or-chain-is-declined	0
 nullable-constant-in	1
+bool-raw-byte-into-alternative	1
+bool-raw-byte-into-nested-alternative	1
+bool-raw-byte-in-variant-constant	1
+bool-variant-constant-other-alternative	1
 bool-raw-byte-still-clamped	1	1
 plain-type-still-rewritten	1

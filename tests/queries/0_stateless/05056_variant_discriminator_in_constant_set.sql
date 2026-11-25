@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 33 of the 52 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 22 of the 56 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -142,6 +142,13 @@ SELECT 'lc-constant-or-chain-is-declined', count() FROM (EXPLAIN QUERY TREE
     WHERE v = 'a'::LowCardinality(String) OR v = 'b'::LowCardinality(String) OR v = 'c'::LowCardinality(String))
 WHERE explain ILIKE '%function_name: in%';
 SELECT 'nullable-constant-in', count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v IN (1::Nullable(UInt64));
+
+-- A `Bool` placed into an alternative is clamped like on the `Field` path, so a raw byte such as 2 still
+-- matches `true`, and a value of the other alternative of a `Variant` with a `Bool` one keeps its own.
+SELECT 'bool-raw-byte-into-alternative', count() FROM (SELECT materialize(true::Variant(Bool, String)) AS v) WHERE v IN (reinterpret(toUInt8(2), 'Bool'));
+SELECT 'bool-raw-byte-into-nested-alternative', count() FROM (SELECT materialize([true]::Array(Variant(Bool, String))) AS a) WHERE a IN ([reinterpret(toUInt8(2), 'Bool')]);
+SELECT 'bool-raw-byte-in-variant-constant', count() FROM (SELECT materialize(true::Variant(Bool, String)) AS v) WHERE v IN (CAST(reinterpret(toUInt8(2), 'Bool'), 'Variant(Bool, String)'));
+SELECT 'bool-variant-constant-other-alternative', count() FROM (SELECT materialize(1::UInt64::Variant(Bool, UInt64)) AS v) WHERE v IN (1::UInt64::Variant(Bool, UInt64));
 
 -- Nothing outside a `Variant` changes: an identity conversion still goes through the `Field` path, which
 -- clamps a raw byte a column can hold outside its type's domain.
