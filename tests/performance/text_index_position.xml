@@ -1,0 +1,67 @@
+<test>
+  <settings>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>4</max_threads>
+  </settings>
+
+  <!-- `position` compared with a constant that rejects 0 is served by the text index like `LIKE '%needle%'`
+       and `multiSearchAny` with one needle: by the dictionary scan. Its cost is proportional to the number
+       of distinct tokens rather than to the number of rows, so two shapes are measured.
+
+       `tab` has a small dictionary (about 20 tokens) over many rows: the scan is nearly free and the index
+       replaces a scan of the column. -->
+  <create_query>
+    CREATE TABLE tab
+    (
+        id     UInt64,
+        message String,
+        INDEX  idx(message) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+
+  <fill_query>
+    INSERT INTO tab
+    SELECT
+        number,
+        trimRight(if(number &lt; 100000,
+            repeat('clickhouse is a fast column oriented database system ', 4),
+            repeat('the quick brown fox jumps over the lazy dog near the river ', 4)))
+    FROM numbers(10000000)
+  </fill_query>
+
+  <query>SELECT count() FROM tab WHERE position(message, 'ickhous') > 0</query>
+  <query>SELECT count() FROM tab WHERE positionUTF8(message, 'ickhous') != 0</query>
+  <query>SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'OLUMN') >= 1</query>
+  <query>SELECT count() FROM tab WHERE positionCaseInsensitiveUTF8(message, 'OLUMN') > 0</query>
+  <!-- A common needle: found in 99% of the rows. -->
+  <query>SELECT count() FROM tab WHERE position(message, 'rive') > 0</query>
+  <!-- Not equivalent to "the needle is found": the index only skips granules, by the tokens of the needle. -->
+  <query>SELECT count() FROM tab WHERE position(message, 'clickhouse is') = 1</query>
+
+  <!-- `tab_large_dictionary` is the worst case for the dictionary scan: every row carries its own token, so
+       the dictionary is as large as the column, and the selective needle is found in 50 rows only. -->
+  <create_query>
+    CREATE TABLE tab_large_dictionary
+    (
+        id     UInt64,
+        message String,
+        INDEX  idx(message) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1
+  </create_query>
+
+  <fill_query>INSERT INTO tab_large_dictionary SELECT number, concat('common message row', toString(number), if(number % 100000 = 0, ' selectiveneedle', '')) FROM numbers(5000000) SETTINGS max_insert_block_size = 10000000, min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+
+  <query>SELECT sum(id) FROM tab_large_dictionary WHERE position(message, 'selectiveneedle') > 0</query>
+  <query>SELECT sum(id) FROM tab_large_dictionary WHERE position(message, 'common') > 0</query>
+  <!-- The same queries without the dictionary scan, i.e. by a scan of the column, to compare with. -->
+  <query>SELECT sum(id) FROM tab_large_dictionary WHERE position(message, 'selectiveneedle') > 0 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0</query>
+  <query>SELECT sum(id) FROM tab_large_dictionary WHERE position(message, 'common') > 0 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_large_dictionary</drop_query>
+</test>
