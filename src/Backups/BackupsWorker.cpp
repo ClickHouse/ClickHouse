@@ -42,6 +42,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/formatReadable.h>
 #include <Common/ThrottlerArray.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -205,7 +206,7 @@ namespace
     /// The hosts of `RESTORE ON CLUSTER` open the base backups with no user, so the initiator opens the chain, authorizing each base.
     void checkAccessToBaseBackupChain(const BackupPtr & backup)
     {
-        std::unordered_set<UUID> seen_uuids{backup->getUUID()};
+        UnorderedSetWithMemoryTracking<UUID> seen_uuids{backup->getUUID()};
         for (auto base_backup = backup->getBaseBackup(); base_backup; base_backup = base_backup->getBaseBackup())
         {
             if (!seen_uuids.insert(base_backup->getUUID()).second)
