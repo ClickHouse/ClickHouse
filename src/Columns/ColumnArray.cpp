@@ -837,9 +837,9 @@ MutableColumnPtr ColumnArray::getDataInRange(size_t start, size_t length) const
 void ColumnArray::insertFromEither(
     const IColumn & src_true_, bool src_true_is_const, const IColumn & src_false_, bool src_false_is_const, const IColumn::Filter & condition)
 {
-    /// Above this average number of elements per row, the elements are copied with one `insertRangeFrom` per row:
+    /// Above this average number of bytes per row, the elements are copied with one `insertRangeFrom` per row:
     /// its virtual call is cheap compared with the copy, and the gather below would copy every element three times.
-    static constexpr size_t max_average_size_to_gather = 16;
+    static constexpr size_t max_average_bytes_to_gather = 128;
 
     const ColumnArray & src_true = assert_cast<const ColumnArray &>(src_true_);
     const ColumnArray & src_false = assert_cast<const ColumnArray &>(src_false_);
@@ -878,7 +878,9 @@ void ColumnArray::insertFromEither(
     const size_t source_elements = true_end - true_begin + false_end - false_begin;
 
     /// Discarded rows count too: in a `LEFT JOIN` with few matches, the unmatched arrays would be copied only to be dropped.
-    if (std::max(elements, source_elements) > rows * max_average_size_to_gather)
+    /// The size of a value that is not fixed (`String`, `Array`) is unbounded, so such values are not gathered.
+    if (!getData().valuesHaveFixedSize()
+        || std::max(elements, source_elements) * getData().sizeOfValueIfFixed() > rows * max_average_bytes_to_gather)
     {
         for (size_t i = 0; i < rows; ++i)
         {
