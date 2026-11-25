@@ -61,11 +61,6 @@ RuntimeCounters getRuntimeCounters();
 namespace Silk
 {
 
-inline bool isFiberSchedulerInitialized()
-{
-    return false;
-}
-
 inline bool isInsideFiber()
 {
     return false;

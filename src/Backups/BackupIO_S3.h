@@ -79,7 +79,7 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
-    const S3MultipartCopyExecution multipart_copy_execution;
+    const std::optional<S3MultipartCopyInFibers> multipart_copy_in_fibers;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3BackupDiskClientFactory disk_client_factory;
@@ -143,7 +143,7 @@ private:
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
-    const S3MultipartCopyExecution multipart_copy_execution;
+    const std::optional<S3MultipartCopyInFibers> multipart_copy_in_fibers;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     S3Capabilities s3_capabilities;

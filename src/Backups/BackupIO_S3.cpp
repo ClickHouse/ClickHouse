@@ -5,6 +5,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/FiberSemaphore.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -95,17 +96,20 @@ namespace ErrorCodes
 namespace
 {
 /// Checked when a reader or writer is created, so that a backup does not fail in the middle of a copy.
-S3MultipartCopyExecution getMultipartCopyExecution(const ContextPtr & context)
+std::optional<S3MultipartCopyInFibers> getMultipartCopyInFibers(const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::backup_restore_s3_use_silk])
-        return S3MultipartCopyExecution::ThreadPool;
+        return {};
 
-    if (!Silk::isFiberSchedulerInitialized())
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Setting `backup_restore_s3_use_silk` requires the Silk runtime: a build with Silk and the server setting `enable_silk_runtime`");
+#if USE_SILK
+    /// The part copies of all backups in fibers share a limit, as those in threads share the backups IO pool.
+    if (Silk::isFiberSchedulerInitialized())
+        return S3MultipartCopyInFibers{.part_copy_limit = &getBackupsIOFiberSemaphore()};
+#endif
 
-    return S3MultipartCopyExecution::Fibers;
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Setting `backup_restore_s3_use_silk` requires the Silk runtime: a build with Silk and the server setting `enable_silk_runtime`");
 }
 
 class S3BackupClientCreator
@@ -419,7 +423,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
-    , multipart_copy_execution(getMultipartCopyExecution(context_))
+    , multipart_copy_in_fibers(getMultipartCopyInFibers(context_))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
@@ -528,13 +532,13 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
                     client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes,
-                    multipart_copy_execution);
+                    multipart_copy_in_fibers);
             else
                 copyS3File(
                     client, s3_uri.bucket, src_key, size,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, copy_blob_storage_log, runner, create_read_buffer, object_attributes,
-                    multipart_copy_execution);
+                    multipart_copy_in_fibers);
 
             return size;
         };
@@ -567,7 +571,7 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
-    , multipart_copy_execution(getMultipartCopyExecution(context_))
+    , multipart_copy_in_fibers(getMultipartCopyInFibers(context_))
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
@@ -636,14 +640,14 @@ bool BackupWriterS3::copyFileFromDiskNatively(
                     src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], length,
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {}, std::nullopt, multipart_copy_execution);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {}, std::nullopt, multipart_copy_in_fibers);
             else
                 return copyS3FileRange(
                     src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
                     /* src_object_size= */ source_size,
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {}, std::nullopt, multipart_copy_execution);
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, {}, std::nullopt, multipart_copy_in_fibers);
         }
     }
 
@@ -704,7 +708,7 @@ bool BackupWriterS3::copyFileFromBlobPath(
             runner,
             create_read_buffer,
             std::nullopt,
-            multipart_copy_execution);
+            multipart_copy_in_fibers);
     else
         return copyS3FileRange(
             /* src_s3_client */ src_client,
@@ -722,7 +726,7 @@ bool BackupWriterS3::copyFileFromBlobPath(
             runner,
             create_read_buffer,
             std::nullopt,
-            multipart_copy_execution);
+            multipart_copy_in_fibers);
 }
 
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
@@ -749,7 +753,7 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
                 client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
         },
         std::nullopt,
-        multipart_copy_execution);
+        multipart_copy_in_fibers);
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)

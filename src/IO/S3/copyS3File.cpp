@@ -19,7 +19,6 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3Common.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/SharedThreadPools.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromS3.h>
@@ -60,7 +59,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace S3RequestSetting
@@ -316,9 +314,8 @@ namespace
         }
 
 #if USE_SILK
-        /// Runs in a fiber, the parts run in child fibers. The parts of all copies in fibers share the server-wide limit
-        /// of the backups IO pool, as the parts of copies in threads share the pool.
-        void performMultipartUploadInFiber(size_t start_offset, size_t size)
+        /// Runs in a fiber, the parts run in child fibers within `part_copy_limit`.
+        void performMultipartUploadInFiber(size_t start_offset, size_t size, Silk::FiberSemaphore * part_copy_limit)
         {
             calculatePartSize(size);
 
@@ -326,7 +323,7 @@ namespace
                 num_parts,
                 request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
                 getCurrentThreadGroup(),
-                &getBackupsIOFiberSemaphore());
+                part_copy_limit);
             runMultipartUpload(start_offset, size, task_tracker);
         }
 #endif
@@ -733,7 +730,7 @@ namespace
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<bool()> fallback_method_,
             bool is_ranged_copy_,
-            S3MultipartCopyExecution multipart_copy_execution_)
+            const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -758,7 +755,7 @@ namespace
             , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
-            , multipart_copy_execution(multipart_copy_execution_)
+            , multipart_copy_in_fibers(multipart_copy_in_fibers_)
         {
         }
 
@@ -813,7 +810,7 @@ namespace
         bool is_ranged_copy;
         const ReadSettings read_settings;
         std::function<bool()> fallback_method;
-        const S3MultipartCopyExecution multipart_copy_execution;
+        const std::optional<S3MultipartCopyInFibers> multipart_copy_in_fibers;
 
         bool performSingleOperationCopy()
         {
@@ -933,8 +930,8 @@ namespace
         {
             try
             {
-                if (multipart_copy_execution == S3MultipartCopyExecution::Fibers)
-                    performMultipartUploadInFibers();
+                if (multipart_copy_in_fibers)
+                    performMultipartUploadInFibers(multipart_copy_in_fibers->part_copy_limit);
                 else
                     UploadHelper::performMultipartUpload(offset, size);
                 return true;
@@ -951,15 +948,19 @@ namespace
 
         /// The calling thread waits for a parent fiber, which runs the lifecycle and rethrows its original exception here,
         /// so that a genuine `ACCESS_DENIED` keeps the buffered route of the caller.
-        void performMultipartUploadInFibers()
+        void performMultipartUploadInFibers([[maybe_unused]] Silk::FiberSemaphore * part_copy_limit)
         {
 #if USE_SILK
+            /// The callers check the runtime before the copy, as `BackupReaderS3` and `BackupWriterS3` do.
+            if (!Silk::isFiberSchedulerInitialized())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Native multipart copy in Silk fibers needs the Silk runtime");
+
             ProfileEvents::increment(ProfileEvents::S3MultipartCopyInFibers);
             Silk::FiberTaskTracker parent(/* max_tasks= */ 1, /* max_inflight= */ 1, getCurrentThreadGroup());
-            parent.add([this] { UploadHelper::performMultipartUploadInFiber(offset, size); });
+            parent.add([this, part_copy_limit] { UploadHelper::performMultipartUploadInFiber(offset, size, part_copy_limit); });
             parent.waitAll();
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Native multipart copy in Silk fibers requires a build with Silk");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Native multipart copy in Silk fibers needs a build with Silk");
 #endif
         }
 
@@ -1073,7 +1074,7 @@ namespace
         const CreateReadBuffer & fallback_file_reader,
         const std::optional<ObjectAttributes> & object_metadata,
         bool is_ranged_copy,
-        S3MultipartCopyExecution multipart_copy_execution)
+        const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
     {
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
@@ -1119,7 +1120,7 @@ namespace
             blob_storage_log,
             std::move(fallback_method),
             is_ranged_copy,
-            multipart_copy_execution};
+            multipart_copy_in_fibers};
         return helper.performCopy();
     }
 }
@@ -1138,7 +1139,7 @@ bool copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata,
-    S3MultipartCopyExecution multipart_copy_execution)
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
 {
     return copyS3FileImpl(
         std::move(src_s3_client),
@@ -1157,7 +1158,7 @@ bool copyS3File(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ false,
-        multipart_copy_execution);
+        multipart_copy_in_fibers);
 }
 
 bool copyS3FileRange(
@@ -1176,7 +1177,7 @@ bool copyS3FileRange(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata,
-    S3MultipartCopyExecution multipart_copy_execution)
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
 {
     return copyS3FileImpl(
         std::move(src_s3_client),
@@ -1195,7 +1196,7 @@ bool copyS3FileRange(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ true,
-        multipart_copy_execution);
+        multipart_copy_in_fibers);
 }
 
 }

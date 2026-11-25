@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/re2.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadSettings.h>
@@ -28,6 +29,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace ProfileEvents
@@ -303,7 +305,7 @@ protected:
             client, uri->bucket, "source", OBJECT_SIZE,
             client, uri->bucket, "destination",
             request_settings, DB::ReadSettings{}, /* blob_storage_log= */ nullptr, /* schedule= */ {},
-            fallback_file_reader, std::nullopt, DB::S3MultipartCopyExecution::Fibers);
+            fallback_file_reader, std::nullopt, DB::S3MultipartCopyInFibers{});
     }
 
     MockS3Server server;
@@ -385,15 +387,20 @@ TEST_F(CopyS3FileInFibersTest, AccessDeniedPartAbortsUploadAndCopiesThroughBuffe
     server.state.failing_part_number = 1;
 
     size_t fallback_calls = 0;
-    auto fallback_file_reader = [&fallback_calls]() -> std::unique_ptr<DB::SeekableReadBuffer>
+    size_t fallback_calls_elsewhere = 0;
+    const auto calling_thread = std::this_thread::get_id();
+    auto fallback_file_reader = [&]() -> std::unique_ptr<DB::SeekableReadBuffer>
     {
         ++fallback_calls;
+        if (Silk::isInsideFiber() || std::this_thread::get_id() != calling_thread)
+            ++fallback_calls_elsewhere;
         return std::make_unique<DB::ReadBufferFromOwnString>(std::string(OBJECT_SIZE, 'x'));
     };
 
     EXPECT_TRUE(copy(fallback_file_reader));
 
     EXPECT_GE(fallback_calls, 1u);
+    EXPECT_EQ(fallback_calls_elsewhere, 0u);
     EXPECT_EQ(kindsOf(server.getRequests()), (std::vector<RequestKind>{
         RequestKind::CreateMultipartUpload,
         RequestKind::UploadPartCopy,

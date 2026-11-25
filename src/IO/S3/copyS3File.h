@@ -12,6 +12,11 @@
 #include <memory>
 
 
+namespace Silk
+{
+class FiberSemaphore;
+}
+
 namespace DB
 {
 struct ReadSettings;
@@ -20,14 +25,14 @@ class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
-/// Where a native multipart copy runs: `CreateMultipartUpload`, the `UploadPartCopy` requests,
-/// and `CompleteMultipartUpload` or `AbortMultipartUpload`. Other routes of the copy are not affected.
-enum class S3MultipartCopyExecution : uint8_t
+/// Runs the lifecycle of a native multipart copy in Silk fibers: `CreateMultipartUpload`, the `UploadPartCopy` requests,
+/// and `CompleteMultipartUpload` or `AbortMultipartUpload`; the calling thread waits for it. Without it, the calling
+/// thread runs the lifecycle and the parts are scheduled with `schedule`. Other routes of the copy are not affected.
+struct S3MultipartCopyInFibers
 {
-    /// The calling thread runs the lifecycle, parts are scheduled with `schedule`.
-    ThreadPool,
-    /// Silk fibers run the whole lifecycle, the calling thread waits for it.
-    Fibers,
+    /// Bounds the `UploadPartCopy` requests of all copies that share it, as a thread pool bounds them in threads.
+    /// No bound if null.
+    Silk::FiberSemaphore * part_copy_limit = nullptr;
 };
 
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
@@ -62,7 +67,7 @@ bool copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    S3MultipartCopyExecution multipart_copy_execution = S3MultipartCopyExecution::ThreadPool);
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers = std::nullopt);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -86,7 +91,7 @@ bool copyS3FileRange(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
-    S3MultipartCopyExecution multipart_copy_execution = S3MultipartCopyExecution::ThreadPool);
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
