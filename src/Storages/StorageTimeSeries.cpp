@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -22,7 +24,9 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
+#include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -64,6 +68,8 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsDataType id_type;
     extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_expiration_seconds;
     extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_size_bytes;
     extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_expiration_seconds;
@@ -232,6 +238,25 @@ StorageTimeSeries::StorageTimeSeries(
     {
         auto normalized_create_query = makeNormalizedCreateQuery(query, local_context, mode, is_restore_from_backup);
         targets = buildTargets(*normalized_create_query, table_id, local_context, mode);
+
+        if (isInnerTable(ViewTarget::Tags))
+        {
+            if (const auto * tags_inner_columns = normalized_create_query->getTargetInnerColumns(ViewTarget::Tags);
+                tags_inner_columns && tags_inner_columns->columns)
+            {
+                for (const auto & child : tags_inner_columns->columns->children)
+                {
+                    const auto & col_decl = child->as<const ASTColumnDeclaration &>();
+                    if ((col_decl.name == TimeSeriesColumnNames::ID) && col_decl.getType())
+                    {
+                        tags_id_type = DataTypeFactory::instance().get(col_decl.getType());
+                        tags_id_default_expression = col_decl.getDefaultExpression();
+                        has_tags_inner_id_column = true;
+                        break;
+                    }
+                }
+            }
+        }
 
         /// Load TimeSeries settings from the `SETTINGS` clause.
         if (normalized_create_query->storage)
@@ -405,6 +430,26 @@ bool StorageTimeSeries::hasInnerRequiredTables() const
 }
 
 
+bool StorageTimeSeries::hasDefaultTagsIDGenerator(const TimeSeriesSettings & settings) const
+{
+    DataTypePtr id_type = settings[TimeSeriesSetting::id_type].value
+        ? settings[TimeSeriesSetting::id_type].value
+        : tags_id_type;
+    if (!id_type)
+        return false;
+
+    ASTPtr id_generator = settings[TimeSeriesSetting::id_generator].value;
+    if (!id_generator && has_tags_inner_id_column)
+    {
+        id_generator = tags_id_default_expression;
+        if (!id_generator)
+            id_generator = TimeSeriesIDGenerator::tryGetDefault(id_type);
+    }
+
+    return TimeSeriesIDGenerator::isDefault(id_type, id_generator);
+}
+
+
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
     std::lock_guard lock{caches_mutex};
@@ -434,7 +479,9 @@ void StorageTimeSeries::createOrDropTagsDeduplicationCache()
         CurrentMetrics::TimeSeriesTagsDeduplicationCacheEntries,
         CurrentMetrics::TimeSeriesTagsDeduplicationCacheBytes,
         ProfileEvents::TimeSeriesTagsDeduplicationCacheHits,
-        ProfileEvents::TimeSeriesTagsDeduplicationCacheMisses);
+        ProfileEvents::TimeSeriesTagsDeduplicationCacheMisses,
+        TimeSeriesDeduplicationCache::Clock{},
+        hasDefaultTagsIDGenerator(settings));
 }
 
 void StorageTimeSeries::createOrDropMetricFamiliesDeduplicationCache()
@@ -743,7 +790,8 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         auto old_settings = storage_settings.get();
         auto setting_changed = [&](const auto & setting) { return (*old_settings)[setting] != (*new_settings)[setting]; };
         bool tags_cache_changed = setting_changed(TimeSeriesSetting::tags_deduplication_cache_size_bytes)
-            || setting_changed(TimeSeriesSetting::tags_deduplication_cache_expiration_seconds);
+            || setting_changed(TimeSeriesSetting::tags_deduplication_cache_expiration_seconds)
+            || (hasDefaultTagsIDGenerator(*old_settings) != hasDefaultTagsIDGenerator(*new_settings));
         bool metric_families_cache_changed = setting_changed(TimeSeriesSetting::metric_families_deduplication_cache_size_bytes)
             || setting_changed(TimeSeriesSetting::metric_families_deduplication_cache_expiration_seconds);
 

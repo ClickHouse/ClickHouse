@@ -73,6 +73,37 @@ namespace
 
         return nullptr;
     }
+
+    bool sameExpression(const IAST & lhs, const IAST & rhs)
+    {
+        if (const auto * lhs_id = lhs.as<ASTIdentifier>())
+        {
+            const auto * rhs_id = rhs.as<ASTIdentifier>();
+            return rhs_id && (lhs_id->name() == rhs_id->name());
+        }
+
+        if (const auto * lhs_fn = lhs.as<ASTFunction>())
+        {
+            const auto * rhs_fn = rhs.as<ASTFunction>();
+            if (!rhs_fn || (lhs_fn->name != rhs_fn->name) || lhs_fn->parameters || rhs_fn->parameters)
+                return false;
+
+            const ASTs empty_args;
+            const ASTs & lhs_args = lhs_fn->arguments ? lhs_fn->arguments->children : empty_args;
+            const ASTs & rhs_args = rhs_fn->arguments ? rhs_fn->arguments->children : empty_args;
+            if (lhs_args.size() != rhs_args.size())
+                return false;
+
+            for (size_t i = 0; i != lhs_args.size(); ++i)
+            {
+                if (!lhs_args[i] || !rhs_args[i] || !sameExpression(*lhs_args[i], *rhs_args[i]))
+                    return false;
+            }
+            return true;
+        }
+
+        return false;
+    }
 }
 
 
@@ -116,6 +147,15 @@ ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const Stor
         "An expression can be chosen automatically only for types UInt64, UInt128, UUID, FixedString(16), "
         "the same types wrapped in LowCardinality, and tuples of two of those types",
         table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
+}
+
+
+bool TimeSeriesIDGenerator::isDefault(const DataTypePtr & id_type, const ASTPtr & id_generator)
+{
+    if (!id_type || !id_generator)
+        return false;
+    auto default_generator = tryGetDefault(id_type);
+    return default_generator && sameExpression(*id_generator, *default_generator);
 }
 
 

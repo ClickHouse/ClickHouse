@@ -18,6 +18,9 @@ struct TimeSeriesIDGenerator
     /// The same as `getDefault`, but returns null if there is no default expression for the type.
     static ASTPtr tryGetDefault(const DataTypePtr & id_type);
 
+    /// Returns true if `id_generator` is the default expression for `id_type`.
+    static bool isDefault(const DataTypePtr & id_type, const ASTPtr & id_generator);
+
     /// Returns true if `id_generator` references the `all_tags` identifier
     /// (so that column needs to be populated at INSERT time).
     static bool usesAllTags(const ASTPtr & id_generator);
