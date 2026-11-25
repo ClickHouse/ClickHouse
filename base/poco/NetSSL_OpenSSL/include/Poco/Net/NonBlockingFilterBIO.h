@@ -62,8 +62,9 @@ namespace Net
         int writeNonBlocking(const char * data, int length);
         int readNonBlocking(BIO * bio, char * data, int length);
 
-        int writeQueuedToNext(BIO * bio);
-        /// Returns 1 when the queue is empty, or -1 with the retry flags of the next BIO.
+        int writeQueuedBlocking(BIO * bio);
+        /// Writes the queue to the next BIO, in the blocking mode. Returns 1 when the queue is empty,
+        /// or -1 with the retry flags of the next BIO.
 
         static constexpr size_t maxQueued = 64 * 1024;
         /// A write over the limit fails the connection.
