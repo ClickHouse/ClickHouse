@@ -4273,6 +4273,16 @@ void StorageMergeTree::checkNoNonAdaptivePartsForGranularityChange() const
 
     /// A restart loads the parts in every state, and an outdated part may be activated again then.
     waitForOutdatedPartsToBeLoaded();
+    {
+        /// A read-only table does not load its outdated parts, so their marks are unknown.
+        std::lock_guard lock(outdated_data_parts_mutex);
+        if (!outdated_unloaded_data_parts.empty())
+            throw Exception(ErrorCodes::READONLY_SETTING,
+                "Settings 'index_granularity' and 'index_granularity_bytes' cannot be changed for storage '{}' "
+                "while {} of its outdated parts are not loaded, for example because the table is read-only",
+                getName(), outdated_unloaded_data_parts.size());
+    }
+
     const auto parts = getDataPartsVectorForInternalUsage(
         {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting, DataPartState::DeleteOnDestroy});
     for (const auto & part : parts)
