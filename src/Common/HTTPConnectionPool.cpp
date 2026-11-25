@@ -1030,7 +1030,7 @@ private:
         , group(group_)
         , transport(transport_)
 #if USE_SSL
-        , client_tls_context(std::move(client_tls_context_))
+        , client_tls_context(client_tls_context_)
 #endif
     {
     }
