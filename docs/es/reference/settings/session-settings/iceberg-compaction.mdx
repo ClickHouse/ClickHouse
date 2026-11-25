@@ -51,7 +51,10 @@ Tiempo mínimo de espera entre 2 operaciones de compactación en segundo plano.
 Máximo de bytes de un archivo de datos Parquet de Iceberg generado por la compactación.
 
 El valor predeterminado refleja el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB);
-consulte https://iceberg.apache.org/docs/1.5.2/configuration/. Manténgalo por encima de
+consulte https://iceberg.apache.org/docs/1.5.2/configuration/. El límite se compara con el tamaño del archivo
+escrito hasta el momento, es decir, el tamaño comprimido, la misma medida que usa `iceberg_data_file_size_lower_threshold_compaction`,
+por lo que un archivo puede superarlo en lo que el escritor aún tenga en búfer, como los grupos de filas de Parquet incompletos y los que se están
+codificando. Manténgalo por encima de
 `iceberg_data_file_size_lower_threshold_compaction`; de lo contrario, cada archivo de salida quedará por debajo del umbral inferior
 y volverá a seleccionarse para la compactación.
 

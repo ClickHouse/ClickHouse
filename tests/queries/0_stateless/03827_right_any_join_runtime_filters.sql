@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 -- Test for applying join runtime filters to RIGHT ANY joins
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
