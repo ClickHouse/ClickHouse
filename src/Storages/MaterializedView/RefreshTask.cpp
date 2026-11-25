@@ -1636,6 +1636,17 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
+                /// The query can stop reading the source before the end of its bounded read (a `LIMIT`, a constant
+                /// `DISTINCT`, `result_overflow_mode = 'break'`, etc.). Such a read does not report the cursor it
+                /// advanced to, so a successful refresh would keep the previous cursor and the next one would append
+                /// the same rows again. The definitions known to do it are rejected in advance; this covers the rest.
+                if (incremental)
+                    if (auto cursor = refresh_context->getStreamingCursor(); cursor && cursor->hasUnfinishedReads())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "The query of the incremental refresh of view {} stopped reading the source table before the end "
+                            "of its snapshot, so the position to continue from is unknown",
+                            view_storage_id.getFullTableName());
+
                 /// `executor` must be destroyed before `pipeline`!
             }
 

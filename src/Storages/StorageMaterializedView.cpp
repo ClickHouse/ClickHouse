@@ -188,9 +188,15 @@ namespace
 
         /// A `LIMIT` can close the source before the bounded read finishes, and then the read does not report
         /// the cursor it advanced to: the refresh would succeed with the previous cursor and append the same rows again.
+        /// The same holds for `LIMIT ... UNTIL`, and for `LIMIT BY` and `DISTINCT`, which are executed with a limit
+        /// when their keys are constants. (`RefreshTask` also checks that the read was not closed, for the other ways.)
         const auto & select = getSingleSelectQuery(select_with_union);
-        if (select.limitLength() || select.limitOffset())
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Incremental refresh does not support LIMIT");
+        if (select.limitBy() || select.limitByLength())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Incremental refresh does not support LIMIT BY");
+        if (select.distinct)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Incremental refresh does not support DISTINCT");
         if (const auto settings_ast = select.settings())
         {
             for (const auto & change : settings_ast->as<const ASTSetQuery &>().changes)

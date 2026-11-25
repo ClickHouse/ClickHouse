@@ -39,6 +39,7 @@
 
 #include <chrono>
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -369,7 +370,18 @@ struct StreamingCursor
 
     static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, Strings path);
 
+    /// A bounded read that is going to report its cursor counts itself when it is created and when it has read
+    /// its snapshot to the end and reported the cursor. A read can stop before that, when the query does not need
+    /// more of its data (a `LIMIT`, a `result_overflow_mode = 'break'`, etc.): then the cursor does not cover what
+    /// the query has consumed, and the incremental refresh must not succeed.
+    void onReadStarted();
+    void onReadFinished();
+    bool hasUnfinishedReads() const;
+
 private:
+    std::atomic<size_t> started_reads = 0;
+    std::atomic<size_t> finished_reads = 0;
+
     std::shared_ptr<StreamingCursor> parent;
     Strings path;
 };

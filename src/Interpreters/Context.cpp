@@ -5316,6 +5316,29 @@ void StreamingCursor::merge(const CursorTreeNodePtr & cursor)
     mergeCursors(tree, canonical);
 }
 
+void StreamingCursor::onReadStarted()
+{
+    if (parent)
+        parent->onReadStarted();
+    else
+        ++started_reads;
+}
+
+void StreamingCursor::onReadFinished()
+{
+    if (parent)
+        parent->onReadFinished();
+    else
+        ++finished_reads;
+}
+
+bool StreamingCursor::hasUnfinishedReads() const
+{
+    if (parent)
+        return parent->hasUnfinishedReads();
+    return finished_reads.load() < started_reads.load();
+}
+
 std::shared_ptr<StreamingCursor> StreamingCursor::createChild(std::shared_ptr<StreamingCursor> parent, Strings path)
 {
     auto child = std::make_shared<StreamingCursor>();

@@ -7,6 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Streaming/Utils.h>
 
+#include <QueryPipeline/StreamLocalLimits.h>
+
 
 #include <algorithm>
 #include <optional>
@@ -34,9 +36,24 @@ ContextPtr makeStreamingContext(ContextPtr context_, const ProjectionDescription
     return copy;
 }
 
-SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
+SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info, bool reports_cursor)
 {
     info.table_expression_modifiers = std::nullopt;
+
+    /// A read round that stops at a limit with the `break` overflow mode (e.g. `max_rows_to_read` with
+    /// `read_overflow_mode = 'break'`) looks like a completed one, and the cursor moves past the rows it did not read.
+    /// When the cursor is reported to be persisted, these rows would be lost, so the limits throw instead.
+    if (reports_cursor && info.storage_limits)
+    {
+        auto storage_limits = std::make_shared<StorageLimitsList>(*info.storage_limits);
+        for (auto & limits : *storage_limits)
+        {
+            limits.local_limits.size_limits.overflow_mode = OverflowMode::THROW;
+            limits.local_limits.timeout_overflow_mode = OverflowMode::THROW;
+            limits.leaf_limits.overflow_mode = OverflowMode::THROW;
+        }
+        info.storage_limits = std::move(storage_limits);
+    }
 
     info.query_tree.reset();
     info.table_expression.reset();
@@ -161,7 +178,7 @@ ReadRoundContext makeReadRoundContext(
 
     return ReadRoundContext{
         .storage = storage,
-        .query_info = makeStreamingSelectQueryInfo(query_info),
+        .query_info = makeStreamingSelectQueryInfo(query_info, !stream_settings.subscribe_for_updates && context->getStreamingCursor()),
         .stream_settings = stream_settings,
         .row_level_filter = std::move(row_level_filter),
         .prewhere_filter = std::move(prewhere_filter),
