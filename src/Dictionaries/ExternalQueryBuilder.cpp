@@ -555,7 +555,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
                 {
                     if (data.size() != sizeof(UInt16))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected BFloat16 dictionary key size: {}", data.size());
-                    UInt16 bits;
+                    UInt16 bits = 0;
                     std::memcpy(&bits, data.data(), sizeof(bits));
                     writeIntText(bits, out);
                     break;
@@ -564,7 +564,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
                 {
                     if (data.size() != sizeof(UInt32))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Float32 dictionary key size: {}", data.size());
-                    UInt32 bits;
+                    UInt32 bits = 0;
                     std::memcpy(&bits, data.data(), sizeof(bits));
                     writeIntText(bits, out);
                     break;
@@ -573,7 +573,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
                 {
                     if (data.size() != sizeof(UInt64))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Float64 dictionary key size: {}", data.size());
-                    UInt64 bits;
+                    UInt64 bits = 0;
                     std::memcpy(&bits, data.data(), sizeof(bits));
                     writeIntText(bits, out);
                     break;
@@ -630,9 +630,9 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
         for (const auto row : requested_rows)
         {
             bool has_null = false;
-            for (size_t i = 0; i < key_columns.size(); ++i)
+            for (const auto & key_column : key_columns)
             {
-                if (key_columns[i]->isNullAt(row))
+                if (key_column->isNullAt(row))
                     has_null = true;
             }
             (has_null ? nullable_rows : regular_rows).push_back(row);
