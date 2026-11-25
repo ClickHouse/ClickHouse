@@ -652,7 +652,7 @@ void StorageKafka::threadFunc(size_t idx)
                 bool views_changed = false;
                 // Exit the loop & reschedule if some stream stalled
                 auto some_stream_is_stalled = streamToViews(cycle_epoch, views, views_changed);
-                /// A REFRESH cycle that ended unconsumed on a view change gives its permit back; the next call claims it again.
+                /// A REFRESH cycle that ended unconsumed on a view change gives its permit back.
                 if (views_changed && refresh_cycle)
                 {
                     task->last_seen_refresh_epoch = refresh_epoch;
