@@ -11904,7 +11904,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         /// and never a storage column - even if a column of the same name exists.
         if (const auto * identifier = ast->as<ASTIdentifier>(); identifier
             && (identifier->name_parts.empty()
-                || std::ranges::find(deferred_set_lambda_parameters, identifier->name_parts.front()) == deferred_set_lambda_parameters.end()))
+                || std::ranges::find(deferred_set_lambda_parameters, identifier->name_parts.front().spelling) == deferred_set_lambda_parameters.end()))
         {
             /// The identifier is the raw text of the predicate, not resolved yet, so the column can be
             /// spelled qualified (`table.column`, `database.table.column`) or addressed through a
@@ -11921,7 +11921,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 {
                     if (end > begin)
                         column_name += ".";
-                    column_name += name_parts[end];
+                    column_name += name_parts[end].spelling;
 
                     if (!visited_columns.emplace(column_name).second)
                         continue;
