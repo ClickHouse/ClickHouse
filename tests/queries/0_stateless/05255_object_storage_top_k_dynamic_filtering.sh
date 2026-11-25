@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Random settings limits: input_format_parquet_preserve_order=(0, 0)
 # - no-fasttest: needs S3 (MinIO) and Iceberg (USE_AVRO)
 
 # TopN dynamic filtering (`ORDER BY <column> LIMIT n`) for Parquet reads from object storage: plain

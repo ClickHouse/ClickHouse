@@ -111,9 +111,9 @@ void fillCheapColumnValue(const String & column_name, IColumn & column, const Qu
 }
 
 /// Names of columns that are cheap to compute (no file I/O beyond what the directory iterator provides).
-[[clang::no_destroy]] const std::vector<String> cheap_column_names = {"path", "name", "depth", "type", "is_symlink"};
+const std::vector<String> cheap_column_names = {"path", "name", "depth", "type", "is_symlink"};
 
-[[clang::no_destroy]] const std::vector<std::pair<String, fs::perms>> permissions_columns = {
+const std::vector<std::pair<String, fs::perms>> permissions_columns = {
     {"owner_read", fs::perms::owner_read},
     {"owner_write", fs::perms::owner_write},
     {"owner_exec", fs::perms::owner_exec},
@@ -524,7 +524,7 @@ private:
 class ReadFromFilesystem final : public SourceStepWithFilter
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "ReadFromFilesystem"; }
+    std::string getName() const override { return "ReadFromFilesystem"; }
 
     ReadFromFilesystem(
         const Names & column_names_,

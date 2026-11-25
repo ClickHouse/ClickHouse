@@ -18,13 +18,11 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
-#include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
-#include <memory>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -67,7 +65,6 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     return CompressionCodecFactory::instance().get(marks_compression_codec);
 }
 
-/// Long stream names are replaced with hashes, as the part writer does.
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -75,8 +72,7 @@ makeOutputStreams(
     const MutableDataPartStoragePtr & data_part_storage,
     const CompressionCodecPtr & default_codec,
     const String & marks_file_extension,
-    const MergeTreeWriterSettings & settings,
-    const MergeTreeSettings & storage_settings)
+    const MergeTreeWriterSettings & settings)
 {
     auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
@@ -84,7 +80,7 @@ makeOutputStreams(
 
     for (const auto & index_substream : index_substreams)
     {
-        auto stream_name = replaceFileNameToHashIfNeeded(index_name + index_substream.suffix, storage_settings, data_part_storage.get());
+        auto stream_name = index_name + index_substream.suffix;
 
         auto stream = std::make_unique<MergeTreeIndexWriterStream>(
             stream_name,
@@ -129,7 +125,7 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
     String marks_file_extension_,
-    MergeTreeSettingsPtr storage_settings_)
+    const MergeTreeSettings & storage_settings)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -137,11 +133,10 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , writer_settings(std::move(writer_settings_))
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
-    , storage_settings(std::move(storage_settings_))
     , segment_numbers(indexes.size(), 0)
     , estimated_allocated_bytes(indexes.size(), 0)
-    , max_processed_tokens((*storage_settings)[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
-    , max_allocated_bytes((*storage_settings)[MergeTreeSetting::text_index_max_memory_usage_before_flush])
+    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
+    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -232,8 +227,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         temporary_storage,
         default_codec,
         marks_file_extension,
-        writer_settings,
-        *storage_settings);
+        writer_settings);
 
     writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams);
@@ -279,9 +273,9 @@ struct MergeTextIndexesTask::PostingsMergeCursor
     /// Decoded and remapped row ids of the current segment, or the embedded postings.
     PaddedPODArray<UInt32> row_ids;
 
-    [[nodiscard]] UInt32 current() const { return row_ids[pos]; }
-    [[nodiscard]] bool isValid() const { return pos < row_ids.size(); }
-    [[nodiscard]] std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
+    UInt32 current() const { return row_ids[pos]; }
+    bool isValid() const { return pos < row_ids.size(); }
+    std::span<const UInt32> remaining() const { return {row_ids.data() + pos, row_ids.size() - pos}; }
 };
 
 /// Merges the row ids of several postings cursors in the globally sorted order.
@@ -305,7 +299,7 @@ public:
     }
 
     void push(const TokenSource & source);
-    [[nodiscard]] bool isValid() const { return !active_cursors.empty(); }
+    bool isValid() const { return !active_cursors.empty(); }
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
     /// Aligned runs of a single source are passed through without copying, the rest is buffered.
@@ -327,11 +321,11 @@ private:
         UInt64 end;
 
         /// Only the smallest source has row ids in the window.
-        [[nodiscard]] bool hasOneSource() const { return second_head >= end; }
+        bool hasOneSource() const { return second_head >= end; }
     };
 
     /// Selects the window of the smallest head from active cursors.
-    [[nodiscard]] Window selectWindow() const;
+    Window selectWindow() const;
 
     /// Sets a bit in window_bits for every row id of every cursor inside the window.
     /// Returns the number of consumed row ids and the mask of non-empty words of window_bits.
@@ -385,7 +379,6 @@ private:
     struct Reader
     {
         ReadBuffer * in = nullptr;
-        std::unique_ptr<ReadBufferFromMemory> embedded_in;
         TextIndexBlockedPositionsCodec::Directory directory;
         size_t next_rank = 0;
         /// Decoded block of `next_rank`, split by `offsets`.
@@ -416,14 +409,6 @@ void MergeTextIndexesTask::PositionsMerge::start()
         const auto & info = sources[i].info;
         if (info.cardinality == 0)
             continue;
-
-        if (info.header & PostingsSerialization::Flags::EmbeddedPositions)
-        {
-            reader.embedded_in = std::make_unique<ReadBufferFromMemory>(info.embedded_positions.data(), info.position_bytes);
-            reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*reader.embedded_in, 0, info.cardinality, info.position_bytes);
-            reader.in = reader.embedded_in.get();
-            continue;
-        }
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
@@ -486,7 +471,10 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
     }
 
     auto * positions_stream = task.output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    TextIndexSerialization::serializePositions(token_info, positions_stream->plain_hashing, [&](WriteBuffer & out) { encoder->finalize(out); });
+    token_info.header |= PostingsSerialization::Flags::HasPositions;
+    token_info.position_offset = positions_stream->plain_hashing.count();
+    encoder->finalize(positions_stream->plain_hashing);
+    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
     encoder.reset();
 }
 
@@ -521,8 +509,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
-    const auto storage_settings = new_data_part->storage.getSettings();
-
     /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
     /// segments into a different directory and must claim nothing in this part.
     if (writer_settings.stream_base_manifest)
@@ -530,7 +516,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         const String index_file_name = index_ptr->getFileName();
         for (const auto & substream : index_ptr->getSubstreams())
             writer_settings.stream_base_manifest->registerStreamBase(
-                replaceFileNameToHashIfNeeded(index_file_name + substream.suffix, *storage_settings, &new_data_part->getDataPartStorage()),
+                index_file_name + substream.suffix,
                 {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
     }
 
@@ -540,8 +526,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
         new_data_part->getMarksFileExtension(),
-        writer_settings,
-        *storage_settings);
+        writer_settings);
 
     auto substreams = index_ptr->getSubstreams();
 
@@ -550,7 +535,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         for (const auto & substream : substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
-            /// so their streams take the regular read buffer size and keep the page cache lookahead.
+            /// so their streams take the regular read buffer size.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
@@ -1288,19 +1273,12 @@ size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 static MergeTreeReaderSettings makeTextIndexReaderSettings(
     const MergeTreeReaderSettings & reader_settings,
     MergeTreeIndexSubstream::Type substream_type,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     using enum MergeTreeIndexSubstream::Type;
 
     auto settings = reader_settings;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
-
-    /// An out-of-order stream's seeks never read the lookahead blocks a cache miss would otherwise
-    /// request: the abandoned request leaves data in flight, so the connection (distributed cache,
-    /// or S3 HTTP, see `HTTPConnectionPool::EndpointConnectionPool::atConnectionDestroy`) is dropped.
-    if (!use_page_cache_lookahead && !reader_settings.use_page_cache_lookahead_for_text_index)
-        settings.read_settings.page_cache_settings.lookahead_blocks = 1;
 
     if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
     {
@@ -1348,8 +1326,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1379,7 +1356,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_file_size,
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -1387,8 +1364,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1403,7 +1379,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 }

@@ -1,5 +1,6 @@
 -- A constant `IN` set prunes the target primary key like a comparison does
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 

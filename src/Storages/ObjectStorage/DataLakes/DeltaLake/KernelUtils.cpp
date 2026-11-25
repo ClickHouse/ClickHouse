@@ -67,17 +67,17 @@ DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block &
     return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
-::KernelStringSlice KernelUtils::toDeltaString(std::string_view string)
+ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
 {
-    return ::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
+    return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }
 
-std::string KernelUtils::fromDeltaString(::KernelStringSlice slice)
+std::string KernelUtils::fromDeltaString(ffi::KernelStringSlice slice)
 {
     return std::string(slice.ptr, slice.len);
 }
 
-void * KernelUtils::allocateString(::KernelStringSlice slice)
+void * KernelUtils::allocateString(ffi::KernelStringSlice slice)
 {
     return new std::string(slice.ptr, slice.len);
 }
@@ -86,7 +86,7 @@ namespace
 {
 
 std::mutex mutex;
-[[clang::no_destroy]] std::unordered_map<uintptr_t, std::string> allocated_errors;
+std::unordered_map<uintptr_t, std::string> allocated_errors;
 
 uintptr_t ptrToInt(void * error)
 {
@@ -130,9 +130,9 @@ bool isKernelErrorAllocation(uintptr_t error)
 
 }
 
-::EngineError * KernelUtils::allocateError(::KernelError etype, ::KernelStringSlice message)
+ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::KernelStringSlice message)
 {
-    auto * error = new ::EngineError;
+    auto * error = new ffi::EngineError;
     error->etype = etype;
 
     std::string error_message(message.ptr, message.len);
@@ -146,7 +146,7 @@ bool isKernelErrorAllocation(uintptr_t error)
     return error;
 }
 
-[[noreturn]] void KernelUtils::throwError(::EngineError * error, const std::string & from)
+[[noreturn]] void KernelUtils::throwError(ffi::EngineError * error, const std::string & from)
 {
     if (error == nullptr)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unpacking nullptr DeltaLake kernel error. (in: {})", from);
@@ -160,7 +160,7 @@ bool isKernelErrorAllocation(uintptr_t error)
             "Deallocating KernelError (in {})",
             from);
 
-        ::KernelError etype = error->etype;
+        ffi::KernelError etype = error->etype;
         delete error;
 
         std::string error_message = forgetKernelErrorAllocation(error_ptr);
@@ -172,7 +172,7 @@ bool isKernelErrorAllocation(uintptr_t error)
     }
     else
     {
-        ::KernelError etype = error->etype;
+        ffi::KernelError etype = error->etype;
         delete error;
 
         LOG_ERROR(

@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -50,10 +49,10 @@ struct ConditionList
     };
 
     ConditionType condition_type = SingleCondition;
-    ActionsDAG::NodeRawConstPtrs existing_nodes;
-    VectorWithMemoryTracking<ConditionList> subconditions;
+    std::vector<const ActionsDAG::Node *> existing_nodes;
+    std::vector<ConditionList> subconditions;
 
-    [[nodiscard]] bool assumedTrue() const
+    bool assumedTrue() const
     {
         return existing_nodes.empty() &&
             (subconditions.empty() || (subconditions.size() == 1 && subconditions.front().assumedTrue()));
@@ -133,7 +132,7 @@ bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
 
 /// Extract all conditions from the filter that use only columns from the list.
 /// The resulting condition is broader then the full filter but can be used to early pre-filtering of the data
-ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns, bool only_conditions_safe_on_more_rows)
+ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
     const bool is_conjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "and";
     const bool is_disjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "or";
@@ -143,7 +142,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         conjuction_template.condition_type = ConditionList::And;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns);
             if (!child_condition_template.assumedTrue())
                 conjuction_template.subconditions.emplace_back(std::move(child_condition_template));
         }
@@ -155,7 +154,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         disjuction_template.condition_type = ConditionList::Or;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns);
             if (child_condition_template.assumedTrue())
                 return ConditionList{}; /// The whole disjunction can be assumed True, so it in not included into partial predicate
 
@@ -165,16 +164,12 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
     }
     else if (node.type == ActionsDAG::ActionType::ALIAS)
     {
-        return extractPartialPredicate(*node.children.front(), available_columns, only_conditions_safe_on_more_rows);
+        return extractPartialPredicate(*node.children.front(), available_columns);
     }
     else
     {
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
-
-        /// the partial predicate also gets the rows that the conditions it leaves out reject
-        if (only_conditions_safe_on_more_rows && !canBeMovedToTheFrontOfAndChain(&node))
-            return ConditionList{};
 
         if (!isUsefulToPreFilterWith(node))
             return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
@@ -228,13 +223,11 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns,
-    bool only_conditions_safe_on_more_rows = false);
+    const Names & available_columns);
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns,
-    bool only_conditions_safe_on_more_rows)
+    const Names & available_columns)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
         return {};
@@ -243,8 +236,7 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
 
     const ActionsDAG::Node & predicate = full_dag.findInOutputs(filter_name);
 
-    auto predicate_template = extractPartialPredicate(
-        predicate, NameSet(available_columns.begin(), available_columns.end()), only_conditions_safe_on_more_rows);
+    auto predicate_template = extractPartialPredicate(predicate, NameSet(available_columns.begin(), available_columns.end()));
 
     if (predicate_template.assumedTrue())
         return {};
@@ -282,7 +274,7 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 
     auto filter_column_name = filter_dag.getOutputs().front()->result_name;
     // Let's keep the order inputs for the join
-    MultiMapWithMemoryTracking<std::string, const ActionsDAG::Node *> filter_inputs;
+    std::multimap<std::string, const ActionsDAG::Node *> filter_inputs;
     for (const auto * input : filter_dag.getInputs())
         filter_inputs.insert({input->result_name, input});
 

@@ -154,27 +154,27 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType, Plain>>;
 
 public:
-    [[nodiscard]] bool isState() const override
+    bool isState() const override
     {
         return nested_func->isState();
     }
 
-    [[nodiscard]] bool isVersioned() const override
+    bool isVersioned() const override
     {
         return nested_func->isVersioned();
     }
 
-    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
+    size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_func->getVersionFromRevision(revision);
     }
 
-    [[nodiscard]] size_t getDefaultVersion() const override
+    size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    [[nodiscard]] DataTypePtr getStateType() const override
+    DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_func);
     }
@@ -186,7 +186,7 @@ public:
         key_type = getKeyType(types, nested_func);
     }
 
-    [[nodiscard]] String getName() const override { return nested_func->getName() + "Map"; }
+    String getName() const override { return nested_func->getName() + "Map"; }
 
     static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
     {
@@ -296,7 +296,7 @@ public:
         });
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -383,7 +383,7 @@ public:
         destroyImpl<false>(place);
     }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
     }
@@ -565,8 +565,8 @@ public:
                 catch (...)
                 {
                     res_offsets.resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i > 0; --i)
-                        nested_func->rollbackInsertResult(merged_maps[keys[i - 1]], val_column);
+                    for (size_t i = transferred; i-- > 0;)
+                        nested_func->rollbackInsertResult(merged_maps[keys[i]], val_column);
                     key_column.rollback(*keys_checkpoint);
                     throw;
                 }
@@ -604,10 +604,9 @@ public:
         /// The values were appended in sorted key order while `merged_maps` is unordered, and a row's
         /// undo depends on which place produced it, so recover that order from the keys themselves.
         const size_t appended_end = key_column.size();
-        const size_t appended_begin = appended_end - appended;
-        for (size_t pos = appended_end; pos > appended_begin; --pos)
+        for (size_t pos = appended_end; pos-- > appended_end - appended;)
         {
-            auto it = merged_maps.find(keyAt(key_column, pos - 1));
+            auto it = merged_maps.find(keyAt(key_column, pos));
             if (it == merged_maps.end())
                 abortOnFailedAssertion("AggregateFunctionMap::rollbackInsertResult: appended key is missing from merged_maps");
             nested_func->rollbackInsertResult(it->second, val_column);
@@ -616,89 +615,20 @@ public:
         key_column.popBack(appended);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
+    bool allocatesMemoryInArena() const override { return true; }
 
-    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 
 class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 {
-    /// The arrays of the keys and the values of the legacy form, either the arguments themselves
-    /// or the elements of a single tuple argument, the same as in `transformArguments`. Otherwise, nullptr.
-    static const DataTypes * getLegacyValueArrays(const DataTypes & arguments)
-    {
-        auto is_array = [](const DataTypePtr & type) { return type->getTypeId() == TypeIndex::Array; };
-        if (arguments.empty())
-            return nullptr;
-        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get()))
-        {
-            const auto & elements = tuple_type->getElements();
-            if (arguments.size() == 1 && elements.size() >= 2 && std::all_of(elements.begin(), elements.end(), is_array))
-                return &elements;
-            return nullptr;
-        }
-        if (arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), is_array))
-            return &arguments;
-        return nullptr;
-    }
-
 public:
-    [[nodiscard]] String getName() const override { return "Map"; }
+    String getName() const override { return "Map"; }
 
-    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
+    bool transformsArgumentTypes() const override { return true; }
 
-    /// The values of the maps are passed to the nested function one by one, so the maps are converted around.
-    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
-
-    /// The legacy form `sumMap(keys, values1, values2, ...)` (or a tuple of these arrays) passes every value array
-    /// to `sumMappedArrays`, while `transformArguments` returns only the type of the first values.
-    /// So every value array is probed and converted independently.
-    [[nodiscard]] DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
-    {
-        if (const auto * value_arrays = getLegacyValueArrays(arguments))
-        {
-            DataTypes res;
-            res.reserve(value_arrays->size() - 1);
-            for (size_t i = 1; i < value_arrays->size(); ++i)
-                res.push_back(assert_cast<const DataTypeArray &>(*(*value_arrays)[i]).getNestedType());
-            return res;
-        }
-        return transformArguments(arguments);
-    }
-
-    void convertVariantArgumentsAround(
-        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
-    {
-        /// The same modes as in `transformArguments`.
-        const auto * map_type = arguments.size() == 1 ? checkAndGetDataType<DataTypeMap>(arguments[0].get()) : nullptr;
-        if (map_type)
-        {
-            arguments[0] = std::make_shared<DataTypeMap>(map_type->getKeyType(), converted_nested_arguments[0]);
-            return;
-        }
-
-        if (const auto * value_arrays = getLegacyValueArrays(arguments))
-        {
-            /// The arrays of the keys and the values, see `transformArgumentsForVariantConversion`.
-            DataTypes arrays = *value_arrays;
-            chassert(arrays.size() == converted_nested_arguments.size() + 1);
-            for (size_t i = 0; i < converted_nested_arguments.size(); ++i)
-                arrays[i + 1] = std::make_shared<DataTypeArray>(converted_nested_arguments[i]);
-
-            if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get()))
-                arguments[0] = tuple_type->hasExplicitNames()
-                    ? std::make_shared<DataTypeTuple>(arrays, tuple_type->getElementNames())
-                    : std::make_shared<DataTypeTuple>(arrays);
-            else
-                arguments = std::move(arrays);
-            return;
-        }
-
-        IAggregateFunctionCombinator::convertVariantArgumentsAround(arguments, nested_arguments, converted_nested_arguments);
-    }
-
-    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -739,7 +669,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
+    AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

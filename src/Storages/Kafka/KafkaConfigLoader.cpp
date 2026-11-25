@@ -45,7 +45,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_security_protocol;
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
-    extern const KafkaSettingsSecretString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
     extern const KafkaSettingsString kafka_autodetect_client_rack;
@@ -602,7 +602,7 @@ void updateConfigurationFromConfig(
     if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
-        kafka_config.set("sasl.password", String(kafka_settings[KafkaSetting::kafka_sasl_password].value));
+        kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
     if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 

@@ -39,17 +39,12 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    /// Use the const `ColumnPtr` accessors (`getNestedColumnPtr`, `getNullMapColumnPtr`) so we go through
-    /// `immutable_ptr::operator->`/`operator*` rather than the `WrappedPtr`'s mutable accessors. The latter
-    /// call `assumeMutableRef`, which now `chassert(use_count() == 1)`. When this constructor is reached via
-    /// `ColumnNullable::create(const ColumnPtr &, const ColumnPtr &)`, the caller still holds an immutable
-    /// reference to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
-    nested_column = getNestedColumnPtr()->convertToFullColumnIfConst();
+    nested_column = getNestedColumn().convertToFullColumnIfConst();
 
-    if (!getNestedColumnPtr()->canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumnPtr()->getName());
+    if (!getNestedColumn().canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
 
-    if (isColumnConst(*getNullMapColumnPtr()))
+    if (isColumnConst(*null_map))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
@@ -337,27 +332,6 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
         insertFromNotNullable(src, position);
 }
 
-void ColumnNullable::insertManyDefaults(size_t length)
-{
-    if (length == 0)
-        return;
-
-    /// Reserved first, so that filling the null map cannot throw.
-    reserve(size() + length);
-    auto & null_map_data = getNullMapData();
-    try
-    {
-        getNestedColumn().insertManyDefaults(length);
-    }
-    catch (...)
-    {
-        /// Keep the null map in sync with the rows the nested column appended before throwing.
-        null_map_data.resize_fill(getNestedColumn().size(), 1);
-        throw;
-    }
-    null_map_data.resize_fill(null_map_data.size() + length, 1);
-}
-
 void ColumnNullable::popBack(size_t n)
 {
     getNestedColumn().popBack(n);
@@ -599,8 +573,8 @@ void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direct
     {
         /// Shift all NULL values to the beginning.
 
-        ssize_t read_idx = static_cast<ssize_t>(res.size()) - 1;
-        ssize_t write_idx = static_cast<ssize_t>(res.size()) - 1;
+        ssize_t read_idx = res.size() - 1;
+        ssize_t write_idx = res.size() - 1;
 
         while (read_idx >= 0 && !isNullAt(res[read_idx]))
         {
@@ -700,8 +674,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             if (limit && first > limit)
                 break;
 
-            ssize_t read_idx = static_cast<ssize_t>(last) - 1;
-            ssize_t write_idx = static_cast<ssize_t>(last) - 1;
+            ssize_t read_idx = last - 1;
+            ssize_t write_idx = last - 1;
             ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
             while (read_idx > begin_idx && !isNullAt(res[read_idx]))
@@ -846,12 +820,8 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
 
 void ColumnNullable::shrinkToFit()
 {
-    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
-    /// to avoid violating the `assumeMutableRef` deep ownership check.
-    if (std::as_const(nested_column)->use_count() == 1)
-        getNestedColumn().shrinkToFit();
-    if (std::as_const(null_map)->use_count() == 1)
-        getNullMapColumn().shrinkToFit();
+    getNestedColumn().shrinkToFit();
+    getNullMapColumn().shrinkToFit();
 }
 
 void ColumnNullable::ensureOwnership()
@@ -886,14 +856,12 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
-    Columns parts{nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
-        },
-        std::move(parts));
+        });
 }
 
 
@@ -1117,19 +1085,9 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().gatherFromRows(rows, field_offset, field_size, begin, count, &getNullMapData());
-}
-
-void ColumnNullable::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 *) const
-{
-    getNestedColumn().gatherRangeIntoRows(rows, row_length, field_offset, start, count, overflow_cursor, getNullMapData().data());
-}
-
-void ColumnNullable::gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 *) const
-{
-    getNestedColumn().gatherSelectedIntoRows(source_rows, destination_rows, field_offset, getNullMapData().data());
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an

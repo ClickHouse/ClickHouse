@@ -11,10 +11,9 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
-#include <base/sanitizer_defs.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
-  * https://web.archive.org/web/20190930141145/volnitsky.com/project/str_search
+  * http://volnitsky.com/project/str_search/
   *
   * `haystack` and `needle` can contain zero bytes.
   *
@@ -168,8 +167,8 @@ namespace VolnitskyTraits
                 }
                 else
                 {
-                    int l_u32 = utf8CaseFold(*u32);
-                    int u_u32 = utf8CaseUpper(*u32);
+                    int l_u32 = Poco::Unicode::toLower(*u32);
+                    int u_u32 = Poco::Unicode::toUpper(*u32);
 
                     /// symbol is case-independent
                     if (l_u32 == u_u32)
@@ -222,8 +221,8 @@ namespace VolnitskyTraits
 
                 if (first_u32)
                 {
-                    first_l_u32 = utf8CaseFold(*first_u32);
-                    first_u_u32 = utf8CaseUpper(*first_u32);
+                    first_l_u32 = Poco::Unicode::toLower(*first_u32);
+                    first_u_u32 = Poco::Unicode::toUpper(*first_u32);
                 }
 
                 /// second sequence always start immediately after u_pos
@@ -235,8 +234,8 @@ namespace VolnitskyTraits
 
                 if (second_u32)
                 {
-                    second_l_u32 = utf8CaseFold(*second_u32);
-                    second_u_u32 = utf8CaseUpper(*second_u32);
+                    second_l_u32 = Poco::Unicode::toLower(*second_u32);
+                    second_u_u32 = Poco::Unicode::toUpper(*second_u32);
                 }
 
                 /// both symbols are case-independent
@@ -380,9 +379,7 @@ protected:
     size_t needle_size;
     const UInt8 * needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    const size_t step = needle_size >= sizeof(VolnitskyTraits::Ngram)
-        ? needle_size - sizeof(VolnitskyTraits::Ngram) + 1
-        : 0;
+    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
@@ -397,7 +394,7 @@ protected:
     /// and ARM NEON). Case-insensitive uses a cache searcher that only beats the hash with the AVX2 kernel;
     /// on ARM NEON and SSE-only the hash wins for selective needles, so it is kept there. AVX2 availability
     /// is what matters, independent of multitarget dispatch (which is off at non-v3 baselines).
-#if USE_X86_64_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
     static constexpr bool case_sensitive_can_bypass = true;
 #else
     static constexpr bool case_sensitive_can_bypass = false;
@@ -489,9 +486,6 @@ public:
     {
         return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
-
-    /// Returns the end of the match that `search` found at `pos`, or `nullptr` if it does not fit before `haystack_end`.
-    const UInt8 * matchEnd(const UInt8 * pos, const UInt8 * haystack_end) const { return fallback_searcher.matchEnd(pos, haystack_end); }
 
 protected:
     void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset)
@@ -653,7 +647,6 @@ public:
         return false;
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     size_t searchOneFirstIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();

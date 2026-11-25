@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
@@ -302,11 +301,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
         /// readers are potentially long, and refinement of a non-prefetched task may block.
         if (thread_task->isValidReadersFuture())
         {
-            {
-                /// Park the CPU lease while waiting for the prefetch (outside the pool mutex)
-                CPULeaseParkGuard cpu_park;
-                thread_task->readers_future->wait();
-            }
+            thread_task->readers_future->wait();
             if (thread_task->pruned_by_refiner)
                 continue;
         }
@@ -525,13 +520,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
         LOG_TRACE(
             log,
-            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, ranges: {}",
+            "Part: {}, sum_marks: {}, approx mark size: {}, prefetch_step_bytes: {}, prefetch_step_marks: {}, (ranges: {})",
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
             settings[Setting::filesystem_prefetch_step_bytes].value,
             part_stat.prefetch_step_marks,
-            parts_ranges[i].ranges.size());
+            toString(parts_ranges[i].ranges));
     }
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
@@ -637,13 +632,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                 }
             }
 
-            /// The loop above may take more than the remaining budget: it deliberately adds the
-            /// tail of a range shorter than one prefetch step after `num_marks_to_get` reaches
-            /// zero. `need_marks` is signed and is meant to go negative when that happens, which it
-            /// did by having both operands promoted to `size_t`, wrapping there, and converting the
-            /// wrapped difference back. Subtracting as `int64_t` reaches the same value without the
-            /// unsigned detour.
-            need_marks -= static_cast<int64_t>(marks_to_get_from_part);
+            need_marks -= marks_to_get_from_part;
             sum_marks -= marks_to_get_from_part;
             part_stat.sum_marks -= marks_to_get_from_part;
 

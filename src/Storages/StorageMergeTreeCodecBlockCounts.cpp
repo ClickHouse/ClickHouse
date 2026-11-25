@@ -47,7 +47,7 @@ const String PART_NAME_COLUMN = "part_name";
 const String COLUMN_COLUMN = "column";
 const String SUBSTREAM_COLUMN = "substream";
 const String DATA_COMPRESSED_BYTES_COLUMN = "data_compressed_bytes";
-[[clang::no_destroy]] const String DATA_UNCOMPRESSED_BYTES_COLUMN = "data_uncompressed_bytes";
+const String DATA_UNCOMPRESSED_BYTES_COLUMN = "data_uncompressed_bytes";
 const String CODEC_BLOCK_COUNTS_COLUMN = "codec_block_counts";
 
 Map codecCountsToField(const std::map<String, UInt64> & counts)
@@ -99,7 +99,7 @@ protected:
         auto component_guard = Coordination::setCurrentComponent("MergeTreeCodecBlockCountsSource::generate");
 
         /// One part per call. generate is called repeatedly until it returns an empty chunk.
-        /// Thus we skip parts with empty ColumnsSubstreams (e.g. written by an older version) and parts
+        /// Thus we skip parts with empty ColumnsSubstreams (e.g. Compact without substream marks) and parts
         /// where keys_filter drops every row, instead of returning an empty chunk for them.
         while (part_index < data_parts.size())
         {
@@ -253,7 +253,7 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
+    std::string getName() const override { return "ReadFromMergeTreeCodecBlockCounts"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

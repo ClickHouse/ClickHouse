@@ -87,9 +87,9 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    bool storesDataOnDisk() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
-    bool isInsertOrderSensitive() const override { return true; }
+
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
@@ -127,9 +127,7 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void finalizeRestoreFromBackup() override;
 
-    /// A snapshot: `ALTER ... MODIFY SETTING` installs a new version (`setSettings`) and frees the old one once no snapshot
-    /// holds it, so hold it while reading.
-    MultiVersion<RocksDBSettings>::Version getSettings() const { return storage_settings.get(); }
+    const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
 
     void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 

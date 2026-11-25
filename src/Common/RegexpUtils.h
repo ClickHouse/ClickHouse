@@ -49,12 +49,6 @@ struct RegexpFixedPrefix
 /// "^(branch1|branch2|...)$?", which is handled separately.
 RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix);
 
-/// Anchors a regular expression at both ends, so that it can only match a whole string.
-/// The straightforward wrapping into `^(?:...)$` is used only when the regex has an alternation or an inline
-/// multiline flag at the top level: a leading group stops `extractFixedPrefixFromRegularExpression`, so the
-/// anchors are added directly (`node_.*` -> `^node_.*$`) whenever that keeps the whole-string semantics.
-String anchorRegexpToMatchWholeString(std::string_view regexp);
-
 /// Removes the last character of `literal`, a whole UTF-8 code point, which a zero-allowing quantifier makes optional.
 void dropLastLiteral(String & literal);
 

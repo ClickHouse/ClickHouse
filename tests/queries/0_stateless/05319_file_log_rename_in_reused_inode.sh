@@ -43,16 +43,5 @@ mv "${logs_dir}/b.csv" "${logs_dir}/c.csv"
 printf '50\n' >> "${logs_dir}/c.csv"
 read_new 1
 
-# The same without a pause between the steps, so that the macOS watcher sees them in one scan.
-ln "${logs_dir}/c.csv" "${held}"
-python3 -c '
-import os, sys
-os.unlink(sys.argv[1])
-with open(sys.argv[2], "w") as f:
-    f.write("60\n70\n80\n90\n100\n110\n")
-os.rename(sys.argv[2], sys.argv[3])
-' "${logs_dir}/c.csv" "${held}" "${logs_dir}/d.csv"
-read_new 6
-
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE file_log"
 rm -rf "${logs_dir}" "${held}"

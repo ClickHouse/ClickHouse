@@ -129,7 +129,7 @@ DatabaseMySQL::DatabaseMySQL(
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
+    , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
@@ -268,7 +268,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     }
 
     auto storage = local_tables_cache[table_name].second;
-    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
+    auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
@@ -318,7 +318,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
+    create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -820,9 +820,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 /*dependent_table_id=*/ nullptr,
                 engine_define->settings))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(
-                *named_collection, *mysql_settings, args.context,
-                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table_or_query=*/ false);
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
         }
         else
         {
@@ -835,7 +833,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
-                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...', ssl_key_passphrase = '...').");
+                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -844,8 +842,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             if (engine_name == "MySQL")
             {
                 size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-                    host_port, max_addresses, 3306, globCaller(fmt::format("Database engine '{}'", engine_name)));
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else
             {
@@ -866,10 +863,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
-        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
-        /// setting and make the `RESTORE` fail. A short `ATTACH` keeps the stored definition, as on startup.
-        if (!args.is_restore_from_backup && !args.create_query.attach_short_syntax)
-            mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
 
@@ -902,6 +896,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # MySQL database engine
 
 <CloudNotSupportedBadge />
@@ -962,9 +958,8 @@ The credentials of an encrypted connection to MySQL are passed as [named collect
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
-| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 

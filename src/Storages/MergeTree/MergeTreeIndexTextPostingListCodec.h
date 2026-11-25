@@ -147,7 +147,7 @@ public:
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
     /// Total number of row ids added so far.
-    [[nodiscard]] size_t cardinality() const { return total_row_ids; }
+    size_t cardinality() const { return total_row_ids; }
 
     /// Deserialize a postings list from input `in` into `out`.
     ///
@@ -178,8 +178,8 @@ private:
 
     /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which restores the row ids
-    ///   from the stored deltas, starting from `prev_row_id`
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills `out` with delta values
+    /// - inclusive_scan converts deltas to row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
@@ -222,7 +222,7 @@ public:
     void append(std::span<const UInt32> row_ids) override { impl.append(row_ids); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    [[nodiscard]] size_t cardinality() const override { return impl.cardinality(); }
+    size_t cardinality() const override { return impl.cardinality(); }
 
 private:
     SegmentedPostingListCodec impl;
@@ -245,7 +245,7 @@ public:
     explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
-    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
 
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
@@ -280,7 +280,7 @@ public:
     void append(std::span<const UInt32> row_ids) override;
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
-    [[nodiscard]] size_t cardinality() const override { return total_row_ids; }
+    size_t cardinality() const override { return total_row_ids; }
 
 private:
     void finishSegment();
@@ -301,7 +301,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    [[nodiscard]] std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };

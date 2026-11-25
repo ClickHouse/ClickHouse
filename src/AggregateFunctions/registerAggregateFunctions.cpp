@@ -1,4 +1,5 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -218,6 +219,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
         registerAggregateFunctionMergedJSONPatch(factory);
         registerAggregateFunctionTimeseries(factory);
+
+        registerWindowFunctions(factory);
     }
 
     {

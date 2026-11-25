@@ -46,41 +46,31 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpret>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// The result type is the type named by the const second argument (`typeFromString`). The
-    /// override below is authoritative-but-examined: it delegates the type computation to the
-    /// declarative signature and only adds the source/destination memory-compatibility validation.
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Any, const t String) -> typeFromString(t)";
-    }
+        const auto & column = arguments.back().column;
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        DataTypePtr from_type = arguments[0].type;
+
+        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
         if (!type_col)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument to {} must be a constant string describing type."
                 " Instead there is non-constant column of type {}",
                 getName(),
-                arguments[1].type->getName());
+                arguments.back().type->getName());
 
-        DataTypePtr from_type = arguments[0].type;
-
-        /// Resolve the query-provided type name outside the signature's factory-info suppression so
-        /// `query_log.used_data_type_families` records it. The signature validates the same type
-        /// expression, while the lookup below preserves the legacy query-log attribution.
         DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
-        (void)IFunction::getReturnTypeImpl(arguments);
 
         WhichDataType result_reinterpret_type(to_type);
 
@@ -138,7 +128,7 @@ public:
         return to_type;
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto from_type = arguments[0].type;
 
@@ -259,6 +249,7 @@ public:
 
                     size_t offset = 0;
                     size_t copy_size = std::min(step, sizeof(ToFieldType));
+                    size_t index = data_from.size() - copy_size;
 
                     if (sizeof(ToFieldType) <= step)
                         vec_res.resize(input_rows_count);
@@ -272,7 +263,6 @@ public:
                         else
                         {
                             size_t offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
-                            size_t index = data_from.size() - copy_size;
                             reverseMemcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
                         }
                         offset += step;
@@ -516,37 +506,13 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpretAs>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    /// `reinterpretAs<T>` accepts any type whose value fits unambiguously in a fixed-size
-    /// contiguous memory region — i.e. `canBeReinterpretedAsNumeric`-typed inputs plus
-    /// `String`/`FixedString`. Returns the requested target type. We can advertise a
-    /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
-    /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
-    /// so its signature is documentation-only.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
-            /// The FixedString length N is the source value's in-memory size.
-            return "(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))";
-        else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
-            /// reinterpretAsString accepts any value laid out contiguously in memory.
-            return "(UnambiguouslyRepresentedInContiguousMemoryRegion) -> String";
-        else
-        {
-            /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
-            static const String sig
-                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
-                + ToDataType{}.getName();
-            return sig;
-        }
-    }
+    bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
@@ -584,11 +550,13 @@ public:
         return arguments_with_type;
     }
 
-    /// getReturnTypeImpl is intentionally not overridden: the declarative signature is
-    /// authoritative for every target (including FixedString, whose N is `sizeOfValueInMemory`).
-    /// The input matcher encodes exactly which source types can be reinterpreted.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto arguments_with_type = addTypeColumnToArguments(arguments);
+        return impl.getReturnTypeImpl(arguments_with_type);
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         auto arguments_with_type = addTypeColumnToArguments(arguments);
         return impl.executeImpl(arguments_with_type, return_type, input_rows_count);

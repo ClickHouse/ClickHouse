@@ -37,11 +37,10 @@ Like the functional/integration validators, this job only checks the "before" si
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
 regular `Unit tests (asan_ubsan)` job, which compiles and runs the full suite —
 including the new test — on the PR binary; a regression test that is itself broken
-makes that job red and blocks the PR.  That delegation is per build type: the counterpart
-of the build type that reproduced is the `Unit tests (<that build type's sanitizer>)` job, so
-a bug reproduced on the `arm_tsan` build type is complemented by `Unit tests (tsan)`.
-Delegating it also lets this job avoid a direct dependency on the PR's
-`UNITTEST_ARM_ASAN_UBSAN` artifact.
+makes that job red and blocks the PR.  That delegation is per-arm: the counterpart of the
+arm that reproduced is the `Unit tests (<that arm's sanitizer>)` job, so a bug reproduced
+on the `amd_tsan` arm is complemented by `Unit tests (tsan)`.  Delegating it also lets this
+job avoid a direct dependency on the PR's `UNITTEST_AMD_ASAN_UBSAN` artifact.
 
 See ci/jobs/functional_tests.py:invert_bugfix_validation_status for the analogous
 functional-test logic.
@@ -74,10 +73,10 @@ BEFORE_BUILD_NORMALIZED = f"{BEFORE_SRC_NORMALIZED}/build"
 BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 
 # Build types the "before" binary is validated on, in order. A test whose failure mode
-# needs a sanitizer the build type lacks passes there either way, so one build type cannot
-# separate "the test does not catch the bug" from "this build cannot observe it". Every build
-# type is a cold build, so the list stops at two and `arm_msan`/`arm_debug` remain blind spots.
-BEFORE_BUILD_TYPES = (BuildTypes.ARM_ASAN_UBSAN, BuildTypes.ARM_TSAN)
+# needs a sanitizer the arm lacks passes there either way, so one arm cannot separate
+# "the test does not catch the bug" from "this build cannot observe it". Every arm is a
+# cold build, so the list stops at two and `amd_msan`/`amd_debug` remain blind spots.
+BEFORE_BUILD_TYPES = (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.AMD_TSAN)
 
 # gtest test-registration macros whose first argument is the test-suite name.
 # `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of

@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
@@ -158,8 +157,7 @@ TEST(SerializationTryDeserialize, NestedReturningFalseAfterInsertLeavesColumnUnc
     FormatSettings settings;
 
     SerializationPtr serialization = SerializationArray::create(
-        std::make_shared<InsertingThenFailingSerialization>(/*rows_to_append=*/1, /*throw_parse_error=*/false),
-        std::make_shared<DataTypeUInt8>());
+        std::make_shared<InsertingThenFailingSerialization>(/*rows_to_append=*/1, /*throw_parse_error=*/false));
 
     auto column = ColumnArray::create(ColumnUInt8::create());
     ReadBufferFromMemory istr("[1]");
@@ -205,14 +203,14 @@ TEST(SerializationTryDeserialize, RethrowsNonParseErrorsFromNested)
     FormatSettings settings;
 
     {
-        SerializationPtr serialization = SerializationArray::create(std::make_shared<ThrowingSerialization>(ErrorCodes::CANNOT_PARSE_NUMBER), std::make_shared<DataTypeUInt8>());
+        SerializationPtr serialization = SerializationArray::create(std::make_shared<ThrowingSerialization>(ErrorCodes::CANNOT_PARSE_NUMBER));
         auto column = ColumnArray::create(ColumnUInt8::create());
         ReadBufferFromMemory istr("[1]");
         ASSERT_FALSE(serialization->tryDeserializeTextQuoted(*column, istr, settings));
     }
 
     {
-        SerializationPtr serialization = SerializationArray::create(std::make_shared<ThrowingSerialization>(ErrorCodes::MEMORY_LIMIT_EXCEEDED), std::make_shared<DataTypeUInt8>());
+        SerializationPtr serialization = SerializationArray::create(std::make_shared<ThrowingSerialization>(ErrorCodes::MEMORY_LIMIT_EXCEEDED));
         auto column = ColumnArray::create(ColumnUInt8::create());
         ReadBufferFromMemory istr("[1]");
         try

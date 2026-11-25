@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 -- { echo }
 -- Elements of a `Nullable(Tuple(...))` that can represent NULL themselves without being wrapped into

@@ -40,14 +40,11 @@
 --- DEFAULT with a secret argument ---
 0	1
 --- DEFAULT reading a column bound to another column, s3 ---
-1	2	0	10
-3	4	6	16
+1	1
 --- DEFAULT reading a column bound to another column, s3Cluster ---
-1	2	0	10
-3	4	6	16
+1	1
 --- DEFAULT reading a column bound to another column, input() ---
-1	2	0	10
-3	4	6	16
+1	1
 --- column of the files named like a function a DEFAULT calls ---
 ILLEGAL_TYPE_OF_ARGUMENT
 ILLEGAL_TYPE_OF_ARGUMENT
