@@ -1927,8 +1927,7 @@ public:
             size_t place_value = half.place(old_buf[i].getHash(*this));
             while (!new_buf[place_value].isZero(*this))
                 place_value = half.next(place_value);
-            memcpy(
-                static_cast<void *>(&new_buf[place_value]), &old_buf[i], sizeof(Cell)); /// NOLINT(bugprone-undefined-memory-manipulation)
+            memcpy(static_cast<void *>(&new_buf[place_value]), static_cast<const void *>(&old_buf[i]), sizeof(Cell));
         }
 
         Allocator::free(old_buf, old_bytes);
