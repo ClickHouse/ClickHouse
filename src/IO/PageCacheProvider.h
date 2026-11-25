@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
+#include <IO/IntervalSet.h>
 #include <Common/PageCache.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -17,8 +18,8 @@ public:
     explicit PageCacheChainedBuffer(PageCache::MappedPtr cell_);
 
     char * data() override { return cell->data(); }
-    [[nodiscard]] const char * data() const override { return cell->data(); }
-    [[nodiscard]] size_t size() const override { return cell->size(); }
+    const char * data() const override { return cell->data(); }
+    size_t size() const override { return cell->size(); }
 
 private:
     PageCache::MappedPtr cell;
@@ -33,7 +34,7 @@ class PageCacheReader : public CacheReader
 public:
     PageCacheReader(ByteRange range_in_file, PageCache::MappedPtr cell_);
 
-    [[nodiscard]] ByteRange range() const override { return range_member; }
+    ByteRange range() const override { return range_member; }
     ChainedBuffers read(ByteRange sub) override;
 
 private:
@@ -103,12 +104,12 @@ public:
         bool bypass_if_missing_,
         size_t file_size_in_bytes_);
 
-    [[nodiscard]] String name() const override { return "PageCache"; }
-    [[nodiscard]] CacheTier tier() const override { return CacheTier::PageCache; }
+    String name() const override { return "PageCache"; }
+    CacheTier tier() const override { return CacheTier::PageCache; }
 
     /// A page-cache block is written whole (first-writer-wins, no later
     /// completion); the probe reports one miss range per block.
-    [[nodiscard]] bool fillsWholeSegment() const override { return true; }
+    bool fillsWholeSegment() const override { return true; }
 
     /// Resolve `range` into per-block hits (readers) and misses (whole-block
     /// writers when populating); see the definition.

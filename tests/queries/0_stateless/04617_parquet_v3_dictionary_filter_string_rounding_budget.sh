@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Random settings limits: output_format_parquet_compression_method=('zstd', 'zstd')
+# Tags: no-fasttest
+# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The value-set reservation in `hashDictionaryValues` must be a genuine upper bound on what the
 # pruning path really allocates. Its materialized-payload term must be derived from the exact total

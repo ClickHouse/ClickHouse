@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/sanitizer_defs.h>
 #include <Common/PODArray.h>
 
 #include <array>
@@ -36,7 +35,7 @@
 namespace DB::HadamardTransform
 {
 
-inline UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW splitmix64Next(UInt64 & state)
+inline UInt64 splitmix64Next(UInt64 & state)
 {
     state += 0x9E3779B97F4A7C15ULL;
     UInt64 z = state;
@@ -538,66 +537,6 @@ inline void fwhtAvx2(float * a, size_t m)
                 _mm256_storeu_ps(a + j + h, _mm256_sub_ps(x0, y0));
                 _mm256_storeu_ps(a + j + h + 8, _mm256_sub_ps(x1, y1));
             }
-}
-
-inline void applyHmAvx2(float * block, size_t m, const UInt32 * col_masks)
-{
-    float z[max_hadamard_block];
-    size_t i = 0;
-    for (; i + 8 <= m; i += 8)
-    {
-        __m256 acc = _mm256_setzero_ps();
-        for (size_t j = 0; j < m; ++j)
-        {
-            const __m256 bj = _mm256_set1_ps(block[j]);
-            const __m256 mask = _mm256_castsi256_ps(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(col_masks + j * m + i)));
-            acc = _mm256_add_ps(acc, _mm256_xor_ps(bj, mask));
-        }
-        _mm256_storeu_ps(z + i, acc);
-    }
-
-    // handles the remaining 4 elements
-    __m128 acc = _mm_setzero_ps();
-    for (size_t j = 0; j < m; ++j)
-    {
-        const __m128 bj = _mm_set1_ps(block[j]);
-        const __m128 mask = _mm_castsi128_ps(_mm_loadu_si128(reinterpret_cast<const __m128i *>(col_masks + j * m + i)));
-        acc = _mm_add_ps(acc, _mm_xor_ps(bj, mask));
-    }
-    _mm_storeu_ps(z + i, acc);
-    for (size_t k = 0; k < m; ++k)
-        block[k] = z[k];
-}
-
-inline void fwhtBlocksAvx2(float * a, size_t blocks, size_t m)
-{
-    for (size_t h = 1; h < blocks; h <<= 1)
-        for (size_t i = 0; i < blocks; i += (h << 1))
-            for (size_t p = i; p < i + h; ++p)
-            {
-                float * lo = a + p * m;
-                float * hi = a + (p + h) * m;
-                size_t j = 0;
-                for (; j + 8 <= m; j += 8)
-                {
-                    const __m256 x = _mm256_loadu_ps(lo + j);
-                    const __m256 y = _mm256_loadu_ps(hi + j);
-                    _mm256_storeu_ps(lo + j, _mm256_add_ps(x, y));
-                    _mm256_storeu_ps(hi + j, _mm256_sub_ps(x, y));
-                }
-                // handles the remaining 4 elements
-                const __m128 x = _mm_loadu_ps(lo + j);
-                const __m128 y = _mm_loadu_ps(hi + j);
-                _mm_storeu_ps(lo + j, _mm_add_ps(x, y));
-                _mm_storeu_ps(hi + j, _mm_sub_ps(x, y));
-            }
-}
-
-inline void kroneckerAvx2(float * a, size_t blocks, size_t m, const HmMasks<float> & hm)
-{
-    for (size_t p = 0; p < blocks; ++p)
-        applyHmAvx2(a + p * m, m, hm.col.data());
-    fwhtBlocksAvx2(a, blocks, m);
 }
 #endif
 

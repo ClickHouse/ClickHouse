@@ -2,11 +2,6 @@
 
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/StreamWithSizeHint.h>
-
-#include <functional>
-#include <map>
-#include <mutex>
 
 namespace DB
 {
@@ -67,31 +62,11 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
-    std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
-    bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const override;
-
-    /// The sum of the per-column read sizes.
-    ColumnSize calculateTotalColumnsReadSize() const override;
-
-    /// The read size of one column, cached per column.
-    ColumnSize getColumnReadSize(const NameAndTypePair & column) const;
-    ColumnSize calculateColumnReadSize(const NameAndTypePair & column) const;
+    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
-    /// Adds the stream's share of its file where it has a size hint, else the whole file.
-    void addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const;
-
-    /// The names of the column's streams that exist in the part, from columns_substreams.txt where the part has it, else
-    /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
-    void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
-
-    /// The streams a read of the columns touches, by requested name, listed by one reader after it has read the prefixes.
-    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(
-        const NamesAndTypesList & columns, const ReadSettings & read_settings) const;
-
-    mutable std::mutex columns_read_sizes_mutex;
-    mutable std::map<String, ColumnSize> columns_read_sizes TSA_GUARDED_BY(columns_read_sizes_mutex);
+    std::vector<String> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 
 }

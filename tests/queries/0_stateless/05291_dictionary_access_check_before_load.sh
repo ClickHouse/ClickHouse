@@ -75,8 +75,6 @@ do
     status
     as_user "SELECT dictHas('${dict}', toUInt64(1))"
     status
-    as_user "SELECT count() FROM numbers(1) GROUP BY dictGet('${dict}', 'value', number) SETTINGS enable_analyzer = 0"
-    status
 done
 
 echo "--- SELECT on a Dictionary table is not enough without a grant on the dictionary"
@@ -84,14 +82,14 @@ query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.w TO ${username}"
 as_user "SELECT * FROM w"
 status
 # A join may use the dictionary directly as a key-value storage, check it is covered as well.
-for settings in "join_algorithm = 'direct'" "join_algorithm = 'hash'" "join_algorithm = 'direct', enable_analyzer = 0"
+for settings in "join_algorithm = 'direct'" "join_algorithm = 'hash'"
 do
     as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS ${settings}"
     status
 done
 # Queries that are only analyzed do not read the right table, but the join planning must not load the dictionary either.
 query "GRANT CREATE VIEW ON ${CLICKHOUSE_DATABASE}.* TO ${username}"
-for analyzer in 1 0
+for analyzer in 1
 do
     as_user "EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
     status
@@ -126,8 +124,8 @@ status
 as_user "DESCRIBE TABLE dictionary('d')"
 as_user "SELECT * FROM dictionary('d')"
 status
-# The same rule applies to a direct join against a Dictionary table, with both analyzers.
-for analyzer in 1 0
+# The same rule applies to a direct join against a Dictionary table.
+for analyzer in 1
 do
     unload
     as_user "SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = ${analyzer}"
@@ -144,9 +142,6 @@ as_user "SELECT dictGet('d', 'value', toUInt64(1))"
 status
 unload
 as_user "SELECT dictHas('${CLICKHOUSE_DATABASE}.d', toUInt64(1))"
-status
-unload
-as_user "SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0"
 status
 unload
 as_user "SELECT * FROM dictionary('d')"

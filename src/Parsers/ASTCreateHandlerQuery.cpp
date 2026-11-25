@@ -70,7 +70,7 @@ void ASTCreateHandlerQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSet
     }
 
     if (handler_type)
-        ostr << " TYPE " << backQuoteIfNeed(*handler_type); /// The parser reads the type as one identifier.
+        ostr << " TYPE " << *handler_type;
 
     if (query)
     {

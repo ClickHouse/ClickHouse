@@ -1,4 +1,3 @@
-#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Common/UTF8Helpers.h>
@@ -24,23 +23,35 @@ public:
     FunctionOverlay(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
 
     static FunctionPtr create(const char * name, bool is_utf8) { return std::make_shared<FunctionOverlay>(name, is_utf8); }
-    [[nodiscard]] String getName() const override { return function_name; }
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    String getName() const override { return function_name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, String, NativeInteger, [NativeInteger]) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"replace", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnString::create();
@@ -201,12 +212,9 @@ private:
             return offset - 1;
         }
 
-        /// Both the comparison and the sum below used to be computed on the wrapped-around
-        /// magnitude of a negative offset; taking the magnitude once keeps them ordinary.
-        const size_t magnitude = common::negateIgnoreOverflow(static_cast<size_t>(offset));
-        if (input_size < magnitude)
+        if (input_size < -static_cast<size_t>(offset))
             return 0;
-        return input_size - magnitude;
+        return input_size + offset;
     }
 
     /// get character count of a slice [data, data+bytes)
@@ -368,8 +376,8 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t input_offset = input_offsets[static_cast<ssize_t>(i) - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
+            size_t input_offset = input_offsets[i - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
@@ -484,8 +492,8 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t replace_offset = replace_offsets[static_cast<ssize_t>(i) - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[static_cast<ssize_t>(i) - 1];
+            size_t replace_offset = replace_offsets[i - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
@@ -601,12 +609,12 @@ private:
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t input_offset = input_offsets[static_cast<ssize_t>(i) - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
+            size_t input_offset = input_offsets[i - 1];
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize<is_utf8_>(&input_data[input_offset], input_bytes);
 
-            size_t replace_offset = replace_offsets[static_cast<ssize_t>(i) - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[static_cast<ssize_t>(i) - 1];
+            size_t replace_offset = replace_offsets[i - 1];
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize<is_utf8_>(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)

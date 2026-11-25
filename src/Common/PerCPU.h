@@ -15,36 +15,18 @@ namespace PerCPU
 /// first `getNumCPUs()` shards are used at runtime (and only those get faulted in).
 constexpr UInt32 MAX_CPUS = 1024;
 
-/// Sanity bound on the possible-CPU count, so that a malformed sysfs file cannot make dynamically
-/// sized per-CPU storage huge. The largest `CONFIG_NR_CPUS` the kernel accepts on any architecture.
-constexpr UInt32 MAX_POSSIBLE_CPUS = 8192;
-
-/// Number of CPU ids `getCurrentCPU` can return, capped at `MAX_POSSIBLE_CPUS`. Cached on first call.
-/// For dynamically allocated per-CPU storage; fixed-size storage uses `getNumCPUs` instead.
-/// On Linux the kernel's possible-CPU count (`/sys/devices/system/cpu/possible`, the bound on the
-/// ids `sched_getcpu` returns; falls back to `get_nprocs_conf()` without sysfs), so that it does not
-/// depend on the libc: musl's `sysconf(_SC_NPROCESSORS_CONF)` counts the affinity mask, which is
-/// smaller than the ids under a cpuset. `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin; 1 on platforms
-/// where `getCurrentCPU` is unimplemented (routing collapses to one shard there) or if unavailable.
-UInt32 getNumPossibleCPUs() noexcept;
-
-/// `getNumPossibleCPUs` capped at `MAX_CPUS`, for storage sized with that constant.
+/// Number of CPUs `getCurrentCPU` can route to, capped at `MAX_CPUS`. Cached on first call.
+/// `get_nprocs_conf()` on Linux, `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin; 1 on platforms where
+/// `getCurrentCPU` is unimplemented (routing collapses to one shard there) or if unavailable.
 UInt32 getNumCPUs() noexcept;
 
 /// Current CPU id, or -1 if unavailable (callers must treat a negative value as "unknown" and
-/// fall back to a fixed shard). Nothing here guarantees that the id is below `getNumCPUs` or
-/// `getNumPossibleCPUs`: the kernel bounds it by the possible-CPU count, but the count may be capped,
-/// come from the libc fallback, or (on Darwin) disagree with the register the id is read from. Callers
-/// must bound it (`cpu % N` or `cpu < N ? cpu : 0`). Cheap on every supported platform (no syscall).
+/// fall back to a fixed shard). The id is not guaranteed to be dense in [0, getNumCPUs()); callers
+/// bound it (`cpu % N` or `cpu < N ? cpu : 0`). Cheap on every supported platform (no syscall).
 ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
-    /// An rseq TLS read on modern kernels, so cheap enough to call on every `ProfileEvents`
-    /// increment. The bundled musl registers the rseq area during thread setup
-    /// (see `contrib/musl/src/sched/rseq.c`), following the glibc 2.35+ ABI; the builds still
-    /// linked against glibc reuse its registration (see `base/glibc-rseq`). Without a registered
-    /// area this falls back to the `getcpu` vDSO entry, or to a real syscall on AArch64, which has
-    /// no such entry - see the startup warning driven by `rseq_cpu_id`.
+    /// TLS read via glibc rseq on modern kernels (see glibc-compatibility/musl/sched_getcpu.c).
     return sched_getcpu();
 #elif defined(OS_DARWIN) && defined(__aarch64__)
     /// macOS has no `sched_getcpu`. XNU exposes the current CPU number to userspace in the low 12
