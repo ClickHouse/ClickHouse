@@ -33,6 +33,7 @@ import traceback
 import urllib.parse
 
 from ci.praktika import Secret
+from ci.praktika._environment import _Environment
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -145,6 +146,10 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
+  a nested local run replaces the state of this job in `ci/tmp` (the PR number, the job name), which
+  breaks the `ci.praktika.gh` wrappers above and the publishing of this review. No ClickHouse binary
+  is available here either. Rely on the CI reports of the PR for the test results.
 """
 
 
@@ -417,6 +422,24 @@ def _run_codex_once(prompt, model):
         )
 
 
+def _restore_job_state(path, saved):
+    """Restore the state file of this job if the agent has replaced it.
+
+    The agent sometimes starts a nested local run (`python3 -m ci.praktika run ...`), which writes the
+    environment of a local run - without the PR number and with another job name - over the one of
+    this job. The review then cannot be posted, and the job result is reported under a wrong name.
+    """
+    current = None
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            current = f.read()
+    if current == saved:
+        return
+    print(f"WARNING: the agent has changed {path}, restoring it")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(saved)
+
+
 def _run(prompt, flagged_sessions):
     """Run the Codex agent with retries, then post the review comment.
 
@@ -427,10 +450,18 @@ def _run(prompt, flagged_sessions):
     last_error = None
     model = MODEL
     review_model = model
+    # Make sure that the environment of this job is on disk before the agent can touch it.
+    _Environment.get()
+    environment_file = _Environment.file_name_static()
+    with open(environment_file, "r", encoding="utf-8") as f:
+        environment = f.read()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             review_model = model
-            result = _run_codex_once(prompt, model)
+            try:
+                result = _run_codex_once(prompt, model)
+            finally:
+                _restore_job_state(environment_file, environment)
             if CYBER_RISK_FLAG in result.info:
                 flagged_sessions.append((attempt, model))
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk")
