@@ -2562,8 +2562,6 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` is enabled.
 - `_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled.
-
-The persisted values of `_block_number` and `_block_offset` can be reset with [`ALTER TABLE ... CLEAR COLUMN`](/reference/statements/alter/column#clear-column) of either of them.
 - `_disk_name` — Disk name used for the storage.
 
 ## Column statistics {#column-statistics}
