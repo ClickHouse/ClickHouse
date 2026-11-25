@@ -81,28 +81,23 @@ public:
     [[nodiscard]] size_t size() const { return map ? map->size() : count; }
 
     /// Returns the bucket with this index (less than `limit`), adding an empty one if it is missing.
-    Bucket & get(size_t index, size_t limit)
+    /// With `may_move_to_array = false` buckets in the map stay there, as merges in any order would move them back and forth.
+    ALWAYS_INLINE Bucket & get(size_t index, size_t limit, bool may_move_to_array = true)
     {
-        const bool below_array = !map && index < first;
-        if (!map && !(index >= first && index - first < slots.size()))
-            growArray(index, limit);
-
-        if (map)
+        /// An index inside the array, or right after it within the reserved capacity, takes no call.
+        if (!map && index >= first)
         {
-            const size_t old_size = map->size();
-            Bucket & bucket = (*map)[index];
-            /// Checked at powers of two and right after an index below the array, so moving stays cheap.
-            if (map->size() == old_size || !(below_array || std::has_single_bit(map->size())) || !moveToArrayIfDense())
-                return bucket;
+            const size_t slot = index - first;
+            if (slot < slots.size())
+                return addToArray(slot);
+            if (slot == slots.size() && slot < slots.capacity() && slot < 2 * (count + 1))
+            {
+                present.push_back(0);
+                slots.emplace_back();
+                return addToArray(slot);
+            }
         }
-
-        const size_t slot = index - first;
-        if (!present[slot])
-        {
-            present[slot] = 1;
-            ++count;
-        }
-        return slots[slot];
+        return getSlow(index, limit, may_move_to_array);
     }
 
     [[nodiscard]] const Bucket * find(size_t index) const
@@ -137,6 +132,33 @@ public:
 
 private:
     using Map = TimeSeriesBucketsMap<Bucket>;
+
+    ALWAYS_INLINE Bucket & addToArray(size_t slot)
+    {
+        if (!present[slot])
+        {
+            present[slot] = 1;
+            ++count;
+        }
+        return slots[slot];
+    }
+
+    NO_INLINE Bucket & getSlow(size_t index, size_t limit, bool may_move_to_array)
+    {
+        const bool below_array = !map && index < first;
+        if (!map && !(index >= first && index - first < slots.size()))
+            growArray(index, limit);
+
+        if (map)
+        {
+            const size_t old_size = map->size();
+            Bucket & bucket = (*map)[index];
+            /// Checked at powers of two and right after an index below the array, so moving stays cheap.
+            if (!may_move_to_array || map->size() == old_size || !(below_array || std::has_single_bit(map->size())) || !moveToArrayIfDense())
+                return bucket;
+        }
+        return addToArray(index - first);
+    }
 
     /// Extends the array up to `index`, or moves the buckets to the map if `index` is below the array,
     /// or the array would be less than half full or take more memory than the map.
@@ -484,7 +506,7 @@ public:
         auto & buckets = data(place)->buckets;
         data(rhs)->buckets.forEach([&](size_t index, const Bucket & rhs_bucket)
         {
-            buckets.get(index, bucket_count).merge(rhs_bucket);
+            buckets.get(index, bucket_count, /* may_move_to_array = */ false).merge(rhs_bucket);
         });
     }
 
