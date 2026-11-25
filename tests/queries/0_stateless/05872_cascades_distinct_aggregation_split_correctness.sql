@@ -102,14 +102,16 @@ SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET count_distinct_implementation = 'uniqExact';
-SET distributed_plan_partial_aggregation_before_shuffle = 1;
+-- Without partial aggregation before the shuffle the split has one form for every type: a shuffle of the rows by
+-- the counted column. With it, the two forms of the split have almost the same cost for keys of 8 to 32 bytes.
+SET distributed_plan_partial_aggregation_before_shuffle = 0;
 SET distributed_plan_force_shuffle_aggregation = 0;
 SET cascades_aggregation_pushdown = 0;
 SET optimize_aggregation_in_order = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 -- The tables stand in for large ones with many distinct values in every column, so the costs select the split
 -- for every type that the rule accepts.
-SET param__internal_join_table_stat_hints = '{"t_distinct_values": {"cardinality": 1000000000, "avg_row_bytes": 40, "distinct_keys": {"u64": 200000000, "i8": 200000000, "i128": 200000000, "u256": 200000000, "d": 200000000, "d32": 200000000, "dt": 200000000, "e8": 200000000, "e16": 200000000, "uuid": 200000000, "ip4": 200000000, "n": 200000000, "lc": 200000000, "lcn": 200000000, "saf": 200000000, "only_null": 200000000, "f64": 200000000, "f32": 200000000, "nf": 200000000}}, "t_distinct_values_by_float": {"cardinality": 1000000000, "avg_row_bytes": 40, "distinct_keys": {"f": 200000000}}, "t_distinct_values_by_int": {"cardinality": 1000000000, "avg_row_bytes": 40, "distinct_keys": {"i": 200000000}}, "t_distinct_values_empty": {"cardinality": 1000000000, "avg_row_bytes": 16, "distinct_keys": {"u64": 200000000, "n": 200000000}}}';
+SET param__internal_join_table_stat_hints = '{"t_distinct_values": {"cardinality": 1000000000, "column_bytes": {"u64": 8, "i8": 1, "i128": 16, "u256": 32, "d": 2, "d32": 4, "dt": 4, "e8": 1, "e16": 2, "uuid": 16, "ip4": 4, "n": 5, "lc": 8, "lcn": 5, "saf": 8, "only_null": 2, "f64": 8, "f32": 4, "nf": 9}, "distinct_keys": {"u64": 200000000, "i8": 200000000, "i128": 200000000, "u256": 200000000, "d": 200000000, "d32": 200000000, "dt": 200000000, "e8": 200000000, "e16": 200000000, "uuid": 200000000, "ip4": 200000000, "n": 200000000, "lc": 200000000, "lcn": 200000000, "saf": 200000000, "only_null": 200000000, "f64": 200000000, "f32": 200000000, "nf": 200000000}}, "t_distinct_values_by_float": {"cardinality": 1000000000, "column_bytes": {"f": 8}, "distinct_keys": {"f": 200000000}}, "t_distinct_values_by_int": {"cardinality": 1000000000, "column_bytes": {"i": 8}, "distinct_keys": {"i": 200000000}}, "t_distinct_values_empty": {"cardinality": 1000000000, "avg_row_bytes": 16, "distinct_keys": {"u64": 200000000, "n": 200000000}}}';
 
 SET cascades_distinct_aggregation_split = 1;
 

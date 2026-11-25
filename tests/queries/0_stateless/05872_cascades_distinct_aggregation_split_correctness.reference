@@ -1,23 +1,23 @@
 -- column, the plan with the setting on
-u64	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-i8	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-i128	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-u256	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-d	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-d32	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-dt	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-e8	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-e16	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-uuid	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-ip4	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-n	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-lc	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-lcn	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-saf	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-only_null	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- MergingAggregated <- ShuffleExchange <- Aggregating <- Expression <- ReadFromMergeTree
-f64	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Expression <- ReadFromMergeTree
-f32	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Expression <- ReadFromMergeTree
-nf	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Expression <- ReadFromMergeTree
+u64	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+i8	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+i128	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+u256	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+d	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+d32	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+dt	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+e8	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+e16	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+uuid	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+ip4	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+n	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+lc	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+lcn	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+saf	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+only_null	Expression <- MergingAggregated <- GatherExchange <- Aggregating <- Aggregating <- Expression <- ShuffleExchange <- ReadFromMergeTree
+f64	Expression <- Aggregating <- Expression <- ReadFromMergeTree
+f32	Expression <- Aggregating <- Expression <- ReadFromMergeTree
+nf	Expression <- Aggregating <- Expression <- ReadFromMergeTree
 -- column, the count with the setting on
 u64	211
 i8	100
@@ -63,20 +63,17 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        MergingAggregated
-          ShuffleExchange
-            Aggregating
-              Expression ((Before GROUP BY + Change column names to column identifiers))
-                ReadFromMergeTree (ParallelRead default.t_distinct_values_by_int)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_distinct_values_by_int)
 100
 100
 -- the same for a float column: no split
 Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ReadFromMergeTree (ParallelRead default.t_distinct_values_by_float)
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_distinct_values_by_float)
 18
 18
 -- only NULL values: one row with zero also with empty_result_for_aggregation_by_empty_set
@@ -89,12 +86,11 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        MergingAggregated
-          ShuffleExchange
-            Aggregating
-              Expression (Before GROUP BY)
-                Filter ((WHERE + Change column names to column identifiers))
-                  ReadFromMergeTree (ParallelRead default.t_distinct_values)
+        Aggregating
+          Expression (Before GROUP BY)
+            Filter ((WHERE + Change column names to column identifiers))
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_distinct_values)
 0
 0
 -- a join with a ROLLUP of one row, with a limit of 16 rows for the hash table
