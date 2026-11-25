@@ -1101,35 +1101,50 @@ QValue takeValue(Call & call)
         return takeValue(call);
     }
 
+    /// The number of the items taken. A negative count takes them from the end. The items repeat when there are fewer
+    /// of them than taken, in both directions: `5#1 2` is `1 2 1 2 1`, and `-5#1 2` is `2 1 2 1 2`, the last five items
+    /// of the repeated list.
+    if (n && *n == std::numeric_limits<Int64>::min())
+        call.fail(ErrorCodes::BAD_ARGUMENTS, "the count is too large");
+    ASTPtr size = n ? lit(Field(static_cast<UInt64>(*n < 0 ? -*n : *n))) : fn("abs", count.ast);
+    auto from_the_end = [&](ASTPtr if_negative, ASTPtr otherwise)
+    {
+        if (n)
+            return *n < 0 ? if_negative : otherwise;
+        return fn("if", fn("less", count.ast, lit(Field(static_cast<UInt64>(0)))), if_negative, otherwise);
+    };
+
     if (value.is_string && value.depth == 0)
     {
+        /// The string repeated to have at least `size` characters, and its first or last `size` characters.
+        ASTPtr length = fn("length", value.ast);
+        ASTPtr repeated = fn("repeat", value.ast, fn("toUInt64", fn("intDivOrZero", fn("plus", size, fn("minus", length, one())), length)));
         QValue result = value;
-        if (n && *n < 0)
-            result.ast = fn("substring", value.ast, lit(Field(*n)));
-        else
-            result.ast = fn("substring", value.ast, one(), count.ast);
+        result.ast = from_the_end(
+            fn("substring", repeated, fn("plus", fn("minus", fn("length", repeated), size), one()), size),
+            fn("substring", repeated, one(), size));
+        result.aggregated |= count.aggregated;
         return result;
     }
 
     if (value.depth == 0)
     {
-        QValue result = QCompiler::scalar(fn("arrayWithConstant", count.ast, value.ast), 1);
+        QValue result = QCompiler::scalar(fn("arrayWithConstant", size, value.ast), 1);
         result.qtype = value.qtype;
-        result.aggregated = value.aggregated;
+        result.aggregated = value.aggregated || count.aggregated;
         return result;
     }
 
+    /// The item at `(start + index) % length`, where `start` is zero, or for a negative count the first of the last
+    /// `size` items of the repeated list: `(length - size % length) % length`.
     QValue result = value;
-    if (n && *n < 0)
-        result.ast = fn("arraySlice", value.ast, lit(Field(*n)));
-    else
-    {
-        /// The items repeat when there are fewer of them than taken.
-        String index = call.compiler.newLambdaParameter();
-        result.ast = fn("arrayMap",
-            makeLambda({index}, fn("arrayElement", value.ast, fn("plus", fn("modulo", ident(index), fn("length", value.ast)), one()))),
-            fn("range", count.ast));
-    }
+    String index = call.compiler.newLambdaParameter();
+    ASTPtr length = fn("length", value.ast);
+    ASTPtr zero = lit(Field(static_cast<UInt64>(0)));
+    ASTPtr start = from_the_end(fn("moduloOrZero", fn("minus", length, fn("moduloOrZero", size, length)), length), zero);
+    result.ast = fn("arrayMap",
+        makeLambda({index}, fn("arrayElement", value.ast, fn("plus", fn("modulo", fn("plus", ident(index), start), length), one()))),
+        fn("range", size));
     result.aggregated |= count.aggregated;
     return result;
 }
