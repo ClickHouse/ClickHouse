@@ -182,6 +182,11 @@ AIResponse AnthropicProvider::call(const AIChatRequest & ai_request, const Conne
         {
             ai_response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
             ai_response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+            ai_response.cache_read_tokens = usage->optValue<UInt64>("cache_read_input_tokens", 0);
+            ai_response.cache_write_tokens = usage->optValue<UInt64>("cache_creation_input_tokens", 0);
+
+            /// Anthropic reports uncached input separately from cache reads and writes.
+            ai_response.input_tokens += ai_response.cache_read_tokens + ai_response.cache_write_tokens;
         }
     }
 
