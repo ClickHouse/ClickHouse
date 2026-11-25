@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 struct DistributedAsyncInsertSource::Data
 {
     LoggerPtr log = nullptr;
@@ -59,6 +64,12 @@ Chunk DistributedAsyncInsertSource::generate()
     auto block = data->block_in.read();
     if (block.empty())
         return {};
+
+    /// All blocks of a file have the structure of the first one, other blocks mean the file is broken.
+    const auto & header = getPort().getHeader();
+    if (block.getNamesAndTypesList() != header.getNamesAndTypesList())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Structure of a block in file {} ({}) does not match the structure of its first block ({})",
+            data->in.getFileName(), block.dumpStructure(), header.dumpStructure());
 
     size_t num_rows = block.rows();
     Chunk res(block.getColumns(), num_rows);
