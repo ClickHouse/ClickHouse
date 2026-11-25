@@ -1,0 +1,80 @@
+---
+slug: /clickstack/self-configured/managing/production
+title: 'Passage en production'
+sidebarTitle: 'Production'
+description: 'Passage en production avec Self-managed ClickHouse Observability'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickHouse Observability', 'production', 'déploiement', 'bonnes pratiques', 'opérations']
+---
+
+import ResourceEstimation from '/snippets/fr/_resource_estimation.mdx';
+
+<Note>
+  Cette page porte sur **Self-managed ClickHouse Observability**. Pour bénéficier de l’expérience entièrement gérée recommandée, consultez la documentation [ici](/fr/clickstack/observability/overview).
+</Note>
+
+Lorsque vous utilisez Self-managed ClickHouse Observability en production, tenez compte des pratiques suivantes en matière de sécurité, de stabilité et de configuration.
+
+[Self-managed ClickHouse Observability](/fr/clickstack/self-configured/getting-started/managed) applique par défaut des [pratiques de sécurité](/fr/products/cloud/features/security) conformes aux normes du secteur, notamment un chiffrement renforcé, une authentification et une connectivité renforcées ainsi que des contrôles d’accès gérés, tout en offrant les avantages suivants :
+
+* Mise à l’échelle automatique de la capacité de calcul, indépendamment du stockage
+* Rétention économique et pratiquement illimitée grâce au stockage d’objet
+* La possibilité d’[isoler les charges de travail de lecture et d’écriture](/fr/clickstack/self-configured/managing/isolating-read-write) grâce aux entrepôts.
+* Authentification intégrée
+* [Sauvegardes](/fr/products/cloud/features/backups/overview) automatisées
+* Mises à niveau transparentes
+
+**Suivez ces [bonnes pratiques](/fr/products/cloud/guides/production-readiness) pour ClickHouse Cloud lorsque vous utilisez Self-managed ClickHouse Observability.**
+
+## Sécuriser l’ingestion {#secure-ingestion-managed}
+
+Par défaut, le Collecteur OpenTelemetry ClickStack n’est pas sécurisé lorsqu’il est déployé en dehors des distributions Open Source et n’exige aucune authentification sur ses ports OTLP.
+
+Pour sécuriser l’ingestion, indiquez un jeton d’authentification au moyen de la variable d’environnement `OTLP_AUTH_TOKEN` lors du déploiement du collecteur. Pour plus de détails, consultez [« Sécuriser le collecteur »](/fr/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+### Créer un utilisateur d&#39;ingestion {#create-a-database-ingestion-user-managed}
+
+Il est recommandé de créer un utilisateur dédié à l&#39;OTel collector pour l&#39;ingestion dans ClickHouse Cloud, afin de garantir que les données ingérées soient envoyées vers une base de données spécifique, par exemple `otel`. Pour plus de détails, consultez [« Créer un utilisateur d&#39;ingestion »](/fr/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured).
+
+## Configurer la durée de vie (TTL) {#configure-ttl-managed}
+
+Assurez-vous que la [durée de vie (TTL)](/fr/clickstack/self-configured/managing/ttl) a été [correctement configurée](/fr/clickstack/self-configured/managing/ttl#modifying-ttl) pour votre déploiement Self-managed ClickHouse Observability. Ce paramètre détermine la durée de conservation des données ; la valeur par défaut de 30 jours devra peut-être être ajustée.
+
+## Estimation des ressources {#estimating-resources}
+
+<ResourceEstimation />
+
+Pour savoir comment affiner les hypothèses de dimensionnement selon votre environnement, consultez [« Affiner les hypothèses de dimensionnement pour votre environnement »](/fr/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions).
+
+### Isoler les charges de travail d&#39;observability {#isolating-workloads}
+
+Si vous ajoutez Self-managed ClickHouse Observability à un **service ClickHouse Cloud existant** qui gère déjà d&#39;autres charges de travail, comme l&#39;analyse de données applicative en temps réel, il est fortement recommandé d&#39;isoler le trafic d&#39;observability.
+
+Utilisez les [**entrepôts gérés**](/fr/products/cloud/features/infrastructure/warehouses) pour créer un **service enfant** dédié à l&#39;observability. Vous pourrez ainsi :
+
+* Isoler la charge d&#39;ingestion et de requêtes des applications existantes
+* Faire évoluer les charges de travail d&#39;observability de manière indépendante
+* Éviter que les requêtes d&#39;observability n&#39;affectent l&#39;analyse de données en production
+* Partager les mêmes jeux de données sous-jacents entre les services si nécessaire
+
+Cette approche garantit que vos charges de travail existantes ne sont pas affectées, tout en permettant aux charges de travail d&#39;observability d&#39;évoluer indépendamment à mesure que le volume de données d&#39;observability augmente.
+
+### Isoler les charges de travail de lecture et d’écriture {#isolating-read-write}
+
+Les entrepôts permettent également de répartir les charges de travail d’ingestion et de requête sur des capacités de calcul dédiées : l’ingestion cible un service de lecture-écriture, tandis que l’UI d’observability s’exécute sur un service en lecture seule. Il s’agit de la topologie de production recommandée pour les déploiements de grande envergure. Consultez [« Isoler les charges de travail de lecture et d’écriture »](/fr/clickstack/self-configured/managing/isolating-read-write).
+
+Pour les déploiements de plus grande envergure ou des recommandations de dimensionnement personnalisées, veuillez contacter l’assistance afin d’obtenir une estimation plus précise.
+
+## Autorisations de l&#39;utilisateur de requête {#user-permissions}
+
+Un user ClickHouse utilisé par un client de requête externe doit disposer de `readonly = 2`. L&#39;UI définit ses propres paramètres, comme `date_time_output_format`, pour chaque requête, et les graphiques en SQL brut définissent également `readonly = 2`. Avec un utilisateur en `readonly = 1`, ces requêtes échouent donc avec l&#39;erreur `Cannot modify '...' setting in readonly mode`. Avec `readonly = 2`, l&#39;UI peut également définir `max_rows_to_read`, `read_overflow_mode` et `cancel_http_readonly_queries_on_client_close`. Si vous limitez `max_rows_to_read`, autorisez au moins 1 million de lignes. `wait_end_of_query` est un paramètre de l&#39;interface HTTP et non un paramètre de configuration : il ne nécessite donc aucun grant.
+
+Par exemple :
+
+```sql
+CREATE USER clickstack_ui IDENTIFIED BY '<password>' SETTINGS readonly = 2;
+GRANT SELECT ON default.* TO clickstack_ui;
+```
+
+Par défaut, l&#39;utilisateur `default` de ClickHouse Cloud dispose de ces autorisations, mais nous vous recommandons de créer un utilisateur dédié.

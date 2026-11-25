@@ -1,0 +1,279 @@
+---
+slug: /clickstack/managed-onboarding/instrument-application-serverless
+title: 'OpenTelemetry로 애플리케이션 계측하기'
+sidebarTitle: '애플리케이션 계측하기'
+description: '데모 Node.js 애플리케이션을 OpenTelemetry로 계측하고 로그, trace, 메트릭을 ClickHouse Observability로 직접 전송합니다. collector는 필요하지 않습니다.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'instrumentation', 'OpenTelemetry', 'OTLP', 'Node.js', 'TypeScript', '세션 리플레이', '시작하기']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **요약**
+
+  작은 데모 애플리케이션을 실행한 뒤, 서비스의 시작하기 페이지에 있는 AI 프롬프트를 사용하거나 코드 두 곳을 직접 수정하여 계측합니다. 그런 다음 로그, trace, 메트릭이 ClickHouse Observability로 수신되는 것을 확인합니다.
+
+  소요 시간: 약 10분
+</Info>
+
+ClickHouse Observability 서비스 생성을 완료했습니다. 이 가이드에서는 비어 있는 서비스에서 출발하여 실행 중인 애플리케이션의 텔레메트리를 수신하기까지의 과정을 안내합니다.
+
+ClickHouse Observability는 관리형 OpenTelemetry 엔드포인트를 제공하며, 애플리케이션은 이 엔드포인트로 텔레메트리를 직접 전송합니다. collector를 실행하거나 스키마(schema)를 생성하거나 데이터베이스 크기를 산정할 필요가 없습니다. 수집, 스키마(schemas), 스토리지, 최적화, 스케일링은 모두 자동으로 처리됩니다.
+
+## 데모 애플리케이션 {#the-demo-application}
+
+실제와 유사한 계측 대상을 마련하기 위해 이 가이드에서는 바로 이 목적으로 제공하는 데모 애플리케이션인 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)를 사용합니다. 이 애플리케이션은 퍼블릭 ClickHouse 데모에 호스팅된 HackerNews 데이터셋을 쿼리하는 소규모 Node.js 및 TypeScript 앱입니다. 모든 차트, 테이블, 검색 상자는 백엔드에 보내는 실제 요청으로 동작합니다. 앱의 캐시에 적중하지 않은 요청은 ClickHouse에도 쿼리를 보내므로 각 트레이스에 아웃바운드 HTTPS 스팬이 추가됩니다.
+
+이 데모는 두 가지 버전으로 제공됩니다.
+
+* **계측되지 않은 버전**: `main` 브랜치에 있습니다. 이 가이드에서는 애플리케이션의 비즈니스 로직을 변경하지 않고 AI 에이전트를 사용하거나 직접 instrumentation을 추가합니다. 동일한 단계를 자체 서비스에도 그대로 적용할 수 있습니다.
+* **사전 계측된 버전**: `instrumented` 브랜치에 있습니다. 텔레메트리 수집을 빠르게 시작하고 UI만 살펴보려면 이 브랜치를 체크아웃하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+* ClickHouse Observability 서비스가 필요합니다. 아직 서비스가 없다면 [시작 가이드](/ko/clickstack/observability/getting-started)에 따라 생성하십시오.
+* Node.js 18 이상과 npm이 필요합니다.
+* 데모를 실행하는 머신과 브라우저에서 서비스의 텔레메트리 엔드포인트에 네트워크로 액세스할 수 있어야 합니다.
+
+## 데모 애플리케이션 계측하기 {#instrument-the-demo-application}
+
+<Steps>
+  <Step title="시작하기 페이지를 여세요" id="open-getting-started">
+    ClickHouse Observability 서비스를 엽니다. 데이터가 수신되기 전까지는 세 가지 연결 방법이 포함된 **Start sending telemetry** 페이지가 표시됩니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![아직 데이터가 없는 현재 서비스와 세 가지 옵션(기존 OpenTelemetry 설정 사용, AI로 계측하기, 설정 가이드 따르기)이 표시된 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    이 가이드에서는 **Instrument with AI**를 사용해 코딩 에이전트가 작업을 수행하도록 하거나, 직접 수정하려는 경우 **View connection details**를 사용합니다. 이 페이지는 열어 두십시오. 나중에 다시 돌아와 데이터가 수신되고 있는지 확인합니다.
+  </Step>
+
+  <Step title="데모 애플리케이션을 복제하고 실행하십시오" id="clone-and-run-the-demo-application">
+    리포지토리를 클론하고 의존성을 설치한 다음, env 템플릿 파일을 복사하세요.
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    데모를 시작하세요. ClickHouse 데이터 소스(data source)는 기본적으로 퍼블릭 읽기 전용 데모 클러스터에 연결되므로 별도의 구성 없이 바로 실행됩니다:
+
+    ```bash
+    ./run.sh
+    ```
+
+    [http://localhost:5001](http://localhost:5001)을 여십시오. 연도 선택기, 요약 통계, 활동 차트, 상위 사용자 및 도메인 테이블, 검색 상자가 표시됩니다. 연도를 바꾸거나 스토리를 자세히 살펴보는 등 자유롭게 둘러보십시오.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 데모 애플리케이션" />
+    </Frame>
+
+    현재 데모는 실행 중이지만 아직 계측되지 않은 상태이므로, 서비스에는 아직 이 데모의 데이터가 표시되지 않습니다. 다음 단계로 넘어가기 전에 Ctrl-C로 데모를 중지하십시오.
+  </Step>
+
+  <Step title="데모 계측하기" id="instrument">
+    다음 중 하나의 경로를 선택하세요. 세 가지 경로 모두 계측된 동일한 데모로 이어집니다.
+
+    <Tabs>
+      <Tab title="AI로 계측하기" id="instrument-with-ai">
+        **Start sending telemetry** 페이지의 **Instrument with AI** 아래에서 **Copy prompt**를 선택하십시오. **Set it up with an AI agent** 대화 상자가 열리고, 코딩 에이전트에 전달할 프롬프트와 계측된 앱에 필요한 시크릿 2개가 표시됩니다.
+
+        <div className="ch-image-md">
+          <Frame>
+            ![instrumentation 프롬프트와 마스킹된 CLICKSTACK_OTLP_ENDPOINT 및 CLICKSTACK_API_KEY 값이 표시된 Set it up with an AI agent 대화 상자](/images/clickstack/getting-started/observability-ai-agent-prompt.png)
+          </Frame>
+        </div>
+
+        먼저 시크릿 2개를 `hn-news-analyzer` 디렉터리의 `.env` 파일에 복사하십시오. **Reveal key**를 선택하여 전체 API Key를 표시한 다음, 옆에 있는 복사 버튼으로 복사하십시오.
+
+        ```bash
+        CLICKSTACK_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        CLICKSTACK_API_KEY=<your-api-key>
+        ```
+
+        프롬프트는 에이전트가 이 값들을 하드코딩하지 말고 반드시 환경 변수에서 읽도록 지시합니다. 데모 리포지토리에서는 `.env`가 버전 관리에서 제외되어 있습니다. 자체 애플리케이션에서는 gitignore에 등록된 `.env` 또는 시크릿 저장소를 사용하십시오.
+
+        다음으로, 프롬프트를 복사하여 Claude Code, Cursor, Copilot 등의 코딩 에이전트에 붙여넣으십시오. 이때 **`hn-news-analyzer` 디렉터리에서** 실행해야 합니다. 에이전트는 언어, 프레임워크, 진입점을 감지하고 OpenTelemetry SDK를 설치한 다음, 위의 두 변수로 익스포터를 구성하고 OTLP/HTTP를 통해 로그, trace, 메트릭을 서비스로 내보냅니다.
+
+        에이전트가 제안한 변경 사항은 적용하기 전에 검토하십시오. 작업이 완료되면 `./run.sh`로 데모를 다시 시작하십시오.
+
+        <Warning>
+          브라우저 SDK는 엔드포인트와 API Key를 브라우저 bundle에 포함하므로, 네트워크 탭을 확인하면 누구나 이 값을 볼 수 있습니다. 테스트용 서비스를 사용하고 `.env`는 버전 관리에서 제외하십시오.
+        </Warning>
+      </Tab>
+
+      <Tab title="수동 instrumentation" id="instrument-manually">
+        **Start sending telemetry** 페이지의 **Use an existing OpenTelemetry setup** 아래에서 **View connection details**를 선택한 다음 **Env vars** 탭을 여십시오. 이 탭에는 OTLP 엔드포인트와 API Key가 데모에서 사용하는 환경 변수 형식으로 표시됩니다.
+
+        <div className="ch-image-md">
+          <Frame>
+            ![URL, Collector config, Env vars 옵션과 마스킹된 연결 정보가 표시된 Set up OpenTelemetry 대화 상자](/images/clickstack/getting-started/observability-connection-details.png)
+          </Frame>
+        </div>
+
+### 데모를 서비스에 연결하기 {#configure-environment}
+
+        `.env` 파일을 열고 다음 값을 설정하십시오. 엔드포인트와 API Key는 대화 상자에 표시된 값으로 바꾸어 입력하십시오.
+
+        ```bash
+        OTEL_SERVICE_NAME=hn-analyzer-api
+        OTEL_EXPORTER_OTLP_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+        OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+        OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-api-key>
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_METRICS_EXPORTER=otlp
+        OTEL_LOGS_EXPORTER=otlp
+        ```
+
+        이 변수들은 표준 OpenTelemetry 익스포터 변수입니다. 애플리케이션 소스에는 하드코딩된 값이 없습니다.
+
+        `OTEL_EXPORTER_OTLP_ENDPOINT`에는 `https://` 접두사를 그대로 두고, `/v1/logs`, `/v1/traces`, `/v1/metrics`를 덧붙이지 마십시오. 신호별 경로는 SDK가 자동으로 추가합니다. `OTEL_EXPORTER_OTLP_HEADERS`는 `Bearer` 접두사 없이 `authorization=<your-api-key>`로 설정하십시오.
+
+        이제 계측(instrumentation)은 SDK 설치, 실행 명령 변경, 브라우저 SDK 활성화의 세 단계로 진행됩니다. 어느 단계도 애플리케이션의 비즈니스 로직을 변경하지 않습니다.
+
+### Node SDK 설치 {#install-node-sdk}
+
+        ```bash
+        npm install @hyperdx/node-opentelemetry
+        ```
+
+### run.sh에서 래퍼 활성화 {#enable-run-sh-wrapper}
+
+        `run.sh` 하단에는 `exec` 줄이 2개 있습니다. 일반 `node` 줄은 주석 처리하고, 계측된 줄은 주석을 해제하십시오.
+
+        ```diff
+         # BEFORE: plain node, no instrumentation:
+        -exec node scripts/entrypoint.js
+        +# exec node scripts/entrypoint.js
+
+         # AFTER: same source, wrapped by opentelemetry-instrument:
+        -# exec npx opentelemetry-instrument scripts/entrypoint.js
+        +exec npx opentelemetry-instrument scripts/entrypoint.js
+        ```
+
+        실행은 계속 `scripts/entrypoint.js`를 통해 하십시오. 이 shim이 `require('console')`을 호출하기 때문에 콘솔 캡처가 `console.log`를 래핑할 수 있습니다. `opentelemetry-instrument`가 `dist/server/index.js`를 직접 가리키도록 하면 트레이스는 전송되지만, 로그는 아무런 경고 없이 누락됩니다.
+
+### 브라우저 SDK 활성화 {#enable-browser-sdk}
+
+        ```bash
+        npm install @hyperdx/browser
+        ```
+
+        `src/web/telemetry.ts`에서 import 문, `HyperDX.init` 블록, `recordAction` 내부의 `HyperDX.addAction`을 주석 해제하십시오:
+
+        ```diff
+        -// import HyperDX from '@hyperdx/browser';
+        +import HyperDX from '@hyperdx/browser';
+
+         export function initTelemetry(): void {
+        -  // HyperDX.init({
+        -  //   url: __OTLP_ENDPOINT__,
+        -  //   apiKey: __OTLP_AUTH_TOKEN__,
+        -  //   service: 'hn-analyzer-web',
+        -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        -  //   consoleCapture: true,
+        -  //   advancedNetworkCapture: true,
+        -  // });
+        +  HyperDX.init({
+        +    url: __OTLP_ENDPOINT__,
+        +    apiKey: __OTLP_AUTH_TOKEN__,
+        +    service: 'hn-analyzer-web',
+        +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        +    consoleCapture: true,
+        +    advancedNetworkCapture: true,
+        +  });
+         }
+        ```
+
+        `__OTLP_ENDPOINT__`와 `__OTLP_AUTH_TOKEN__`은 `vite.config.ts`가 백엔드에서 사용하는 것과 동일한 `OTEL_EXPORTER_OTLP_*` 값을 기반으로 주입하는 컴파일 타임 상수입니다.
+
+        <Warning>
+          브라우저 SDK는 엔드포인트와 API Key를 브라우저 번들에 포함하므로, 네트워크 탭을 확인하면 누구나 이 값을 볼 수 있습니다. 테스트용 서비스를 사용하고, `.env` 파일은 버전 관리 대상에서 제외하십시오.
+        </Warning>
+
+        `./run.sh`를 실행하여 데모를 다시 시작하십시오.
+      </Tab>
+
+      <Tab title="미리 계측된 브랜치를 사용하십시오" id="use-the-instrumented-branch">
+        계측 과정을 건너뛰고 이미 계측된 데모로 바로 시작하려면 수동 계측 탭의 설명에 따라 `.env`에 `OTEL_EXPORTER_OTLP_*` 값을 설정한 후 [`instrumented` 브랜치](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented)를 체크아웃하십시오:
+
+        ```bash
+        git checkout instrumented
+        npm install
+        ./run.sh
+        ```
+
+        SDK를 제거하려는 것이 아니라면 이 브랜치에서 `./reset.sh`를 실행하지 마세요.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="트래픽을 생성하고 데이터가 수신되는지 확인하십시오" id="confirm-data-is-arriving">
+    계측된 데모가 실행 중인 상태에서 [http://localhost:5001](http://localhost:5001)을 다시 로드하여 브라우저가 업데이트된 bundle을 제공하도록 하십시오. 연도를 전환하고 기사를 클릭하여 트래픽을 생성하십시오.
+
+    수동 경로 또는 사전 계측된 브랜치를 사용했다면 시작 배너에 `/v1/traces`, `/v1/metrics`, `/v1/logs`에 대한 `Health check passed` 줄 3개가 출력됩니다. 이 검사는 데모에서 서비스로 직접 수행되므로, 검사를 통과했다면 엔드포인트와 API Key가 올바르게 설정된 것입니다.
+
+    서비스의 **Start sending telemetry** 페이지로 돌아가 **Check for data**를 선택하십시오. 텔레메트리가 수신되면 서비스 상태가 **Data received**로 변경되고 **Start exploring**을 사용할 수 있습니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![서비스 상태가 Data received로 표시되고, 탐색 준비가 완료되었다는 확인 메시지와 함께 Start exploring 버튼이 활성화된 Start sending telemetry 페이지](/images/clickstack/getting-started/observability-data-received.png)
+      </Frame>
+    </div>
+
+    **Start exploring**을 선택하여 **Search**를 여십시오.
+  </Step>
+
+  <Step title="텔레메트리 탐색" id="explore-your-telemetry">
+    1. **검색**에서 **Logs** 소스를 선택하고 시간 범위를 **Last 15 minutes**로 설정하십시오. 백엔드 로그를 확인하려면 `ServiceName`을 `hn-analyzer-api`로 필터링하십시오.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-logs.png" alt="hn-analyzer-api로 필터링된 백엔드 로그를 보여 주는 ClickHouse Observability 검색 화면" />
+    </Frame>
+
+    2. **Traces** 소스를 선택하고 `hn-analyzer-api`의 요청 하나를 여십시오. Express 핸들러 스팬, 실제 네트워크 소요 시간이 기록된 `sql-clickhouse.clickhouse.com` 대상 자식 HTTP 스팬, 그리고 같은 트레이스에 연관된 `console.log` 레코드를 확인할 수 있습니다.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-traces.png" alt="브라우저 요청, 백엔드 스팬, 상호 연관된 로그 및 ClickHouse로의 HTTP 요청을 보여 주는 ClickHouse Observability 트레이스" />
+    </Frame>
+
+    3. **클라이언트 세션**을 열고 `hn-analyzer-web`의 세션을 선택한 다음 **Session Replay**를 열어 브라우저 상호작용과 그에 따라 트리거된 요청을 함께 살펴보십시오.
+
+    <Frame>
+      <img src="/images/clickstack/getting-started/observability-hackernews-sessions.png" alt="대시보드 갱신 및 검색 이벤트가 포함된 HackerNews Analyzer 데모를 보여 주는 ClickHouse Observability 세션 리플레이" />
+    </Frame>
+
+    4. **차트 탐색기**를 열고 **Time Series**와 **Metrics** 소스를 선택한 다음, 데모에서 내보낸 메트릭을 선택하십시오. `ResourceAttributes.service.name:"hn-analyzer-api"`로 필터링하고 테스트 기간이 포함되도록 시간 범위를 선택한 후 **실행**을 클릭하여 메트릭 데이터가 수집되었는지 확인하십시오.
+
+    로그, 트레이스, 메트릭, 세션 다시 보기가 모두 한곳에 모이며, 동일한 검색 구문을 사용하고 자동으로 상호 연관됩니다.
+  </Step>
+</Steps>
+
+## 아무것도 표시되지 않는 경우 {#if-nothing-shows-up}
+
+* `.env`의 값을 확인하십시오. 엔드포인트는 `https://`로 시작하고 포트 `4318`로 끝나야 하며, `/v1/...` 접미사가 없어야 합니다. API Key는 전체 값이어야 하며, **Reveal key**를 선택하면 복사할 수 있습니다.
+* 수동 방식으로 설정한 경우, `OTEL_EXPORTER_OTLP_HEADERS`가 `Bearer` 접두사 없이 `authorization=<your-api-key>` 형식인지, 그리고 시작 배너에 `Health check passed` 줄 3개가 모두 표시되는지 확인하십시오.
+* 데모를 계측한 후 재시작했는지, 그리고 브라우저 탭을 새로 고쳤는지 확인하십시오. 세션 리플레이는 계측된 bundle이 제공된 후에야 시작됩니다.
+* **검색**에서 시간 범위를 넓히고 필터를 모두 제거하십시오. 기본 소스가 **Logs**가 아닌 **Traces**로 설정되어 있을 수 있습니다.
+* 서비스 자체의 문제인지 확인하려면 **팀 설정 → Managed Telemetry**로 이동하여 **Send a Test Log**를 사용하십시오. 이 로그가 **검색**에 표시되면 서비스는 데이터를 정상적으로 수신하고 있는 것이므로, 데모 구성에 문제가 있는 것입니다.
+
+## 다음 단계 {#next-steps}
+
+이제 서비스에 실제 애플리케이션의 텔레메트리가 저장되었습니다. 직접 운영하는 서비스를 계측하려면 서비스의 **AI로 계측하기** 프롬프트를 다시 사용하거나, 동일한 엔드포인트와 API Key로 [지원되는 언어별 SDK](/ko/clickstack/observability/ingesting-data/sdks/index)를 사용하십시오.
+
+애플리케이션 코드가 아닌 인프라에서 데이터를 수집하려면 다음을 참고하십시오.
+
+* [Kubernetes 모니터링](/ko/clickstack/observability/example-datasets/kubernetes): 클러스터 로그와 메트릭을 수집하고 Kubernetes 대시보드에서 살펴봅니다.
+* [로컬 로그 및 메트릭](/ko/clickstack/observability/example-datasets/local-data): macOS 또는 Linux에서 로컬 파일과 시스템 메트릭을 수집합니다.
+
+UI를 더 활용하려면 다음을 참고하십시오.
+
+* [검색](/ko/clickstack/observability/features/search): Lucene 스타일 구문 또는 SQL로 로그와 trace를 쿼리합니다.
+* [세션 리플레이](/ko/clickstack/observability/features/session-replay): 기능 개요, SDK 옵션, 개인정보 보호 제어 기능을 설명합니다.
+* [샘플 데이터 세트](/ko/clickstack/observability/example-datasets): 더 다양한 데이터 세트와 단계별 조사 가이드를 제공합니다.
