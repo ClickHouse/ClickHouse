@@ -1603,7 +1603,24 @@ const std::unordered_map<String, Handler> & handlers()
         h["avg"] = [](Call & c) { return simpleAggregate(c, "avg", "arrayAvg", QType::Float); };
         h["min"] = [](Call & c) { return simpleAggregate(c, "min", "arrayMin"); };
         h["max"] = [](Call & c) { return simpleAggregate(c, "max", "arrayMax"); };
-        h["med"] = [](Call & c) { return simpleAggregate(c, "medianExact", "", QType::Float); };
+        h["med"] = [](Call & c)
+        {
+            /// The median of q is the mean of the two middle values when the count of the values is even.
+            /// `medianExact` takes one of the two, while `quantileExactInclusive` interpolates between them.
+            return aggregate(c,
+                [](ASTPtr column) -> ASTPtr
+                {
+                    auto median = make_intrusive<ASTFunction>();
+                    median->name = "quantileExactInclusive";
+                    median->arguments = makeExpressionList({std::move(column)});
+                    median->children.push_back(median->arguments);
+                    median->parameters = makeExpressionList({lit(Field(0.5))});
+                    median->children.push_back(median->parameters);
+                    return median;
+                },
+                [](ASTPtr list) { return fn("arrayReduce", lit(Field(String("quantileExactInclusive(0.5)"))), std::move(list)); },
+                false, QType::Float);
+        };
         h["dev"] = [](Call & c) { return simpleAggregate(c, "stddevPop", "", QType::Float); };
         h["sdev"] = [](Call & c) { return simpleAggregate(c, "stddevSamp", "", QType::Float); };
         h["var"] = [](Call & c) { return simpleAggregate(c, "varPop", "", QType::Float); };
