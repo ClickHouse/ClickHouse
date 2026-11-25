@@ -207,8 +207,8 @@ private:
         if (!can_be_had_above)
             return Decision::Carry;
 
-        /// A column its step does not let go of is had from the output of that step only.
-        if (merged.unremovable_outputs.contains(node))
+        /// What a join makes of such a column is not what its expressions say, so it is had from its output only.
+        if (merged.opaque_outputs.contains(node))
             return Decision::Carry;
 
         /// A lambda is not a column a step can hand over. It is placed only for the higher-order function that reads it,

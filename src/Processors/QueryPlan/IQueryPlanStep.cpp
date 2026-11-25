@@ -18,7 +18,6 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
-#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -61,13 +60,6 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     if (!supportsDataflowStatisticsCollection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step {} doesn't support dataflow statistics collection", getName());
     dataflow_cache_updater = std::move(updater);
-}
-
-VectorWithMemoryTracking<size_t> IQueryPlanStep::getRemovableOutputPositions() const
-{
-    VectorWithMemoryTracking<size_t> positions(output_header ? output_header->columns() : 0);
-    std::iota(positions.begin(), positions.end(), 0);
-    return positions;
 }
 
 IQueryPlanStep::PrunedInput IQueryPlanStep::PrunedInput::unchanged(const SharedHeader & header)

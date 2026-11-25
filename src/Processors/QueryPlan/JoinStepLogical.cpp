@@ -456,19 +456,26 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findConditionInp
     return inputs_with_repeated_names;
 }
 
-VectorWithMemoryTracking<size_t> JoinStepLogical::getRemovableOutputPositions() const
+/// The positions of the outputs computed from any of `inputs`, sorted.
+static VectorWithMemoryTracking<size_t> findOutputPositionsReading(
+    const ActionsDAG & actions_dag, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & inputs)
 {
-    const auto inputs_with_repeated_names = findConditionInputsWithRepeatedNames(join_operator, expression_actions, input_headers);
-    if (inputs_with_repeated_names.empty())
-        return IQueryPlanStep::getRemovableOutputPositions();
-
     VectorWithMemoryTracking<size_t> positions;
-    const auto & outputs = expression_actions.getActionsDAG()->getOutputs();
+    if (inputs.empty())
+        return positions;
+
+    const auto & outputs = actions_dag.getOutputs();
     for (size_t position = 0; position < outputs.size(); ++position)
-        if (!anyReachableNode({outputs[position]}, [&](const ActionsDAG::Node * node) { return inputs_with_repeated_names.contains(node); }))
+        if (anyReachableNode({outputs[position]}, [&](const ActionsDAG::Node * node) { return inputs.contains(node); }))
             positions.push_back(position);
 
     return positions;
+}
+
+VectorWithMemoryTracking<size_t> JoinStepLogical::getOutputPositionsReadingRepeatedNames() const
+{
+    return findOutputPositionsReading(
+        *expression_actions.getActionsDAG(), findConditionInputsWithRepeatedNames(join_operator, expression_actions, input_headers));
 }
 
 JoinStepLogical::UnneededColumnsPlan
@@ -481,9 +488,10 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     const SetWithMemoryTracking<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
-    /// All the inputs of such a name have to stay for the physical join to keep taking the same one of them.
+    /// All the inputs of such a name have to stay for the physical join to keep taking the same one of them,
+    /// and so does what the join outputs of them.
     const auto inputs_with_repeated_names = findConditionInputsWithRepeatedNames(join_operator, expression_actions, input_headers);
-    const auto removable_output_positions = getRemovableOutputPositions();
+    const auto positions_reading_repeated_names = findOutputPositionsReading(actions_dag, inputs_with_repeated_names);
 
     ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
@@ -497,7 +505,7 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
         if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node)
-            || !std::ranges::binary_search(removable_output_positions, position))
+            || std::ranges::binary_search(positions_reading_repeated_names, position))
             kept_output_nodes.push_back(output_node);
         else
             plan.dropped_output_positions.push_back(position);

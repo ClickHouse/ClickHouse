@@ -210,14 +210,14 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     [[nodiscard]] bool canRemoveUnusedColumns() const override;
-
-    /// All but the columns the join outputs of an input whose name a join condition reads and the header of its
-    /// side repeats. The physical join finds its columns by name, so of the columns of that name it takes the
-    /// first, whichever one the condition reads: what it makes of them is not what its expressions say.
-    [[nodiscard]] VectorWithMemoryTracking<size_t> getRemovableOutputPositions() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
     [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
+
+    /// The physical join finds its columns by name. Where a side has several columns named as an input a join
+    /// condition reads, it takes the first of them, whichever one the condition reads, so what the join makes of
+    /// them is not what its expressions say. These are the positions of the columns it outputs of such inputs.
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getOutputPositionsReadingRepeatedNames() const;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join

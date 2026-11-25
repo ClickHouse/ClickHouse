@@ -274,7 +274,7 @@ void uniteRightSide(Built & built, Built & right)
     built.dag.nearest_padded_side.merge(right.dag.nearest_padded_side);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_outputs.merge(right.dag.step_outputs);
-    built.dag.unremovable_outputs.insert(right.dag.unremovable_outputs.begin(), right.dag.unremovable_outputs.end());
+    built.dag.opaque_outputs.insert(right.dag.opaque_outputs.begin(), right.dag.opaque_outputs.end());
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 }
 
@@ -508,18 +508,14 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, VectorWithMemoryTr
         return {};
     dag_outputs.resize(step_dag.getOutputs().size());
 
-    /// See `MergedPlanDAG::unremovable_outputs`. A join above can pad such a value as any other of this subtree.
-    const auto removable_positions = join_step->getRemovableOutputPositions();
-    for (size_t position = 0; position < dag_outputs.size(); ++position)
+    /// See `MergedPlanDAG::opaque_outputs`. A join above can pad such a value as any other of this subtree.
+    for (size_t position : join_step->getOutputPositionsReadingRepeatedNames())
     {
-        if (std::ranges::binary_search(removable_positions, position))
-            continue;
-
-        const auto * kept = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
-        dag_outputs[position] = kept;
-        built.dag.origins.emplace(kept, MergedPlanDAG::Origin{&node, nullptr});
-        built.dag.unremovable_outputs.insert(kept);
-        built.ungated_nodes.push_back(kept);
+        const auto * opaque = &dag.addAlias(*dag_outputs[position], dag_outputs[position]->result_name);
+        dag_outputs[position] = opaque;
+        built.dag.origins.emplace(opaque, MergedPlanDAG::Origin{&node, nullptr});
+        built.dag.opaque_outputs.insert(opaque);
+        built.ungated_nodes.push_back(opaque);
     }
 
     collectJoinConditions(built, join_operator, clone_mapping);
