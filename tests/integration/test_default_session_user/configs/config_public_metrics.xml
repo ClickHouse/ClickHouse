@@ -1,0 +1,19 @@
+<clickhouse>
+    <!-- `test_users_without_password_warning_metrics_only_listener` stops all the other listeners: then the
+         server answers queries on the loopback address only, while a `prometheus` endpoint listens on all
+         addresses. Without a `prometheus.handlers` section, the endpoint only exposes metrics. -->
+    <protocols>
+        <loopback_tcp>
+            <type>tcp</type>
+            <host>127.0.0.1</host>
+            <port>9120</port>
+            <description>native protocol on the loopback address</description>
+        </loopback_tcp>
+        <public_metrics>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9121</port>
+            <description>prometheus protocol on all addresses</description>
+        </public_metrics>
+    </protocols>
+</clickhouse>

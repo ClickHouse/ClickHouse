@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Maintains the warning in `system.warnings` that users can connect from any host without a password while the server
-/// accepts connections on a non-loopback address. Only the users whose names a client does not need to guess are checked:
+/// authenticates users on a non-loopback address. Only the users whose names a client does not need to guess are checked:
 /// the well-known `default` and the users that connections without a user name get (`default_session_user`, globally or per
 /// endpoint of the `protocols` section). A user restricted by `networks` / `HOST` (e.g. to localhost) is a deliberate setup.
 ///
@@ -23,7 +23,7 @@ namespace DB
 class UsersWithoutPasswordWarning
 {
 public:
-    /// A listening socket that accepts connections of users.
+    /// A listening socket that authenticates the users of its connections (not one that only exposes metrics, for example).
     struct Listener
     {
         String host;

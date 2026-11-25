@@ -99,6 +99,13 @@ public:
     [[nodiscard]] const std::optional<String> & getDefaultSessionUser() const { return default_session_user; }
     void setDefaultSessionUser(std::optional<String> default_session_user_) { default_session_user = std::move(default_session_user_); }
 
+    /// Whether a client of this server can log in as a user it names (or, without a user name, as the default session user)
+    /// with the credentials of that user. The server clears it for a listener whose handlers, as configured when the listener
+    /// is created, only expose metrics or only log in as a user fixed in the configuration (a `prometheus` listener).
+    /// Like `getDefaultSessionUser`, this is what the handlers were created with.
+    [[nodiscard]] bool authenticatesUsers() const { return authenticates_users; }
+    void setAuthenticatesUsers(bool authenticates_users_) { authenticates_users = authenticates_users_; }
+
 private:
     class Impl
     {
@@ -122,6 +129,7 @@ private:
     std::string description;
     std::unique_ptr<Impl> impl;
     std::optional<String> default_session_user;
+    bool authenticates_users = true;
     bool supports_runtime_reconfiguration = true;
     bool started = false;
 };

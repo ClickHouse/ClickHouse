@@ -89,7 +89,9 @@ private:
         UInt16 port,
         [[maybe_unused]] bool secure = false) const;
 
-    /// `default_session_user` receives the override of the setting that the handlers of the stack are created with.
+    /// `default_session_user` receives the override of the setting that the handlers of the stack are created with, and
+    /// `authenticates_users` whether they authenticate users by the credentials of the client
+    /// (see `ProtocolServerAdapter::authenticatesUsers`).
     std::unique_ptr<TCPProtocolStackFactory> buildProtocolStackFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const ServerSettings & server_settings,
@@ -98,7 +100,8 @@ private:
         AsynchronousMetrics & async_metrics,
         bool & is_secure,
         ServerType::Type & protocol_type,
-        std::optional<String> & default_session_user);
+        std::optional<String> & default_session_user,
+        bool & authenticates_users);
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(

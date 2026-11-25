@@ -756,7 +756,7 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
-/// The running listeners that accept connections of users, each with the user that a connection without a user name gets.
+/// The running listeners that authenticate users, each with the user that a connection without a user name gets.
 std::vector<UsersWithoutPasswordWarning::Listener> getUserListeners(
     const String & global_default_session_user,
     std::initializer_list<const std::vector<ProtocolServerAdapter> *> server_lists)
@@ -766,8 +766,9 @@ std::vector<UsersWithoutPasswordWarning::Listener> getUserListeners(
     {
         for (const auto & server : *server_list)
         {
-            /// Keeper and the interserver protocol do not authenticate users.
-            if (server.isStopping() || server.getPortName().starts_with("keeper_server.")
+            /// Keeper and the interserver protocol do not authenticate users, nor do the handlers of a listener that, as configured
+            /// when it was created, only expose metrics or only log in as fixed users (e.g. a `prometheus` listener).
+            if (server.isStopping() || !server.authenticatesUsers() || server.getPortName().starts_with("keeper_server.")
                 || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTP
                 || server.getProtocolType() == ServerType::Type::INTERSERVER_HTTPS)
                 continue;
@@ -4416,6 +4417,14 @@ bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfi
     return false;
 }
 
+/// Whether a `prometheus` listener authenticates users by the credentials of the client. The keeper-metrics-only one
+/// (`KeeperPrometheusHandler-factory`) only exposes metrics, and the regular one authenticates them only in the time-series
+/// handlers without a fixed `user`, which are exactly the handlers that consult the default session user.
+bool prometheusListenerAuthenticatesUsers(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
+{
+    return !server_settings[ServerSetting::prometheus_keeper_metrics_only] && prometheusHandlersConsumeDefaultSessionUser(config);
+}
+
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
@@ -4426,7 +4435,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     AsynchronousMetrics & async_metrics,
     bool & is_secure,
     ServerType::Type & protocol_type,
-    std::optional<String> & default_session_user)
+    std::optional<String> & default_session_user,
+    bool & authenticates_users)
 {
     /// The default session user for the endpoint: the `default_session_user` key looked up
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
@@ -4436,6 +4446,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     /// (so its handler factory is created while walking the chain) and inherit the setting from
     /// a module it references, which the walk reaches only later.
     default_session_user = getEffectiveDefaultSessionUser(config, "protocols." + protocol);
+    authenticates_users = false;
 
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
@@ -4516,7 +4527,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             else if (type == "proxy1")
                 has_proxy = true;
             else
+            {
                 leaf_type = type;
+                /// The interserver protocol does not authenticate users, and a `prometheus` endpoint may only expose metrics.
+                if (type != "interserver" && (type != "prometheus" || prometheusListenerAuthenticatesUsers(config, server_settings)))
+                    authenticates_users = true;
+            }
 
             if (type == "interserver")
                 has_interserver = true;
@@ -4644,8 +4660,10 @@ void Server::createServers(
             bool is_secure = false;
             auto protocol_type = ServerType::Type::END;
             std::optional<String> default_session_user;
+            bool authenticates_users = true;
             auto stack = buildProtocolStackFromConfig(
-                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type, default_session_user);
+                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type, default_session_user,
+                authenticates_users);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -4669,6 +4687,7 @@ void Server::createServers(
                         makeServerParams(server_settings),
                         is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
                 adapter.setDefaultSessionUser(default_session_user);
+                adapter.setAuthenticatesUsers(authenticates_users);
                 return adapter;
             });
         }
@@ -4958,19 +4977,22 @@ void Server::createServers(
             if (!config.getString(port_name, "").empty())
             {
                 auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
+                const bool authenticates_users = prometheusListenerAuthenticatesUsers(config, server_settings);
                 createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
                     socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
                     socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
+                    ProtocolServerAdapter adapter(
                         listen_host,
                         port_name,
                         ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                    adapter.setAuthenticatesUsers(authenticates_users);
+                    return adapter;
                 });
             }
         }
