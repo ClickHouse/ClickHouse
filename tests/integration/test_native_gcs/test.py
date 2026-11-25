@@ -974,11 +974,13 @@ def test_table_function_filesystem_cache(started_cluster):
     # A cache hit still needs the reader's own permission to read the object: a glob is resolved by a
     # listing, which needs only `storage.objects.list`, so the read asks for the object's metadata with
     # its own credentials before it is served from the cache.
+    # `sum`, not `count`: the reads above cached the count of the file, which would answer a `count`
+    # without reading it.
     glob_select = (
-        f"SELECT count() FROM gcs('{gcs_url('fs_cache/*.tsv')}', NOSIGN, 'TSV', 'a UInt64') {read_settings}"
+        f"SELECT sum(a) FROM gcs('{gcs_url('fs_cache/*.tsv')}', NOSIGN, 'TSV', 'a UInt64') {read_settings}"
     )
     glob_query_id = f"gcs_fs_cache_glob_{uuid.uuid4()}"
-    assert node.query(glob_select, query_id=glob_query_id).strip() == "100"
+    assert node.query(glob_select, query_id=glob_query_id).strip() == str(sum(range(100)))
     node.query("SYSTEM FLUSH LOGS")
     from_cache, metadata_requests = map(
         int,
