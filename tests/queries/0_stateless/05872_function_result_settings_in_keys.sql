@@ -32,6 +32,7 @@ DROP TABLE IF EXISTS t_bool_cast;
 DROP TABLE IF EXISTS t_json_inferred_time;
 DROP TABLE IF EXISTS t_time_array_text;
 DROP TABLE IF EXISTS t_unrelated_setting;
+DROP TABLE IF EXISTS t_shared_prefix;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -112,6 +113,10 @@ CREATE TABLE t_json_inferred_time (s String) ENGINE = MergeTree
 INSERT INTO t_json_inferred_time SELECT concat('{"a":"2024-01-01 ', leftPad(toString(number), 2, '0'), ':00:00"}') FROM numbers(24);
 CREATE TABLE t_time_array_text (dt DateTime) ENGINE = MergeTree ORDER BY toString([dt]) SETTINGS index_granularity = 1;
 INSERT INTO t_time_array_text SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
+-- Only the subexpressions computed from `formatDateTime` are unusable: the key column `lower(s)` is not.
+CREATE TABLE t_shared_prefix (s String) ENGINE = MergeTree
+    ORDER BY (lower(s), concat(lower(s), formatDateTime(toDateTime('2024-05-01', 'UTC'), '%M'))) SETTINGS index_granularity = 1;
+INSERT INTO t_shared_prefix SELECT toString(number) FROM numbers(100);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -134,6 +139,7 @@ SELECT 'changed session';
 SELECT 'primary key', count() FROM t_sort WHERE formatDateTime(dt, '%M') = '05';
 SELECT 'primary key expected', count() FROM t_sort WHERE formatDateTime(dt, '%M') = '05' SETTINGS use_primary_key = 0;
 SELECT 'primary key forced', count() FROM t_sort WHERE formatDateTime(dt, '%M') = '05' SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT 'shared prefix uses the index', count() FROM t_shared_prefix WHERE lower(s) = '5' SETTINGS force_primary_key = 1;
 SELECT 'distinct in order', count() FROM (SELECT DISTINCT b, formatDateTime(dt, '%M') FROM t_sort) SETTINGS optimize_distinct_in_order = 1, optimize_read_in_order = 1;
 SELECT 'read in order', groupArray(k) = arraySort(groupArray(k)) FROM (SELECT formatDateTime(dt, '%M') AS k FROM t_sort ORDER BY k SETTINGS optimize_read_in_order = 1, max_threads = 1);
 SELECT 'locate primary key', count() FROM t_locate WHERE locate(s, 'b') = 0;
@@ -233,6 +239,7 @@ DROP TABLE t_bool_cast;
 DROP TABLE t_json_inferred_time;
 DROP TABLE t_time_array_text;
 DROP TABLE t_unrelated_setting;
+DROP TABLE t_shared_prefix;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

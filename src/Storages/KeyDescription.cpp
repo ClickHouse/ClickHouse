@@ -9,7 +9,6 @@
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Interpreters/ActionsDAGTraversal.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -17,6 +16,8 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -35,33 +36,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings)
+void collectResultSettings(
+    const IAST & ast, const ActionsDAG & dag, const Settings & settings, std::vector<ResultSettingsOfExpression> & result_settings)
 {
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> functions;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> nodes;
     for (const auto & node : dag.getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION)
-            functions.emplace(node.result_name, &node);
+        nodes.emplace(node.result_name, &node);
 
-    auto visit = [&](this auto & self, const IAST & node) -> void
+    VectorWithMemoryTracking<const ActionsDAG::Node *> enclosing;
+    auto visit = [&](this auto & self, const IAST & ast_node) -> void
     {
-        if (const auto * function = node.as<ASTFunction>())
+        const auto * function = ast_node.as<ASTFunction>();
+        const ActionsDAG::Node * node = nullptr;
+        if (function)
+        {
+            auto it = nodes.find(function->getColumnName());
+            if (it != nodes.end())
+                node = it->second;
+        }
+        if (node)
+            enclosing.push_back(node);
+
+        if (function && !enclosing.empty())
         {
             if (const auto * registered = FunctionFactory::instance().tryGetResultSettings(function->name))
             {
                 /// A call folded into a constant or inside a lambda has no node to ask, so all its declared settings count.
-                auto it = functions.find(function->getColumnName());
-                const IFunctionBase * built = it == functions.end() ? nullptr : it->second->function_base.get();
+                const IFunctionBase * built = node && node->type == ActionsDAG::ActionType::FUNCTION ? node->function_base.get() : nullptr;
+                const String & expression = enclosing.back()->result_name;
+                auto entry = std::ranges::find(result_settings, expression, &ResultSettingsOfExpression::expression);
                 for (size_t i = 0; i < registered->settings.size(); ++i)
                 {
-                    if ((!built || built->resultDependsOnSetting(registered->settings[i])) && !result_settings.tryGet(registered->names[i]))
-                        result_settings.emplace_back(registered->names[i], settings.getByIndex(registered->indices[i]));
+                    if (built && !built->resultDependsOnSetting(registered->settings[i]))
+                        continue;
+                    if (entry == result_settings.end())
+                    {
+                        result_settings.push_back({expression, {}});
+                        entry = std::prev(result_settings.end());
+                    }
+                    if (!entry->settings.tryGet(registered->names[i]))
+                        entry->settings.emplace_back(registered->names[i], settings.getByIndex(registered->indices[i]));
                 }
             }
         }
-        for (const auto & child : node.children)
+
+        for (const auto & child : ast_node.children)
             self(*child);
+
+        if (node)
+            enclosing.pop_back();
     };
     visit(ast);
+}
+
+void collectResultSettings(const IAST & ast, const ActionsDAG & dag, const Settings & settings, SettingsChanges & result_settings)
+{
+    std::vector<ResultSettingsOfExpression> of_expressions;
+    collectResultSettings(ast, dag, settings, of_expressions);
+    for (const auto & entry : of_expressions)
+        for (const auto & change : entry.settings)
+            if (!result_settings.tryGet(change.name))
+                result_settings.push_back(change);
 }
 
 bool resultSettingsChanged(const SettingsChanges & result_settings, const Settings & settings)
@@ -236,9 +271,7 @@ KeyDescription KeyDescription::getKeyFromAST(
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
 
         /// Collected from the analyzed AST: user-defined functions are expanded there, and no call is erased by constant folding yet.
-        for (const auto & column_ast : expr->children)
-            collectResultSettings(
-                *column_ast, result.expression->getActionsDAG(), context->getSettingsRef(), result.result_settings.emplace_back());
+        collectResultSettings(*expr, result.expression->getActionsDAG(), context->getSettingsRef(), result.result_settings);
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
@@ -266,19 +299,37 @@ KeyDescription KeyDescription::getKeyFromAST(
 
 NameSet KeyDescription::getExpressionsWithChangedResultSettings(const Settings & settings) const
 {
-    NameSet result;
-    for (size_t i = 0; i < result_settings.size(); ++i)
+    NameSet changed;
+    for (const auto & entry : result_settings)
+        if (resultSettingsChanged(entry.settings, settings))
+            changed.insert(entry.expression);
+    if (changed.empty())
+        return {};
+
+    /// The expressions computed from a changed one are changed too.
+    const auto & dag = expression->getActionsDAG();
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, VectorWithMemoryTracking<const ActionsDAG::Node *>> parents;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
+    for (const auto & node : dag.getNodes())
     {
-        if (!resultSettingsChanged(result_settings[i], settings))
+        for (const auto * child : node.children)
+            parents[child].push_back(&node);
+        if (changed.contains(node.result_name))
+            stack.push_back(&node);
+    }
+
+    NameSet result;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
             continue;
-
-        const auto * output = expression->getActionsDAG().tryFindInOutputs(column_names[i]);
-        if (!output)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Key column {} is not an output of the key expression", column_names[i]);
-
-        for (const auto * node : findReachableNodes({output}))
-            if (node->type != ActionsDAG::ActionType::INPUT)
-                result.insert(node->result_name);
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            result.insert(node->result_name);
+        if (auto it = parents.find(node); it != parents.end())
+            stack.insert(stack.end(), it->second.begin(), it->second.end());
     }
     return result;
 }
