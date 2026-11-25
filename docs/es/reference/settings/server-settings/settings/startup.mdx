@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="startup_mv_delay_ms">
-  ## startup_mv_delay_ms
-</div>
+## startup_mv_delay_ms {#startup_mv_delay_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Parámetro de depuración para simular el retraso en la creación de vistas materializadas
 
-<div id="startup_scripts.throw_on_error">
-  ## startup_scripts.throw_on_error
-</div>
+## startup_scripts.throw_on_error {#startup_scripts.throw_on_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Si se establece en true, el servidor no se iniciará si ocurre un error durante la ejecución del script.
 

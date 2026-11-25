@@ -176,36 +176,24 @@ quit
 импортировать схему.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
-
-</Frame>
-
+  <Frame>
+    ![Форма настройки pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
 </div>
 
 После завершения настройки консоль отобразит подтверждение, а внешний сервер
 появится в списке серверов.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
-
-</Frame>
-
+  <Frame>
+    ![Завершённая настройка pg_clickhouse для базы данных taxi в консоли ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Список внешних серверов с подключением pg_clickhouse для taxi](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
-
-</Frame>
-
+  <Frame>
+    ![Список внешних серверов с подключением pg_clickhouse для taxi](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
 </div>
 
 Теперь вы можете открыть **SQL консоль** Postgres и выполнять запросы к импортированным таблицам:
@@ -351,11 +339,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 Теперь выполните запрос к таблице:
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 Обратите внимание, как быстро выполнился запрос. pg&#95;clickhouse целиком
@@ -363,12 +351,12 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 Postgres возвращается только одна строка. Чтобы убедиться в этом, используйте [EXPLAIN]:
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 Обратите внимание, что &quot;Foreign Scan&quot; находится в корне плана, то есть
