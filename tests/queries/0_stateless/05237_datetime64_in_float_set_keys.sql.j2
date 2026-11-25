@@ -1,0 +1,53 @@
+-- A `DateTime64` key probes a floating-point set with the value of its cast. All timestamps within the
+-- resolution of the float convert to the same value, and only the one that the value converts back to
+-- matches it, so a key never matches a timestamp that merely lies within the float's resolution of it.
+
+SET enable_nullable_tuple_type = 1;
+
+{% for mode in [0, 1] %}
+-- Nanoseconds are below the resolution of `Float64` for a timestamp in 2026: the whole second matches its
+-- float value, while the timestamps one nanosecond away, which the cast rounds to the same value, do not.
+SELECT {{ mode }}, toUnixTimestamp64Nano(t) - 1767225600000000000 AS offset_ns,
+    (t, 1) IN (SELECT toFloat64(1767225600), 1),
+    (t, 1) NOT IN (SELECT toFloat64(1767225600), 1),
+    (toNullable(tuple(t)), 1) IN (SELECT tuple(toFloat64(1767225600)), 1),
+    (toNullable(tuple(t)), 1) NOT IN (SELECT tuple(toFloat64(1767225600)), 1),
+    toFloat64(t) = toFloat64(1767225600) AS cast_collides
+FROM (SELECT fromUnixTimestamp64Nano(1767225600000000000 + arrayJoin([-1, 0, 1]), 'UTC') AS t)
+ORDER BY offset_ns
+SETTINGS transform_null_in = {{ mode }};
+
+-- `Float32` holds a timestamp in 2026 only to a multiple of 128 seconds, and `BFloat16` to a multiple of 2^23.
+SELECT {{ mode }}, t,
+    (t, 1) IN (SELECT toFloat32(1767225600), 1),
+    (t, 1) NOT IN (SELECT toFloat32(1767225600), 1),
+    toFloat32(t) = toFloat32(1767225600) AS cast_collides
+FROM (SELECT fromUnixTimestamp64Milli(1767225600000 + arrayJoin([0, 1000]), 'UTC') AS t)
+ORDER BY t
+SETTINGS transform_null_in = {{ mode }};
+SELECT {{ mode }}, t,
+    (t, 1) IN (SELECT toBFloat16(1767225600), 1),
+    (t, 1) NOT IN (SELECT toBFloat16(1767225600), 1),
+    toBFloat16(t) = toBFloat16(1767225600) AS cast_collides
+FROM (SELECT toDateTime64(arrayJoin([1761607680, 1767225600]), 0, 'UTC') AS t)
+ORDER BY t
+SETTINGS transform_null_in = {{ mode }};
+
+-- A fraction that `Float64` holds only approximately still matches when the float converts back to the same
+-- timestamp. The nearest double to 0.29 lies below it, so truncating its product with the scale multiplier
+-- would restore 28 hundredths; the check rounds to the nearest tick instead.
+SELECT {{ mode }},
+    (toDateTime64('1970-01-01 00:00:00.29', 2, 'UTC'), 1) IN (SELECT toFloat64(0.29), 1),
+    (toDateTime64('2026-01-01 00:00:00.123', 3, 'UTC'), 1) IN (SELECT toFloat64(1767225600.123), 1),
+    (toDateTime64('2026-01-01 00:00:00.5', 9, 'UTC'), 1) IN (SELECT toFloat64(1767225600.5), 1)
+SETTINGS transform_null_in = {{ mode }};
+
+-- At nanosecond scale, the float nearest to a millisecond timestamp converts back to another nanosecond
+-- tick. That tick is the only one to match the float; its neighbor converts to the same float and does not.
+WITH toDateTime64(toFloat64(1767225600.123), 9, 'UTC') AS restored
+SELECT {{ mode }}, toUnixTimestamp64Nano(restored),
+    (restored, 1) IN (SELECT toFloat64(1767225600.123), 1),
+    (restored + INTERVAL 1 NANOSECOND, 1) IN (SELECT toFloat64(1767225600.123), 1),
+    toFloat64(restored + INTERVAL 1 NANOSECOND) = toFloat64(1767225600.123) AS cast_collides
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}

@@ -65,8 +65,8 @@ h3GetResolution(h3index)
 
 **Valeurs renvoyées**
 
-* Résolution de l’index. Plage : `[0, 15]`. [UInt8](/fr/reference/data-types/int-uint).
-* Si l’index n’est pas valide, la fonction renvoie une valeur aléatoire. Utilisez [h3IsValid](#h3isvalid) pour vérifier l’index. [UInt8](/fr/reference/data-types/int-uint).
+* Résolution de l’index. Plage : `[0, 15]`. [UInt8](/fr/reference/data-types/int-uint).
+* Si l’index n’est pas valide, la fonction lève une exception par défaut, ou renvoie `0` lorsque [`functions_h3_default_if_invalid`](/fr/reference/settings/session-settings/other#functions_h3_default_if_invalid) est activé. Utilisez [h3IsValid](#h3isvalid) pour vérifier l’index. [UInt8](/fr/reference/data-types/int-uint).
 
 **Exemple**
 
@@ -648,9 +648,10 @@ h3GetResolution(index)
 
 * `index` — Numéro d’index hexagonal. [UInt64](/fr/reference/data-types/int-uint).
 
-**Valeur de retour**
+**Valeur renvoyée**
 
-* Résolution de l’index. Plage : `[0, 15]`. [UInt8](/fr/reference/data-types/int-uint).
+* Résolution de l’index. Plage : `[0, 15]`. [UInt8](/fr/reference/data-types/int-uint).
+* Par défaut, un index invalide lève une exception ; il renvoie `0` lorsque `functions_h3_default_if_invalid` est activé.
 
 **Exemple**
 

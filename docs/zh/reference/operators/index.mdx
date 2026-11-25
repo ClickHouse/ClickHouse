@@ -673,7 +673,7 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 运算符。
   * 否则返回 `0`。
 * 对于其他值，`IS NULL` 运算符始终返回 `0`。
 
-可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null != 0 FROM TABLE`。
+当该列未在查询的其他任何位置使用时，该函数可以只读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null != 0 FROM TABLE`。此优化由 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置控制，该设置默认已启用。
 
 {/* */}
 
@@ -706,7 +706,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。
+当该列未在查询中的其他任何地方使用时，该函数可以仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。此优化由 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置控制，该设置默认启用。
 
 ## 检查布尔值 {#checking-boolean-values}
 

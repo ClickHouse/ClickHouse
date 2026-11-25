@@ -6,11 +6,7 @@ tags: ['原生客户端与接口', '错误和异常']
 keywords: ['ODBC', 'Power BI 连接器', '身份验证失败']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
-<div id="question">
-  ## 问题
-</div>
+## 问题 {#question}
 
 尝试通过连接器从 PowerBI 连接到 ClickHouse 时，会收到身份验证错误。
 
@@ -27,10 +23,14 @@ See also /etc/clickhouse-server/users.ml on the server where
 ClickHouse is installed.
 ```
 
-<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Power BI ODBC 身份验证错误对话框" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Power BI ODBC 身份验证错误对话框](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
+  </Frame>
+</div>
 
 <div id="answer">
-  ## 答案
+  ## 答案 {#answer}
 </div>
 
 请将 ClickHouse ODBC Driver 更新到 [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) 版本。

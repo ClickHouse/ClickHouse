@@ -19,15 +19,15 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
   Recomenda-se que os usuários do ClickHouse Cloud usem [ClickPipes](/pt-BR/integrations/clickpipes/home) para replicar dados do PostgreSQL para o ClickHouse. Isso oferece suporte nativo a CDC (Change Data Capture) de alto desempenho para PostgreSQL.
 </Note>
 
-Cria um banco de dados ClickHouse com tabelas de um banco de dados PostgreSQL. Primeiro, o banco de dados com engine `MaterializedPostgreSQL` cria um snapshot do banco de dados PostgreSQL e carrega as tabelas necessárias. As tabelas necessárias podem incluir qualquer subconjunto de tabelas de qualquer subconjunto de esquemas do banco de dados especificado. Junto com o snapshot, a engine do banco de dados obtém o LSN e, depois que o dump inicial das tabelas é realizado, começa a buscar atualizações do WAL. Depois que o banco de dados é criado, as tabelas adicionadas posteriormente ao banco de dados PostgreSQL não são incluídas automaticamente na replicação. Elas precisam ser adicionadas manualmente com a consulta `ATTACH TABLE db.table`.
+Cria um banco de dados ClickHouse com tabelas de um banco de dados PostgreSQL. Primeiro, o banco de dados com motor `MaterializedPostgreSQL` cria um snapshot do banco de dados PostgreSQL e carrega as tabelas necessárias. As tabelas necessárias podem incluir qualquer subconjunto de tabelas de qualquer subconjunto de esquemas do banco de dados especificado. Junto com o snapshot, o motor do banco de dados obtém o LSN e, depois que o dump inicial das tabelas é realizado, começa a buscar atualizações do WAL. Depois que o banco de dados é criado, as tabelas adicionadas posteriormente ao banco de dados PostgreSQL não são incluídas automaticamente na replicação. Elas precisam ser adicionadas manualmente com a consulta `ATTACH TABLE db.table`.
 
 A replicação é implementada com o Protocolo de Replicação Lógica do PostgreSQL, que não permite replicar DDL, mas permite identificar se ocorreram alterações que quebram a replicação (mudanças no tipo de coluna, adição/remoção de colunas). Essas alterações são detectadas e, nesse caso, as tabelas correspondentes deixam de receber atualizações. Nesse caso, você deve usar as consultas `ATTACH`/ `DETACH PERMANENTLY` para recarregar completamente a tabela. Se o DDL não quebrar a replicação (por exemplo, ao renomear uma coluna), a tabela continuará recebendo atualizações (a inserção é feita por posição).
 
 <Note>
-  Esta engine de banco de dados é experimental. Para usá-la, defina `allow_experimental_database_materialized_postgresql` como 1 em seus arquivos de configuração ou use o comando `SET`:
+  Este motor de banco de dados é experimental. Para usá-lo, defina `enable_database_materialized_postgresql` como 1 em seus arquivos de configuração ou use o comando `SET`:
 
   ```sql
-  SET allow_experimental_database_materialized_postgresql=1
+  SET enable_database_materialized_postgresql=1
   ```
 </Note>
 

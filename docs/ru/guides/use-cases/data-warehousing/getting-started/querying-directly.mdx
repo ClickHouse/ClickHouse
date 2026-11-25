@@ -67,7 +67,7 @@ ClickHouse предоставляет табличные функции для �
     Peak memory usage: 10.48 GiB.
     ```
 
-    ### Кластерный вариант
+### Кластерный вариант {#iceberg-cluster-variant}
 
     Функция [`icebergS3Cluster`](/ru/reference/functions/table-functions/icebergCluster) распределяет операции чтения между несколькими узлами кластера ClickHouse. Узел-инициатор устанавливает соединения со всеми узлами и динамически распределяет файлы данных. Каждый узел-воркер запрашивает и обрабатывает задачи до тех пор, пока не будут прочитаны все файлы. `icebergCluster` — псевдоним для `icebergS3Cluster`. Также существуют варианты для Azure ([`icebergAzureCluster`](/ru/reference/functions/table-functions/icebergCluster)) и HDFS ([`icebergHDFSCluster`](/ru/reference/functions/table-functions/icebergCluster)).
 
@@ -95,7 +95,7 @@ ClickHouse предоставляет табличные функции для �
     LIMIT 5
     ```
 
-    ### Движок таблицы
+### Движок таблицы {#iceberg-table-engine}
 
     В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблиц `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg). Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в разных сеансах без необходимости каждый раз указывать путь к хранилищу и учётные данные. Для каждого backend-хранилища предусмотрены варианты движка: `IcebergS3` (или псевдоним `Iceberg`), `IcebergAzure`, `IcebergHDFS` и `IcebergLocal`.
 
@@ -197,7 +197,7 @@ ClickHouse предоставляет табличные функции для �
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### Кластерный вариант
+### Кластерный вариант {#delta-cluster-variant}
 
     Функция [`deltaLakeCluster`](/ru/reference/functions/table-functions/deltalakeCluster) распределяет операции чтения между несколькими узлами кластера ClickHouse. Узел-инициатор динамически направляет файлы данных на воркер-узлы для параллельной обработки. `deltaLakeS3Cluster` — псевдоним для `deltaLakeCluster`. Также доступен вариант для Azure ([`deltaLakeAzureCluster`](/ru/reference/functions/table-functions/deltalakeCluster)).
 
@@ -231,7 +231,7 @@ ClickHouse предоставляет табличные функции для �
     LIMIT 5
     ```
 
-    ### Движок таблицы
+### Движок таблицы {#delta-table-engine}
 
     В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблицы `DeltaLake`](/ru/reference/engines/table-engines/integrations/deltalake) при работе с S3-совместимым хранилищем. Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в рамках их сеансов без необходимости каждый раз указывать путь к хранилищу и учётные данные.
 
@@ -290,7 +290,7 @@ ClickHouse предоставляет табличные функции для �
     hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### Кластерный вариант
+### Кластерный вариант {#hudi-cluster-variant}
 
     Функция [`hudiCluster`](/ru/reference/functions/table-functions/hudiCluster) распределяет чтение между несколькими узлами кластера ClickHouse. Узел-инициатор динамически распределяет файлы данных между воркер-узлами для параллельной обработки.
 
@@ -298,7 +298,7 @@ ClickHouse предоставляет табличные функции для �
     hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
     ```
 
-    ### Движок таблицы
+### Движок таблицы {#hudi-table-engine}
 
     Вместо того чтобы использовать табличную функцию в каждом запросе, вы можете создать постоянную таблицу с помощью [движка таблицы `Hudi`](/ru/reference/engines/table-engines/integrations/hudi). Данные по-прежнему хранятся в Объектном хранилище и читаются по запросу — в ClickHouse ничего не копируется. Преимущество в том, что определение таблицы хранится в ClickHouse и может использоваться разными пользователями в разных сеансах, без необходимости каждый раз указывать путь к хранилищу и учетные данные.
 
@@ -330,7 +330,7 @@ ClickHouse предоставляет табличные функции для �
     paimonLocal(path_to_table, [,format] [,compression_method])
     ```
 
-    ### Кластерный вариант
+### Кластерный вариант {#paimon-cluster-variant}
 
     Функция [`paimonS3Cluster`](/ru/reference/functions/table-functions/paimonCluster) распределяет операции чтения между несколькими узлами в кластере ClickHouse. Узел-инициатор динамически распределяет файлы данных между узлами-воркерами для параллельной обработки. `paimonCluster` — псевдоним `paimonS3Cluster`. Также доступны варианты для Azure ([`paimonAzureCluster`](/ru/reference/functions/table-functions/paimonCluster)) и HDFS ([`paimonHDFSCluster`](/ru/reference/functions/table-functions/paimonCluster)).
 
@@ -343,9 +343,9 @@ ClickHouse предоставляет табличные функции для �
     paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
     ```
 
-    ### Движок таблицы
+### Движок таблицы {#paimon-table-engine}
 
-    ClickHouse предоставляет экспериментальные [движки таблиц `PaimonS3`, `PaimonAzure`, `PaimonHDFS` и `PaimonLocal`](/ru/reference/engines/table-engines/integrations/paimon). Включите их с помощью `allow_experimental_paimon_storage_engine = 1`.
+    ClickHouse предоставляет экспериментальные [движки таблиц `PaimonS3`, `PaimonAzure`, `PaimonHDFS` и `PaimonLocal`](/ru/reference/engines/table-engines/integrations/paimon). Включите их с помощью `enable_paimon_storage_engine = 1`.
 
     Список поддерживаемых возможностей, включая бэкенды хранилища и другие, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полное описание см. в документации по [табличной функции `paimon`](/ru/reference/functions/table-functions/paimon).
   </Tab>

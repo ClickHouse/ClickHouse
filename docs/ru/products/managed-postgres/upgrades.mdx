@@ -7,17 +7,12 @@ keywords: ['обновления ClickHouse Managed Postgres', 'версия Pos
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
-
 ClickHouse Managed Postgres обновляет версии PostgreSQL, чтобы ваши экземпляры оставались защищёнными и актуальными. Поддерживаются как обновления минорной версии, так и мажорные обновления с минимальными перебоями.
 
-<div id="maintenance-updates">
-  ## Обновления обслуживания
-</div>
+## Обновления обслуживания {#maintenance-updates}
 
 Регулярное обслуживание экземпляров PostgreSQL включает следующее:
 
@@ -29,9 +24,7 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 
 Для экземпляров с включенными [резервными узлами](/ru/products/managed-postgres/high-availability) обновление сначала применяется к резервному узлу, а затем выполняется failover, чтобы минимизировать простой.
 
-<div id="scheduled-upgrades">
-  ## Запланированные обновления
-</div>
+## Запланированные обновления {#scheduled-upgrades}
 
 <ScalePlanFeatureBadge feature="Запланированные обновления" linking_verb_are="true" />
 
@@ -44,9 +37,7 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 [днями недели](#days-of-the-week). В плане Scale можно выбрать только временной период,
 и обновления могут выполняться в любой день в его пределах.
 
-<div id="configure-a-schedule">
-  ### Настройка расписания
-</div>
+### Настройка расписания {#configure-a-schedule}
 
 <Steps>
   <Step title="Откройте настройки экземпляра" id="open-settings">
@@ -79,9 +70,7 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 Чтобы изменить расписание экземпляра, необходимо разрешение `control-plane:postgres-service:manage`.
 Элементы управления также недоступны, если экземпляр остановлен или ещё подготавливается.
 
-<div id="time-periods">
-  ### Временные периоды
-</div>
+### Временные периоды {#time-periods}
 
 Длительность окон составляет два часа, и они всегда указываются в UTC — выбрать локальный часовой пояс
 нельзя. Доступны следующие окна:
@@ -98,9 +87,7 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 Пользовательские время начала и длительность окна, а также несколько окон для одного экземпляра не
 поддерживаются.
 
-<div id="days-of-the-week">
-  ### Дни недели
-</div>
+### Дни недели {#days-of-the-week}
 
 <EnterprisePlanFeatureBadge feature="Ограничение обновлений определёнными днями недели" />
 
@@ -110,11 +97,9 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 * **Выбран один или несколько дней** — обновления выполняются только в эти дни в пределах
   выбранного периода времени. Выбор всех семи дней равнозначен тому, что дни не выбраны.
 
-<div id="schedule-scope">
-  ### На что распространяется расписание
-</div>
+### На что распространяется расписание {#schedule-scope}
 
-Расписание регулирует только **обслуживание платформы** — обновления до минорных версий, обновления функций управляемого
+Расписание регулирует только **обслуживание платформы** — обновления до минорных версий, обновления возможностей управляемого
 сервиса и патчи операционной системы, описанные в разделе
 [Обновления обслуживания](#maintenance-updates).
 
@@ -124,21 +109,17 @@ ClickHouse Managed Postgres обновляет версии PostgreSQL, чтоб
 
 <Note>
   Запланированные обновления выполняются по мере возможности. Обслуживание может быть проведено вне назначенного окна, если это
-  необходимо для работоспособности экземпляра — например, когда использование диска достигает 95 %, — а также для
+  необходимо для работоспособности экземпляра, например, когда использование диска достигает 95%, а также для
   критических патчей безопасности и устранения уязвимостей. При необходимости вы получите уведомление о таких исключениях.
 </Note>
 
-<div id="read-replicas">
-  ### Реплики для чтения
-</div>
+### Реплики для чтения {#read-replicas}
 
 [Реплики для чтения](/ru/products/managed-postgres/read-replicas) используют расписание
 основного экземпляра и не имеют собственного, поэтому раздел **Запланированные обновления**
 для них не отображается.
 
-<div id="major-version-upgrades">
-  ## Мажорные обновления
-</div>
+## Мажорные обновления {#major-version-upgrades}
 
 Возможность мажорных обновлений (например, с 17.x до 18.x) через интерфейс и API скоро появится.
 Пока же, чтобы обновить свой экземпляр ClickHouse Managed Postgres, обратитесь в [службу поддержки](https://clickhouse.com/support/program).
