@@ -76,7 +76,7 @@ function alter_collection_of_existing_table()
     echo "${key}:"
     run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1"
     run "INSERT INTO ${table} VALUES (1)"
-    # A table that is read back from its metadata is checked in the same way as a new table.
+    # A table that is attached again with short `ATTACH` is checked in the same way as a new table.
     $CLICKHOUSE_CLIENT -q "DETACH TABLE ${table}"
     run "ATTACH TABLE ${table}"
     # The table is attached again when the collection does not have the property.
@@ -145,15 +145,16 @@ echo '--- A stored table is loaded at startup when the collection has a rejected
 # Each run of clickhouse-local with the same path loads the stored tables like a server startup.
 local_path="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
 rm -rf "$local_path"
-${CLICKHOUSE_LOCAL} --path="$local_path" --query "
-    CREATE NAMED COLLECTION nc AS ${required_keys};
-    CREATE TABLE kafka (x UInt64) ENGINE = Kafka(nc);
-    ALTER NAMED COLLECTION nc SET \`kafka.ssl_ca_location\` = '/etc/passwd';" < /dev/null
-for query in \
-    "SELECT name FROM system.tables WHERE database = currentDatabase()" \
-    "SELECT * FROM kafka SETTINGS stream_like_engine_allow_direct_select = 1" \
-    "DROP TABLE kafka; SELECT count() FROM system.tables WHERE database = currentDatabase()"
-do
-    ${CLICKHOUSE_LOCAL} --path="$local_path" --query "$query" 2>&1 < /dev/null | grep -o -e '^Code: [0-9]*' -e '^[a-z0-9]*$' | head -1
-done
+$CLICKHOUSE_LOCAL --path="$local_path" --query "
+    CREATE NAMED COLLECTION ${collection}_local AS ${required_keys};
+    CREATE TABLE kafka_local_table (x UInt64) ENGINE = Kafka(${collection}_local);
+    ALTER NAMED COLLECTION ${collection}_local SET \`kafka.ssl_ca_location\` = '/etc/passwd';" < /dev/null
+# Prints the result, or the code of the error.
+function local_query()
+{
+    $CLICKHOUSE_LOCAL --path="$local_path" --query "$1" 2>&1 < /dev/null | grep -o -e '^Code: [0-9]*' -e '^[a-z0-9_]*$' | head -1
+}
+echo "system.tables: $(local_query "SELECT name FROM system.tables WHERE database = currentDatabase()")"
+echo "SELECT: $(local_query "SELECT * FROM kafka_local_table SETTINGS stream_like_engine_allow_direct_select = 1")"
+echo "DROP TABLE: $(local_query "DROP TABLE kafka_local_table; SELECT count() FROM system.tables WHERE database = currentDatabase()")"
 rm -rf "$local_path"

@@ -128,7 +128,7 @@ void registerStorageKafka(StorageFactory & factory)
             &args.table_id,
             args.storage_def->settings))
         {
-            /// The named collection is checked also on short `ATTACH`: the collection can change after the table is created.
+            /// The named collection is still checked on short `ATTACH`: the collection can change after the table is created.
             /// It is not checked on server startup, so the table stays loadable; its consumers and producers check it again.
             if (!isLoadingFromExistingMetadata(args.mode))
                 KafkaConfigLoader::checkNamedCollection(*named_collection);
