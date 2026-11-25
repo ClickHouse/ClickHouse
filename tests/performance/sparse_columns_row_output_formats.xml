@@ -1,0 +1,69 @@
+<test>
+    <!--
+        Row output formats writing sparse columns: 20 sparse columns, 2% of their values are not the default.
+        Shell queries over HTTP, because the native protocol of the SQL queries does not use a row output format.
+    -->
+
+    <create_query>CREATE TABLE sparse_row_formats (
+        id UInt64,
+        u1 UInt64,
+        u2 UInt64,
+        u3 UInt64,
+        u4 UInt64,
+        u5 UInt64,
+        u6 UInt64,
+        u7 UInt64,
+        u8 UInt64,
+        u9 UInt64,
+        u10 UInt64,
+        u11 UInt64,
+        u12 UInt64,
+        u13 UInt64,
+        u14 UInt64,
+        u15 UInt64,
+        u16 UInt64,
+        s1 String,
+        s2 String,
+        s3 String,
+        s4 String)
+    ENGINE = MergeTree ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO sparse_row_formats SELECT
+        number,
+        if(cityHash64(number, 1) % 50 = 0, cityHash64(number, 101) % 1000000, 0),
+        if(cityHash64(number, 2) % 50 = 0, cityHash64(number, 102) % 1000000, 0),
+        if(cityHash64(number, 3) % 50 = 0, cityHash64(number, 103) % 1000000, 0),
+        if(cityHash64(number, 4) % 50 = 0, cityHash64(number, 104) % 1000000, 0),
+        if(cityHash64(number, 5) % 50 = 0, cityHash64(number, 105) % 1000000, 0),
+        if(cityHash64(number, 6) % 50 = 0, cityHash64(number, 106) % 1000000, 0),
+        if(cityHash64(number, 7) % 50 = 0, cityHash64(number, 107) % 1000000, 0),
+        if(cityHash64(number, 8) % 50 = 0, cityHash64(number, 108) % 1000000, 0),
+        if(cityHash64(number, 9) % 50 = 0, cityHash64(number, 109) % 1000000, 0),
+        if(cityHash64(number, 10) % 50 = 0, cityHash64(number, 110) % 1000000, 0),
+        if(cityHash64(number, 11) % 50 = 0, cityHash64(number, 111) % 1000000, 0),
+        if(cityHash64(number, 12) % 50 = 0, cityHash64(number, 112) % 1000000, 0),
+        if(cityHash64(number, 13) % 50 = 0, cityHash64(number, 113) % 1000000, 0),
+        if(cityHash64(number, 14) % 50 = 0, cityHash64(number, 114) % 1000000, 0),
+        if(cityHash64(number, 15) % 50 = 0, cityHash64(number, 115) % 1000000, 0),
+        if(cityHash64(number, 16) % 50 = 0, cityHash64(number, 116) % 1000000, 0),
+        if(cityHash64(number, 17) % 50 = 0, concat('v', toString(cityHash64(number, 117) % 100000)), ''),
+        if(cityHash64(number, 18) % 50 = 0, concat('v', toString(cityHash64(number, 118) % 100000)), ''),
+        if(cityHash64(number, 19) % 50 = 0, concat('v', toString(cityHash64(number, 119) % 100000)), ''),
+        if(cityHash64(number, 20) % 50 = 0, concat('v', toString(cityHash64(number, 120) % 100000)), '')
+    FROM numbers(2000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE sparse_row_formats FINAL</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" \
+            --data-binary "SELECT * FROM sparse_row_formats FORMAT TSV" \
+            -o /dev/null
+    ]]></query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?output_format_parallel_formatting=0" \
+            --data-binary "SELECT * FROM sparse_row_formats FORMAT RowBinary" \
+            -o /dev/null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS sparse_row_formats</drop_query>
+</test>
