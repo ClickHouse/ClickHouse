@@ -1162,7 +1162,7 @@ public:
             state = 1;
 
             auto pos_after_bracket = pos;
-            auto old_expected = expected;
+            auto old_expected = expected.save();
 
             ParserKeyword all(Keyword::ALL);
             ParserKeyword distinct(Keyword::DISTINCT);
@@ -1185,7 +1185,7 @@ public:
                 if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
                 {
                     pos = pos_after_bracket;
-                    expected = old_expected;
+                    expected.restore(old_expected);
                     has_all = false;
                     has_distinct = false;
                 }
@@ -1246,7 +1246,7 @@ public:
                         return false;
 
                     auto pos_after_bracket = pos;
-                    auto old_expected = expected;
+                    auto old_expected = expected.save();
 
                     ParserKeyword all(Keyword::ALL);
                     ParserKeyword distinct(Keyword::DISTINCT);
@@ -1269,7 +1269,7 @@ public:
                         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
                         {
                             pos = pos_after_bracket;
-                            expected = old_expected;
+                            expected.restore(old_expected);
                             has_distinct = false;
                         }
                     }
@@ -2798,7 +2798,7 @@ public:
             state = 1;
 
             auto begin = pos;
-            auto init_expected = expected;
+            auto init_expected = expected.save();
             ASTPtr string_literal;
             String literal;
 
@@ -2829,7 +2829,7 @@ public:
                 if (!token_pos.isValid())
                 {
                     pos = begin;
-                    expected = init_expected;
+                    expected.restore(init_expected);
                     return true;
                 }
 
