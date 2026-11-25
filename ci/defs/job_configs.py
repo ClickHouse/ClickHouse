@@ -387,6 +387,29 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         needs_submodules=True,
     )
+    libcxx_external_threading_jobs = Job.Config(
+        name=JobNames.LIBCXX_EXTERNAL_THREADING,
+        runs_on=[],
+        command="python3 ./ci/jobs/libcxx_external_threading_job.py {PARAMETER}",
+        run_in_docker="clickhouse/fasttest",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/libcxx_external_threading_job.py",
+                "./base/libcxx-external-threading",
+                "./contrib/llvm-project",
+                "./contrib/libcxx-cmake",
+                "./contrib/libcxxabi-cmake",
+                "./contrib/silk",
+                "./contrib/silk-cmake",
+                "./cmake/cxx.cmake",
+            ],
+        ),
+        needs_submodules=True,
+    ).parametrize(
+        Job.ParamSet(parameter="release", runs_on=RunnerLabels.ARM_MEDIUM),
+        Job.ParamSet(parameter="tsan", runs_on=RunnerLabels.AMD_MEDIUM),
+        Job.ParamSet(parameter="asan", runs_on=RunnerLabels.AMD_MEDIUM),
+    )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
         runs_on=None,  # from parametrize()

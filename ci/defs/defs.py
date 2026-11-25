@@ -453,6 +453,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    LIBCXX_EXTERNAL_THREADING = "Libcxx external threading tests"
     CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"

@@ -1,6 +1,11 @@
 if (ENABLE_SILK)
-    add_library(libcxx-external-threading STATIC external_threading.cpp)
+    add_library(libcxx-external-threading STATIC external_threading.cpp thread_impl.cpp)
     target_compile_options(libcxx-external-threading PRIVATE -Wno-pragma-clang-attribute)
     target_link_libraries(libcxx-external-threading PRIVATE ch_contrib::silk_fibers)
     target_link_libraries(cxx PUBLIC $<LINK_ONLY:libcxx-external-threading>)
+
+    option(ENABLE_LIBCXX_EXTERNAL_THREADING_TESTS "Build the libc++ thread tests against the external threading in thread, fiber and mixed modes" OFF)
+    if (ENABLE_LIBCXX_EXTERNAL_THREADING_TESTS)
+        add_subdirectory(tests)
+    endif ()
 endif ()
