@@ -641,6 +641,12 @@ void StorageNATS::readStream(
     if (stream_settings.watermark)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine NATS");
 
+    /// A read with an empty block would never fetch a message and never finish.
+    const size_t max_block_size = getMaxBlockSize();
+    if (max_block_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The block size of a table with engine NATS must not be zero for STREAM, check the setting `nats_max_block_size`");
+
     auto modified_context = addSettings(local_context);
 
     NATSStreamSource::Params params{
@@ -649,7 +655,7 @@ void StorageNATS::readStream(
         .subjects = subjects,
         .format_name = format_name,
         .handle_error_mode = (*nats_settings)[NATSSetting::nats_handle_error_mode],
-        .max_block_size = getMaxBlockSize(),
+        .max_block_size = max_block_size,
         .poll_timeout_ms = std::max<size_t>(100, modified_context->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
         .table_name = getStorageID().getTableName(),
     };
