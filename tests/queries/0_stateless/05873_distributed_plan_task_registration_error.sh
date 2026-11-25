@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-QUERY_ID="${CLICKHOUSE_DATABASE}_task_registration_failure"
+QUERY_ID="${CLICKHOUSE_DATABASE}_task_registration_error"
 
 $CLICKHOUSE_CLIENT --query "CREATE TABLE t_task_registration (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_task_registration SELECT number % 100, number FROM numbers(10000)"
