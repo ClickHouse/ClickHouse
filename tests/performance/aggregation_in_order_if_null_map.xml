@@ -1,15 +1,32 @@
 <test>
-    <create_query>CREATE TABLE agg_in_order_if_null_map (k UInt32, x Nullable(Float64), cond UInt8, y Float64, cn Nullable(UInt8), w Nullable(Float64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <!-- Groups of 1024 rows keep the per-group work, whose speed depends on the code layout of the build, a small part of the time.
+         `corr` and `argMinIf`, the least layout-sensitive queries, use groups of 128 rows and `minIf` uses 256, so the per-group work they must still measure stays a large share. -->
+    <create_query>CREATE TABLE agg_in_order_if_null_map_g1024 (k UInt32, x Nullable(Float64), cond UInt8, y Float64, cn Nullable(UInt8), w Nullable(Float64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE agg_in_order_if_null_map_g128 (k UInt32, x Nullable(Float64), cond UInt8, y Float64, cn Nullable(UInt8), w Nullable(Float64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE agg_in_order_if_null_map_g256 (k UInt32, x Nullable(Float64), cond UInt8, y Float64, cn Nullable(UInt8), w Nullable(Float64)) ENGINE = MergeTree ORDER BY k</create_query>
 
-    <fill_query>INSERT INTO agg_in_order_if_null_map SELECT intDiv(number, 8), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0, toFloat64(number % 1000), if(number % 23 = 0, NULL, toUInt8(number % 3 != 0)), if(number % 13 = 0, NULL, toFloat64(number % 97)) FROM numbers_mt(5000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE agg_in_order_if_null_map FINAL</fill_query>
+    <fill_query>INSERT INTO agg_in_order_if_null_map_g1024 SELECT intDiv(number, 1024), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0, toFloat64(number % 1000), if(number % 23 = 0, NULL, toUInt8(number % 3 != 0)), if(number % 13 = 0, NULL, toFloat64(number % 97)) FROM numbers_mt(80000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_if_null_map_g1024 FINAL</fill_query>
+    <fill_query>INSERT INTO agg_in_order_if_null_map_g128 SELECT intDiv(number, 128), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0, toFloat64(number % 1000), if(number % 23 = 0, NULL, toUInt8(number % 3 != 0)), if(number % 13 = 0, NULL, toFloat64(number % 97)) FROM numbers_mt(40000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_if_null_map_g128 FINAL</fill_query>
+    <fill_query>INSERT INTO agg_in_order_if_null_map_g256 SELECT intDiv(number, 256), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0, toFloat64(number % 1000), if(number % 23 = 0, NULL, toUInt8(number % 3 != 0)), if(number % 13 = 0, NULL, toFloat64(number % 97)) FROM numbers_mt(60000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_if_null_map_g256 FINAL</fill_query>
 
-    <query>SELECT k, sumIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
-    <query>SELECT k, avgIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
-    <query>SELECT k, minIf(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
-    <query>SELECT k, sumIf(y, cn) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
-    <query>SELECT k, argMinIf(y, x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
-    <query>SELECT k, corr(x, w) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, sumIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, avgIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, minIf(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, sumIf(y, cn) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, argMinIf(y, x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query disabled="1">SELECT k, corr(x, w) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
 
-    <drop_query>DROP TABLE IF EXISTS agg_in_order_if_null_map</drop_query>
+    <query>SELECT k, sumIfOrDefault(x, cond) FROM agg_in_order_if_null_map_g1024 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query>SELECT k, avgIfOrDefault(x, cond) FROM agg_in_order_if_null_map_g1024 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query>SELECT k, minIf(x, cond) FROM agg_in_order_if_null_map_g256 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query>SELECT k, sumIf(y, cn) FROM agg_in_order_if_null_map_g1024 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query>SELECT k, argMinIf(y, x, cond) FROM agg_in_order_if_null_map_g128 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+    <query>SELECT k, corr(x, w) FROM agg_in_order_if_null_map_g128 GROUP BY k SETTINGS optimize_aggregation_in_order = 1, max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_if_null_map_g1024</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_if_null_map_g128</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_if_null_map_g256</drop_query>
 </test>

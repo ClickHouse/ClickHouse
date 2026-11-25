@@ -10,7 +10,7 @@
 -- packed keys are used.
 --
 -- The right table is larger than the L2 cache, so that the `hash` join prefetches and builds the keys of its left blocks
--- 256 rows at a time.
+-- 256 rows at a time. A minimum of 0 packs the keys on any host.
 
 CREATE TABLE keys (j UInt64, k String) ENGINE = Memory;
 INSERT INTO keys
@@ -52,7 +52,7 @@ SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_th
 SELECT 'parallel_hash', getSetting('enable_packed_string_keys_in_hash_join'), count(), sum(cityHash64(p.k, p.i, b.j))
 FROM p INNER JOIN b ON p.k = b.k
 SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 4,
-    enable_packed_string_keys_in_hash_join = 1;
+    enable_packed_string_keys_in_hash_join = 1, min_rows_for_packed_string_keys_in_hash_join = 0;
 
 SELECT 'hash', getSetting('enable_packed_string_keys_in_hash_join'), count(), sum(cityHash64(p.k, p.i, b.j))
 FROM p INNER JOIN b ON p.k = b.k
@@ -61,4 +61,4 @@ SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_
 SELECT 'hash', getSetting('enable_packed_string_keys_in_hash_join'), count(), sum(cityHash64(p.k, p.i, b.j))
 FROM p INNER JOIN b ON p.k = b.k
 SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-    enable_packed_string_keys_in_hash_join = 1;
+    enable_packed_string_keys_in_hash_join = 1, min_rows_for_packed_string_keys_in_hash_join = 0;
