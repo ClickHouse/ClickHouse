@@ -94,13 +94,6 @@ public:
                 candidate->convertToNullable();
                 node = candidate;
             }
-            else
-            {
-                return;
-            }
-
-            /// A single-element tuple comparison is replaced by the comparison of its elements, which can be tuples too.
-            enterImpl(node);
         }
     }
 

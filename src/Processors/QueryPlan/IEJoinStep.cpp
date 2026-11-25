@@ -6,7 +6,6 @@
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryExecutionCounters.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
@@ -69,8 +68,6 @@ IEJoinStep::IEJoinStep(
     size_t max_block_size_,
     size_t max_block_bytes_)
     : conditions(conditions_)
-    , query_kind(kind_)
-    , query_strictness(strictness_)
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
     , size_limits(size_limits_)
     , max_block_size(max_block_size_)
@@ -133,12 +130,6 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinStep expects two input pipelines, got {}", pipelines.size());
-
-    /// A right-side SEMI/ANTI join is executed as its left-side mirror, and `system.query_log` reports
-    /// the join as executed, so report the mirrored kind. Only the side changes, not the strictness.
-    const auto executed_kind = swap_inputs ? reverseJoinKind(query_kind) : query_kind;
-
-    QueryExecutionCounters::addExecutedJoin(executed_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
 
     if (swap_inputs)
         std::swap(pipelines[0], pipelines[1]);

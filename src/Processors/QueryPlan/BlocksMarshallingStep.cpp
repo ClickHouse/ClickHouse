@@ -1,10 +1,6 @@
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 
-#include <Core/ProtocolDefines.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Processors/ISimpleTransform.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/SortChunksBySequenceNumber.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -12,17 +8,9 @@
 namespace DB
 {
 
-namespace Setting
+namespace ErrorCodes
 {
-    extern const SettingsBool enable_parallel_blocks_marshalling;
-}
-
-bool contextAllowsBlocksMarshalling(const Context & context)
-{
-    const auto & client_info = context.getClientInfo();
-    return context.getSettingsRef()[Setting::enable_parallel_blocks_marshalling]
-        && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
-        && !client_info.is_replicated_database_internal;
+    extern const int INCORRECT_DATA;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -90,25 +78,13 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 QueryPlanStepPtr BlocksMarshallingStep::deserialize(Deserialization & ctx)
 {
-    chassert(ctx.input_headers.size() == 1);
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "BlocksMarshallingStep must have exactly one input, got {}", ctx.input_headers.size());
     return std::make_unique<BlocksMarshallingStep>(ctx.input_headers.front());
 }
 
 void BlocksMarshallingStep::updateOutputHeader()
 {
-}
-
-void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry);
-void registerBlocksMarshallingStep(QueryPlanStepRegistry & registry)
-{
-    /// Declared with the version that introduced it, not the default "since version 0": unlike the
-    /// steps that only `make_distributed_plan` ships, this one is put on an ordinary shard plan by
-    /// the planner, so without an introduction version it could be written into a stream an older
-    /// peer accepts and then fails to parse.
-    registry.registerStep(
-        "BlocksMarshalling",
-        BlocksMarshallingStep::deserialize,
-        {{0, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP}});
 }
 
 }

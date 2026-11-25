@@ -131,17 +131,6 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
-
-    /// Guards the storage under its current name, following a concurrent RENAME. Waits without
-    /// polling sleeps. Returns nullptr on timeout, when `is_alive()` turns false, or right away
-    /// when an exclusive database DDL holds the database lock.
-    DDLGuardPtr tryGetDDLGuardForStorage(
-        const StoragePtr & storage,
-        const Poco::Timespan & timeout,
-        std::function<bool()> is_alive = [] { return true; });
-
-    /// Same, but throws TIMEOUT_EXCEEDED instead of returning nullptr.
-    DDLGuardPtr getDDLGuardForStorage(const StoragePtr & storage, const Poco::Timespan & timeout);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
@@ -305,11 +294,6 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
-    /// Always returns a guard, check `ownsTableLock` for the outcome.
-    DDLGuardPtr tryGetDDLGuard(
-        const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout);
-
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
@@ -336,9 +320,6 @@ private:
     TablesMarkedAsDropped getTablesToDrop();
     void dropTablesParallel(TablesMarkedAsDropped tables);
     void rescheduleDropTableTask();
-
-    void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     void reloadDisksTask();
 
@@ -394,7 +375,6 @@ private:
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     std::condition_variable wait_table_finally_dropped;
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
@@ -408,7 +388,8 @@ private:
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
 /// But such object may start using a directory in store/ since its creation.
-/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
+/// To prevent another table or database from using the same UUID (and so the same directory)
+/// concurrently, we have to mark UUID as used first.
 /// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
 /// or remove the lock if creation failed.
 /// See also addUUIDMapping(...)

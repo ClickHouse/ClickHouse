@@ -105,10 +105,6 @@ public:
     {
         virtual ~BloomFilter() = default;
 
-        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
-        /// value set intersect the two sequences in one pass instead of searching for each hash
-        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -215,13 +211,6 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
-    /// Checks if the condition has unknown atoms.
-    bool hasUnknownAtoms() const;
-
-    /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
-    /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
-    KeyCondition createWithUnknownAtomsAssumedTrue() const;
-
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
@@ -248,6 +237,15 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
+    /** Computes value of constant expression and its data type.
+      * Returns false, if expression isn't constant.
+      */
+    static bool getConstant(
+        const ASTPtr & expr,
+        Block & block_with_constants,
+        Field & out_value,
+        DataTypePtr & out_type);
+
     /** Calculate expressions, that depend only on constants.
       * For index to work when something like "WHERE Date = toDate(now())" is written.
       */
@@ -256,24 +254,11 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result,
         ContextPtr context);
 
-    /// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
-    /// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
-    /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
-    static bool fieldHasNullInside(const Field & field);
-
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
         bool single_point = false);
-
-    /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
-    /// could not be evaluated on a range (rather than because it is not monotonic there). Such an answer is an
-    /// over-approximation, so it supports no exactness claim derived from `matchesExactContinuousRange`, and it
-    /// contradicts none either. The caller takes a snapshot before a check and compares after it: the analysis of a
-    /// part runs on one thread, and the counter is the only channel that reaches through every path applying a chain,
-    /// including `MergeTreeSetIndex`.
-    static size_t getNumUnevaluableChainApplications();
 
     bool matchesExactContinuousRange() const;
 
@@ -389,10 +374,6 @@ public:
         /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
 
-        /// Position of this element in the RPN built from the filter. An element that
-        /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
-        std::optional<size_t> position_in_filter_rpn;
-
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
@@ -461,15 +442,9 @@ public:
     /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
     /// FUNCTION_NOT_IN_SET (1 element)
     ///
-    /// These atoms are relaxed when the associated constants undergo
+    /// These atoms are relaxed only when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier. Two NaN rules relax them as well, each for the bound
-    /// its condition is evaluated against: a right-unbounded FUNCTION_IN_RANGE
-    /// atom over a key column that can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns), and, for a condition built
-    /// over a getExtremes-derived hyperrectangle, a range or single-element set
-    /// atom over any key column that can hide a NaN (see
-    /// relaxAtomsOverNaNHidingColumns).
+    /// mentioned earlier.
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -483,22 +458,6 @@ public:
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
-
-    /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
-    /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
-    /// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
-    /// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
-    static bool typeMayHideNaN(const DataTypePtr & type);
-
-    /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
-    /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
-    /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
-    /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
-    void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
-
-    /// The primary-key counterpart of the above, for a NaN hidden inside a `Tuple` key column rather than
-    /// behind a `getExtremes` bound. Weaker on purpose: it keeps the exact-range machinery intact.
-    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
@@ -615,8 +574,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool nested_null_is_ordinary_value,
-        bool & out_atom_is_exact);
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -712,17 +670,11 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
-    struct SpaceFillingCurveArgument
-    {
-        String name;
-        DataTypePtr type;
-    };
-
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<SpaceFillingCurveArgument> arguments;
+        std::vector<String> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;

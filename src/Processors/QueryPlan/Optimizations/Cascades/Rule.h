@@ -50,7 +50,6 @@ OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createTwoStageAggregationTransformation();
-OptimizationRulePtr createAggregationPushdown();
 OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation();

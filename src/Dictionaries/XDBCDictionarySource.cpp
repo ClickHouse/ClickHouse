@@ -279,8 +279,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
     };
-    /// The connection string goes to the driver verbatim and can carry the password (`PWD=...`).
-    factory.registerSource("odbc", create_table_source, SecretArgumentsSpec{.secret_keys = {"connection_string"}}, Documentation{
+    factory.registerSource("odbc", create_table_source, Documentation{
         .description = R"DOCS_MD(
 # ODBC dictionary source
 
@@ -329,7 +328,7 @@ Setting fields:
 | `connection_string` | Connection string. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
-| `query` | The custom query. Optional. Its columns are taken by position, so it must return them in the [order the dictionary expects](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
+| `query` | The custom query. Optional. |
 
 <Note>
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
@@ -585,7 +584,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
     };
-    factory.registerSource("jdbc", create_table_source, SecretArgumentsSpec{.secret_keys = {"datasource"}}, Documentation{
+    factory.registerSource("jdbc", create_table_source, Documentation{
         .description = "Reads dictionary data from an external database over JDBC, via the `clickhouse-jdbc-bridge` program. Currently disabled, pending consistent support for nullable fields.",
         .syntax = "SOURCE(JDBC(datasource '...' table 'table'))",
         .related = {"odbc"}});

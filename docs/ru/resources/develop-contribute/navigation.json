@@ -23,13 +23,15 @@
     {
       "group": "Собственный протокол",
       "pages": [
-        "ru/resources/develop-contribute/native-protocol/protocol",
-        "ru/resources/develop-contribute/native-protocol/format",
+        "ru/resources/develop-contribute/native-protocol/basics",
+        "ru/resources/develop-contribute/native-protocol/client",
+        "ru/resources/develop-contribute/native-protocol/server",
+        "ru/resources/develop-contribute/native-protocol/columns",
         "ru/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "Участие в разработке",
+      "group": "Участие в проекте",
       "pages": [
         "ru/resources/develop-contribute/contribute/tests",
         "ru/resources/develop-contribute/contribute/continuous-integration",
@@ -51,13 +53,13 @@
       ]
     },
     {
-      "group": "Планы развития",
+      "group": "Дорожная карта",
       "pages": [
         "ru/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Разработка и участие в проекте",
+  "item": "Разработка и вклад",
   "root": "ru/resources/develop-contribute/index"
 }

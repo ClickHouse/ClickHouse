@@ -2,7 +2,6 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
@@ -47,16 +46,6 @@ namespace
     /// returns null if `type` is not one of the plain identifier types supported by the generator.
     ASTPtr makeHashExpressionForType(const IDataType & type, ASTs arguments)
     {
-        /// For a LowCardinality type the hash is calculated for the dictionary type, and the result
-        /// is dictionary-encoded right in the generator expression, so that the expression's type
-        /// matches the column's type and identifiers stay dictionary-encoded on every path.
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
-        {
-            if (auto nested_expression = makeHashExpressionForType(*low_cardinality_type->getDictionaryType(), std::move(arguments)))
-                return makeASTFunction("toLowCardinality", std::move(nested_expression));
-            return nullptr;
-        }
-
         WhichDataType which(type);
 
         if (which.isUInt64())
@@ -77,7 +66,7 @@ namespace
 }
 
 
-ASTPtr TimeSeriesIDGenerator::tryGetDefault(const DataTypePtr & id_type)
+ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const StorageID & table_id)
 {
     /// The `tags` column contains all the tags, including the `__name__` tag with the metric name
     /// and the tags stored in the columns specified in the `tags_to_columns` setting,
@@ -102,20 +91,11 @@ ASTPtr TimeSeriesIDGenerator::tryGetDefault(const DataTypePtr & id_type)
         }
     }
 
-    return nullptr;
-}
-
-
-ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const StorageID & table_id)
-{
-    if (auto expression = tryGetDefault(id_type))
-        return expression;
-
     throw Exception(ErrorCodes::INCORRECT_QUERY,
         "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
         "either as a DEFAULT expression of that column or in the 'id_generator' setting. "
         "An expression can be chosen automatically only for types UInt64, UInt128, UUID, FixedString(16), "
-        "the same types wrapped in LowCardinality, and tuples of two of those types",
+        "and tuples of two of those types",
         table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
 }
 

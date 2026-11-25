@@ -1,8 +1,7 @@
 #include <Common/maskSensitiveQueryParameters.h>
 
-#include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 
 #include <array>
 #include <string>
@@ -98,6 +97,8 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
     if (question == std::string::npos)
         return uri;
 
+    constexpr std::string_view hidden = "[HIDDEN]";
+
     std::string result;
     result.reserve(uri.size());
     /// Copy the path together with the '?'.
@@ -129,7 +130,7 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
             result.append(name.data(), name.size());
             result += '=';
             if (isSensitiveParameterName(name))
-                result.append(HIDDEN_SECRET);
+                result.append(hidden.data(), hidden.size());
             else
                 result.append(pair.data() + eq + 1, pair.size() - eq - 1);
         }

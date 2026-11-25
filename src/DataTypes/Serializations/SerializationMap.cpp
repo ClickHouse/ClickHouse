@@ -161,35 +161,6 @@ SerializationPtr SerializationMap::create(
     return ISerialization::pooled(getHash(nested_serialization_, serialization_version_), [&] { return new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_); });
 }
 
-namespace
-{
-
-bool isMapNestedTupleElementSubcolumn(const ISerialization::SubstreamPath & path, std::string_view element_name)
-{
-    using Substream = ISerialization::Substream;
-    return path.size() >= 2
-        && path[path.size() - 2].type == Substream::ArrayElements
-        && path.back().type == Substream::TupleElement
-        && path.back().name_of_substream == element_name;
-}
-
-}
-
-bool SerializationMap::isKeysSubcolumn(const SubstreamPath & path)
-{
-    return isMapNestedTupleElementSubcolumn(path, "keys");
-}
-
-bool SerializationMap::isValuesSubcolumn(const SubstreamPath & path)
-{
-    return isMapNestedTupleElementSubcolumn(path, "values");
-}
-
-bool SerializationMap::isKeyValueSubcolumn(const SubstreamPath & path)
-{
-    return !path.empty() && path.back().type == Substream::MapKeyValue;
-}
-
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,
@@ -734,10 +705,8 @@ void SerializationMap::enumerateStreams(
         bool enumerate_bucket_index = !settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path);
         if (enumerate_bucket_index)
         {
-            auto bucket_index_type = getSmallestIndexesType(buckets);
-            auto bucket_index_serialization = bucket_index_type->getDefaultSerialization();
+            auto bucket_index_serialization = getSmallestIndexesType(buckets)->getDefaultSerialization();
             auto bucket_index_data = SubstreamData(bucket_index_serialization)
-                .withType(map_type ? bucket_index_type : nullptr)
                 .withDeserializeState(map_deserialize_state ? map_deserialize_state->bucket_index_state : nullptr);
             bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
         }
