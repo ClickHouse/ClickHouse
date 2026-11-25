@@ -145,6 +145,10 @@ public:
     std::optional<Section> findSection(std::function<bool(const Section & section, size_t idx)> && pred) const;
     std::optional<Section> findSectionByName(const char * name) const;
 
+    /// Lets the kernel drop the resident pages that lie entirely inside `section`, if this object maps its file:
+    /// they are read again from the file when accessed. Does nothing for an object made from `data` and `size`.
+    void releaseSectionPages(const Section & section) const;
+
     const char * begin() const { return mapped; }
     const char * end() const { return mapped + elf_size; }
     size_t size() const { return elf_size; }

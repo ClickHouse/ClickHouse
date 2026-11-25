@@ -1,8 +1,12 @@
 #include <Common/Elf.h>
 #include <Common/Exception.h>
+#include <base/getPageSize.h>
 #include <base/unaligned.h>
 
+#include <cstdint>
 #include <cstring>
+
+#include <sys/mman.h>
 
 
 namespace DB
@@ -137,6 +141,29 @@ std::optional<Elf::Section> Elf::findSection(std::function<bool(const Section & 
 std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 {
     return findSection([&](const Section & section, size_t) { return 0 == strcmp(name, section.name()); });
+}
+
+
+void Elf::releaseSectionPages(const Section & section) const
+{
+    /// Only a mapping of the file is safe to drop: it is `PROT_READ` and never written, so its pages are always
+    /// those of the file. Data given by the caller may be anonymous memory, which `MADV_DONTNEED` would zero.
+    if (!in)
+        return;
+
+    const auto mapping_begin = reinterpret_cast<uintptr_t>(mapped);
+    const auto section_begin = reinterpret_cast<uintptr_t>(section.begin());
+    if (section_begin < mapping_begin || !rangeWithin(section_begin - mapping_begin, section.size(), elf_size))
+        return;
+
+    const auto page_size = static_cast<uintptr_t>(::getPageSize());
+    const uintptr_t first_page = (section_begin + page_size - 1) / page_size * page_size;
+    const uintptr_t end_page = (section_begin + section.size()) / page_size * page_size;
+    if (first_page >= end_page)
+        return;
+
+    /// Advisory: if it fails, the pages stay resident and nothing else changes.
+    [[maybe_unused]] int result = ::madvise(reinterpret_cast<void *>(first_page), end_page - first_page, MADV_DONTNEED);
 }
 
 

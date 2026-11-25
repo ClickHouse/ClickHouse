@@ -4,12 +4,14 @@
 #include <Common/Hex.h>
 #include <base/sort.h>
 #if defined(__ELF__)
-#include <Common/CompactSymbols.h>
+#include <Common/CompactSymbolLookup.h>
+#include <Common/Stopwatch.h>
 #endif
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
+#include <Common/SymbolNamePreference.h>
 
 #include <algorithm>
 #include <atomic>
@@ -20,6 +22,9 @@
 #include <numeric>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
 
 #include <filesystem>
@@ -106,125 +111,113 @@ extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t
 namespace DB
 {
 
-#if defined(__ELF__)
-class CompactSymbolTable
-{
-public:
-    explicit CompactSymbolTable(std::string_view data)
-        : reader(data)
-        , maximum_name_granule_size(reader.maximumNameGranuleSize())
-    {
-        /// Lookups cannot report errors, so reject a corrupted name payload up front and keep the section absent.
-        reader.validateNames();
-    }
-
-    CompactSymbols::Reader reader;
-    size_t maximum_name_granule_size;
-};
-#endif
-
 namespace
 {
 
-#if defined(__ELF__)
-ZstdDCtxPtr createDecompressionContext()
-{
-    ZstdDCtxPtr context(ZSTD_createDCtx());
-    if (!context)
-        throw std::bad_alloc();
-    return context;
-}
-
-std::string_view decodeCompactName(
-    const CompactSymbols::Reader & reader,
-    uint32_t granule_index,
-    uint32_t entry_index,
-    ZSTD_DCtx * decompression_context,
-    std::span<char> granule_buffer,
-    std::optional<CompactSymbols::NameGranuleDecoder> & decoder,
-    std::string & name_buffer,
-    uint32_t & cached_granule_index,
-    uint32_t & cached_entry_index)
-{
-    constexpr uint32_t no_index = std::numeric_limits<uint32_t>::max();
-
-    if (granule_index != cached_granule_index)
-    {
-        decoder.emplace(reader.decodeNameGranule(granule_index, decompression_context, granule_buffer));
-        cached_granule_index = granule_index;
-        cached_entry_index = no_index;
-        name_buffer.clear();
-    }
-    else if (cached_entry_index != no_index && cached_entry_index > entry_index)
-    {
-        decoder->reset();
-        cached_entry_index = no_index;
-        name_buffer.clear();
-    }
-
-    if (cached_entry_index == entry_index)
-        return std::string_view(name_buffer.data(), name_buffer.size());
-
-    uint32_t next_entry_index = cached_entry_index == no_index ? 0 : cached_entry_index + 1;
-    while (next_entry_index <= entry_index)
-    {
-        if (!decoder->next(name_buffer))
-            return std::string_view("");
-        cached_entry_index = next_entry_index;
-        ++next_entry_index;
-    }
-    return std::string_view(name_buffer.data(), name_buffer.size());
-}
-
-class CompactNameWorkspace
+/// The order `keepPreferredPerRange` needs to choose one symbol per address range: by the names, as
+/// `isPreferredSymbolName` orders them, and for equal names by the name reference. Reads names only when
+/// asked to compare, that is for ranges that have several symbols.
+class SymbolPreference
 {
 public:
-    CompactNameWorkspace()
-        : decompression_context(createDecompressionContext())
+#if defined(__ELF__)
+    SymbolPreference(const SymbolIndex::Data & data_, size_t maximum_name_size_, size_t maximum_granule_size_)
+        : data(data_)
+        , maximum_name_size(maximum_name_size_)
+        , maximum_granule_size(maximum_granule_size_)
     {
     }
-
-    void prepare(size_t maximum_granule_size)
+#else
+    explicit SymbolPreference(const SymbolIndex::Data & data_)
+        : data(data_)
     {
-        if (granule_buffer.size() < maximum_granule_size || name_buffer.capacity() < maximum_granule_size)
+    }
+#endif
+
+    bool prefers(const SymbolIndex::Symbol & lhs, const SymbolIndex::Symbol & rhs)
+    {
+        std::string_view lhs_name = name(lhs, lhs_storage);
+        std::string_view rhs_name = name(rhs, rhs_storage);
+        if (lhs_name != rhs_name)
+            return isPreferredSymbolName(lhs_name, rhs_name);
+        return std::pair(lhs.nameSourceId(), lhs.nameOffsetOrIndex()) < std::pair(rhs.nameSourceId(), rhs.nameOffsetOrIndex());
+    }
+
+private:
+    /// The view is valid until the next call with the same `storage`.
+    std::string_view name(const SymbolIndex::Symbol & symbol, [[maybe_unused]] std::string & storage)
+    {
+        const SymbolIndex::NameSource * source = data.nameSource(symbol);
+        if (!source)
+            return {};
+
+        if (source->kind == SymbolIndex::NameSource::Kind::Direct)
+            return source->direct_base ? std::string_view(source->direct_base + symbol.nameOffsetOrIndex()) : std::string_view();
+
+#if defined(__ELF__)
+        if (source->compact_table_index >= data.compact_symbol_tables.size())
+            return {};
+
+        if (!decompression_context)
         {
-            invalidate();
+            decompression_context = createDecompressionContext();
             granule_buffer.resize(maximum_granule_size);
-            name_buffer.reserve(maximum_granule_size);
+            name_buffer.reserve(maximum_name_size);
         }
+
+        /// The decoder continues from the previous name only within one table.
+        if (symbol.nameSourceId() != cached_source_id)
+        {
+            cached_source_id = symbol.nameSourceId();
+            cached_granule_index = std::numeric_limits<uint32_t>::max();
+            cached_entry_index = std::numeric_limits<uint32_t>::max();
+            decoder.reset();
+            name_buffer.clear();
+        }
+
+        uint32_t name_index = symbol.nameOffsetOrIndex();
+        storage.assign(decodeCompactName(
+            data.compact_symbol_tables[source->compact_table_index]->reader,
+            name_index / CompactSymbols::names_per_granule,
+            name_index % CompactSymbols::names_per_granule,
+            decompression_context.get(),
+            granule_buffer,
+            decoder,
+            name_buffer,
+            cached_granule_index,
+            cached_entry_index));
+        return storage;
+#else
+        return {};
+#endif
     }
 
-    void invalidate()
-    {
-        source_id = std::numeric_limits<uint32_t>::max();
-        granule_index = std::numeric_limits<uint32_t>::max();
-        entry_index = std::numeric_limits<uint32_t>::max();
-        decoder.reset();
-        name_buffer.clear();
-    }
-
+    const SymbolIndex::Data & data;
+    std::string lhs_storage;
+    std::string rhs_storage;
+#if defined(__ELF__)
+    size_t maximum_name_size = 0;
+    size_t maximum_granule_size = 0;
+    uint32_t cached_source_id = std::numeric_limits<uint32_t>::max();
+    uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
+    uint32_t cached_entry_index = std::numeric_limits<uint32_t>::max();
     ZstdDCtxPtr decompression_context;
     std::vector<char> granule_buffer;
     std::string name_buffer;
     std::optional<CompactSymbols::NameGranuleDecoder> decoder;
-    uint32_t source_id = std::numeric_limits<uint32_t>::max();
-    uint32_t granule_index = std::numeric_limits<uint32_t>::max();
-    uint32_t entry_index = std::numeric_limits<uint32_t>::max();
+#endif
 };
 
+#if defined(__ELF__)
 CompactNameWorkspace & compactNameWorkspace()
 {
     thread_local CompactNameWorkspace workspace;
     return workspace;
 }
 
-CompactNameWorkspace & preparedCompactNameWorkspace(size_t maximum_granule_size)
+UInt64 nameCacheNowSeconds()
 {
-    /// Account the thread-lifetime workspace globally, not to the query that first needs symbolization.
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    CompactNameWorkspace & workspace = compactNameWorkspace();
-    workspace.prepare(maximum_granule_size);
-    return workspace;
+    return clock_gettime_ns(CLOCK_MONOTONIC_COARSE) / 1'000'000'000;
 }
 
 /// Notes: "PHDR" is "Program Headers".
@@ -513,7 +506,8 @@ void collectSymbolsFromELFSymbolTable(
 }
 
 
-bool searchAndCollectSymbolsFromELFSymbolTable(
+/// Returns the symbol table and the string table it read, if it found them.
+std::optional<std::pair<Elf::Section, Elf::Section>> searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     SectionHeaderType section_header_type,
     const char * string_table_name,
@@ -532,11 +526,26 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
             return (symbol_table && string_table);
         }))
     {
-        return false;
+        return std::nullopt;
     }
 
     collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, data);
-    return true;
+    return std::pair(*symbol_table, *string_table);
+}
+
+/// Also records the tables, so that `load` releases their pages once it has selected the symbols.
+/// `elf` must be the `Elf` of an object in `data.objects`, which outlives the load.
+void searchAndCollectSymbolsFromObjectSymbolTable(
+    const Elf & elf,
+    SectionHeaderType section_header_type,
+    const char * string_table_name,
+    SymbolIndex::Data & data)
+{
+    if (auto tables = searchAndCollectSymbolsFromELFSymbolTable(elf, section_header_type, string_table_name, data))
+    {
+        data.symbol_table_sections.emplace_back(&elf, tables->first);
+        data.symbol_table_sections.emplace_back(&elf, tables->second);
+    }
 }
 
 
@@ -819,7 +828,7 @@ bool collectSymbolsFromELF(
     if (!searchAndCollectCompactSymbols(*data.objects.back().elf, data))
     {
         const size_t initial_symbol_count = data.symbols.size();
-        searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data);
+        searchAndCollectSymbolsFromObjectSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data);
         /// `.gnu_debugdata` is produced by our own `SYMBOL_SECTIONS=gnu_debugdata` packaging mode.
         /// Read it only for the main executable, so that stripped system libraries shipping MiniDebugInfo
         /// are not decompressed and kept in memory.
@@ -829,7 +838,7 @@ bool collectSymbolsFromELF(
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
+    searchAndCollectSymbolsFromObjectSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
 #endif
 
     return is_main_executable;
@@ -1057,10 +1066,13 @@ void collectSymbolsFromMachOImage(
         [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
         { return a.offset_begin < b.offset_begin; });
 
-    /// Deduplicate symbols at the same address
-    local_symbols.erase(std::unique(local_symbols.begin(), local_symbols.end(),
+    /// Keep one symbol per address, the one with the preferred name.
+    SymbolPreference preference(data);
+    local_symbols.erase(keepPreferredPerRange(local_symbols.begin(), local_symbols.end(),
         [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
-        { return a.offset_begin == b.offset_begin; }),
+        { return a.offset_begin == b.offset_begin; },
+        [&preference](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
+        { return preference.prefers(a, b); }),
         local_symbols.end());
 
     /// Mach-O nlist_64 entries don't have a size field.
@@ -1170,24 +1182,47 @@ void SymbolIndex::load()
 
 #if defined(__ELF__)
     for (const auto & table : data.compact_symbol_tables)
-        maximum_name_granule_size = std::max(maximum_name_granule_size, table->maximum_name_granule_size);
+    {
+        maximum_name_granule_size = std::max(maximum_name_granule_size, table->reader.maximumNameGranuleSize());
+        maximum_name_size = std::max(maximum_name_size, table->reader.maximumNameSize());
+    }
 #endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
 
-    /// We found symbols both from loaded program headers and from ELF symbol tables.
-    auto sort_and_deduplicate = [](std::vector<Symbol> & symbols)
+#if defined(__ELF__)
+    SymbolPreference preference(data, maximum_name_size, maximum_name_granule_size);
+#else
+    SymbolPreference preference(data);
+#endif
+
+    /// Several symbols of one range come from aliases, from identical code folding, and from reading both
+    /// the program headers and a symbol table. One of them is kept, chosen by its name, so that the result
+    /// does not depend on the order of the symbols.
+    auto sort_and_deduplicate = [&preference](std::vector<Symbol> & symbols)
     {
-        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
-        symbols.erase(std::unique(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
+        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
         {
-            return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
-        }), symbols.end());
+            return std::tie(a.offset_begin, a.offset_end) < std::tie(b.offset_begin, b.offset_end);
+        });
+        symbols.erase(keepPreferredPerRange(symbols.begin(), symbols.end(),
+            [](const Symbol & a, const Symbol & b) { return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end; },
+            [&preference](const Symbol & a, const Symbol & b) { return preference.prefers(a, b); }),
+            symbols.end());
     };
 
     sort_and_deduplicate(data.symbols);
     for (auto & object : data.objects)
         sort_and_deduplicate(object.symbols);
+
+#if defined(__ELF__)
+    /// The symbols are copied into `data`, and the selection above was the last read of their names at load:
+    /// later lookups fault the string table pages back in from the page cache.
+    for (const auto & [elf, section] : data.symbol_table_sections)
+        elf->releaseSectionPages(section);
+    data.symbol_table_sections.clear();
+    data.symbol_table_sections.shrink_to_fit();
+#endif
 
 #if defined(__ELF__)
     if (data.has_compact_symbols)
@@ -1283,40 +1318,19 @@ const char * SymbolIndex::getSymbolNameImpl(const Symbol & symbol, size_t * name
         return "";
     }
 
-    uint32_t source_id = symbol.nameSourceId();
-    uint32_t name_index = symbol.nameOffsetOrIndex();
-    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
-    uint32_t entry_index = name_index % CompactSymbols::names_per_granule;
-    CompactNameWorkspace & workspace = preparedCompactNameWorkspace(maximum_name_granule_size);
-    if (source_id != workspace.source_id)
-    {
-        workspace.invalidate();
-        workspace.source_id = source_id;
-    }
-
-    try
-    {
-        std::string_view name = decodeCompactName(
-            data.compact_symbol_tables[source->compact_table_index]->reader,
-            granule_index,
-            entry_index,
-            workspace.decompression_context.get(),
-            workspace.granule_buffer,
-            workspace.decoder,
-            workspace.name_buffer,
-            workspace.granule_index,
-            workspace.entry_index);
-        if (name_size)
-            *name_size = name.size();
-        return name.data();
-    }
-    catch (const std::runtime_error &)
-    {
-        workspace.invalidate();
-        if (name_size)
-            *name_size = 0;
-        return "";
-    }
+    UInt64 now_seconds = nameCacheNowSeconds();
+    /// Account the thread-lifetime workspace and the name caches globally, not to the query that first needs symbolization.
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    std::string_view name = compactNameWorkspace().getName(
+        *data.compact_symbol_tables[source->compact_table_index],
+        symbol.nameSourceId(),
+        symbol.nameOffsetOrIndex(),
+        now_seconds,
+        maximum_name_size,
+        maximum_name_granule_size);
+    if (name_size)
+        *name_size = name.size();
+    return name.data();
 #else
     if (name_size)
         *name_size = 0;
@@ -1328,7 +1342,12 @@ void SymbolIndex::warmUp() const
 {
 #if defined(__ELF__)
     if (maximum_name_granule_size != 0)
-        preparedCompactNameWorkspace(maximum_name_granule_size);
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        CompactNameWorkspace & workspace = compactNameWorkspace();
+        workspace.prepare(maximum_name_size, maximum_name_granule_size);
+        workspace.setNameCacheReadOnly();
+    }
 #endif
 }
 
@@ -1343,7 +1362,7 @@ SymbolIndex::SymbolIterator::SymbolIterator(const SymbolIndex & index_)
         /// allocating them under a global blocker would make their deallocation underreport the query.
         decompression_context = createDecompressionContext();
         granule_buffer.resize(index.maximum_name_granule_size);
-        name_buffer.reserve(index.maximum_name_granule_size);
+        name_buffer.reserve(index.maximum_name_size);
     }
 #endif
 }

@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include <boost/noncopyable.hpp>
 #if defined(__ELF__)
@@ -175,7 +176,8 @@ public:
     /// `getSymbolNameCString`, `getSymbolName`, or an iterator method on the same thread.
     /// An empty string is returned on failure. Copy it if needed longer.
     [[nodiscard]] const char * getSymbolNameCString(const Symbol & symbol) const;
-    /// Preallocates the compact-name workspace for the current thread.
+    /// Preallocates everything the current thread needs to decode compact names, and makes its lookups
+    /// only read the name caches, so that symbolization on this thread does not allocate.
     void warmUp() const;
     [[nodiscard]] SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
     const Object * findObject(const void * address) const;
@@ -227,6 +229,8 @@ public:
 #if defined(__ELF__)
         std::vector<std::shared_ptr<const CompactSymbolTable>> compact_symbol_tables;
         bool has_compact_symbols = false;
+        /// Symbol and string tables that the load read from the `Elf` of an object; empty after the load.
+        std::vector<std::pair<const Elf *, Elf::Section>> symbol_table_sections;
 #endif
         std::vector<uint32_t> symbol_scan_order;
         /// BuildID from the Object corresponding to main executable (as opposed to dynamic libraries).
@@ -237,6 +241,7 @@ private:
     Data data;
 #if defined(__ELF__)
     size_t maximum_name_granule_size = 0;
+    size_t maximum_name_size = 0;
 #endif
 
     void load();

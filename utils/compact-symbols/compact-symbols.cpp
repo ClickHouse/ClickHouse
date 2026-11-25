@@ -228,8 +228,8 @@ int main(int argc, char ** argv)
         std::vector<char> encoded = DB::CompactSymbols::encode(symbols);
         DB::CompactSymbols::Reader reader(std::string_view(encoded.data(), encoded.size()));
         writeFile(argv[2], encoded);
-        std::cout << "Wrote " << encoded.size() << " bytes for " << reader.addressCount() << " symbols and " << reader.nameCount()
-                  << " unique names\n";
+        std::cout << "Wrote " << encoded.size() << " bytes for " << symbols.size() << " symbols: " << reader.addressCount()
+                  << " address ranges and " << reader.nameCount() << " unique names\n";
         return 0;
     }
     catch (const std::exception & exception)
