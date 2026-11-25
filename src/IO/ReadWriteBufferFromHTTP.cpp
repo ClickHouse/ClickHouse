@@ -254,7 +254,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , read_settings(std::move(read_settings_))
     , timeouts(std::move(timeouts_))
 #if USE_SSL
-    , client_tls_context(std::move(client_tls_context_))
+    , client_tls_context(client_tls_context_)
 #endif
     , credentials(credentials_)
     , remote_host_filter(remote_host_filter_)
