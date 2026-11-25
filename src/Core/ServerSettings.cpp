@@ -1382,7 +1382,7 @@ Changeable at runtime. Disabled by default.
     DECLARE(Bool, workloads_respect_server_memory_limit, false, R"(
 When enabled, the server-wide memory limit is applied through the workload scheduler as a memory-reservation budget. A `MEMORY RESERVATION` resource `__server_memory__` is created implicitly if none is defined, and the `max_memory` of the root workload (the workload with an empty name) is derived from `max_server_memory_usage` (and its RAM ratio), so every workload shares one memory-reservation budget taken from that setting. This is a reservation-admission budget and does not replace the process-wide memory limit, which continues to apply. The budget is taken from the configured `max_server_memory_usage` when the configuration is loaded or reloaded; it does not follow runtime adjustments of the process-wide limit made by `memory_worker_dynamic_hard_limit`, so between reloads it may be larger than the limit in effect.
 
-Enable `implicit_default_workload` together with this setting (or define a `default` workload). Only queries classified into a workload reserve from this budget. Without a `default` workload, a query using the default `workload` setting value, and the background merges and mutations that use the default workload, do not reserve from it; with `throw_on_unknown_workload = 1`, such queries fail instead.
+Enable `implicit_default_workload` together with this setting (or define a `default` workload). Only queries classified into a workload reserve from this budget: without a `default` workload, a query using the default `workload` setting value does not reserve from it, and with `throw_on_unknown_workload = 1` such a query fails instead. Background merges and mutations never reserve memory from workloads, so their memory is not part of this budget in any case.
 
 Changeable at runtime. Disabled by default.
 
@@ -1396,7 +1396,7 @@ Changeable at runtime. Disabled by default.
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, implicit_default_workload, false, R"(
-When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. The implicit `default` workload cannot be a parent of other workloads; create `default` explicitly for that. Enable it together with `workloads_respect_server_cpu_limit` and `workloads_respect_server_memory_limit`: it brings those queries, and the background merges and mutations that use the default workload, under the server-wide budgets. Changeable at runtime. Disabled by default.
+When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. The implicit `default` workload cannot be a parent of other workloads; create `default` explicitly for that. Enable it together with `workloads_respect_server_cpu_limit` and `workloads_respect_server_memory_limit`: it brings those queries under the server-wide budgets, and the background merges and mutations that use the default workload under the CPU budget. Changeable at runtime. Disabled by default.
 
 **Example**
 

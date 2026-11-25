@@ -1020,6 +1020,38 @@ def test_replaced_resource_releases_disk_operations():
     assert dequeued() > before
 
 
+def test_replaced_resource_keeps_other_disk_resource():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e6);
+    """
+    )
+
+    # `io_read` is selected for reads of the disk, `io_write` is the other resource that also reads it
+    node.query(
+        """
+        create resource io_read (read disk s3_no_resource);
+        create resource io_write (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued(resource):
+        return int(
+            node.query(
+                f"select sum(dequeued_requests) from system.scheduler where resource='{resource}' and type='request_queue'"
+            )
+        )
+
+    # After the selected resource stops reading the disk, the other one is used
+    node.query("create or replace resource io_read (write disk s3_no_resource)")
+    before = dequeued("io_write")
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued("io_write") > before
+
+
 def test_workload_entity_keeper_storage():
     node.query("create resource io_write (write disk s3_no_resource);")
     node.query("create resource io_read (read disk s3_no_resource);")

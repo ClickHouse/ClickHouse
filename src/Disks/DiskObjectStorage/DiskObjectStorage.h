@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
@@ -300,6 +302,10 @@ private:
     String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
     String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
+    std::set<String> read_resource_candidates; /// All resources with READ DISK for this disk, the first one is selected
+    std::set<String> write_resource_candidates;
+    std::set<String> read_resource_any_candidates;
+    std::set<String> write_resource_any_candidates;
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 

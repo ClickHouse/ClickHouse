@@ -163,21 +163,11 @@ DiskObjectStorage::DiskObjectStorage(
         {
             std::unique_lock lock{resource_mutex};
 
-            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
-            std::set<String> new_read_resource_name_from_sql;
-            std::set<String> new_write_resource_name_from_sql;
-            std::set<String> new_read_resource_name_from_sql_any;
-            std::set<String> new_write_resource_name_from_sql_any;
-
-            // Current state
-            if (!read_resource_name_from_sql.empty())
-                new_read_resource_name_from_sql.insert(read_resource_name_from_sql);
-            if (!write_resource_name_from_sql.empty())
-                new_write_resource_name_from_sql.insert(write_resource_name_from_sql);
-            if (!read_resource_name_from_sql_any.empty())
-                new_read_resource_name_from_sql_any.insert(read_resource_name_from_sql_any);
-            if (!write_resource_name_from_sql_any.empty())
-                new_write_resource_name_from_sql_any.insert(write_resource_name_from_sql_any);
+            // All matching resources are kept, so the selection stays deterministic when the selected one goes away
+            auto & new_read_resource_name_from_sql = read_resource_candidates;
+            auto & new_write_resource_name_from_sql = write_resource_candidates;
+            auto & new_read_resource_name_from_sql_any = read_resource_any_candidates;
+            auto & new_write_resource_name_from_sql_any = write_resource_any_candidates;
 
             // Process all updates in specified order
             for (const auto & [entity_type, resource_name, resource] : events)
