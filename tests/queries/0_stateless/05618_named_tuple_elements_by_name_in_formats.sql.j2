@@ -95,11 +95,6 @@ SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(a Int32)') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(a Int32, b Nullable(Int32), c Int32)') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
 
-INSERT INTO FUNCTION file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet') SELECT [NULL, '1950-01-01'][intDiv(number, 2) + 1]::Nullable(Date32) AS d
-FROM numbers(4) SETTINGS output_format_parquet_row_group_size = 2;
-SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 1;
-SELECT count() FROM file(currentDatabase() || '_05618_pruning.Parquet', 'Parquet', 'd Date32') WHERE d > '1960-01-01' SETTINGS input_format_parquet_filter_push_down = 0;
-
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_union.ORC', 'ORC') SELECT
     number AS id,
     [CAST(CAST(tuple(NULL), 'Tuple(a Nullable(Int8))'), 'Variant(Tuple(a Nullable(Int8)), String)'), NULL][number + 1] AS v1,

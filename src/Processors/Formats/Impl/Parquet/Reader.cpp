@@ -27,7 +27,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/hasNullable.h>
-#include <DataTypes/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -655,7 +654,7 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = (*createColumnWithDefaults(output_block_type, 1))[0];
+                    range.right = range.left = output_block_type.getDefault();
                 else
                     range.right = range.left;
                 continue;
@@ -3014,7 +3013,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
             /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
             /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
             /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField((*createColumnWithDefaults(output_block_type, 1))[0], schema_element);
+            auto default_hash = parquetTryHashField(output_block_type.getDefault(), schema_element);
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
@@ -3229,7 +3228,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = (*createColumnWithDefaults(output_block_type, 1))[0];
+                    range.right = range.left = output_block_type.getDefault();
                 else
                     range.right = range.left;
             }
@@ -3333,7 +3332,7 @@ bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         {
             /// Note: the default of the output block type, not of output_type, because the range
             /// is in terms of the former - see cast_stats_to_output_type.
-            Field default_value = (*createColumnWithDefaults(*extended_sample_block_data_types.at(column_info.idx_in_output_block), 1))[0];
+            Field default_value = extended_sample_block_data_types.at(column_info.idx_in_output_block)->getDefault();
             /// Make sure the range contains the default value.
             if (!range.left.isNull() && accurateLess(default_value, range.left))
                 range.left = default_value;
@@ -5048,7 +5047,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     if (output_info.is_missing_column)
     {
-        res = createColumnWithDefaults(*output_info.output_type, num_rows);
+        res = output_info.output_type->createColumn();
+        output_info.output_type->insertManyDefaultsInto(*res, num_rows);
 
         if (output_info.idx_in_output_block.has_value() &&
             /// If block_missing_values is enabled (not empty), and this column is not prewhere-only

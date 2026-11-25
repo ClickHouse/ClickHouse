@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <DataTypes/Utils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -207,7 +206,10 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
-            columns[i] = createColumnWithDefaults(*fields[i].type, rows);
+            if (fields[i].type->isDefaultInsertTrivial())
+                columns[i]->insertManyDefaults(rows);
+            else
+                fields[i].type->insertManyDefaultsInto(*columns[i], rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
         }

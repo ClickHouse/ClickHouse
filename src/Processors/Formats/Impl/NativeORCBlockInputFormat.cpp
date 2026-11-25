@@ -33,7 +33,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Utils.h>
 #include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -833,7 +832,7 @@ static void buildORCSearchArgumentImpl(
             const auto & declared_type = column_types->declared_type;
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(declared_type))
             {
-                /// The default a NULL row of `declared_type` gets. It differs from `getDefault` for `Date32`.
+                /// The default a NULL row of `declared_type` gets.
                 auto default_column = declared_type->createColumn();
                 declared_type->insertDefaultInto(*default_column);
                 const bool match_if_null = evaluateRPNElement({}, curr);
@@ -3424,7 +3423,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 if (auto value = column_mapper->getIcebergInitialDefault(element_path, element_path, element_type))
                     element = element_type->createColumnConst(orc_column->numElements, *value)->convertToFullColumnIfConst();
                 else
-                    element = createColumnWithDefaults(*element_type, orc_column->numElements);
+                {
+                    auto defaults = element_type->createColumn();
+                    element_type->insertManyDefaultsInto(*defaults, orc_column->numElements);
+                    element = std::move(defaults);
+                }
                 tuple_elements.emplace_back(std::move(element));
                 tuple_types.emplace_back(element_type);
                 tuple_names.emplace_back(element_name);

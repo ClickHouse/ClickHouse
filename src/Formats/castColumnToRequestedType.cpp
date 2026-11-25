@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Utils.h>
 #include <Interpreters/castColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -305,7 +304,9 @@ ColumnPtr createMissingColumn(
 
     if (block_missing_values)
         block_missing_values->setBits(column_i, num_rows);
-    return createColumnWithDefaults(*header_column.type, num_rows);
+    auto column = header_column.type->createColumn();
+    header_column.type->insertManyDefaultsInto(*column, num_rows);
+    return column;
 }
 
 void matchTupleElementsByName(ColumnWithTypeAndName & column, const DataTypePtr & requested_type)

@@ -1,7 +1,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/NaNUtils.h>
-#include <DataTypes/Utils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -1291,7 +1290,17 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(
             }
             else
             {
-                converted_columns[i] = createColumnWithDefaults(*to_element_types[i], input_rows_count);
+                const auto & to_element_type = to_element_types[i];
+                if (to_element_type->isDefaultInsertTrivial())
+                {
+                    converted_columns[i] = to_element_type->createColumn()->cloneResized(input_rows_count);
+                }
+                else
+                {
+                    auto column = to_element_type->createColumn();
+                    to_element_type->insertManyDefaultsInto(*column, input_rows_count);
+                    converted_columns[i] = std::move(column);
+                }
             }
         }
 
