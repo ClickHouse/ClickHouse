@@ -40,8 +40,8 @@ UNIFORM_TABLES = {"marksheet_uniform"}
 ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 
 # Tables reported as not external, name -> `table_type`, where None removes the field. A static
-# mapping, so no test can change what another test sees. The legacy resolver ignores `table_type`
-# entirely, which is why these values have to be refused by the write guard rather than by the read rule.
+# mapping, so no test can change what another test sees. Neither resolver refuses a Delta table for
+# its `table_type`, which is why these values have to be refused by the write guard rather than by the read rule.
 PATCHED_TABLE_TYPES = {
     "managed_delta": "MANAGED",
     "clone_delta": "MANAGED_SHALLOW_CLONE",
