@@ -255,10 +255,10 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     # cannot stand in for the host that will actually create the database. Without the mode conjunct
     # the check is skipped here and the restricted user reaches the embedded locator unchecked.
     #
-    # The outer locator is File and IS granted, so a denial naming READ ON S3 can only come from the
-    # embedded S3 locator, which is why the manifest is rewritten to hold one - the
+    # The outer locator is File and IS granted, so a denial naming READ ON DISK can only come from the
+    # embedded Disk locator, which is why the manifest is rewritten to hold one - the
     # attacker-controlled-manifest shape this authorization exists for.
-    # Every locator here is credential-free (File locally, a 1-argument S3 URL in the manifest): the
+    # Every locator here is credential-free (File locally, a Disk locator in the manifest): the
     # later definition-mismatch error logs both definitions, and a masked credential in that line
     # trips the tests-only `throw_on_match` masking rule and aborts the server.
     node.query("DROP DATABASE IF EXISTS dbembedded SYNC")
@@ -270,13 +270,13 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
             "bash",
             "-c",
             "printf \"CREATE DATABASE dbembedded ENGINE = Backup('d67785', "
-            "S3('http://minio1:9001/root/data/denied/b10'))\\n\" "
+            "Disk('backup_disk', 'b10'))\\n\" "
             "> /var/lib/clickhouse/backups/outer10/metadata/dbembedded.sql",
         ],
         user="root",
     )
     # The preflight opens the embedded backup to authorize its base backups, so it must exist.
-    node.query(f"BACKUP DATABASE d67785 TO {s3(DENIED + '/b10')} FORMAT Null")
+    node.query("BACKUP DATABASE d67785 TO Disk('backup_disk', 'b10') FORMAT Null")
 
     # The target database exists on the initiator, which is what used to skip the check.
     assert node.query("SELECT count() FROM system.databases WHERE name = 'dbembedded'") == "1\n"
@@ -287,11 +287,11 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     )
     assert "ACCESS_DENIED" in error, error
     # Not the outer File locator, and not some other missing privilege.
-    assert "READ ON S3" in error, error
+    assert "READ ON DISK" in error, error
 
     # With the grant, authorization passes: the restore proceeds past CHECKING_ACCESS_RIGHTS and
     # fails later on the mismatch between the pre-existing definition and the rewritten one instead.
-    node.query(f"GRANT READ ON S3 TO {USER}")
+    node.query(f"GRANT READ ON DISK TO {USER}")
     error = node.query_and_get_error(
         "RESTORE DATABASE dbembedded ON CLUSTER one_shard FROM File('outer10')", user=USER
     )
