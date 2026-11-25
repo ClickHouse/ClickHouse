@@ -54,7 +54,21 @@ $CLIENT $SYNC_OPTS --query_id "${qid_prefix}_partial_samples_sync" \
 $CLIENT $SYNC_OPTS --query_id "${qid_prefix}_partial_metadata_sync" \
     -q "INSERT INTO ts_partial (metric_family, type, unit, help) VALUES ('cpu_usage', 'gauge', 'ratio', 'CPU usage')"
 
-$CLIENT -q "SYSTEM FLUSH LOGS query_log"
+for _ in {1..30}; do
+    $CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    logged=$($CLIENT -q "
+        SELECT count()
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND current_database = currentDatabase()
+          AND type = 'QueryFinish'
+          AND query_id LIKE '${qid_prefix}_%'
+    ")
+    if [[ "$logged" -ge 8 ]]; then
+        break
+    fi
+    sleep 0.2
+done
 
 echo "-- inner target tables opened by each query"
 $CLIENT -q "
@@ -64,6 +78,7 @@ SELECT
     arrayCount(t -> t LIKE '%.inner_id.%' OR t LIKE '%.inner.%', tables) AS inner_tables
 FROM system.query_log
 WHERE event_date >= yesterday()
+  AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query_id LIKE '${qid_prefix}_%'
 ORDER BY label
