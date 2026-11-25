@@ -93,7 +93,7 @@ struct MultiReadResponses
         static_assert(try_multi, "A MultiRead awaited on the first access exists only for try-requests");
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return std::visit(
             [&]<typename TResponses>(const TResponses & resp) -> size_t
@@ -184,7 +184,7 @@ private:
             }
         }
 
-        size_t size() const { return future_responses.size(); }
+        [[nodiscard]] size_t size() const { return future_responses.size(); }
     };
 
     /// One MultiRead request in flight, awaited on the first access: the lazy counterpart of
@@ -213,7 +213,7 @@ private:
             return response->responses;
         }
 
-        size_t size() const { return num_requests; }
+        [[nodiscard]] size_t size() const { return num_requests; }
     };
 
     std::variant<std::monostate, RegularResponses, ResponsesWithFutures, MultiResponseWithFuture> responses;
@@ -257,7 +257,7 @@ public:
 
     ~ZooKeeper();
 
-    ZooKeeperArgs getArgs() const { return args; }
+    const ZooKeeperArgs & getArgs() const { return args; }
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
@@ -689,6 +689,8 @@ public:
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
+    Coordination::IKeeper & getImpl() { return *impl; }
+
     /// Checks that our session was not killed, and allows to avoid applying a request from an old lost session.
     /// Imagine a "connection-loss-on-commit" situation like this:
     /// - We have written some write requests to the socket and immediately disconnected (e.g. due to "Operation timeout")
@@ -850,12 +852,23 @@ public:
         }
     }
 
-    std::string getPath() const
+    [[nodiscard]] std::string getPath() const
     {
         return path;
     }
 
-    bool isCreated() const
+    [[nodiscard]] ZooKeeper & getZooKeeper() const
+    {
+        return zookeeper;
+    }
+
+    /// Keeper removes the ephemeral nodes of an expired session.
+    [[nodiscard]] bool isLost() const
+    {
+        return zookeeper.expired();
+    }
+
+    [[nodiscard]] bool isCreated() const
     {
         return created;
     }

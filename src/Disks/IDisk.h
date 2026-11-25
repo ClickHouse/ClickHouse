@@ -488,6 +488,9 @@ public:
     /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
     virtual bool prefersRecursiveRemoval() const { return false; }
 
+    /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
+    virtual bool supportsAtomicFileCreation() const { return false; }
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -576,13 +579,16 @@ public:
     virtual bool supportsStat() const { return false; }
     virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
 
-    virtual bool supportsChmod() const { return false; }
-    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
-
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
     UInt128 getCustomDiskSettings() const { return custom_disk_settings_hash; }
-    void markDiskAsCustom(UInt128 settings_hash) { custom_disk_settings_hash = settings_hash; }
+    void markDiskAsCustom(UInt128 settings_hash, bool uses_server_credentials)
+    {
+        custom_disk_settings_hash = settings_hash;
+        custom_disk_uses_server_credentials = uses_server_credentials;
+    }
+    /// A custom disk that uses the server's own credentials, directly or through the disk it wraps.
+    bool customDiskUsesServerCredentials() const { return custom_disk_uses_server_credentials; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
@@ -636,6 +642,7 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+    bool custom_disk_uses_server_credentials = false;
 
     /// The configuration the disk was created from, see keepConfigurationAlive.
     std::shared_ptr<const ConfigurationWithUsageTracking> creation_config;
@@ -659,17 +666,17 @@ class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
-    virtual UInt64 getSize() const = 0;
+    [[nodiscard]] virtual UInt64 getSize() const = 0;
 
     /// Space available for reservation
     /// (with this reservation already take into account).
-    virtual std::optional<UInt64> getUnreservedSpace() const = 0;
+    [[nodiscard]] virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT
 
     /// Get all disks, used in reservation
-    virtual Disks getDisks() const = 0;
+    [[nodiscard]] virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;

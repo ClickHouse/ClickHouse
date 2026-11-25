@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -145,7 +146,7 @@ struct AggregateFunctionFlameGraphTree
 
     using Traces = VectorWithMemoryTracking<Trace>;
 
-    Traces dump(size_t max_depth, size_t min_bytes) const
+    [[nodiscard]] Traces dump(size_t max_depth, size_t min_bytes) const
     {
         Traces traces;
         Trace::Frames frames;
@@ -183,7 +184,7 @@ struct AggregateFunctionFlameGraphTree
             if (enough_bytes)
             {
                 frames.push_back(current->ptr);
-                allocated_self.back() -= current->allocated;
+                allocated_self.back() = common::subIgnoreOverflow(allocated_self.back(), current->allocated);
 
                 if (enough_depth)
                 {
@@ -255,7 +256,7 @@ static void dumpFlameGraphImpl(
 
     UnorderedMapWithMemoryTracking<uintptr_t, size_t> mapping;
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
@@ -278,7 +279,7 @@ static void dumpFlameGraphImpl(
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
             {
                 if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
@@ -363,12 +364,14 @@ struct AggregateFunctionFlameGraphData
         free_list = entry;
     }
 
+    /// The counters are sums modulo 2^64: `untrack` exactly reverts `track`, and the `self` size in the dump
+    /// is the difference of such sums.
     static void track(Entry * allocation)
     {
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated += allocation->size;
+            node->allocated = common::addIgnoreOverflow(node->allocated, allocation->size);
             node = node->parent;
         }
     }
@@ -378,7 +381,7 @@ struct AggregateFunctionFlameGraphData
         auto * node = allocation->trace;
         while (node)
         {
-            node->allocated -= allocation->size;
+            node->allocated = common::subIgnoreOverflow(node->allocated, allocation->size);
             node = node->parent;
         }
     }
@@ -447,7 +450,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -static_cast<UInt64>(size);
+            UInt64 abs_size = common::negateIgnoreOverflow(static_cast<UInt64>(size));
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -533,7 +536,7 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
+                add(entry.value.first, static_cast<Int64>(common::negateIgnoreOverflow(deallocation->size)), nullptr, 0, arena);
             }
         }
 
@@ -623,7 +626,7 @@ public:
         const auto & trace_offsets = trace.getOffsets();
         UInt64 prev_offset = 0;
         if (row_num)
-            prev_offset = trace_offsets[row_num - 1];
+            prev_offset = trace_offsets[static_cast<ssize_t>(row_num) - 1];
         UInt64 trace_size = trace_offsets[row_num] - prev_offset;
 
         Int64 allocated = 1;
