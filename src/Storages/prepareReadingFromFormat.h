@@ -57,6 +57,8 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        /// True if the format returns the column `name` of type `type` as read from the file, so the file's statistics describe it.
+        bool formatReturnsColumnUnchanged(const String & name, const DataTypePtr & type) const;
         bool hasDefaultOfColumnOrParent(const String & name) const;
         bool defaultsDependOnTheirBlock(const ContextPtr & context) const;
         /// The filter without the conjuncts on hive partition and virtual columns:

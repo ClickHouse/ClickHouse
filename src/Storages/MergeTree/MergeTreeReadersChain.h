@@ -44,7 +44,7 @@ public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
     ReadResult
-    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, size_t max_block_size_rows = 0);
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, size_t max_stripe_block_rows = 0);
 
     [[nodiscard]] size_t numReadRowsInCurrentGranule() const;
     [[nodiscard]] size_t numPendingRowsInCurrentGranule() const;
