@@ -39,6 +39,7 @@
 #include <Common/DateLUT.h>
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace DB
@@ -609,6 +610,24 @@ const DataType * getCompositeTypeHint(const IDataType * from_type_hint)
     return typeid_cast<const DataType *>(from_type_hint);
 }
 
+bool fieldContainsObject(const Field & field)
+{
+    checkStackSize();
+    switch (field.getType())
+    {
+        case Field::Types::Object:
+            return true;
+        case Field::Types::Array:
+            return std::ranges::any_of(field.safeGet<Array>(), fieldContainsObject);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(field.safeGet<Tuple>(), fieldContainsObject);
+        case Field::Types::Map:
+            return std::ranges::any_of(field.safeGet<Map>(), fieldContainsObject);
+        default:
+            return false;
+    }
+}
+
 /// Converts an object like the parser of the type: skipped paths are dropped, the values of typed paths
 /// are converted to their types, and the absent typed paths get their defaults (see `ColumnObject::insert`).
 /// `src_type` is the type of the object if known: a `Field` holds a value without its type (an `Enum` as its number).
@@ -622,6 +641,7 @@ Field convertObjectToType(
 {
     const auto & typed_paths = type.getTypedPaths();
     const auto & paths_to_skip = *type.getPathsToSkip();
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
     Object res;
     for (const auto & [path, value] : src)
     {
@@ -641,10 +661,15 @@ Field convertObjectToType(
             continue;
         }
 
+        /// As in parsing, a value that is not valid for a typed path gets the default of the type
+        /// with `type_json_skip_invalid_typed_paths`, and a NULL also with `input_format_null_as_default`.
         const auto & path_type = *typed_it->second;
-        /// A NULL of a typed path that cannot contain it is the default of the type, as in parsing.
         if (value.isNull() && !canContainNull(path_type))
-            continue;
+        {
+            if (format_settings.null_as_default || skip_invalid)
+                continue;
+            return {};
+        }
 
         const IDataType * src_path_type = nullptr;
         if (src_type)
@@ -653,9 +678,15 @@ Field convertObjectToType(
                 src_path_type = src_it->second.get();
         }
 
-        Field converted = convertFieldToType(value, path_type, src_path_type, format_settings, strict, convert_inexact_floats);
+        Field converted = skip_invalid
+            ? tryConvertFieldToType(value, path_type, src_path_type, format_settings, strict, convert_inexact_floats)
+            : convertFieldToType(value, path_type, src_path_type, format_settings, strict, convert_inexact_floats);
         if (converted.isNull() && !value.isNull())
+        {
+            if (skip_invalid)
+                continue;
             return {};
+        }
         res[path] = std::move(converted);
     }
 
@@ -1522,10 +1553,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
-        /// If we can insert, no need to convert anything.
-        auto col = type_variant->createColumn();
-        if (col->tryInsert(src))
-            return src;
+        /// If we can insert, no need to convert anything. A JSON column accepts an object as it is,
+        /// without the conversion to its type (skipped paths, types of typed paths), so objects are converted below.
+        if (!fieldContainsObject(src))
+        {
+            auto col = type_variant->createColumn();
+            if (col->tryInsert(src))
+                return src;
+        }
 
         /// Note: the exact-alternative preference below applies only to fields that fall through to
         /// the conversion loop. A field accepted by the two fast paths above keeps `ColumnVariant`'s

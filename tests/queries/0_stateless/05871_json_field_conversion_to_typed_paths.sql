@@ -47,3 +47,22 @@ SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_mi
 INSERT INTO t_json_missing_column (id) VALUES (1);
 SELECT j FROM t_json_missing_column;
 DROP TABLE t_json_missing_column;
+
+SELECT 'objects in a Variant are converted to the type';
+SELECT JSONAllPaths(variantElement(v, 'JSON(SKIP secret)')) FROM values('v Variant(JSON(SKIP secret), UInt64)', (CAST('{"secret" : 1, "x" : 2}' AS JSON)));
+SELECT v FROM values('v Variant(Array(JSON(SKIP secret)), UInt64)', ([CAST('{"secret" : 1, "x" : 2}' AS JSON)]));
+SELECT v, variantType(v) FROM values('v Variant(JSON, String)', ('{"a" : 1}'));
+
+SELECT 'NULL and invalid values of typed paths';
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8)))));
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8))))) SETTINGS input_format_null_as_default = 0; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : null}' AS JSON(n Nullable(UInt8))))) SETTINGS input_format_null_as_default = 0, type_json_skip_invalid_typed_paths = 1;
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : "abc"}' AS JSON(n String)))); -- { serverError TYPE_MISMATCH }
+SELECT * FROM values('j JSON(n UInt8)', (CAST('{"n" : "abc"}' AS JSON(n String)))) SETTINGS type_json_skip_invalid_typed_paths = 1;
+
+SELECT 'nested timestamps out of the range of DateTime';
+SELECT * FROM values('t Tuple(DateTime(\'UTC\'))', (tuple(toDate32('1900-01-01')))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM values('a Array(DateTime(\'UTC\'))', ([toDate32('1900-01-01')])); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM values('m Map(String, DateTime(\'UTC\'))', (map('k', toDate32('1900-01-01')))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM values('j JSON(d DateTime(\'UTC\'))', (CAST('{"d" : "1900-01-01"}' AS JSON(d Date32)))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT * FROM values('t Tuple(DateTime(\'UTC\'))', (tuple(toDate32('2020-01-02'))));

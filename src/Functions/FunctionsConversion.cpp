@@ -3274,24 +3274,45 @@ ColumnPtr castColumnRejectingInvalid(
     return castColumnWithSettings({column, from, ""}, to, convert_settings, CastType::nonAccurate);
 }
 
+void checkPathIsNotReservedForSource(std::string_view path)
+{
+    if (DataTypeObject::isSourceSubcolumnPath(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+            path,
+            DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+}
+
+/// A reserved dynamic path is rejected only if some row has a value in it, as the parser sees only present paths
+/// (e.g. after a filter, the path stays with NULLs only). Such a path is removed from the result.
+void removeDynamicPathsReservedForSource(UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_columns)
+{
+    for (auto it = dynamic_columns.begin(); it != dynamic_columns.end();)
+    {
+        if (!DataTypeObject::isSourceSubcolumnPath(it->first))
+        {
+            ++it;
+            continue;
+        }
+
+        const auto & column = *it->second;
+        for (size_t i = 0; i != column.size(); ++i)
+        {
+            if (!column.isNullAt(i))
+                checkPathIsNotReservedForSource(it->first);
+        }
+        it = dynamic_columns.erase(it);
+    }
+}
+
 /// The JSON text of each row of a converted object, written as the format+parse conversion writes it.
-/// The paths reserved for the source subcolumn are rejected, as the parser does.
+/// The paths reserved for the source subcolumn in the shared data are rejected, as the parser does.
 ColumnPtr createSourceFromObject(const ColumnObject & column, const DataTypeObject & type, const FormatSettings & format_settings)
 {
-    auto check_path = [](std::string_view path)
-    {
-        if (DataTypeObject::isSourceSubcolumnPath(path))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
-                path,
-                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
-    };
-    for (const auto & [path, _] : column.getDynamicPaths())
-        check_path(path);
     const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
     for (size_t i = 0; i != shared_data_paths->size(); ++i)
-        check_path(shared_data_paths->getDataAt(i));
+        checkPathIsNotReservedForSource(shared_data_paths->getDataAt(i));
 
     auto source = ColumnString::create();
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*source, column.size());
@@ -3776,6 +3797,9 @@ ColumnPtr convertObjectColumns(
         }
         dst_typed_columns[path] = std::move(col);
     }
+
+    if (dst_type.hasSource())
+        removeDynamicPathsReservedForSource(dst_dynamic_columns);
 
     /// Lock max_dynamic_paths if shared data is non-empty.
     size_t effective_max_dynamic_paths = dst_global_max_dynamic_paths;

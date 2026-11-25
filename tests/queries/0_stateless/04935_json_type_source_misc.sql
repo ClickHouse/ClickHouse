@@ -115,3 +115,11 @@ SELECT r.json, r.json.__source FROM (SELECT 1 AS k) AS l LEFT JOIN (SELECT 2 AS 
 SELECT 'a reserved path from a reinterpreted aggregate state is rejected';
 SELECT finalizeAggregation(CAST(unhex(h), 'AggregateFunction(groupUniqArray, JSON(with_source=1))'))
 FROM (SELECT hex(groupUniqArrayState(j)) AS h FROM (SELECT materialize('{"__source" : 42, "a" : 1}')::JSON AS j)); -- { serverError INCORRECT_DATA }
+
+SELECT 'a reserved path without values after a filter is dropped by CAST';
+DROP TABLE IF EXISTS t_json_reserved_filtered;
+CREATE TABLE t_json_reserved_filtered (j JSON) ENGINE = Memory;
+INSERT INTO t_json_reserved_filtered VALUES ('{"__source" : 1}'), ('{"a" : 1}');
+SELECT c, c.__source, JSONAllPaths(c) FROM (SELECT CAST(j AS JSON(with_source=1)) AS c FROM t_json_reserved_filtered WHERE isNull(j.__source));
+SELECT CAST(j AS JSON(with_source=1)) FROM t_json_reserved_filtered; -- { serverError INCORRECT_DATA }
+DROP TABLE t_json_reserved_filtered;

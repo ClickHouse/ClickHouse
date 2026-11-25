@@ -57,3 +57,5 @@ generateRandom creates the source from the generated objects
 a default row of a JOIN has the defaults of the types in the value and in the source
 {"e":"minus"}	{"e":"minus"}
 a reserved path from a reinterpreted aggregate state is rejected
+a reserved path without values after a filter is dropped by CAST
+{"a":1}	{"a":1}	['a']

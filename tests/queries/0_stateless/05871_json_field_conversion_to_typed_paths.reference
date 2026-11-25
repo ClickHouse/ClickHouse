@@ -26,3 +26,13 @@ default of the type
 {"e":"ok","n":0}
 a column the part marks as missing
 {"n":0,"s":""}
+objects in a Variant are converted to the type
+['x']
+['{"x":2}']
+{"a" : 1}	String
+NULL and invalid values of typed paths
+{"n":0}
+{"n":0}
+{"n":0}
+nested timestamps out of the range of DateTime
+('2020-01-02 00:00:00')
