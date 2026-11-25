@@ -39,6 +39,7 @@ ENGINE = IcebergLocal((SELECT sort FROM iceberg_path), 'Parquet')
 ORDER BY (day(a));
 INSERT INTO t_sort SELECT 1, toDateTime('2026-01-01 10:00:00', 'UTC');
 SELECT 'sort', k, toString(a, 'UTC') FROM t_sort;
+SELECT 'sort key', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_sort';
 
 -- The ClickHouse functions keep their own meaning: day of month is not an Iceberg transform.
 CREATE TABLE t_day_of_month (k Int64, a DateTime('UTC'))

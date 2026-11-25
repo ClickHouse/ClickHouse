@@ -4,4 +4,5 @@ transforms	20273	55	666	486557
 transforms	20454	56	672	490906
 after alter	2	2
 sort	1	2026-01-01 10:00:00.000000
+sort key	icebergDay(a)
 merge tree	toYear(b)
