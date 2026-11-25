@@ -3937,6 +3937,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         prepareBuildQueryPlanForTableExpression(table_expression, select_query_options, planner_context);
     }
 
+    /// A follower, or the analyze-only header pass of a shipped query, sees the GLOBAL locality the initiator gave
+    /// the shipped sides; only a pass that may ship this tree itself has to refuse an n-way GLOBAL join.
+    const bool may_ship_join_tree = !select_query_options.only_analyze
+        && !planner_context->getQueryContext()->canUseParallelReplicasOnFollower();
     auto should_disable_parallel_replicas = [&]() -> bool
     {
         /// n-way join like LEFT/INNER/RIGHT ... RIGHT ...
@@ -3945,7 +3949,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             return true;
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
-        if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+        if (joins_count > 1 && (is_full_join || (is_global_join && may_ship_join_tree) || is_cross_join))
             return true;
 
         /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
