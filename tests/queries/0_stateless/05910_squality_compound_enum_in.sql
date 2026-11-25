@@ -16,7 +16,7 @@ CREATE TABLE squality_compound_enum_check
 (
     x Array(UInt64),
     e Array(Enum8('neg' = -1)),
-    CONSTRAINT no_false_match CHECK x NOT IN (materialize(e), NULL)
+    CONSTRAINT no_false_match CHECK isNull(x IN (materialize(e), NULL))
 ) ENGINE = Memory;
 INSERT INTO squality_compound_enum_check VALUES ([18446744073709551615], [-1]);
 SELECT count() FROM squality_compound_enum_check;
