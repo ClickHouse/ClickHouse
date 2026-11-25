@@ -3,10 +3,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <new>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -15,6 +19,16 @@ namespace DB::CompactSymbols
 {
 namespace
 {
+
+constexpr size_t granule_count_field = 36;
+constexpr size_t version_field = 8;
+constexpr size_t dictionary_offset_field = 40;
+constexpr size_t dictionary_size_field = 48;
+constexpr size_t marks_offset_field = 56;
+constexpr size_t names_offset_field = 72;
+constexpr size_t names_size_field = 80;
+constexpr size_t addresses_offset_field = 88;
+constexpr size_t addresses_size_field = 96;
 
 struct DecodedSymbol
 {
@@ -25,38 +39,156 @@ struct DecodedSymbol
     bool operator==(const DecodedSymbol &) const = default;
 };
 
-uint64_t readLittleEndian64(const std::vector<char> & data, size_t offset)
+template <typename T>
+T readField(const std::vector<char> & data, size_t offset)
 {
-    if (offset > data.size() || sizeof(uint64_t) > data.size() - offset)
+    if (offset > data.size() || sizeof(T) > data.size() - offset)
         throw std::runtime_error("Compact symbols test field is out of bounds");
 
-    uint64_t value = 0;
-    for (size_t byte = 0; byte < sizeof(uint64_t); ++byte)
-        value |= static_cast<uint64_t>(static_cast<unsigned char>(data[offset + byte])) << (byte * 8);
+    T value = 0;
+    for (size_t byte = 0; byte < sizeof(T); ++byte)
+        value |= static_cast<T>(static_cast<unsigned char>(data[offset + byte])) << (byte * 8);
     return value;
 }
 
-void advertiseHugeFrameContentSize(std::vector<char> & data, size_t frame_offset)
+template <typename T>
+void writeField(std::vector<char> & data, size_t offset, T value)
+{
+    if (offset > data.size() || sizeof(T) > data.size() - offset)
+        throw std::runtime_error("Compact symbols test field is out of bounds");
+
+    for (size_t byte = 0; byte < sizeof(T); ++byte)
+        data[offset + byte] = static_cast<char>(value >> (byte * 8));
+}
+
+std::string_view nameGranuleFrame(const std::vector<char> & data, uint32_t granule)
+{
+    size_t marks_offset = readField<uint64_t>(data, marks_offset_field);
+    size_t names_offset = readField<uint64_t>(data, names_offset_field);
+    size_t begin = granule == 0 ? 0 : readField<uint32_t>(data, marks_offset + (granule - 1) * sizeof(uint32_t));
+    size_t end = readField<uint32_t>(data, marks_offset + granule * sizeof(uint32_t));
+    return std::string_view(data.data() + names_offset + begin, end - begin);
+}
+
+/// Splices `frame` in place of a name granule and shifts the marks and the parts after it.
+void replaceNameGranule(std::vector<char> & data, uint32_t granule, std::string_view frame)
+{
+    size_t marks_offset = readField<uint64_t>(data, marks_offset_field);
+    size_t names_offset = readField<uint64_t>(data, names_offset_field);
+    uint32_t granule_count = readField<uint32_t>(data, granule_count_field);
+    std::string_view old_frame = nameGranuleFrame(data, granule);
+    size_t begin = old_frame.data() - data.data();
+    int64_t delta = static_cast<int64_t>(frame.size()) - static_cast<int64_t>(old_frame.size());
+
+    data.erase(data.begin() + begin, data.begin() + begin + old_frame.size());
+    data.insert(data.begin() + begin, frame.begin(), frame.end());
+    for (uint32_t index = granule; index < granule_count; ++index)
+    {
+        size_t mark = marks_offset + index * sizeof(uint32_t);
+        writeField<uint32_t>(data, mark, static_cast<uint32_t>(readField<uint32_t>(data, mark) + delta));
+    }
+    writeField<uint64_t>(data, names_size_field, readField<uint64_t>(data, names_size_field) + delta);
+    writeField<uint64_t>(data, addresses_offset_field, readField<uint64_t>(data, addresses_offset_field) + delta);
+    if (readField<uint64_t>(data, names_offset_field) != names_offset)
+        throw std::runtime_error("Compact symbols test moved the names part");
+}
+
+std::string compressFrame(std::string_view payload, std::string_view dictionary, bool checksum = true)
+{
+    ZstdCCtxPtr context(ZSTD_createCCtx());
+    if (!context)
+        throw std::bad_alloc();
+    if (ZSTD_isError(ZSTD_CCtx_setParameter(context.get(), ZSTD_c_compressionLevel, compression_level))
+        || ZSTD_isError(ZSTD_CCtx_setParameter(context.get(), ZSTD_c_checksumFlag, checksum ? 1 : 0))
+        || ZSTD_isError(ZSTD_CCtx_loadDictionary(context.get(), dictionary.data(), dictionary.size())))
+        throw std::runtime_error("Compact symbols test cannot configure compression");
+    std::string frame(ZSTD_compressBound(payload.size()), '\0');
+    size_t size = ZSTD_compress2(context.get(), frame.data(), frame.size(), payload.data(), payload.size());
+    if (ZSTD_isError(size))
+        throw std::runtime_error(std::string("Compact symbols test cannot compress: ") + ZSTD_getErrorName(size));
+    frame.resize(size);
+    return frame;
+}
+
+std::string decompressFrame(std::string_view frame, std::string_view dictionary)
+{
+    ZstdDCtxPtr context(ZSTD_createDCtx());
+    if (!context)
+        throw std::bad_alloc();
+    unsigned long long content_size = ZSTD_getFrameContentSize(frame.data(), frame.size());
+    if (content_size == ZSTD_CONTENTSIZE_ERROR || content_size == ZSTD_CONTENTSIZE_UNKNOWN)
+        throw std::runtime_error("Compact symbols test frame has no content size");
+    std::string payload(content_size, '\0');
+    size_t size = ZSTD_decompress_usingDict(
+        context.get(), payload.data(), payload.size(), frame.data(), frame.size(), dictionary.data(), dictionary.size());
+    if (ZSTD_isError(size) || size != payload.size())
+        throw std::runtime_error("Compact symbols test cannot decompress");
+    return payload;
+}
+
+std::string_view dictionaryOf(const std::vector<char> & data)
+{
+    size_t offset = readField<uint64_t>(data, dictionary_offset_field);
+    size_t size = readField<uint64_t>(data, dictionary_size_field);
+    return std::string_view(data.data() + offset, size);
+}
+
+/// The same frame with an 8-byte content size field advertising 2^60 bytes. The rest of the frame,
+/// including its blocks and checksum, is unchanged, so it stays a structurally valid single frame.
+std::string withHugeContentSize(std::string_view frame)
 {
     constexpr uint64_t advertised_size = uint64_t{1} << 60;
-    constexpr std::array<char, 5> frame_header{
-        static_cast<char>(0x28),
-        static_cast<char>(0xb5),
-        static_cast<char>(0x2f),
-        static_cast<char>(0xfd),
-        static_cast<char>(0xe0),
-    };
-    constexpr size_t content_size_offset = frame_header.size();
-    constexpr size_t frame_header_size = content_size_offset + sizeof(advertised_size);
-    if (frame_offset > data.size() || frame_header_size > data.size() - frame_offset)
+    constexpr size_t descriptor_offset = 4;
+    if (frame.size() <= descriptor_offset)
         throw std::runtime_error("Compact symbols test frame is too small");
 
-    std::copy(frame_header.begin(), frame_header.end(), data.data() + frame_offset);
-    for (size_t byte = 0; byte < sizeof(advertised_size); ++byte)
-        data[frame_offset + content_size_offset + byte] = static_cast<char>(advertised_size >> (byte * 8));
+    auto descriptor = static_cast<uint8_t>(frame[descriptor_offset]);
+    bool single_segment = descriptor & 0x20;
+    constexpr std::array<size_t, 4> dictionary_id_sizes{0, 1, 2, 4};
+    std::array<size_t, 4> content_size_sizes{single_segment ? size_t{1} : size_t{0}, 2, 4, 8};
+    size_t kept_size = (single_segment ? 0 : 1) + dictionary_id_sizes[descriptor & 3];
+    size_t header_size = descriptor_offset + 1 + kept_size + content_size_sizes[descriptor >> 6];
 
-    if (ZSTD_getFrameContentSize(data.data() + frame_offset, data.size() - frame_offset) != advertised_size)
-        throw std::runtime_error("Compact symbols test frame does not advertise the expected size");
+    std::string result(frame.substr(0, descriptor_offset));
+    result += static_cast<char>((descriptor & 0x3f) | 0xc0);
+    result += frame.substr(descriptor_offset + 1, kept_size);
+    for (size_t byte = 0; byte < sizeof(advertised_size); ++byte)
+        result += static_cast<char>(advertised_size >> (byte * 8));
+    result += frame.substr(header_size);
+
+    if (ZSTD_getFrameContentSize(result.data(), result.size()) != advertised_size
+        || ZSTD_findFrameCompressedSize(result.data(), result.size()) != result.size())
+        throw std::runtime_error("Compact symbols test cannot enlarge the content size of a frame");
+    return result;
+}
+
+void replaceAddressesFrame(std::vector<char> & data, std::string_view frame)
+{
+    size_t addresses_offset = readField<uint64_t>(data, addresses_offset_field);
+    if (addresses_offset + readField<uint64_t>(data, addresses_size_field) != data.size())
+        throw std::runtime_error("Compact symbols test expects the addresses part at the end");
+    data.resize(addresses_offset);
+    data.insert(data.end(), frame.begin(), frame.end());
+    writeField<uint64_t>(data, addresses_size_field, frame.size());
+}
+
+std::string_view addressesFrame(const std::vector<char> & data)
+{
+    return std::string_view(data.data() + readField<uint64_t>(data, addresses_offset_field), readField<uint64_t>(data, addresses_size_field));
+}
+
+template <typename F>
+void expectExpansionBoundRejection(F && function)
+{
+    try
+    {
+        function();
+        ADD_FAILURE() << "Expected the expansion bound to reject the frame";
+    }
+    catch (const std::runtime_error & e)
+    {
+        EXPECT_NE(std::string_view(e.what()).find("maximum expansion ratio"), std::string_view::npos) << e.what();
+    }
 }
 
 std::vector<std::string> decodeNames(const Reader & reader, std::vector<size_t> * granule_sizes = nullptr)
@@ -65,10 +197,9 @@ std::vector<std::string> decodeNames(const Reader & reader, std::vector<size_t> 
     if (!decompression_context)
         throw std::bad_alloc();
 
-    size_t maximum_granule_size = reader.maximumNameGranuleSize();
-    std::vector<char> granule_buffer(maximum_granule_size);
+    std::vector<char> granule_buffer(reader.maximumNameGranuleSize());
     std::string name_buffer;
-    name_buffer.reserve(maximum_granule_size);
+    name_buffer.reserve(reader.maximumNameSize());
 
     std::vector<std::string> names;
     for (uint32_t granule = 0; granule < reader.granuleCount(); ++granule)
@@ -94,6 +225,62 @@ std::vector<DecodedSymbol> decodeSymbols(const Reader & reader)
     return result;
 }
 
+/// Small enough to train on a small input. The format behaves the same for any capacity.
+constexpr size_t test_dictionary_capacity = 4096;
+
+/// Names whose front-coded granules are just large enough to train a dictionary of `test_dictionary_capacity`.
+struct LargeInput
+{
+    LargeInput()
+    {
+        static constexpr std::array<std::string_view, 16> words{
+            "Aggregate", "Column", "Merge", "Tree", "Function", "Reader", "Buffer", "Context",
+            "Storage", "Settings", "Pipeline", "Processor", "Execute", "Transform", "Serialize", "Hash"};
+
+        uint64_t state = 1;
+        size_t front_coded_size = 0;
+        constexpr size_t training_size = test_dictionary_capacity * dictionary_training_ratio;
+        while (front_coded_size < training_size + training_size / 10)
+        {
+            /// A random token after the namespace keeps the prefix shared by sorted neighbours short.
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            std::string name = "_ZN2DB" + std::to_string(state >> 32);
+            for (size_t word = 0; word < 8; ++word)
+            {
+                state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+                std::string_view chosen = words[(state >> 59) & 15];
+                name += std::to_string(chosen.size());
+                name += chosen;
+            }
+            name += "Ev";
+            constexpr size_t maximum_expected_shared_prefix = 16;
+            front_coded_size += name.size() - maximum_expected_shared_prefix + 2;
+            names.push_back(std::move(name));
+        }
+
+        symbols.reserve(names.size());
+        for (size_t index = 0; index < names.size(); ++index)
+            symbols.push_back({0x1000 + index * 16, 16, names[index]});
+        encoded = encode(symbols, test_dictionary_capacity);
+    }
+
+    std::vector<std::string> names;
+    std::vector<Symbol> symbols;
+    std::vector<char> encoded;
+};
+
+const LargeInput & largeInput()
+{
+    static const LargeInput input;
+    return input;
+}
+
+std::vector<char> encodeSingleName()
+{
+    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
+    return encode(symbols);
+}
+
 TEST(CompactSymbols, Empty)
 {
     std::vector<Symbol> symbols;
@@ -103,7 +290,9 @@ TEST(CompactSymbols, Empty)
     EXPECT_EQ(reader.nameCount(), 0);
     EXPECT_EQ(reader.addressCount(), 0);
     EXPECT_EQ(reader.granuleCount(), 0);
+    EXPECT_EQ(reader.dictionarySize(), 0);
     EXPECT_EQ(reader.maximumNameGranuleSize(), 0);
+    EXPECT_EQ(reader.maximumNameSize(), 0);
     EXPECT_TRUE(reader.decodeAddresses().empty());
     EXPECT_TRUE(decodeNames(reader).empty());
 }
@@ -121,6 +310,8 @@ TEST(CompactSymbols, AddressAndNameRoundTrip)
 
     EXPECT_EQ(reader.nameCount(), 3);
     EXPECT_EQ(reader.addressCount(), 4);
+    EXPECT_EQ(reader.dictionarySize(), 0);
+    EXPECT_EQ(reader.maximumNameSize(), std::string_view("prefix_alpha").size());
     EXPECT_EQ(
         decodeSymbols(reader),
         (std::vector<DecodedSymbol>{
@@ -133,8 +324,7 @@ TEST(CompactSymbols, AddressAndNameRoundTrip)
 
 TEST(CompactSymbols, SingleName)
 {
-    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
-    auto encoded = encode(symbols);
+    auto encoded = encodeSingleName();
     Reader reader(std::string_view(encoded.data(), encoded.size()));
 
     EXPECT_EQ(reader.granuleCount(), 1);
@@ -166,60 +356,117 @@ TEST(CompactSymbols, NameGranuleBoundaries)
     EXPECT_EQ(decoded_names, expected);
 }
 
+TEST(CompactSymbols, DictionaryRoundTripAndDeterminism)
+{
+    const auto & input = largeInput();
+    Reader reader(std::string_view(input.encoded.data(), input.encoded.size()));
+
+    EXPECT_GT(reader.dictionarySize(), 0);
+    EXPECT_LE(reader.dictionarySize(), test_dictionary_capacity);
+    std::vector<std::string> expected = input.names;
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(decodeNames(reader), expected);
+    size_t maximum_name_size = 0;
+    for (const auto & name : input.names)
+        maximum_name_size = std::max(maximum_name_size, name.size());
+    EXPECT_EQ(reader.maximumNameSize(), maximum_name_size);
+
+    auto addresses = reader.decodeAddresses();
+    ASSERT_EQ(addresses.size(), input.symbols.size());
+    for (size_t index = 0; index < addresses.size(); ++index)
+    {
+        EXPECT_EQ(addresses[index].address, input.symbols[index].address);
+        EXPECT_EQ(expected.at(addresses[index].name_index), input.symbols[index].name);
+    }
+
+    EXPECT_EQ(encode(input.symbols, test_dictionary_capacity), input.encoded);
+}
+
+TEST(CompactSymbols, RejectsUnsupportedVersion)
+{
+    auto encoded = encodeSingleName();
+    for (uint32_t version : {format_version - 1, format_version + 1})
+    {
+        auto patched = encoded;
+        writeField<uint32_t>(patched, version_field, version);
+        EXPECT_THROW((void)Reader(std::string_view(patched.data(), patched.size())), std::runtime_error);
+    }
+}
+
+TEST(CompactSymbols, RejectsCorruptedDictionary)
+{
+    const auto & encoded = largeInput().encoded;
+    size_t dictionary_offset = readField<uint64_t>(encoded, dictionary_offset_field);
+    size_t dictionary_size = readField<uint64_t>(encoded, dictionary_size_field);
+
+    /// The magic, the entropy tables right after the dictionary id, and the tail of the content.
+    const std::array<std::pair<size_t, size_t>, 3> corruptions{{{0, 1}, {8, 64}, {dictionary_size - dictionary_size / 4, dictionary_size / 4}}};
+    for (auto [begin, size] : corruptions)
+    {
+        auto corrupted = encoded;
+        for (size_t index = begin; index < begin + size; ++index)
+            corrupted[dictionary_offset + index] ^= static_cast<char>(0x5a);
+        EXPECT_THROW((void)Reader(std::string_view(corrupted.data(), corrupted.size())), std::runtime_error) << begin;
+    }
+}
+
+TEST(CompactSymbols, RejectsFrameNotMatchingDictionary)
+{
+    const auto & with_dictionary = largeInput().encoded;
+    std::string_view dictionary = dictionaryOf(with_dictionary);
+    std::string payload = decompressFrame(nameGranuleFrame(with_dictionary, 0), dictionary);
+
+    {
+        auto patched = with_dictionary;
+        replaceNameGranule(patched, 0, compressFrame(payload, {}));
+        EXPECT_THROW((void)Reader(std::string_view(patched.data(), patched.size())), std::runtime_error);
+    }
+
+    {
+        std::string other_dictionary(dictionary);
+        other_dictionary[4] ^= 1;
+        auto patched = with_dictionary;
+        replaceNameGranule(patched, 0, compressFrame(payload, other_dictionary));
+        EXPECT_THROW((void)Reader(std::string_view(patched.data(), patched.size())), std::runtime_error);
+    }
+
+    {
+        auto without_dictionary = encodeSingleName();
+        std::string single_payload = decompressFrame(nameGranuleFrame(without_dictionary, 0), {});
+        replaceNameGranule(without_dictionary, 0, compressFrame(single_payload, {}));
+        EXPECT_NO_THROW((void)Reader(std::string_view(without_dictionary.data(), without_dictionary.size())));
+        replaceNameGranule(without_dictionary, 0, compressFrame(single_payload, {}, /* checksum = */ false));
+        EXPECT_THROW((void)Reader(std::string_view(without_dictionary.data(), without_dictionary.size())), std::runtime_error);
+        replaceNameGranule(without_dictionary, 0, compressFrame(single_payload, dictionary));
+        EXPECT_THROW((void)Reader(std::string_view(without_dictionary.data(), without_dictionary.size())), std::runtime_error);
+    }
+}
+
 TEST(CompactSymbols, RejectsHugeAdvertisedAddressFrameSize)
 {
-    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
-    auto encoded = encode(symbols);
-    constexpr size_t addresses_offset_field = 72;
-    size_t addresses_offset = static_cast<size_t>(readLittleEndian64(encoded, addresses_offset_field));
-    advertiseHugeFrameContentSize(encoded, addresses_offset);
+    auto encoded = encodeSingleName();
+    replaceAddressesFrame(encoded, withHugeContentSize(addressesFrame(encoded)));
 
     Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_THROW((void)reader.decodeAddresses(), std::runtime_error);
+    expectExpansionBoundRejection([&] { (void)reader.decodeAddresses(); });
 }
 
 TEST(CompactSymbols, RejectsHugeAdvertisedNameGranuleSize)
 {
-    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
-    auto encoded = encode(symbols);
-    constexpr size_t names_offset_field = 56;
-    size_t names_offset = static_cast<size_t>(readLittleEndian64(encoded, names_offset_field));
-    advertiseHugeFrameContentSize(encoded, names_offset);
+    auto encoded = encodeSingleName();
+    replaceNameGranule(encoded, 0, withHugeContentSize(nameGranuleFrame(encoded, 0)));
 
-    Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_THROW((void)reader.maximumNameGranuleSize(), std::runtime_error);
+    expectExpansionBoundRejection([&] { (void)Reader(std::string_view(encoded.data(), encoded.size())); });
 }
 
-TEST(CompactSymbols, ValidatesNames)
+TEST(CompactSymbols, RejectsInvalidNamePayload)
 {
-    std::vector<Symbol> symbols{{0x1234, 17, "only_symbol"}};
-    auto encoded = encode(symbols);
+    auto encoded = encodeSingleName();
+    EXPECT_NO_THROW((void)Reader(std::string_view(encoded.data(), encoded.size())));
 
-    {
-        Reader reader(std::string_view(encoded.data(), encoded.size()));
-        EXPECT_NO_THROW(reader.validateNames());
-    }
-
-    /// Replace the only name granule with a well-formed zstd frame of the same size whose
-    /// front-coded payload is invalid: the first name must not share a prefix.
-    constexpr size_t marks_offset_field = 40;
-    constexpr size_t names_offset_field = 56;
-    size_t marks_offset = static_cast<size_t>(readLittleEndian64(encoded, marks_offset_field));
-    size_t names_offset = static_cast<size_t>(readLittleEndian64(encoded, names_offset_field));
-    size_t compressed_offset = static_cast<size_t>(readLittleEndian64(encoded, marks_offset));
-    size_t compressed_size = static_cast<size_t>(readLittleEndian64(encoded, marks_offset + sizeof(uint64_t)));
-
-    const std::string invalid_payload = std::string("\x01\x0b") + "only_symbol";
-    std::vector<char> invalid_frame(ZSTD_compressBound(invalid_payload.size()));
-    size_t invalid_frame_size
-        = ZSTD_compress(invalid_frame.data(), invalid_frame.size(), invalid_payload.data(), invalid_payload.size(), compression_level);
-    if (ZSTD_isError(invalid_frame_size) || invalid_frame_size != compressed_size)
-        throw std::runtime_error("Compact symbols test cannot build a replacement name granule");
-    std::copy_n(invalid_frame.data(), invalid_frame_size, encoded.data() + names_offset + compressed_offset);
-
-    Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_NO_THROW((void)reader.maximumNameGranuleSize());
-    EXPECT_THROW(reader.validateNames(), std::runtime_error);
+    /// A well-formed frame whose front-coded payload is invalid: the first name must not share a prefix.
+    replaceNameGranule(encoded, 0, compressFrame(std::string("\x01\x0b") + "only_symbol", {}));
+    EXPECT_THROW((void)Reader(std::string_view(encoded.data(), encoded.size())), std::runtime_error);
 }
 
 }

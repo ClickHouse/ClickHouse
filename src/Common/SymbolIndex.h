@@ -175,7 +175,8 @@ public:
     /// `getSymbolNameCString`, `getSymbolName`, or an iterator method on the same thread.
     /// An empty string is returned on failure. Copy it if needed longer.
     [[nodiscard]] const char * getSymbolNameCString(const Symbol & symbol) const;
-    /// Preallocates the compact-name workspace for the current thread.
+    /// Preallocates everything the current thread needs to decode compact names, and makes its lookups
+    /// only read the name caches, so that symbolization on this thread does not allocate.
     void warmUp() const;
     [[nodiscard]] SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
     const Object * findObject(const void * address) const;
@@ -237,6 +238,7 @@ private:
     Data data;
 #if defined(__ELF__)
     size_t maximum_name_granule_size = 0;
+    size_t maximum_name_size = 0;
 #endif
 
     void load();

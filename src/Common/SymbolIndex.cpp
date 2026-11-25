@@ -4,7 +4,8 @@
 #include <Common/Hex.h>
 #include <base/sort.h>
 #if defined(__ELF__)
-#include <Common/CompactSymbols.h>
+#include <Common/CompactSymbolLookup.h>
+#include <Common/Stopwatch.h>
 #endif
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -106,125 +107,19 @@ extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t
 namespace DB
 {
 
-#if defined(__ELF__)
-class CompactSymbolTable
-{
-public:
-    explicit CompactSymbolTable(std::string_view data)
-        : reader(data)
-        , maximum_name_granule_size(reader.maximumNameGranuleSize())
-    {
-        /// Lookups cannot report errors, so reject a corrupted name payload up front and keep the section absent.
-        reader.validateNames();
-    }
-
-    CompactSymbols::Reader reader;
-    size_t maximum_name_granule_size;
-};
-#endif
-
 namespace
 {
 
 #if defined(__ELF__)
-ZstdDCtxPtr createDecompressionContext()
-{
-    ZstdDCtxPtr context(ZSTD_createDCtx());
-    if (!context)
-        throw std::bad_alloc();
-    return context;
-}
-
-std::string_view decodeCompactName(
-    const CompactSymbols::Reader & reader,
-    uint32_t granule_index,
-    uint32_t entry_index,
-    ZSTD_DCtx * decompression_context,
-    std::span<char> granule_buffer,
-    std::optional<CompactSymbols::NameGranuleDecoder> & decoder,
-    std::string & name_buffer,
-    uint32_t & cached_granule_index,
-    uint32_t & cached_entry_index)
-{
-    constexpr uint32_t no_index = std::numeric_limits<uint32_t>::max();
-
-    if (granule_index != cached_granule_index)
-    {
-        decoder.emplace(reader.decodeNameGranule(granule_index, decompression_context, granule_buffer));
-        cached_granule_index = granule_index;
-        cached_entry_index = no_index;
-        name_buffer.clear();
-    }
-    else if (cached_entry_index != no_index && cached_entry_index > entry_index)
-    {
-        decoder->reset();
-        cached_entry_index = no_index;
-        name_buffer.clear();
-    }
-
-    if (cached_entry_index == entry_index)
-        return std::string_view(name_buffer.data(), name_buffer.size());
-
-    uint32_t next_entry_index = cached_entry_index == no_index ? 0 : cached_entry_index + 1;
-    while (next_entry_index <= entry_index)
-    {
-        if (!decoder->next(name_buffer))
-            return std::string_view("");
-        cached_entry_index = next_entry_index;
-        ++next_entry_index;
-    }
-    return std::string_view(name_buffer.data(), name_buffer.size());
-}
-
-class CompactNameWorkspace
-{
-public:
-    CompactNameWorkspace()
-        : decompression_context(createDecompressionContext())
-    {
-    }
-
-    void prepare(size_t maximum_granule_size)
-    {
-        if (granule_buffer.size() < maximum_granule_size || name_buffer.capacity() < maximum_granule_size)
-        {
-            invalidate();
-            granule_buffer.resize(maximum_granule_size);
-            name_buffer.reserve(maximum_granule_size);
-        }
-    }
-
-    void invalidate()
-    {
-        source_id = std::numeric_limits<uint32_t>::max();
-        granule_index = std::numeric_limits<uint32_t>::max();
-        entry_index = std::numeric_limits<uint32_t>::max();
-        decoder.reset();
-        name_buffer.clear();
-    }
-
-    ZstdDCtxPtr decompression_context;
-    std::vector<char> granule_buffer;
-    std::string name_buffer;
-    std::optional<CompactSymbols::NameGranuleDecoder> decoder;
-    uint32_t source_id = std::numeric_limits<uint32_t>::max();
-    uint32_t granule_index = std::numeric_limits<uint32_t>::max();
-    uint32_t entry_index = std::numeric_limits<uint32_t>::max();
-};
-
 CompactNameWorkspace & compactNameWorkspace()
 {
     thread_local CompactNameWorkspace workspace;
     return workspace;
 }
 
-CompactNameWorkspace & preparedCompactNameWorkspace(size_t maximum_granule_size)
+UInt64 nameCacheNowSeconds()
 {
-    /// Account the thread-lifetime workspace globally, not to the query that first needs symbolization.
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    CompactNameWorkspace & workspace = compactNameWorkspace();
-    workspace.prepare(maximum_granule_size);
-    return workspace;
+    return clock_gettime_ns(CLOCK_MONOTONIC_COARSE) / 1'000'000'000;
 }
 
 /// Notes: "PHDR" is "Program Headers".
@@ -1170,7 +1065,10 @@ void SymbolIndex::load()
 
 #if defined(__ELF__)
     for (const auto & table : data.compact_symbol_tables)
-        maximum_name_granule_size = std::max(maximum_name_granule_size, table->maximum_name_granule_size);
+    {
+        maximum_name_granule_size = std::max(maximum_name_granule_size, table->reader.maximumNameGranuleSize());
+        maximum_name_size = std::max(maximum_name_size, table->reader.maximumNameSize());
+    }
 #endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
@@ -1283,40 +1181,19 @@ const char * SymbolIndex::getSymbolNameImpl(const Symbol & symbol, size_t * name
         return "";
     }
 
-    uint32_t source_id = symbol.nameSourceId();
-    uint32_t name_index = symbol.nameOffsetOrIndex();
-    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
-    uint32_t entry_index = name_index % CompactSymbols::names_per_granule;
-    CompactNameWorkspace & workspace = preparedCompactNameWorkspace(maximum_name_granule_size);
-    if (source_id != workspace.source_id)
-    {
-        workspace.invalidate();
-        workspace.source_id = source_id;
-    }
-
-    try
-    {
-        std::string_view name = decodeCompactName(
-            data.compact_symbol_tables[source->compact_table_index]->reader,
-            granule_index,
-            entry_index,
-            workspace.decompression_context.get(),
-            workspace.granule_buffer,
-            workspace.decoder,
-            workspace.name_buffer,
-            workspace.granule_index,
-            workspace.entry_index);
-        if (name_size)
-            *name_size = name.size();
-        return name.data();
-    }
-    catch (const std::runtime_error &)
-    {
-        workspace.invalidate();
-        if (name_size)
-            *name_size = 0;
-        return "";
-    }
+    UInt64 now_seconds = nameCacheNowSeconds();
+    /// Account the thread-lifetime workspace and the name caches globally, not to the query that first needs symbolization.
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    std::string_view name = compactNameWorkspace().getName(
+        *data.compact_symbol_tables[source->compact_table_index],
+        symbol.nameSourceId(),
+        symbol.nameOffsetOrIndex(),
+        now_seconds,
+        maximum_name_size,
+        maximum_name_granule_size);
+    if (name_size)
+        *name_size = name.size();
+    return name.data();
 #else
     if (name_size)
         *name_size = 0;
@@ -1328,7 +1205,12 @@ void SymbolIndex::warmUp() const
 {
 #if defined(__ELF__)
     if (maximum_name_granule_size != 0)
-        preparedCompactNameWorkspace(maximum_name_granule_size);
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        CompactNameWorkspace & workspace = compactNameWorkspace();
+        workspace.prepare(maximum_name_size, maximum_name_granule_size);
+        workspace.setNameCacheReadOnly();
+    }
 #endif
 }
 
@@ -1343,7 +1225,7 @@ SymbolIndex::SymbolIterator::SymbolIterator(const SymbolIndex & index_)
         /// allocating them under a global blocker would make their deallocation underreport the query.
         decompression_context = createDecompressionContext();
         granule_buffer.resize(index.maximum_name_granule_size);
-        name_buffer.reserve(index.maximum_name_granule_size);
+        name_buffer.reserve(index.maximum_name_size);
     }
 #endif
 }
