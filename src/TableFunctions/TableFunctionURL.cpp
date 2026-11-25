@@ -586,6 +586,10 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             /// Same whole-source grant as `getStorage`, for every read through the web object storage -
             /// a wildcard listing and an archive fetch alike: the structure inference reads the source too,
             /// and an ad-hoc call has no table grants to fall back on.
+            /// Deliberately without the replay exemption of `getStorage`: every path that resolves a stored
+            /// definition skips structure inference (the stored columns list or the lazy proxy answers), so
+            /// a replayed instance cannot reach this check. Do not add such a caller here, or stored tables
+            /// would start demanding an unfiltered grant at startup and disappear from the catalog.
             checkWholeSourceAccessForURLWildcard(context);
 
             auto object_storage_configuration

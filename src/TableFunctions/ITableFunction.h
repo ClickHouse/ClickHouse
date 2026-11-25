@@ -131,12 +131,6 @@ public:
         is_dynamic_database_table = true;
     }
 
-    /// Whether the experimental gate that guards HTTP index-page listing is skipped for this instance. It is
-    /// skipped where a definition is read back from the metadata, because the gate is a session setting that
-    /// would otherwise be the server default and drop the table from the catalog. A carrier that rebuilds the
-    /// function for a fresh query - a URL database resolves its tables per query - keeps the gate.
-    void setSkipExperimentalGate(bool value) const { skip_experimental_gate = value; }
-
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:
@@ -228,7 +222,13 @@ protected:
     /// because the combination parsed there was written when the database was created and the tables of the
     /// database cannot be recreated from inside the read path.
     mutable bool is_dynamic_database_table = false;
-    /// See `setSkipExperimentalGate`.
+    /// Whether the experimental gate that guards HTTP index-page listing is skipped for this instance. It is
+    /// skipped exactly when the instance replays a definition read back from the metadata
+    /// (`setIsReplayedDefinition`), because the gate is a session setting that would otherwise be the
+    /// server default and drop the table from the catalog. A carrier that rebuilds the function for a
+    /// fresh query - a URL database resolves its tables per query - keeps the gate
+    /// (`setDynamicDatabaseTable`). There is deliberately no standalone setter: skipping the gate is
+    /// never a caller's choice, it follows from what the instance is.
     mutable bool skip_experimental_gate = false;
 
     /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
