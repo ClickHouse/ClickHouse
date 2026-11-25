@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
 
@@ -552,7 +553,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
     if (!is_and(dag.getNodesCount() - 1))
         return conjuncts;
 
-    std::vector<bool> expanded(dag.getNodesCount());
+    VectorWithMemoryTracking<bool> expanded(dag.getNodesCount());
     std::vector<size_t> stack{dag.getNodesCount() - 1};
     while (!stack.empty())
     {

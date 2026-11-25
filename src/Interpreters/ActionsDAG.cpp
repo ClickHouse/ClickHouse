@@ -4695,7 +4695,7 @@ namespace
 ActionsDAG::NodeRawConstPtrs extractConjunctionAtomsImpl(const ActionsDAG::Node * predicate, bool written_order)
 {
     ActionsDAG::NodeRawConstPtrs atoms;
-    std::unordered_set<const ActionsDAG::Node *> expanded;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(predicate);
 

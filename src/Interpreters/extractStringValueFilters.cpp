@@ -1,6 +1,7 @@
 #include <Interpreters/extractStringValueFilters.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -342,7 +343,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
 bool filterNodeRejectsEmptyString(const ActionsDAG::Node * filter_node, const String & column_name)
 {
     std::vector<const ActionsDAG::Node *> stack;
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     stack.push_back(skipAliases(filter_node));
     while (!stack.empty())
     {

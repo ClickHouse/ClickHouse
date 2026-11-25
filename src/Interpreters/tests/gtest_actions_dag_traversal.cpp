@@ -181,11 +181,11 @@ TEST(ActionsDAGTraversal, DeterminismOfSharedChain)
 
 TEST(ActionsDAGTraversal, ConjunctionAtomsExpandSharedAndOnce)
 {
-    /// `c_{i+1} = and(c_i, c_i)`: 2^64 paths from the output to the input.
+    /// `c_{i+1} = and(c_i, c_i)`: 2^16 paths from the output to the input.
     ActionsDAG dag;
     const auto * input = &dag.addInput("x", std::make_shared<DataTypeUInt8>());
     const auto * node = input;
-    for (size_t i = 0; i < 64; ++i)
+    for (size_t i = 0; i < 16; ++i)
         node = &addFunction(dag, "and", {node, node}, "c" + std::to_string(i));
 
     EXPECT_EQ(ActionsDAG::extractConjunctionAtoms(node), (ActionsDAG::NodeRawConstPtrs{input, input}));

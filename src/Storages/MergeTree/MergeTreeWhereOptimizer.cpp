@@ -530,7 +530,7 @@ static bool computesSharedNode(const RPNBuilderTreeNode & node, const std::unord
 static void collectConjuncts(
     const RPNBuilderTreeNode & node,
     std::vector<RPNBuilderTreeNode> & conjuncts,
-    std::unordered_set<const ActionsDAG::Node *> & expanded)
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & expanded)
 {
     auto fn = node.toFunctionNodeOrNull();
     if (fn.has_value() && fn->getFunctionName() == "and")
@@ -580,7 +580,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 {
     /// Flatten the top-level AND chain into individual conjuncts.
     std::vector<RPNBuilderTreeNode> conjuncts;
-    std::unordered_set<const ActionsDAG::Node *> expanded;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
     collectConjuncts(node, conjuncts, expanded);
 
     struct ConjunctInfo
@@ -845,7 +845,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     if (!where_optimizer_context.allow_reorder_prewhere_conditions)
     {
         std::vector<RPNBuilderTreeNode> conjuncts;
-        std::unordered_set<const ActionsDAG::Node *> expanded;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
         collectConjuncts(node, conjuncts, expanded);
         for (const auto & conjunct : conjuncts)
         {
