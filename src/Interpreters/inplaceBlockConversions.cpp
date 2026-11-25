@@ -135,7 +135,9 @@ void addDefaultRequiredExpressionsRecursively(
             if (block.has(name) || columns.has(name))
                 continue;
 
-            auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            /// An `EPHEMERAL` column is an input of a default expression as well.
+            static constexpr auto columns_with_ephemeral = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::AllPhysical | GetColumnsOptions::Ephemeral);
+            auto subcolumn = columns.tryGetColumnOrSubcolumn(columns_with_ephemeral, name);
             if (!subcolumn || !subcolumn->isSubcolumn())
                 continue;
 

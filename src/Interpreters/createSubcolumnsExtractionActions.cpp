@@ -22,6 +22,7 @@ ActionsDAG createSubcolumnsExtractionActions(
     /// Find all subcolumns in the required_columns that are not presented
     /// in the available_columns and extract them using getSubcolumn function.
     std::unordered_map<String, const ActionsDAG::Node *> input_nodes;
+    static constexpr auto columns_with_ephemeral = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::AllPhysical | GetColumnsOptions::Ephemeral);
     for (const auto & required_column : required_columns)
     {
         if (available_columns.has(required_column))
@@ -32,11 +33,13 @@ ActionsDAG createSubcolumnsExtractionActions(
         /// The column that the table gives the subcolumn is the only one to take it from. If it is not available
         /// (the `INSERT` omitted it), the subcolumn is not extracted from another column that happens to offer
         /// the same name: its values would not be the values of the subcolumn of the table.
+        /// An `EPHEMERAL` column counts as well: it is an input of the `DEFAULT` and `MATERIALIZED` expressions
+        /// evaluated on `INSERT`. It is in no part, so for the other callers its subcolumn is simply not available.
         String column_name_in_table;
         String subcolumn_name_in_table;
         if (table_columns)
         {
-            auto column_in_table = table_columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required_column);
+            auto column_in_table = table_columns->tryGetColumnOrSubcolumn(columns_with_ephemeral, required_column);
             if (column_in_table && column_in_table->isSubcolumn())
             {
                 column_name_in_table = column_in_table->getNameInStorage();
