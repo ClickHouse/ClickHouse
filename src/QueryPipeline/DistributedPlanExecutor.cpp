@@ -1660,15 +1660,18 @@ protected:
             return stage_finished;
         }
 
-        /// Cancels the tasks still tracked, once: they leave `stage_tasks` here. Collects them under the lock and sends the
-        /// requests without it, so that the `checkStatusFunc` threads can exit. It can run on the killed query's own thread, so
-        /// its requests skip the query cancellation check.
+        /// Cancels the tasks still tracked and forgets every task, once, when the query ends: the tasks leave `stage_tasks`
+        /// and `ended_tasks` here. Collects them under the lock and sends the requests without it, so that the
+        /// `checkStatusFunc` threads can exit. It can run on the killed query's own thread, so its requests skip the query
+        /// cancellation check.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
+            VectorWithMemoryTracking<RunningTaskInfo> tasks_to_forget;
             {
                 std::lock_guard g(lock);
                 cancel_started = true;
+                tasks_to_forget.swap(ended_tasks);
                 for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
                     for (auto & [task_name, task_info] : started_tasks)
@@ -1711,6 +1714,9 @@ protected:
                         "the worker drops it when it ends", task.task_id, task.endpoint_uri);
                 tryForgetTask(task);
             }
+
+            for (const auto & task : tasks_to_forget)
+                tryForgetTask(task);
         }
 
     private:
@@ -1839,10 +1845,13 @@ protected:
                 return;
             }
 
-            /// Release worker-side bookkeeping for it (TaskState/progress/future). Best-effort. Only
-            /// after recording the failure: a forgotten task answers the teardown's poll with
-            /// "Unknown task", which carries none.
-            tryForgetTask(task);
+            /// Forgotten when the query ends, so the query keeps its slot on the worker between its persisted waves.
+            {
+                std::lock_guard g(lock);
+                ended_tasks.push_back(task);
+                if (!finished)
+                    stage_tasks[stage_name].erase(task.task_id);
+            }
 
             if (finished)
                 setTaskFinished(stage_name, task.task_id);
@@ -2049,6 +2058,8 @@ protected:
         UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
         /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
         bool cancel_started TSA_GUARDED_BY(lock) = false;
+        /// Tasks whose last status was read; `cancel` forgets them.
+        VectorWithMemoryTracking<RunningTaskInfo> ended_tasks TSA_GUARDED_BY(lock);
         /// Tasks whose failure is recorded, see `recordTaskFailureOnce`.
         UnorderedSetWithMemoryTracking<String> tasks_with_recorded_failure TSA_GUARDED_BY(lock);
         std::atomic<Int64> in_flight_request_count = 0;
