@@ -7659,10 +7659,11 @@ ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadableP
             return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
         }, context);
 
-    /// A data mutation applied on the fly computes again the columns it changes, and the `MATERIALIZED` columns computed from
-    /// them, in each read: with a non-deterministic expression, a second read of a column the main read reads as well would
-    /// return other values than the main read has. Such a column stays in the main read.
-    const bool can_read_twice = !mutations_snapshot || !mutations_snapshot->hasDataMutations();
+    /// A data mutation applied on the fly, or a masking policy, which is applied the same way, computes again the columns it
+    /// changes, and the `MATERIALIZED` columns computed from them, in each read: with a non-deterministic expression, a second
+    /// read of a column the main read reads as well would return other values than the main read has. Such a column stays in
+    /// the main read.
+    const bool can_read_twice = (!mutations_snapshot || !mutations_snapshot->hasDataMutations()) && !data.hasEnabledMaskingPolicies(context);
 
     LazilyReadablePositions readable;
     for (size_t i = 0; i < positions.size(); ++i)
