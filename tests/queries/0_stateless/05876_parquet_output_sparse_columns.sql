@@ -67,6 +67,10 @@ SELECT 'split', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (c
 SELECT 'row group bytes', (SELECT (count(), sum(cityHash64(*))) FROM t_mixed) = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
     || '/?query=SELECT+*+FROM+' || currentDatabase() || '.t_mixed+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&output_format_parquet_row_group_size_bytes=100000',
     Parquet, 'id UInt64, u UInt64, s String, n Nullable(UInt32), tup Tuple(a UInt64, b String), lc LowCardinality(String), arr Array(UInt8)'));
+-- Row groups closed by bytes count the full size of the sparse columns, as on master.
+SELECT 'row groups by full size', (SELECT num_row_groups FROM url('http://localhost:' || toString(getServerPort('http_port'))
+    || '/?query=SELECT+u,+s+FROM+' || currentDatabase() || '.t_sparse+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&max_block_size=1000&output_format_parquet_row_group_size_bytes=50000',
+    ParquetMetadata)) >= 3;
 SELECT 'array join', (SELECT (count(), sum(cityHash64(*))) FROM (SELECT id, s, a FROM t_mixed ARRAY JOIN range(3) AS a))
     = (SELECT (count(), sum(cityHash64(*))) FROM url('http://localhost:' || toString(getServerPort('http_port'))
     || '/?query=SELECT+id,+s,+a+FROM+' || currentDatabase() || '.t_mixed+ARRAY+JOIN+range(3)+AS+a+FORMAT+Parquet&max_streams_for_merge_tree_reading=1&max_threads=4&enable_lazy_columns_replication=1',
