@@ -1,0 +1,12 @@
+-- 1. without a column part it is not a reference to the skipped side
+1
+-- 2. with a column part it is
+Code: 1022
+-- 3. a qualified matcher is looked up by the whole table name
+Code: 1022
+-- 4. outside a dead branch the identifier without a column part is unknown
+Code: 47
+-- 5. a database-qualified column is found when the alias of the other side is the database name
+1
+-- 6. and is unknown without a column part
+Code: 47
