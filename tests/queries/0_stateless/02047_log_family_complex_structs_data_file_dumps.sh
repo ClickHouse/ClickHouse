@@ -12,8 +12,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # `StripeLog` instead writes one shared `data.bin` (and its `index.mrk`) with the server default codec regardless
 # of the column codec (currently `ZSTD(3)`). The bytes and the sizes of its compressed blocks depend on the
-# version of the compression library, so `data.bin` is dumped decompressed, only the decompressed size is
-# printed for `index.mrk` (it holds the offsets of the compressed blocks), and the sizes are masked in `sizes.json`.
+# version of the compression library, so `data.bin` is dumped decompressed, and only the decompressed size is
+# printed for `index.mrk`, which holds the offsets of the compressed blocks. A size in `sizes.json` is replaced
+# with `OK` only if it is the size of the file. What the index says about the data is checked by `reattach_table`.
 dump_files()
 {
     for name in $(find "$data_dir"* -print0 | xargs -0 -n 1 basename | sort); do
@@ -28,9 +29,22 @@ dump_files()
         elif [ "$name" == "index.mrk" ]; then
             echo "$name decompressed size=$(${CLICKHOUSE_COMPRESSOR} --decompress < "$file_path" | wc -c)"
         else
-            echo "$name: $(sed -E 's/"size":"[0-9]+"/"size":"N"/g' "$file_path")"
+            data_size=$(stat -c%s "${data_dir}data.bin")
+            index_size=$(stat -c%s "${data_dir}index.mrk")
+            echo "$name: $(sed \
+                -e "s/\"data%2Ebin\":{\"size\":\"$data_size\"}/\"data%2Ebin\":{\"size\":\"OK\"}/" \
+                -e "s/\"index%2Emrk\":{\"size\":\"$index_size\"}/\"index%2Emrk\":{\"size\":\"OK\"}/" \
+                "$file_path")"
         fi
     done
+}
+
+# Makes the next query read the table from its files: while the table is attached, the index of `StripeLog`
+# and the marks of `Log` are served from memory, so a wrong index or wrong sizes on disk would stay unnoticed.
+reattach_table()
+{
+    $CLICKHOUSE_CLIENT --query="DETACH TABLE tbl"
+    $CLICKHOUSE_CLIENT --query="ATTACH TABLE tbl"
 }
 
 declare -a engines=("Log" "TinyLog" "StripeLog")
@@ -48,11 +62,13 @@ do
 
     echo "1 element:"
     $CLICKHOUSE_CLIENT --query="INSERT INTO tbl VALUES ([[3,5,7]], ['a1', 'a2'], [4.1, 4.2])"
+    reattach_table
     $CLICKHOUSE_CLIENT --query="SELECT * FROM tbl ORDER BY x"
     dump_files
 
     echo "3 elements:"
     $CLICKHOUSE_CLIENT --query="INSERT INTO tbl VALUES ([], [], []), ([[10]], ['a3'], [4.3])"
+    reattach_table
     $CLICKHOUSE_CLIENT --query="SELECT * FROM tbl ORDER BY x"
     dump_files
 

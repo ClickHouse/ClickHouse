@@ -247,7 +247,7 @@ data.bin decompressed:
 00000070  33 83 40 66 66 86 40                              |3.@ff.@|
 00000077
 index.mrk decompressed size=109
-sizes.json: {"clickhouse":{"data%2Ebin":{"size":"N"},"index%2Emrk":{"size":"N"}}}
+sizes.json: {"clickhouse":{"data%2Ebin":{"size":"OK"},"index%2Emrk":{"size":"OK"}}}
 3 elements:
 []	[]	[]
 [[3,5,7]]	['a1','a2']	[4.1,4.2]
@@ -271,5 +271,5 @@ data.bin decompressed:
 000000f0  00 00 00 9a 99 89 40                              |......@|
 000000f7
 index.mrk decompressed size=218
-sizes.json: {"clickhouse":{"data%2Ebin":{"size":"N"},"index%2Emrk":{"size":"N"}}}
+sizes.json: {"clickhouse":{"data%2Ebin":{"size":"OK"},"index%2Emrk":{"size":"OK"}}}
 

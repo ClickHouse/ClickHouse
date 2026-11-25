@@ -103,7 +103,7 @@ data.bin decompressed:
 00000010  79 06 53 74 72 69 6e 67  01 61                    |y.String.a|
 0000001a
 index.mrk decompressed size=52
-sizes.json: {"clickhouse":{"data%2Ebin":{"size":"N"},"index%2Emrk":{"size":"N"}}}
+sizes.json: {"clickhouse":{"data%2Ebin":{"size":"OK"},"index%2Emrk":{"size":"OK"}}}
 3 elements:
 1	a
 22	bc
@@ -115,5 +115,5 @@ data.bin decompressed:
 00000030  53 74 72 69 6e 67 02 62  63 03 64 65 66           |String.bc.def|
 0000003d
 index.mrk decompressed size=104
-sizes.json: {"clickhouse":{"data%2Ebin":{"size":"N"},"index%2Emrk":{"size":"N"}}}
+sizes.json: {"clickhouse":{"data%2Ebin":{"size":"OK"},"index%2Emrk":{"size":"OK"}}}
 
