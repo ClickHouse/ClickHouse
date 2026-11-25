@@ -18,7 +18,9 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
+#include <bit>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -427,6 +429,14 @@ struct HashMethodSerialized
     std::vector<size_t> lc_strides;
     ColumnRawPtrs lc_index_columns;
     std::vector<LcCacheValue> lc_cache;
+    /// A sub-range state with more positions than slots hashes the position to a slot that remembers it.
+    struct LcHashedSlot
+    {
+        size_t position = 0;
+        LcCacheValue value = nullptr;
+    };
+    std::vector<LcHashedSlot> lc_hashed_cache;
+    size_t lc_hashed_shift = 0;
     /// The rows a sub-range state's cache is valid for: the keys constant over them are not part of the position.
     size_t lc_range_begin = 0;
     size_t lc_range_end = 0;
@@ -569,7 +579,7 @@ struct HashMethodSerialized
         std::vector<size_t> dict_sizes;
         dict_sizes.reserve(keys_size);
         size_t product = 1;
-        size_t whole_block_product = 1;
+        constexpr size_t max_product = for_sub_range ? std::numeric_limits<size_t>::max() : lc_cache_max_size;
 
         for (size_t i = 0; i < keys_size; ++i)
         {
@@ -581,16 +591,11 @@ struct HashMethodSerialized
 
             if constexpr (for_sub_range)
             {
-                if (dict_size == 0 || whole_block_product > lc_cache_max_size / dict_size)
-                    whole_block_product = 0;
-                else
-                    whole_block_product *= dict_size;
-
                 if (isConstantOnRange(low_cardinality->getIndexes(), range_begin, range_end))
                     continue;
             }
 
-            if (dict_size == 0 || product > lc_cache_max_size / dict_size)
+            if (dict_size == 0 || product > max_product / dict_size)
                 return;
 
             product *= dict_size;
@@ -598,22 +603,26 @@ struct HashMethodSerialized
             lc_index_columns.push_back(low_cardinality->getIndexesPtr().get());
         }
 
-        if constexpr (for_sub_range)
-        {
-            /// A cache larger than its range still pays off where the whole-block state would build one: it is never larger than that one.
-            if (product > range_end - range_begin && whole_block_product == 0)
-                return;
-            lc_range_begin = range_begin;
-            lc_range_end = range_end;
-        }
-
         const size_t num_cached_keys = dict_sizes.size();
         lc_strides.assign(num_cached_keys, 1);
         for (size_t i = num_cached_keys; i > 1; --i)
             lc_strides[i - 2] = lc_strides[i - 1] * dict_sizes[i - 1];
 
-        lc_cache.assign(product, nullptr);
         lc_cache_enabled = true;
+        if constexpr (for_sub_range)
+        {
+            lc_range_begin = range_begin;
+            lc_range_end = range_end;
+            /// At most twice the rows of the range, however large the dictionaries are.
+            const size_t slots = std::min(std::bit_ceil(2 * (range_end - range_begin)), lc_cache_max_size);
+            if (product > slots)
+            {
+                lc_hashed_cache.assign(slots, {});
+                lc_hashed_shift = 64 - std::countr_zero(slots);
+                return;
+            }
+        }
+        lc_cache.assign(product, nullptr);
     }
 
     static bool isConstantOnRange(const IColumn & column, size_t begin, size_t end)
@@ -633,6 +642,26 @@ struct HashMethodSerialized
         return position;
     }
 
+    ALWAYS_INLINE LcCacheValue & getLowCardinalityCacheSlot(size_t row)
+    {
+        const size_t position = getLowCardinalityPosition(row);
+        if constexpr (for_sub_range)
+        {
+            chassert(row >= lc_range_begin && row < lc_range_end);
+            if (lc_hashed_shift)
+            {
+                LcHashedSlot & slot = lc_hashed_cache[(position * 0x9E3779B97F4A7C15ULL) >> lc_hashed_shift];
+                if (slot.position != position)
+                {
+                    slot.position = position;
+                    slot.value = nullptr;
+                }
+                return slot.value;
+            }
+        }
+        return lc_cache[position];
+    }
+
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
@@ -640,9 +669,7 @@ struct HashMethodSerialized
         {
             if (lc_cache_enabled)
             {
-                if constexpr (for_sub_range)
-                    chassert(row >= lc_range_begin && row < lc_range_end);
-                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                LcCacheValue & cached = getLowCardinalityCacheSlot(row);
                 if (cached != nullptr)
                     return EmplaceResult(cached, cached, false);
 
@@ -662,9 +689,7 @@ struct HashMethodSerialized
         {
             if (lc_cache_enabled)
             {
-                if constexpr (for_sub_range)
-                    chassert(row >= lc_range_begin && row < lc_range_end);
-                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                LcCacheValue & cached = getLowCardinalityCacheSlot(row);
                 if (cached != nullptr)
                     return FindResult(&cached, true, 0);
             }
