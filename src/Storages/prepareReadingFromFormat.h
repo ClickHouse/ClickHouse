@@ -62,6 +62,8 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        bool hasDefaultOfColumnOrParent(const String & name) const;
+        bool defaultsDependOnTheirBlock(const ContextPtr & context) const;
         /// Other columns that are added to the chunk after the format, e.g. the partition columns and the columns of the
         /// change data feed of a data lake, which are added by the schema transform of each data file.
         /// A column of the data file with the same name can hold other values, so they must not be used by the format.

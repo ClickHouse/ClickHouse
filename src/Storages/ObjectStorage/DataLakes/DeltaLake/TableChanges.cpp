@@ -41,30 +41,30 @@ namespace DeltaLake
 namespace
 {
 
-using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
-using KernelTableChanges = KernelPointerWrapper<ffi::ExclusiveTableChanges, ffi::free_table_changes>;
-using KernelTableChangesScan = KernelPointerWrapper<ffi::SharedTableChangesScan, ffi::free_table_changes_scan>;
+using KernelExternEngine = KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
+using KernelTableChanges = KernelPointerWrapper<::ExclusiveTableChanges, ::free_table_changes>;
+using KernelTableChangesScan = KernelPointerWrapper<::SharedTableChangesScan, ::free_table_changes_scan>;
 using KernelTableChangesScanFilesIterator
-    = KernelPointerWrapper<ffi::SharedTableChangesScanFilesIterator, ffi::free_table_changes_scan_files_iter>;
-using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
-using KernelExpression = KernelPointerWrapper<ffi::SharedExpression, ffi::free_kernel_expression>;
+    = KernelPointerWrapper<::SharedTableChangesScanFilesIterator, ::free_table_changes_scan_files_iter>;
+using KernelSharedSchema = KernelPointerWrapper<::SharedSchema, ::free_schema>;
+using KernelExpression = KernelPointerWrapper<::SharedExpression, ::free_kernel_expression>;
 
 KernelExternEngine createEngine(const IKernelHelper & helper)
 {
-    return KernelExternEngine(KernelUtils::unwrapResult(ffi::builder_build(helper.createBuilder()), "builder_build"));
+    return KernelExternEngine(KernelUtils::unwrapResult(::builder_build(helper.createBuilder()), "builder_build"));
 }
 
 KernelTableChanges createTableChanges(
-    const TableChangesVersionRange & version_range, const IKernelHelper & helper, ffi::SharedExternEngine * engine)
+    const TableChangesVersionRange & version_range, const IKernelHelper & helper, ::SharedExternEngine * engine)
 {
     const auto table_location = KernelUtils::toDeltaString(helper.getTableLocation());
     if (version_range.second.has_value())
         return KernelTableChanges(KernelUtils::unwrapResult(
-            ffi::table_changes_between_versions(table_location, engine, version_range.first, version_range.second.value()),
+            ::table_changes_between_versions(table_location, engine, version_range.first, version_range.second.value()),
             "table_changes_between_versions"));
 
     return KernelTableChanges(KernelUtils::unwrapResult(
-        ffi::table_changes_from_version(table_location, engine, version_range.first),
+        ::table_changes_from_version(table_location, engine, version_range.first),
         "table_changes_from_version"));
 }
 
@@ -96,7 +96,7 @@ public:
         cdc_read_schema.emplace_back(TableChanges::CHANGE_TYPE_COLUMN, std::make_shared<DB::DataTypeString>());
 
         files = KernelTableChangesScanFilesIterator(KernelUtils::unwrapResult(
-            ffi::table_changes_scan_files_iter_init(scan.get(), engine.get()), "table_changes_scan_files_iter_init"));
+            ::table_changes_scan_files_iter_init(scan.get(), engine.get()), "table_changes_scan_files_iter_init"));
     }
 
     size_t estimatedKeysCount() override
@@ -113,7 +113,7 @@ public:
 
         NextFile next_file{.iterator = this, .object = {}, .exception = {}};
         const bool has_file = KernelUtils::unwrapResult(
-            ffi::table_changes_scan_files_next(files.get(), &next_file, &onFile), "table_changes_scan_files_next");
+            ::table_changes_scan_files_next(files.get(), &next_file, &onFile), "table_changes_scan_files_next");
 
         /// The exception cannot be thrown from the callback, because it is called by Rust code.
         if (next_file.exception)
@@ -144,19 +144,19 @@ private:
     };
 
     static void onFile(
-        ffi::NullableCvoid engine_context,
-        ffi::KernelStringSlice path,
+        ::NullableCvoid engine_context,
+        ::KernelStringSlice path,
         int64_t size,
         bool is_cdc,
-        ffi::OptionalValue<ffi::SharedExpression *> transform,
+        ::SharedExpression * transform,
         const uint64_t * row_indexes,
         uintptr_t row_indexes_len,
         bool row_indexes_are_selection)
     {
         /// Take ownership of the handle first, so that it is freed on any exit path.
         std::optional<KernelExpression> transform_handle;
-        if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
-            transform_handle.emplace(transform.some._0);
+        if (transform)
+            transform_handle.emplace(transform);
 
         auto * next_file = static_cast<NextFile *>(engine_context);
         try
@@ -180,7 +180,7 @@ private:
         const std::string & path,
         int64_t size,
         bool is_cdc,
-        ffi::SharedExpression * transform,
+        ::SharedExpression * transform,
         const uint64_t * row_indexes,
         size_t row_indexes_len,
         bool row_indexes_are_selection) const
@@ -285,7 +285,7 @@ DB::NamesAndTypesList TableChanges::getSchema() const
 
     auto engine = createEngine(*helper);
     auto table_changes = createTableChanges(version_range, *helper, engine.get());
-    KernelSharedSchema kernel_schema(ffi::table_changes_schema(table_changes.get()));
+    KernelSharedSchema kernel_schema(::table_changes_schema(table_changes.get()));
     schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
 
     LOG_TRACE(log, "Change data feed schema: {}", schema->toString());
@@ -304,7 +304,7 @@ DB::ObjectIterator TableChanges::iterate(
     /// The logical schema of the change data feed, with physical names, is the result of the transform of every file.
     /// The fields of structs have physical names too, as in the columns read from the data files: a requested subcolumn
     /// (e.g. `c-t.c-t-x` for `t.x`) is found by its physical name in the type of the column that the transform outputs.
-    KernelSharedSchema logical_schema(ffi::table_changes_schema(table_changes.get()));
+    KernelSharedSchema logical_schema(::table_changes_schema(table_changes.get()));
     auto expression_schema = convertToClickHouseSchema(logical_schema.get(), engine.get());
     /// The predicate refers to the columns by their logical names.
     const auto predicate_schema = expression_schema;
@@ -326,12 +326,12 @@ DB::ObjectIterator TableChanges::iterate(
     if (filter_dag && context->getSettingsRef()[DB::Setting::delta_lake_enable_engine_predicate])
         predicate = getEnginePredicate(*filter_dag, predicate_exception, context, predicate_schema);
     KernelTableChangesScan scan(KernelUtils::unwrapResult(
-        ffi::table_changes_scan(table_changes.release(), engine.get(), predicate.get()), "table_changes_scan"));
+        ::table_changes_scan(table_changes.release(), engine.get(), predicate.get()), "table_changes_scan"));
     if (predicate_exception)
         std::rethrow_exception(predicate_exception);
 
     /// The columns of the data files, with physical names.
-    KernelSharedSchema physical_schema(ffi::table_changes_scan_physical_schema(scan.get()));
+    KernelSharedSchema physical_schema(::table_changes_scan_physical_schema(scan.get()));
     auto read_schema = convertToClickHouseSchema(physical_schema.get(), engine.get());
 
     LOG_TRACE(

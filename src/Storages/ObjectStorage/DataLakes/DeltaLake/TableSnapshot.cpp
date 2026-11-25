@@ -71,9 +71,9 @@ namespace
 
 /// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
 /// so it is not a row count for such a file.
-bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
+bool hasDeletionVector(::SharedDvInfo * dv_info_ptr)
 {
-    return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
+    return dv_info_ptr && ::dv_info_has_vector(dv_info_ptr);
 }
 
 }
@@ -208,7 +208,7 @@ public:
         {
             auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext(), table_schema);
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
+                ::scan(
                     kernel_snapshot_state->snapshot.get(),
                     kernel_snapshot_state->engine.get(),
                     predicate.get(),
@@ -218,7 +218,7 @@ public:
         else
         {
             scan = KernelUtils::unwrapResult(
-                ffi::scan(
+                ::scan(
                     kernel_snapshot_state->snapshot.get(),
                     kernel_snapshot_state->engine.get(),
                     /* predicate */nullptr,
@@ -227,7 +227,7 @@ public:
         }
 
         scan_data_iterator = KernelUtils::unwrapResult(
-            ffi::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
+            ::scan_metadata_iter_init(kernel_snapshot_state->engine.get(), scan.get()),
             "scan_metadata_iter_init");
     }
 
@@ -310,7 +310,7 @@ public:
                     while (!shutdown.load())
                     {
                         bool have_scan_data_res = KernelUtils::unwrapResult(
-                            ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                            ::scan_metadata_next(scan_data_iterator.get(), this, visitData),
                             "scan_metadata_next");
 
                         if (have_scan_data_res)
@@ -474,19 +474,19 @@ public:
         auto & metadata = object->data_lake_metadata;
         chassert(metadata.has_value());
 
-        if (auto * dv_info_ptr = scan_item.dv_info_handle.get(); dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr))
+        if (auto * dv_info_ptr = scan_item.dv_info_handle.get(); dv_info_ptr && ::dv_info_has_vector(dv_info_ptr))
         {
             /// `row_indexes_from_dv` returns a vector of row indexes
             /// that should be *removed* from the result set
-            ffi::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
-                ffi::row_indexes_from_dv(
+            ::KernelRowIndexArray row_indexes = KernelUtils::unwrapResult(
+                ::row_indexes_from_dv(
                     dv_info_ptr,
                     kernel_snapshot_state->engine.get(),
                     KernelUtils::toDeltaString(getTableLocation())),
                 "row_indexes_from_dv");
 
             SCOPE_EXIT({
-                ffi::free_row_indexes(row_indexes);
+                ::free_row_indexes(row_indexes);
             });
 
             if (row_indexes.len > 0)
@@ -505,19 +505,19 @@ public:
 
     static void visitData(
         void * engine_context,
-        ffi::SharedScanMetadata * scan_metadata)
+        ::SharedScanMetadata * scan_metadata)
     {
         auto * iter = static_cast<Iterator *>(engine_context);
         /// Release the handle on all exit paths to avoid leaking it.
         SCOPE_EXIT({
-            ffi::free_scan_metadata(scan_metadata);
+            ::free_scan_metadata(scan_metadata);
         });
         /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the `extern "C"`
         /// frame, so store it (like `scanCallback`) and let `scanDataFunc` rethrow after it returns.
         try
         {
             KernelUtils::unwrapResult(
-                ffi::visit_scan_metadata(
+                ::visit_scan_metadata(
                     scan_metadata,
                     iter->kernel_snapshot_state->engine.get(),
                     engine_context,
@@ -532,14 +532,14 @@ public:
     }
 
     static bool scanCallback(
-        ffi::NullableCvoid engine_context,
-        struct ffi::KernelStringSlice path,
+        ::NullableCvoid engine_context,
+        struct ::KernelStringSlice path,
         int64_t size,
         int64_t /*mod_time*/,
-        const ffi::Stats * stats,
-        ffi::SharedDvInfo * dv_info,
-        ffi::OptionalValue<ffi::SharedExpression *> transform,
-        const struct ffi::CStringMap * deprecated)
+        const ::Stats * stats,
+        ::SharedDvInfo * dv_info,
+        ::SharedExpression * transform,
+        const struct ::CStringMap * deprecated)
     {
         try
         {
@@ -558,19 +558,19 @@ public:
     }
 
     static bool scanCallbackImpl(
-        ffi::NullableCvoid engine_context,
-        struct ffi::KernelStringSlice path,
+        ::NullableCvoid engine_context,
+        struct ::KernelStringSlice path,
         int64_t size,
-        const ffi::Stats * stats,
-        ffi::SharedDvInfo * dv_info,
-        ffi::OptionalValue<ffi::SharedExpression *> transform,
-        const struct ffi::CStringMap * /* deprecated */)
+        const ::Stats * stats,
+        ::SharedDvInfo * dv_info,
+        ::SharedExpression * transform,
+        const struct ::CStringMap * /* deprecated */)
     {
         /// Wrap handles in RAII immediately to ensure cleanup on any exit path
         KernelDvInfo dv_info_handle(dv_info);
         std::optional<KernelExpression> transform_handle;
-        if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
-            transform_handle.emplace(transform.some._0);
+        if (transform)
+            transform_handle.emplace(transform);
 
         /// Read before `dv_info_handle` is moved into `data_files` below.
         const bool has_deletion_vector = hasDeletionVector(dv_info_handle.get());
@@ -616,7 +616,9 @@ public:
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
         std::string full_path = context->helper->resolveDataFilePath(KernelUtils::fromDeltaString(path), context->getContext());
-        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
+        DB::ObjectInfoPtr object = size > 0
+            ? std::make_shared<DB::ObjectInfoWithFileSizeHint>(DB::RelativePathWithMetadata(std::move(full_path)), static_cast<size_t>(size))
+            : std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
         if (stats)
             object->data_lake_metadata->num_rows = stats->num_records;
@@ -643,8 +645,8 @@ public:
     }
 
 private:
-    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
+    using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
+    using KernelScanDataIterator = KernelPointerWrapper<::SharedScanMetadataIterator, ::free_scan_metadata_iter>;
 
     std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     /// Fingerprint of the credentials embedded in `kernel_snapshot_state` at build time.
@@ -755,7 +757,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     KernelScan fallback_scan;
     fallback_scan = KernelUtils::unwrapResult(
-        ffi::scan(
+        ::scan(
             state->snapshot.get(),
             state->engine.get(),
             /* predicate */nullptr,
@@ -764,15 +766,15 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     KernelScanMetadataIterator fallback_scan_data_iterator;
     fallback_scan_data_iterator = KernelUtils::unwrapResult(
-        ffi::scan_metadata_iter_init(
+        ::scan_metadata_iter_init(
             state->engine.get(), fallback_scan.get()),
         "scan_metadata_iter_init");
 
     struct StatsVisitor
     {
-        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+        explicit StatsVisitor(::SharedExternEngine * engine_) : engine(engine_) {}
 
-        ffi::SharedExternEngine * const engine;
+        ::SharedExternEngine * const engine;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -782,14 +784,14 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         std::exception_ptr exception;
 
         static bool visit(
-            ffi::NullableCvoid engine_context,
-            struct ffi::KernelStringSlice /* path */,
+            ::NullableCvoid engine_context,
+            struct ::KernelStringSlice /* path */,
             int64_t size,
             int64_t /* mod_time */,
-            const ffi::Stats * stats,
-            ffi::SharedDvInfo * dv_info,
-            ffi::OptionalValue<ffi::SharedExpression *> transform,
-            const struct ffi::CStringMap * /* deprecated */)
+            const ::Stats * stats,
+            ::SharedDvInfo * dv_info,
+            ::SharedExpression * transform,
+            const struct ::CStringMap * /* deprecated */)
         {
             /// Wrap handles in RAII immediately to ensure cleanup on any exit path
             /// TODO: Actually we do not need any transforms/dv_info to exist here,
@@ -797,8 +799,8 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             /// which will only collect stats.
             KernelDvInfo dv_info_handle(dv_info);
             std::optional<KernelExpression> transform_handle;
-            if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
-                transform_handle.emplace(transform.some._0);
+            if (transform)
+                transform_handle.emplace(transform);
 
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
@@ -810,19 +812,19 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             return true;
         }
 
-        static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
+        static void visitData(void * engine_context, ::SharedScanMetadata * scan_metadata)
         {
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             /// Release the handle on all exit paths to avoid leaking it.
             SCOPE_EXIT({
-                ffi::free_scan_metadata(scan_metadata);
+                ::free_scan_metadata(scan_metadata);
             });
             /// Runs inside Rust's `scan_metadata_next`: a C++ exception must not cross the
             /// `extern "C"` frame, so store it and let the caller rethrow after the call returns.
             try
             {
                 KernelUtils::unwrapResult(
-                    ffi::visit_scan_metadata(
+                    ::visit_scan_metadata(
                         scan_metadata,
                         visitor->engine,
                         engine_context,
@@ -841,7 +843,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
     while (true)
     {
         bool have_scan_data = KernelUtils::unwrapResult(
-            ffi::scan_metadata_next(
+            ::scan_metadata_next(
                 fallback_scan_data_iterator.get(),
                 &visitor,
                 StatsVisitor::visitData),
@@ -961,28 +963,28 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
     });
 
     auto * engine_builder = helper_.createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = KernelUtils::unwrapResult(::builder_build(engine_builder), "builder_build");
 
-    using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
+    using KernelSnapshotBuilder = KernelPointerWrapper<::MutableFfiSnapshotBuilder, ::free_snapshot_builder>;
     KernelSnapshotBuilder snapshot_builder(KernelUtils::unwrapResult(
-        ffi::get_snapshot_builder(
+        ::get_snapshot_builder(
             KernelUtils::toDeltaString(helper_.getTableLocation()),
             engine.get()),
         "get_snapshot_builder"));
     if (snapshot_version_.has_value())
     {
         auto * builder_handle = snapshot_builder.get();
-        ffi::snapshot_builder_set_version(&builder_handle, snapshot_version_.value());
+        ::snapshot_builder_set_version(&builder_handle, snapshot_version_.value());
     }
     /// `snapshot_builder_build` consumes the handle, so release() prevents the RAII destructor
     /// from double-freeing on success. The destructor still frees on early exception paths.
     snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot_builder_build(snapshot_builder.release()),
+        ::snapshot_builder_build(snapshot_builder.release()),
         "snapshot_builder_build");
 
-    snapshot_version = ffi::version(snapshot.get());
+    snapshot_version = ::version(snapshot.get());
     scan = KernelUtils::unwrapResult(
-        ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
+        ::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
         "scan");
 }
 
