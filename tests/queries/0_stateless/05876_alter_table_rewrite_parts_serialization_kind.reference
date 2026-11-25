@@ -1,8 +1,11 @@
 -- { echo }
 
 SELECT table, count(), groupUniqArray(part_type) FROM system.parts WHERE database = currentDatabase() AND active GROUP BY table ORDER BY table;
+t_batch	1	['Wide']
 t_compact	1	['Compact']
+t_index	1	['Wide']
 t_no_counts	1	['Wide']
+t_patch	1	['Wide']
 t_wide	1	['Wide']
 -- Wide part: inserted with ratio 0.9.
 SELECT column, serialization_kind, subcolumns.serializations[indexOf(subcolumns.names, 'a')] AS a, subcolumns.serializations[indexOf(subcolumns.names, 'b')] AS b
@@ -66,6 +69,33 @@ s	Sparse
 u	Sparse
 SELECT count(), countIf(s != ''), sum(u) FROM t_no_counts;
 10000	2000	495000
+-- The same mutation changes the data: the counts are stale, so the kinds of the source part are kept.
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_batch' AND active AND column = 's';
+s	Default
+ALTER TABLE t_batch MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_batch (UPDATE s = 'z' WHERE 1), (REWRITE PARTS) SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_batch' AND active AND column = 's';
+s	Default
+SELECT count(), countIf(s = 'z') FROM t_batch;
+10000	10000
+-- A pending lightweight update is applied by the rewrite: same.
+UPDATE t_patch SET s = 'z' WHERE 1 SETTINGS enable_lightweight_update = 1;
+ALTER TABLE t_patch MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_patch REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_patch' AND active AND column = 's' AND name NOT LIKE 'patch%';
+s	Default
+SELECT count(), countIf(s = 'z') FROM t_patch;
+10000	10000
+-- A skip index does not stop the choice.
+ALTER TABLE t_index MODIFY SETTING ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_index REWRITE PARTS SETTINGS mutations_sync = 2;
+SELECT column, serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_index' AND active AND column = 's';
+s	Sparse
+SELECT count(), countIf(s != '') FROM t_index;
+10000	2000
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_no_counts;
+DROP TABLE t_batch;
+DROP TABLE t_patch;
+DROP TABLE t_index;

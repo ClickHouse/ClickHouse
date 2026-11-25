@@ -2200,7 +2200,7 @@ ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 
 This will rewrite the parts from scratch, using all new settings. This makes sense because table-level settings like `use_const_adaptive_granularity` are applied only for newly written parts by default.
 
-The serialization kind of each column (`Sparse` or `Default`) is chosen again from the counts of default values stored in the part, as merges do. A part without such counts, for example one written with `ratio_of_defaults_for_sparse_serialization = 1`, gets them from the first rewrite. A second rewrite then chooses its serialization kinds.
+The serialization kind of each column (`Sparse` or `Default`) is chosen again from the counts of default values stored in the part, as merges do. If the same mutation also changes the data, for example an `UPDATE` or a pending lightweight update, the part keeps its serialization kinds. A part without such counts, for example one written with `ratio_of_defaults_for_sparse_serialization = 1`, gets them from the first rewrite. A second rewrite then chooses its serialization kinds.
 
 ### Example {#example-rewrite-parts}
 

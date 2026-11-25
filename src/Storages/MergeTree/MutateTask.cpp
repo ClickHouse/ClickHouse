@@ -1592,7 +1592,16 @@ getColumnsForNewDataPart(
             MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
     }
 
-    const bool rechoose_kinds = commands_for_interpreter.hasRewritePartsCommand();
+    const bool rechoose_kinds = commands_for_interpreter.hasRewritePartsCommand()
+        && std::ranges::all_of(commands_for_interpreter, [](const MutationCommand & command)
+        {
+            /// Commands that keep the values of the source part, so its counts still describe them.
+            return command.type == MutationCommand::REWRITE_PARTS
+                || command.type == MutationCommand::MATERIALIZE_INDEX
+                || command.type == MutationCommand::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::MATERIALIZE_PROJECTION
+                || (command.type == MutationCommand::READ_COLUMN && !command.read_for_patch);
+        });
     SerializationInfo::Settings rechoose_settings = settings;
     rechoose_settings.choose_kind = true;
 
@@ -1656,7 +1665,7 @@ getColumnsForNewDataPart(
             continue;
         }
 
-        /// The rows are unchanged, so the counts of the source part choose the kinds, as in a merge.
+        /// The values are those of the source part, so its counts choose the kinds, as in a merge.
         if (rechoose_kinds && old_type->equals(*new_type))
         {
             new_info = new_type->createSerializationInfo(rechoose_settings);
