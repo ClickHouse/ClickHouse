@@ -28,6 +28,9 @@ create t_local_again "disk(type = local, path = '${root}/one/', keep_free_space_
 echo '-- the same directory spelled differently'
 create t_local_spelling "disk(type = local, path = '${root}/one/./')"
 
+echo '-- a directory whose name differs only by a dot at the end'
+create t_local_dot "disk(type = local, path = '${root}/one./')"
+
 echo '-- an encrypted disk in the directory of another local disk'
 create t_inner "disk(type = local, path = '${root}/two/enc/')"
 create t_outer "disk(type = encrypted, path = 'enc/', ${key}, disk = disk(type = local, path = '${root}/two/'))"
