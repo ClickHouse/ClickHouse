@@ -290,7 +290,10 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
                 "Cannot convert NULL value to non-Nullable type");
         auto res = result_type->createColumn();
-        result_type->insertManyDefaultsInto(*res, input_rows_count);
+        if (result_type->isDefaultInsertTrivial())
+            res->insertManyDefaults(input_rows_count);
+        else
+            result_type->insertManyDefaultsInto(*res, input_rows_count);
         return res;
     }
 
@@ -333,7 +336,10 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         if (!nested_result)
         {
             auto res = result_type->createColumn();
-            result_type->insertManyDefaultsInto(*res, input_rows_count);
+            if (result_type->isDefaultInsertTrivial())
+                res->insertManyDefaults(input_rows_count);
+            else
+                result_type->insertManyDefaultsInto(*res, input_rows_count);
             return res;
         }
 
