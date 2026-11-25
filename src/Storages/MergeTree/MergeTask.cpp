@@ -1039,7 +1039,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             auto part_statistics = part->loadStatistics();
             /// A pending DROP or RENAME COLUMN can give a name of the part to another column.
-            const auto columns_with_replaced_data = global_ctx->alter_conversions[part_num]->getColumnsInvalidatingIndexes();
+            const auto & part_alter_conversions = global_ctx->alter_conversions[part_num];
+            const auto columns_with_replaced_data = part_alter_conversions->getColumnsInvalidatingIndexes();
+            const bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
 
             for (const auto & [column_name, column_stats] : result_statistics)
             {
@@ -1047,7 +1049,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
                 if (it == part_statistics.end() || !column_stats->structureEquals(*it->second)
                     || (column_stats->hasSum() && !it->second->hasSum())
-                    || columns_with_replaced_data.contains(column_name))
+                    || columns_with_replaced_data.contains(column_name)
+                    || part_alter_conversions->isColumnDropped(column_name, share_nested))
                     global_ctx->statistics_to_build_by_part[part->name].emplace(column_name, column_stats->cloneEmpty());
                 else
                     column_stats->merge(it->second);
