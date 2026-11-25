@@ -1,6 +1,7 @@
 #include <Interpreters/Q/QCompiler.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -1408,6 +1409,13 @@ QValue sqlTable(Call & call)
         settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     if (!query->as<ASTSelectWithUnionQuery>())
         call.fail(ErrorCodes::BAD_ARGUMENTS, "expected a SELECT query");
+
+    /// The query parameters of the request (`{name:Type}`) are substituted here: the structure of the query is analyzed
+    /// right away, and the analysis does not take the parameters. The substitution of the parameters in the compiled
+    /// query, which is done for every query, comes too late for that.
+    ReplaceQueryParameterVisitor visitor(call.compiler.getContext()->getQueryParameters());
+    visitor.visit(query);
+
     return tableValue(call.compiler, query);
 }
 
