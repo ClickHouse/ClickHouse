@@ -3119,6 +3119,7 @@ try
             }
 
             /// Load WORKLOADs and RESOURCEs.
+            std::exception_ptr workload_entities_exception;
             try
             {
                 global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
@@ -3127,7 +3128,7 @@ try
             {
                 if (initial_loading)
                     throw;
-                tryLogCurrentException(log, "Failed to reload workload entities from the configuration");
+                workload_entities_exception = std::current_exception();
             }
 
             {
@@ -3280,6 +3281,9 @@ try
 
             /// Must be the last.
             latest_config = reload_config;
+
+            if (workload_entities_exception)
+                std::rethrow_exception(workload_entities_exception);
         });
 
     const auto listen_hosts = getListenHosts(config());
