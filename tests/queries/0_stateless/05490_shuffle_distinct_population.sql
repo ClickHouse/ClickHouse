@@ -1,4 +1,4 @@
-SET allow_experimental_shuffle_query = 1;
+SET allow_shuffle_query = 1;
 SET max_threads = 4, max_block_size = 1000;
 
 -- Even values occur in two streams. `DISTINCT` must remove the extra sampling chance.

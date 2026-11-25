@@ -72,7 +72,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_shuffle_query;
+    extern const SettingsBool allow_shuffle_query;
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsString count_distinct_implementation;
@@ -1482,7 +1482,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (select_query->shuffle)
     {
-        if (!settings[Setting::allow_experimental_shuffle_query])
+        if (!settings[Setting::allow_shuffle_query])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for `SHUFFLE` is disabled (turn on setting `allow_experimental_shuffle_query`)");
 
         if (!select_options.only_analyze)

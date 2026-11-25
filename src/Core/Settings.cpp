@@ -11157,12 +11157,14 @@ Allows to use the `MaterializedPostgreSQL` table engine.
 Enable functions for funnel analysis.
 )", EXPERIMENTAL, allow_experimental_funnel_functions, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_funnel_functions`."}) \
-    DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_hash_functions, false, R"(
+)", EXPERIMENTAL, allow_experimental_nlp_functions, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_nlp_functions`."}) \
+    DECLARE_WITH_ALIAS(Bool, allow_hash_functions, false, R"(
 Enable experimental hash functions
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_hash_functions, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_hash_functions`."}) \
     DECLARE(Bool, enable_ipcrypt, false, R"(
 Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 )", EXPERIMENTAL, \
@@ -11181,7 +11183,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", PRIVATE_PREVIEW, allow_experimental_time_series_table, \
         {"26.9", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}, \
-        {"24.8", false, false, "Added new setting to allow the TimeSeries table engine. At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}) \
+        {"24.8", false, false, "Added new setting to allow the TimeSeries table engine.  At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
@@ -11263,9 +11265,9 @@ If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is me
 Set to false to force the old full-mutation behavior.
 )", 0, \
         {"26.8", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."}) \
-    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_shuffle_query, false, R"(
 Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_shuffle_query, \
         {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
@@ -11536,10 +11538,11 @@ until a later run. Does nothing for a table of the format version 1.
 )", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
-    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
-)", EXPERIMENTAL, \
-        {"25.8", 0, 0, "New setting"}) \
+)", EXPERIMENTAL, allow_experimental_iceberg_compaction, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_iceberg_compaction`."}, \
+        {"25.8", 0, 0, "New setting."}) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.

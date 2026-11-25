@@ -154,7 +154,7 @@ extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool input_format_parquet_preserve_order;
 extern const SettingsBool allow_insert_into_iceberg;
-extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsBool allow_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_expire_snapshots;
@@ -602,7 +602,7 @@ bool IcebergMetadata::optimize(
             ErrorCodes::NOT_IMPLEMENTED,
             "OPTIMIZE is not supported with iceberg_use_version_hint on a standalone Iceberg table");
 
-    if (settings[Setting::allow_experimental_iceberg_compaction])
+    if (settings[Setting::allow_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
@@ -633,7 +633,7 @@ bool IcebergMetadata::optimizeManifestFiles(
 {
     checkTableRootIsQueriedPath("OPTIMIZE TABLE ... MANIFEST");
 
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    if (context->getSettingsRef()[Setting::allow_iceberg_compaction])
     {
         /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
         if (persistent_components.format_version >= 3)

@@ -20,5 +20,5 @@ SELECT roundDown(5, [1, 4, 8]);
 SELECT minSampleSizeContinuous(20, 10, materialize(0.05), 0.8, 0.05); -- { serverError ILLEGAL_COLUMN }
 SELECT minSampleSizeConversion(0.9, materialize(0.01), 0.8, 0.05); -- { serverError ILLEGAL_COLUMN }
 SELECT __patchPartitionID('all', materialize('x')); -- { serverError ILLEGAL_COLUMN }
-SET allow_experimental_nlp_functions = 1;
+SET allow_nlp_functions = 1;
 SELECT lemmatize(materialize('en'), 'wolves'); -- { serverError ILLEGAL_COLUMN }

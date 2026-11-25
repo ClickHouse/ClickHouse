@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_nlp_functions = 1;
+SET allow_nlp_functions = 1;
 
 SELECT lemmatize('en', 'wolves');
 SELECT lemmatize('en', 'dogs');
