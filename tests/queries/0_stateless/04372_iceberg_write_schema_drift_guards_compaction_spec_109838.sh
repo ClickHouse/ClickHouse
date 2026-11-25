@@ -245,6 +245,47 @@ current = next(s for s in m['snapshots'] if s['snapshot-id'] == m['current-snaps
 print([s['summary']['operation'] for s in m['snapshots']], current.get('spark.sql.streaming.epochId'), current['total-records'])
 " "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
 
+# --- OPTIMIZE of append A (with a Spark marker) -> position delete -> append B keeps A an ancestor
+# of the current snapshot: the marker stays reachable through the parents and OPTIMIZE runs again
+reset
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2, allow_experimental_iceberg_compaction=1;
+INSERT INTO ${TABLE} VALUES (1), (2);
+"
+python3 -c "
+import json, os, re, sys
+d = sys.argv[1]
+n = max(int(x.group(1)) for f in os.listdir(d) if (x := re.fullmatch(r'v(\d+)\.metadata\.json', f)))
+m = json.load(open(os.path.join(d, f'v{n}.metadata.json')))
+m['snapshots'][0]['summary'].update({'spark.sql.streaming.queryId': 'q', 'spark.sql.streaming.epochId': '0'})
+m['last-updated-ms'] += 1000
+json.dump(m, open(os.path.join(d, f'v{n + 1}.metadata.json'), 'w'))
+" "${TABLE_PATH}/metadata"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+ALTER TABLE ${TABLE} DELETE WHERE c0 = 1;
+INSERT INTO ${TABLE} VALUES (3);
+"
+optimize_then_show_ancestry_and_rows() {
+    ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
+    python3 -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+by_id = {s['snapshot-id']: s for s in m['snapshots']}
+s, ops, epoch = by_id.get(m['current-snapshot-id']), [], None
+while s:
+    ops.append(s['summary']['operation'])
+    epoch = epoch or s['summary'].get('spark.sql.streaming.epochId')
+    s = by_id.get(s.get('parent-snapshot-id'))
+print(ops, epoch)
+" "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(c0)) FROM ${TABLE}"
+}
+optimize_then_show_ancestry_and_rows
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DELETE WHERE c0 = 2"
+optimize_then_show_ancestry_and_rows
+
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
 

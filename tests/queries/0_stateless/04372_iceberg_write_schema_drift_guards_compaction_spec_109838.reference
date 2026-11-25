@@ -18,4 +18,8 @@ NOT_IMPLEMENTED
 ['append']
 [2,3]
 ['append', 'append', 'append'] 2 2
+['append', 'append'] 0
+[2,3]
+['append', 'append'] 0
+[3]
 1

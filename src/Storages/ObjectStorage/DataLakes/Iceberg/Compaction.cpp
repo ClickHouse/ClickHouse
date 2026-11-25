@@ -1226,12 +1226,19 @@ static bool writeMetadataFiles(
         Int64 files_size = 0;
     };
     std::unordered_map<Int64, LiveTotals> snapshot_id_to_live_totals;
+    /// Delete-only snapshots are not rebuilt, so their children are re-parented onto the nearest rebuilt ancestor.
+    std::unordered_map<Int64, Int64> skipped_snapshot_to_parent;
 
     for (const auto & history_record : plan.history)
     {
+        Int64 parent_id = history_record.parent_id;
+        if (auto it = skipped_snapshot_to_parent.find(parent_id); it != skipped_snapshot_to_parent.end())
+            parent_id = it->second;
+
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
+            skipped_snapshot_to_parent[history_record.snapshot_id] = parent_id;
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
         }
@@ -1245,14 +1252,14 @@ static bool writeMetadataFiles(
         }
         /// The `total-*` counters add the `added_*` values to the parent's totals only when the parent is rewritten too.
         LiveTotals parent;
-        if (auto it = snapshot_id_to_live_totals.find(history_record.parent_id); it != snapshot_id_to_live_totals.end())
+        if (auto it = snapshot_id_to_live_totals.find(parent_id); it != snapshot_id_to_live_totals.end())
             parent = it->second;
         snapshot_id_to_live_totals[history_record.snapshot_id] = live;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
+            parent_id,
             live.data_files - parent.data_files,
             live.records - parent.records,
             live.files_size - parent.files_size,
