@@ -1,0 +1,37 @@
+collations	1	0
+ar	Arabic
+de	German
+en_US	English
+ja	Japanese
+ru	Russian
+sr_Latn	Serbian
+tr	Turkish
+zh	Chinese
+ru	['а','Б','е','ё','ж','Ж','я']
+tr	['c','ç','ı','I','i','İ','z']
+sv	['a','z','å','ä','ö']
+zh	['阿','汉','文','中','字']
+ja	['あ','ア','カ','か','亜','漢']
+ko	['가','나','다','하']
+de phonebook	['Mueller','Müller','Muller','Mz']
+es traditional	['cuna','chico','dedo','luna','llama']
+CP1251	CFF0E8E2E5F2	Привет
+Shift_JIS	93FA967B8CEA
+GB18030	D6D0CEC4
+EUC-KR	C7D1B1B9
+KOI8-R	CDC9D2
+ISO-8859-15	A4
+UTF-16LE	6100E900
+ibm-037	818283
+normalize	C3A9	65CC81	fi1	41CC8A
+case	àéîõü привет σας	STRASSE ПРИВЕТ Ǆ
+tokens en	['Hello','world','Привет','мир']
+tokens zh	['我','爱','北京','天安门']
+tokens ja	['こんにちは','世界']
+tokens th	['สวัสดี','ชาว','โลก']
+tokens km my lo	['ភាសាខ្មែរ','မြန်မာဘာသာ','ພາສາ','ລາວ']
+unicode	1
+A	LATIN CAPITAL LETTER A
+я	CYRILLIC SMALL LETTER YA
+€	EURO SIGN
+中	CJK UNIFIED IDEOGRAPH-4E2D
