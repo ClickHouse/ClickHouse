@@ -762,7 +762,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 positions_filled_by_defaults.push_back(pos);
         }
 
-        evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
+        evaluateMissingDefaults(range_reader, result, previous_header, read_columns, mayReevaluateDefaultsAfterPatches());
     }
 
     /// The patches applied below are tracked for these columns row by row, if a patch may change what their `DEFAULT` reads.
@@ -1263,7 +1263,8 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     MergeTreeRangeReader & range_reader,
     ReadResult & result,
     const Block & previous_header,
-    Columns & columns) const
+    Columns & columns,
+    bool keep_intermediates) const
 {
     chassert(range_reader.getReader()->mayEvaluateMissingDefaults());
 
@@ -1284,7 +1285,7 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
 
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
     range_reader.getReader()->evaluateMissingDefaults(
-        additional_columns, columns, mayReevaluateDefaultsAfterPatches() ? &result.default_intermediates : nullptr);
+        additional_columns, columns, keep_intermediates ? &result.default_intermediates : nullptr);
 }
 
 bool MergeTreeReadersChain::mayReevaluateDefaultsAfterPatches() const
@@ -1443,8 +1444,14 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
 
         if (has_missing_key_columns)
         {
+            /// Only the key columns are taken from this evaluation: the pass in `executeActionsBeforePrewhere` evaluates
+            /// the other missing columns of the block. It must read the values the key was evaluated from: with
+            /// `b DEFAULT rand64()`, a sort-key column `k DEFAULT b` and `z DEFAULT b`, a second value of `b` would
+            /// make `z` differ from `k`. So the columns evaluated here are kept for it, whether or not a patch may
+            /// change what a `DEFAULT` reads (see `mayReevaluateDefaultsAfterPatches`).
             auto columns_with_defaults = read_result.columns;
-            evaluateMissingDefaults(range_readers.front(), read_result, /*previous_header=*/ {}, columns_with_defaults);
+            evaluateMissingDefaults(
+                range_readers.front(), read_result, /*previous_header=*/ {}, columns_with_defaults, /*keep_intermediates=*/ true);
 
             for (size_t pos = 0; pos < num_columns; ++pos)
             {

@@ -460,9 +460,10 @@ public:
 
         /// The columns the part does not store that were evaluated from their `DEFAULT`, including the unrequested
         /// ones a requested `DEFAULT` reads, e.g. `b` of `b DEFAULT rand64()` read by `z DEFAULT a + b` and by
-        /// a sort-key column `k DEFAULT b`. Kept only when patch parts are read: when `z` is evaluated again after
-        /// a patch to `a`, or `b` is evaluated by a later step, it reads or gets this value of `b` rather than
-        /// a new one, and so agrees with the columns that keep their values. A column leaves it when a column its `DEFAULT` reads is patched or
+        /// a sort-key column `k DEFAULT b`. Kept only when a patch part may overwrite a column a missing `DEFAULT`
+        /// reads, or when the defaults were evaluated early to fill a missing sort-key column for the patches: when `z`
+        /// is evaluated again after a patch to `a`, or `b` is evaluated by a later step, it reads or gets this value of `b`
+        /// rather than a new one, and so agrees with the columns that keep their values. A column leaves it when a column its `DEFAULT` reads is patched or
         /// recomputed by a step. See `MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn`.
         Block default_intermediates;
 

@@ -72,11 +72,14 @@ private:
         size_t num_read_rows) const;
 
     /// Evaluates default expressions for columns that are absent in part.
+    /// The columns of `result.default_intermediates` are read as they are. With `keep_intermediates`, the missing
+    /// columns evaluated here are added to it, so that the next evaluations give or read the same values.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
         ReadResult & result,
         const Block & previous_header,
-        Columns & columns) const;
+        Columns & columns,
+        bool keep_intermediates) const;
 
     void executePrewhereActions(
         MergeTreeRangeReader & reader,
@@ -148,6 +151,8 @@ private:
     /// the state needed for that is kept in `ReadResult`: `columns_filled_by_defaults`, `rows_filled_by_defaults`,
     /// `default_intermediates` and the columns projected out by the last step. Otherwise the patches are applied
     /// as if the part had no `DEFAULT` columns to evaluate, and that state is not filtered along with the result.
+    /// The exception is `default_intermediates` of a block for which `executeSortingKeyExpressions` evaluated
+    /// the defaults early: those are kept regardless of this, as the ordinary pass evaluates the defaults again.
     bool mayReevaluateDefaultsAfterPatches() const;
 
     RangeReaders range_readers;
