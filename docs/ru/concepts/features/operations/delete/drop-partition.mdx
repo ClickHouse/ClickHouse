@@ -8,9 +8,7 @@ keywords: ['DROP PARTITION', 'удаление партиции', 'удалит�
 doc_type: 'reference'
 ---
 
-<div id="background">
-  ## Общие сведения
-</div>
+## Общие сведения {#background}
 
 Партиционирование задаётся для таблицы при её первоначальном определении с помощью предложения `PARTITION BY`. Это предложение может содержать SQL-выражение для любых столбцов, результат которого определяет, в какую партицию попадёт строка.
 
@@ -19,7 +17,7 @@ doc_type: 'reference'
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -35,9 +33,7 @@ PARTITION BY toYear(CreationDate)
 
 В ClickHouse пользователям следует в первую очередь рассматривать партиционирование как возможность управления данными, а не как способ оптимизации запросов. При логическом разделении данных по ключу с каждой партицией можно работать независимо, например удалять её. Это позволяет пользователям перемещать партиции, а значит и подмножества данных, между [уровнями хранения](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) по мере устаревания данных или [настраивать срок хранения данных / эффективно удалять их из кластера](/ru/reference/statements/alter/partition).
 
-<div id="drop-partitions">
-  ## Удаление партиций
-</div>
+## Удаление партиций {#drop-partitions}
 
 `ALTER TABLE ... DROP PARTITION` — это экономичный способ удалить партицию целиком.
 

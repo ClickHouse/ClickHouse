@@ -601,6 +601,7 @@
                     "clickstack/integration-examples/jvm-metrics",
                     "clickstack/integration-examples/kafka-metrics",
                     "clickstack/integration-examples/kubernetes",
+                    "clickstack/integration-examples/loom",
                     "clickstack/integration-examples/mysql",
                     "clickstack/integration-examples/nodejs-traces",
                     "clickstack/integration-examples/postgres-logs",

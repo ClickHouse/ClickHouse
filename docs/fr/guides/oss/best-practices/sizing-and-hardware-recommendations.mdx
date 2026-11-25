@@ -18,33 +18,23 @@ La configuration de votre cluster ClickHouse dépend fortement du cas d’usage 
 * Coûts matériels
 * Coûts de maintenance
 
-<div id="disk">
-  ## Disque
-</div>
+## Disque {#disk}
 
 Les types de disques à utiliser avec ClickHouse dépendent du volume de données ainsi que des exigences en matière de latence ou de débit.
 
-<div id="optimizing-for-performance">
-  ### Optimiser les performances
-</div>
+### Optimiser les performances {#optimizing-for-performance}
 
 Pour maximiser les performances, nous recommandons d’attacher directement des [volumes SSD AWS à IOPS provisionnées](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html), ou l’offre équivalente de votre fournisseur cloud, afin d’optimiser les IO.
 
-<div id="optimizing-for-storage-costs">
-  ### Optimisation des coûts de stockage
-</div>
+### Optimisation des coûts de stockage {#optimizing-for-storage-costs}
 
 Pour réduire les coûts, vous pouvez utiliser des [volumes EBS SSD à usage général](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html).
 
 Vous pouvez également mettre en place un stockage hiérarchisé reposant sur des SSD et des HDD dans une [architecture hot/warm/cold](/fr/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture). Autre possibilité : utiliser [AWS S3](https://aws.amazon.com/s3/) pour le stockage afin de séparer les ressources de calcul et le stockage. Consultez notre guide sur l’utilisation de ClickHouse open source avec séparation des ressources de calcul et du stockage [ici](/fr/guides/oss/deployment-and-scaling/separation-storage-compute). La séparation des ressources de calcul et du stockage est disponible par défaut dans ClickHouse Cloud.
 
-<div id="cpu">
-  ## CPU
-</div>
+## CPU {#cpu}
 
-<div id="which-cpu-should-i-use">
-  ### Quel CPU dois-je utiliser ?
-</div>
+### Quel CPU dois-je utiliser ? {#which-cpu-should-i-use}
 
 Le type de CPU à utiliser dépend de votre profil d’utilisation. De manière générale, toutefois, les applications qui exécutent de nombreuses requêtes concurrentes fréquentes, qui traitent plus de données ou qui utilisent des UDF gourmandes en calcul nécessiteront davantage de cœurs CPU.
 
@@ -62,15 +52,11 @@ Pour les charges de travail de data warehousing et les requêtes analytiques ad 
 
 ***
 
-<div id="what-should-cpu-utilization-be">
-  ### Quel taux d’utilisation du CPU viser ?
-</div>
+### Quel taux d’utilisation du CPU viser ? {#what-should-cpu-utilization-be}
 
 Il n’existe pas d’objectif standard en matière d’utilisation du CPU pour ClickHouse. Utilisez un outil tel que [iostat](https://linux.die.net/man/1/iostat) pour mesurer l’utilisation moyenne du CPU, puis ajustez en conséquence la taille de vos serveurs afin d’absorber les pics de trafic imprévus. En revanche, pour les cas d’usage analytiques ou de data warehousing avec des requêtes ad hoc, visez un taux d’utilisation du CPU de 10 à 20 %.
 
-<div id="how-many-cpu-cores-should-i-use">
-  ### Combien de cœurs CPU dois-je utiliser ?
-</div>
+### Combien de cœurs CPU dois-je utiliser ? {#how-many-cpu-cores-should-i-use}
 
 Le nombre de CPU à utiliser dépend de votre charge de travail. Cependant, nous recommandons généralement les ratios mémoire/cœur CPU suivants selon votre type de CPU :
 
@@ -80,9 +66,7 @@ Le nombre de CPU à utiliser dépend de votre charge de travail. Cependant, nous
 
 Par exemple, avec des CPU de type M, nous recommandons d’allouer 100 Go de mémoire pour 25 cœurs CPU. Pour déterminer la quantité de mémoire adaptée à votre application, il est nécessaire de profiler votre utilisation de la mémoire. Vous pouvez consulter [ce guide sur le débogage des problèmes de mémoire](/fr/concepts/features/performance/troubleshoot/debugging-memory-issues) ou utiliser le [tableau de bord d’observabilité intégré](/fr/guides/oss/deployment-and-scaling/monitoring/monitoring) pour surveiller ClickHouse.
 
-<div id="memory">
-  ## Mémoire
-</div>
+## Mémoire {#memory}
 
 Comme pour le choix du CPU, le choix du ratio mémoire/stockage et du ratio mémoire/CPU dépend de votre cas d’utilisation.
 
@@ -94,9 +78,7 @@ Le volume de RAM requis dépend généralement de :
 De manière générale, toutefois, plus vous disposez de mémoire, plus vos requêtes s’exécuteront rapidement.
 Si votre cas d’utilisation est sensible au prix, des quantités de mémoire plus faibles peuvent convenir, car il est possible d’activer des paramètres ([`max_bytes_before_external_group_by`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) et [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) pour autoriser l’écriture des données sur disque, mais notez que cela peut affecter significativement les performances des requêtes.
 
-<div id="what-should-the-memory-to-storage-ratio-be">
-  ### Quel devrait être le ratio mémoire/stockage ?
-</div>
+### Quel devrait être le ratio mémoire/stockage ? {#what-should-the-memory-to-storage-ratio-be}
 
 Pour de faibles volumes de données, un ratio mémoire/stockage de 1:1 est acceptable, mais la mémoire totale ne doit pas être inférieure à 8 Go.
 
@@ -104,9 +86,7 @@ Pour les cas d’utilisation impliquant une longue période de rétention des do
 
 Pour les cas d’utilisation avec des accès fréquents, comme les charges de travail orientées client, nous recommandons d’utiliser davantage de mémoire, avec un ratio mémoire/stockage de 1:30 à 1:50.
 
-<div id="replicas">
-  ## Répliques
-</div>
+## Répliques {#replicas}
 
 Nous recommandons d’avoir au moins trois répliques par segment (ou deux répliques avec [Amazon EBS](https://aws.amazon.com/ebs/)). De plus, nous vous conseillons d’augmenter verticalement les ressources de toutes les répliques avant d’ajouter des répliques supplémentaires (mise à l’échelle horizontale).
 
@@ -114,17 +94,13 @@ ClickHouse n’effectue pas le sharding automatiquement, et repartitionner votre
 
 Envisagez d’utiliser [ClickHouse Cloud](https://clickhouse.com/cloud), qui se met à l’échelle automatiquement et vous permet de contrôler facilement le nombre de répliques selon votre cas d’utilisation.
 
-<div id="example-configurations-for-large-workloads">
-  ## Exemples de configurations pour de fortes charges de travail
-</div>
+## Exemples de configurations pour de fortes charges de travail {#example-configurations-for-large-workloads}
 
 Les configurations de ClickHouse dépendent fortement des exigences propres à votre application. Veuillez [contacter l’équipe commerciale](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations) si vous souhaitez que nous vous aidions à optimiser votre architecture en termes de coût et de performances.
 
 À titre indicatif uniquement, et non comme recommandation, voici quelques exemples de configurations d’utilisateurs de ClickHouse en production :
 
-<div id="fortune-500-b2b-saas">
-  ### SaaS B2B du classement Fortune 500
-</div>
+### SaaS B2B du classement Fortune 500 {#fortune-500-b2b-saas}
 
 <table>
   <tr>
@@ -200,9 +176,7 @@ Les configurations de ClickHouse dépendent fortement des exigences propres à v
   </tr>
 </table>
 
-<div id="fortune-500-telecom-operator-for-a-logging-use-case">
-  ### Opérateur télécom du Fortune 500 pour un cas d’usage de logs
-</div>
+### Opérateur télécom du Fortune 500 pour un cas d’usage de logs {#fortune-500-telecom-operator-for-a-logging-use-case}
 
 <table>
   <tr>
@@ -226,7 +200,7 @@ Les configurations de ClickHouse dépendent fortement des exigences propres à v
 
   <tr>
     <td><strong>Disque par nœud</strong></td>
-    <td>13TB</td>
+    <td>16TB</td>
   </tr>
 
   <tr>
@@ -244,7 +218,7 @@ Les configurations de ClickHouse dépendent fortement des exigences propres à v
   </tr>
 
   <tr>
-    <td><strong>Total vCPU</strong></td>
+    <td><strong>Total des vCPU</strong></td>
     <td>1600</td>
   </tr>
 
@@ -259,12 +233,12 @@ Les configurations de ClickHouse dépendent fortement des exigences propres à v
 
   <tr>
     <td><strong>RAM par réplique</strong></td>
-    <td>256GB</td>
+    <td>256Go</td>
   </tr>
 
   <tr>
     <td><strong>Ratio RAM/vCPU</strong></td>
-    <td>6 GB:1</td>
+    <td>6 Go:1</td>
   </tr>
 
   <tr>
@@ -273,9 +247,7 @@ Les configurations de ClickHouse dépendent fortement des exigences propres à v
   </tr>
 </table>
 
-<div id="further-reading">
-  ## Pour en savoir plus
-</div>
+## Pour en savoir plus {#further-reading}
 
 Voici des articles de blog publiés sur les architectures d’entreprises qui utilisent ClickHouse open source :
 

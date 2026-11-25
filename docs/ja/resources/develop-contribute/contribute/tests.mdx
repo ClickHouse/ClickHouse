@@ -250,11 +250,11 @@ SELECT 1
 | `no-ordinary-database`         | デフォルトのデータベースエンジンが `Ordinary` の場合はテストを無効にする                  |                                                       |
 | `no-parallel`                  | このテストと並行してほかのテストを実行しないようにする                                 | テストが `system` テーブルを読み取るため、不変条件が壊れる可能性がある              |
 | `no-parallel-replicas`         | 並列レプリカが有効な場合はテストを無効にする                                      |                                                       |
-| `no-debug`                     | Debug ビルドではテストを無効にする                                        |                                                       |
+| `no-debug`                     | デバッグ ビルドではテストを無効にする                                        |                                                       |
 | `no-release`                   | Release ビルドではテストを無効にする                                      |                                                       |
 | `no-darwin`                    | macOS (Darwin) ではテストを無効にする                                  | テストが分散クエリ、`procfs`、HTTP サーバーなどの Linux 固有機能に依存している     |
 
-次のオプションもサポートされています: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+次のオプションもサポートされています: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 上記の設定に加えて、特定の ClickHouse 機能の使用有無を定義するために、`system.build_options` の `USE_*` フラグも使用できます。
 たとえば、テストで MySQL テーブルを使用する場合は、`use-mysql` タグを追加する必要があります。
