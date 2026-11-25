@@ -862,8 +862,7 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 {
 	ScopedLock lock(*_mutex);
 	Context::VerificationMode mode = _pContext->verificationMode();
-	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled() ||
-	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
+	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled())
 		return X509_V_OK;
 
 	// SSL_get1_peer_certificate returns a certificate whose reference count has
@@ -886,6 +885,9 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
             }
         }
         X509_free(pCert);
+        /// `isLocalHost` resolves a host name, so the loopback exemption is checked only when the certificate does not name the host.
+        if (result != X509_V_OK && mode != Context::VERIFY_STRICT && isLocalHost(hostName))
+            result = X509_V_OK;
         return result;
 	}
 	else return X509_V_OK;
