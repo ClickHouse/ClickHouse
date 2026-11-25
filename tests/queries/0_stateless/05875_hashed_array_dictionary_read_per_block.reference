@@ -10,3 +10,5 @@ inverse lookup	77
 limit	10
 empty	0
 empty dictGetKeys	[]
+memory	2000000	1999999000000	11999989
+memory limit	10

@@ -1899,7 +1899,7 @@ public:
     template <typename Func>
     void forEachCellInOffsetRange(size_t begin, size_t end, Func && func) const
     {
-        if (!buf)
+        if (!buf || begin >= end)
             return;
         if (begin == 0)
         {

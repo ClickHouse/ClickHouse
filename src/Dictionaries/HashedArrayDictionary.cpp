@@ -1170,7 +1170,7 @@ Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & col
         size_t num_blocks = 0;
         for (const auto & container : key_attribute.containers)
         {
-            size_t blocks = max_block_size ? (container.size() + max_block_size - 1) / max_block_size : (container.empty() ? 0 : 1);
+            size_t blocks = container.empty() ? 0 : (max_block_size ? (container.size() - 1) / max_block_size + 1 : 1);
             container_blocks.push_back(blocks);
             num_blocks += blocks;
         }
@@ -1186,13 +1186,16 @@ Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & col
                 const auto & container = key_attribute.containers[container_index];
                 const size_t blocks = container_blocks[container_index];
                 const size_t offsets = container.getBufferSizeInCells() + 1;
+                const size_t cells_per_block = offsets / blocks;
+                const size_t extra_cells = offsets % blocks;
+                const size_t range_begin = block * cells_per_block + std::min(block, extra_cells);
+                const size_t range_end = range_begin + cells_per_block + (block < extra_cells ? 1 : 0);
 
                 auto keys_column = ColumnUInt64::create();
                 auto & keys = keys_column->getData();
                 /// A range holds about the average number of keys; the headroom avoids reallocating for most ranges.
                 keys.reserve(container.size() / blocks * 17 / 16 + 1);
-                container.forEachCellInOffsetRange(
-                    offsets * block / blocks, offsets * (block + 1) / blocks, [&](const auto & cell) { keys.push_back(cell.getKey()); });
+                container.forEachCellInOffsetRange(range_begin, range_end, [&](const auto & cell) { keys.push_back(cell.getKey()); });
 
                 return ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(keys_column), key_type, dict_struct.id->name)};
             });
