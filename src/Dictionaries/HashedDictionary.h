@@ -394,15 +394,13 @@ HashedDictionary<dictionary_key_type, sparse>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
+        if (!pool.trySchedule(attachedJob(ThreadName::HASHED_DICT_DTOR, [&container]
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
-
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
                 ServerOwnedMemoryScope memory_blocker;
 
                 clearContainer(container);
-            }))
+            })))
         {
             ServerOwnedMemoryScope memory_blocker;
             clearContainer(container);

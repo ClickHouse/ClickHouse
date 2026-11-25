@@ -343,12 +343,11 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         {
             if (format_settings.pretty.squash_consecutive_ms && !mono_block && !thread)
             {
-                thread.emplace([this, thread_group = CurrentThread::getGroup()]
+                thread.emplace(attachedJob(ThreadName::PRETTY_WRITER, [this]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER);
 
                     writingThread();
-                });
+                }));
             }
 
             if (mono_chunk)

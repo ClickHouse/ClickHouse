@@ -833,9 +833,8 @@ public:
         try
         {
             branch->thread = ThreadFromGlobalPool(
-                [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+                attachedJob(ThreadName::DISTRIBUTED_QUERY_TASK, [branch, filter_name, log = logger]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
                     try
                     {
                         fiu_do_on(FailPoints::distributed_plan_runtime_filter_receive_branch_fails_before_connect,
@@ -855,7 +854,7 @@ public:
                                 "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
                                 filter_name));
                     }
-                });
+                }));
         }
         catch (...)
         {

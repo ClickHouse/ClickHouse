@@ -1625,15 +1625,7 @@ HashJoin::RightTableData::~RightTableData()
             CurrentMetrics::HashJoinDestroyThreadsScheduled,
             num_threads);
 
-        auto schedule = [&pool, thread_group = CurrentThread::getGroup()](auto job)
-        {
-            pool.scheduleOrThrowOnError(
-                [job, thread_group]
-                {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DTOR);
-                    job();
-                });
-        };
+        auto schedule = [&pool](auto job) { pool.scheduleOrThrowOnError(attachedJob(ThreadName::HASH_JOIN_DTOR, std::move(job))); };
         auto schedule_destroy = [&schedule](auto & container) { schedule([&container] { auto destroyed = std::move(container); }); };
 
         for (auto & sublist : sublists)

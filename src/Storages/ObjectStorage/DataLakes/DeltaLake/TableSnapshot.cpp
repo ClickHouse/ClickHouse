@@ -158,13 +158,11 @@ public:
         }
 
         thread = ThreadFromGlobalPool(
-            [&, thread_group = DB::CurrentThread::getGroup()]
+            DB::attachedJob(DB::ThreadName::DATALAKE_TABLE_SNAPSHOT, [&]
             {
-                /// Attach to current query thread group, to be able to
-                /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+                /// Attached to the query thread group, to have the query id in logs and metrics from scanDataFunc.
                 scanDataFunc();
-            });
+            }));
     }
 
     ~Iterator() override

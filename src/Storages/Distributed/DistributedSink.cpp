@@ -699,12 +699,11 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
+                        pool->scheduleOrThrowOnError(attachedJob(ThreadName::DISTRIBUTED_SINK, [&job]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
                             job.executor->finish();
-                        });
+                        }));
                     }
                 }
             }

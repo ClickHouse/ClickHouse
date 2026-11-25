@@ -11,6 +11,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
+#include <Common/ServerOwnedMemory.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -282,6 +283,19 @@ public:
     }
 };
 
+
+namespace
+{
+
+/// What the callable captured may be the query's, the rest was allocated as the server's.
+void releaseJob(std::optional<JobWithPriority> & job_data)
+{
+    job_data->job = {};
+    ServerOwnedMemoryScope server_owned;
+    job_data.reset();
+}
+
+}
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
@@ -558,7 +572,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         try
         {
-            jobs.emplace(std::move(job),
+            /// A worker frees what the job holds besides the callable after detaching, so it is the server's.
+            std::optional<JobWithPriority> job_with_priority;
+            {
+                ServerOwnedMemoryScope server_owned;
+                job_with_priority.emplace(std::move(job),
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -568,6 +586,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
+            }
+            jobs.emplace(std::move(*job_with_priority));
 
             ++scheduled_jobs;
 
@@ -1125,7 +1145,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
                     /// job can contain packaged_task which can set exception during destruction
-                    job_data.reset();
+                    releaseJob(job_data);
                 }
                 job_is_done = true;
                 continue;
@@ -1197,7 +1217,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
         catch (...)
         {
@@ -1214,7 +1234,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
 
         DB::Exception::clearThreadFramePointers();

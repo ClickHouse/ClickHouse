@@ -4,7 +4,10 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <boost/core/noncopyable.hpp>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -22,12 +25,7 @@ ThreadGroupPtr getCurrentThreadGroup();
 /**
  * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
  *
- * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
- *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
- *           ...
- *       });
+ * To run a pool job for the query that schedules it, prefer `attachedJob`.
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
@@ -51,5 +49,27 @@ private:
     bool should_restore_prev_thread_name = false;
 };
 
+
+/// A pool job that runs `f` attached to the thread group of the scheduling thread, like
+///   pool->scheduleOrThrow(attachedJob(ThreadName::X, [captures] { ... }));
+/// `f` is destroyed before the thread detaches, so what it captured is released by the query it belongs to. The job holds
+/// one pointer to a server-owned block, so it fits in the buffer of `std::function` and costs no query memory itself.
+template <typename F>
+auto attachedJob(ThreadName thread_name, F && f)
+{
+    struct State
+    {
+        ThreadGroupPtr thread_group;
+        std::decay_t<F> f;
+        ThreadName thread_name;
+    };
+    auto job_state = std::allocate_shared<State>(ServerOwnedAllocator<State>{}, getCurrentThreadGroup(), std::forward<F>(f), thread_name);
+    return [state = std::move(job_state)]
+    {
+        ThreadGroupSwitcher switcher(std::move(state->thread_group), state->thread_name);
+        auto local = std::move(state->f);
+        local();
+    };
+}
 
 }

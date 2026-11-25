@@ -66,10 +66,8 @@ public:
 
             try
             {
-                pool.scheduleOrThrowOnError([this, shard, thread_group = getCurrentThreadGroup()]
+                pool.scheduleOrThrowOnError(attachedJob(ThreadName::HASHED_DICT_LOAD, [this, shard]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
-
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(
                         LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
@@ -82,7 +80,7 @@ public:
                     LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
 
                     threadWorker(shard, statistic);
-                });
+                }));
             }
             catch (...)
             {
