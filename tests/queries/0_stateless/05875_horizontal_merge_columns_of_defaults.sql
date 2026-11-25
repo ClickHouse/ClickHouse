@@ -33,7 +33,8 @@ SYSTEM START MERGES t_merge;
 OPTIMIZE TABLE t_merge FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_merge' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'merge') = sum(cityHash64(toString(tuple(*)))), count(), countIf(x_one != 0) FROM t_merge;
-SELECT count() FROM t_merge WHERE e_i = 0 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i';
+SELECT count() FROM t_merge WHERE e_i = 0
+    SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i', optimize_trivial_count_with_sparsity_filter = 0;
 
 SELECT 'ReplacingMergeTree';
 
@@ -59,7 +60,8 @@ SYSTEM START MERGES t_replacing;
 OPTIMIZE TABLE t_replacing FINAL;
 SELECT groupArray(part_type) FROM system.parts WHERE database = currentDatabase() AND table = 't_replacing' AND active;
 SELECT (SELECT h FROM hashes WHERE c = 'replacing') = sum(cityHash64(toString(tuple(*)))), count(), countIf(x_one != 0) FROM t_replacing;
-SELECT count() FROM t_replacing WHERE e_i = 0 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i';
+SELECT count() FROM t_replacing WHERE e_i = 0
+    SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_e_i', optimize_trivial_count_with_sparsity_filter = 0;
 
 SELECT 'TTL';
 
