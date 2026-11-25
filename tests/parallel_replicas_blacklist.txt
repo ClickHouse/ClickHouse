@@ -43,7 +43,6 @@
 03151_analyzer_view_read_only_necessary_columns
 01737_move_order_key_to_prewhere_select_final
 03168_read_in_order_buffering_1
-02155_read_in_order_max_rows_to_read
 02493_max_streams_for_merge_tree_reading
     Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
 01655_plan_optimizations_optimize_read_in_window_order_long

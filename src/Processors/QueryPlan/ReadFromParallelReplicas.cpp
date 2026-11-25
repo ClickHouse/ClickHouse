@@ -100,6 +100,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     ContextPtr context_,
     VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use_,
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : ISourceStep(query_plan_->getRootNode()->step->getOutputHeader())
@@ -107,8 +108,7 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     , cluster(cluster_)
     , coordinator(std::move(coordinator_))
     , context(context_)
-    // , scalars(scalars_)
-    // , storage_limits(std::move(storage_limits_))
+    , storage_limits(std::move(storage_limits_))
     , log(getLogger("ReadFromParallelReplicas"))
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
@@ -144,8 +144,8 @@ void ReadFromParallelReplicasStep::initializePipeline(QueryPipelineBuilder & pip
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    // for (const auto & processor : pipe.getProcessors())
-    //     processor->setStorageLimits(storage_limits);
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(storage_limits);
 
     pipeline.init(std::move(pipe));
 }
