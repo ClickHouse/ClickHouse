@@ -89,9 +89,11 @@ INSERT INTO squality_alias_scope_semi_right VALUES (1), (2), (3);
 
 SET semi_join_include_columns_from_both_sides = 0;
 
+-- The aliased inner table cannot absorb the original name, so this resolves to the
+-- inaccessible right side of the parent SEMI JOIN and must be rejected.
 SELECT (SELECT sum(squality_alias_scope_semi_right.x) FROM squality_alias_scope_semi_right AS inner_table)
 FROM squality_alias_scope_semi_left LEFT SEMI JOIN squality_alias_scope_semi_right
-    ON squality_alias_scope_semi_left.x = squality_alias_scope_semi_right.x;
+    ON squality_alias_scope_semi_left.x = squality_alias_scope_semi_right.x; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Correlation is collected from column descendants when owning-scope resolution produces an expression.
 CREATE TABLE squality_alias_scope_nested (n Nested(x UInt64, y String)) ENGINE = Memory;
