@@ -325,7 +325,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     /// The two readings are owned differently. The captured plan goes to the log capture, which the
     /// `Context` holds, because the query log still needs it once the pipeline is gone. The clocks
     /// and analyzers go to the pipeline, which is their only owner, so that they are freed with it.
-    /// Both are the server's, so they do not take from the memory the query may use while it runs.
+    /// Both are made as the server's, so they do not take from the memory the query may use while it runs. The captured
+    /// plan is released as the server's too. The profiler is not: its analyzers hold parts of the query, like its joins.
     if (log_capture)
     {
         /// Profiling is a diagnostic and does not get to fail a query that would otherwise run.
@@ -337,7 +338,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             const PlanWalk walk = PlanWalk::of(*this, /*only_built_child_plans=*/ true);
 
             log_capture->capturePlanStructure(walk, pretty_names, optimization_settings.max_step_description_length);
-            last_pipeline->setStepProfiler(makeServerOwned<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
+            last_pipeline->setStepProfiler(std::make_shared<StepProfiler>(walk, /*collect_work_intervals_=*/ false));
         }
         catch (...)
         {
