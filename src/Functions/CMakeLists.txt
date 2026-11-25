@@ -18,7 +18,6 @@ set(DBMS_FUNCTIONS
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
-    CancellationBudget.cpp # makeCancellationCheck, rethrowIfQueryCancelled (Used by arrayResize.cpp, ActionsDAG.cpp...)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
     FunctionsConversion_impl00.cpp
@@ -71,7 +70,6 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
     CastOverloadResolver.h
-    CancellationBudget.h
     extractKeyValuePairs.h
 )
 
@@ -102,7 +100,6 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         ch_contrib::libdivide
         ch_contrib::xxHash
-        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)

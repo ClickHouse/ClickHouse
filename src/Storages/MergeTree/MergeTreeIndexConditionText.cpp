@@ -9,13 +9,14 @@
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/RegexpUtils.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -35,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -410,6 +412,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match"
+        || function_name == "fullMatch"
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
         || function_name == "multiSearchAnyCaseInsensitive"
@@ -1206,7 +1209,10 @@ static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(co
 
 static std::string_view withoutTrailingZeros(std::string_view value)
 {
-    return value.substr(0, value.find_last_not_of('\0') + 1);
+    const size_t last_non_zero = value.find_last_not_of('\0');
+    /// An all-zero value has no such byte, and `npos + 1` wrapped to 0 here; return that empty
+    /// prefix explicitly instead.
+    return last_non_zero == std::string_view::npos ? value.substr(0, 0) : value.substr(0, last_non_zero + 1);
 }
 
 /// Strips or re-pads the needle's trailing zero bytes in place to the form the index stores; false when no single form covers every match.
@@ -1264,9 +1270,9 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
-/// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
-/// `mapValues` stores neither.
-static bool isMapValueDefault(std::string_view value, const Block & header)
+/// The value an absent map key reads, and the element that LEFT ARRAY JOIN adds for an empty array:
+/// `''`, or all NUL when the value type is `FixedString`. The index does not have it for these rows.
+static bool isDefaultValue(std::string_view value, const Block & header)
 {
     /// A text index is always defined on a single expression.
     chassert(header.columns() == 1);
@@ -1296,8 +1302,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
 
     /// `arrayJoin(arr) = const` needs an element equal to the constant, like `has(arr, const)`; a row answer cannot replace it
-    if (auto array_join_argument = index_column_node.getArrayJoinArgument();
-        function_name == "equals" && array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+    bool padded = false;
+    if (auto array_join_argument = getIndexedArrayJoinArgument(index_column_node, padded); function_name == "equals" && array_join_argument)
     {
         index_column_node = *array_join_argument;
         direct_read_mode = TextIndexDirectReadMode::None;
@@ -1324,6 +1330,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+        /// The array phrase of `hasPhrase` is a token sequence taken verbatim. It matches the stored tokens of a string value
+        /// only without a preprocessor, which direct read does not apply to a JSON path.
+        if (function_name == "hasPhrase" && !has_preprocessor
+            && WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString())
+            is_special_text_index_function = true;
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
@@ -1447,7 +1459,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
         ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
         ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
+        if (value_field.safeGet<String>().empty() || (padded && isDefaultValue(value_field.safeGet<String>(), header)))
             return false;
 
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
@@ -1812,10 +1824,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         return false;
     }
-    if (function_name == "match" && tokenizer->supportsStringLike())
+    if ((function_name == "match" || function_name == "fullMatch") && tokenizer->supportsStringLike())
     {
-        /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
-        const auto & pattern = value_field.safeGet<String>();
+        /// `fullMatch` is `match` with the pattern anchored at both ends, so its tokens come from the anchored form.
+        String pattern = value_field.safeGet<String>();
+        if (function_name == "fullMatch")
+            pattern = anchorRegexpToMatchWholeString(pattern);
+
+        /// Compile the pattern as the execution does, so an invalid regexp raises exception instead of being silently pruned.
         Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -2037,6 +2053,11 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         || !dag_node->function_base
         || !dag_node->isDeterministic()
         || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
+        return false;
+
+    /// The result on the default value decides for every row without the key, so no function in the expression
+    /// may return another value on each evaluation.
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -2327,7 +2348,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
+    if (const_value.getType() != Field::Types::String || isDefaultValue(const_value.safeGet<String>(), header))
         return false;
 
     if (!hasIndexForMapElementValue(index_column_node))
@@ -2419,6 +2440,9 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(dag_node))
+        return false;
+
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
     auto required_columns = subdag.getRequiredColumns();
     const auto & outputs = subdag.getOutputs();
@@ -2449,6 +2473,20 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     return true;
 }
 
+std::optional<RPNBuilderTreeNode> MergeTreeIndexConditionText::getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const
+{
+    auto argument = node.getArrayJoinArgument();
+    if (!argument || hasIndexForColumn(argument->getColumnName()))
+        return argument;
+    if (!argument->isFunction() || argument->toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return std::nullopt;
+    auto array = argument->toFunctionNode().getArgumentAt(0);
+    if (!hasIndexForColumn(array.getColumnName()))
+        return std::nullopt;
+    padded = true;
+    return array;
+}
+
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
@@ -2468,6 +2506,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    bool padded = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2478,7 +2517,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
-        if (auto array_join_argument = node.getArrayJoinArgument(); array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+        if (getIndexedArrayJoinArgument(node, padded))
             return true;
         return hasIndexForColumn(node.getColumnName())
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
@@ -2574,7 +2613,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
+        if (element.empty() || ((has_index_for_map_element_value || padded) && isDefaultValue(element, header)))
         {
             out.text_search_queries.clear();
             return false;

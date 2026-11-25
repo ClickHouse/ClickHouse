@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -220,7 +220,9 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
         auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot, context);
         chassert(!specialized.getOutputs().empty());
 
-        Cond produced = generate(&specialized, specialized.getOutputs().front());
+        /// Folding can turn an operand into a constant, so redo the first pass: every condition must see one canonical DAG.
+        ActionsDAGWithInversionPushDown canonical(specialized.getOutputs().front(), context, /* boolean_context */ true);
+        Cond produced = generate(&*canonical.dag, canonical.predicate);
         return setSubstituted(partition_id, std::move(produced));
     }
     catch (const Exception & e)

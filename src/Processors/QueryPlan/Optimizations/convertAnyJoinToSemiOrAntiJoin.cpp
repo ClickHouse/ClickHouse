@@ -5,7 +5,7 @@
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
