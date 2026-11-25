@@ -25,3 +25,18 @@ SELECT sum(cityHash64(toString(a))) FROM (SELECT [range(number % 100), [number]]
 SELECT sum(cityHash64(toString(a))) FROM (SELECT [range(number % 40)] AS a FROM numbers(20000) ORDER BY cityHash64(number));
 SELECT count() FROM (SELECT materialize([range(100000)::Array(UInt8)]) AS a FROM numbers(128)) WHERE NOT ignore(a)
 SETTINGS max_memory_usage = 50000000, max_block_size = 128;
+
+-- More than 65536 nested elements per block, so the gather crosses chunk boundaries; one row is longer than a chunk.
+-- Each result is compared with the same value computed without replicating or reordering the rows.
+SELECT 'chunks';
+SET max_block_size = 1000000, enable_lazy_columns_replication = 0, query_plan_remove_redundant_sorting = 0;
+DROP TABLE IF EXISTS t_array_gather_chunks;
+CREATE TABLE t_array_gather_chunks (n UInt64, a Array(Array(UInt64)), r Array(UInt8)) ENGINE = Memory;
+INSERT INTO t_array_gather_chunks
+SELECT number, if(number = 2, arrayMap(x -> [x], range(70000)), [range(number % 5), [number]]), range(number % 3) FROM numbers(100000);
+SELECT (SELECT sum(cityHash64(n, toString(a))) FROM t_array_gather_chunks ARRAY JOIN r)
+    = (SELECT sum(cityHash64(n, toString(a)) * length(r)) FROM t_array_gather_chunks);
+SELECT (SELECT sum(cityHash64(n, toString(a))) FROM (SELECT n, a FROM t_array_gather_chunks ORDER BY cityHash64(n)))
+    = (SELECT sum(cityHash64(n, toString(a))) FROM t_array_gather_chunks);
+DROP TABLE t_array_gather_chunks;
+SELECT sum(cityHash64(toString(materialize([[1, 2], [], [3]])))) = 100000 * cityHash64(toString([[1, 2], [], [3]])) FROM numbers(100000);
