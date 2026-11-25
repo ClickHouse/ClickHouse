@@ -718,14 +718,14 @@ public:
     void reloadBlockedObjects()
     {
         std::lock_guard lock{mutex};
-        /// Forced, because a blocked attempt may have been a reload for a changed config:
-        /// a non-forced one would clone the previous version and keep its old config.
+        /// Each one as forced as the attempt that was blocked: a reload for a changed config must stay forced,
+        /// or it would clone the previous version and keep its old config, and a periodic update must stay incremental.
         /// One `min_id` for all of them, as `loadImpl` does for `SYSTEM RELOAD DICTIONARIES`: an object
         /// that loads another one while reloading then waits for that one's new version, not its old one.
         size_t min_id = getMinIDToFinishLoading(/* forced_to_reload = */ true);
         for (auto & [name, info] : infos)
             if (info.blocked)
-                startLoading(info, /* forced_to_reload = */ true, min_id);
+                startLoading(info, info.forced_to_reload, min_id);
     }
 
     /// Starts reloading all the object which update time is earlier than now.
@@ -887,6 +887,7 @@ private:
         std::exception_ptr exception; /// Last error occurred.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
         bool blocked = false; /// Loading was blocked
+        bool forced_to_reload = false; /// The current or last loading attempt was forced.
     };
 
     void resetInfoToUnloaded(const String & name, Info & info)
@@ -1009,8 +1010,8 @@ private:
             if (reload_blocked && info->blocked)
                 return true; /// Stop if blocked
 
-            /// If reload is blocked the call to startLoading is still needed to obtain values
-            /// that have already been loaded
+            /// While reload is blocked, a loaded object is still returned: it already has `state_id >= min_id`,
+            /// unless this thread is loading another object that needs its newer version, which is then blocked.
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
 
@@ -1106,6 +1107,7 @@ private:
         /// decided yet, so `blocked` (and thus `LoadResult::blocked`) must not read as true
         /// while this fresh attempt is in progress.
         info.blocked = false;
+        info.forced_to_reload = forced_to_reload;
 
         LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
@@ -1192,13 +1194,13 @@ private:
                     return;
                 }
 
-                /// If reload is blocked and there is no previous version then do not load the object.
-                /// Loading can proceed with the previous version even if reload is blocked so that
-                /// a object that has already been loaded can be accessed.
+                /// While reload is blocked no loading runs, forced or not: a non-forced one of a loaded object
+                /// (a periodic update) still reads the source to build the new version.
+                /// A loaded object stays accessible: reading it does not start a loading.
                 /// Checked here rather than when the loading was queued, which can be before `SYSTEM START RELOAD DICTIONARIES`,
                 /// and under the same lock as setting `blocked`: `START` lifts the blocker before it takes this lock to requeue
                 /// the blocked objects, so either it sees `blocked` set here or this thread sees the blocker lifted.
-                if (reload_blocker.isCancelled() && (forced_to_reload || !info->object))
+                if (reload_blocker.isCancelled())
                 {
                     LOG_TRACE(log, "Could not load object '{}': Reload is blocked", name);
                     finishLoadingSingleObject(name, loading_id, /* blocked = */ true, lock);
