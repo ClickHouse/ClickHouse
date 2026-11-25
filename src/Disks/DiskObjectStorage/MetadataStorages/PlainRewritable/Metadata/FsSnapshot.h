@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsDirectoryEntries.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/NormalizedPath.h>
 
 #include <Common/CurrentMetrics.h>
 

@@ -1,5 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/NormalizedPath.h>
 #include <base/defines.h>
 
 #include <Common/getRandomASCIIString.h>

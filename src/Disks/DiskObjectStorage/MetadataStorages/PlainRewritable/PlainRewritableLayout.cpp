@@ -1,5 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/NormalizedPath.h>
 
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/NormalizedPath.h>
 
 #include <functional>
 #include <map>
