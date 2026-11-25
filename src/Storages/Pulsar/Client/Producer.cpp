@@ -269,8 +269,9 @@ void ProducerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
                 return;
             if (!producer_name)
                 producer_name = success.producer_name();
+            /// The broker reports -1 when the producer has not published anything yet, so the sequence starts at zero.
             if (!next_sequence_id)
-                next_sequence_id = static_cast<UInt64>(success.last_sequence_id()) + 1;
+                next_sequence_id = success.last_sequence_id() < 0 ? 0 : static_cast<UInt64>(success.last_sequence_id()) + 1;
             state = State::Ready;
             LOG_TRACE(log, "Created the Pulsar producer {} for topic {}", *producer_name, topic);
             return;
