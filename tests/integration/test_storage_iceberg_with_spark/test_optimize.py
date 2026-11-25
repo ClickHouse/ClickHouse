@@ -562,15 +562,14 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert not changed, changed
 
 
-def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_iceberg_with_spark):
+def test_optimize_keeps_partition_tuple_of_another_arity(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_optimize_spec_arity_" + get_uuid_str()
     table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
 
-    # OPTIMIZE rewrites every data file under the default partition spec, so a data file whose
-    # partition tuple has another number of values (here: written before DROP PARTITION FIELD)
-    # must be refused before anything is written.
+    # A data file written before DROP PARTITION FIELD has a partition tuple of another arity than the
+    # default spec. OPTIMIZE rewrites it under its own partition spec, keeping its tuple.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
@@ -590,36 +589,61 @@ def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_icebe
     )
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
-    # Arming condition: the default spec has no fields, while the old data files carry a one-value tuple.
-    metadata = get_latest_metadata(instance, table_path)
-    default_spec = [s for s in metadata["partition-specs"] if s["spec-id"] == metadata["default-spec-id"]]
-    assert len(default_spec) == 1 and default_spec[0]["fields"] == [], metadata["partition-specs"]
-    data_file_partitions = sorted(
-        instance.query(
-            f"""
-            SELECT partition FROM system.iceberg_files
-            WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' FORMAT TSVRaw
-            """
+    def data_file_partitions():
+        return sorted(
+            instance.query(
+                f"""
+                SELECT partition FROM system.iceberg_files
+                WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' FORMAT TSVRaw
+                """
+            )
+            .strip()
+            .splitlines()
         )
-        .strip()
-        .splitlines()
-    )
-    assert data_file_partitions == ["{'a'}", "{'b'}", "{}"], data_file_partitions
 
-    list_files = ["bash", "-c", f"find {table_path} -type f | sort"]
-    files_before = instance.exec_in_container(list_files)
+    # Arming condition: the default spec has no fields, while the old data files carry a one-value tuple.
+    metadata_before = get_latest_metadata(instance, table_path)
+    default_spec = [s for s in metadata_before["partition-specs"] if s["spec-id"] == metadata_before["default-spec-id"]]
+    assert len(default_spec) == 1 and default_spec[0]["fields"] == [], metadata_before["partition-specs"]
+    assert data_file_partitions() == ["{'a'}", "{'b'}", "{}"]
 
     expected_ids = "1\n3\n4\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
 
-    error = instance.query_and_get_error(
+    instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
-    assert "NOT_IMPLEMENTED" in error and "Logical error" not in error, error
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
-    assert instance.exec_in_container(list_files) == files_before
+    assert "POSITION_DELETE" not in instance.query(
+        f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
+    )
+    assert data_file_partitions() == ["{'a'}", "{'b'}", "{}"]
+    metadata_after = get_latest_metadata(instance, table_path)
+    changed = {
+        key: (metadata_before[key], metadata_after.get(key))
+        for key in ("partition-specs", "default-spec-id", "last-partition-id")
+        if metadata_after.get(key) != metadata_before[key]
+    }
+    assert not changed, changed
+
+    # Spark reads the rewritten file under its old partition spec.
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"{table_path}/",
+        f"{table_path}/",
+    )
+    data_files = (
+        spark.read.format("iceberg")
+        .load(f"{table_path}#files")
+        .where("content = 0")
+        .selectExpr("spec_id", "coalesce(partition.region, '') AS region")
+        .collect()
+    )
+    assert sorted((row.spec_id, row.region) for row in data_files) == [(0, "a"), (0, "b"), (1, "")], data_files
+    assert sorted(row.id for row in spark.read.format("iceberg").load(table_path).collect()) == [1, 3, 4]
 
 
 def test_optimize_keeps_field_ids_of_reordered_columns(started_cluster_iceberg_with_spark):
