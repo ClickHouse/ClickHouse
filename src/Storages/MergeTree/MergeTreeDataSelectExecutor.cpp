@@ -170,15 +170,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// Calls `process_part(part_index)` for the parts [0, num_parts) on the calling thread and on up to `num_threads - 1` threads more,
-/// one per CPU slot granted to the query (see `allocateCPUSlots`), so the analysis of indexes competes for CPU with the queries.
-/// The workload scheduler grants slots asynchronously, so the calling thread starts a thread for every slot granted meanwhile.
-/// No thread waits for a slot: the calling thread can hold the only slot of its workload (a thread of the pipeline executor
-/// in `mergeTreeAnalyzeIndexes`), and nothing would stop the wait of a cancelled query. So the workload scheduler always provides
-/// CPU leases (the calling thread gets one without a wait), and they are not renewed, so no thread is preempted.
-/// The CPU time of a thread is reported to the workload when its slot is released.
-/// The parts are taken in order, and no more parts are taken once `process_part` returns false.
-/// If `process_part` throws, the other parts are abandoned and the exception is rethrown.
+/// Calls `process_part(part_index)` for parts [0, num_parts), in order, on the calling thread and on one more thread
+/// per granted CPU slot (see `allocateCPUSlots`), up to `num_threads` in total. Stops once `process_part` returns false or throws.
+/// Never waits for a slot: the caller may hold the only one of its workload (`mergeTreeAnalyzeIndexes`), and such a wait
+/// cannot be cancelled. Hence the leases are not renewed: no preemption, the CPU time is reported on release.
 template <typename ProcessPart>
 void processPartsInParallel(size_t num_parts, size_t num_threads, bool use_concurrency_control, const ProcessPart & process_part)
 {
