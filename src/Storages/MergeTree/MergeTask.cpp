@@ -2530,10 +2530,11 @@ std::optional<NameAndTypePair> MergeTask::VerticalMergeStage::tryGetColumnOfDefa
         if (parts[part_num]->rows_count == 0)
             continue;
 
-        /// Mutations and patches applied on reading may change the values of the column.
+        /// Mutations, patches, renames and drops applied on reading may change the values of the column.
         const auto & alter_conversions = global_ctx->alter_conversions[part_num];
         if (alter_conversions->hasMutations() || alter_conversions->hasPatches()
-            || alter_conversions->columnHasNewName(column_name) || alter_conversions->isColumnRenamed(column_name))
+            || alter_conversions->columnHasNewName(column_name) || alter_conversions->isColumnRenamed(column_name)
+            || alter_conversions->isColumnDropped(column_name))
             return {};
 
         if (!partHasOnlyDefaultsInColumn(parts[part_num], *column))

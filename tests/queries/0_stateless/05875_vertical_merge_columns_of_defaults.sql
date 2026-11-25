@@ -18,6 +18,7 @@ CREATE TABLE t_defaults_wide
     e_n Nullable(UInt32),
     e_i UInt32,
     e_p UInt64,
+    e_x UInt64,
     INDEX idx_i e_i TYPE minmax GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY k
@@ -35,7 +36,7 @@ SETTINGS
     apply_patches_on_merge = 1,
     max_bytes_to_merge_at_max_space_in_pool = 1;
 
-INSERT INTO t_defaults_wide (k, v) SELECT number * 3, number FROM numbers(3000);
+INSERT INTO t_defaults_wide (k, v, e_x) SELECT number * 3, number, if(number = 5, 1, 0) FROM numbers(3000);
 INSERT INTO t_defaults_wide (k, v) SELECT number * 3 + 1, number FROM numbers(3000);
 INSERT INTO t_defaults_wide (k, v) SELECT number * 3 + 2, number FROM numbers(3000);
 
@@ -45,11 +46,11 @@ OPTIMIZE TABLE t_defaults_wide FINAL;
 UPDATE t_defaults_wide SET e_p = 7 WHERE k = 4;
 OPTIMIZE TABLE t_defaults_wide FINAL;
 
-SELECT count(), sum(v), countIf(e_u != 0), countIf(e_s != ''), countIf(e_f != 0), countIf(e_n IS NOT NULL), countIf(e_i != 0), countIf(e_p != 0), sum(e_p)
+SELECT count(), sum(v), countIf(e_u != 0), countIf(e_s != ''), countIf(e_f != 0), countIf(e_n IS NOT NULL), countIf(e_i != 0), countIf(e_p != 0), sum(e_p), countIf(e_x != 0), sum(e_x)
 FROM t_defaults_wide;
 SELECT e_p FROM t_defaults_wide WHERE k = 4 SETTINGS apply_patch_parts = 0;
-SELECT count() FROM t_defaults_wide WHERE e_i = 0;
-SELECT count() FROM t_defaults_wide WHERE e_i = 1;
+SELECT count() FROM t_defaults_wide WHERE e_i = 0 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_i';
+SELECT count() FROM t_defaults_wide WHERE e_i = 1 SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'idx_i';
 SELECT column, serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_defaults_wide' AND active AND NOT startsWith(name, 'patch') AND NOT startsWith(column, '_')
 ORDER BY column;

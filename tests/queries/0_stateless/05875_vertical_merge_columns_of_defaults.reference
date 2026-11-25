@@ -1,5 +1,5 @@
 Wide parts, lightweight delete, then a lightweight update
-8910	13362030	0	0	0	0	0	1	7
+8910	13362030	0	0	0	0	0	1	7	1	1
 7
 8910
 0
@@ -9,6 +9,7 @@ e_n	Sparse
 e_p	Sparse
 e_s	Sparse
 e_u	Sparse
+e_x	Sparse
 k	Default
 v	Default
 Compact parts with duplicate keys merged into a Wide part
