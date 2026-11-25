@@ -272,7 +272,7 @@ public:
         output_header = input_headers.front();
     }
 
-    String getName() const override { return "ValidateNestedArraySizes"; }
+    [[nodiscard]] String getName() const override { return "ValidateNestedArraySizes"; }
 
 private:
     static Traits getTraits()
