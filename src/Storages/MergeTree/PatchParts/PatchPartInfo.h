@@ -84,6 +84,19 @@ enum class PatchMode
     MergeOnKey,
 };
 
+/// Which `_block_offset` a patch stores for the rows of a source part. It matters only for a part that stores
+/// `_block_offset` without `_block_number` (see `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`):
+/// its `_block_offset` reads as the row position in the part with `use_block_offset_only_with_block_number`,
+/// and as the stored value without it.
+enum class PatchBlockOffsets : UInt8
+{
+    /// The stored value. Also in all patches written by older versions.
+    Stored = 0,
+    RowPositions = 1,
+    /// Both, in a patch merged from patches with different values.
+    Mixed = 2,
+};
+
 template <typename TDataPartPtr>
 struct PatchPartInfoBase
 {
@@ -116,6 +129,8 @@ struct PatchPartMetadata
 {
     MergeTreePatchPartsVersion version{MergeTreePatchPartsVersion::V2};
     StorageMetadataPtr metadata;
+    /// Set only for a patch that is being written.
+    PatchBlockOffsets block_offsets = PatchBlockOffsets::Stored;
 };
 
 }

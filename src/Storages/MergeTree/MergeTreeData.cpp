@@ -397,12 +397,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_statistics_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
-    extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsBool use_block_offset_only_with_block_number;
     extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
@@ -1117,9 +1117,16 @@ PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPar
     if (in_partition == patches_by_partition.end())
         return {};
 
+    /// The patches of such part are applied only if they store the `_block_offset` that the part reads now.
+    const bool check_block_offsets = part->storesBlockOffsetWithoutBlockNumber();
+    const auto block_offsets = check_block_offsets && part->ignoresStoredBlockOffset() ? PatchBlockOffsets::RowPositions : PatchBlockOffsets::Stored;
+
     PatchParts res;
     for (const auto & patch_part : in_partition->second)
     {
+        if (check_block_offsets)
+            patch_part->getPatchPartIndex().checkBlockOffsetsOfSourceParts(part->info, block_offsets, patch_part->name);
+
         auto patch_infos = DB::getPatchesForPart(part->info, patch_part);
         std::move(patch_infos.begin(), patch_infos.end(), std::back_inserter(res));
     }
@@ -2315,6 +2322,14 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata 
 NamesAndTypesList MergeTreeData::getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings)
 {
     return getMinMaxColumns(metadata, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
+}
+
+bool MergeTreeData::shouldPersistBlockNumberColumn(const MergeTreeSettings & data_settings)
+{
+    if (data_settings[MergeTreeSetting::enable_block_number_column])
+        return true;
+
+    return data_settings[MergeTreeSetting::enable_block_offset_column] && data_settings[MergeTreeSetting::use_block_offset_only_with_block_number];
 }
 
 ExpressionActionsPtr
@@ -12729,7 +12744,7 @@ void MergeTreeData::optimizeDryRun(
         choice.range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
     }
 
-    if ((*getSettings())[MergeTreeSetting::apply_patches_on_merge])
+    if (shouldApplyPatchesOnMerge(choice.range, *getSettings()))
     {
         const auto partition_id = choice.range.front().info.getPartitionId();
         auto all_patch_parts = getPatchPartsVectorForPartition(partition_id);
@@ -15436,6 +15451,13 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
+    /// The patch stores the row position as `_block_offset` of the rows of parts that store `_block_offset` without
+    /// `_block_number` (see `PatchBlockOffsets`). It is marked only if there are such parts, so that older versions
+    /// can read the patches of other tables. It is checked before the parts to read are taken: no such parts are
+    /// created while `use_block_offset_only_with_block_number` is enabled.
+    const bool block_offsets_are_row_positions = (*getSettings())[MergeTreeSetting::use_block_offset_only_with_block_number]
+        && std::ranges::any_of(getDataPartsVectorForInternalUsage(), [](const auto & part) { return part->storesBlockOffsetWithoutBlockNumber(); });
+
     MutationsInterpreter interpreter(
         shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
@@ -15460,6 +15482,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
 
     PatchPartMetadata patch_metadata;
     patch_metadata.version = patch_parts_version;
+    patch_metadata.block_offsets = block_offsets_are_row_positions ? PatchBlockOffsets::RowPositions : PatchBlockOffsets::Stored;
 
     switch (patch_parts_version)
     {

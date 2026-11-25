@@ -59,6 +59,9 @@ struct PartProperties
         const time_t next_recompress_ttl;
     };
     const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
+
+    /// See `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`.
+    const bool stores_block_offset_without_block_number = false;
 };
 
 using PartsRange = std::vector<PartProperties>;

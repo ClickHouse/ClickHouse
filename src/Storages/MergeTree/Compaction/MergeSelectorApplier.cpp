@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <Common/logger_useful.h>
 
@@ -32,7 +33,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent;
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
-    extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_threshold;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_min_count;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_max_age;
@@ -61,7 +61,7 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
 {
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
-        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+        const bool apply_patch_parts = shouldApplyPatchesOnMerge(parts, ctx.merge_tree_settings);
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
         return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
     };

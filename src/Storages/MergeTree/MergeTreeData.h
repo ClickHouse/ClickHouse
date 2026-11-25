@@ -1638,6 +1638,13 @@ public:
     static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
     static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 
+    /// Whether merges and mutations store `_block_number` in parts. `_block_offset` is unique only
+    /// together with `_block_number`: a part that stores `_block_offset` without `_block_number` reads
+    /// `_block_number` as the constant `min_block`, and a part merged from several insert blocks then has
+    /// duplicate `(_block_number, _block_offset)` pairs. So with `use_block_offset_only_with_block_number`,
+    /// `_block_number` is stored whenever `_block_offset` is.
+    static bool shouldPersistBlockNumberColumn(const MergeTreeSettings & data_settings);
+
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
     /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.

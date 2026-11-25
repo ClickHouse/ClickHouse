@@ -17,6 +17,11 @@ class PatchPartIndex
 {
 public:
     static constexpr UInt8 MAX_SUPPORTED_FORMAT_VERSION = static_cast<UInt8>(MergeTreePatchPartsVersion::V2);
+    /// The serialized index starts with the format version of the patch part. If `PatchBlockOffsets` of some source part
+    /// is not `Stored`, it starts with `SERIALIZATION_VERSION_WITH_BLOCK_OFFSETS` instead, followed by the format
+    /// version, and every source part is followed by its `PatchBlockOffsets`. Older versions refuse to read such index.
+    static constexpr UInt8 SERIALIZATION_VERSION_WITH_BLOCK_OFFSETS = 2;
+    static_assert(MAX_SUPPORTED_FORMAT_VERSION < SERIALIZATION_VERSION_WITH_BLOCK_OFFSETS);
     static constexpr auto FILENAME = "source_parts.dat";
 
     PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_);
@@ -35,7 +40,14 @@ public:
     /// Returns an index with the same format version and sorting key but without source parts.
     [[nodiscard]] PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
 
-    void addSourcePart(const String & name, UInt64 data_version);
+    [[nodiscard]] PatchBlockOffsets getBlockOffsets(const String & part_name) const;
+
+    void addSourcePart(const String & name, UInt64 data_version, PatchBlockOffsets block_offsets);
+
+    /// Throws if the patch is matched with the rows of `original_part` by `(_block_number, _block_offset)`,
+    /// but stores another `_block_offset` for them than the part reads now (`block_offsets`).
+    /// It is called only for parts that store `_block_offset` without `_block_number`.
+    void checkBlockOffsetsOfSourceParts(const MergeTreePartInfo & original_part, PatchBlockOffsets block_offsets, const String & patch_part_name) const;
 
     [[nodiscard]] PatchParts getPatchParts(
         const MergeTreePartInfo & original_part,
@@ -47,7 +59,8 @@ public:
         const Block & block,
         UInt64 data_version,
         MergeTreePatchPartsVersion format_version,
-        String sorting_key_desc);
+        String sorting_key_desc,
+        PatchBlockOffsets block_offsets);
 
     static PatchPartIndex merge(const DataPartsVector & source_parts);
     void writeBinary(WriteBuffer & out) const;
@@ -63,6 +76,9 @@ private:
     /// Part name -> min and max version of updated data stored in patch part for the source part.
     /// Serialized to the file on disk.
     std::map<String, std::pair<UInt64, UInt64>> min_max_versions_by_part;
+
+    /// Source parts with `PatchBlockOffsets` other than `Stored`. Serialized to the file on disk.
+    std::map<String, PatchBlockOffsets> block_offsets_by_part;
 
     UInt64 min_data_version = 0;
     UInt64 max_data_version = 0;
