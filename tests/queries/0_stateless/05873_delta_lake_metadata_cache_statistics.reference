@@ -1,0 +1,69 @@
+int lower	50	1
+int lower warm	50
+int lower pruned	2
+int none	0	1
+int none warm	0
+int none pruned	4
+int or string	50	1
+int or string warm	50
+int or string pruned	0
+two columns	1	1
+two columns warm	1
+two columns pruned	6
+either column	3	1
+either column warm	3
+either column pruned	0
+Int32	0	1
+Int32 warm	0
+Int32 pruned	2
+Int64	0	1
+Int64 warm	0
+Int64 pruned	2
+Int8	0	1
+Int8 warm	0
+Int8 pruned	2
+Int16	0	1
+Int16 warm	0
+Int16 pruned	2
+Float32	0	1
+Float32 warm	0
+Float32 pruned	2
+Float64	0	1
+Float64 warm	0
+Float64 pruned	2
+Float64 negated	0	1
+Float64 negated warm	0
+Float64 negated pruned	0
+String	0	1
+String warm	0
+String pruned	2
+Date32	0	1
+Date32 warm	0
+Date32 pruned	2
+DateTime64 above	0	1
+DateTime64 above warm	0
+DateTime64 above pruned	2
+DateTime64 within	0	1
+DateTime64 within warm	0
+DateTime64 within pruned	0
+Decimal	0	1
+Decimal warm	0
+Decimal pruned	2
+column mapping	0	1
+column mapping warm	0
+column mapping pruned	2
+is null	3	1
+is null warm	3
+is null pruned	2
+is not null	6	1
+is not null warm	6
+is not null pruned	0
+nullable greater	3	1
+nullable greater warm	3
+nullable greater pruned	2
+nullable greater or null	6	1
+nullable greater or null warm	6
+nullable greater or null pruned	0
+deletion vectors	19	1
+deletion vectors warm	19
+deletion vectors pruned	10

@@ -5,6 +5,7 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Common/CacheBase.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataFileStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -24,6 +25,7 @@ struct ScannedDataFile
     std::optional<UInt64> num_records;
     KernelDvInfo dv_info;
     std::optional<KernelExpression> transform;
+    std::optional<DataFileStatistics> statistics;
 };
 
 using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;

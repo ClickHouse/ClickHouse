@@ -27,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataFileStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -55,6 +56,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeMinMaxPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
@@ -74,6 +76,13 @@ namespace
 
 /// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
 /// so it is not a row count for such a file.
+::SharedScan * scanWithAllStatsColumns(::SharedSnapshot * snapshot, ::SharedExternEngine * engine)
+{
+    return KernelUtils::unwrapResult(
+        ::scan_builder_build(::scan_builder_with_all_stats_columns(::scan_builder(snapshot)), engine),
+        "scan_builder_build");
+}
+
 bool hasDeletionVector(::SharedDvInfo * dv_info_ptr)
 {
     return dv_info_ptr && ::dv_info_has_vector(dv_info_ptr);
@@ -93,6 +102,7 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
+        const StatisticsColumns & statistics_columns_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -112,6 +122,7 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
+        , statistics_columns(statistics_columns_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -150,7 +161,12 @@ public:
 
         use_engine_predicate = filter.has_value() && enable_engine_predicate && !metadata_cache;
         if (metadata_cache && !cached_data_files_)
+        {
             collector.emplace(metadata_cache->maxSizeInBytes());
+            statistics_converter.emplace(statistics_columns);
+        }
+        if (metadata_cache && filter)
+            statistics_pruner.emplace(*filter, statistics_columns, getContext());
 
         if (cached_data_files_)
         {
@@ -208,6 +224,10 @@ public:
                     predicate.get(),
                     /* schema */nullptr),
                 "scan");
+        }
+        else if (statistics_converter)
+        {
+            scan = scanWithAllStatsColumns(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get());
         }
         else
         {
@@ -424,6 +444,13 @@ public:
 
             schedule_next_batch_cv.notify_one();
 
+            if (statistics_pruner && scan_item->statistics && statistics_pruner->canBePruned(*scan_item->statistics))
+            {
+                ProfileEvents::increment(ProfileEvents::DeltaLakeMinMaxPrunedFiles);
+                LOG_TEST(log, "Skipping file {} according to the statistics", scan_item->path);
+                continue;
+            }
+
             std::string full_path = helper->resolveDataFilePath(scan_item->path, getContext());
             DB::ObjectInfoPtr object = scan_item->size > 0
                 ? std::make_shared<DB::ObjectInfoWithFileSizeHint>(DB::RelativePathWithMetadata(std::move(full_path)), static_cast<size_t>(scan_item->size))
@@ -626,6 +653,8 @@ public:
             file->num_records = stats->num_records;
         file->dv_info = std::move(dv_info_handle);
         file->transform = std::move(transform_handle);
+        if (context->statistics_converter && stats)
+            file->statistics = context->statistics_converter->convert(*stats);
 
         LOG_TEST(
             context->log,
@@ -666,11 +695,14 @@ private:
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
+    std::optional<StatisticsPruner> statistics_pruner;
 
     KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
+    const StatisticsColumns statistics_columns;
+    std::optional<DataFileStatisticsConverter> statistics_converter;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -808,13 +840,16 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
     }
 
     KernelScan fallback_scan;
-    fallback_scan = KernelUtils::unwrapResult(
-        ::scan(
-            state->snapshot.get(),
-            state->engine.get(),
-            /* predicate */nullptr,
-            /* schema */nullptr),
-        "scan");
+    if (metadata_cache)
+        fallback_scan = scanWithAllStatsColumns(state->snapshot.get(), state->engine.get());
+    else
+        fallback_scan = KernelUtils::unwrapResult(
+            ::scan(
+                state->snapshot.get(),
+                state->engine.get(),
+                /* predicate */nullptr,
+                /* schema */nullptr),
+            "scan");
 
     KernelScanMetadataIterator fallback_scan_data_iterator;
     fallback_scan_data_iterator = KernelUtils::unwrapResult(
@@ -824,15 +859,19 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
     struct StatsVisitor
     {
-        StatsVisitor(::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight)
+        StatsVisitor(::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight, const StatisticsColumns & statistics_columns)
             : engine(engine_)
         {
             if (max_cached_weight)
+            {
                 collector.emplace(*max_cached_weight);
+                statistics_converter.emplace(statistics_columns);
+            }
         }
 
         ::SharedExternEngine * const engine;
         std::optional<SnapshotDataFilesCollector> collector;
+        std::optional<DataFileStatisticsConverter> statistics_converter;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -886,6 +925,8 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
                         file->num_records = stats->num_records;
                     file->dv_info = std::move(dv_info_handle);
                     file->transform = std::move(transform_handle);
+                    if (stats)
+                        file->statistics = visitor->statistics_converter->convert(*stats);
                     visitor->collector->add(file);
                 }
                 return true;
@@ -923,8 +964,11 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         }
     };
 
+    initOrUpdateSchemaIfChanged();
     StatsVisitor visitor(
-        state->engine.get(), metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt);
+        state->engine.get(),
+        metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt,
+        schema->statistics_columns);
 
     while (true)
     {
@@ -1153,6 +1197,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
+        schema->statistics_columns,
         filter_dag,
         callback,
         list_batch_size,
@@ -1195,12 +1240,14 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             fmt::join(partition_columns, ", "),
             physical_names_map.size());
 
+        auto statistics_columns = getStatisticsColumns(table_schema, partition_columns, physical_names_map);
         schema.emplace(SchemaInfo{
             .table_schema = std::move(table_schema),
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
             .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
+            .statistics_columns = std::move(statistics_columns),
         });
     }
 }
