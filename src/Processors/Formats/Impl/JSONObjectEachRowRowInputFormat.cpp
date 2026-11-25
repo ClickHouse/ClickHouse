@@ -92,7 +92,8 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
         JSONUtils::skipComma(in);
 
     JSONUtils::readFieldName(in, format_settings.json);
-    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(
+        in, format_settings, &inference_info, format_settings.json_object_each_row.column_for_object_name);
 }
 
 NamesAndTypesList JSONObjectEachRowSchemaReader::getStaticNamesAndTypes()
@@ -226,7 +227,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 #### Omitted values processing {#omitted-values-processing}
 
-ClickHouse substitutes omitted values with the default values for the corresponding [data types](/reference/data-types).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](/reference/data-types/index).
 
 If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting.
 

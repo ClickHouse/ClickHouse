@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/hasExactMetricNameMatcher.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
@@ -17,7 +18,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -27,37 +27,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-
-/// Validates arguments for `quantile_over_time`:
-/// exactly 2 arguments (SCALAR, RANGE_VECTOR).
-void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-{
-    if (arguments.size() != 2)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects 2 arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
-
-    const auto & phi_argument = arguments[0];
-    if (phi_argument.type != ResultType::SCALAR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects first argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::SCALAR,
-                        getPromQLText(phi_argument, context), phi_argument.type);
-    }
-
-    const auto & range_argument = arguments[1];
-    if (range_argument.type != ResultType::RANGE_VECTOR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects second argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::RANGE_VECTOR,
-                        getPromQLText(range_argument, context), range_argument.type);
-    }
-}
-
 
 /// The quantile level (the 1st argument of `quantile_over_time`) converted to an AST.
 struct QuantileLevel
@@ -110,7 +79,7 @@ QuantileLevel getQuantileLevel(SQLQueryPiece & scalar_argument, ConverterContext
         case StoreMethod::SAMPLES:
         case StoreMethod::TIMESTAMP_AND_VALUE:
         {
-            /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
+            /// Can't get in here because these store methods are incompatible with a scalar (see the checks in `applyFunctionQuantileOverTime`).
             throwUnexpectedStoreMethod(scalar_argument, context);
         }
     }
@@ -129,8 +98,9 @@ bool isFunctionQuantileOverTime(std::string_view function_name)
 SQLQueryPiece applyFunctionQuantileOverTime(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto function_name = function_node->function_name;
-    checkArgumentTypes(function_name, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 2);
+    checkArgumentType(function_node, arguments, 0, ResultType::SCALAR, context);
+    checkArgumentType(function_node, arguments, 1, ResultType::RANGE_VECTOR, context);
 
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
@@ -160,9 +130,9 @@ SQLQueryPiece applyFunctionQuantileOverTime(
         /// A fixed @ freezes samples but not phi; PromQL evaluates per step.
         /// Requires an aggregate over an array of quantile levels.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Function '{}' does not support a time-varying first argument (the quantile) together with "
+                        "{} does not support a time-varying first argument (the quantile) together with "
                         "a fixed @ modifier on the range vector {}",
-                        function_name, getPromQLText(range_argument, context));
+                        function_node->getTypeAndName(), getPromQLText(range_argument, context));
     }
     const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
 
