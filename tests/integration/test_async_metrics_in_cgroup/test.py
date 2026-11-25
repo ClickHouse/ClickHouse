@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 # The tests measure the CPU time of an idle `node1` over the last minute, and
 # the export of the system logs to the CI Logs cluster (see
 # helpers/ci_logs_export.py) materialises every log table from a dozen threads
-# at startup, which is inside that window: keep it off for both nodes.
+# at startup, which is inside that window: keep it off for all nodes.
 node1 = cluster.add_instance(
     "node1",
     stay_alive=True,
@@ -18,6 +18,25 @@ node2 = cluster.add_instance(
     stay_alive=True,
     main_configs=["configs/config.xml"],
     cpu_limit=6,
+    with_ci_logs_export=False,
+)
+# No CPU quota, the limit is only in the cpuset: as for a Kubernetes pod with exclusive CPUs
+# under the `static` CPU manager policy, where `cpu.max` is `max`.
+node3 = cluster.add_instance(
+    "node3",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=False,
+    cpuset="0-1",
+    with_ci_logs_export=False,
+)
+# A quota larger than the cpuset: the cpuset is the limit.
+node4 = cluster.add_instance(
+    "node4",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=4,
+    cpuset="0-1",
     with_ci_logs_export=False,
 )
 
@@ -104,3 +123,26 @@ def test_system_wide_metrics(start_cluster):
     ]:
         node2_value = get_async_metric(node2, metric)
         assert float(node2_value) > 0
+
+
+def test_cpuset_without_quota(start_cluster):
+    max_cpu = node3.query_with_retry(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU'",
+        check_callback=lambda result: result.strip() == "2",
+    )
+    assert max_cpu.strip() == "2"
+
+    # Normalized metrics are computed from the second update on.
+    normalized = node3.query_with_retry(
+        "SELECT count() FROM system.asynchronous_metrics WHERE metric = 'CGroupUserTimeNormalized'",
+        check_callback=lambda result: result.strip() == "1",
+    )
+    assert normalized.strip() == "1"
+
+
+def test_quota_larger_than_cpuset(start_cluster):
+    max_cpu = node4.query_with_retry(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU'",
+        check_callback=lambda result: result.strip() == "2",
+    )
+    assert max_cpu.strip() == "2"
