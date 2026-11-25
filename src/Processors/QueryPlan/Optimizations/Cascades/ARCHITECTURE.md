@@ -262,15 +262,14 @@ aggregation stay in the group, and the costs select.
   `-0.`: these results can differ, as between any two plans.
 - **`max_rows_to_group_by`**: the rule does not apply, because the limit would apply to the
   distinct values.
-- **Estimates**: to compare the plans, the estimates count the distinct values that the
+- **Estimates**: to compare the plans, the costs count the distinct values that the
   `uniqExact` states of an aggregation without keys hold (bytes from
-  `IAggregateFunction::getStateBytesPerDistinctInput`):
-  - For the partial half of a two-stage aggregation, `deriveAggregatingStatistics` counts
-    the values as output rows, so the exchange and the merge above it have a price for each
-    value. It does so only there: `ROLLUP` and `CUBE` keep the statistics of their input for
-    their own output.
-  - Any other aggregation without keys has one output row, so `CostEstimator` gives the
-    values to its cost function, which prices them as hash table entries.
+  `IAggregateFunction::getStateBytesPerDistinctInput`). The statistics of such an aggregation
+  have one output row, so `CostEstimator` gives the values to the cost functions:
+  - The aggregation prices them as hash table entries.
+  - A non-final aggregation emits the states. It records the values on its physical expression
+    (`GroupExpression::output_distinct_state_values`), and the exchange and the merge above it
+    price each value as a row.
   - A single `uniqExact` that is computed with radix partitioning, or in the order of its
     argument, builds no hash set of all the values, and has no such price.
 

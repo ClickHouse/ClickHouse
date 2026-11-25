@@ -35,17 +35,8 @@ class SortingStep;
 class LimitStep;
 class DistinctStep;
 
-/// The distinct values that the `uniqExact` states of an aggregation hold, summed over the states.
-/// A function with a combinator (`uniqExactIf`) is not counted: the estimate does not know which
-/// values its condition accepts.
-struct DistinctValuesOfStates
-{
-    Float64 values = 0;
-    /// The upper bound of `values`.
-    Float64 max_values = 0;
-    /// The memory that the values take in the hash sets of the states.
-    Float64 bytes = 0;
-};
+/// The distinct values that the `uniqExact` states of an aggregation hold. A function with a combinator
+/// (`uniqExactIf`) is not counted: the estimate does not know which values its condition accepts.
 DistinctValuesOfStates estimateDistinctValuesOfStates(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
 
 /// Derives statistics for groups in the Cascades optimizer.
@@ -68,8 +59,7 @@ private:
     ExpressionStatistics deriveReadStatistics(const ReadFromMergeTree & read_step);
     ExpressionStatistics deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics);
-    ExpressionStatistics deriveAggregatingStatistics(
-        const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics, bool is_partial_of_two_stage_aggregation);
+    ExpressionStatistics deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics);

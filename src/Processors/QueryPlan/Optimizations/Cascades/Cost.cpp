@@ -172,7 +172,7 @@ static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-                 + inputs.distinct_state_values + inputs.distinct_state_bytes
+                 + inputs.distinct_state_values.values + inputs.distinct_state_values.bytes
                  + inputStats(inputs, 0).estimated_row_count) / divide_by;
     return cost;
 }
@@ -260,12 +260,14 @@ Cost WindowStrategy::estimateOperatorCost(const CostInputs & inputs) const
     return windowCost(inputs);
 }
 
+/// The merge inserts each distinct value of the `uniqExact` states of its input into its own states, so a
+/// value has the price of an input row.
 static Cost mergingAggregatedCost(const CostInputs & inputs)
 {
     Cost cost;
     cost.work = (inputs.output_stats.estimated_row_count
         + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        + inputStats(inputs, 0).estimated_row_count) / inputs.parallelism;
+        + inputStats(inputs, 0).estimated_row_count + inputs.distinct_state_values.values) / inputs.parallelism;
     /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
     /// merge for large outputs; bucket-level merge within a node is parallel.
     cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
@@ -280,7 +282,8 @@ static Cost broadcastExchangeCost(const CostInputs & inputs)
     /// and the senders each ship their share of the copies in parallel. So one full payload
     /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
     /// a shuffle of the same data.
-    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row;
+    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+        + inputs.distinct_state_values.bytes;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     return cost;
 }
@@ -295,7 +298,9 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// 1/N of the data per node, all nodes concurrently; without the division one node
     /// scanning the whole table is priced the same as the cluster shuffling it, and the
     /// optimizer keeps big scans on a single node.
-    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row;
+    /// The distinct values in `uniqExact` states are not in the row width. The exchange sends and reads
+    /// such a state value by value, so a value has the price of a row here and in the funnel below.
+    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row + inputs.distinct_state_values.bytes;
     if (dynamic_cast<const ShuffleExchangeStep *>(&step))
         network_bytes /= std::max(1.0, inputs.node_count);
     cost.network += network_bytes;
@@ -313,7 +318,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
         if (const auto * sorted_gather = dynamic_cast<const GatherExchangeStep *>(&step);
             sorted_gather && sorted_gather->getMaintainSortDescription())
             funnel_rows = std::min(funnel_rows, inputs.output_stats.estimated_row_count);
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnel_rows;
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * (funnel_rows + inputs.distinct_state_values.values);
     }
     if (const auto * gather = dynamic_cast<const GatherExchangeStep *>(&step);
         gather && gather->getMaintainSortDescription())
@@ -506,19 +511,29 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         inputs.input_stats.push_back(input_group->statistics ? &*input_group->statistics : nullptr);
     }
 
-    /// The statistics of the partial half of a two-stage aggregation count the distinct values of its
-    /// `uniqExact` states as output rows. Any other aggregation without keys has one output row, so its
-    /// cost function gets the values from here.
+    /// An aggregation without keys has one output row in the statistics, and its `uniqExact` states hold all
+    /// the distinct values. So the cost functions get the values from here. A non-final aggregation emits
+    /// the states: it records the values for the exchange and the merge above it. An exchange and a
+    /// non-final merge emit the states that they get, so they pass the values on.
     {
         const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step);
-        if (aggregating_step && memo.getContext().cascades_distinct_aggregation_split
-            && !expression->is_partial_of_two_stage_aggregation
-            && holdsDistinctValuesInHashSets(*aggregating_step, memo.getContext())
-            && !inputs.input_stats.empty() && inputs.input_stats[0])
+        const auto * merging_step = typeid_cast<const MergingAggregatedStep *>(step);
+        if (aggregating_step)
         {
-            const auto distinct_values = estimateDistinctValuesOfStates(*aggregating_step, *inputs.input_stats[0]);
-            inputs.distinct_state_values = distinct_values.values;
-            inputs.distinct_state_bytes = distinct_values.bytes;
+            if (memo.getContext().cascades_distinct_aggregation_split
+                && holdsDistinctValuesInHashSets(*aggregating_step, memo.getContext())
+                && !inputs.input_stats.empty() && inputs.input_stats[0])
+            {
+                inputs.distinct_state_values = estimateDistinctValuesOfStates(*aggregating_step, *inputs.input_stats[0]);
+                if (!aggregating_step->getFinal())
+                    expression->output_distinct_state_values = inputs.distinct_state_values;
+            }
+        }
+        else if ((is_exchange || merging_step) && !selected_inputs.empty() && selected_inputs[0].expression)
+        {
+            inputs.distinct_state_values = selected_inputs[0].expression->output_distinct_state_values;
+            if (is_exchange || !merging_step->isFinal())
+                expression->output_distinct_state_values = inputs.distinct_state_values;
         }
     }
 

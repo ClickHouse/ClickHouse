@@ -97,6 +97,11 @@ public:
     /// top-N emits up to L rows on each of its nodes while the group stats are trimmed to L.
     /// Set during costing (statistics are derived by then); parents price exchanges on it.
     std::optional<Float64> physical_output_rows;
+
+    /// The distinct values in the `uniqExact` states that the expression emits: a non-final aggregation
+    /// without keys, and an exchange or a non-final merge above it. Set during costing; the exchange and
+    /// the merge above price them.
+    DistinctValuesOfStates output_distinct_state_values;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
