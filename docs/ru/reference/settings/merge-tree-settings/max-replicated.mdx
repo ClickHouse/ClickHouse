@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
+## max_replicated_fetches_network_bandwidth
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -42,7 +42,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 Может использоваться для ограничения скорости репликации данных при добавлении
 новых узлов или замене существующих.
 
-## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
+## max_replicated_logs_to_keep
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
@@ -53,28 +53,28 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * Любое положительное целое число.
 
-## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
+## max_replicated_merges_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Сколько задач слияния и мутации частей может одновременно находиться в
 очереди ReplicatedMergeTree.
 
-## max_replicated_merges_with_ttl_in_queue {#max_replicated_merges_with_ttl_in_queue}
+## max_replicated_merges_with_ttl_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Сколько задач слияния частей с TTL может одновременно находиться в
 очереди ReplicatedMergeTree.
 
-## max_replicated_mutations_in_queue {#max_replicated_mutations_in_queue}
+## max_replicated_mutations_in_queue
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 Сколько задач по мутации частей может одновременно находиться в
 очереди ReplicatedMergeTree.
 
-## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
+## max_replicated_sends_network_bandwidth
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

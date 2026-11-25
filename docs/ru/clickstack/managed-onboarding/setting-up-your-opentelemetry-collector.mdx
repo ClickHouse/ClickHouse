@@ -1,10 +1,9 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
 title: 'Настройка OpenTelemetry Collector'
-sidebarTitle: 'Настройка OpenTelemetry Collector'
-description: 'Настройка OpenTelemetry Collector для самоуправляемого варианта ClickHouse Observability'
+description: 'Настройка OpenTelemetry Collector для Управляемого ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'opentelemetry', 'collector', 'self-managed', 'ClickHouse Observability', 'gateway', 'telemetrygen']
+keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -15,15 +14,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 import ConfirmInUI from '/snippets/ru/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/ru/components/AgentPrompt/AgentPrompt.jsx';
 
-<Note>
-  **Вы выбрали самоуправляемый вариант**
-
-  Вы решили настроить ClickHouse Observability самостоятельно, используя [самоуправляемый вариант](/ru/clickstack/self-configured/overview). В этом варианте вы сами запускаете OpenTelemetry Collector, управляете ингестией данных в ваш сервис ClickHouse Cloud, настраиваете схему и разделяете рабочие нагрузки ингестии и запросов с помощью хранилищ. См. разделы [OpenTelemetry Collector](/ru/clickstack/self-configured/ingesting-data/collector), [Настройка производительности](/ru/clickstack/self-configured/managing/performance-tuning) и [Изоляция рабочих нагрузок чтения и записи](/ru/clickstack/self-configured/managing/isolating-read-write).
-
-  Предпочитаете бессерверный вариант, в котором ClickHouse берёт на себя ингестию, схемы и вычислительные ресурсы? Тогда воспользуйтесь стандартным вариантом ClickHouse Observability и следуйте [Руководству по началу работы](/ru/clickstack/observability/getting-started).
-</Note>
-
-Это руководство поможет вам развернуть OpenTelemetry Collector для существующего сервиса ClickHouse Observability или адаптировать уже имеющийся коллектор, а затем убедиться, что данные через него проходят. В самоуправляемом варианте вы запускаете этот коллектор самостоятельно: он принимает данные по OTLP от ваших приложений и агентов и записывает их в ваш сервис ClickHouse Cloud.
+Это руководство поможет вам развернуть OpenTelemetry Collector для существующего сервиса Управляемый ClickStack или адаптировать уже имеющийся коллектор, а затем убедиться, что данные через него проходят.
 
 Перед использованием помощника настройки установите официальный пакет ClickHouse agent skills:
 
@@ -31,29 +22,21 @@ import { AgentPrompt } from '/snippets/ru/components/AgentPrompt/AgentPrompt.jsx
 npx skills add clickhouse/agent-skills
 ```
 
-Если у вас уже установлен [`clickhousectl`](/ru/concepts/features/interfaces/cli), вы можете вместо этого установить те же навыки в агенты для программирования, которые он обнаружит:
-
-```bash
-clickhousectl skills --detected-only
-```
-
-Чтобы установить навыки для конкретного агента, передайте `--agent` (например, `--agent claude`). Добавьте `--global`, чтобы выполнить установку в домашний каталог, а не в текущий проект.
-
 <AgentPrompt
-  prompt="Используйте навык clickstack-otel-collector, чтобы подключить OpenTelemetry Collector к моему сервису Самостоятельно управляемый ClickHouse Observability."
+  prompt="Используйте навык clickstack-otel-collector, чтобы подключить OpenTelemetry Collector к моему сервису Управляемый ClickStack."
   description="Ваш агент настроит для вас коллектор ClickStack OpenTelemetry. Работает с Claude Code, Cursor, Codex и другими агентами для программирования."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-  "Установите clickhousectl, если он ещё не установлен, и убедитесь, что он аутентифицирован с помощью ключа API (вход через браузер даёт доступ только для чтения и не позволяет создать пользователя для ингестии). Если это не так, попросите пользователя самостоятельно выполнить clickhousectl cloud auth login --interactive в отдельном терминале из того же каталога проекта (ключ будет сохранён там в .clickhouse/credentials.json). Никогда не вставляйте секрет ключа API в чат.",
-  "Спросите у пользователя ID или имя целевого сервиса ClickHouse Cloud, затем получите его HTTPS-конечную точку.",
-  "Создайте в сервисе SQL-пользователя hyperdx_ingest (сгенерируйте надёжный пароль или используйте предоставленный пользователем).",
-  "Запустите коллектор ClickStack OpenTelemetry локально в Docker, указав ваш сервис в качестве назначения.",
-  "Отправьте через коллектор короткую серию синтетических журналов, трасс и метрик, чтобы подтвердить, что конвейер работает.",
-  "Убедитесь, что данные попали в базу данных otel, и передайте URL интерфейса ClickStack, где их можно просмотреть."
-  ]}
+"Установите clickhousectl, если он ещё не установлен, и выполните аутентификацию (будет запрошен API key ClickHouse Cloud — вставьте его в чат или выполните команду входа самостоятельно).",
+"Спросите у пользователя ID или имя целевого сервиса ClickHouse Cloud, затем получите его HTTPS-конечную точку.",
+"Создайте в сервисе SQL-пользователя hyperdx_ingest (сгенерируйте надёжный пароль или используйте предоставленный пользователем).",
+"Запустите коллектор ClickStack OpenTelemetry локально в Docker, указав ваш сервис в качестве назначения.",
+"Отправьте через коллектор короткую серию синтетических логов, трасс и метрик, чтобы подтвердить, что конвейер работает.",
+"Убедитесь, что данные попали в базу данных otel, и передайте URL интерфейса ClickStack, где их можно просмотреть."
+]}
 />
 
-Коллектор работает как **шлюз**: это единая конечная точка OTLP, в которую отправляют данные ваши приложения, SDK и коллекторы-агенты. Шлюз объединяет события в батчи, применяет настроенную вами обработку и записывает их в ClickHouse через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Такой подход позволяет вынести логику сбора из прикладного кода и масштабировать ингестию независимо от рабочих нагрузок, создающих данные. Подробнее о ролях шлюза и агента см. в разделе [Роли коллектора](/ru/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
+Коллектор работает как **шлюз**: это единая конечная точка OTLP, в которую отправляют данные ваши приложения, SDK и коллекторы-агенты. Шлюз объединяет события в батчи, применяет настроенную вами обработку и записывает их в ClickHouse через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Такой подход позволяет вынести логику сбора из прикладного кода и масштабировать ингестию независимо от рабочих нагрузок, создающих данные. Подробнее о ролях шлюза и агента см. в разделе [Роли коллектора](/ru/clickstack/ingesting-data/collector#collector-roles).
 
 <Info>
   **Существующий коллектор**
@@ -70,12 +53,12 @@ clickhousectl skills --detected-only
         <GatherCredentials />
       </Step>
 
-      <Step title="Создайте пользователя для ингестии" id="create-ingestion-user">
+      <Step title="Создайте пользователя для приёма данных" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
       <Step title="Разверните коллектор" id="deploy-the-collector">
-        Разверните **дистрибутив OpenTelemetry Collector от ClickStack**, который уже настроен для ClickHouse Observability. В примере ниже для простоты мы запускаем коллектор локально и генерируем тестовую телеметрию на той же машине.
+        Разверните **дистрибутив OpenTelemetry Collector от ClickStack**, который уже настроен для Управляемого ClickStack. В примере ниже для простоты мы запускаем коллектор локально и генерируем тестовую телеметрию на той же машине.
 
         <Note>
           В продакшне коллектор обычно разворачивают в кластере Kubernetes или на виртуальной машине, к которой могут обращаться ваши OpenTelemetry SDKs, агенты и другие коллекторы. Это позволяет централизованно собирать телеметрию со всей среды и передавать её в ClickStack.
@@ -109,11 +92,11 @@ clickhousectl skills --detected-only
         <Info>
           **Развертывания в продакшне**
 
-          Для продакшна мы рекомендуем включить TLS для конечной точки OTLP. См. [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+          Для продакшна мы рекомендуем включить TLS для конечной точки OTLP. См. [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector).
         </Info>
       </Step>
 
-      <Step title="Проверьте конечную точку" id="verify-the-endpoint">
+      <Step title="Проверка конечной точки" id="verify-the-endpoint">
         Сгенерируйте синтетический трафик на коллектор, чтобы убедиться в корректной работе всего конвейера. Мы используем [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) — генератор OpenTelemetry Collector Contrib, который отправляет OTLP-журналы, трассировки и метрики, а также предоставляет флаги для формирования данных по сервисам, уровням серьёзности, статусам спанов и типам метрик.
 
         Запустите его из Docker-образа (установка не требуется). Определите небольшую вспомогательную функцию, чтобы приведённые ниже команды оставались читаемыми; `--add-host` позволяет контейнеру обращаться к коллектору, слушающему на хосте:
@@ -164,7 +147,7 @@ clickhousectl skills --detected-only
 
         Одних журналов достаточно, чтобы убедиться в работоспособности конечной точки. Для получения более насыщенного демо-набора данных, карты сервисов с несколькими сервисами и графиков по различным типам метрик разверните и выполните приведённые ниже команды. Они используют вспомогательный инструмент `tg`, поэтому запускайте их в том же терминале.
 
-        <Accordion title="Собирайте более подробную телеметрию (необязательно)">
+        <Accordion title="Собирайте более детальные телеметрические данные (необязательно)">
           Отправьте трассы из нескольких спанов от нескольких работоспособных сервисов и одной сбоящей зависимости. Это придаст карте сервисов реалистичный вид: в основном всё будет работать нормально, но один сервис будет выдавать ошибки, и при этом в представлениях ошибок тоже появятся данные:
 
           ```shell
@@ -200,7 +183,7 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/observability/example-datasets/telemetrygen#self-managed).
+        Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/example-datasets/telemetrygen).
       </Step>
 
       <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
@@ -220,7 +203,7 @@ clickhousectl skills --detected-only
       </Step>
 
       <Step title="Адаптируйте конфигурацию коллектора" id="adapt-collector">
-        Расширьте существующую конфигурацию коллектора, чтобы отправлять данные в ваш сервис ClickHouse Observability через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+        Расширьте существующую конфигурацию коллектора, чтобы отправлять данные в Управляемый ClickStack через [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
           **Требуется ClickHouse exporter**
@@ -320,7 +303,7 @@ clickhousectl skills --detected-only
 
         Перезагрузите коллектор с новой конфигурацией. После этого приложения, SDK и коллекторы-агенты должны отправлять данные на конечные точки OTLP, опубликованные вашим коллектором, с тем заголовком аутентификации, который ожидает ваша конфигурация.
 
-        Дополнительные сведения о настройке коллекторов OpenTelemetry для работы с ClickHouse Observability см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+        Дополнительные сведения о настройке коллекторов OpenTelemetry для работы с Управляемым ClickStack см. в разделе [Ингестия с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
       </Step>
 
       <Step title="Проверьте конечную точку" id="verify-the-endpoint-existing">
@@ -374,7 +357,7 @@ clickhousectl skills --detected-only
 
         Одних журналов достаточно, чтобы убедиться в работоспособности конечной точки. Для получения более насыщенного демо-набора данных, карты сервисов с несколькими сервисами и графиков по различным типам метрик разверните и выполните приведённые ниже команды. Они используют вспомогательный инструмент `tg`, поэтому запускайте их в том же терминале.
 
-        <Accordion title="Собирайте более детальные телеметрические данные (необязательно)">
+        <Accordion title="Собирайте более подробную телеметрию (необязательно)">
           Отправьте трассы из нескольких спанов от нескольких работоспособных сервисов и одной сбоящей зависимости. Это придаст карте сервисов реалистичный вид: в основном всё будет работать нормально, но один сервис будет выдавать ошибки, и при этом в представлениях ошибок тоже появятся данные:
 
           ```shell
@@ -410,7 +393,7 @@ clickhousectl skills --detected-only
           ```
         </Accordion>
 
-        Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/observability/example-datasets/telemetrygen#self-managed).
+        Полный список флагов и другие варианты использования см. в разделе [Синтетические данные с telemetrygen](/ru/clickstack/example-datasets/telemetrygen).
       </Step>
 
       <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui-existing">
@@ -420,22 +403,26 @@ clickhousectl skills --detected-only
   </Tab>
 </Tabs>
 
-## Следующие шаги: отправьте собственные данные {#next-steps}
+<div id="next-steps">
+  ## Следующие шаги: отправьте собственные данные
+</div>
 
-Описанный выше синтетический всплеск лишь подтверждает, что конвейер работает. Чтобы начать отправлять реальные телеметрические данные, добавьте инструментацию в свои сервисы с помощью [ClickStack SDKs](/ru/clickstack/observability/ingesting-data/sdks), которые поддерживают инструментирование для Node.js, Python, Go, Java и других языков и экспортируют OTLP в конечную точку коллектора, которую вы только что проверили. Полный пошаговый пример см. в разделе [Инструментирование приложения](/ru/clickstack/self-configured/managed-onboarding/instrument-application).
+Описанный выше синтетический всплеск лишь подтверждает, что конвейер работает. Чтобы начать отправлять реальные телеметрические данные, добавьте инструментацию в свои сервисы с помощью [ClickStack SDKs](/ru/clickstack/ingesting-data/sdks/index), которые поддерживают инструментирование для Node.js, Python, Go, Java и других языков и экспортируют OTLP в конечную точку коллектора, которую вы только что проверили. Полный пошаговый пример см. в разделе [Инструментирование приложения](/ru/clickstack/managed-onboarding/instrument-application).
 
 Чтобы собирать данные из инфраструктуры, а не из прикладного кода:
 
-* [Мониторинг Kubernetes](/ru/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): собирайте журналы, метрики инфраструктуры и события Kubernetes из кластера.
-* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): передавайте журналы CloudWatch через приёмник CloudWatch OpenTelemetry.
+* [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): собирайте журналы, метрики инфраструктуры и события Kubernetes из кластера.
+* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): передавайте журналы CloudWatch через приёмник CloudWatch OpenTelemetry.
 
-## Дополнительные материалы {#further-reading}
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
 
-В этом руководстве рассматривается один инстанс коллектора в простейшей конфигурации. О дальнейших шагах см. [справочник по OpenTelemetry Collector](/ru/clickstack/self-configured/ingesting-data/collector):
+В этом руководстве описан один экземпляр коллектора в его базовой конфигурации. В [справочнике по OpenTelemetry Collector](/ru/clickstack/ingesting-data/collector) описаны следующие шаги:
 
-* [Развертывание коллектора в Kubernetes](/ru/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) с помощью вышестоящего Helm-чарта OpenTelemetry и образа коллектора ClickStack.
-* [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured): TLS на конечной точке OTLP и пользователи для ингестии с минимально необходимыми привилегиями.
-* [Обработка, фильтрация и обогащение](/ru/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) событий на шлюзе.
-* [Изменение конфигурации коллектора](/ru/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured): пользовательские приёмники, процессоры и конвейеры.
-* [Оценка ресурсов](/ru/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) для развертываний шлюза и агента с учётом ожидаемой пропускной способности.
-* [Переход к промышленной эксплуатации](/ru/clickstack/self-configured/managing/production)
+* [Развертывание коллектора в Kubernetes](/ru/clickstack/ingesting-data/collector#configuring-the-collector) с использованием официального Helm-чарта OpenTelemetry и образа коллектора ClickStack.
+* [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с помощью TLS на конечной точке OTLP и пользователей ингестии с минимально необходимыми привилегиями.
+* [Обработка, фильтрация и обогащение](/ru/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) событий на шлюзе.
+* [Расширение конфигурации коллектора](/ru/clickstack/ingesting-data/collector#extending-collector-config) с помощью пользовательских приёмников, процессоров и конвейеров.
+* [Оценка ресурсов](/ru/clickstack/ingesting-data/collector#estimating-resources) для развертываний в ролях шлюза и агента с учётом ожидаемой пропускной способности.
+* [Переход в продакшн](/ru/clickstack/managing/production)

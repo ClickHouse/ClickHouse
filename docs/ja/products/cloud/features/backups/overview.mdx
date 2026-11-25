@@ -7,12 +7,13 @@ description: 'ClickHouse Cloud におけるバックアップ機能の概要'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 データベースのバックアップは、最後に成功したバックアップからサービスを以前の状態に復元できるように設計されています。
 
 <div id="backups">
-  ## バックアップ {#backups}
+  ## バックアップ
 </div>
 
 ### ClickHouse Cloud におけるバックアップの仕組み {#how-backups-work-in-clickhouse-cloud}
@@ -25,11 +26,7 @@ ClickHouse Cloud のバックアップは、フルバックアップと増分バ
 
 1 日目には、バックアップチェーンを開始するためにフルバックアップが取得されます。2 日目には増分バックアップが取得され、フルバックアップと増分バックアップの両方から復元できるようになります。7 日目までに、チェーンには 1 つのフルバックアップと 6 つの増分バックアップが含まれ、これらはすべて表示され、復元に利用できます。8 日目には新しいフルバックアップが取得され、9 日目に新しいチェーン内に 2 つのバックアップがそろうと、以前のチェーンは破棄されます。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse Cloud におけるバックアップチェーンの例](/images/cloud/manage/backup-chain.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloudにおけるバックアップチェーンの例" />
 
 ### デフォルトのバックアップポリシー {#default-backup-policy}
 
@@ -61,13 +58,13 @@ ClickHouse Cloud では、**Scale** および **Enterprise** ティアのサー�
 ## Bring Your Own Bucket (BYOB) バックアップ {#byob}
 
 ClickHouse Cloud では、バックアップをお使いのクラウドサービスプロバイダー (CSP) アカウントのストレージ (AWS S3、Google Cloud Storage、または Azure Blob Storage) にエクスポートできます。
-ご自身のバケットへのバックアップを設定した場合でも、ClickHouse Cloud はデフォルトで引き続き独自のバックアップを取得します。
-バックアップ保持期間の設定は、ご自身のバケットに書き込まれるバックアップに適用されます。ClickHouse Cloud が管理するバックアップにはデフォルトの保持ポリシーが適用されます。
+独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud はデフォルトで引き続き独自のバックアップを取得します。
+バックアップ保持期間の設定は、お使いのバケットに書き込まれるバックアップに適用されます。ClickHouse Cloud が管理するバックアップにはデフォルトの保持ポリシーが適用されます。
 
 ClickHouse Cloud のバックアップの仕組みについて詳しくは、[バックアップ](/ja/products/cloud/guides/backups/review-and-restore-backups)のドキュメントを参照してください。
 
 このガイドでは、バックアップを AWS、GCP、Azure のオブジェクトストレージにエクスポートする方法と、アカウント内のそれらのバックアップを新しい ClickHouse Cloud サービスに復元する方法を説明します。
-また、バックアップをご自身のバケットにエクスポートし、そこから復元するためのバックアップ / 復元コマンドも紹介します。
+また、バックアップをお使いのバケットにエクスポートし、そこから復元するためのバックアップ / 復元コマンドも紹介します。
 
 <Info>
   **クロスリージョンバックアップ**
@@ -75,17 +72,11 @@ ClickHouse Cloud のバックアップの仕組みについて詳しくは、[�
   同じクラウドプロバイダー内であっても、バックアップを
   別のリージョンにエクスポートする場合は、[データ転送](/ja/products/cloud/reference/billing/network-data-transfer)
   料金が発生します。
+
+  現在、[Transparent Data Encryption (TDE)](/ja/products/cloud/guides/security/cmek#transparent-data-encryption-tde) を使用するサービスおよび規制対象サービスでは、バックアップ / 復元はサポートされていません。
 </Info>
 
-<Warning>
-  **ご自身のバケットにバックアップをエクスポートできないサービス**
-
-  リージョンの種類として **HIPAA 準拠** または **PCI準拠** を選択して作成されたサービス (規制対象サービス)、および [Transparent Data Encryption (TDE)](/ja/products/cloud/guides/security/cmek#transparent-data-encryption-tde) を使用するサービスでは、ご自身のバケットへのバックアップは利用できません。
-
-  規制対象サービスにおけるこの制限は、設定で変更できるものではなく、規制対象環境のセキュリティ管理策です。コンソールでは **Set up external backup** オプションが無効になっており、`BACKUP` 権限も付与されないため、外部バケットへの `BACKUP ... TO` も実行できません。ClickHouse が管理するバックアップ、バックアップスケジュールの設定、および同一リージョン内の新しいサービスへの復元は引き続き利用できます。詳しくは [HIPAA オンボーディング](/ja/products/cloud/guides/security/compliance/hipaa-onboarding#backups) および [PCI オンボーディング](/ja/products/cloud/guides/security/compliance/pci-onboarding#backups) を参照してください。
-</Warning>
-
-AWS、GCP、Azure のオブジェクトストレージに対してフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例については、[&quot;Export backups to your own クラウドアカウント&quot;](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) を参照してください。
+AWS、GCP、Azure のオブジェクトストレージに対してフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例については、[&quot;Export backups to your own Cloud account&quot;](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) を参照してください。
 
 ### バックアップオプション {#backup-options}
 

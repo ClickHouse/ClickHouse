@@ -1,16 +1,18 @@
 ---
 slug: /intro
 sidebarTitle: '¿Qué es ClickHouse?'
-description: 'ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) orientado a columna para el Procesamiento Analítico en Línea (OLAP). Está disponible tanto como software de código abierto como servicio en la nube.'
+description: 'ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) orientado a columna para el procesamiento analítico en línea (OLAP). Está disponible tanto como software de código abierto como servicio en la nube.'
 title: '¿Qué es ClickHouse?'
 keywords: ['ClickHouse', 'base de datos columnar', 'base de datos OLAP', 'base de datos analítica', 'base de datos de alto rendimiento']
 doc_type: 'guide'
 ---
 
-ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) de alto rendimiento, orientado a columna, para Procesamiento Analítico en Línea (OLAP). Está disponible tanto como [software de código abierto](https://github.com/ClickHouse/ClickHouse) como [servicio en la nube](https://clickhouse.com/cloud).
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) de alto rendimiento, orientado a columna, para procesamiento analítico en línea (OLAP). Está disponible tanto como [software de código abierto](https://github.com/ClickHouse/ClickHouse) como [servicio en la nube](https://clickhouse.com/cloud).
 
 <div id="what-are-analytics">
-  ## ¿Qué es la analítica? {#what-are-analytics}
+  ## ¿Qué es la analítica?
 </div>
 
 La analítica, también conocida como OLAP (Online Analytical Processing), se refiere a consultas SQL con cálculos complejos (p. ej., agregaciones, procesamiento de cadenas y operaciones aritméticas) sobre grandes volúmenes de datos.
@@ -19,7 +21,9 @@ A diferencia de las consultas transaccionales (u OLTP, Online Transaction Proces
 
 En muchos casos de uso, [las consultas analíticas deben ser &quot;en tiempo real&quot;](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), es decir, devolver un resultado en menos de un segundo.
 
-## Almacenamiento orientado a fila vs. orientado a columna {#row-oriented-vs-column-oriented-storage}
+<div id="row-oriented-vs-column-oriented-storage">
+  ## Almacenamiento orientado a fila vs. orientado a columna
+</div>
 
 Ese nivel de rendimiento solo puede lograrse con la &quot;orientación&quot; de datos adecuada.
 
@@ -47,11 +51,7 @@ LIMIT 8;
 
 Puedes [ejecutar esta consulta en el ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), que selecciona y filtra [solo unas pocas de las más de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) columnas existentes, y devuelve el resultado en cuestión de milisegundos:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consulta de ejemplo en una base de datos orientada a columna](/images/column-oriented-example-query.webp)
-  </Frame>
-</div>
+<Image img="/images/column-oriented-example-query.webp" alt="Consulta de ejemplo en una base de datos orientada a columna" size="lg" />
 
 Como puedes ver en la sección de estadísticas del diagrama anterior, la consulta procesó 100 millones de filas en 92 milisegundos, con un rendimiento de algo más de 1.000 millones de filas por segundo, o algo menos de 7 GB de datos transferidos por segundo.
 
@@ -59,55 +59,47 @@ Como puedes ver en la sección de estadísticas del diagrama anterior, la consul
 
 En una base de datos orientada a fila, aunque la consulta anterior solo procesa unas pocas de las columnas existentes, el sistema sigue necesitando cargar en memoria desde disco los datos de otras columnas existentes. Esto se debe a que los datos se almacenan en disco en fragmentos llamados [bloques](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (normalmente de tamaño fijo, p. ej., 4 KB u 8 KB). Los bloques son las unidades de datos más pequeñas que se leen del disco a la memoria. Cuando una aplicación o base de datos solicita datos, el subsistema de E/S de disco del sistema operativo lee del disco los bloques necesarios. Aunque solo se necesite una parte de un bloque, se lee el bloque completo en memoria (esto se debe al diseño del disco y del sistema de archivos):
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Estructura de una base de datos orientada a fila](/images/row-oriented.webp)
-  </Frame>
-</div>
+<Image img="/images/row-oriented.webp" alt="Estructura de una base de datos orientada a fila" size="lg" />
 
 **DBMS orientado a columna**
 
 Dado que los valores de cada columna se almacenan secuencialmente en disco, uno tras otro, no se cargan datos innecesarios cuando se ejecuta la consulta anterior.
 Como el almacenamiento y la transferencia por bloques del disco a la memoria se ajustan al patrón de acceso a los datos de las consultas analíticas, solo se leen del disco las columnas necesarias para una consulta, lo que evita operaciones de E/S innecesarias sobre datos que no se utilizan. Esto es [mucho más rápido](https://benchmark.clickhouse.com/) en comparación con el almacenamiento basado en filas, donde se leen filas completas (incluidas las columnas irrelevantes):
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Estructura de una base de datos orientada a columnas](/images/column-oriented.webp)
-  </Frame>
-</div>
+<Image img="/images/column-oriented.webp" alt="Estructura de base de datos orientada a columna" size="lg" />
 
 <div id="data-replication-and-integrity">
-  ## Replicación e integridad de los datos {#data-replication-and-integrity}
+  ## Replicación e integridad de los datos
 </div>
 
 ClickHouse utiliza un esquema de replicación multimaestro asíncrono para garantizar que los datos se almacenen de forma redundante en varios nodos. Una vez que se escriben en cualquier réplica disponible, todas las demás réplicas obtienen su copia en segundo plano. El sistema mantiene datos idénticos en las distintas réplicas. La recuperación tras la mayoría de los fallos se realiza de forma automática o, en casos complejos, semiautomática.
 
 <div id="role-based-access-control">
-  ## Control de acceso basado en roles {#role-based-access-control}
+  ## Control de acceso basado en roles
 </div>
 
 ClickHouse implementa la gestión de cuentas de usuario mediante consultas SQL y permite configurar el control de acceso basado en roles, de forma similar a lo que se encuentra en el estándar ANSI SQL y en los sistemas de gestión de bases de datos relacionales más populares.
 
 <div id="sql-support">
-  ## Compatibilidad con SQL {#sql-support}
+  ## Compatibilidad con SQL
 </div>
 
 ClickHouse admite un [lenguaje de consultas declarativo basado en SQL](/es/reference/home) que coincide con el estándar ANSI SQL en muchos casos. Entre las cláusulas de consulta admitidas se incluyen [GROUP BY](/es/reference/statements/select/group-by), [ORDER BY](/es/reference/statements/select/order-by), subconsultas en [FROM](/es/reference/statements/select/from), la cláusula [JOIN](/es/reference/statements/select/join), el operador [IN](/es/reference/statements/in), [funciones de ventana](/es/reference/functions/window-functions/index) y subconsultas escalares.
 
 <div id="approximate-calculation">
-  ## Cálculo aproximado {#approximate-calculation}
+  ## Cálculo aproximado
 </div>
 
 ClickHouse ofrece formas de sacrificar precisión a cambio de rendimiento. Por ejemplo, algunas de sus funciones de agregación calculan de forma aproximada el recuento de valores distintos, la mediana y los cuantiles. Además, las consultas pueden ejecutarse sobre una muestra de los datos para obtener rápidamente un resultado aproximado. Por último, las agregaciones pueden ejecutarse con un número limitado de claves en lugar de hacerlo para todas ellas. Dependiendo de lo sesgada que esté la distribución de las claves, esto puede proporcionar un resultado razonablemente preciso usando muchos menos recursos que un cálculo exacto.
 
 <div id="adaptive-join-algorithms">
-  ## Algoritmos de join adaptativos {#adaptive-join-algorithms}
+  ## Algoritmos de join adaptativos
 </div>
 
 ClickHouse elige el algoritmo de join de forma adaptativa: comienza con hash joins rápidos y recurre a merge joins si hay más de una tabla grande.
 
 <div id="superior-query-performance">
-  ## Rendimiento superior de las consultas {#superior-query-performance}
+  ## Rendimiento superior de las consultas
 </div>
 
 ClickHouse es ampliamente conocido por ofrecer un rendimiento de consulta extremadamente rápido.

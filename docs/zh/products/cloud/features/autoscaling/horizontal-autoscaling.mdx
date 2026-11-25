@@ -1,21 +1,17 @@
 ---
-sidebarTitle: '横向自动扩缩容'
+sidebarTitle: '水平自动扩缩容'
 slug: /cloud/features/autoscaling/horizontal-autoscaling
-description: '在 ClickHouse Cloud 中配置横向自动扩缩容'
-keywords: ['横向自动扩缩容', '自动扩缩容', '副本', '并发查询', '扩缩容']
-title: '横向自动扩缩容'
+description: '在 ClickHouse Cloud 中配置水平自动扩缩容'
+keywords: ['水平自动扩缩容', '自动扩缩容', '副本', '并发查询', '扩缩容']
+title: '水平自动扩缩容'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <Note>
-  横向自动扩缩容目前处于 Beta 阶段，适用于 Scale 和 Enterprise 套餐。在正式可用之前，其行为和功能可能会发生变化。
+  水平自动扩缩容目前处于私有预览阶段，适用于 Scale 和 Enterprise 套餐。若要申请访问权限，请联系您的 ClickHouse 客户团队或支持团队。
 </Note>
 
-横向自动扩缩容会根据工作负载需求，自动为您的服务添加或移除副本。垂直自动扩缩容会调整每个副本的资源规模，而横向自动扩缩容会调整副本数量，因此尤其适合因查询数量增加而非单个查询负载加重导致需求上升的工作负载。
+水平自动扩缩容会根据工作负载需求，自动为您的服务添加或移除副本。垂直自动扩缩容会调整每个副本的资源规模，而水平自动扩缩容会调整副本数量，因此尤其适合因查询数量增加而非单个查询负载加重导致需求上升的工作负载。
 
 ## 工作原理 {#how-it-works}
 
@@ -78,6 +74,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ## 已知限制 {#known-limitations}
 
+* 水平自动扩缩容目前处于私有预览阶段，必须由 ClickHouse 支持团队为您的组织启用。
 * 必须将最小内存设置为与最大内存相同，以固定垂直副本大小。
 * 存在副本数量限制；请参阅[使用限制](/zh/cloud/bestpractices/usage-limits)了解适用于您服务的限制，如需更多副本，请联系支持团队。
-* 系统每 10 分钟生成一次建议；横向自动扩缩容并非用于应对一分钟以内的突发流量。对于可预测的峰值，请考虑使用[定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling)。
+* 系统每 10 分钟生成一次建议；水平自动扩缩容并非用于应对一分钟以内的突发流量。对于可预测的峰值，请考虑使用[定时扩缩容](/zh/products/cloud/features/autoscaling/scheduled-scaling)。

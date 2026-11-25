@@ -1,11 +1,6 @@
--- Tags: no-parallel-replicas, no-msan
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: parallel replicas split the aggregation into partial + merging, so the
 -- annotation's `isFinal()` requirement refuses and every applying cell below would return 0.
--- no-msan: the file averaged 67.1 s (max 159.2 s) over 526 runs of
--- `Stateless tests (amd_msan, parallel, 1/3)` in the 14 days to 2026-10-13 (`play.clickhouse.com`,
--- table `checks`). Its cells mostly assert on `EXPLAIN` plans; the conversion that actually skips
--- groups keeps its MSan coverage through the value oracles in
--- `05234_query_plan_aggregation_having_prefilter_results`, which still runs under MSan.
 
 -- The `aggregationHavingPrefilter` plan optimization lets the final two-level bucket conversion skip
 -- a group's key materialization when a HAVING bound on that aggregation's own no-argument `count()`
@@ -15,8 +10,7 @@
 -- groups each shape skips, and what a conversion that skips groups leaves observable above it.
 -- The value oracles - the same rows with the setting off and on - and the dataflow statistics live in
 -- `05234_query_plan_aggregation_having_prefilter_results`, which runs on the same fixture: a
--- sanitizer build other than MSan (see the tags) has to finish either file inside one test's time
--- budget.
+-- sanitizer build has to finish either file inside one test's time budget.
 
 -- The pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
 SET serialize_query_plan = 0;
@@ -327,28 +321,27 @@ SELECT '--- block boundaries above the filter are unchanged ---';
 -- `convertOneBucketToChunk` emits exactly one chunk per bucket however many groups survive, so a
 -- block-observing function above the retained filter sees the same layout either way. `max_block_size`
 -- is pinned small so a boundary would be visible at this group count, and `max_threads` because block
--- assignment across threads is not deterministic by itself. The adaptive aggregator also takes one thread
--- and emits blocks of its own, so these queries turn it off.
+-- assignment across threads is not deterministic by itself.
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, enable_adaptive_aggregator = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, enable_adaptive_aggregator = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_adaptive_aggregator = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 0, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
 SELECT count(), uniqExact(bn), max(rn), sum(rn) FROM (
     SELECT rowNumberInBlock() AS rn, blockNumber() AS bn FROM (
         SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3
     )
-) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_adaptive_aggregator = 0;
+) SETTINGS query_plan_aggregation_having_prefilter = 1, max_threads = 1, max_block_size = 1000, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0;
 
 SELECT '--- the group-by row limit still counts every group ---';
 

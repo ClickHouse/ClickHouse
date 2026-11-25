@@ -84,9 +84,25 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
-            nested_func->createNestedStates(new_state, new_size, nested_size_of_data);
-
             size_t i = 0;
+            try
+            {
+                for (i = 0; i < new_size; ++i)
+                {
+                    nested_func->create(&new_state[i * nested_size_of_data]);
+                }
+            }
+            catch (...)
+            {
+                size_t cleanup_size = i;
+
+                for (i = 0; i < cleanup_size; ++i)
+                {
+                    nested_func->destroy(&new_state[i * nested_size_of_data]);
+                }
+
+                throw;
+            }
 
             /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
             /// allocation does not advance, so new_state aliases old_state. There is no
@@ -254,7 +270,7 @@ public:
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
-        size_t begin = offsets[static_cast<ssize_t>(row_num) - 1];
+        size_t begin = offsets[row_num - 1];
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
@@ -263,7 +279,7 @@ public:
             const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
-            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[static_cast<ssize_t>(row_num) - 1] != begin))
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
@@ -296,7 +312,7 @@ public:
         size_t end) const
     {
         for (const auto * offsets : trailing_offsets)
-            if ((*offsets)[row] != end || (row != 0 && (*offsets)[static_cast<ssize_t>(row) - 1] != begin))
+            if ((*offsets)[row] != end || (row != 0 && (*offsets)[row - 1] != begin))
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arrays passed to {} aggregate function have different sizes", getName());
@@ -311,9 +327,7 @@ public:
         size_t row,
         Arena * arena) const
     {
-        /// `offsets[-1]` is the guaranteed zero of `PaddedPODArray`'s left padding, as at `row_num`
-        /// above; an unsigned `row - 1` reaches the same byte only by wrapping twice.
-        size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+        size_t begin = offsets[row - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
         if (begin == end)
@@ -466,113 +480,6 @@ public:
         }
     }
 
-    /// The parallel merge is forwarded to the nested function element by element.
-    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
-    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
-
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        if (nested_size_of_data == 0)
-            return false;
-
-        /// The whole state with all its elements is deferred as one unit (the deferred pointers are later passed
-        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one element pair is.
-        /// Elements past the end of `place` are merged into freshly created empty states, which is never large.
-        const AggregateFunctionForEachData & state = data(place);
-        const AggregateFunctionForEachData & rhs_state = data(rhs);
-        const size_t common_size = std::min(state.dynamic_array_size, rhs_state.dynamic_array_size);
-        for (size_t i = 0; i < common_size; ++i)
-            if (nested_func->isLargeMergePair(
-                    state.array_of_aggregate_datas + i * nested_size_of_data,
-                    rhs_state.array_of_aggregate_datas + i * nested_size_of_data))
-                return true;
-        return false;
-    }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
-    {
-        if (nested_size_of_data == 0)
-            return;
-
-        size_t max_size = 0;
-        for (auto * place : places)
-            max_size = std::max(max_size, data(place).dynamic_array_size);
-
-        AggregateDataPtrs nested_places;
-        nested_places.reserve(places.size());
-        for (size_t i = 0; i < max_size; ++i)
-        {
-            nested_places.clear();
-            for (auto * place : places)
-            {
-                const AggregateFunctionForEachData & state = data(place);
-                if (i < state.dynamic_array_size)
-                    nested_places.push_back(state.array_of_aggregate_datas + i * nested_size_of_data);
-            }
-            nested_func->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
-        }
-    }
-
-    void mergeImpl(
-        AggregateDataPtr __restrict place,
-        ConstAggregateDataPtr rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
-        Arena * arena) const override
-    {
-        const AggregateFunctionForEachData & rhs_state = data(rhs);
-        AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
-
-        /// See the serial `mergeImpl`.
-        if (nested_size_of_data == 0)
-            return;
-
-        for (size_t i = 0; i < rhs_state.dynamic_array_size; ++i)
-            nested_func->merge(
-                state.array_of_aggregate_datas + i * nested_size_of_data,
-                rhs_state.array_of_aggregate_datas + i * nested_size_of_data,
-                thread_pool,
-                is_cancelled,
-                arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        if (places.empty())
-            return;
-
-        size_t max_size = 0;
-        for (auto * place : places)
-            max_size = std::max(max_size, data(place).dynamic_array_size);
-
-        /// `places[0]` is the destination: it has to hold all elements of the sources before they are merged into it.
-        const AggregateFunctionForEachData & state = ensureAggregateData(places[0], max_size, *arena);
-
-        /// See the serial `mergeImpl`.
-        if (nested_size_of_data == 0)
-            return;
-
-        AggregateDataPtrs nested_places;
-        nested_places.reserve(places.size());
-        for (size_t i = 0; i < max_size; ++i)
-        {
-            if (is_cancelled.load(std::memory_order_seq_cst))
-                return;
-
-            nested_places.clear();
-            nested_places.push_back(state.array_of_aggregate_datas + i * nested_size_of_data);
-            for (size_t p = 1; p < places.size(); ++p)
-            {
-                const AggregateFunctionForEachData & rhs_state = data(places[p]);
-                if (i < rhs_state.dynamic_array_size)
-                    nested_places.push_back(rhs_state.array_of_aggregate_datas + i * nested_size_of_data);
-            }
-
-            if (nested_places.size() > 1)
-                nested_func->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
-        }
-    }
-
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         const AggregateFunctionForEachData & state = data(place);
@@ -648,8 +555,8 @@ public:
                 {
                     arr_to.getOffsets().resize_assume_reserved(offsets_before);
                     const char * nested_state = data(place).array_of_aggregate_datas;
-                    for (size_t i = transferred; i > 0; --i)
-                        nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
+                    for (size_t i = transferred; i-- > 0;)
+                        nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
                     throw;
                 }
 
@@ -679,8 +586,8 @@ public:
 
         offsets_to.resize_assume_reserved(offsets_to.size() - 1);
         const char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = state.dynamic_array_size; i > 0; --i)
-            nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
+        for (size_t i = state.dynamic_array_size; i-- > 0;)
+            nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
     }
 
     bool allocatesMemoryInArena() const override

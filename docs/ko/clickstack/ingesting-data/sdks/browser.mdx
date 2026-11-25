@@ -1,159 +1,180 @@
 ---
 slug: /use-cases/observability/clickstack/sdks/browser
-description: 'ClickStack 브라우저 SDK로 브라우저 로그, trace, 세션 리플레이를 수집합니다.'
+description: 'ClickStack용 브라우저 SDK - ClickHouse 관측성 스택'
 title: '브라우저 JS'
 doc_type: 'guide'
-keywords: ['ClickStack', 'SDK', 'browser', 'session replay']
-sidebarTitle: '브라우저 JS'
+keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
 ---
 
 import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-ClickStack 브라우저 SDK는 OpenTelemetry를 기반으로 브라우저 요청, 오류, 세션 리플레이를 수집합니다. 이 SDK를 사용하면 ClickStack에서 프론트엔드 이벤트를 백엔드 텔레메트리와 함께 조사할 수 있습니다.
+ClickStack 브라우저 SDK를 사용하면 프론트엔드 애플리케이션을 계측해
+이벤트를 ClickStack으로 전송할 수 있습니다. 이를 통해 네트워크
+요청과 예외를 백엔드 이벤트와 함께 단일 타임라인에서 확인할 수 있습니다.
+
+또한 세션 리플레이 데이터를 자동으로 캡처하고 연관시키므로,
+애플리케이션을 사용하는 동안 사용자가 보고 있던 내용을 시각적으로
+단계별로 따라가며 디버깅할 수 있습니다.
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## 설치 {#install}
+## 시작하기 {#getting-started}
 
-프론트엔드 애플리케이션에 패키지를 설치하십시오:
+<br />
 
-```shell
-npm install @clickhouse/clickstack-browser
-```
+<Tabs>
+  <Tab title="패키지 import">
+    **패키지 import로 설치(권장)**
 
-이 패키지는 ES 모듈을 사용합니다. npm은 OpenTelemetry 피어 의존성(peer dependencies)을 자동으로 설치합니다. 애플리케이션에서 `@opentelemetry/api`도 직접 설치하는 경우 `~1.9.1` 버전을 사용하고, 사본이 하나만 존재하도록 유지하십시오. 1.10 버전은 이 SDK가 지원하는 범위를 벗어납니다.
+    다음 명령으로 [브라우저 패키지](https://www.npmjs.com/package/@hyperdx/browser)를 설치합니다.
 
-## 대상 구성 {#configure-destination}
+    ```shell
+    npm install @hyperdx/browser
+    ```
 
-collector의 OTLP HTTP 엔드포인트와 해당 collector에 구성된 수집 키를 사용하십시오. 이 엔드포인트는 사용자의 브라우저에서 연결할 수 있어야 합니다. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
+    **ClickStack 초기화**
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack에서는 생략
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드 요청과 백엔드 요청의 trace를 연결하도록 설정
+        consoleCapture: true, // 콘솔 로그 수집(기본값: false)
+        advancedNetworkCapture: true, // HTTP 요청/응답의 전체 header와 본문 수집(기본값: false)
+    });
+    ```
+  </Tab>
+
+  <Tab title="스크립트 태그">
+    **스크립트 태그로 설치(대안)**
+
+    NPM으로 설치하는 대신 스크립트 태그로 스크립트를 포함해 사용할 수도
+    있습니다. 이렇게 하면 전역 변수 `HyperDX`가 제공되며, NPM 패키지와 동일한
+    방식으로 사용할 수 있습니다.
+
+    현재 사이트를 번들러로 빌드하지 않는 경우 이 방법을 권장합니다.
+
+    ```html
+    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack에서는 생략
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드 요청과 백엔드 요청의 trace를 연결하도록 설정
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+### 옵션 {#options}
+
+* `apiKey` - ClickStack 수집 API Key입니다.
+* `service` - HyperDX UI에 이벤트가 표시될 서비스 이름입니다.
+* `tracePropagationTargets` - 프론트엔드와 백엔드 trace를 연결하기 위해 HTTP
+  요청과 대조할 regex 패턴 목록입니다. 패턴 중 하나와 일치하는 모든 요청에
+  추가 `traceparent` header를 추가합니다. 백엔드 API 도메인(예:
+  `api.yoursite.com`)으로 설정해야 합니다.
+* `consoleCapture` - (선택 사항) 모든 콘솔 로그를 수집합니다(기본값 `false`).
+* `advancedNetworkCapture` - (선택 사항) 전체 요청/응답 headers
+  및 본문을 수집합니다(기본값 `false`).
+* `url` - (선택 사항) OpenTelemetry collector URL이며,
+  자체 호스팅 인스턴스에서만 필요합니다.
+* `maskAllInputs` - (선택 사항) 세션 리플레이에서 모든 입력 필드를
+  마스킹할지 여부입니다(기본값 `false`).
+* `maskAllText` - (선택 사항) 세션 리플레이에서 모든 텍스트를 마스킹할지 여부입니다(기본값
+  `false`).
+* `disableIntercom` - (선택 사항) Intercom 통합을 비활성화할지 여부입니다(기본값 `false`)
+* `disableReplay` - (선택 사항) 세션 리플레이를 비활성화할지 여부입니다(기본값 `false`)
+
+## 추가 구성 {#additional-configuration}
+
+### 사용자 정보 또는 메타데이터 추가 {#attach-user-information-or-metadata}
+
+사용자 정보를 추가하면 HyperDX UI에서 세션과 이벤트를 검색하거나 필터링할 수
+있습니다. 이는 클라이언트 세션 중 언제든지 호출할 수 있습니다. 현재
+클라이언트 세션과 이 호출 이후에 전송되는 모든 이벤트는 사용자 정보와 연결
+됩니다.
+
+`userEmail`, `userName`, `teamName`은 세션 UI에 해당 값을 표시하는 데
+사용되지만 생략할 수도 있습니다. 그 외의 추가 값도 지정할 수 있으며,
+이벤트를 검색하는 데 사용할 수 있습니다.
 
 ```javascript
-import { init } from '@clickhouse/clickstack-browser';
-
-init({
-  endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
-  apiKey: 'YOUR_INGESTION_API_KEY',
-  serviceName: 'my-frontend-app',
+HyperDX.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // 기타 사용자 정의 속성...
 });
 ```
 
-collector의 OTLP 수신기에 구성된 키를 사용하십시오. collector의 HTTP 수신기 CORS 구성에서 애플리케이션의 시작점(origin)을 허용해야 합니다.
+### React error boundary 오류 자동 수집 {#auto-capture-react-error-boundary-errors}
 
-`init`은 페이지 로드당 한 번, 엔트리 모듈의 최상위 수준에서 호출하십시오. 예를 들어 Vite에서는 `src/main.ts`, Next.js에서는 `instrumentation-client.ts`에서 호출합니다. 초기화는 비동기로 실행되므로 같은 틱에서 바로 발생한 요청은 캡처되지 않을 수 있습니다. React effect 안에서는 초기화하지 마십시오. cleanup에서 `shutdown`을 호출하면 해당 페이지 로드 동안 텔레메트리가 영구적으로 중지됩니다.
-
-<Note>
-  브라우저 구성은 수집 키를 포함하여 페이지를 로드하는 누구에게나 노출됩니다. 키를 서버에만 두려면 `/otel`과 같은 동일 시작점(same-origin) 엔드포인트를 사용하고, `apiKey`를 생략한 뒤, 서버가 적절한 인증 헤더를 붙여 OTLP 요청을 전달하도록 구성하십시오.
-</Note>
-
-## 수집 확인 {#verify-ingestion}
-
-애플리케이션을 로드하고 페이지와 상호작용한 뒤, 요청을 보내고 콘솔 오류를 발생시키십시오. ClickStack에서 최근 시간 범위를 선택한 다음 Logs 또는 Traces에서 `my-frontend-app`을 검색하십시오. 세션 리플레이(Session replay)를 열어 기록된 세션을 확인하십시오.
-
-데이터가 표시되지 않으면 브라우저 콘솔과 `/v1/traces` 및 `/v1/logs`로 전송되는 네트워크 요청을 확인하십시오. 엔드포인트, 인증 헤더, CORS, 콘텐츠 보안 정책(Content Security Policy)을 점검하십시오. 사용 중인 ClickStack 버전이 리플레이와 SDK의 표준 `session.id` 속성을 지원하는지도 확인하십시오. 레코드가 수신되더라도 UI에 세션이 반드시 표시되는 것은 아닙니다.
-
-## 초기화 옵션 {#initialization-options}
-
-다음 옵션을 `init`에 전달하십시오. 공유 collector를 사용하는 경우 `endpoint`를 지정하고, trace와 로그를 서로 다른 대상으로 보내는 경우에는 두 신호 엔드포인트를 모두 지정하십시오.
-
-| 옵션                   | 기본값                          | 용도                                                                                                               |
-| -------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `endpoint`           | 두 신호 엔드포인트를 모두 설정하지 않은 경우 필수 | 기본 OTLP HTTP URL 또는 동일 시작점(same-origin) 프록시 경로입니다. SDK가 신호별 경로를 덧붙입니다                                             |
-| `tracesEndpoint`     | 설정되지 않음                      | trace 전체 URL입니다. `endpoint`에서 도출된 URL 대신 지정한 값을 그대로 사용합니다                                                        |
-| `logsEndpoint`       | 설정되지 않음                      | 로그 및 리플레이 전체 URL입니다. `endpoint`에서 도출된 URL 대신 지정한 값을 그대로 사용합니다                                                    |
-| `serviceName`        | 필수                           | 모든 텔레메트리에 `service.name`을 설정합니다                                                                                  |
-| `apiKey`             | 설정되지 않음                      | `authorization` 헤더 값입니다. 앞에서 설명한 대상별 포맷을 사용하십시오                                                                  |
-| `traceOrigins`       | 설정되지 않음                      | 추적 컨텍스트를 전달받을 백엔드 시작점(origin) 또는 정규식입니다                                                                           |
-| `replay`             | `true`                       | 세션 리플레이를 기록합니다. `false`로 설정하면 브라우저 텔레메트리는 계속 수집하되 리플레이는 비활성화합니다                                                  |
-| `resourceAttributes` | 설정되지 않음                      | 리플레이에도 적용되는 추가 리소스 속성입니다. 키가 겹치면 `serviceName`, `serviceVersion`, `environment`가 우선합니다                           |
-| `maskAllText`        | `true`                       | 리플레이의 텍스트를 마스킹합니다                                                                                                |
-| `maskAllInputs`      | `true`                       | input, textarea, select 값을 마스킹합니다                                                                                |
-| `console`            | `'error'`                    | `'error'`, `'warn'`, `'info'`(`console.log` 포함), `'debug'` 중 지정한 수준 및 그보다 심각한 수준을 수집합니다. 비활성화하려면 `false`를 사용하십시오 |
-| `serviceVersion`     | 설정되지 않음                      | 애플리케이션 릴리스를 식별합니다                                                                                                |
-| `environment`        | 설정되지 않음                      | `deployment.environment.name`을 설정합니다                                                                             |
-| `sanitizeUrl`        | 설정되지 않음                      | 기록된 URL을 재작성합니다(예: 쿼리 매개변수 제거)                                                                                   |
-
-전체 API는 [브라우저 SDK 참조](https://github.com/ClickHouse/clickstack-browser#quick-start)를 확인하십시오.
-
-## 세션 리플레이 및 개인정보 보호 {#session-replay-and-privacy}
-
-세션 리플레이는 기본적으로 활성화되어 있습니다. 텍스트와 입력값은 기본적으로 마스킹됩니다.
-
-마스킹(masking)은 체크박스 상태, 라디오 버튼 상태, 또는 링크 URL 및 플레이스홀더와 같은 속성을 숨기지 않습니다. 민감한 요소를 제외하려면 `rr-block` 클래스를 사용하십시오. URL 정제는 리플레이된 페이지 콘텐츠, 스택 트레이스, 콘솔 메시지에 포함된 URL에는 적용되지 않습니다. 개인정보 처리방침에서 허용하는 사용자 정보만 수집하십시오.
-
-브라우저 텔레메트리를 중지하지 않고 리플레이만 일시 중지하려면 다음과 같이 설정하십시오:
+React를 사용하는 경우, 에러 바운더리(error boundary) 컴포넌트를
+`attachToReactErrorBoundary` 함수에 전달하면 React error boundary 내에서 발생하는
+오류를 자동으로 수집할 수 있습니다.
 
 ```javascript
-import { pauseReplay } from '@clickhouse/clickstack-browser';
+// ErrorBoundary를 가져옵니다 (예시로 react-error-boundary를 사용합니다)
+import { ErrorBoundary } from 'react-error-boundary';
 
-pauseReplay();
+// ErrorBoundary 컴포넌트에 연결하여 해당 컴포넌트의 모든 인스턴스에서 발생하는
+// 오류를 캡처합니다.
+HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-녹화를 다시 시작하려면 다음과 같이 하십시오:
+### 사용자 지정 액션 보내기 {#send-custom-actions}
+
+특정 애플리케이션 이벤트(예: 회원 가입, 제출 등)를 명시적으로 추적하려면 이벤트 이름과 선택적 메타데이터를 함께 지정해 `addAction` 함수를 호출할 수 있습니다.
+
+예시:
 
 ```javascript
-import { resumeReplay } from '@clickhouse/clickstack-browser';
-
-resumeReplay();
+HyperDX.addAction('Form-Completed', {
+  formId: 'signup-form',
+  formName: 'Signup Form',
+  formType: 'signup',
+});
 ```
 
-## 프론트엔드 trace와 백엔드 trace 연결 {#trace-propagation}
+### 네트워크 캡처 동적으로 활성화하기 {#enable-network-capture-dynamically}
 
-브라우저 요청을 백엔드 trace와 연결하려면 `init` 옵션에 `traceOrigins`를 추가하고, 예시 값을 실제 백엔드 시작점(origin)으로 바꾸십시오:
+네트워크 캡처를 동적으로 활성화하거나 비활성화하려면 필요에 따라 `enableAdvancedNetworkCapture` 또는 `disableAdvancedNetworkCapture` 함수를 호출하면 됩니다.
 
 ```javascript
-traceOrigins: ['https://api.example.com'],
+HyperDX.enableAdvancedNetworkCapture();
 ```
 
-페이지 자체 시작점(origin) 및 일치하는 백엔드로 전송되는 요청에는 `traceparent`, `tracestate`, `baggage`가 포함됩니다. 백엔드는 이 컨텍스트를 이어받도록 계측되어 있어야 합니다.
+### CORS 요청에 대한 리소스 타이밍 활성화 {#enable-resource-timing-for-cors-requests}
 
-교차 시작점(cross-origin) 백엔드는 CORS에서 이러한 헤더를 허용해야 합니다. 텔레메트리 collector도 프론트엔드 시작점을 허용해야 합니다. 애플리케이션에서 콘텐츠 보안 정책(Content Security Policy)을 사용하는 경우 `connect-src`에 collector 엔드포인트를 허용하십시오.
+프런트엔드 애플리케이션이 다른 도메인으로 API 요청을 보내는 경우,
+선택적으로 `Timing-Allow-Origin`[헤더](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)가 요청과 함께 전송되도록 설정할 수
+있습니다. 이렇게 하면 ClickStack이 [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming)을 통해 DNS 조회, 응답
+다운로드 등 요청에 대한 세부적인 리소스 타이밍 정보를 수집할 수 있습니다.
 
-## 사용자 식별 및 오류 기록 {#users-and-errors}
-
-로그인 시 `setUser`를 사용하여 이후 생성되는 스팬과 로그에 사용자 정보를 추가하십시오.
+`cors` 패키지와 함께 `express`를 사용 중이라면, 다음
+스니펫을 사용하여 헤더를 활성화할 수 있습니다:
 
 ```javascript
-import { setUser } from '@clickhouse/clickstack-browser';
+var cors = require('cors');
+var onHeaders = require('on-headers');
 
-setUser({ id: 'user-123', email: 'user@example.com' });
+// ... 나머지 코드
+
+app.use(function (req, res, next) {
+  onHeaders(res, function () {
+    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+    if (allowOrigin) {
+      res.setHeader('Timing-Allow-Origin', allowOrigin);
+    }
+  });
+  next();
+});
+app.use(cors());
 ```
-
-로그아웃 시에는 사용자 정보를 초기화하고 새 세션을 시작하세요:
-
-```javascript
-import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
-
-setUser(null);
-startNewSession();
-```
-
-이후 생성되는 스팬과 로그에 애플리케이션 메타데이터를 추가하려면 `setAttributes`를 사용하세요. 호출할 때마다 이전에 설정한 값이 대체되며, 설정한 값을 지우려면 `null`을 전달하세요:
-
-```javascript
-import { setAttributes } from '@clickhouse/clickstack-browser';
-
-setAttributes({ 'app.team.name': 'checkout' });
-```
-
-포착되지 않은 오류와 처리되지 않은 거부(unhandled rejection)는 자동으로 수집됩니다. `console.error`를 통해 보고하는 React 오류 경계(error boundary)도 기본적으로 수집됩니다. 포착된 오류 중 아직 로그에 기록되지 않은 오류에는 `recordException`을 사용하십시오. 같은 오류를 `recordException`으로 기록하면서 로깅까지 하면 이벤트가 중복으로 생성됩니다:
-
-```javascript
-import { recordException } from '@clickhouse/clickstack-browser';
-
-try {
-  await submitCheckout();
-} catch (error) {
-  recordException(error, { 'app.operation': 'checkout' });
-  // Handle the error in your application.
-}
-```
-
-`submitCheckout`을 모니터링할 애플리케이션 작업으로 바꾸세요.
-
-## HyperDX 브라우저 SDK에서 마이그레이션하기 {#migration}
-
-이번 변경은 패키지 이름만 바꾸는 업그레이드가 아닙니다. `url`은 `endpoint`로, `service`는 `serviceName`으로, `tracePropagationTargets`는 `traceOrigins`로 변경됩니다. 이제 텍스트 및 입력 마스킹(masking)의 기본값은 `true`입니다. `setGlobalAttributes`는 사용자 아이덴티티의 경우 `setUser`로, 애플리케이션 메타데이터의 경우 `setAttributes`로 대체하십시오. `console.error`를 통해 오류를 보고하는 React 오류 경계(error boundary)에는 별도의 후크가 필요하지 않습니다. 아직 로그에 기록되지 않은 오류에는 `recordException`을 사용하십시오.
-
-제거된 옵션과 속성 변경 사항은 [SDK 마이그레이션 가이드](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md)를 참조하십시오. script 태그로 설치하거나 이미 OpenTelemetry를 초기화하는 애플리케이션에 적용하는 경우에는 [SDK README](https://github.com/ClickHouse/clickstack-browser#readme)를 참조하십시오.
-
-ClickStack 브라우저 SDK로 인해 애플리케이션에서 호환성 이슈가 발생하면 원인을 조사하는 동안 [레거시 HyperDX 브라우저 SDK](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser)를 사용할 수 있습니다. 위의 마이그레이션 가이드를 참고하여 레거시 SDK의 구성과 API 호출을 복원하십시오. 두 SDK는 서로 대체하여 사용할 수 없으며 함께 실행해서도 안 됩니다.

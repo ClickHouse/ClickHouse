@@ -1,16 +1,13 @@
 #include <type_traits>
 
 #include <base/range.h>
-#include <base/sanitizer_defs.h>
 
 #include <Formats/JSONExtractTree.h>
 #include <Formats/FormatFactory.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Common/assert_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/re2.h>
 
 #include <Core/Settings.h>
 
@@ -44,7 +41,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -63,8 +59,6 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
-extern const int CANNOT_COMPILE_REGEXP;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -78,12 +72,6 @@ template <typename T>
 concept Reservable = requires (T t)
 {
     t.reserve(0);
-};
-
-template <typename T>
-concept ParsableInPlace = requires (T t, typename T::Element & element)
-{
-    t.parse(std::string_view{}, size_t{0}, element);
 };
 
 template <typename T>
@@ -171,17 +159,12 @@ public:
             }
 
             String error;
-            const bool trivial_default = result_type->isDefaultInsertTrivial();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[static_cast<ssize_t>(i) - 1]]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]};
-                    /// The bytes of the next rows serve as padding, so only the last rows are copied.
-                    if constexpr (ParsableInPlace<JSONParser>)
-                        document_ok = parser.parse(json, chars.size() - offsets[i], document);
-                    else
-                        document_ok = parser.parse(json, document);
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
+                    document_ok = parser.parse(json, document);
                 }
 
                 bool added_to_column = false;
@@ -196,14 +179,9 @@ public:
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
                 }
 
-                /// We add the default of the result type if something goes wrong, we don't throw exceptions in these JSON functions.
+                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
                 if (!added_to_column)
-                {
-                    if (trivial_default)
-                        to->insertDefault();
-                    else
-                        result_type->insertDefaultInto(*to);
-                }
+                    to->insertDefault();
             }
             return to;
         }
@@ -265,9 +243,6 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
-
-                if (format_settings.json.json_type_escape_dots_in_keys)
-                    key = escapeDotInJSONKey(key);
 
                 if (!path.empty())
                     path += '.';
@@ -372,20 +347,12 @@ private:
 
     struct Move
     {
-        explicit Move(MoveType type_, Int64 index_ = 0) : type(type_), index(index_) {}
+        explicit Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
         Move(MoveType type_, const String & key_) : type(type_), key(key_) {}
         MoveType type;
-        Int64 index = 0;
+        size_t index = 0;
         String key;
     };
-
-    /// A UInt64 index above the Int64 range is past the end of any array or object.
-    static Int64 getIndex(const ColumnWithTypeAndName & argument, size_t row)
-    {
-        if (isNativeUInt(argument.type))
-            return static_cast<Int64>(std::min<UInt64>(argument.column->getUInt(row), std::numeric_limits<Int64>::max()));
-        return argument.column->getInt(row);
-    }
 
     static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
@@ -410,7 +377,7 @@ private:
                 if (isString(column.type))
                     moves.emplace_back(MoveType::ConstKey, column_const.getValue<String>());
                 else
-                    moves.emplace_back(MoveType::ConstIndex, getIndex(column, 0));
+                    moves.emplace_back(MoveType::ConstIndex, column_const.getInt(0));
             }
             else
             {
@@ -439,7 +406,7 @@ private:
             {
                 case MoveType::ConstIndex:
                 {
-                    if (!moveToElementByIndex<JSONParser>(res_element, moves[j].index, key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
                         return false;
                     break;
                 }
@@ -460,8 +427,8 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = getIndex(arguments[j + 1], row);
-                    if (!moveToElementByIndex<JSONParser>(res_element, index, key))
+                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
                 }
@@ -489,8 +456,7 @@ private:
     }
 
     template <typename JSONParser>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
-    static bool moveToElementByIndex(typename JSONParser::Element & element, Int64 index, std::string_view & out_key)
+    static bool moveToElementByIndex(typename JSONParser::Element & element, int index, std::string_view & out_key)
     {
         if (element.isArray())
         {
@@ -552,7 +518,7 @@ private:
         size_t max_size = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+            size_t size = offsets[i] - offsets[i - 1];
             max_size = std::max(max_size, size);
         }
         if (max_size)
@@ -583,69 +549,6 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
-/// A function with `Impl::ignores_allow_simdjson` uses simdjson whenever it is built, as `JSONArrayLength` does.
-/// The parsers render some numbers differently, so the setting would make the result depend on the session.
-template <template<typename> typename Impl>
-constexpr bool functionIgnoresAllowSimdjson()
-{
-    if constexpr (requires { Impl<DummyJSONParser>::ignores_allow_simdjson; })
-        return Impl<DummyJSONParser>::ignores_allow_simdjson;
-    else
-        return false;
-}
-
-/// If the result cannot be wrapped in Nullable (e.g. Array), set the result of the null rows to the default value
-/// of the return type (e.g. an empty array). The parser still sees the values under the null map, which are not
-/// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
-static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const ColumnsWithTypeAndName & args, size_t input_rows_count)
-{
-    VectorWithMemoryTracking<const NullMap *> null_maps;
-    for (const auto & arg : args)
-    {
-        /// A constant argument can be left wrapped in `ColumnConst` when other arguments are not constant.
-        /// If it is null, all rows are null.
-        if (isColumnConst(*arg.column))
-        {
-            if (input_rows_count && arg.column->isNullAt(0))
-            {
-                auto defaults = result->cloneEmpty();
-                defaults->insertManyDefaults(input_rows_count);
-                return defaults;
-            }
-        }
-        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
-            null_maps.push_back(&nullable->getNullMapData());
-    }
-
-    auto is_null_row = [&](size_t row)
-    {
-        for (const auto * null_map : null_maps)
-        {
-            if ((*null_map)[row])
-                return true;
-        }
-        return false;
-    };
-
-    size_t first_null_row = 0;
-    while (first_null_row < input_rows_count && !is_null_row(first_null_row))
-        ++first_null_row;
-    if (first_null_row == input_rows_count)
-        return result;
-
-    auto patched = result->cloneEmpty();
-    patched->reserve(input_rows_count);
-    patched->insertRangeFrom(*result, 0, first_null_row);
-    for (size_t row = first_null_row; row < input_rows_count; ++row)
-    {
-        if (is_null_row(row))
-            patched->insertDefault();
-        else
-            patched->insertFrom(*result, row);
-    }
-    return patched;
-}
-
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class ExecutableFunctionJSON final : public IExecutableFunction
 {
@@ -661,41 +564,18 @@ public:
         format_settings.null_as_default = false;
     }
 
-    [[nodiscard]] String getName() const override { return Name::name; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        if constexpr (requires { Impl<DummyJSONParser>::number_of_constant_arguments; })
-        {
-            ColumnNumbers res;
-            for (size_t i = 1; i <= Impl<DummyJSONParser>::number_of_constant_arguments; ++i)
-                res.push_back(i);
-            return res;
-        }
-        else
-            return {};
-    }
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
+    String getName() const override { return Name::name; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return !functionForcesTheReturnType<Impl>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
-        if constexpr (requires { Impl<DummyJSONParser>::number_of_constant_arguments; })
-        {
-            /// A `NULL` in a constant option argument is an error, it must not be turned into a default value by the `Nullable` handling below.
-            for (size_t i = 1; i <= Impl<DummyJSONParser>::number_of_constant_arguments && i < arguments.size(); ++i)
-            {
-                if (arguments[i].type->isNullable() && arguments[i].column && arguments[i].column->size() > 0 && arguments[i].column->isNullAt(0))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN, "Argument {} of function {} should be a constant non-NULL String", i + 1, Name::name);
-            }
-        }
 
         if constexpr (functionForcesTheReturnType<Impl>())
         {
@@ -711,12 +591,7 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-            {
-                if (result_type->isNullable())
-                    temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
-                else
-                    temporary_result = replaceNullRowsWithDefaults(temporary_result, columns_without_low_cardinality, input_rows_count);
-            }
+                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -729,12 +604,7 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-            {
-                if (result_type->isNullable())
-                    temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-                else
-                    temporary_result = replaceNullRowsWithDefaults(temporary_result, arguments, input_rows_count);
-            }
+                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -745,11 +615,11 @@ public:
 
 private:
 
-    [[nodiscard]] ColumnPtr
+    ColumnPtr
     chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
 #if USE_SIMDJSON
-        if (allow_simdjson || functionIgnoresAllowSimdjson<Impl>())
+        if (allow_simdjson)
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings);
 #endif
 
@@ -863,58 +733,28 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        if constexpr (requires { Impl<DummyJSONParser>::number_of_constant_arguments; })
-        {
-            ColumnNumbers res;
-            for (size_t i = 1; i <= Impl<DummyJSONParser>::number_of_constant_arguments; ++i)
-                res.push_back(i);
-            return res;
-        }
-        else
-            return {};
-    }
     bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return !functionForcesTheReturnType<Impl>();
     }
 
-    /// `build()` below constructs the result type itself, so the signature is purely
-    /// advertised — it does not gate execution. We still surface it through
-    /// `system.functions` so users see the expected shape for each JSON function.
-    String getSignatureString() const override
-    {
-        if constexpr (requires { Impl<DummyJSONParser>::signature; })
-            return Impl<DummyJSONParser>::signature;
-        else
-            return {};
-    }
-
-    /// `build` computes the result type from `Impl::getReturnType`, which is the authoritative
-    /// logic for these functions: it also accepts `Dynamic` / `Variant` JSON arguments and wraps
-    /// nullable inputs itself, neither of which the advertised signature expresses. Route both
-    /// return-type entry points through the same logic, so that a direct `getReturnType` call
-    /// agrees with `build` instead of evaluating the documentation-only signature.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return calculateResultType(arguments);
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return calculateResultType(columns);
-    }
-
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nothing_argument = false;
+        for (const auto & arg : arguments)
+            has_nothing_argument |= isNothing(arg.type);
+
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
+        DataTypePtr return_type;
+        if (has_nothing_argument)
+            return_type = std::make_shared<DataTypeNothing>();
+        else if (null_presence.has_null_constant)
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+        else if (null_presence.has_nullable)
+            return_type = makeNullable(json_return_type);
+        else
+            return_type = json_return_type;
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
@@ -925,31 +765,6 @@ public:
     }
 
 private:
-    /// Applies the `Nothing` / `Nullable` handling on top of the type `Impl` computed.
-    static DataTypePtr wrapReturnType(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, const NullPresence & null_presence)
-    {
-        for (const auto & arg : arguments)
-        {
-            if (isNothing(arg.type))
-                return std::make_shared<DataTypeNothing>();
-        }
-
-        if (null_presence.has_null_constant)
-            return makeNullable(std::make_shared<DataTypeNothing>());
-        /// If the return type cannot be Nullable (e.g. Array), return it as-is.
-        /// Null rows get the default value of the return type (e.g. an empty array), see `replaceNullRowsWithDefaults`.
-        if (null_presence.has_nullable)
-            return makeNullableSafe(json_return_type);
-        return json_return_type;
-    }
-
-    static DataTypePtr calculateResultType(const ColumnsWithTypeAndName & arguments)
-    {
-        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        return wrapReturnType(arguments, json_return_type, getNullPresense(arguments));
-    }
-
     const bool allow_simdjson;
     FormatSettings format_settings;
     UInt64 settings_hash = 0;
@@ -971,8 +786,6 @@ struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
 struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
-struct NameJSONExtractLeafValues { static constexpr auto name{"JSONExtractLeafValues"}; };
-struct NameJSONExtractLeafPathsAndValues { static constexpr auto name{"JSONExtractLeafPathsAndValues"}; };
 
 // Case-insensitive variants
 struct NameJSONExtractIntCaseInsensitive { static constexpr auto name{"JSONExtractIntCaseInsensitive"}; };
@@ -993,7 +806,6 @@ class JSONHasImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
@@ -1013,7 +825,6 @@ class IsValidJSONImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String) -> UInt8";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1044,7 +855,6 @@ class JSONLengthImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1075,7 +885,6 @@ class JSONKeyImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1100,8 +909,6 @@ class JSONTypeImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature
-        = "(String, ...) -> Enum8('Array' = 91, 'Object' = 123, 'String' = 34, 'Int64' = 105, 'UInt64' = 117, 'Double' = 100, 'Bool' = 98, 'Null' = 0)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1163,10 +970,6 @@ class JSONExtractNumericImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature =
-        std::is_same_v<NumberType, Int64>  ? "(String, ...) -> Int64"  :
-        std::is_same_v<NumberType, UInt64> ? "(String, ...) -> UInt64" :
-                                             "(String, ...) -> Float64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1206,7 +1009,6 @@ class JSONExtractBoolImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1247,7 +1049,6 @@ class JSONExtractStringImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1276,13 +1077,6 @@ class JSONExtractImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Declarative signature — the last argument is a constant string with the
-    /// type name; the result is the type produced by `typeFromString` on that
-    /// name. The optional middle arguments are JSON-pointer-like index/key
-    /// selectors. The signature is documentation-only because the function's
-    /// `build()` constructs the return type itself.
-    static constexpr auto signature = "(String, ..., const t String) -> typeFromString(t)";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1324,12 +1118,6 @@ class JSONExtractKeysAndValuesImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Declarative signature — keys are strings; values get parsed via the
-    /// trailing constant type-name argument. Result is `Array(Tuple(String,
-    /// typeFromString(t)))`. Documentation-only (the function's `build()`
-    /// constructs the return type itself).
-    static constexpr auto signature = "(String, ..., const t String) -> Array(Tuple(String, typeFromString(t)))";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1397,7 +1185,6 @@ class JSONExtractRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1434,7 +1221,6 @@ class JSONExtractArrayRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1469,7 +1255,6 @@ class JSONExtractKeysAndValuesRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(Tuple(String, String))";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1510,7 +1295,6 @@ class JSONExtractKeysImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1538,262 +1322,6 @@ public:
         return true;
     }
 };
-
-/// Walks a JSON object and emits one entry per scalar leaf (`null` is not a leaf).
-/// Arguments after the JSON are options (not path keys): `skip_regex` and `arrays`, both constant strings.
-/// With `with_paths` the result is `Array(Tuple(path String, value String))`, otherwise `Array(String)`.
-template <typename JSONParser, bool with_paths>
-class JSONExtractLeafImpl
-{
-public:
-    using Element = typename JSONParser::Element;
-    static constexpr auto signature = with_paths ? "(String [, String [, String]]) -> Array(Tuple(path String, value String))"
-                                                 : "(String [, String [, String]]) -> Array(String)";
-
-    /// The options are constant arguments, see `ExecutableFunctionJSON::getArgumentsThatAreAlwaysConstant`.
-    static constexpr size_t number_of_constant_arguments = 2;
-
-    /// The result must not depend on the session, because the function can be an index expression,
-    /// which is computed at insert, at merge and at query time with different settings.
-    static constexpr bool ignores_allow_simdjson = true;
-
-    static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
-    {
-        if (arguments.empty() || arguments.size() > 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires from 1 to 3 arguments: json [, skip_regex [, arrays]], got {}",
-                function_name,
-                arguments.size());
-
-        if (isObject(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a string containing JSON, illegal type: {}. "
-                "Use the function JSONAllValues for the JSON type",
-                function_name,
-                arguments[0].type->getName());
-
-        if (!isString(removeLowCardinality(arguments[0].type)) && !isNothing(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a String containing JSON, illegal type: {}",
-                function_name,
-                arguments[0].type->getName());
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            if (isNothing(arguments[i].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN, "Argument {} of function {} should be a constant String, got NULL", i + 1, function_name);
-            if (!isString(removeLowCardinality(arguments[i].type)))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} should be a constant String, illegal type: {}",
-                    i + 1,
-                    function_name,
-                    arguments[i].type->getName());
-        }
-
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        if constexpr (with_paths)
-        {
-            DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type}, Names{"path", "value"});
-            return std::make_shared<DataTypeArray>(tuple_type);
-        }
-        else
-            return std::make_shared<DataTypeArray>(string_type);
-    }
-
-    static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
-
-    void prepare(const char * function_name, const ColumnsWithTypeAndName & arguments, const DataTypePtr &)
-    {
-        if (arguments.size() > 1)
-        {
-            String skip_regex = getConstantStringOption(function_name, arguments[1]);
-            if (!skip_regex.empty())
-            {
-                re2::RE2::Options options;
-                options.set_log_errors(false);
-                skip_matcher = std::make_unique<re2::RE2>(skip_regex, options);
-                if (!skip_matcher->ok())
-                    throw Exception(
-                        ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "Cannot compile regular expression '{}' in function {}: {}",
-                        skip_regex,
-                        function_name,
-                        skip_matcher->error());
-            }
-        }
-
-        build_paths = with_paths || skip_matcher;
-
-        if (arguments.size() > 2)
-        {
-            String arrays_mode = getConstantStringOption(function_name, arguments[2]);
-            if (arrays_mode == "skip")
-                arrays = ArraysMode::Skip;
-            else if (arrays_mode == "string")
-                arrays = ArraysMode::String;
-            else if (arrays_mode == "elements")
-                arrays = ArraysMode::Elements;
-            else
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Third argument of function {} should be one of 'skip', 'string', 'elements', got '{}'",
-                    function_name,
-                    arrays_mode);
-        }
-    }
-
-    bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String &)
-    {
-        if (!element.isObject())
-            return false;
-
-        auto & col_arr = assert_cast<ColumnArray &>(dest);
-        size_t old_size = col_arr.getData().size();
-
-        String path;
-        walkObject(element, path, false, col_arr.getData(), format_settings);
-
-        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + (col_arr.getData().size() - old_size));
-        return true;
-    }
-
-private:
-    enum class ArraysMode
-    {
-        Skip,
-        String,
-        Elements,
-    };
-
-    static String getConstantStringOption(const char * function_name, const ColumnWithTypeAndName & argument)
-    {
-        const auto * col_const = typeid_cast<const ColumnConst *>(argument.column.get());
-        if (!col_const || col_const->isNullAt(0))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Options of function {} should be constant non-NULL strings", function_name);
-        return col_const->getValue<String>();
-    }
-
-    /// Always a partial match, independent of `type_json_use_partial_match_to_skip_paths_by_regexp`, see `ignores_allow_simdjson`.
-    [[nodiscard]] bool isSkipped(const String & path) const
-    {
-        return skip_matcher && re2::RE2::PartialMatch(path, *skip_matcher);
-    }
-
-    void walkObject(const Element & object_element, String & path, bool has_parent, IColumn & dest, const FormatSettings & format_settings)
-    {
-        checkStackSize();
-
-        for (const auto & [key, value] : object_element.getObject())
-        {
-            size_t old_path_size = path.size();
-            if (build_paths)
-            {
-                if (has_parent)
-                    path += '.';
-                /// Dots in keys are never escaped, unlike the `JSON` data type with `json_type_escape_dots_in_keys`.
-                /// A setting would make the paths, and so the `skip_regex` matches, differ between the index and the query.
-                path.append(key);
-            }
-
-            walkValue(value, path, dest, format_settings);
-            path.resize(old_path_size);
-        }
-    }
-
-    void walkValue(const Element & value, String & path, IColumn & dest, const FormatSettings & format_settings)
-    {
-        if (value.isNull() || isSkipped(path))
-            return;
-
-        if (value.isObject())
-        {
-            walkObject(value, path, true, dest, format_settings);
-            return;
-        }
-
-        if (value.isArray())
-        {
-            if (arrays == ArraysMode::String)
-            {
-                insertLeaf(dest, path, value, format_settings);
-                return;
-            }
-
-            if (arrays == ArraysMode::Elements)
-            {
-                checkStackSize();
-
-                size_t old_path_size = path.size();
-                size_t index = 0;
-                for (const auto & array_element : value.getArray())
-                {
-                    if (build_paths)
-                    {
-                        path += '[';
-                        path += std::to_string(index++);
-                        path += ']';
-                    }
-                    walkValue(array_element, path, dest, format_settings);
-                    path.resize(old_path_size);
-                }
-            }
-            return;
-        }
-
-        insertLeaf(dest, path, value, format_settings);
-    }
-
-    static void insertLeaf(IColumn & dest, const String & path, const Element & value, const FormatSettings & format_settings)
-    {
-        ColumnString * col_path = nullptr;
-        ColumnString * col_value = nullptr;
-        if constexpr (with_paths)
-        {
-            auto & col_tuple = assert_cast<ColumnTuple &>(dest);
-            col_path = &assert_cast<ColumnString &>(col_tuple.getColumn(0));
-            col_value = &assert_cast<ColumnString &>(col_tuple.getColumn(1));
-        }
-        else
-            col_value = &assert_cast<ColumnString &>(dest);
-
-        if constexpr (with_paths)
-            col_path->insertData(path.data(), path.size());
-
-        if (value.isString())
-        {
-            std::string_view str = value.getString();
-            col_value->insertData(str.data(), str.size());
-        }
-        else
-        {
-            /// No depth limit, so the result does not depend on `input_format_json_max_depth`.
-            /// The parse limit of simdjson (nesting below 1024) bounds the recursion; `checkStackSize` guards RapidJSON.
-            auto & chars = col_value->getChars();
-            {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                jsonElementToString<JSONParser>(value, buf, format_settings, /* max_depth = */ 0);
-            }
-            col_value->getOffsets().push_back(chars.size());
-        }
-    }
-
-    std::unique_ptr<re2::RE2> skip_matcher;
-    /// The path is needed only for the result and for `skip_regex`; building it costs a string append per member.
-    bool build_paths = with_paths;
-    ArraysMode arrays = ArraysMode::Elements;
-};
-
-template <typename JSONParser>
-using JSONExtractLeafValuesImpl = JSONExtractLeafImpl<JSONParser, false>;
-
-template <typename JSONParser>
-using JSONExtractLeafPathsAndValuesImpl = JSONExtractLeafImpl<JSONParser, true>;
 
 REGISTER_FUNCTION(JSON)
 {
@@ -2554,124 +2082,6 @@ Parses a JSON string and extracts the keys using case-insensitive key matching t
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>(documentation);
-    }
-
-    /// JSONExtractLeafValues
-    {
-        FunctionDocumentation::Description description = R"(
-Parses a JSON string and returns the values of all scalar leaves of the top-level object as an array of strings, in document order.
-A leaf is a string, number or boolean. `null`, empty objects and empty arrays produce no value.
-Strings are returned unescaped, numbers and booleans as JSON text (the same as [`JSONExtractRaw`](#JSONExtractRaw) returns them).
-If the JSON is invalid, or its top level is not an object, the result is an empty array.
-If a key occurs several times, all its values are returned.
-
-The path of a value is formed by the keys joined with `.`, and `[i]` for the index of an array element, for example `a.b`, `a[0]`, `a[0].b`, `a[0][1]`.
-Keys are not escaped: a key `a.b` and a nested key `b` inside `a` give the same path `a.b`.
-Unlike the `JSON` data type, the setting [`json_type_escape_dots_in_keys`](/reference/settings/formats/other#json_type_escape_dots_in_keys) does not apply.
-
-The `skip_regex` is matched against every visited path (object members at any depth, members inside arrays, and array element paths such as `a[0]`).
-A match skips the value and everything below it.
-A partial match is enough, as in [`match`](/reference/functions/regular-functions/string-search-functions#match): use `^` and `$` to match the full path.
-Unlike the `SKIP REGEXP` of the `JSON` data type, the setting [`type_json_use_partial_match_to_skip_paths_by_regexp`](/reference/settings/formats/type-json#type_json_use_partial_match_to_skip_paths_by_regexp) does not apply.
-
-In the `'string'` mode, an array is returned whole, with no depth limit.
-
-<Note>
-The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
-So an index over the function gives the same rows as a full scan.
-</Note>
-
-Use [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) for columns of the `JSON` data type.
-        )";
-        FunctionDocumentation::Syntax syntax = "JSONExtractLeafValues(json[, skip_regex[, arrays]])";
-        FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
-            {"skip_regex", "Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing.", {"const String"}},
-            {"arrays", "Optional. Constant, case-sensitive. How arrays are handled: `'skip'` produces nothing for arrays, `'string'` returns each array as one value in compact JSON, `'elements'` (default) walks the elements, and the element paths are `a[0]`, `a[1]` and so on.", {"const String"}}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the values of the scalar leaves.",
-            {"Array(String)"}
-        };
-        FunctionDocumentation::Examples examples = {
-        {
-            "Nested objects and arrays",
-            R"(
-SELECT JSONExtractLeafValues('{"a": {"b": "x", "c": 1.50}, "d": [true, null, {"e": "y"}], "f": null}') AS res;
-            )",
-            R"(
-┌─res────────────────────┐
-│ ['x','1.5','true','y'] │
-└────────────────────────┘
-            )"
-        },
-        {
-            "Skipping paths",
-            R"(
-SELECT JSONExtractLeafValues('{"a": "x", "b_noindex": {"c": "y"}, "d": [{"e_noindex": "z", "f": "w"}]}', '.*_noindex$') AS res;
-            )",
-            R"(
-┌─res───────┐
-│ ['x','w'] │
-└───────────┘
-            )"
-        },
-        {
-            "Arrays as strings",
-            R"(
-SELECT JSONExtractLeafValues('{"a": [1, 2], "b": "x"}', '', 'string') AS res;
-            )",
-            R"(
-┌─res───────────┐
-│ ['[1,2]','x'] │
-└───────────────┘
-            )"
-        }
-        };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
-        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction<JSONOverloadResolver<NameJSONExtractLeafValues, JSONExtractLeafValuesImpl>>(documentation);
-    }
-
-    /// JSONExtractLeafPathsAndValues
-    {
-        FunctionDocumentation::Description description = R"(
-The same as [`JSONExtractLeafValues`](#JSONExtractLeafValues), but returns a tuple `(path, value)` for every scalar leaf.
-See the description of `JSONExtractLeafValues` for the rules of the paths and the arguments `skip_regex` and `arrays`.
-
-<Note>
-The result does not depend on the settings, such as `allow_simdjson`, `input_format_json_max_depth` and `json_type_escape_dots_in_keys`.
-So an index over the function gives the same rows as a full scan.
-</Note>
-        )";
-        FunctionDocumentation::Syntax syntax = "JSONExtractLeafPathsAndValues(json[, skip_regex[, arrays]])";
-        FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
-            {"skip_regex", "Optional. Constant regular expression ([re2](https://github.com/google/re2/wiki/Syntax) syntax). Paths that match are skipped together with everything below them. An empty string (default) skips nothing.", {"const String"}},
-            {"arrays", "Optional. Constant, case-sensitive. How arrays are handled: `'skip'`, `'string'` or `'elements'` (default).", {"const String"}}
-        };
-        FunctionDocumentation::ReturnedValue returned_value = {
-            "Returns the paths and the values of the scalar leaves.",
-            {"Array(Tuple(path String, value String))"}
-        };
-        FunctionDocumentation::Examples examples = {
-        {
-            "Paths and values",
-            R"(
-SELECT arrayMap(x -> (x.1, x.2), JSONExtractLeafPathsAndValues('{"a": {"b": "x"}, "c": [1, {"d": true}]}')) AS res;
-            )",
-            R"(
-┌─res──────────────────────────────────────────┐
-│ [('a.b','x'),('c[0]','1'),('c[1].d','true')] │
-└──────────────────────────────────────────────┘
-            )"
-        }
-        };
-        FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
-        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        factory.registerFunction<JSONOverloadResolver<NameJSONExtractLeafPathsAndValues, JSONExtractLeafPathsAndValuesImpl>>(documentation);
     }
 }
 

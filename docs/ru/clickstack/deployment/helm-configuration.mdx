@@ -14,52 +14,58 @@ keywords: ['конфигурация ClickStack', 'секреты Helm', 'нас
 
 В этом руководстве описаны параметры конфигурации для Helm-развертываний ClickStack. Базовую установку см. в [основном руководстве по развертыванию с Helm](/ru/clickstack/deployment/helm).
 
-## Организация значений {#values-organization}
+<div id="values-organization">
+  ## Организация значений
+</div>
 
 В чарте v2.x значения сгруппированы по типам ресурсов Kubernetes в блоке `hyperdx:`:
 
 ```yaml
 hyperdx:
-  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+  ports:          # Общие номера портов (Deployment, Service, ConfigMap, Ingress)
     api: 8000
     app: 3000
     opamp: 4320
 
   frontendUrl: "http://localhost:3000"
 
-  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+  config:         # → clickstack-config ConfigMap (несекретные переменные окружения)
     APP_PORT: "3000"
     HYPERDX_LOG_LEVEL: "info"
 
-  secrets:        # → clickstack-secret Secret (sensitive env vars)
+  secrets:        # → clickstack-secret Secret (секретные переменные окружения)
     HYPERDX_API_KEY: "..."
     CLICKHOUSE_PASSWORD: "otelcollectorpass"
     CLICKHOUSE_APP_PASSWORD: "hyperdx"
     MONGODB_PASSWORD: "hyperdx"
 
-  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
-  service:        # K8s Service spec (type, annotations)
-  ingress:        # K8s Ingress spec (host, tls, annotations)
-  podDisruptionBudget:  # K8s PDB spec
-  tasks:          # K8s CronJob specs
+  deployment:     # Спецификация K8s Deployment (образ, реплики, пробы и т.д.)
+  service:        # Спецификация K8s Service (тип, аннотации)
+  ingress:        # Спецификация K8s Ingress (хост, tls, аннотации)
+  podDisruptionBudget:  # Спецификация K8s PDB
+  tasks:          # Спецификации K8s CronJob
 ```
 
-Все переменные окружения передаются через два ресурса с фиксированными именами, которые совместно используются развертыванием интерфейса ClickStack **и** OTel collector через `envFrom`:
+Все переменные окружения передаются через два ресурса с фиксированными именами, которые совместно используются развертыванием HyperDX **и** OTel collector через `envFrom`:
 
 * **`clickstack-config`** ConfigMap — заполняется из `hyperdx.config`
 * **`clickstack-secret`** Secret — заполняется из `hyperdx.secrets`
 
 Отдельного ConfigMap для OTel collector больше нет. Обе рабочие нагрузки используют одни и те же источники.
 
-## Настройка ключа API {#api-key-setup}
+<div id="api-key-setup">
+  ## Настройка API-ключа
+</div>
 
-После успешного развертывания ClickStack настройте ключ API, чтобы включить сбор телеметрических данных:
+После успешного развертывания ClickStack настройте API-ключ, чтобы включить сбор данных телеметрии:
 
-1. **Перейдите к своему инстансу интерфейса ClickStack** через настроенный входной шлюз или конечную точку сервиса
-2. **Войдите в панель мониторинга интерфейса ClickStack** и перейдите в Team settings, чтобы создать или получить ключ API
-3. **Обновите развертывание** с помощью ключа API, используя один из следующих методов:
+1. **Перейдите к своему экземпляру HyperDX** через настроенный входной шлюз или конечную точку сервиса
+2. **Войдите в панель мониторинга HyperDX** и перейдите в Team settings, чтобы создать или получить API-ключ
+3. **Обновите развертывание** с помощью API-ключа, используя один из следующих методов:
 
-### Способ 1: Обновление с помощью helm upgrade и файла значений {#api-key-values-file}
+<div id="api-key-values-file">
+  ### Способ 1: Обновление с помощью helm upgrade и файла значений
+</div>
 
 Добавьте API-ключ в `values.yaml`:
 
@@ -75,14 +81,18 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-### Способ 2: обновление через Helm upgrade с флагом `--set` {#api-key-set-flag}
+<div id="api-key-set-flag">
+  ### Способ 2: обновление через Helm upgrade с флагом --set
+</div>
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack \
   --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
 ```
 
-### Перезапустите поды, чтобы применить изменения {#restart-pods}
+<div id="restart-pods">
+  ### Перезапустите поды, чтобы применить изменения
+</div>
 
 После обновления API-ключа перезапустите поды, чтобы они применили новую конфигурацию:
 
@@ -94,11 +104,15 @@ kubectl rollout restart deployment my-clickstack-clickstack-app
   Чарт автоматически создает secret Kubernetes (`clickstack-secret`) с вашими параметрами конфигурации. Дополнительная настройка secret не требуется, если только вы не хотите использовать внешний secret.
 </Note>
 
-## Управление секретами {#secret-management}
+<div id="secret-management">
+  ## Управление секретами
+</div>
 
 Для работы с конфиденциальными данными, такими как ключи API или учетные данные базы данных, чарт v2.x предоставляет единый ресурс `clickstack-secret`, который заполняется из `hyperdx.secrets`.
 
-### Значения секретов по умолчанию {#default-secret-values}
+<div id="default-secret-values">
+  ### Значения секретов по умолчанию
+</div>
 
 В чарте заданы значения по умолчанию для всех секретов. Переопределите их в `values.yaml`:
 
@@ -111,7 +125,9 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### Использование внешнего секрета {#using-external-secret}
+<div id="using-external-secret">
+  ### Использование внешнего секрета
+</div>
 
 Для рабочих развертываний, где нужно хранить учетные данные отдельно от значений Helm, используйте внешний секрет Kubernetes:
 
@@ -132,11 +148,15 @@ hyperdx:
   existingConfigSecret: "my-clickstack-secrets"
 ```
 
-## Настройка входного шлюза {#ingress-setup}
+<div id="ingress-setup">
+  ## Настройка входного шлюза
+</div>
 
-Чтобы открыть доступ к интерфейсу и API ClickStack по доменному имени, включите входной шлюз в файле `values.yaml`.
+Чтобы открыть доступ к интерфейсу и API HyperDX по доменному имени, включите входной шлюз в файле `values.yaml`.
 
-### Общие настройки входного шлюза {#general-ingress-configuration}
+<div id="general-ingress-configuration">
+  ### Общие настройки входного шлюза
+</div>
 
 ```yaml
 hyperdx:
@@ -153,7 +173,9 @@ hyperdx:
   `hyperdx.frontendUrl` должен совпадать с хостом входного шлюза и включать протокол (например, `https://hyperdx.yourdomain.com`). Это гарантирует, что все создаваемые ссылки, cookie и перенаправления будут работать корректно.
 </Info>
 
-### Включение TLS (HTTPS) {#enabling-tls}
+<div id="enabling-tls">
+  ### Включение TLS (HTTPS)
+</div>
 
 Чтобы защитить развертывание с помощью HTTPS:
 
@@ -177,7 +199,9 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-### Пример конфигурации входного шлюза {#example-ingress-configuration}
+<div id="example-ingress-configuration">
+  ### Пример конфигурации входного шлюза
+</div>
 
 Для справки: ниже показано, как выглядит сгенерированный ресурс входного шлюза:
 
@@ -208,7 +232,9 @@ spec:
       secretName: hyperdx-tls
 ```
 
-### Распространенные проблемы с входным шлюзом {#common-ingress-pitfalls}
+<div id="common-ingress-pitfalls">
+  ### Распространенные проблемы с входным шлюзом
+</div>
 
 **Настройка `path` и `rewrite`:**
 
@@ -233,7 +259,9 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-## Входной шлюз для OTel collector {#otel-collector-ingress}
+<div id="otel-collector-ingress">
+  ## Входной шлюз для OTel collector
+</div>
 
 Если вам нужно открыть доступ к конечным точкам OTel collector (для трассировок, метрик и журналов) через входной шлюз, используйте конфигурацию `additionalIngresses`. Это полезно, если вы отправляете телеметрические данные из-за пределов кластера или используете для collector собственный домен.
 
@@ -271,7 +299,9 @@ hyperdx:
 
 В качестве альтернативы вы можете использовать [`additionalManifests`](/ru/clickstack/deployment/helm-additional-manifests), чтобы определить полностью настраиваемые ресурсы входного шлюза, например AWS ALB Ingress.
 
-## Конфигурация OTEL collector {#otel-collector-configuration}
+<div id="otel-collector-configuration">
+  ## Конфигурация OTEL collector
+</div>
 
 OTEL Collector разворачивается с помощью официального Helm-чарта OpenTelemetry Collector как подчарт `otel-collector:`. Настройте его напрямую в разделе `otel-collector:` файла values:
 
@@ -300,7 +330,9 @@ otel-collector:
 
 См. [OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), чтобы узнать обо всех доступных значениях дочернего чарта.
 
-## Конфигурация MongoDB {#mongodb-configuration}
+<div id="mongodb-configuration">
+  ## Конфигурация MongoDB
+</div>
 
 MongoDB управляется оператором MCK через пользовательский ресурс `MongoDBCommunity`. Раздел `spec` ресурса CR выводится без изменений из `mongodb.spec`:
 
@@ -329,7 +361,9 @@ mongodb:
 
 Пароль MongoDB задаётся в `hyperdx.secrets.MONGODB_PASSWORD`. Все доступные поля CRD см. в [документации MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity).
 
-## Конфигурация ClickHouse {#clickhouse-configuration}
+<div id="clickhouse-configuration">
+  ## Конфигурация ClickHouse
+</div>
 
 ClickHouse управляется через ClickHouse Operator с помощью пользовательских ресурсов `ClickHouseCluster` и `KeeperCluster`. Разделы `spec` обоих CR дословно берутся из `values`:
 
@@ -362,7 +396,9 @@ clickhouse:
 
 Учетные данные пользователя ClickHouse берутся из `hyperdx.secrets` (а не из `clickhouse.config.users`, как в версии v1.x). Полный список доступных полей CRD см. в [руководстве по настройке ClickHouse Operator](/ru/products/kubernetes-operator/guides/configuration).
 
-## Устранение неполадок входного шлюза {#troubleshooting-ingress}
+<div id="troubleshooting-ingress">
+  ## Устранение неполадок входного шлюза
+</div>
 
 **Проверьте ресурс входного шлюза:**
 
@@ -399,7 +435,9 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * После внесения изменений очистите кэш браузера и кэш CDN/прокси, чтобы избежать загрузки устаревших ресурсов
 
-## Настройка значений {#customizing-values}
+<div id="customizing-values">
+  ## Настройка значений
+</div>
 
 Вы можете настроить параметры с помощью флагов `--set`:
 
@@ -419,7 +457,9 @@ helm show values clickstack/clickstack > values.yaml
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-## Следующие шаги {#next-steps}
+<div id="next-steps">
+  ## Следующие шаги
+</div>
 
 * [Варианты развертывания](/ru/clickstack/deployment/helm-deployment-options) - Внешние системы и минимальные развертывания
 * [Облачные развертывания](/ru/clickstack/deployment/helm-cloud) - Конфигурации GKE, EKS и AKS

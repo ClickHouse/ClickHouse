@@ -29,23 +29,28 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 
 <br />
 
-| 语言                       | 描述                                                  | 链接                                                              |
-| ------------------------ | --------------------------------------------------- | --------------------------------------------------------------- |
-| AWS Lambda               | 适用于异步处理程序的 ClickStack Node.js SDK，或 OpenTelemetry 层 | [文档](/zh/clickstack/ingesting-data/sdks/aws-lambda)                |
-| Browser                  | 用于浏览器应用的 JavaScript SDK                             | [文档](/zh/clickstack/ingesting-data/sdks/browser)                   |
-| Elixir                   | Elixir 应用                                           | [文档](/zh/clickstack/ingesting-data/sdks/elixir)                    |
-| Go                       | Go 应用和微服务                                           | [文档](/zh/clickstack/ingesting-data/sdks/golang)                    |
-| Java                     | Java 应用                                             | [文档](/zh/clickstack/ingesting-data/sdks/java)                      |
-| NestJS                   | 适用于 NestJS 的 ClickStack Node.js SDK                 | [文档](/zh/clickstack/ingesting-data/sdks/nestjs)                    |
-| Next.js (自托管 Node.js)    | ClickStack Node.js SDK                              | [文档](/zh/clickstack/ingesting-data/sdks/nextjs#self-hosted-nextjs) |
-| Next.js (Vercel 或 Edge)  | `@vercel/otel`                                      | [文档](/zh/clickstack/ingesting-data/sdks/nextjs#vercel-or-edge)     |
-| Node.js                  | ClickStack Node.js SDK                              | [文档](/zh/clickstack/ingesting-data/sdks/nodejs)                    |
-| Deno                     | 内置 OpenTelemetry                                    | [文档](/zh/clickstack/ingesting-data/sdks/deno)                      |
-| Python                   | Python 应用和 Web 服务                                   | [文档](/zh/clickstack/ingesting-data/sdks/python)                    |
-| React Native             | React Native 移动应用                                   | [文档](/zh/clickstack/ingesting-data/sdks/react-native)              |
-| Ruby                     | Ruby on Rails 应用和 Web 服务                            | [文档](/zh/clickstack/ingesting-data/sdks/ruby)                      |
+| 语言           | 描述                       | 链接                                                 |
+| ------------ | ------------------------ | -------------------------------------------------- |
+| AWS Lambda   | 为 AWS Lambda 函数添加遥测采集    | [文档](/zh/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | 用于浏览器应用的 JavaScript SDK  | [文档](/zh/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Elixir 应用                | [文档](/zh/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Go 应用和微服务                | [文档](/zh/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Java 应用                  | [文档](/zh/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | NestJS 应用                | [文档](/zh/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Next.js 应用               | [文档](/zh/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | 用于服务端应用的 JavaScript 运行时  | [文档](/zh/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Deno 应用                  | [文档](/zh/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Python 应用和 Web 服务        | [文档](/zh/clickstack/ingesting-data/sdks/python)       |
+| React Native | React Native 移动应用        | [文档](/zh/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Ruby on Rails 应用和 Web 服务 | [文档](/zh/clickstack/ingesting-data/sdks/ruby)         |
 
 ## 使用 API key 进行安全防护 {#securing-api-key}
+
+<Info>
+  **托管 ClickStack 不需要 API key**
+
+  托管 ClickStack 不需要 API key。
+</Info>
 
 为了通过 OpenTelemetry Collector 将数据发送到 ClickStack，SDKs 需要指定摄取 API key。可以通过 SDK 中的 `init` 函数或 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量进行设置：
 
@@ -53,7 +58,7 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 
-此 API key 由 ClickStack UI 应用生成，可在应用的 `Team Settings → API Keys` 中找到。
+此 API key 由 ClickStack UI (HyperDX) 应用生成，可在应用的 `Team Settings → API Keys` 中找到。
 
 对于大多数支持 OpenTelemetry 的[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)和遥测库，你只需在应用中设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量，或在 SDK 初始化时指定该端点：
 

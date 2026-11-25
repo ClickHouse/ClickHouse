@@ -8,25 +8,22 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-El modo administrado se ejecuta en un cluster de Amazon EKS de su propiedad. Cada versión incluye cuatro módulos raíz de Terraform (en adelante, raíces) que crean un cluster que cumple sus requisitos o añaden lo necesario a una VPC o a un cluster que ya tenga. Las raíces crean el cluster con su grupo de nodos del sistema y los complementos administrados (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), además de los roles de IAM, las Claves de KMS y las etiquetas; `existing-eks` instala únicamente los complementos que indique en `install_addons`. En el destino de Helm, `clicklink clctl init` instala a continuación la capa de plataforma a partir de las salidas y de un paquete de plataforma: Karpenter, el controlador AWS Load Balancer, la clase de almacenamiento y los componentes con versión fijada (consulte [inicializar el connector a partir de las salidas de Terraform](#hand-off)). Las raíces requieren Terraform 1.10+ u OpenTofu 1.12+ y el provider de AWS `~> 6.0`. Puede usar `tofu` en lugar de `terraform` en todos los comandos de esta página.
+El modo administrado se ejecuta en un cluster de Amazon EKS de su propiedad. Cada versión incluye cuatro módulos raíz de Terraform (en adelante, raíces) que crean un cluster que cumple sus requisitos o añaden lo necesario a una VPC o a un cluster que ya tenga. Las raíces crean el cluster con su grupo de nodos del sistema y los complementos administrados (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), además de los roles de IAM, las claves de KMS y las etiquetas; `existing-eks` instala únicamente los complementos que indique en `install_addons`. En el destino de Helm, `clicklink clctl init` instala a continuación la capa de plataforma a partir de las salidas y de un paquete de plataforma: Karpenter, el controlador AWS Load Balancer, la clase de almacenamiento y los componentes con versión fijada (consulte [inicializar el connector a partir de las salidas de Terraform](#hand-off)). Las raíces requieren Terraform 1.10+ u OpenTofu 1.12+ y el provider de AWS `~> 6.0`. Puede usar `tofu` en lugar de `terraform` en todos los comandos de esta página.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Flujo de aprovisionamiento con Terraform para el Conector de ClickHouse en AWS](/images/cloud/reference/byoc-connector-terraform-flow.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Flujo de aprovisionamiento con Terraform para el ClickHouse Connector en AWS" />
 
-## Antes de empezar {#before-you-begin}
+## Antes de comenzar {#before-you-begin}
 
 Necesita:
 
-* Terraform 1.10+ u OpenTofu 1.12+, además del proveedor de AWS `~> 6.0`.
-* Una identity de AWS con permisos para crear y modificar los recursos que requiera la raíz seleccionada.
-* `curl`, una herramienta de SHA-256 (`sha256sum` o `shasum`) y `cosign` para descargar y verificar el archivo de la versión.
-* Del [registro](/es/products/bring-your-own-cloud/connector/onboarding#registration): el `chart_repository_arn` que requieren todas las raíces, además del endpoint del conector, el token de inscripción y el paquete de la plataforma para el traspaso a `init` al final.
+* Terraform 1.10+ u OpenTofu 1.12+, además del provider de AWS `~> 6.0`.
+* Una identity de AWS con permisos para crear y modificar los recursos que requiere la raíz seleccionada.
+* `curl`, una herramienta SHA-256 (`sha256sum` o `shasum`) y `cosign` para descargar y verificar el archivo de la versión publicada.
+* Del [registro](/es/products/bring-your-own-cloud/connector/onboarding#registration): el `chart_repository_arn` que requiere cada raíz, además del endpoint del conector, el token de inscripción y el paquete de la plataforma para el traspaso final a `init`.
 
 Para `production` y `existing-vpc`, planifique cómo accederá a la API privada de EKS la máquina que ejecute `clicklink clctl init` y `kubectl`; por ejemplo, mediante una VPN, un bastión, una red con peering o un reenvío de puertos de SSM.
 

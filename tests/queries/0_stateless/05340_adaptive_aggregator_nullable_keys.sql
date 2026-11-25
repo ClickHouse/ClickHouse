@@ -1,9 +1,11 @@
--- The adaptive aggregator takes Nullable keys, whose method either packs the null map into the key or keeps
--- NULL in a slot of its own outside the cells of the table. Every key has NULL next to its nested default
--- value, and every result is compared with the ordinary path.
+-- The adaptive aggregator takes Nullable keys whose method packs the null map into the key. Every key
+-- has NULL next to its nested default value, and every result is compared with the ordinary path.
 
+SET max_threads = 4;
 SET max_block_size = 1024;
 SET adaptive_aggregator_freeze_threshold = 8;
+SET group_by_two_level_threshold = 10000000;
+SET group_by_two_level_threshold_bytes = 500000000;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
@@ -89,37 +91,29 @@ SELECT 'single_wide',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single_wide';
 
--- nullable_keys128 with external aggregation. A randomized two-level threshold of a few bytes would make the
--- ordinary path convert every table to two-level and spill each block as 256 buckets, 200 times slower,
--- so the arm pins the thresholds; the adaptive path still spills its staged records.
+-- nullable_keys128 with external aggregation
 SELECT 'external',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY a, b)
-        SETTINGS enable_adaptive_aggregator = 0, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
+        FROM numbers_mt(300000) GROUP BY a, b) SETTINGS enable_adaptive_aggregator = 0, max_bytes_before_external_group_by = 1)
     =
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY a, b)
-        SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
+        FROM numbers_mt(300000) GROUP BY a, b) SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 1)
 SETTINGS log_comment = '05340_arm_external';
 
--- nullable_keys128 under ROLLUP. The aggregation under `ROLLUP` is partial, and the adaptive aggregator
--- takes a partial aggregation only with two-level aggregation on. That needs non-zero thresholds and,
--- without external aggregation, several streams, so the arm pins the thresholds and four threads.
+-- nullable_keys128 under ROLLUP
 SELECT 'rollup',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b))
-        SETTINGS enable_adaptive_aggregator = 0, group_by_use_nulls = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
+        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b)) SETTINGS enable_adaptive_aggregator = 0, group_by_use_nulls = 1)
     =
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), isNull(b), ifNull(b, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, number % 1000) AS a, if(number % 11 = 0, NULL, toUInt32(intDiv(number, 3) % 500)) AS b, count() AS c, sum(number) AS s
-        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b))
-        SETTINGS enable_adaptive_aggregator = 1, group_by_use_nulls = 1, max_threads = 4, max_threads_min_free_memory_per_thread = 0, group_by_two_level_threshold = 10000000, group_by_two_level_threshold_bytes = 500000000)
+        FROM numbers_mt(300000) GROUP BY ROLLUP(a, b)) SETTINGS enable_adaptive_aggregator = 1, group_by_use_nulls = 1)
 SETTINGS log_comment = '05340_arm_rollup';
 
--- nullable_key64, which keeps NULL in a slot of its own
+-- nullable_key64 keeps NULL in a separate cell and stays on the ordinary path
 SELECT 'single',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, toUInt64(number % 100000)) AS a, count() AS c, sum(number) AS s
@@ -130,7 +124,7 @@ SELECT 'single',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single';
 
--- nullable_key_string, which keeps NULL in a slot of its own
+-- nullable_key_string keeps NULL in a separate cell and stays on the ordinary path
 SELECT 'single_string',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, ''), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, if(number % 13 = 0, '', toString(number % 100000))) AS a, count() AS c, sum(number) AS s
@@ -141,7 +135,7 @@ SELECT 'single_string',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single_string';
 
--- nullable_key_fixed_string, which keeps NULL in a slot of its own
+-- nullable_key_fixed_string keeps NULL in a separate cell and stays on the ordinary path
 SELECT 'single_fixed_string',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, toFixedString('', 6)), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, if(number % 13 = 0, toFixedString('', 6), toFixedString(toString(number % 100000), 6))) AS a,

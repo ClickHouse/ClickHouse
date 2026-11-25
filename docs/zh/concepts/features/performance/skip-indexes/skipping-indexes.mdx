@@ -7,8 +7,10 @@ doc_type: 'guide'
 keywords: ['跳过索引', '数据跳过', '性能', '索引', '最佳实践']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 <div id="introduction">
-  ## 简介 {#introduction}
+  ## 简介
 </div>
 
 影响 ClickHouse 查询性能的因素有很多。在大多数场景下，关键在于 ClickHouse 在评估查询的 WHERE 子句条件时能否使用主键。因此，在表设计中，选择一个适用于最常见查询模式的主键至关重要。
@@ -19,7 +21,9 @@ keywords: ['跳过索引', '数据跳过', '性能', '索引', '最佳实践']
 
 相反，ClickHouse 提供了另一种类型的索引，在特定情况下可以显著提升查询速度。这些结构被称为“跳过”索引，因为它们使 ClickHouse 能够跳过读取那些可以确定不包含匹配值的大块数据。
 
-## 基本操作 {#basic-operation}
+<div id="basic-operation">
+  ## 基本操作
+</div>
 
 只有 MergeTree 家族的表才能使用数据跳过索引。每个数据跳过索引都有四个主要参数：
 
@@ -100,11 +104,7 @@ ClickHouse 不必处理 800 MB 的 1 亿行数据，而只读取并分析了 327
 更直观地说，下图展示了 `my_value` 为 125 的 4096 行是如何被读取并选中的，以及后续这些行
 如何在不从磁盘读取的情况下被跳过：
 
-<div className="ch-image-md">
-  <Frame>
-    ![简单跳过](/images/guides/best-practices/simple_skip.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="简单跳过" />
 
 你可以在执行查询时启用 trace，以查看跳过索引使用情况的详细信息。要在
 clickhouse-client 中执行此操作，请设置 `send_logs_level`：
@@ -121,13 +121,13 @@ SET send_logs_level='trace';
 ```
 
 <div id="skip-index-types">
-  ## 跳过索引类型 {#skip-index-types}
+  ## 跳过索引类型
 </div>
 
 {/* vale off */}
 
 <div id="minmax">
-  ### minmax {#minmax}
+  ### minmax
 </div>
 
 {/* vale on */}
@@ -140,7 +140,7 @@ SET send_logs_level='trace';
 {/* vale off */}
 
 <div id="set">
-  ### set {#set}
+  ### set
 </div>
 
 {/* vale on */}
@@ -153,7 +153,7 @@ SET send_logs_level='trace';
 {/* vale off */}
 
 <div id="text">
-  ### 文本 {#text}
+  ### 文本
 </div>
 
 {/* vale on */}
@@ -164,7 +164,7 @@ SET send_logs_level='trace';
 详情请参阅[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes)的文本索引文档。
 
 <div id="bloom-filter-types">
-  ### 布隆过滤器类型 {#bloom-filter-types}
+  ### 布隆过滤器类型
 </div>
 
 *布隆过滤器*是一种数据结构，能够以较高的空间效率测试元素是否属于某个集合，但会有少量误报。对于跳过索引来说，误报并不是什么大问题，因为唯一的代价只是多读取几个不必要的块。不过，存在误报也意味着，被索引的表达式应当通常为真，否则可能会跳过本应命中的有效数据。
@@ -189,7 +189,7 @@ SET send_logs_level='trace';
 > 文本索引 提供真正的倒排索引；与基于标记的布隆过滤器索引相比，它具有更好的搜索性能、更可预测的行为，以及更高的灵活性。
 
 <div id="skip-index-functions">
-  ## 跳过索引函数 {#skip-index-functions}
+  ## 跳过索引函数
 </div>
 
 数据跳过索引的核心目的是减少常见查询需要分析的数据量。由于 ClickHouse 数据以分析型场景为主，这些查询在大多数情况下都会包含函数表达式。因此，跳过索引若要高效工作，就必须能够与常用函数正确配合。这通常发生在以下任一场景中：
@@ -200,7 +200,7 @@ SET send_logs_level='trace';
 每种类型的跳过索引都只适用于部分 ClickHouse 函数，具体取决于相应的索引实现，详见[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#functions-support)。一般来说，Set 索引和基于 Bloom filter 的索引 (也是一种 Set 索引) 都是无序的，因此不适用于范围条件。相比之下，MinMax 索引特别适合范围条件，因为判断范围是否相交的速度非常快。部分匹配函数 LIKE、startsWith、endsWith 和 hasToken 的效果取决于所使用的索引类型、索引表达式以及数据的具体形态。
 
 <div id="skip-index-settings">
-  ## 跳过索引设置 {#skip-index-settings}
+  ## 跳过索引设置
 </div>
 
 有两个可用设置适用于跳过索引。
@@ -208,17 +208,15 @@ SET send_logs_level='trace';
 * **use&#95;skip&#95;indexes**   (0 或 1，默认值为 1) 。并非所有查询都能高效地使用跳过索引。如果某个过滤条件很可能会包含大多数粒度，应用数据跳过索引就会产生不必要的开销，有时甚至相当可观。对于不太可能从任何跳过索引中获益的查询，请将该值设为 0。
 * **force&#95;data&#95;skipping&#95;indices** (以逗号分隔的索引名称列表) 。此设置可用于防止某些低效查询。在某些情况下，查询某张表如果不使用跳过索引，代价就会过高；此时可通过该设置指定一个或多个索引名称，使任何未使用所列索引的查询都抛出异常。这样可以防止编写不当的查询消耗服务器资源。
 
-## 跳过索引最佳实践 {#skip-best-practices}
+<div id="skip-best-practices">
+  ## 跳过索引最佳实践
+</div>
 
 跳过索引并不容易理解，尤其是对那些习惯了 RDBMS 领域基于行的二级索引，或文档存储中的倒排索引的人来说。要真正获得收益，应用 ClickHouse 数据跳过索引时，必须减少足够多的粒度读取，才能抵消计算索引本身的开销。关键在于，只要某个值在已建立索引的块中出现过哪怕一次，就意味着整个块都必须读入内存并进行评估，这样一来，索引计算的开销也就白白付出了。
 
 请看下面的数据分布：
 
-<div className="ch-image-md">
-  <Frame>
-    ![糟糕的跳过示例](/images/guides/best-practices/bad_skip.webp)
-  </Frame>
-</div>
+<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="糟糕的跳过示例" />
 
 假设主键/ORDER BY 键是 `timestamp`，并且在 `visitor_id` 上建有索引。请看下面这个查询：
 
@@ -251,7 +249,9 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 包括类型、粒度大小以及其他参数的不同组合。测试往往会揭示出仅靠
 纸面推演难以发现的模式和陷阱。
 
-## 相关文档 {#related-docs}
+<div id="related-docs">
+  ## 相关文档
+</div>
 
 * [最佳实践指南](/zh/concepts/best-practices/using-data-skipping-indices)
 * [数据跳过索引示例](/zh/concepts/features/performance/skip-indexes/skipping-indexes-examples)

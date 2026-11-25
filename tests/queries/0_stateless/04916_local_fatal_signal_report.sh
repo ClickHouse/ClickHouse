@@ -20,7 +20,7 @@ $CLICKHOUSE_LOCAL --client_logs_file=client.log --max_threads=1 \
 pid=$!
 
 for _ in {1..600}; do
-    grep -q ready stdout 2>/dev/null && break
+    grep -q ready stdout && break
     sleep 0.1
 done
 # Signal the process while it idles in sleep(), not while it finishes the previous query.

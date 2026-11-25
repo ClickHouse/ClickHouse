@@ -6,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
@@ -17,11 +16,52 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
 
 
 namespace DB::PrometheusQueryToSQL
 {
+
+namespace
+{
+    /// Checks if the types of the specified arguments are valid for the `histogram_quantile` function.
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
+    {
+        const auto & function_name = function_node->function_name;
+
+        if (arguments.size() != 2)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects 2 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
+        }
+
+        const auto & phi_arg = arguments[0];
+
+        if (phi_arg.type != ResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects first argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::SCALAR,
+                            getPromQLText(phi_arg, context), phi_arg.type);
+        }
+
+        const auto & vector_arg = arguments[1];
+
+        if (vector_arg.type != ResultType::INSTANT_VECTOR)
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function '{}' expects second argument of type {}, but expression {} has type {}",
+                            function_name, ResultType::INSTANT_VECTOR,
+                            getPromQLText(vector_arg, context), vector_arg.type);
+        }
+    }
+}
+
 
 bool isHistogramQuantile(std::string_view function_name)
 {
@@ -33,9 +73,7 @@ SQLQueryPiece applyHistogramQuantile(
     std::vector<SQLQueryPiece> && arguments,
     ConverterContext & context)
 {
-    checkNumberOfArguments(function_node, arguments, 2);
-    checkArgumentType(function_node, arguments, 0, ResultType::SCALAR, context);
-    checkArgumentType(function_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
+    checkArgumentTypes(function_node, arguments, context);
 
     auto & phi_arg = arguments[0];
     auto & expression = arguments[1];
@@ -43,7 +81,7 @@ SQLQueryPiece applyHistogramQuantile(
     if (phi_arg.store_method != StoreMethod::CONST_SCALAR)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "{} currently requires a constant phi parameter", function_node->getTypeAndName());
+            "Function 'histogram_quantile' currently requires a constant phi parameter");
     }
 
     expression = toVectorGrid(std::move(expression), context);

@@ -14,7 +14,7 @@ doc_type: 'reference'
 تلبّي ميزة خادم MCP البعيد في ClickHouse Cloud هذه الحاجة من خلال توفير واجهة قياسية يمكن للوكلاء الخارجيين استخدامها لاسترجاع السياق التحليلي.
 ويُعد MCP، أو Model Context Protocol، معيارًا للوصول المنظّم إلى البيانات من قِبل تطبيقات الذكاء الاصطناعي المدعومة بنماذج اللغة الكبيرة.
 ومن خلال هذا التكامل، يمكن للوكلاء الخارجيين عرض قواعد البيانات والجداول، وفحص المخططات، وتشغيل استعلامات `SELECT` محددة النطاق وبوضع القراءة فقط.
-وتتم المصادقة عبر OAuth 2.0 أو [مفتاح API الخاص بـ ClickHouse Cloud](/ar/cloud/manage/openapi). كما أن الخادم مُدار بالكامل على ClickHouse Cloud، لذلك لا يلزم أي إعداد أو صيانة.
+وتتم المصادقة عبر OAuth 2.0 أو [مفتاح API الخاص بـ ClickHouse Cloud](/cloud/manage/openapi). كما أن الخادم مُدار بالكامل على ClickHouse Cloud، لذلك لا يلزم أي إعداد أو صيانة.
 
 وهذا يسهّل على الأدوات القائمة على الوكلاء التكامل مع ClickHouse واسترجاع البيانات التي تحتاج إليها، سواء للتحليل أو التلخيص أو توليد الشيفرة أو الاستكشاف.
 
@@ -22,14 +22,14 @@ doc_type: 'reference'
 
 توفّر ClickHouse خادمين لـMCP.
 
-|                    | خادم MCP البعيد (Cloud)                                                                                                     | خادم MCP مفتوح المصدر                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **Source**         | مُدار بالكامل بواسطة ClickHouse Cloud                                                                                       | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) على GitHub |
-| **Transport**      | HTTP قابل للتدفق (`https://mcp.clickhouse.cloud/mcp`)                                                                       | `stdio` محلي                                                              |
-| **Works with**     | خدمات ClickHouse Cloud وManaged Postgres                                                                                    | أي مثيل ClickHouse (مستضاف ذاتيًا أو Cloud)                               |
-| **Authentication** | OAuth 2.0 باستخدام بيانات اعتماد Cloud الخاصة بك، أو مفتاح API لـ ClickHouse Cloud                                       | متغيرات البيئة                                                            |
-| **Tools**          | أدوات لتنفيذ الاستعلامات، واستكشاف المخطط، وإدارة الخدمة، والنسخ الاحتياطية، وClickPipes، وبيانات الفوترة، ومراقبة Postgres | 3 أدوات: `run_select_query`، و`list_databases`، و`list_tables`            |
-| **Setup**          | من دون أي تثبيت. وجّه عميل MCP إلى نقطة النهاية ثم أكمل المصادقة.                                                           | ثبّت الخادم وشغّله محليًا                                                 |
+|                    | خادم MCP البعيد (Cloud)                                                                                       | خادم MCP مفتوح المصدر                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Source**         | مُدار بالكامل بواسطة ClickHouse Cloud                                                                           | [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) على GitHub |
+| **Transport**      | HTTP قابل للتدفق (`https://mcp.clickhouse.cloud/mcp`)                                                           | `stdio` محلي                                                              |
+| **Works with**     | خدمات ClickHouse Cloud                                                                                          | أي مثيل ClickHouse (مستضاف ذاتيًا أو Cloud)                               |
+| **Authentication** | OAuth 2.0 باستخدام بيانات اعتماد Cloud الخاصة بك، أو مفتاح API خاص بـClickHouse Cloud                           | متغيرات البيئة                                                            |
+| **Tools**          | 13 أداة تغطي تنفيذ الاستعلامات، واستكشاف المخطط، وإدارة الخدمة، والنسخ الاحتياطية، وClickPipes، وبيانات الفوترة | 3 أدوات: `run_select_query`، و`list_databases`، و`list_tables`            |
+| **Setup**          | من دون أي تثبيت. وجّه عميل MCP إلى نقطة النهاية ثم أكمل المصادقة.                                               | ثبّت الخادم وشغّله محليًا                                                 |
 
 يوفّر خادم MCP البعيد أوسع تكامل مع ClickHouse Cloud، بما في ذلك إدارة الخدمة، ومراقبة النسخ الاحتياطية، وإتاحة رؤية ClickPipe، وبيانات الفوترة، من دون أي بنية تحتية تحتاج إلى إدارتها.
 بالنسبة إلى مثيلات ClickHouse المستضافة ذاتيًا، راجع [أدلة خادم MCP مفتوح المصدر](/ar/guides/use-cases/ai-ml/MCP/index).
@@ -38,8 +38,7 @@ doc_type: 'reference'
 
 يجب تمكين خادم MCP البعيد على مستوى كل خدمة قبل أن يتمكن من قبول الاتصالات.
 في وحدة تحكم ClickHouse Cloud، افتح خدمتك، وانقر على زر **Connect**، ثم اختر **MCP** وقم بتمكينه.
-بالنسبة إلى خدمات ClickHouse، يتطلب تمكين خادم MCP البعيد أو تعطيله امتلاك الإذن `control-plane:service:manage-mcp` (راجع [أدوار وأذونات وحدة التحكم](/ar/products/cloud/reference/security/console-roles#console-permissions)).
-أما خدمات Managed Postgres، فافتح لوحة **Connect** الخاصة بالخدمة وفعّل الخيار **Enable Model Context Protocol**. وترث النسخ المتماثلة للقراءة إعداد MCP المطبّق على قاعدة البيانات الأصل.
+يتطلب تمكين خادم MCP البعيد أو تعطيله امتلاك الإذن `control-plane:service:manage-mcp` (راجع [أدوار وأذونات وحدة التحكم](/ar/products/cloud/reference/security/console-roles#console-permissions)).
 للاطلاع على خطوات مفصلة مع لقطات شاشة، راجع [دليل الإعداد](/ar/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server).
 
 ## نقطة النهاية {#endpoint}
@@ -71,7 +70,7 @@ https://mcp.clickhouse.cloud/mcp
 
 ## الأدوات المتاحة {#available-tools}
 
-يوفّر خادم MCP البعيد أدوات ضمن الفئات التالية. يعتمد توافر الأدوات على طريقة المصادقة والميزات المفعّلة.
+يوفّر خادم MCP البعيد 13 أداة مُصنَّفة ضمن الفئات التالية.
 
 ### استكشاف الاستعلامات والمخطط {#query-and-schema}
 
@@ -83,21 +82,6 @@ https://mcp.clickhouse.cloud/mcp
 | `list_databases`   | اعرض جميع قواعد البيانات المتاحة في خدمة ClickHouse.           | `serviceId`                                                                                  |
 | `list_tables`      | اعرض جميع الجداول في قاعدة بيانات، بما في ذلك تعريفات الأعمدة. | `serviceId`; `database`; اختياريًا `like` أو `notLike` (أنماط SQL LIKE لتصفية أسماء الجداول) |
 
-### Managed Postgres {#managed-postgres}
-
-تُستخدم هذه الأدوات للاستعلام عن خدمات Managed Postgres ومراقبتها. استخدم `get_organizations` للحصول على `organizationId`، ثم `get_services_list` للعثور على خدمة تكون قيمة `serviceType` فيها `postgres`، واستخدم قيمة `id` الخاصة بها بوصفها `serviceId`.
-
-| أداة                                      | الوصف                                                                                                                                                                        | المعلمات                                                                                                                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run_postgres_select_query`               | تنفيذ استعلام SQL للقراءة فقط على خدمة Postgres. يتطلب المصادقة عبر OAuth، وهو غير متاح عند استخدام مفاتيح API لـ ClickHouse Cloud.                                          | `organizationId`؛ `serviceId`؛ `query`؛ واختياريًا `database` (الافتراضي: `postgres`) و`timeoutSeconds` (1–3600، الافتراضي: 300)                                          |
-| `list_postgres_slow_query_patterns`       | استعراض أنماط الاستعلامات البطيئة مع مقاييس مجمّعة لزمن الاستجابة وعدد الاستدعاءات والصفوف وCPU وI/O وWAL والأخطاء. تُقاس المُدد بالميكرو ثانية.                             | `organizationId`؛ `serviceId`؛ `fromDate`؛ `toDate`؛ واختياريًا `limit` (1–500، الافتراضي: 20) و`offset` و`sortBy` و`sortOrder` و`dbName` و`dbUser` و`dbOperation` و`app` |
-| `get_postgres_slow_query_pattern_details` | إرجاع ما يصل إلى 10 من عمليات التنفيذ الأخيرة لنمط استعلام خلال آخر 24 ساعة، إلى جانب المقاييس المجمّعة عند توفرها.                                                          | `organizationId`؛ `serviceId`؛ `queryId`؛ `dbName`؛ `dbUser`؛ `dbOperation`؛ واختياريًا `app`                                                                             |
-| `get_postgres_metrics`                    | إرجاع مقاييس time-series لـ CPU والذاكرة والقرص والشبكة والاتصالات ونسبة إصابات ذاكرة التخزين المؤقت والمعاملات وحالات الانتظار. يتضمن كل مقياس وحدته وسلاسل بيانات مُعنونة. | `organizationId`؛ `serviceId`؛ `fromDate`؛ `toDate`؛ واختياريًا `bucketSizeSeconds` (عدد صحيح موجب؛ يُحدَّد تلقائيًا عند عدم تحديده)                                      |
-
-بالنسبة إلى `fromDate` و`toDate`، استخدم طوابع زمنية بتوقيت UTC بدقة المللي ثانية، مثل `2026-11-03T00:00:00.000Z`. تكون البداية شاملة، أما النهاية فتكون شاملة بمستوى تجزئة الدقيقة في أنماط الاستعلامات البطيئة، واستبعادية في المقاييس.
-
-لفحص نمط استعلام بطيء، مرّر قيم `queryId` و`dbName` و`dbUser` و`dbOperation` و`app` الخاصة به من `list_postgres_slow_query_patterns` إلى `get_postgres_slow_query_pattern_details`. أبقِ قيمة `app` سلسلةً فارغة للاستعلامات التي لا تحتوي على `application_name`؛ إذ يؤدي حذف `app` إلى تضمين جميع التطبيقات.
-
 ### المؤسسات {#organizations}
 
 | الأداة                     | الوصف                                                                                | المعلمات         |
@@ -107,10 +91,10 @@ https://mcp.clickhouse.cloud/mcp
 
 ### الخدمات {#services}
 
-| أداة                  | الوصف                                                                                    | معلمات                    |
-| --------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
-| `get_services_list`   | يسرد خدمات ClickHouse وManaged Postgres في مؤسسة، مع حقل `serviceType` يحدد نوع كل خدمة. | `organizationId`              |
-| `get_service_details` | يعرض تفاصيل خدمة ClickHouse أو Managed Postgres، ويكتشف نوعها تلقائيًا.                  | `organizationId`; `serviceId` |
+| Tool                  | الوصف                                            | Parameters                    |
+| --------------------- | ------------------------------------------------ | ----------------------------- |
+| `get_services_list`   | يسرد جميع الخدمات في مؤسسة ضمن ClickHouse Cloud. | `organizationId`              |
+| `get_service_details` | يعرض تفاصيل خدمة محددة.                          | `organizationId`; `serviceId` |
 
 ### النسخ الاحتياطية {#backups}
 

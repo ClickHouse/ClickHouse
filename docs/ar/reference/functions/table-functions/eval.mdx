@@ -6,12 +6,12 @@ title: 'eval'
 doc_type: 'reference'
 ---
 
-تُقيِّم دالة الجدول `eval` وسيطتها إلى سلسلة استعلام، ثم تنفّذ هذه السلسلة باعتبارها استعلام `SELECT` واحدًا.
+تُقيِّم دالة الجدول `eval` وسيطها إلى سلسلة استعلام، ثم تنفّذ هذه السلسلة باعتبارها استعلام `SELECT` واحدًا.
 
-هذه دالة الجدول تجريبية ومُعطّلة افتراضيًا. فعِّلها باستخدام الإعداد `enable_eval_table_function`:
+هذه دالة الجدول تجريبية ومُعطّلة افتراضيًا. فعِّلها باستخدام الإعداد `allow_experimental_eval_table_function`:
 
 ```sql
-SET enable_eval_table_function = 1;
+SET allow_experimental_eval_table_function = 1;
 ```
 
 ## الصياغة {#syntax}
@@ -112,4 +112,4 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 ## ذات صلة {#related}
 
 * [دالة الجدول `view`](/ar/reference/functions/table-functions/view)
-* إعداد `enable_eval_table_function`
+* إعداد `allow_experimental_eval_table_function`

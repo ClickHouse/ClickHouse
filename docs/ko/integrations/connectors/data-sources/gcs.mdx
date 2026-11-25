@@ -8,6 +8,7 @@ keywords: ['Google Cloud Storage ClickHouse', 'GCS ClickHouse 통합', 'GCS 기�
 ---
 
 import BucketDetails from '/snippets/ko/_GCS_authentication_and_bucket.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Note>
   [Google Cloud](https://cloud.google.com)에서 ClickHouse Cloud를 사용 중이라면 서비스가 이미 [Google Cloud Storage](https://cloud.google.com/storage)를 사용하므로 이 페이지는 해당되지 않습니다. GCS에서 데이터를 `SELECT`하거나 `INSERT`하려면 [`gcs` 테이블 함수](/ko/reference/functions/table-functions/gcs)를 참조하십시오.
@@ -16,17 +17,17 @@ import BucketDetails from '/snippets/ko/_GCS_authentication_and_bucket.mdx';
 ClickHouse는 스토리지와 컴퓨트를 분리하려는 경우 GCS가 매력적인 스토리지 솔루션이 될 수 있음을 인지하고 있습니다. 이를 지원하기 위해 MergeTree 엔진의 스토리지로 GCS를 사용할 수 있도록 지원합니다. 이를 통해 GCS의 확장성과 비용상 이점을 활용하는 동시에 MergeTree 엔진의 삽입 및 쿼리 성능도 활용할 수 있습니다.
 
 <div id="gcs-backed-mergetree">
-  ## GCS 기반 MergeTree {#gcs-backed-mergetree}
+  ## GCS 기반 MergeTree
 </div>
 
 <div id="creating-a-disk">
-  ### 디스크 생성 {#creating-a-disk}
+  ### 디스크 생성
 </div>
 
 GCS 버킷을 디스크로 사용하려면 먼저 `conf.d` 아래의 파일에 있는 ClickHouse 구성에서 이를 선언해야 합니다. 아래는 GCS 디스크 선언 예시입니다. 이 구성에는 GCS &quot;디스크&quot;, 캐시, 그리고 GCS 디스크에 테이블(table)을 생성할 때 DDL 쿼리에서 지정할 정책을 설정하는 여러 섹션이 포함되어 있습니다. 각 섹션은 아래에서 설명합니다.
 
 <div id="storage_configuration--disks--gcs">
-  #### 스토리지 구성 &gt; disks &gt; gcs {#storage_configuration--disks--gcs}
+  #### 스토리지 구성 &gt; disks &gt; gcs
 </div>
 
 이 구성 부분은 강조 표시된 섹션에 나와 있으며, 다음을 지정합니다.
@@ -63,7 +64,7 @@ GCS 버킷을 디스크로 사용하려면 먼저 `conf.d` 아래의 파일에 �
 ```
 
 <div id="storage_configuration--disks--cache">
-  #### 스토리지 구성 &gt; disks &gt; 캐시 {#storage_configuration--disks--cache}
+  #### 스토리지 구성 &gt; disks &gt; 캐시
 </div>
 
 아래 강조 표시된 예시 구성은 디스크 `gcs`에 10Gi 메모리 캐시를 활성화합니다.
@@ -101,7 +102,7 @@ GCS 버킷을 디스크로 사용하려면 먼저 `conf.d` 아래의 파일에 �
 ```
 
 <div id="storage_configuration--policies--gcs_main">
-  #### 스토리지 구성 &gt; 정책 &gt; gcs_main {#storage_configuration--policies--gcs_main}
+  #### 스토리지 구성 &gt; 정책 &gt; gcs_main
 </div>
 
 스토리지 구성 정책을 사용하면 데이터를 저장할 위치를 선택할 수 있습니다. 아래에 표시된 정책은 `gcs_main` 정책을 지정해 데이터를 디스크 `gcs`에 저장할 수 있도록 합니다. 예를 들어 `CREATE TABLE ... SETTINGS storage_policy='gcs_main'`와 같습니다.
@@ -135,7 +136,7 @@ GCS 버킷을 디스크로 사용하려면 먼저 `conf.d` 아래의 파일에 �
 이 디스크 선언과 관련된 전체 설정 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)에서 확인할 수 있습니다.
 
 <div id="creating-a-table">
-  ### 테이블 생성 {#creating-a-table}
+  ### 테이블 생성
 </div>
 
 디스크가 쓰기 권한이 있는 버킷을 사용하도록 구성되어 있다면, 아래 예시와 같은 테이블을 생성할 수 있습니다. 설명을 간단히 하기 위해 NYC taxi 컬럼 일부만 사용하고, 데이터를 GCS 기반 테이블로 직접 스트리밍합니다:
@@ -174,13 +175,13 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="handling-replication">
-  ### 복제 처리 {#handling-replication}
+  ### 복제 처리
 </div>
 
 GCS 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진으로 구현할 수 있습니다. 자세한 내용은 [GCS를 사용해 두 GCP 리전에서 단일 세그먼트를 복제하는 방법](#gcs-multi-region) 가이드를 참조하십시오.
 
 <div id="learn-more">
-  ### 자세히 알아보기 {#learn-more}
+  ### 자세히 알아보기
 </div>
 
 [Cloud Storage XML API](https://cloud.google.com/storage/docs/xml-api/overview)는 Amazon Simple Storage Service(Amazon S3)와 같은 서비스에서 사용하는 일부 도구 및 라이브러리와 호환됩니다.
@@ -188,7 +189,7 @@ GCS 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진�
 스레드 조정에 대한 자세한 내용은 [성능 최적화](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-optimizing-performance)를 참조하십시오.
 
 <div id="gcs-multi-region">
-  ## Google Cloud Storage (GCS) 사용 {#gcs-multi-region}
+  ## Google Cloud Storage (GCS) 사용
 </div>
 
 <Tip>
@@ -196,7 +197,7 @@ GCS 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진�
 </Tip>
 
 <div id="plan-the-deployment">
-  ### 배포 계획 {#plan-the-deployment}
+  ### 배포 계획
 </div>
 
 이 튜토리얼은 Google Cloud에서 실행되고, ClickHouse 스토리지 디스크 &quot;type&quot;으로 Google Cloud Storage(GCS)를 사용하는 복제된 ClickHouse 배포를 설명합니다.
@@ -212,7 +213,7 @@ GCS 디스크를 사용하는 복제는 `ReplicatedMergeTree` 테이블 엔진�
 ClickHouse Keeper가 작동하려면 최소 2개의 노드가 필요하므로, 고가용성을 위해서는 3개의 노드가 필요합니다.
 
 <div id="prepare-vms">
-  ### 가상 머신 준비 {#prepare-vms}
+  ### 가상 머신 준비
 </div>
 
 3개의 리전에 VM 5대를 배포합니다:
@@ -226,7 +227,7 @@ ClickHouse Keeper가 작동하려면 최소 2개의 노드가 필요하므로, �
 `*` 이는 1 또는 2와 동일한 리전 내의 다른 가용 영역일 수 있습니다.
 
 <div id="deploy-clickhouse">
-  #### ClickHouse 배포 {#deploy-clickhouse}
+  #### ClickHouse 배포
 </div>
 
 두 개의 호스트에 ClickHouse를 배포합니다. 이 샘플 구성에서는 호스트 이름을 `chnode1`, `chnode2`로 사용합니다.
@@ -240,7 +241,7 @@ ClickHouse Keeper가 작동하려면 최소 2개의 노드가 필요하므로, �
 ClickHouse 서버 노드에서 배포 단계를 수행할 때는 [설치 지침](/ko/get-started/setup/install)을 참조하십시오.
 
 <div id="deploy-clickhouse-keeper">
-  #### ClickHouse Keeper 배포 {#deploy-clickhouse-keeper}
+  #### ClickHouse Keeper 배포
 </div>
 
 3개의 호스트에 ClickHouse Keeper를 배포합니다. 샘플 구성에서는 이 호스트의 이름을 `keepernode1`, `keepernode2`, `keepernode3`로 사용합니다. `keepernode1`은 `chnode1`과 동일한 리전에, `keepernode2`는 `chnode2`와 동일한 리전에 배포할 수 있습니다. `keepernode3`는 두 리전 중 어느 곳에든 배포할 수 있지만, 해당 리전의 ClickHouse 노드와는 서로 다른 가용 영역에 배포해야 합니다.
@@ -248,7 +249,7 @@ ClickHouse 서버 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침](/ko/get-started/setup/install)을 참조하십시오.
 
 <div id="create-two-buckets">
-  ### 버킷 두 개 만들기 {#create-two-buckets}
+  ### 버킷 두 개 만들기
 </div>
 
 고가용성을 위해 두 ClickHouse 서버는 서로 다른 리전에 배치됩니다. 각 서버에는 동일한 리전에 GCS 버킷이 하나씩 있어야 합니다.
@@ -260,7 +261,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 <BucketDetails />
 
 <div id="configure-clickhouse-keeper">
-  ### ClickHouse Keeper 구성 {#configure-clickhouse-keeper}
+  ### ClickHouse Keeper 구성
 </div>
 
 모든 ClickHouse Keeper 노드는 `server_id` 줄(아래에서 첫 번째로 강조 표시된 줄)을 제외하면 동일한 설정 파일을 사용합니다. ClickHouse Keeper 서버의 호스트명에 맞게 파일을 수정하고, 각 서버에서 `server_id`를 `raft_configuration`의 해당 `server` 항목과 일치하도록 설정하십시오. 이 예시에서는 `server_id`가 `3`으로 설정되어 있으므로 `raft_configuration`에서 일치하는 줄을 강조 표시했습니다.
@@ -313,7 +314,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ```
 
 <div id="configure-clickhouse-server">
-  ### ClickHouse 서버 구성 {#configure-clickhouse-server}
+  ### ClickHouse 서버 구성
 </div>
 
 <Info>
@@ -323,7 +324,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 </Info>
 
 <div id="networking">
-  #### 네트워킹 {#networking}
+  #### 네트워킹
 </div>
 
 기본적으로 ClickHouse는 루프백 인터페이스에서만 수신 대기합니다. 복제된 구성에서는 서버 간 네트워킹이 필요합니다. 모든 인터페이스에서 수신 대기하도록 설정하십시오:
@@ -335,7 +336,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ```
 
 <div id="remote-clickhouse-keeper-servers">
-  #### 원격 ClickHouse Keeper 서버 {#remote-clickhouse-keeper-servers}
+  #### 원격 ClickHouse Keeper 서버
 </div>
 
 복제는 ClickHouse Keeper가 조정합니다. 이 설정 파일은 호스트명과 포트 번호를 사용해 ClickHouse Keeper 노드를 식별합니다.
@@ -362,7 +363,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ```
 
 <div id="remote-clickhouse-servers">
-  #### 원격 ClickHouse 서버 {#remote-clickhouse-servers}
+  #### 원격 ClickHouse 서버
 </div>
 
 이 파일은 클러스터에 있는 각 ClickHouse 서버의 호스트명과 포트를 설정합니다. 기본 설정 파일에는 예시 클러스터 정의가 포함되어 있으므로, 완전히 구성된 클러스터만 표시하려면 `remote_servers` 항목에 `replace="true"` 태그를 추가합니다. 이렇게 하면 이 구성이 기본 구성과 머지될 때 `remote_servers` 섹션에 내용을 추가하지 않고 해당 섹션을 대체합니다.
@@ -389,7 +390,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ```
 
 <div id="replica-identification">
-  #### 레플리카 식별 {#replica-identification}
+  #### 레플리카 식별
 </div>
 
 이 파일은 ClickHouse Keeper 경로와 관련된 설정을 구성합니다. 구체적으로는 데이터가 어느 레플리카에 속하는지 식별하는 데 사용되는 매크로를 설정합니다. 한 server에서는 레플리카를 `replica_1`로 지정하고, 다른 server에서는 `replica_2`로 지정해야 합니다. 이름은 변경할 수 있습니다. 예를 들어 한 레플리카가 South Carolina에 저장되고 다른 레플리카가 Northern Virginia에 저장되는 경우, 값은 `carolina`와 `virginia`로 지정할 수 있습니다. 각 머신에서 서로 다른 값만 사용하도록 하십시오.
@@ -408,7 +409,7 @@ ClickHouse Keeper 노드에서 배포 단계를 수행할 때는 [설치 지침]
 ```
 
 <div id="storage-in-gcs">
-  #### GCS 스토리지 {#storage-in-gcs}
+  #### GCS 스토리지
 </div>
 
 ClickHouse 스토리지 구성에는 `disks`와 `policies`가 포함됩니다. 아래에서 구성하는 디스크의 이름은 `gcs`이고, `type`은 `s3`입니다. `type`이 `s3`인 이유는 ClickHouse가 GCS 버킷을 AWS S3 버킷처럼 액세스하기 때문입니다. 이 구성은 각 ClickHouse 서버 노드에 하나씩, 총 2개가 필요합니다.
@@ -458,7 +459,7 @@ ClickHouse 스토리지 구성에는 `disks`와 `policies`가 포함됩니다. �
 ```
 
 <div id="start-clickhouse-keeper">
-  ### ClickHouse Keeper 시작 {#start-clickhouse-keeper}
+  ### ClickHouse Keeper 시작
 </div>
 
 예를 들어, 사용 중인 운영 체제에 맞는 다음 명령을 사용하십시오:
@@ -470,7 +471,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### ClickHouse Keeper 상태 확인 {#check-clickhouse-keeper-status}
+  #### ClickHouse Keeper 상태 확인
 </div>
 
 `netcat`을 사용해 ClickHouse Keeper에 명령을 전송합니다. 예를 들어 `mntr` 명령은 ClickHouse Keeper 클러스터의 상태를 반환합니다. 각 Keeper 노드에서 이 명령을 실행하면 하나는 리더이고 나머지 두 개는 팔로워임을 확인할 수 있습니다:
@@ -502,7 +503,7 @@ zk_synced_followers     2
 ```
 
 <div id="start-clickhouse-server">
-  ### ClickHouse 서버 시작 {#start-clickhouse-server}
+  ### ClickHouse 서버 시작
 </div>
 
 `chnode1` 및 `chnode`에서 다음을 실행하세요:
@@ -516,11 +517,11 @@ sudo service clickhouse-server status
 ```
 
 <div id="verification">
-  ### 확인 {#verification}
+  ### 확인
 </div>
 
 <div id="verify-disk-configuration">
-  #### 디스크 구성을 확인하세요 {#verify-disk-configuration}
+  #### 디스크 구성을 확인하세요
 </div>
 
 `system.disks`에는 각 디스크에 대한 레코드가 있어야 합니다.
@@ -588,7 +589,7 @@ cache_path:
 ```
 
 <div id="verify-that-tables-created-on-the-cluster-are-created-on-both-nodes">
-  #### 클러스터에서 생성한 테이블이 두 노드 모두에 생성되었는지 확인 {#verify-that-tables-created-on-the-cluster-are-created-on-both-nodes}
+  #### 클러스터에서 생성한 테이블이 두 노드 모두에 생성되었는지 확인
 </div>
 
 ```sql highlight={1,18}
@@ -624,7 +625,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 <div id="verify-that-data-can-be-inserted">
-  #### 데이터를 삽입할 수 있는지 확인 {#verify-that-data-can-be-inserted}
+  #### 데이터를 삽입할 수 있는지 확인
 </div>
 
 ```sql
@@ -647,7 +648,7 @@ LIMIT 1000000
 ```
 
 <div id="verify-that-the-storage-policy-gcs_main-is-used-for-the-table">
-  #### 테이블에 `gcs_main` 스토리지 정책이 사용되는지 확인합니다. {#verify-that-the-storage-policy-gcs_main-is-used-for-the-table}
+  #### 테이블에 `gcs_main` 스토리지 정책이 사용되는지 확인합니다.
 </div>
 
 ```sql
@@ -675,23 +676,19 @@ formatReadableSize(total_bytes): 36.42 MiB
 ```
 
 <div id="verify-in-google-cloud-console">
-  #### Google Cloud 콘솔에서 확인 {#verify-in-google-cloud-console}
+  #### Google Cloud 콘솔에서 확인
 </div>
 
 버킷을 보면 `storage.xml` 설정 파일에서 사용한 이름의 폴더가 각 버킷에 생성된 것을 확인할 수 있습니다. 폴더를 펼치면 데이터 파티션을 나타내는 여러 파일이 표시됩니다.
 
-#### 레플리카 1용 버킷 {#bucket-for-replica-one}
-
-<div className="ch-image-lg">
-  <Frame>
-    ![Google Cloud Storage의 레플리카 1 버킷에서 데이터 파티션이 포함된 폴더 구조를 보여 주는 화면](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
-  </Frame>
+<div id="bucket-for-replica-one">
+  #### 레플리카 1용 버킷
 </div>
 
-#### 레플리카 2용 버킷 {#bucket-for-replica-two}
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="데이터 파티션이 포함된 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 1용 버킷" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![데이터 파티션이 있는 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 2 버킷](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
-  </Frame>
+<div id="bucket-for-replica-two">
+  #### 레플리카 2용 버킷
 </div>
+
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="데이터 파티션이 있는 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 2 버킷" />

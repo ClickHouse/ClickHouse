@@ -107,9 +107,9 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-## Parámetros de configuración {#settings}
+## Configuración {#settings}
 
-El grupo de conexiones utilizado por el motor de tabla `PostgreSQL` (y la función de tabla [`postgresql`](/es/reference/functions/table-functions/postgresql)) puede configurarse para cada tabla mediante una cláusula `SETTINGS`. Cuando no se especifica ningún parámetro de configuración, se usa de forma predeterminada el valor del parámetro de configuración `postgresql_*` correspondiente a nivel de consulta. Una tabla nueva, salvo que se haya restaurado desde una copia de seguridad, añade a su `SETTINGS` los valores que obtiene de esta forma y que difieren de los del servidor (por ejemplo, los establecidos con `SET` o mediante un perfil de parámetros de configuración del usuario), de modo que los conserva tras reiniciar el servidor. Un valor igual al del servidor no se almacena, por lo que esa tabla seguirá el valor del servidor si este cambia más adelante. Un parámetro de configuración que ya establece una colección con nombre no se toma del parámetro de configuración de consulta, por lo que no se almacena nada para él. Un valor almacenado forma parte del `SETTINGS` de la tabla, por lo que sobrescribe la misma clave si se añade posteriormente a la colección con nombre y, si esa clave es `NOT OVERRIDABLE`, la tabla no se carga y se produce el error `Override not allowed`. En la cláusula `SETTINGS` de una tabla, un parámetro de configuración restablecido con `name = DEFAULT` no se toma del parámetro de configuración de consulta.
+El grupo de conexiones utilizado por el motor de tabla `PostgreSQL` (y la función de tabla [`postgresql`](/es/reference/functions/table-functions/postgresql)) puede configurarse para cada tabla mediante una cláusula `SETTINGS`. Cuando no se especifica ninguna configuración, se usa de forma predeterminada el valor de la configuración `postgresql_*` correspondiente a nivel de consulta.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -160,7 +160,7 @@ Las consultas `SELECT` del lado de PostgreSQL se ejecutan como `COPY (SELECT ...
 
 Las cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, se ejecutan en el servidor PostgreSQL.
 
-Todos los joins, las agregaciones, la ordenación y las condiciones `IN [ array ]` se ejecutan en ClickHouse después de que finaliza la consulta a PostgreSQL. La restricción de muestreo `LIMIT` se delega a PostgreSQL solo cuando es seguro hacerlo y [external&#95;storage&#95;push&#95;down&#95;limit](/es/reference/settings/session-settings/external-storage#external_storage_push_down_limit) está habilitado; de lo contrario, se ejecuta en ClickHouse.
+Todos los joins, las agregaciones, la ordenación, las condiciones `IN [ array ]` y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a PostgreSQL.
 
 ## Pasar una consulta en lugar de un nombre de tabla {#passing-a-query}
 

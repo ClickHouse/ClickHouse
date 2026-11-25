@@ -14,20 +14,24 @@ integration:
   Se você usa um dos provedores compatíveis (na barra lateral), consulte o guia específico desse provedor.
 </Info>
 
-## Ative a retenção dos logs binários {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## Ative a retenção dos logs binários
+</div>
 
 Os logs binários contêm informações sobre modificações de dados feitas em uma instância do servidor MySQL e são necessários para a replicação.
 
-### MySQL 8.x e versões mais recentes {#binlog-v8-x}
+<div id="binlog-v8-x">
+  ### MySQL 8.x e versões mais recentes
+</div>
 
 Para ativar o log binário na sua instância do MySQL, verifique se as seguintes configurações estão definidas:
 
 ```sql
-log_bin = ON                        -- default value
-binlog_format = ROW                 -- default value
-binlog_row_image = FULL             -- default value
+log_bin = ON                        -- valor padrão
+binlog_format = ROW                 -- valor padrão
+binlog_row_image = FULL             -- valor padrão
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
+binlog_expire_logs_seconds = 86400  -- 1 dia ou mais; o padrão é 30 dias
 ```
 
 Para verificar essas configurações, execute os seguintes comandos SQL:
@@ -47,23 +51,25 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 259200;
+SET PERSIST binlog_expire_logs_seconds = 86400;
 ```
 
 Se você alterou a configuração `log_bin`, PRECISA REINICIAR a instância do MySQL para que as alterações entrem em vigor.
 
 Depois de alterar as configurações, prossiga para [configurar um usuário do banco de dados](#configure-database-user).
 
-### MySQL 5.7 {#binlog-v5-x}
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
 
 Para ativar o log binário na sua instância do MySQL 5.7, certifique-se de que as seguintes configurações estejam definidas:
 
 ```sql
-server_id = 1            -- or greater; anything but 0
+server_id = 1            -- ou maior; qualquer valor exceto 0
 log_bin = ON
-binlog_format = ROW      -- default value
-binlog_row_image = FULL  -- default value
-expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
+binlog_format = ROW      -- valor padrão
+binlog_row_image = FULL  -- valor padrão
+expire_logs_days = 1     -- ou maior; 0 significa que os logs serão preservados indefinidamente
 ```
 
 Para verificar essas configurações, execute os seguintes comandos SQL:
@@ -84,7 +90,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 Você PRECISA REINICIAR a instância do MySQL para que as alterações passem a valer.
@@ -93,7 +99,9 @@ Você PRECISA REINICIAR a instância do MySQL para que as alterações passem a 
   A exclusão de colunas e as alterações no esquema não têm suporte no MySQL 5.7 e em versões anteriores. Esses recursos dependem de metadados da tabela que não estão disponíveis no binlog antes do [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/).
 </Note>
 
-## Configure um usuário do banco de dados {#configure-database-user}
+<div id="configure-database-user">
+  ## Configure um usuário do banco de dados
+</div>
 
 Conecte-se à sua instância do MySQL como usuário root e execute os comandos a seguir:
 
@@ -120,7 +128,9 @@ Conecte-se à sua instância do MySQL como usuário root e execute os comandos a
   Substitua `clickpipes_user` e `some_secure_password` pelo nome de usuário e pela senha desejados.
 </Note>
 
-## Configuração de SSL/TLS (recomendada) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## Configuração de SSL/TLS (recomendada)
+</div>
 
 Os certificados SSL garantem conexões seguras com seu banco de dados MySQL. A configuração depende do tipo de certificado:
 
@@ -134,7 +144,9 @@ Os certificados SSL garantem conexões seguras com seu banco de dados MySQL. A c
 
 Para mais informações sobre as opções de SSL/TLS, consulte nosso [FAQ](/pt-BR/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## Próximos passos {#whats-next}
+<div id="whats-next">
+  ## Próximos passos
+</div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/mysql/index) e começar a ingerir dados da sua instância do MySQL para o ClickHouse Cloud.
 Anote os dados de conexão usados ao configurar sua instância do MySQL, pois você precisará deles durante o processo de criação do ClickPipe.

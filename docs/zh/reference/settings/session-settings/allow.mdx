@@ -23,16 +23,6 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 当分区键适合 GROUP BY 键时，启用在独立线程上对各分区分别进行聚合。当分区数量接近 CPU 核心数，且各分区大小大致相同时，此功能最有利。`ReadFromMergeTree` 中的启发式规则会在布局不理想时 (分区过少、分区过多，或分区大小严重失衡) 自动禁用该优化；如需绕过这些检查，请参见 `force_aggregate_partitions_independently`。
 
-## allow_ai_functions {#allow_ai_functions}
-
-**别名**：`allow_experimental_ai_functions`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "AI 函数进入 Beta 阶段，并默认启用。该设置当时名为 `allow_experimental_ai_functions`，该名称现为其别名。无论 `compatibility` 如何设置，均保持此默认值。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置。该设置当时名为 `allow_experimental_ai_functions`，该名称现为其别名。"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置别名 `allow_experimental_ai_functions`。"}]}]} />
-
-允许使用 AI 函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`、`aiEmbed`、`aiSimilarity`) 。禁用此设置时，使用这些函数的查询将抛出异常。
-
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -159,6 +149,18 @@ Cloud 默认值: `1`。
 
 如果设置为 true，则用户可以执行 DDL 查询。
 
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
+
+<BetaBadge />
+
+**别名**：`allow_experimental_delta_kernel_rs`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs` 的新名称；该设置不再处于实验阶段，原名称保留为别名。默认值保持不变。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新设置。最初以 `allow_experimental_delta_kernel_rs` 之名引入，现为该设置的别名；为保留完整历史记录，此条目以规范名称延续。"}]}]} />
+
+允许使用 `delta-kernel-rs` 实现读取 Delta Lake 表。
+
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -189,7 +191,7 @@ Cloud 默认值: `1`。
 
 当分区表达式是 `DISTINCT` 列的确定性函数时，启用在独立线程中按分区计算 `DISTINCT`，从而跳过跨流合并。当分区数接近 CPU 核心数且各分区大小大致相同时，此设置会带来收益；否则，成本启发式策略会跳过此优化。请参阅 [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/zh/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) 和 [force&#95;distinct&#95;partitions&#95;independently](/zh/reference/settings/session-settings/force#force_distinct_partitions_independently)。不适用于 `FINAL` 或并行副本。
 
-在各流保持独立期间，[max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 和 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 适用于所有分区集合的合并大小。
+设置 [max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 或 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 时，不会应用此设置：这些限制由可见整个合并结果的单个 `DISTINCT` 转换执行，因此会保留跨流合并，以确保其全局语义。
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -226,18 +228,6 @@ Cloud 默认值: `1`。
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许以列式方式执行 multiIf 函数
-
-## allow_expire_snapshots {#allow_expire_snapshots}
-
-<ExperimentalBadge />
-
-**别名**：`allow_experimental_expire_snapshots`
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置别名 `allow_experimental_expire_snapshots`。"}]}]} />
-
-允许执行 Iceberg 命令 `ALTER TABLE ... EXECUTE expire_snapshots`。
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -459,20 +449,6 @@ ClickHouse 使用服务器启动时加载的此设置值。
 通过 `SET` 或查询级 `SETTINGS` 所做的更改不会改变提取子列的行为。
 要更改提取子列的行为，请在启动 profile 配置 (例如 users.xml) 中更新 `allow_nullable_tuple_in_extracted_subcolumns`，然后重启服务器。
 
-## allow_parallel_distinct {#allow_parallel_distinct}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：使用哈希分区并行执行最终的 `DISTINCT`。"}]}]} />
-
-按 `DISTINCT` 列的哈希值对输入 stream 进行分区，从而在多个线程上执行最终的 `DISTINCT`。相同的键会进入同一个 stream，因此每个分区都可以独立去重。
-
-与 [allow&#95;distinct&#95;partitions&#95;independently](/zh/reference/settings/session-settings/allow#allow_distinct_partitions_independently) 不同，此设置不要求表的分区键与 `DISTINCT` 列之间存在关联。输入 stream 和哈希分区的数量上限与 `max_threads` 相互独立，以控制拆分块和连接 stream 的开销。
-
-对于全局已排序的输入，不会应用哈希分区，因为 `DISTINCT` 会保持该顺序。[max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 和 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 针对的是所有哈希分区的合计大小。
-
-不带 `ORDER BY` 的 `DISTINCT` 不保证行顺序，因此启用该优化后，返回的不同值虽然相同，顺序却可能不同。所以，对无序的 `DISTINCT` 结果使用 `LIMIT`、`OFFSET` 或 `LIMIT BY` 时，选出的行子集可能会有所不同。
-
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -517,14 +493,6 @@ ClickHouse 使用服务器启动时加载的此设置值。
 默认情况下不允许这样做：如果源表在请求的分区中没有数据，那么从该源执行 `REPLACE PARTITION` 会抛出异常，因为这种情况下，该操作实际上等同于对目标端静默执行 `DROP PARTITION` (目标端数据会被删除，但不会有任何内容替换它) ，这也是意外数据丢失的常见原因 (参见 [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)) 。
 
 启用此设置可恢复之前的行为，例如当你有意使用空源分区来清空目标端数据时。若要无条件删除，建议直接改用 `ALTER TABLE ... DROP PARTITION ...`。
-
-## allow_reserved_column_names {#allow_reserved_column_names}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "拒绝与 MergeTree 表虚拟列同名的列"}]}]} />
-
-允许在 `CREATE TABLE`、带完整定义的 `ATTACH TABLE`，以及 `ALTER TABLE ... ADD COLUMN` 和 `RENAME COLUMN` 中，为 `MergeTree` 家族表的列使用该表某个虚拟列的名称 (例如 `_part`、`_part_offset` 或 `_table`) 。此类列会遮蔽同名的虚拟列。已包含此类列的表无论此设置取值如何都会被正常加载。持久化虚拟列的名称始终会被拒绝。
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

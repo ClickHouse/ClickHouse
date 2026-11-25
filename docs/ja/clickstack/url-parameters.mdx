@@ -4,7 +4,7 @@ title: 'ディープリンク'
 sidebarTitle: 'ディープリンク'
 description: 'URL クエリパラメータを使用して ClickStack ページに直接リンクする'
 doc_type: 'reference'
-keywords: ['ClickStack', 'URL parameters', 'query parameters', 'ディープリンク', 'パーマリンク', 'ClickStack UI']
+keywords: ['ClickStack', 'URL parameters', 'query parameters', 'ディープリンク', 'パーマリンク', 'HyperDX']
 ---
 
 ClickStack ページは、URL クエリパラメータを使用したディープリンクで開けます。これにより、外部システム (アラート通知、ランブック、CI ジョブ、チャットメッセージなど) から特定の検索、ダッシュボード、またはパネルに直接移動できます。
@@ -27,7 +27,9 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
   ```
 </Info>
 
-## Search — `/search` {#search}
+<div id="search">
+  ## Search — `/search`
+</div>
 
 主要なログ／トレース検索ビューです。検索構文の詳細については、[Search](/ja/clickstack/features/search)を参照してください。
 
@@ -46,19 +48,25 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 
 保存済み検索は、`/search/<savedSearchId>`から直接開くこともできます。
 
-### 例: 時間範囲を指定して `Logs` ログソース内の `checkout` サービスのエラーを検索する {#example-search-errors}
+<div id="example-search-errors">
+  ### 例: 時間範囲を指定して `Logs` ログソース内の `checkout` サービスのエラーを検索する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
 ```
 
-### 例: トレースのウォーターフォールビューを直接開く {#example-search-trace}
+<div id="example-search-trace">
+  ### 例: トレースのウォーターフォールビューを直接開く
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
 ```
 
-## 保存済み検索 — `/search/list` {#saved-searches}
+<div id="saved-searches">
+  ## 保存済み検索 — `/search/list`
+</div>
 
 保存済み検索の一覧。
 
@@ -66,13 +74,17 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | ----- | ------ | ------------------------- |
 | `tag` | string | このタグが付いた保存済み検索に一覧を絞り込みます。 |
 
-### 例: `production` タグが付いた保存済み検索を一覧表示する {#example-saved-searches-tag}
+<div id="example-saved-searches-tag">
+  ### 例: `production` タグが付いた保存済み検索を一覧表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/search/list?tag=production
 ```
 
-## ダッシュボード — `/dashboards/<dashboardId>` {#dashboards}
+<div id="dashboards">
+  ## ダッシュボード — `/dashboards/<dashboardId>`
+</div>
 
 保存済みのダッシュボードです。`<dashboardId>`を省略して (`/dashboards`) 、一時的な未保存のダッシュボードを開くことができます。ダッシュボードの作成について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview)を参照してください。
 
@@ -85,7 +97,9 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 時系列タイルのバケットサイズです。`auto`は、選択した時間範囲に基づいてバケットサイズを決定します。          |
 | `highlightedTileId` | 文字列                                                                                                                                 | 特定のタイルまでスクロールして強調表示します。alertからリンクする場合に便利です。                   |
 
-### 例: 1 つのタイルを強調表示した状態で、指定した時間範囲のダッシュボードを開く {#example-dashboard-highlight}
+<div id="example-dashboard-highlight">
+  ### 例: 1 つのタイルを強調表示した状態で、指定した時間範囲のダッシュボードを開く
+</div>
 
 アラート通知から、発火したタイルに直接リンクする際に便利です。
 
@@ -93,19 +107,25 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
 ```
 
-## ダッシュボード一覧 — `/dashboards/list` {#dashboards-list}
+<div id="dashboards-list">
+  ## ダッシュボード一覧 — `/dashboards/list`
+</div>
 
 | パラメータ | フォーマット | 説明                   |
 | ----- | ------ | -------------------- |
 | `tag` | string | タグでダッシュボード一覧を絞り込みます。 |
 
-### 例: `infra` タグが付いたダッシュボードを一覧表示する {#example-dashboards-list-tag}
+<div id="example-dashboards-list-tag">
+  ### 例: `infra` タグが付いたダッシュボードを一覧表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
 ```
 
-## Chart Explorer — `/chart` {#chart-explorer}
+<div id="chart-explorer">
+  ## Chart Explorer — `/chart`
+</div>
 
 アドホックな共有可能チャートビルダー。
 
@@ -114,13 +134,17 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `config`     | JSON    | 完全なチャート設定 (ログソース、select、where、チャートタイプなど) 。通常は手動で記述するのではなく、アプリ内の「Share」リンクから生成されます。 |
 | `from`, `to` | エポックミリ秒 | 時間範囲。省略した場合、デフォルトでは直近15分間になります。                                                    |
 
-### 例: 指定した時間範囲の p99 レイテンシチャート設定を開く {#example-chart-config}
+<div id="example-chart-config">
+  ### 例: 指定した時間範囲の p99 レイテンシチャート設定を開く
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
 ```
 
-## アラート — `/alerts` {#alerts}
+<div id="alerts">
+  ## アラート — `/alerts`
+</div>
 
 アラートの作成と管理について詳しくは、[Alerts](/ja/clickstack/features/alerts)を参照してください。
 
@@ -130,13 +154,17 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `tag`     | string | タグでフィルタリングします。                |
 | `creator` | string | アラート作成者の名前でフィルタリングします。        |
 
-### 例: `on-call` タグ付きのアラートを一覧表示する {#example-alerts-filter}
+<div id="example-alerts-filter">
+  ### 例: `on-call` タグ付きのアラートを一覧表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/alerts?tag=on-call
 ```
 
-## セッションリプレイ — `/sessions` {#session-replay}
+<div id="session-replay">
+  ## セッションリプレイ — `/sessions`
+</div>
 
 セッションリプレイの閲覧と再生。機能の詳細については、[セッションリプレイ](/ja/clickstack/features/session-replay)を参照してください。
 
@@ -149,19 +177,25 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `sid`           | string           | ID で特定のセッションを開きます。                     |
 | `sfrom`, `sto`  | エポックミリ秒          | 開いたセッションの時間ウィンドウ (`sid` とともに使用) 。      |
 
-### 例: 指定した期間内のセッションリプレイを閲覧する {#example-sessions-time-range}
+<div id="example-sessions-time-range">
+  ### 例: 指定した期間内のセッションリプレイを閲覧する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
 ```
 
-### 例: 記録された時間範囲で特定のセッションリプレイを開く {#example-sessions-open}
+<div id="example-sessions-open">
+  ### 例: 記録された時間範囲で特定のセッションリプレイを開く
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
 ```
 
-## サービスマップ — `/service-map` {#service-map}
+<div id="service-map">
+  ## サービスマップ — `/service-map`
+</div>
 
 機能の詳細については、[サービスマップ](/ja/clickstack/service-maps)を参照してください。
 
@@ -171,13 +205,17 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `samplingFactor` | integer | トレースサンプリングの除数 (`1` = トレース全体の 100%、`2` = 50%、`4` = 25% など) 。 |
 | `from`, `to`     | エポックミリ秒 | 時間範囲。省略した場合、直近 15 分間がデフォルトになります。                            |
 
-### 例: 時間範囲を指定してサービスマップを表示する {#example-service-map}
+<div id="example-service-map">
+  ### 例: 時間範囲を指定してサービスマップを表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
 ```
 
-## サービス — `/services` {#services}
+<div id="services">
+  ## サービス — `/services`
+</div>
 
 サービスごとの HTTP、データベース、エラーのダッシュボード。
 
@@ -191,19 +229,25 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | ダッシュボードのフィルターバーの値。                            |
 | `from`, `to`    | エポックミリ秒                                                                    | 時間範囲。省略した場合は直近 15 分間がデフォルトです。                 |
 
-### 例: 指定した期間のサービスのデータベースダッシュボードを表示する {#example-services-database}
+<div id="example-services-database">
+  ### 例: 指定した期間のサービスのデータベースダッシュボードを表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
 ```
 
-### 例: サービスのエラーダッシュボードを表示する {#example-services-errors}
+<div id="example-services-errors">
+  ### 例: サービスのエラーダッシュボードを表示する
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
 ```
 
-## Kubernetes — `/kubernetes` {#kubernetes}
+<div id="kubernetes">
+  ## Kubernetes — `/kubernetes`
+</div>
 
 | パラメータ                                  | フォーマット                           | 説明                                                                  |
 | -------------------------------------- | -------------------------------- | ------------------------------------------------------------------- |
@@ -213,13 +257,17 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
 | `podName`, `nodeName`, `namespaceName` | string                           | 特定のポッド、ノード、またはネームスペースの詳細パネルを開きます。                                   |
 | `from`, `to`                           | エポックミリ秒                          | 時間範囲。省略した場合、直近 15 分間がデフォルトで使用されます。                                  |
 
-### 例: 特定のポッドの詳細パネルを開く {#example-kubernetes-pod}
+<div id="example-kubernetes-pod">
+  ### 例: 特定のポッドの詳細パネルを開く
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
 ```
 
-## Notebooks — `/notebook/<notebookId>` {#notebooks}
+<div id="notebooks">
+  ## Notebooks — `/notebook/<notebookId>`
+</div>
 
 <Info>
   **Managed ClickStack のみ**
@@ -227,7 +275,9 @@ ClickStack ページは、URL クエリパラメータを使用したディー�
   Notebooks は、Managed ClickStack のデプロイメントでのみ利用できます。機能の詳細については、[AIノートブック](/ja/clickstack/notebooks)を参照してください。
 </Info>
 
-### 例: 指定した Cloud サービスで特定の notebook を開く {#example-notebook-open}
+<div id="example-notebook-open">
+  ### 例: 指定した Cloud サービスで特定の notebook を開く
+</div>
 
 ```text
 <YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123

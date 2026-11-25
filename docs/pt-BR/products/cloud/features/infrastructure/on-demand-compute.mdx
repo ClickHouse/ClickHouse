@@ -1,14 +1,15 @@
 ---
-title: 'On-Demand Compute do ClickHouse'
-sidebarTitle: 'On-Demand Compute'
+title: 'Compute sob demanda do ClickHouse'
+sidebarTitle: 'Compute sob demanda'
 sidebar_label: 'On-Demand Compute'
 slug: /cloud/features/on-demand-compute
-description: 'Adicione capacidade computacional para workloads do ClickHouse Cloud sem redimensionar seu primary serviço. O suporte em private preview é limitado a consultas selecionadas.'
-keywords: ['On-Demand Compute', 'isolamento de workload', 'workers sem estado', 'private preview']
+description: 'Adicione compute para workloads do ClickHouse Cloud sem redimensionar seu primary service. O suporte em private preview é limitado a consultas selecionadas.'
+keywords: ['compute sob demanda', 'isolamento de workload', 'workers sem estado', 'private preview']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,11 +19,11 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
   [Entre na lista de espera](https://clickhouse.com/cloud/on-demand-compute-waitlist).
 </Note>
 
-O On-Demand Compute é uma capability do ClickHouse Cloud que oferece ao seu cloud serviço (um tenant) capacidade adicional e instantânea para workloads compatíveis, sem exigir que você redimensione ou provisione outro serviço. Esse trabalho é executado em workers do ClickHouse, fora da capacidade computacional do próprio serviço. Os workers vêm de um pool gerenciado compartilhado entre tenants na mesma região, mas cada worker é atribuído a apenas um tenant por vez.
+O On-Demand Compute é uma capability do ClickHouse Cloud que oferece ao seu cloud service (um tenant) capacidade adicional e instantânea para workloads compatíveis, sem exigir que você redimensione ou provisione outro service. Esse trabalho é executado em workers do ClickHouse, fora do processamento do próprio service. Os workers vêm de um pool gerenciado compartilhado entre tenants na mesma região, mas cada worker é atribuído a apenas um tenant por vez.
 
-Durante o private preview, o On-Demand Compute oferece suporte apenas a consultas `SELECT`. Você habilita uma consulta por meio de settings em nível de consulta/session/USER, e o ClickHouse atribui workers do pool para executá-la por meio do seu serviço e endpoint existentes.
+Durante o private preview, o On-Demand Compute oferece suporte apenas a consultas `SELECT`. Você habilita uma consulta por meio de settings em nível de consulta/session/USER, e o ClickHouse atribui workers do pool para executá-la por meio do seu service e endpoint existentes.
 
-Isso é diferente da [separação de capacidade computacional](/pt-BR/products/cloud/features/infrastructure/warehouses). Um warehouse oferece capacidade computacional dedicada e de longa duração por meio de múltiplos serviços que compartilham dados. O On-Demand Compute oferece workers temporários de um pool compartilhado, por meio do seu serviço existente.
+Isso é diferente da [separação de processamento](/pt-BR/products/cloud/features/infrastructure/warehouses). Um warehouse oferece processamento dedicado e de longa duração por meio de múltiplos services que compartilham dados. O On-Demand Compute oferece workers temporários de um pool compartilhado, por meio do seu service existente.
 
 O On-Demand Compute utiliza capabilities totalmente novas:
 
@@ -247,19 +248,15 @@ Nada muda na forma como você acessa o ClickHouse. Os clientes continuam se cone
 
 ### Isolamento de rede {#network-isolation}
 
-Enquanto um worker está alocado para o seu serviço, a plataforma permite o tráfego de rede entre esse worker e o seu serviço e bloqueia todo o restante. A restrição é aplicada na camada de rede, e não no engine de consulta, portanto não depende da consulta, de suas configurações nem do plan produzido pelo optimizer.
+Enquanto um worker está em lease para o seu service, a plataforma permite o tráfego de rede entre esse worker e o seu service e bloqueia todo o restante. A restrição é aplicada na camada de rede, e não no engine de consulta, portanto não depende da consulta, de suas configurações nem do plan produzido pelo optimizer.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Diagrama explicativo do isolamento de rede](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Diagrama explicativo do isolamento de rede" />
 
-* **Somente o seu serviço consegue alcançar os seus workers.** O path existe durante o lease atual do worker e apenas para aquele serviço.
-* **Workers não atribuídos são inalcançáveis.** Um worker aguardando no pool não tem nenhum caminho de rede de ou para qualquer serviço até ser alocado.
-* **Workers alocados para serviços diferentes não conseguem se alcançar.** Os workers de um mesmo lease trocam entre si estágios do plano e resultados intermediários. Workers de leases diferentes permanecem isolados uns dos outros, mesmo compartilhando um pool.
+* **Somente o seu service consegue alcançar os seus workers.** O path existe durante o lease atual do worker e apenas para aquele service.
+* **Workers não atribuídos são inalcançáveis.** Um worker aguardando no pool não tem nenhum path de rede de ou para qualquer service até entrar em lease.
+* **Workers em lease para services diferentes não conseguem se alcançar.** Os workers de um mesmo lease trocam entre si estágios do plano e resultados intermediários. Workers de leases diferentes permanecem isolados uns dos outros, mesmo compartilhando um pool.
 * **O path é removido junto com o worker.** Encerrar um lease destrói o worker, o que elimina a única coisa que o tráfego tinha permissão para alcançar.
-* **O path de request permanece restrito.** Seu serviço acessa o serviço de atribuição de workers para fazer lease e renovar workers. Esse path não transporta dados de consulta e se limita à API de assignment.
+* **O path de request permanece restrito.** Seu service acessa o serviço de assignment de workers para fazer lease e renovar workers. Esse path não transporta dados de consulta e se limita à API de assignment.
 
 ### Authentication e autorização internas {#authentication-and-authorization}
 

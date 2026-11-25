@@ -14,14 +14,6 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La conversion à deux niveaux de `GROUP BY` compare `group_by_two_level_threshold_bytes` uniquement à la mémoire occupée par l’état d’agrégation, mesurée par un composant de suivi de la mémoire dédié (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490). Avant la version 26.7, elle se fondait sur l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de choisir la manière dont la conversion à deux niveaux de `GROUP BY` mesure la mémoire d’agrégation. La modification qu’il conditionne a été livrée dans la version 26.7, et la régression de mémoire associée a été corrigée dans la version 26.9."}]}]} />
-
-Mesure la taille de l’état d’agrégation, comparée à `group_by_two_level_threshold_bytes`, à l’aide du composant de suivi de la mémoire dédié à l’agrégation. Lorsque ce paramètre est désactivé, la taille correspond à l’augmentation de l’utilisation de la mémoire de l’ensemble de la requête depuis la création de l’agrégation : une agrégation dont l’état est de petite taille peut donc être convertie en agrégation à deux niveaux.
-
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -55,13 +47,11 @@ Utilise le fuseau horaire du client pour interpréter les valeurs de chaîne Dat
 Détermine si le cache de colonnes est utilisé. Accepte 0 ou 1. Valeur par défaut : 0 (désactivé).
 Le cache de colonnes stocke les colonnes désérialisées issues des tables `MergeTree`, ce qui évite de décompresser et de désérialiser à plusieurs reprises les données fréquemment consultées. Il peut ainsi réduire considérablement la latence des requêtes répétées sur les mêmes données. Le cache est indexé par l&#39;UUID de la table, le nom de la part, le nom de la colonne et un stripe de granules consécutifs d&#39;environ 65536 lignes.
 
-Les entrées étant indexées par l&#39;UUID de la table, le cache n&#39;est actif que pour les tables des bases de données qui attribuent des UUID, comme `Atomic`, `Replicated` et `Shared` (le moteur de base de données par défaut dans ClickHouse Cloud) ; les tables `MergeTree` des bases de données legacy `Ordinary` ont un UUID nul et ignorent silencieusement ce paramètre.
+Les entrées étant indexées par l&#39;UUID de la table, le cache n&#39;est actif que pour les tables des bases de données qui attribuent des UUID, comme `Atomic`, `Replicated` et `Shared` (le moteur de base de données par défaut dans ClickHouse Cloud) ; les tables `MergeTree` des bases de données legacy `Ordinary` ont un UUID nul et ignorent silencieusement ce paramètre.
 
-Le cache s&#39;applique aussi bien aux parts wide qu&#39;aux parts compact, y compris aux parts des projections.
+Pour l&#39;instant, le cache ne s&#39;applique qu&#39;aux parts wide : les données des parts compact ne sont ni lues depuis le cache de colonnes ni écrites dans celui-ci, si bien que l&#39;accélération d&#39;une lecture dépend du format de la part.
 
-Une entrée contient une plage contiguë de granules d&#39;un même stripe : un granule n&#39;entre dans le cache qu&#39;une fois lu intégralement, de sa première à sa dernière ligne ; une lecture est servie depuis le cache granule par granule, et les plages écrites par des lectures distinctes sont fusionnées, de sorte que des lectures découpant une part en plages de marques différentes partagent les mêmes entrées.
-
-Le cache s&#39;applique également aux fichiers `Parquet` lus depuis le système de fichiers local (la fonction de table `file` et le table engine `File`) ou depuis des stockages d&#39;objets (`s3`, `azureBlobStorage` et leurs table engines), ainsi qu&#39;à ceux lus par les tables de lac de données. Dans ce cas, une entrée contient un fragment de 65536 lignes d&#39;une colonne d&#39;un groupe de lignes (le dernier fragment d&#39;un groupe de lignes peut être plus court), indexé par le chemin du fichier, sa version (l&#39;ETag d&#39;un objet, ou la date de modification, l&#39;inode et la taille d&#39;un fichier local), la colonne du fichier et le type sous lequel elle est lue. Un groupe de lignes qui utilise le cache est lu par fragments de cette taille, quels que soient les paramètres de taille de bloc. Un fragment est écrit dans le cache au fil de son décodage, sans copie, si toutes ses lignes ont été lues avant l&#39;application de tout filtre : avec `PREWHERE`, c&#39;est le cas des colonnes du filtre, tandis que les autres colonnes ne sont lues que pour les lignes qui le satisfont. Une colonne d&#39;un groupe de lignes n&#39;est servie depuis le cache que lorsque tous ses fragments y sont présents ; les fragments d&#39;une colonne qui ne peuvent pas tous être écrits sont donc retirés du cache. Un fichier local n&#39;est mis en cache que s&#39;il n&#39;a pas été modifié depuis quelques secondes, afin que sa version identifie bien son contenu.
+Une entrée contient une plage contiguë de granules d&#39;un même stripe : un granule n&#39;entre dans le cache qu&#39;une fois lu intégralement, de sa première à sa dernière ligne ; une lecture est servie depuis le cache granule par granule, et les plages écrites par des lectures distinctes sont fusionnées, de sorte que des lectures découpant une part en plages de marques différentes partagent les mêmes entrées.
 
 ## use_concurrency_control {#use_concurrency_control}
 
@@ -70,20 +60,6 @@ Le cache s&#39;applique également aux fichiers `Parquet` lus depuis le système
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Activer le contrôle de la concurrence par défaut"}]}]} />
 
 Respecte le contrôle de la concurrence du serveur (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`). Si ce paramètre est désactivé, il permet d&#39;utiliser un plus grand nombre de threads même si le serveur est surchargé (non recommandé en usage normal, et surtout nécessaire pour les tests).
-
-## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de déterminer le parallélisme d’une requête à partir de la part équitable des créneaux CPU du contrôle de concurrence"}]}]} />
-
-Détermine le parallélisme d’une requête (le nombre de flux et de fils d’exécution prévus lors de sa planification) à partir de la part équitable des créneaux CPU du contrôle de concurrence du serveur, plutôt qu’à partir du nombre de cœurs CPU. La part équitable correspond à la limite de créneaux (voir les paramètres globaux du serveur `concurrent_threads_soft_limit_num` et `concurrent_threads_soft_limit_ratio_to_cores`) répartie à parts égales entre les pipelines en cours d’exécution et la nouvelle requête.
-
-Ainsi, lorsque de nombreuses requêtes s’exécutent simultanément, chacune est planifiée avec moins de flux : elle consomme moins de mémoire et moins de CPU pour fusionner les résultats partiels de ses fils d’exécution (par exemple, les états d’agrégation), ce qui augmente le débit global. Une requête planifiée alors que le serveur est inactif utilise tous les cœurs CPU, comme auparavant.
-
-La part équitable est déterminée une seule fois par requête, lors de la construction de son plan, afin que toutes les parties de la requête (sous-requêtes, sets, tables jointes) soient planifiées avec le même nombre de flux.
-
-Ce paramètre ne s’applique que si `max_threads` vaut `auto` (non défini explicitement) et si `use_concurrency_control` est activé.
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 
@@ -105,14 +81,6 @@ Valeurs possibles :
 
 * 0 — Désactivé.
 * 1 — Activé.
-
-## use_datalake_metadata_statistics {#use_datalake_metadata_statistics}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d’estimer, à partir des métadonnées de la table, le nombre de lignes et les statistiques de colonne des lectures de lac de données (Iceberg pour l’instant) pour le réordonnancement des JOIN."}]}]} />
-
-Lorsque [`use_statistics`](/fr/reference/settings/session-settings/use-statistics#use_statistics) est activé, estime une lecture de lac de données à partir des métadonnées de la table, sans lire les données, pour le réordonnancement des JOIN. Seul Iceberg est pris en charge : l’estimation s’appuie sur les manifestes de ses fichiers de données qui subsistent après l’élagage par partition et par min-max selon le filtre de la requête. Le nombre de lignes est tiré de leur `record_count`, tandis que le nombre de valeurs distinctes, les valeurs min/max et la fraction de NULL des colonnes renvoyées sont tirés de leurs valeurs de partition identity, de leurs bornes de valeurs et de leurs nombres de NULL. Le filtre, le `PREWHERE` et la politique de ligne de la lecture sont estimés à partir de ces statistiques, comme pour les tables MergeTree dotées de statistiques de colonne ; si aucune des colonnes demandées ne dispose de statistiques, un filtre qui n’élague aucun fichier ne produit aucune estimation, comme pour les tables MergeTree qui en sont dépourvues. L’estimation du nombre de lignes est exacte en l’absence de filtre et de fichiers de suppression. L’élagage par le filtre nécessite l’activation de [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning).
 
 ## use_hash_table_stats_for_join_reordering {#use_hash_table_stats_for_join_reordering}
 
@@ -166,16 +134,6 @@ Cela permet aux moteurs de stockage de filtrer plus tôt, ce qui peut réduire l
 L&#39;optimisation préserve la sémantique et n&#39;est appliquée que lorsque chaque branche OR de premier niveau apporte au moins un
 prédicat déterministe pour le côté cible.
 
-## use_join_runtime_filters_for_iceberg_pruning {#use_join_runtime_filters_for_iceberg_pruning}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant d’élaguer les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet, à l’aide des filtres JOIN à l’exécution."}]}]} />
-
-Ignore les fichiers de données Iceberg, ainsi que les groupes de lignes et les pages Parquet des fichiers lus, qui ne peuvent contenir aucune clé d’un filtre d’exécution de JOIN (voir [enable&#95;join&#95;runtime&#95;filters](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters)). Une fois le côté build de la jointure terminé, les clés du filtre (ou leur plage min/max, si le set est trop volumineux) sont comparées aux limites des colonnes figurant dans les manifestes, aux statistiques des groupes de lignes et à l’index des pages. Les fichiers de données demandés avant ce stade sont lus intégralement.
-
-Nécessite [enable&#95;join&#95;runtime&#95;filters&#95;index&#95;analysis](/fr/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) et [use&#95;iceberg&#95;partition&#95;pruning](/fr/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning). Pour les groupes de lignes, [input&#95;format&#95;parquet&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_filter_push_down) est également requis ; pour les pages, ce paramètre ainsi que [input&#95;format&#95;parquet&#95;page&#95;filter&#95;push&#95;down](/fr/reference/settings/formats/input-format#input_format_parquet_page_filter_push_down) sont requis.
-
 ## use_legacy_to_time {#use_legacy_to_time}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -205,16 +163,6 @@ Valeurs possibles :
 * 0 — Désactivé. Toutes les colonnes de la clé primaire sont traitées lors de l’analyse d’index.
 * 1 — Activé.
 
-## use_lz4_library_decompression {#use_lz4_library_decompression}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre : permet d’utiliser, en option, le décodeur de la bibliothèque amont `LZ4` à la place du décodeur adaptatif de ClickHouse."}]}]} />
-
-Utilise la bibliothèque amont `LZ4` pour décompresser les blocs natifs ClickHouse, y compris les données compressées avec `LZ4HC` ou avec une chaîne de codecs contenant `LZ4`.
-Désactivé par défaut : c’est alors le décodeur `LZ4` adaptatif de ClickHouse qui est utilisé. Les deux décodeurs lisent les mêmes données stockées ; modifier ce paramètre ne nécessite donc pas de réécrire les parts.
-Le paramètre s’applique à la décompression effectuée dans le contexte de la requête. En dehors d’une requête, c’est le paramètre du contexte global qui s’applique ou, en l’absence de contexte, le décodeur de ClickHouse.
-
 ## use_parquet_metadata_cache {#use_parquet_metadata_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -223,9 +171,7 @@ Le paramètre s’applique à la décompression effectuée dans le contexte de l
 
 Lorsque ce paramètre est activé, le format Parquet peut utiliser le cache des métadonnées Parquet.
 
-Pour le table engine `File` et la fonction de table `file`, une lecture avec filtre conserve également dans le cache les statistiques min/max des colonnes filtrées. Une requête ultérieure ignore alors un fichier sans l&#39;ouvrir si ces statistiques indiquent qu&#39;aucun groupe de lignes du fichier ne peut satisfaire son filtre. Les erreurs que seule l&#39;ouverture d&#39;un tel fichier lèverait (par exemple, une colonne sélectionnée absente du fichier alors que `input_format_parquet_allow_missing_columns` est désactivé) dépendent donc de la présence ou non de ses statistiques dans le cache. Désactiver ce paramètre désactive également la conservation des statistiques et le saut de fichiers.
-
-Valeurs possibles :
+Valeurs possibles :
 
 * 0 - Désactivé
 * 1 - Activé

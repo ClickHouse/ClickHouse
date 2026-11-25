@@ -7,7 +7,9 @@ doc_type: 'guide'
 keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
 ---
 
-هذا الدليل مخصص للمستخدمين الذين لديهم دور مسؤول في ClickHouse Cloud.
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+هذا الدليل مخصص للمستخدمين الذين لديهم دور Admin في ClickHouse Cloud.
 
 يمكن لعملاء ClickHouse Cloud الاختيار من بين أدوار النظام المعرّفة مسبقًا أو إنشاء أدوار مخصصة لتعيينها للمستخدمين. لمزيد من المعلومات حول أدوار النظام والأذونات المرتبطة بها، راجع [Console roles and permissions](/ar/products/cloud/reference/security/console-roles). يقدّم هذا الدليل تفاصيل حول إدارة الأدوار المخصصة.
 
@@ -19,41 +21,25 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   <Step title="الوصول إلى إعدادات المؤسسة واختيار `Users and roles`" id="users-and-roles-1">
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
   <Step title={<>اختر علامة التبويب <code>Roles</code></>} id="roles-tab">
     اختر علامة التبويب `Roles` من أعلى منتصف الشاشة.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
   <Step title={<>اختر <code>Create new role</code> من أعلى اليمين</>} id="create-new-role">
     اختر الزر `Create new role` في أعلى يمين الشاشة.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step title="سمِّ الدور" id="name-the-role">
+  <Step title="سمِّ الدور" id="name-the-role">
     أدخل اسمًا وصفيًا للدور. سيكون هذا هو الاسم الذي ستراه عند تعيين الأدوار للمستخدمين ولمفاتيح API.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
   <Step title={<>انقر على <code>Allow</code> وحدد نطاق الأذونات</>} id="scope-permissions">
@@ -69,21 +55,13 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
       للوصول إلى علامة التبويب **مصادر البيانات**، يتطلب الدور حاليًا الإذن `Manage selected services`.
     </Info>
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
   <Step title="راجع دورك الجديد" id="review-role">
-    راجع الأذونات المعيَّنة إلى دورك الجديد قبل الإنهاء. انقر على `Create role` عند الانتهاء.
+    راجع الأذونات المعيَّنة إلى دورك الجديد قبل الإنهاء. انقر على `Create role` عند الانتهاء.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
 
@@ -95,29 +73,17 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   هذه الميزة متاحة للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث.
 </Note>
 
-عند إضافة سياسة `Data` إلى دور مخصص، ينشئ ClickHouse Cloud دورًا مطابقًا في كل خدمة محددة، مع البادئة `cloud:`. على سبيل المثال، يظهر الدور المخصص المسمى `readonly` في قاعدة البيانات باسم `cloud:readonly`. يحصل أعضاء الدور المخصص على أذونات قاعدة البيانات هذه عند اتصالهم بالخدمة عبر المصادقة من دون كلمة مرور في وحدة تحكم SQL.
+عند إضافة سياسة `Data` إلى دور مخصص، ينشئ ClickHouse Cloud دورًا مطابقًا في كل خدمة محددة، مع البادئة `cloud:`. على سبيل المثال، يظهر الدور المخصص المسمى `readonly` في قاعدة البيانات باسم `cloud:readonly`. يحصل أعضاء الدور المخصص على أذونات قاعدة البيانات هذه عند اتصالهم بالخدمة عبر المصادقة من دون كلمة مرور في SQL Console.
 
 <Warning>
-  تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع جلسات JWT داخل وحدة تحكم SQL.
+  تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع جلسات JWT داخل SQL Console.
 </Warning>
-
-<Warning>
-  تحل سياسة `Data` ذات الوصول `Custom` محل الوصول إلى قاعدة البيانات الذي يحصل عليه العضو من الأدوار المضمّنة [مسؤول وحدة تحكم SQL أو وحدة تحكم SQL للقراءة فقط](/ar/products/cloud/reference/security/console-roles#sql-console-roles)، ولا تُضاف إليه. فعندما ينتمي العضو إلى أي دور مخصص يتمتع بوصول `Custom` على خدمة ما، تقتصر جلسات وحدة تحكم SQL الخاصة به على تلك الخدمة على الامتيازات المحددة في أدواره المخصصة فقط. وينطبق ذلك أيضًا على مسؤولي المؤسسة. وعند الانتماء إلى عدة أدوار مخصصة، تُجمَع امتيازاتها معًا.
-
-  أدرِج في السياسة كل امتياز يحتاجه الأعضاء. ولا تُضِف الأعضاء الذين يحتاجون إلى صلاحية الكتابة إلى دور مخصص لا يمنح سوى صلاحية القراءة.
-</Warning>
-
-لا تتضمن أدوار قاعدة البيانات التي يديرها Cloud سوى الامتيازات. فلا تنطبق [ملفات تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles) والحصص وسياسات الصفوف المُسنَدة إلى دور `cloud:` على جلسات وحدة تحكم SQL، إذ تستخدم هذه الجلسات الإعدادات الافتراضية للخدمة. ولتقييد الموارد لاستعلام واحد، أضِف عبارة `SETTINGS` إلى الاستعلام، مثل `SETTINGS max_memory_usage = 10000000000`.
 
 ### المتطلبات الأساسية {#manage-database-roles-prerequisites}
 
-تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [المصادقة باستخدام JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة سياسة `Data` إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
+تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة سياسة `Data` إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![بطاقة المصادقة باستخدام JWT مع تفعيل مفتاح تبديل وحدة تحكم SQL](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="بطاقة مصادقة JWT مع تفعيل مفتاح تبديل SQL Console" size="lg" force />
 
 <Steps>
   <Step title="فتح مربع حوار الدور" id="open-role-dialog">
@@ -131,7 +97,7 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   <Step title="إضافة سياسة على مستوى الخدمة" id="add-service-policy">
     انقر فوق `Allow permissions`، واختر `Service`، ثم حدد الخدمات التي ستنطبق عليها سياسة البيانات، وفعّل الإذن `View selected services`.
 
-    يحتاج أعضاء الدور إلى كلا الإذنين لتسجيل الدخول إلى الـ console وفتح الخدمة في وحدة تحكم SQL، حيث تنطبق سياسة البيانات.
+    يحتاج أعضاء الدور إلى كلا الإذنين لتسجيل الدخول إلى الـ console وفتح الخدمة في SQL console، حيث تنطبق سياسة البيانات.
   </Step>
 
   <Step title="إضافة سياسة للبيانات" id="add-data-permissions">
@@ -143,15 +109,9 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   </Step>
 
   <Step title="اختيار مستوى الوصول" id="choose-data-access-level">
-    حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse. لا يمكن تحديد مستوى الوصول `Custom` إلا عندما تستهدف السياسة خدمة واحدة؛ ولتحديد أذونات مخصصة لخدمات متعددة، أضف سياسة `Data` منفصلة لكل خدمة. بالنسبة إلى الخدمات الموجودة ضمن [مستودع](/ar/products/cloud/features/infrastructure/warehouses)، عرّف مستوى الوصول `Custom` على الخدمة الرئيسية للمستودع، وسينطبق حينئذٍ على جميع خدمات المستودع.
+    حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse. لا يمكن تحديد مستوى الوصول `Custom` إلا عندما تستهدف السياسة خدمة واحدة؛ ولتحديد أذونات مخصصة لخدمات متعددة، أضف سياسة `Data` منفصلة لكل خدمة.
 
-    لا يقبل مستوى الوصول `Custom` إلا عبارات منح الامتيازات، مثل `GRANT SELECT ON db.table`. أما العبارات التي تمنح دورًا، مثل `GRANT my_role`، أو التي تتضمن عبارة `TO` أو `FROM`، فتُرفض.
-
-    <div className="ch-image-md">
-      <Frame>
-        ![مربع حوار إنشاء دور جديد مع أذونات للبيانات محددة بعبارات منح مخصصة](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="مربع حوار إنشاء دور جديد مع أذونات للبيانات محددة بعبارات منح مخصصة" size="md" />
   </Step>
 
   <Step title="إنشاء الدور" id="create-role-with-data-permissions">
@@ -161,7 +121,7 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
 
 ### التحقق من أدوار قاعدة البيانات {#verify-database-roles}
 
-تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`، وقد يستغرق ظهورها بعد إنشائها ما يصل إلى 10 دقائق. لعرضها، نفّذ استعلامًا على table `system.roles` في الخدمة:
+تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`، وقد يستغرق ظهورها بعد إنشائها ما يصل إلى 10 دقائق. لعرضها، نفّذ query على table `system.roles` في الخدمة:
 
 ```sql
 SELECT * FROM system.roles;
@@ -173,16 +133,14 @@ SELECT * FROM system.roles;
 └────────────────┴──────────────────────────────────────┴─────────┘
 ```
 
-للتحقق من الامتيازات التي تمتلكها session وحدة تحكم SQL الخاصة بك، شغّل `SHOW GRANTS` في وحدة تحكم SQL. يعرض الإخراج الامتيازات المجمّعة لأدوارك المخصصة. ولا تحمل جلسات وحدة تحكم SQL أدوار `cloud:` نفسها، لذا تُعيد `currentRoles` مصفوفة فارغة.
-
 <div id="update-custom-role">
-  ## تحديث الأدوار المخصصة {#update-custom-role}
+  ## تحديث الأدوار المخصصة
 </div>
 
 يمكن تحديث الأدوار المخصصة بعد إنشائها. سيفقد المستخدمون أي أذونات تُزال من الدور، وسيُمنحون أي أذونات تُضاف إليه.
 
 <Tip>
-  أذونات المستخدمين تراكمية. إذا كان لدى مستخدم إذن لتنفيذ عملية ما ضمن عدة أدوار، فقد لا يفقد حق الوصول فورًا إذا أُزيل الإذن من دور واحد فقط. ويُستثنى من ذلك الوصول إلى قاعدة البيانات: فسياسة `Data` ذات مستوى الوصول `Custom` تحل محل صلاحية الوصول المدمجة إلى قاعدة البيانات عبر وحدة تحكم SQL. راجع [إدارة أدوار قاعدة البيانات](#manage-database-roles).
+  أذونات المستخدمين تراكمية. إذا كان لدى مستخدم إذن لتنفيذ عملية ما ضمن عدة أدوار، فقد لا يفقد حق الوصول فورًا إذا أُزيل الإذن من دور واحد فقط.
 </Tip>
 
 1. انتقل إلى إعدادات المؤسسة وحدد `Users and roles`
@@ -193,7 +151,7 @@ SELECT * FROM system.roles;
 6. حدد `Edit role`
 
 <div id="delete-custom-role">
-  ## حذف الأدوار المخصصة {#delete-custom-role}
+  ## حذف الأدوار المخصصة
 </div>
 
 يمكن حذف الأدوار المخصصة في أي وقت.

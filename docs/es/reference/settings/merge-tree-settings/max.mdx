@@ -91,28 +91,6 @@ El valor de esta configuración no incluye la longitud de la extensión del arch
 se recomienda establecerlo por debajo de la longitud máxima del nombre de archivo (normalmente 255
 bytes), dejando cierto margen para evitar errores del sistema de archivos.
 
-## max_memory_ratio_to_activate_adaptive_write_buffer {#max_memory_ratio_to_activate_adaptive_write_buffer}
-
-<SettingsInfoBlock type="Float" default_value="0.03125" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.03125"},{"label": "Nuevo ajuste. Activa los búferes de escritura adaptativos cuando los búferes que preasigna una parte de formato Wide ocuparían al menos esta fracción del memory limit del servidor, de modo que una tabla con muchas columnas no reserve cientos de megabytes de búferes de escritura en un servidor pequeño. El valor anterior deshabilita este disparador y conserva el comportamiento previo a la versión 26.11."}]}]} />
-
-Activa también los búferes de escritura adaptativos cuando los búferes que preasigna una parte de formato Wide ocuparían al menos esta
-fracción del memory limit del servidor (`max_server_memory_usage`), independientemente de
-`min_columns_to_activate_adaptive_write_buffer`.
-
-Una parte de formato Wide preasigna dos búferes de `max_compress_block_size` por cada stream que escribe (el búfer
-de archivo y el búfer de bloque del compresor), por lo que una tabla con muchas columnas reserva cientos de megabytes
-antes de escribir un solo byte, y cada fusión concurrente vuelve a reservarlos. Esto es insignificante en un servidor
-grande, pero supone una parte considerable de la memoria disponible en uno pequeño, donde puede hacer que un `INSERT` falle con
-`MEMORY_LIMIT_EXCEEDED`.
-
-Se aplica a las inserciones y a las fusiones y mutaciones de tablas no replicadas. Las fusiones y mutaciones de tablas
-replicadas lo ignoran: los búferes de escritura adaptativos modifican los desplazamientos almacenados en las marcas, y las réplicas comparan las sumas de comprobación
-de las partes que fusionan, por lo que los búferes no deben depender del memory limit de cada réplica.
-
-Establézcalo en `0` para desactivar este disparador y elegir los búferes de escritura adaptativos únicamente según el número de columnas.
-
 ## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />

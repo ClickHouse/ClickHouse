@@ -1,13 +1,17 @@
 ---
-sidebarTitle: '付款阈值'
+sidebarTitle: '支付阈值'
 slug: /cloud/billing/payment-thresholds
-title: '付款阈值'
-description: 'ClickHouse Cloud 的付款阈值和自动出账。'
-keywords: ['计费', '付款阈值', '自动出账', '发票']
+title: '支付阈值'
+description: 'ClickHouse Cloud 的支付阈值和自动出账。'
+keywords: ['计费', '支付阈值', '自动出账', '账单']
 doc_type: 'guide'
 ---
 
-## 付款阈值 {#threshholds}
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="threshholds">
+  ## 支付阈值
+</div>
 
 如果您是按量付费客户，且在某个 ClickHouse Cloud 计费周期内的应付金额达到 1,000 美元或等值金额，系统会自动从您的组织所配置的付款方式中扣款。
 
@@ -23,22 +27,14 @@ doc_type: 'guide'
 
 在下面的示例中，展示了 Cloud Console 中的 Billing UI：
 
-<div className="ch-image-sm">
-  <Frame>
-    ![在 UI 中哪里可以找到账单](/images/cloud/reference/billing_payment_threshhold.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="在 UI 中哪里可以找到账单" />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![账单](/images/cloud/reference/billing_payment_threshhold_2.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="账单" />
 
 如上例所示，在 2 月 28 日至 3 月 31 日的计费周期内发送了一张阈值发票，随后在同一计费周期内，又针对超过 1,000 美元的剩余用量发送了另一张发票。
 
 <div id="threshholds-notifications">
-  ## 支付阈值通知 {#threshholds-notifications}
+  ## 支付阈值通知
 </div>
 
 如果您的组织已达到支付阈值的 90%，且预计会在当期中途超过该支付阈值，与该组织关联的账单联系人邮箱将收到一封电子邮件通知。

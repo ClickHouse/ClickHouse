@@ -16,16 +16,12 @@ Principais recursos:
 
 * Executar consultas SQL e recuperar resultados no formato Apache Arrow.
 * Inserir dados em tabelas usando o formato Arrow.
-* Consultar metadados (catálogos, schemas, tabelas, chaves primárias) por meio de comandos do Flight SQL.
+* Consultar metadados (catálogos, esquemas, tabelas, chaves primárias) por meio de comandos do Flight SQL.
 * Criar, vincular, executar e fechar instruções preparadas no servidor por meio do Flight SQL.
 * Gerenciar sessões e configurações por meio de ações do Flight SQL.
 * Criptografia com TLS e autenticação com nome de usuário e senha.
 * Recuperação incremental de resultados por meio de `PollFlightInfo`.
 * Cancelamento de consultas por meio de `CancelFlightInfo`.
-
-<Note>
-  No ClickHouse Cloud, a interface Arrow Flight vem desabilitada por padrão e só pode ser usada após a habilitação de uma feature flag do Cloud para o seu serviço. Os exemplos de configuração do servidor a seguir se aplicam ao ClickHouse autogerenciado.
-</Note>
 
 ## Habilitando o Arrow Flight Server {#enabling-server}
 

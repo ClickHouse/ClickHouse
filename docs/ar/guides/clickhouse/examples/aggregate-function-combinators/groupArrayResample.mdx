@@ -7,7 +7,9 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-## الوصف {#description}
+<div id="description">
+  ## الوصف
+</div>
 
 يمكن تطبيق المُركِّب [`Resample`](/ar/reference/functions/aggregate-functions/combinators#-resample)
 على الدالة التجميعية [`groupArray`](/ar/reference/functions/aggregate-functions/sum) من أجل
@@ -16,7 +18,9 @@ doc_type: 'reference'
 (تقابل أصغر مفتاح) من نقاط البيانات الواقعة ضمن كل فترة.
 وهو ينشئ عرضًا للبيانات بعد تقليل أخذ العينات، بدلًا من جمع جميع القيم.
 
-## مثال على الاستخدام {#example-usage}
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
 
 لنلقِ نظرة على مثال. سننشئ جدولًا يحتوي على `name` و`age` و
 `wage` للموظفين، وسنُدرج فيه بعض البيانات:
@@ -28,7 +32,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -58,7 +62,9 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-## انظر أيضًا {#see-also}
+<div id="see-also">
+  ## انظر أيضًا
+</div>
 
 * [`groupArray`](/ar/reference/functions/aggregate-functions/groupArray)
 * [`Resample المُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-resample)

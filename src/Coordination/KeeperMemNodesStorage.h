@@ -143,7 +143,7 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     {
         const Node * node = nullptr;
 
-        [[nodiscard]] const Node * get() const { return node; }
+        const Node * get() const { return node; }
     };
 
     using Container = SnapshotableHashTable<KeeperMemNode>;
@@ -183,11 +183,11 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     {
         std::optional<UncommittedNodesIterator> it{};
 
-        [[nodiscard]] const Node * get() const { return it ? (*it)->second.node.get() : nullptr; }
+        const Node * get() const { return it ? (*it)->second.node.get() : nullptr; }
 
         /// Mutable access to the node. Should only be used from `prepare*` functions, together
         /// with producing deltas matching the changes made to the Node.
-        [[nodiscard]] Node * getMut() const
+        Node * getMut() const
         {
             chassert(it.has_value());
             chassert((*it)->second.node != nullptr);

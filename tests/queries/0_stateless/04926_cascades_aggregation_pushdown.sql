@@ -3,8 +3,6 @@
 -- `Aggregating` below on the pushed input. It wins when the pushed side is huge but has few
 -- distinct keys.
 
-SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
-
 DROP TABLE IF EXISTS t_push_facts;
 DROP TABLE IF EXISTS t_push_dims;
 DROP TABLE IF EXISTS t_push_dims_multi;

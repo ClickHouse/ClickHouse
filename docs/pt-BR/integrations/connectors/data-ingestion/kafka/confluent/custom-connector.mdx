@@ -1,13 +1,14 @@
 ---
-sidebarTitle: 'Kafka Connector Sink como Conector Personalizado'
+sidebarTitle: 'Kafka Connector Sink como Custom Connector'
 slug: /integrations/kafka/cloud/confluent/custom-connector
-description: 'Faça o upload e execute o ClickHouse Connector Sink no Confluent Cloud como um Conector Personalizado'
-title: 'ClickHouse Connector Sink como Conector Personalizado no Confluent Cloud'
+description: 'Faça o upload e execute o ClickHouse Connector Sink no Confluent Cloud como um Custom Connector'
+title: 'ClickHouse Connector Sink como Custom Connector no Confluent Cloud'
 keywords: ['integração entre Confluent e ClickHouse', 'connector Kafka do ClickHouse', 'sink do ClickHouse no Kafka Connect', 'Confluent Platform ClickHouse', 'connector personalizado do Confluent']
 doc_type: 'guide'
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <div class="vimeo-container">
   <Frame>
@@ -23,7 +24,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## Pré-requisitos {#prerequisites}
+  ## Pré-requisitos
 </div>
 
 Partimos do pressuposto de que você já esteja familiarizado com:
@@ -38,28 +39,28 @@ Partimos do pressuposto de que você já esteja familiarizado com:
 ## O connector oficial do Kafka da ClickHouse como um Custom Connector {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
 
 <div id="installing-on-confluent-platform">
-  ### Instalação como Custom Connector {#installing-on-confluent-platform}
+  ### Instalação como Custom Connector
 </div>
 
 Este é um guia rápido para ajudar você a começar a usar o ClickHouse Sink Connector como Custom Connector no Confluent Cloud.
 Para mais detalhes, consulte a [documentação oficial da Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
-  #### Criar um tópico {#create-a-topic}
+  #### Criar um tópico
 </div>
 
 Criar um tópico no Confluent Cloud é bastante simples, e há instruções detalhadas [aqui](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
-  #### Observações importantes {#important-notes}
+  #### Observações importantes
 </div>
 
 * O nome do tópico do Kafka deve ser o mesmo da tabela do ClickHouse. A forma de ajustar isso é usando um transformador (por exemplo, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
 * Mais partições nem sempre significam mais desempenho — consulte nosso próximo guia para mais detalhes e dicas de performance.
 
-#### Instalar o connector {#install-connector}
+#### Instalar o conector {#install-connector}
 
-Você pode baixar o connector em nosso [repositório](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) — sinta-se à vontade para enviar comentários e relatar problemas por lá também!
+Você pode baixar o conector em nosso [repositório](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) — sinta-se à vontade para enviar comentários e relatar problemas por lá também!
 
 Navegue até &quot;Connector Plugins&quot; -&gt; &quot;Add plugin&quot; e use as seguintes configurações:
 
@@ -71,20 +72,16 @@ Navegue até &quot;Connector Plugins&quot; -&gt; &quot;Add plugin&quot; e use as
 
 Exemplo:
 
-<div className="ch-image-md">
-  <Frame>
-    ![UI do Confluent Platform mostrando as configurações para adicionar um connector personalizado do ClickHouse](/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="IU da Confluent Platform mostrando as configurações para adicionar um conector ClickHouse personalizado" border />
 
 <div id="gather-your-connection-details">
-  #### Reúna os detalhes da conexão {#gather-your-connection-details}
+  #### Reúna os detalhes da conexão
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### Configurar o conector {#configure-the-connector}
+  #### Configurar o conector
 </div>
 
 Acesse `Connectors` -&gt; `Add Connector` e use as configurações a seguir (observe que os valores são apenas exemplos):
@@ -108,7 +105,7 @@ Acesse `Connectors` -&gt; `Add Connector` e use as configurações a seguir (obs
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### Especifique os endpoints de conexão {#specify-the-connection-endpoints}
+  #### Especifique os endpoints de conexão
 </div>
 
 Você precisa especificar a lista de permissões de endpoints que o conector pode acessar.
@@ -123,9 +120,11 @@ Example: `u57swl97we.eu-west-1.aws.clickhouse.com:8443`
 
 Tudo pronto!
 
-#### Limitações conhecidas {#known-limitations}
+<div id="known-limitations">
+  #### Limitações conhecidas
+</div>
 
-* Os Conectores Personalizados devem usar endpoints da internet pública. Endereços IP estáticos não são compatíveis.
-* É possível substituir algumas propriedades do Conector Personalizado. Consulte a [lista completa na documentação oficial.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
-* Os Conectores Personalizados estão disponíveis apenas em [algumas regiões da AWS](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
-* Consulte a lista de [limitações dos Conectores Personalizados na documentação oficial](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)
+* Os Custom Connectors devem usar endpoints públicos na internet. Endereços IP estáticos não são compatíveis.
+* Você pode substituir algumas propriedades dos Custom Connectors. Veja a [lista completa na documentação oficial.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
+* Os Custom Connectors estão disponíveis apenas em [algumas regiões da AWS](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
+* Consulte a lista de [limitações dos Custom Connectors na documentação oficial](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)

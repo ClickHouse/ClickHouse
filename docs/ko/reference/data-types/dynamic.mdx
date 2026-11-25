@@ -18,7 +18,9 @@ doc_type: 'guide'
 
 여기서 `N`은 `0`부터 `254` 사이의 선택적 매개변수로, 별도로 저장되는 단일 데이터 블록(예를 들어 MergeTree 테이블의 단일 데이터 파트(data part)) 전체에서 `Dynamic` 타입 컬럼 안에 서로 다른 데이터 타입을 별도의 서브컬럼으로 몇 개까지 저장할 수 있는지를 나타냅니다. 이 한도를 초과하면 새 타입의 모든 값은 특수한 공유 데이터 구조(shared data structure)에 바이너리 형식으로 함께 저장됩니다. `max_types`의 기본값은 `32`입니다.
 
-## Dynamic 생성 {#creating-dynamic}
+<div id="creating-dynamic">
+  ## Dynamic 생성
+</div>
 
 테이블 컬럼 정의에 `Dynamic` 유형을 사용합니다:
 
@@ -64,7 +66,9 @@ SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NU
 └───────┴────────────────┘
 ```
 
-## Dynamic 중첩 타입을 서브컬럼으로 읽기 {#reading-dynamic-nested-types-as-subcolumns}
+<div id="reading-dynamic-nested-types-as-subcolumns">
+  ## Dynamic 중첩 타입을 서브컬럼으로 읽기
+</div>
 
 `Dynamic` 타입은 타입 이름을 서브컬럼으로 사용해 `Dynamic` 컬럼에서 단일 중첩 타입을 읽을 수 있도록 지원합니다.
 따라서 `d Dynamic` 컬럼이 있으면 `d.T` 구문을 사용해 임의의 유효한 타입 `T`의 서브컬럼을 읽을 수 있습니다.
@@ -132,11 +136,15 @@ SELECT dynamicType(d) FROM test;
 └────────────────┘
 ```
 
-## Dynamic 컬럼과 다른 컬럼 간의 변환 {#conversion-between-dynamic-column-and-other-columns}
+<div id="conversion-between-dynamic-column-and-other-columns">
+  ## Dynamic 컬럼과 다른 컬럼 간의 변환
+</div>
 
 `Dynamic` 컬럼으로 수행할 수 있는 변환은 4가지입니다.
 
-### 일반 컬럼을 Dynamic 컬럼으로 변환 {#converting-an-ordinary-column-to-a-dynamic-column}
+<div id="converting-an-ordinary-column-to-a-dynamic-column">
+  ### 일반 컬럼을 Dynamic 컬럼으로 변환
+</div>
 
 ```sql
 SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
@@ -148,7 +156,9 @@ SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 └───────────────┴────────────────┘
 ```
 
-### 파싱을 통해 String 컬럼을 Dynamic 컬럼으로 변환하기 {#converting-a-string-column-to-a-dynamic-column-through-parsing}
+<div id="converting-a-string-column-to-a-dynamic-column-through-parsing">
+  ### 파싱을 통해 String 컬럼을 Dynamic 컬럼으로 변환하기
+</div>
 
 `String` 컬럼에서 `Dynamic` 타입 값을 파싱하려면 `cast_string_to_dynamic_use_inference` 설정을 활성화할 수 있습니다:
 
@@ -163,9 +173,11 @@ SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'))
 └─────────────────────────────────────────────┴──────────────────────────────────────────────┘
 ```
 
-### Dynamic 컬럼을 일반 컬럼으로 변환하기 {#converting-a-dynamic-column-to-an-ordinary-column}
+<div id="converting-a-dynamic-column-to-an-ordinary-column">
+  ### Dynamic 컬럼을 일반 컬럼으로 변환하기
+</div>
 
-`Dynamic` 컬럼은 일반 컬럼으로 변환할 수 있습니다. 이 경우 모든 중첩 유형이 대상 유형으로 변환됩니다:
+`Dynamic` 컬럼은 일반 컬럼으로 변환할 수 있습니다. 이 경우 모든 중첩 타입이 대상 타입으로 변환됩니다:
 
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE = Memory;
@@ -183,9 +195,9 @@ SELECT d::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-대상 유형으로 변환할 수 없는 유형은 컬럼에 해당 유형의 값이 포함된 경우에만 오류를 발생시킵니다.
-
-### Variant 컬럼을 Dynamic 컬럼으로 변환 {#converting-a-variant-column-to-dynamic-column}
+<div id="converting-a-variant-column-to-dynamic-column">
+  ### Variant 컬럼을 Dynamic 컬럼으로 변환
+</div>
 
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
@@ -202,7 +214,9 @@ SELECT v::Dynamic AS d, dynamicType(d) FROM test;
 └─────────┴────────────────┘
 ```
 
-### Dynamic(max_types=N) 컬럼을 다른 Dynamic(max_types=K)으로 변환하기 {#converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk}
+<div id="converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk">
+  ### Dynamic(max_types=N) 컬럼을 다른 Dynamic(max_types=K)으로 변환하기
+</div>
 
 `K >= N`이면 변환 과정에서 데이터는 변경되지 않습니다:
 
@@ -262,7 +276,9 @@ SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDyna
 └─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
 ```
 
-## 데이터에서 Dynamic 타입 읽기 {#reading-dynamic-type-from-the-data}
+<div id="reading-dynamic-type-from-the-data">
+  ## 데이터에서 Dynamic 타입 읽기
+</div>
 
 모든 텍스트 형식(TSV, CSV, CustomSeparated, Values, JSONEachRow 등)은 `Dynamic` 타입 읽기를 지원합니다. 데이터를 파싱하는 동안 ClickHouse는 각 값의 유형을 추론한 뒤, `Dynamic` 컬럼에 삽입할 때 해당 유형을 사용하려고 시도합니다.
 
@@ -296,7 +312,9 @@ $$)
 └───────────────┴────────────────┴───────────────┴──────┴───────┴────────────┴─────────┘
 ```
 
-## 함수에서 Dynamic 타입 사용 {#using-dynamic-type-in-functions}
+<div id="using-dynamic-type-in-functions">
+  ## 함수에서 Dynamic 타입 사용
+</div>
 
 대부분의 함수는 `Dynamic` 타입의 인수를 지원합니다. 이 경우 함수는 `Dynamic` 컬럼 내부에 저장된 각 내부 데이터 타입별로 개별 실행됩니다.
 함수의 결과 타입이 인수 타입에 따라 달라지는 경우, `Dynamic` 인수로 실행된 함수의 결과 타입은 `Dynamic`이 됩니다. 함수의 결과 타입이 인수 타입에 의존하지 않는 경우, 결과는 `Nullable(T)`가 되며, 여기서 `T`는 해당 함수의 일반적인 결과 타입입니다.
@@ -503,7 +521,9 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 └───────┴──────┴─────────────────┘
 ```
 
-### 유형 불일치 시 동작 {#dynamic-type-mismatch-behavior}
+<div id="dynamic-type-mismatch-behavior">
+  ### 유형 불일치 시 동작
+</div>
 
 설정 `dynamic_throw_on_type_mismatch`는 함수가 `Dynamic` 컬럼에 적용될 때 각 행에 실제로 저장된 유형이 해당 함수와 호환되지 않으면 어떻게 처리할지를 제어합니다.
 
@@ -532,7 +552,9 @@ SELECT d, length(d) FROM test ORDER BY d::String NULLS LAST;
 └───────┴───────────┘
 ```
 
-## ORDER BY 및 GROUP BY에서 Dynamic 타입 사용 {#using-dynamic-type-in-order-by-and-group-by}
+<div id="using-dynamic-type-in-order-by-and-group-by">
+  ## ORDER BY 및 GROUP BY에서 Dynamic 타입 사용
+</div>
 
 `ORDER BY` 및 `GROUP BY`에서 `Dynamic` 타입의 값은 `Variant` 타입의 값과 비슷한 방식으로 비교됩니다.
 `Dynamic` 타입에서 내부 타입이 `T1`인 값 `d1`과 내부 타입이 `T2`인 값 `d2`에 대한 `<` 연산자의 결과는 다음과 같이 정의됩니다:
@@ -615,14 +637,18 @@ SELECT d, dynamicType(d) FROM test GROUP BY d SETTINGS allow_suspicious_types_in
 
 **참고:** 설명한 비교 규칙은 `Dynamic` 타입 함수의 [특수한 동작](#using-dynamic-type-in-functions) 때문에 `<`/`>`/`=` 등의 비교 함수를 실행할 때는 적용되지 않습니다
 
-## Dynamic 내부에 저장되는 서로 다른 데이터 타입 수 한도에 도달한 경우 {#reaching-the-limit-in-number-of-different-data-types-stored-inside-dynamic}
+<div id="reaching-the-limit-in-number-of-different-data-types-stored-inside-dynamic">
+  ## Dynamic 내부에 저장되는 서로 다른 데이터 타입 수 한도에 도달한 경우
+</div>
 
 `Dynamic` 데이터 타입은 제한된 수의 서로 다른 데이터 타입만 별도의 서브컬럼으로 저장할 수 있습니다. 기본 한도는 32이지만, 타입 선언에서 `Dynamic(max_types=N)` 구문을 사용해 변경할 수 있습니다. 여기서 N은 0에서 254 사이의 값입니다(구현 세부 사항 때문에 Dynamic 내부에서 별도의 서브컬럼으로 저장할 수 있는 서로 다른 데이터 타입은 254개를 초과할 수 없습니다).
 이 한도에 도달하면 이후 `Dynamic` 컬럼에 삽입되는 모든 새로운 데이터 타입은, 서로 다른 데이터 타입의 값을 바이너리 형식으로 저장하는 하나의 공유 데이터 구조에 삽입됩니다.
 
 이제 서로 다른 시나리오에서 이 한도에 도달하면 어떤 일이 발생하는지 살펴보겠습니다.
 
-### 데이터 파싱 중 한도에 도달한 경우 {#reaching-the-limit-during-data-parsing}
+<div id="reaching-the-limit-during-data-parsing">
+  ### 데이터 파싱 중 한도에 도달한 경우
+</div>
 
 데이터에서 `Dynamic` 값을 파싱하는 동안 현재 데이터 블록에서 한도에 도달하면, 모든 새 값이 공유 데이터 구조에 삽입됩니다:
 
@@ -650,7 +676,9 @@ SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM format(JSONEachRo
 
 알 수 있듯이, 서로 다른 3개의 데이터 타입인 `Int64`, `Array(Int64)`, `String`을 삽입한 후 새 타입은 모두 특수한 공유 데이터 구조에 저장되었습니다.
 
-### MergeTree 테이블 엔진에서 데이터 파트가 머지되는 동안 {#during-merges-of-data-parts-in-mergetree-table-engines}
+<div id="during-merges-of-data-parts-in-mergetree-table-engines">
+  ### MergeTree 테이블 엔진에서 데이터 파트가 머지되는 동안
+</div>
 
 MergeTree 테이블에서 여러 데이터 파트가 머지되는 동안, 결과 데이터 파트의 `Dynamic` 컬럼은 내부의 별도 서브컬럼에 저장할 수 있는 서로 다른 데이터 타입 수의 한도에 도달할 수 있으며, 그 결과 원본 파트의 모든 타입을 서브컬럼으로 저장하지 못할 수 있습니다.
 이 경우 ClickHouse는 머지 후 어떤 타입을 별도 서브컬럼으로 유지하고 어떤 타입을 공유 데이터 구조에 삽입할지 선택합니다. 대부분의 경우 ClickHouse는 가장 자주 나타나는 타입을 유지하고, 가장 드물게 나타나는 타입은 공유 데이터 구조에 저장하려고 하지만, 이는 구현에 따라 달라집니다.
@@ -703,7 +731,9 @@ SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test
 
 보시다시피 ClickHouse는 가장 빈도가 높은 타입인 `UInt64`와 `Array(UInt64)`는 서브컬럼으로 유지하고, 나머지 모든 타입은 공유 데이터에 삽입했습니다.
 
-## Dynamic와 함께 사용하는 JSONExtract 함수 {#jsonextract-functions-with-dynamic}
+<div id="jsonextract-functions-with-dynamic">
+  ## Dynamic와 함께 사용하는 JSONExtract 함수
+</div>
 
 모든 `JSONExtract*` 함수는 `Dynamic` 타입을 지원합니다:
 
@@ -737,7 +767,9 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Dyn
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
 ```
 
-### 바이너리 출력 형식 {#binary-output-format}
+<div id="binary-output-format">
+  ### 바이너리 출력 형식
+</div>
 
 RowBinary format에서 `Dynamic` 타입 값은 다음과 같은 형식으로 직렬화됩니다:
 

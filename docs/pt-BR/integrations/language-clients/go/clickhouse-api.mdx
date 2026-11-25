@@ -270,27 +270,7 @@ for i := 0; i < 100; i++ {
 }
 ```
 
-[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
-
-### Inserção assíncrona com lote {#async-insert-batch}
-
-`WithAsync` também se aplica a inserções em lote nos protocolos Native e HTTP. Um lote usa apenas o contexto passado para `PrepareBatch`. `Send` envia o lote com as configurações desse contexto.
-
-```go
-ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
-batch, err := conn.PrepareBatch(ctx, "INSERT INTO example") // WithAsync must be on this context
-if err != nil {
-    return err
-}
-for i := 0; i < 100; i++ {
-    if err := batch.Append(uint64(i), "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
-        return err
-    }
-}
-return batch.Send()
-```
-
-[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async_native.go)
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/async.go)
 
 ## Inserção colunar {#columnar-insert}
 

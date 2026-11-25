@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Псевдонимы**: `str_to_map`, `mapFromString`
+**Псевдонимы**: `mapFromString`, `str_to_map`
 
 **Аргументы**
 
@@ -833,17 +833,15 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Добавленный в: v21.2.0
 
 Возвращает ключи заданного Map.
-Если Map больше нигде в запросе не используется, функция может считывать только подстолбец `keys`, а не весь Map.
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Когда настройка включена, функция считывает только подстолбец `keys`, а не весь Map.
 Запрос `SELECT mapKeys(m) FROM table` преобразуется в `SELECT m.keys FROM table`.
-Эта оптимизация управляется настройкой [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), которая включена по умолчанию.
 
 **Синтаксис**
 
 ```sql
 mapKeys(map)
 ```
-
-**Псевдонимы**: `map_keys`
 
 **Аргументы**
 
@@ -960,7 +958,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Возвращаемое значение**
 
-Возвращает Map или кортеж из двух массивов, где первый содержит ключи в отсортированном порядке, а второй — значения для соответствующих ключей. [`Map(K, V)`](/ru/reference/data-types/map) или [`Tuple(Array(UInt*), Array)`](/ru/reference/data-types/tuple)
+Возвращает Map или кортеж из двух массивов, где первый содержит ключи в отсортированном порядке, а второй — значения для соответствующих ключей. [`Map(K, V)`](/ru/reference/data-types/map) или [`Tuple(Array(UInt*), Array(Any))`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
@@ -1167,17 +1165,15 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Добавленный в: v21.2.0
 
 Возвращает значения указанного Map.
-Если Map больше нигде в запросе не используется, функция может считывать только подстолбец `values`, а не весь Map.
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Если настройка включена, функция считывает только подстолбец `values`, а не весь Map.
 Запрос `SELECT mapValues(m) FROM table` преобразуется в `SELECT m.values FROM table`.
-Эта оптимизация управляется настройкой [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), которая включена по умолчанию.
 
 **Синтаксис**
 
 ```sql
 mapValues(map)
 ```
-
-**Псевдонимы**: `map_values`
 
 **Аргументы**
 

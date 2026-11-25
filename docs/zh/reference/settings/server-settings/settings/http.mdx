@@ -132,11 +132,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 **示例**
 
-访问 `http://localhost: http_port` 时，将打开内置的网页用户界面 (`/play`)。
+访问 `http://localhost: http_port` 时，将打开 `https://tabix.io/`。
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
+  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```
 

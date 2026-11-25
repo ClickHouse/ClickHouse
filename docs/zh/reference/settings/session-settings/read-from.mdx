@@ -10,12 +10,13 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## read_from_distributed_cache_if_exists_otherwise_bypass_cache {#read_from_distributed_cache_if_exists_otherwise_bypass_cache}
+<div id="read_from_distributed_cache_if_exists_otherwise_bypass_cache">
+  ## read_from_distributed_cache_if_exists_otherwise_bypass_cache
+</div>
 
 <CloudOnlyBadge />
 
@@ -25,23 +26,17 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。与 read&#95;from&#95;filesystem&#95;cache&#95;if&#95;exists&#95;otherwise&#95;bypass&#95;cache 相同，但作用于分布式缓存。
 
-## read_from_filesystem_cache_if_exists_otherwise_bypass_cache {#read_from_filesystem_cache_if_exists_otherwise_bypass_cache}
+<div id="read_from_filesystem_cache_if_exists_otherwise_bypass_cache">
+  ## read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 允许以被动模式使用文件系统缓存——利用现有缓存条目，但不再向缓存中写入新的条目。如果对高负载的临时查询启用此设置，而对短时实时查询保持禁用，就有助于避免高负载查询造成缓存抖动，并提升系统整体效率。
 
-## read_from_filesystem_cache_if_exists_otherwise_cache_temporarily {#read_from_filesystem_cache_if_exists_otherwise_cache_temporarily}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增实验性设置。"}]}]} />
-
-对于不在文件系统缓存中的数据，将该缓存用作临时缓冲区：未命中的数据会先读入缓存，再由缓存提供；当不再有任何持有者时，缓存会将其移除，除非该数据曾被此模式之外的读取器或写入器使用过。仅 Experimental `ReaderExecutor` 支持此设置；其他读取器会绕过缓存。`read_from_filesystem_cache_if_exists_otherwise_bypass_cache` 的优先次序更高。
-
-## read_from_page_cache_if_exists_otherwise_bypass_cache {#read_from_page_cache_if_exists_otherwise_bypass_cache}
+<div id="read_from_page_cache_if_exists_otherwise_bypass_cache">
+  ## read_from_page_cache_if_exists_otherwise_bypass_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

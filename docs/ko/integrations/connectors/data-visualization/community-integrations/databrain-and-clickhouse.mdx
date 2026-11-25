@@ -9,31 +9,30 @@ doc_type: 'guide'
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
+import { Image } from "/snippets/ko/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Databrain](https://usedatabrain.com)은 고객에게 대화형 대시보드, 메트릭, 데이터 시각화를 구축하고 공유할 수 있게 해주는 임베디드 애널리틱스 플랫폼입니다. Databrain은 HTTPS 인터페이스를 사용해 ClickHouse에 연결되므로, 현대적이고 사용하기 쉬운 인터페이스에서 ClickHouse 데이터를 쉽게 시각화하고 분석할 수 있습니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse 데이터 시각화를 보여주는 Databrain 대시보드 인터페이스](/images/integrations/data-visualization/databrain_01.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="ClickHouse 데이터 시각화를 보여주는 Databrain 대시보드 인터페이스" border />
 
 <br />
 
 이 가이드에서는 Databrain을 ClickHouse 인스턴스에 연결하는 방법을 단계별로 안내합니다.
 
 <div id="pre-requisites">
-  ## 사전 요구 사항 {#pre-requisites}
+  ## 사전 요구 사항
 </div>
 
 * 자체 인프라 또는 [ClickHouse Cloud](https://clickhouse.com/)에서 호스팅되는 ClickHouse 데이터베이스.
 * [Databrain 계정](https://app.usedatabrain.com/users/sign-up).
 * 데이터 소스를 연결할 Databrain 워크스페이스.
 
-## Databrain을 ClickHouse에 연결하는 단계 {#steps-to-connect-databrain-to-clickhouse}
+<div id="steps-to-connect-databrain-to-clickhouse">
+  ## Databrain을 ClickHouse에 연결하는 단계
+</div>
 
 <Steps>
   <Step title="연결 정보 수집" id="1-gather-your-connection-details">
@@ -46,7 +45,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
     ClickHouse Cloud 사용자의 경우:
 
     1. ClickHouse Cloud 콘솔에서 서비스로 이동합니다
-    2. **설정** → **보안**으로 이동합니다
+    2. **설정** → **Security**로 이동합니다
     3. Databrain의 IP 주소를 허용 목록에 추가합니다
 
     <Tip>
@@ -57,36 +56,24 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
   <Step title="Databrain에서 ClickHouse를 데이터 소스로 추가하기" id="3-add-clickhouse-as-a-data-source">
     1. Databrain 계정에 로그인한 후 데이터 소스를 추가할 워크스페이스로 이동합니다.
 
-    2. 탐색 메뉴에서 **데이터 소스(Data Sources)**를 클릭합니다.
+    2. 탐색 메뉴에서 **Data Sources**를 클릭합니다.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Databrain 데이터 소스 메뉴](/images/integrations/data-visualization/databrain_02.webp)
-      </Frame>
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 데이터 소스 메뉴" border />
 
     3. **Add a Data Source** 또는 **데이터 소스 연결**을 클릭합니다.
 
     4. 사용 가능한 커넥터 목록에서 **ClickHouse**를 선택합니다.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![ClickHouse 옵션이 표시된 Databrain 커넥터 선택 화면](/images/integrations/data-visualization/databrain_03.webp)
-      </Frame>
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouse 옵션이 표시된 Databrain 커넥터 선택 화면" border />
 
     5. 연결 정보를 입력합니다:
        * **Destination Name**: 이 연결을 식별할 수 있는 이름을 입력합니다(예: &quot;Production ClickHouse&quot; 또는 &quot;Analytics DB&quot;)
        * **Host**: ClickHouse 호스트 URL을 입력합니다(예: `https://your-instance.region.aws.clickhouse.cloud`)
-       * **포트**: `8443`을 입력합니다(ClickHouse의 기본 HTTPS 포트)
-       * **사용자 이름**: ClickHouse 사용자 이름을 입력합니다
-       * **비밀번호**: ClickHouse 비밀번호를 입력합니다
+       * **Port**: `8443`을 입력합니다(ClickHouse의 기본 HTTPS 포트)
+       * **Username**: ClickHouse 사용자 이름을 입력합니다
+       * **Password**: ClickHouse 비밀번호를 입력합니다
 
-    <div className="ch-image-md">
-      <Frame>
-        ![구성 필드가 있는 Databrain ClickHouse 연결 양식](/images/integrations/data-visualization/databrain_04.webp)
-      </Frame>
-    </div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="구성 필드가 있는 Databrain ClickHouse 연결 양식" border />
 
     6. Databrain이 ClickHouse 인스턴스에 연결할 수 있는지 확인하려면 **Test Connection**을 클릭합니다.
 
@@ -109,25 +96,23 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 </Steps>
 
 <div id="using-databrain-with-clickhouse">
-  ## ClickHouse에서 Databrain 사용하기 {#using-databrain-with-clickhouse}
+  ## ClickHouse에서 Databrain 사용하기
 </div>
 
-### 데이터 탐색하기 {#explore-your-data}
+<div id="explore-your-data">
+  ### 데이터 탐색하기
+</div>
 
 1. 연결한 후 Databrain의 워크스페이스로 이동하세요.
 
 2. 데이터 탐색기에 ClickHouse 테이블(table) 목록이 표시됩니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse 테이블이 표시된 Databrain 데이터 탐색기](/images/integrations/data-visualization/databrain_05.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="ClickHouse 테이블이 표시된 Databrain 데이터 탐색기" border />
 
 3. 테이블을 클릭하여 스키마(schema)를 살펴보고 데이터를 미리 확인하세요.
 
 <div id="create-metrics-and-visualizations">
-  ### 메트릭 및 시각화 만들기 {#create-metrics-and-visualizations}
+  ### 메트릭 및 시각화 만들기
 </div>
 
 1. **Create Metric**을 클릭하여 ClickHouse 데이터로 시각화를 만들기 시작합니다.
@@ -142,7 +127,9 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
 4. 메트릭을 저장하여 여러 대시보드에서 재사용합니다.
 
-### 대시보드 만들기 {#build-dashboards}
+<div id="build-dashboards">
+  ### 대시보드 만들기
+</div>
 
 1. **Create Dashboard**를 클릭하여 대시보드 만들기를 시작하세요.
 
@@ -150,16 +137,12 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
 3. 대시보드의 레이아웃과 모양을 사용자 지정하세요.
 
-<div className="ch-image-md">
-  <Frame>
-    ![여러 ClickHouse 시각화가 있는 Databrain 대시보드](/images/integrations/data-visualization/databrain_06.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="여러 ClickHouse 시각화가 있는 Databrain 대시보드" border />
 
 4. 대시보드를 팀과 공유하거나 애플리케이션에 임베드하세요.
 
 <div id="advanced-features">
-  ### 고급 기능 {#advanced-features}
+  ### 고급 기능
 </div>
 
 Databrain은 ClickHouse와 함께 사용할 때 여러 고급 기능을 제공합니다.
@@ -172,11 +155,11 @@ Databrain은 ClickHouse와 함께 사용할 때 여러 고급 기능을 제공�
 * **시맨틱 레이어**: 재사용 가능한 데이터 모델과 비즈니스 로직을 생성합니다
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="connection-fails">
-  ### 연결 실패 {#connection-fails}
+  ### 연결 실패
 </div>
 
 ClickHouse에 연결되지 않는 경우:
@@ -188,7 +171,7 @@ ClickHouse에 연결되지 않는 경우:
 5. **사용자 권한**: 해당 사용자에게 `information_schema`와 대상 데이터베이스에 대한 SELECT 권한이 있는지 확인하세요.
 
 <div id="slow-query-performance">
-  ### 쿼리 성능이 느릴 때 {#slow-query-performance}
+  ### 쿼리 성능이 느릴 때
 </div>
 
 쿼리가 느리게 실행된다면:
@@ -199,7 +182,7 @@ ClickHouse에 연결되지 않는 경우:
 4. **인덱스 최적화**: ClickHouse의 프라이머리 키와 스킵 인덱스를 활용하세요
 
 <div id="learn-more">
-  ## 더 알아보기 {#learn-more}
+  ## 더 알아보기
 </div>
 
 Databrain 기능과 강력한 분석을 구축하는 방법에 대한 자세한 내용은 다음 문서를 참고하십시오:

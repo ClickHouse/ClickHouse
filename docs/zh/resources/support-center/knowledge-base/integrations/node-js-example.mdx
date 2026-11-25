@@ -6,7 +6,9 @@ tags: ['语言客户端']
 keywords: ['NodeJS']
 ---
 
-## 使用 Node.js 和 @clickhouse/client {#use-nodejs-with-clickhouseclient}
+<div id="use-nodejs-with-clickhouseclient">
+  ## 使用 Node.js 和 @clickhouse/client
+</div>
 
 下面是一个基础代码示例文件 `main.ts`。
 
@@ -54,8 +56,8 @@ interface Count {
   c: number;
 }
 
-//Please replace client connection parameters like`host`
-//`username`, `password`, `database` as needed.
+//请按需替换客户端连接参数，如 `host`、
+//`username`、`passowrd`、`database` 等。
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({

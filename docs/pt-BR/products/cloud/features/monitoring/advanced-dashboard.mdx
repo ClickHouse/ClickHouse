@@ -1,64 +1,58 @@
 ---
-description: 'Painel avançado no ClickHouse Cloud'
+description: 'dashboard avançado no ClickHouse Cloud'
 keywords: ['monitoramento', 'observabilidade', 'painel avançado', 'painel', 'painel de observabilidade']
 sidebarTitle: 'Painel avançado'
 slug: /cloud/manage/monitor/advanced-dashboard
-title: 'Painel avançado no ClickHouse Cloud'
+title: 'dashboard avançado no ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-Monitorar seu sistema de banco de dados em um ambiente de produção é vital para
-entender a integridade da sua implantação, para que você possa evitar ou resolver interrupções.
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-O painel avançado é uma ferramenta leve projetada para oferecer visibilidade profunda
+Monitorar seu sistema de banco de dados em um ambiente de produção é vital para
+entender a saúde da sua implantação, para que você possa evitar ou resolver interrupções.
+
+O dashboard avançado é uma ferramenta leve projetada para oferecer visibilidade profunda
 sobre seu sistema ClickHouse e seu ambiente, ajudando você a se antecipar a
 gargalos de desempenho, falhas do sistema e ineficiências.
 
-O painel avançado está disponível tanto no ClickHouse OSS (software open source)
-quanto no Cloud. Neste artigo, mostraremos como usar o painel avançado no
+O dashboard avançado está disponível tanto no ClickHouse OSS (software open source)
+quanto no Cloud. Neste artigo, mostraremos como usar o dashboard avançado no
 Cloud.
 
-## Como acessar o painel avançado {#accessing-the-advanced-dashboard}
+<div id="accessing-the-advanced-dashboard">
+  ## Como acessar o dashboard avançado
+</div>
 
-O painel avançado pode ser acessado navegando até:
+O dashboard avançado pode ser acessado navegando até:
 
 * Painel lateral esquerdo
   * `Monitoring` → `Advanced dashboard`
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Painel avançado](/images/cloud/manage/monitoring/advanced_dashboard.webp)
-  </Frame>
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+
+<div id="accessing-the-native-advanced-dashboard">
+  ## Acessando o dashboard avançado nativo
 </div>
 
-## Acessando o painel avançado nativo {#accessing-the-native-advanced-dashboard}
-
-O painel avançado nativo pode ser acessado navegando até:
+O dashboard avançado nativo pode ser acessado navegando até:
 
 * Painel lateral esquerdo
   * `Monitoring` → `Advanced dashboard`
   * Clicando em `You can still access the native advanced dashboard.`
 
-Isso abrirá o painel avançado nativo em uma nova guia. Você precisará se
+Isso abrirá o dashboard avançado nativo em uma nova guia. Você precisará se
 autenticar para acessar o dashboard.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Painel avançado](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
 
 Cada visualização tem uma consulta SQL associada que a preenche. Você pode
 editar essa consulta clicando no ícone de caneta.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Painel avançado](/images/cloud/manage/monitoring/edit_visualization.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Advanced dashboard" />
 
 <div id="out-of-box-visualizations">
-  ## Visualizações prontas para uso {#out-of-box-visualizations}
+  ## Visualizações prontas para uso
 </div>
 
 Os gráficos padrão do dashboard avançado foram projetados para oferecer
@@ -66,7 +60,7 @@ visibilidade em tempo real do seu sistema ClickHouse. Abaixo está uma lista com
 cada gráfico. Eles estão agrupados em três categorias para ajudar você a navegar entre eles.
 
 <div id="clickhouse-specific">
-  ### Específicas do ClickHouse {#clickhouse-specific}
+  ### Específicas do ClickHouse
 </div>
 
 Estas métricas foram projetadas para monitorar a saúde e o desempenho da sua
@@ -83,7 +77,7 @@ instância do ClickHouse.
 | Bytes selecionados por segundo | Indica o volume de dados lidos pelas consultas                                                        |
 
 <div id="system-health-specific">
-  ### Específico de saúde do sistema {#system-health-specific}
+  ### Específico de saúde do sistema
 </div>
 
 Monitorar o sistema subjacente é tão importante quanto monitorar o próprio ClickHouse.
@@ -100,7 +94,7 @@ Monitorar o sistema subjacente é tão importante quanto monitorar o próprio Cl
 | Uso de CPU do SO (Kernel)            | Uso de CPU ao executar código do kernel                                                |
 
 <div id="clickhouse-cloud-specific">
-  ## Específico do ClickHouse Cloud {#clickhouse-cloud-specific}
+  ## Específico do ClickHouse Cloud
 </div>
 
 O ClickHouse Cloud armazena dados usando armazenamento de objetos (tipo S3). Monitorar essa interface pode ajudar a detectar problemas.
@@ -120,7 +114,7 @@ O ClickHouse Cloud armazena dados usando armazenamento de objetos (tipo S3). Mon
 | Conexões de rede simultâneas                   | Acompanha o número atual de conexões de rede simultâneas            |
 
 <div id="identifying-issues-with-the-advanced-dashboard">
-  ## Como identificar problemas usando o dashboard avançado {#identifying-issues-with-the-advanced-dashboard}
+  ## Como identificar problemas usando o dashboard avançado
 </div>
 
 Ter essa visão em tempo real da integridade do seu serviço do ClickHouse ajuda muito
@@ -128,7 +122,7 @@ a mitigar problemas antes que eles afetem seu negócio ou a resolvê-los. Abaixo
 alguns problemas que você pode identificar usando o dashboard avançado.
 
 <div id="unbatched-inserts">
-  ### Inserções não agrupadas {#unbatched-inserts}
+  ### Inserções sem batch
 </div>
 
 Conforme descrito na [documentação de boas práticas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous), recomenda-se sempre
@@ -138,24 +132,22 @@ Uma inserção em massa com um tamanho de batch adequado reduz o número de part
 durante a ingestão, resultando em gravações em disco mais eficientes e em menos operações
 de mesclagem.
 
-As principais métricas para identificar inserções não otimizadas são **Linhas inseridas/seg** e
-**Máximo de Partes por Partição**
+As principais métricas para identificar inserções não otimizadas são **Inserted Rows/sec** e
+**Max Parts for Partition**
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Inserções não agrupadas](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Inserções sem batch" />
 
-O exemplo acima mostra dois picos em **Linhas inseridas/seg** e **Máximo de Partes por Partição**
+O exemplo acima mostra dois picos em **Inserted Rows/sec** e **Max Parts for Partition**
 entre 13h e 14h. Isso indica que estamos fazendo a ingestão de dados em uma velocidade adequada.
 
-Em seguida, vemos outro grande pico em **Máximo de Partes por Partição** após as 16h, mas com
-**Linhas inseridas/seg** muito baixas. Muitas partes estão sendo criadas com
+Em seguida, vemos outro grande pico em **Max Parts for Partition** após as 16h, mas com
+**Inserted Rows/sec** muito baixo. Muitas partes estão sendo criadas com
 muito poucos dados, o que indica que o tamanho dessas partes está
 subótimo.
 
-### Consulta intensiva em recursos {#resource-intensive-query}
+<div id="resource-intensive-query">
+  ### Consulta intensiva em recursos
+</div>
 
 É comum executar consultas SQL que consomem muitos recursos, como
 CPU ou memória. No entanto, é importante monitorar essas consultas e entender
@@ -163,34 +155,28 @@ o impacto delas no desempenho geral da sua implantação.
 
 Uma mudança repentina no consumo de recursos sem uma alteração na vazão de consultas pode
 indicar a execução de consultas mais custosas. Dependendo do tipo de consultas
-que você executa, isso pode ser esperado, mas é útil identificá-las no painel avançado.
+que você executa, isso pode ser esperado, mas é útil identificá-las no dashboard avançado.
 
 Abaixo está um exemplo de pico no uso de CPU sem uma mudança significativa no
 número de consultas executadas por segundo.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consulta intensiva em recursos](/images/cloud/manage/monitoring/resource_intensive_query.webp)
-  </Frame>
+<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Consulta intensiva em recursos" />
+
+<div id="bad-primary-key-design">
+  ### Design inadequado da chave primária
 </div>
 
-### Design inadequado da chave primária {#bad-primary-key-design}
-
-Outro problema que você pode identificar usando o painel avançado é um design inadequado da chave primária.
+Outro problema que você pode identificar usando o dashboard avançado é um design inadequado da chave primária.
 Como descrito em [&quot;Uma introdução prática aos índices primários no ClickHouse&quot;](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key),
 escolher a chave primária mais adequada ao seu caso de uso melhorará bastante o desempenho
 ao reduzir o número de linhas que o ClickHouse precisa ler para executar a consulta.
 
 Uma das métricas que você pode acompanhar para identificar possíveis melhorias nas chaves primárias
 é **Linhas selecionadas por segundo**. Um pico repentino no número de linhas selecionadas pode
-indicar tanto um aumento geral na vazão de consultas quanto a execução de consultas que
+indicar tanto um aumento geral no throughput de consultas quanto a execução de consultas que
 selecionam um grande número de linhas.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Consulta intensiva em recursos](/images/cloud/manage/monitoring/selected_rows_sec.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Consulta intensiva em recursos" />
 
 Usando o timestamp como filtro, você pode encontrar as consultas executadas no momento
 do pico na tabela `system.query_log`.

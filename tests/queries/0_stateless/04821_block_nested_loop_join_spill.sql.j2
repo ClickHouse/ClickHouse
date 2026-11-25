@@ -13,7 +13,6 @@
 SET cross_to_inner_join_rewrite = 0;
 SET join_use_nulls = 0;
 SET join_algorithm = 'partial_merge';
-SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 
 DROP TABLE IF EXISTS bnl_spill_probe;
 DROP TABLE IF EXISTS bnl_spill_build;

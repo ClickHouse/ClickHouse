@@ -3,9 +3,14 @@ slug: /cloud/managed-postgres/security
 sidebarTitle: 'Sécurité'
 title: 'Sécurité'
 description: 'Fonctionnalités de sécurité de ClickHouse Managed Postgres, notamment le filtrage par adresses IP, le chiffrement, AWS PrivateLink et GCP Private Service Connect'
-keywords: ['sécurité Postgres', 'filtrage par adresses IP', 'chiffrement', 'TLS', 'SSL', 'Private Link', 'Private Service Connect', 'PSC', 'conservation des sauvegardes']
+keywords: ['sécurité Postgres', 'filtrage par adresses IP', 'chiffrement', 'TLS', 'SSL', 'Private Link', 'Private Service Connect', 'PSC', 'rétention des sauvegardes']
 doc_type: 'guide'
 ---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 ClickHouse Managed Postgres est conçu avec des fonctionnalités de sécurité de niveau entreprise afin de protéger vos données et de répondre aux exigences de conformité. Cette page présente la sécurité réseau, le chiffrement et les politiques de conservation des sauvegardes.
 
@@ -13,14 +18,10 @@ ClickHouse Managed Postgres est conçu avec des fonctionnalités de sécurité d
 
 Les filtres IP déterminent quelles adresses IP source sont autorisées à se connecter à votre instance ClickHouse Managed Postgres, assurant un contrôle d’accès au niveau du réseau afin de protéger votre base de données contre les connexions non autorisées.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Configuration de la liste d’accès IP](/images/managed-postgres/ip-filters.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/ip-filters.webp" alt="Configuration de la liste d’accès IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### Configuration des filtres IP {#configuring-ip-filters}
+  ### Configuration des filtres IP
 </div>
 
 Pour configurer les filtres IP :
@@ -50,21 +51,38 @@ Vous pouvez spécifier :
 
 ## Chiffrement {#encryption}
 
-ClickHouse Managed Postgres chiffre vos données au repos et en transit.
+ClickHouse Managed Postgres chiffre vos données au repos comme en transit afin d’assurer une protection complète.
 
 ### Chiffrement au repos {#encryption-at-rest}
 
-Le chiffrement au repos est activé sur chaque instance et ne peut pas être désactivé. Il est transparent pour vos applications et ne nécessite aucune configuration. Il s’applique aux éléments suivants :
+Toutes les données stockées par ClickHouse Managed Postgres sont chiffrées au repos afin de les protéger contre tout accès non autorisé à l’infrastructure de stockage sous-jacente.
 
-* **Stockage NVMe :** fichiers de base de données, journaux de transactions et fichiers temporaires, chiffrés au moyen d’algorithmes de chiffrement conformes aux standards du secteur.
-* **Stockage d’objet :** sauvegardes complètes quotidiennes, archives WAL incrémentales et données de restauration à un instant précis.
+<div id="nvme-encryption">
+  #### Chiffrement du stockage NVMe
+</div>
+
+Les fichiers de votre base de données, les journaux de transaction et les fichiers temporaires stockés sur des disques NVMe sont chiffrés à l’aide d’algorithmes de chiffrement conformes aux normes du secteur. Ce chiffrement est transparent pour vos applications et ne nécessite aucune configuration.
+
+#### Chiffrement du stockage objet {#s3-encryption}
+
+Les sauvegardes et les archives du Write-Ahead Log (WAL) stockées dans le stockage objet sont également chiffrées au repos. Cela inclut :
+
+* Les sauvegardes complètes quotidiennes
+* Les archives WAL incrémentales
+* Les données de restauration à un instant précis
+
+Toutes les données de sauvegarde sont stockées dans des buckets de stockage dédiés et isolés, avec des identifiants propres à chaque instance, de sorte qu’elles restent sécurisées et accessibles uniquement aux systèmes autorisés.
+
+<Info>
+  Le chiffrement au repos est activé par défaut pour toutes les instances ClickHouse Managed Postgres et ne peut pas être désactivé. Aucune configuration supplémentaire n’est nécessaire.
+</Info>
 
 ### Chiffrement des données en transit {#encryption-in-transit}
 
 Toutes les connexions réseau à ClickHouse Managed Postgres sont sécurisées à l’aide de TLS (Transport Layer Security) afin de protéger les données pendant leur transfert entre vos applications et la base de données.
 
 <div id="tls-ssl">
-  #### Configuration TLS/SSL {#tls-ssl}
+  #### Configuration TLS/SSL
 </div>
 
 Par défaut, les connexions utilisent le chiffrement TLS sans vérification du certificat. Pour les charges de travail en production, nous vous recommandons d’utiliser une connexion TLS avec vérification du certificat afin de vous assurer que vous communiquez avec le bon serveur.
@@ -154,7 +172,7 @@ Pour connecter un autre endpoint à la même instance, par exemple depuis un aut
 ClickHouse Managed Postgres sauvegarde automatiquement vos données pour les protéger contre les suppressions accidentelles, la corruption et d’autres scénarios de perte de données.
 
 <div id="retention-policy">
-  ### Politique de rétention {#retention-policy}
+  ### Politique de rétention
 </div>
 
 * **Période de rétention par défaut** : 7 jours
@@ -163,6 +181,10 @@ ClickHouse Managed Postgres sauvegarde automatiquement vos données pour les pro
 
 ### Sécurité des sauvegardes {#backup-security}
 
-Les sauvegardes sont [chiffrées au repos](#encryption-at-rest) et stockées dans des buckets de stockage isolés par instance, avec des identifiants aux autorisations limitées, de sorte que seule l’instance Postgres liée à la sauvegarde puisse y accéder.
+Les sauvegardes sont stockées avec les mêmes garanties de sécurité que vos données principales :
+
+* **Chiffrement au repos** dans le stockage objet
+* **Buckets de stockage isolés** par instance, avec des identifiants aux autorisations limitées
+* **Contrôle d’accès** limité à l’instance Postgres liée à la sauvegarde.
 
 Pour plus de détails sur les stratégies de sauvegarde et la restauration à un instant précis, consultez la page [Sauvegarde et restauration](/fr/products/managed-postgres/backup-and-restore).

@@ -5,12 +5,16 @@ date: 2024-11-06
 tags: ['Formatos de datos', 'Ingestión de datos']
 ---
 
-## Kafka y el tipo de datos JSON {#kafka-and-the-json-data-type}
+<div id="kafka-and-the-json-data-type">
+  ## Kafka y el tipo de datos JSON
+</div>
 
 Con la introducción del nuevo tipo de datos [`JSON`](/es/reference/data-types/newjson), ClickHouse es ahora una buena opción como [base de datos para analizar JSON](https://clickhouse.com/engineering-resources/json-database).
 En esta guía, aprenderemos a cargar mensajes JSON desde Apache Kafka directamente en una sola columna `JSON` de ClickHouse.
 
-## Configurar Kafka {#setup-kafka}
+<div id="setup-kafka">
+  ## Configurar Kafka
+</div>
 
 Empecemos ejecutando un broker de Kafka en nuestra máquina. También vamos a mapear el puerto 9092 al puerto 9092 de nuestro sistema operativo anfitrión para que sea más fácil interactuar con Kafka:
 
@@ -18,7 +22,9 @@ Empecemos ejecutando un broker de Kafka en nuestra máquina. También vamos a ma
 docker run --name broker -p 9092:9092 apache/kafka:3.8.1
 ```
 
-## Ingesta de datos en Kafka {#ingest-data-into-kafka}
+<div id="ingest-data-into-kafka">
+  ## Ingesta de datos en Kafka
+</div>
 
 Una vez que esté en funcionamiento, necesitamos ingestar algunos datos.
 El feed de cambios recientes de Wikimedia es una buena fuente de datos en tiempo real, así que vamos a ingestarlo en el topic `wiki_events`:
@@ -43,13 +49,16 @@ kcat -C -b localhost:9092  -t wiki_events
 
 Hasta aquí, todo bien.
 
-## Ingestar datos en ClickHouse {#ingest-data-into-clickhouse}
+<div id="ingest-data-into-clickhouse">
+  ## Ingestar datos en ClickHouse
+</div>
 
 A continuación, ingestaremos los datos en ClickHouse.
+Primero, habilitemos el tipo JSON (que actualmente es experimental) estableciendo la siguiente propiedad:
 
-<Note>
-  En las versiones 24.8 a 25.2, habilita el tipo `JSON` con `SET allow_experimental_json_type = 1;` antes de crear las tablas siguientes.
-</Note>
+```sql
+SET allow_experimental_json_type = 1;
+```
 
 Ahora, crearemos la tabla `wiki_queue`, que utiliza el [motor de tabla `Kafka`](/es/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
 
@@ -89,7 +98,9 @@ SELECT json
 FROM wiki_queue;
 ```
 
-## Consulta de datos JSON en ClickHouse {#querying-json-data-in-clickhouse}
+<div id="querying-json-data-in-clickhouse">
+  ## Consulta de datos JSON en ClickHouse
+</div>
 
 Luego podemos escribir consultas sobre la tabla `wiki`.
 Por ejemplo, podríamos contar la cantidad de bots que han realizado cambios:

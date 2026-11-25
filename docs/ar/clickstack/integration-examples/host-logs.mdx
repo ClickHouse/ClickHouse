@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'مراقبة النظام', 'سجلات الخادم']
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **الخلاصة**
 
-  اجمع سجلات نظام المضيف (syslog وauth وkernel) وصوّرها بصريًا في ClickStack باستخدام مستقبِل OTel ‏`filelog`. يتضمن مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
+  اجمع سجلات نظام المضيف (syslog وauth وkernel) وصوّرها بصريًا في ClickStack باستخدام مستقبِل OTel ‏`filelog`. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
 </Info>
 
 <div id="existing-hosts">
-  ## التكامل مع المضيفين الحاليين {#existing-hosts}
+  ## التكامل مع المضيفين الحاليين
 </div>
 
 يشرح هذا القسم كيفية تهيئة المضيفين الحاليين لديك لإرسال سجلات النظام إلى ClickStack، وذلك عبر تعديل إعدادات ClickStack OTel مجمّع لقراءة جميع ملفات سجلات النظام (`syslog` و`auth` و`kernel` و`daemon` وسجلات التطبيقات).
@@ -24,7 +26,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا كنت ترغب في اختبار تكامل سجلات المضيف قبل تهيئة إعدادك الحالي، فيمكنك إجراء الاختبار باستخدام الإعداد المهيأ مسبقًا وبيانات العينة في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/host-logs#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات المسبقة {#prerequisites}
+  ##### المتطلبات المسبقة
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -184,13 +186,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     جميع الإعدادات:
 
     * اقرأ ملفات syslog من مواقعها القياسية
-    * حلّل تنسيق syslog لاستخراج الحقول المنظَّمة (الطابع الزمني، اسم المضيف، الوحدة/الخدمة، PID، الرسالة)
+    * حلّل تنسيق syslog لاستخراج الحقول المنظَّمة (الطابع الزمني، اسم المضيف، الوحدة/الخدمة، PID، الرسالة)
     * احتفِظ بالطوابع الزمنية الأصلية للسجلات
-    * أضِف السمة `source: host-logs` لتسهيل التصفية في واجهة مستخدم ClickStack
-    * وجّه السجلات إلى مُصدِّر ClickHouse عبر pipeline مخصّص
+    * أضِف السمة `source: host-logs` لتسهيل التصفية في HyperDX
+    * وجّه السجلات إلى مُصدِّر ClickHouse عبر pipeline مخصّص
 
     <Note>
-      - لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدة
+      - لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدة
       - إن `processors` (`memory_limiter`, `transform`, `batch`) و`exporters` (`clickhouse`) معرّفة بالفعل في إعداد ClickStack الأساسي — ما عليك سوى الإشارة إليها بالاسم
       - يستخرج محلّل `regex` أسماء وحدات systemd ومعرّفات PID وبيانات وصفية أخرى من تنسيق syslog
       - يستخدم هذا الإعداد `start_at: end` لتجنّب إعادة إدخال السجلات عند إعادة تشغيل `collector`. وللاختبار، غيّره إلى `start_at: beginning` لعرض السجلات السابقة فورًا.
@@ -204,7 +206,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. تعيين متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
     3. ربط دليل `syslog` لديك لكي يتمكن المجمّع من قراءته
 
-##### الخيار 1: Docker Compose {#docker-compose}
+    ##### الخيار 1: Docker Compose
 
     حدّث إعدادات نشر ClickStack لديك:
 
@@ -221,7 +223,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
           # ... other volumes ...
     ```
 
-##### الخيار 2: Docker Run (الصورة المتكاملة) {#all-in-one}
+    ##### الخيار 2: Docker Run (الصورة المتكاملة)
 
     إذا كنت تستخدم الصورة المتكاملة مع docker run:
 
@@ -239,29 +241,23 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="التحقّق من السجلات في واجهة مستخدم ClickStack" id="verifying-logs">
-    بعد إتمام الإعداد، سجّل الدخول إلى واجهة مستخدم ClickStack وتحقّق من أن السجلات تتدفّق:
+  <Step title="التحقّق من السجلات في HyperDX" id="verifying-logs">
+    بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق:
 
     1. انتقل إلى عرض البحث
     2. اضبط المصدر على Logs
-    3. صفِّ باستخدام `source:host-logs` لعرض السجلات الخاصة بالمضيف
-    4. ينبغي أن ترى إدخالات سجل منظَّمة تتضمن حقولًا مثل `unit` و`hostname` و`pid` و`message` وغيرها.
+    3. صفِّ باستخدام `source:host-logs` لعرض السجلات الخاصة بالمضيف
+    4. ينبغي أن ترى إدخالات سجل منظَّمة تتضمن حقولًا مثل `unit` و`hostname` و`pid` و`message` وغيرها.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![عرض البحث](/images/clickstack/host-logs/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="عرض البحث" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![عرض السجل](/images/clickstack/host-logs/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="عرض السجل" />
   </Step>
 </Steps>
 
-## مجموعة البيانات التجريبية {#demo-dataset}
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
 
 للمستخدمين الذين يريدون اختبار تكامل سجلات المضيف قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات نموذجية من سجلات النظام المُنشأة مسبقًا بأنماط واقعية.
 
@@ -280,12 +276,12 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * حادثة أمنية (هجوم brute force مع استجابة fail2ban)
     * صيانة مجدولة (مهام cron وanacron)
     * عمليات إعادة تشغيل الخدمات (rsyslog)
-    * رسائل النواة ونشاط جدار الحماية
+    * رسائل النواة ونشاط الجدار الناري
     * مزيج من العمليات العادية والأحداث البارزة
   </Step>
 
-  <Step title="أنشئ إعدادات جامع البيانات للاختبار" id="test-config">
-    أنشئ ملفًا باسم `host-logs-demo.yaml` باستخدام الإعدادات التالية:
+  <Step title="أنشئ تهيئة collector للاختبار" id="test-config">
+    أنشئ ملفًا باسم `host-logs-demo.yaml` باستخدام التهيئة التالية:
 
     ```yaml
     cat > host-logs-demo.yaml << 'EOF'
@@ -326,8 +322,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="شغّل ClickStack باستخدام الإعدادات التجريبية" id="run-demo">
-    شغّل ClickStack باستخدام السجلات التجريبية وهذه الإعدادات:
+  <Step title="شغّل ClickStack باستخدام التهيئة التجريبية" id="run-demo">
+    شغّل ClickStack باستخدام السجلات التجريبية وهذه التهيئة:
 
     ```bash
     docker run --name clickstack-demo \
@@ -343,69 +339,51 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="تحقّق من السجلات في واجهة مستخدم ClickStack" id="verify-demo-logs">
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
     بعد تشغيل ClickStack:
 
-    1. افتح [واجهة مستخدم ClickStack](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
     2. انتقل إلى Search view واضبط المصدر على `Logs`
     3. اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view](/images/clickstack/host-logs/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/host-logs/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أكثر وضوحًا.
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أكثر وضوحًا.
     </Info>
   </Step>
 </Steps>
 
-## لوحات المعلومات والتصورات {#dashboards}
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
 
 لمساعدتك على بدء مراقبة سجلات المضيف باستخدام ClickStack، نوفر تصورات أساسية لسجلات النظام.
 
 <Steps>
-  <Step title="نزّل إعدادات لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
+  <Step title="نزّل إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">نزّل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="استورد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
-    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
+  <Step title="استورد لوحة المعلومات الجاهزة" id="import-dashboard">
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
 
     3. ارفع الملف `host-logs-dashboard.json` وانقر على **إتمام الاستيراد**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![إتمام الاستيراد](/images/clickstack/host-logs/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إتمام الاستيراد" />
   </Step>
 
   <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![لوحة معلومات السجلات](/images/clickstack/host-logs/host-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
 
     تشمل التصورات الرئيسية ما يلي:
 
@@ -423,11 +401,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+  ## استكشاف الأخطاء وإصلاحها
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### تعذّر تحميل ملف الإعدادات المخصّص {#troubleshooting-not-loading}
+  ### تعذّر تحميل ملف الإعدادات المخصّص
 </div>
 
 تحقّق من تعيين متغير البيئة:
@@ -442,7 +420,9 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### عدم ظهور السجلات في واجهة مستخدم ClickStack {#no-logs}
+<div id="no-logs">
+  ### عدم ظهور السجلات في HyperDX
+</div>
 
 **تأكّد من وجود ملفات syslog ومن استمرار الكتابة إليها:**
 
@@ -454,7 +434,7 @@ ls -la /var/log/syslog /var/log/messages
 tail -f /var/log/syslog
 ```
 
-**تحقّق من قدرة جامع البيانات على قراءة السجلات:**
+**تحقّق من قدرة المجمّع على قراءة السجلات:**
 
 ```bash
 docker exec <container> cat /var/log/syslog | head -20
@@ -466,7 +446,7 @@ docker exec <container> cat /var/log/syslog | head -20
 docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
 ```
 
-**تحقّق من وجود أخطاء في سجلات جامع البيانات:**
+**تحقّق من وجود أخطاء في سجلات المجمّع:**
 
 ```bash
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i "filelog\|syslog"
@@ -479,7 +459,7 @@ docker exec <container> cat /tmp/host-demo/journal.log | wc -l
 ```
 
 <div id="logs-not-parsing">
-  ### عدم تحليل السجلات بصورة صحيحة {#logs-not-parsing}
+  ### عدم تحليل السجلات بصورة صحيحة
 </div>
 
 **تحقّق من أن تنسيق syslog لديك يطابق التهيئة التي اخترتها:**
@@ -503,7 +483,7 @@ tail -5 /var/log/system.log
 إذا لم يكن التنسيق لديك مطابقًا، فحدّد علامة تبويب التهيئة المناسبة في قسم [إنشاء تهيئة مخصصة لـ OTel مجمّع](#custom-otel).
 
 <div id="next-steps">
-  ## الخطوات التالية {#next-steps}
+  ## الخطوات التالية
 </div>
 
 * أعدّ [التنبيهات](/ar/clickstack/features/alerts) لأحداث النظام الحرجة (تعطّل الخدمات، فشل المصادقة، تحذيرات القرص)
@@ -511,6 +491,8 @@ tail -5 /var/log/system.log
 * اربط بين سجلات المضيف وسجلات التطبيق لاستكشاف الأخطاء وإصلاحها على نحو شامل
 * أنشئ لوحات معلومات مخصصة لمراقبة الأمان (محاولات SSH، استخدام sudo، عمليات حظر جدار الحماية)
 
-## الانتقال إلى بيئة الإنتاج {#going-to-production}
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
 
 يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر على بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

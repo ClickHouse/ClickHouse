@@ -33,9 +33,9 @@ ENGINE = HDFS(URI, format)
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — 可选。在大多数情况下，不需要分区键；即使需要，通常也不必将分区划分得比按月更细。分区主要是一种数据管理手段：每个分区都会写入单独的文件。使用 `hive` 分区策略时，按分区列过滤的查询只会读取匹配分区对应的文件。切勿使用粒度过细的分区方式。不要按客户端标识符或名称对数据进行分区。
+`PARTITION BY` — 可选。在大多数情况下，不需要分区键；即使需要，通常也不必将分区划分得比按月更细。分区不会加快查询速度 (这一点与 ORDER BY 表达式不同) 。切勿使用粒度过细的分区方式。不要按客户端标识符或名称对数据进行分区 (而应将客户端标识符或名称设为 ORDER BY 表达式中的第一列) 。
 
-使用 `hive` 分区策略 (即 `file_like_engine_default_partition_strategy` 设置的默认值) 时，分区键必须由表列组成，例如 `PARTITION BY (year, month)`。诸如 `toYYYYMM(date_column)` 之类的表达式需要使用 `wildcard` 策略，并在路径中包含 `{_partition_id}`。使用 `wildcard` 策略的表只能写入，无法读取。
+如果按月分区，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个 [Date](/zh/reference/data-types/date) 类型的日期列。这里的分区名称采用 `"YYYYMM"` 格式。
 
 **示例：**
 
@@ -99,6 +99,8 @@ SELECT * FROM hdfs_engine_table LIMIT 2
    * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
 
 2. 可以通过多种方式创建一个包含这六个文件的表：
+
+{/* */}
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')

@@ -7,6 +7,10 @@ keywords: ['managed postgres', '.net', 'dotnet', 'c#', 'asp.net core', 'entity f
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-dotnet-beta" />
+
 [Entity Framework Core](https://learn.microsoft.com/ef/core/) ‏(EF Core) هي أداة ربط الكائنات بقواعد البيانات المعتمدة في منصة ‎.NET، و[Npgsql](https://www.npgsql.org/efcore/) هو مزوّدها الخاص بقاعدة بيانات PostgreSQL. ستُنشئ في هذا الدليل واجهة برمجة تطبيقات مصغّرة (minimal API) باستخدام ASP.NET Core، ثم تُنشئ جدولها عبر عملية ترحيل (migration) في EF Core، وتوفّر نقاط نهاية لعمليات الإنشاء والقراءة والتحديث والحذف. ويعتمد كل اتصال على بروتوكول TLS مع التحقق الكامل من الشهادة.
 
 ## المتطلبات الأساسية {#prerequisites}

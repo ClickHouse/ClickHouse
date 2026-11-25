@@ -224,7 +224,7 @@ func main() {
 Em seguida, você precisará configurar as seguintes variáveis de ambiente no shell para enviar telemetria ao ClickStack por meio do coletor do OpenTelemetry:
 
 <Tabs>
-  <Tab title="Managed ClickStack">
+  <Tab title="ClickStack gerenciado">
     ```shell
     export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
@@ -232,7 +232,7 @@ Em seguida, você precisará configurar as seguintes variáveis de ambiente no s
     ```
   </Tab>
 
-  <Tab title="ClickStack Open Source">
+  <Tab title="ClickStack open source">
     ```shell
     export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
@@ -242,4 +242,4 @@ Em seguida, você precisará configurar as seguintes variáveis de ambiente no s
   </Tab>
 </Tabs>
 
-A variável de ambiente `OTEL_EXPORTER_OTLP_HEADERS` contém a chave de API disponível na Interface do ClickStack em `Team Settings → API Keys`.
+A variável de ambiente `OTEL_EXPORTER_OTLP_HEADERS` contém a chave de API disponível no aplicativo HyperDX em `Team Settings → API Keys`.

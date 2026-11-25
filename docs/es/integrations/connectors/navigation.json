@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "Fuentes de datos",
       "pages": [
         "es/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "Visualización de datos",
       "pages": [
         "es/integrations/connectors/data-visualization/index",
         {
@@ -78,9 +78,8 @@
         "es/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integraciones de la comunidad",
           "pages": [
-            "es/integrations/connectors/data-visualization/community-integrations/arcodash-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse",
@@ -102,7 +101,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "Ingestión de datos",
       "pages": [
         "es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         {
@@ -147,7 +146,7 @@
             "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Plantillas de Dataflow",
               "pages": [
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -179,20 +178,11 @@
           ]
         },
         {
-          "group": "Striim",
-          "pages": [
-            "es/integrations/connectors/data-ingestion/etl-tools/striim/index",
-            "es/integrations/connectors/data-ingestion/etl-tools/striim/get-started",
-            "es/integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline"
-          ]
-        },
-        {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Integraciones de la comunidad",
           "pages": [
             "es/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "es/integrations/connectors/data-ingestion/community-integrations/erathos",
-            "es/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -207,7 +197,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "Integraciones de datos",
       "pages": [
         "es/integrations/connectors/tools/data-integration-index",
         "es/integrations/connectors/data-integrations/integrations/retool",
@@ -220,7 +210,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "Clientes SQL",
       "pages": [
         "es/integrations/connectors/sql-clients/index",
         "es/integrations/connectors/sql-clients/sql-console",
@@ -228,7 +218,6 @@
         "es/integrations/connectors/sql-clients/dbeaver",
         "es/integrations/connectors/sql-clients/dbvisualizer",
         "es/integrations/connectors/sql-clients/jupysql",
-        "es/integrations/connectors/sql-clients/libredb-studio",
         "es/integrations/connectors/sql-clients/probedeck",
         "es/integrations/connectors/sql-clients/qstudio",
         "es/integrations/connectors/sql-clients/tablum",
@@ -237,7 +226,7 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "Herramientas",
       "pages": [
         "es/integrations/connectors/tools/index",
         "es/integrations/connectors/tools/misc-index",
@@ -247,5 +236,6 @@
       ]
     }
   ],
-  "item": "Connectors"
+  "icon": "/images/icons/icon-connectors.svg",
+  "item": "Conectores"
 }

@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'phoenix', 'elixir', 'ecto', 'postgrex', 'mix', '
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-phoenix-beta" />
+
 [Phoenix](https://www.phoenixframework.org/) は Elixir の Web フレームワークで、[Ecto](https://ecto.hexdocs.pm/) と [Postgrex](https://postgrex.hexdocs.pm/) ドライバーを使用して PostgreSQL と通信します。このガイドでは、Phoenix アプリを作成し、証明書検証付きの TLS で ClickHouse Managed Postgres に接続したうえで、Ecto 移行を実行し、JSON 形式の `todos` リソースを提供します。
 
 ## 前提条件 {#prerequisites}

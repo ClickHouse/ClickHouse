@@ -18,12 +18,12 @@ doc_type: 'reference'
 ClickHouse 支持临时表，具有以下特性：
 
 * 临时表会在会话结束时消失，连接断开时也同样如此。
-* 未指定引擎时，临时表使用 `Memory` 表引擎。只有轻量级引擎可以作为临时表的底层引擎：`Memory`、非复制的 `MergeTree` 系列、`Log`、`TinyLog`、`StripeLog`、`File`、`URL`、`Null`、`Join` 和 `Set`。启用 `cloud_mode` 时，将数据存储在本地磁盘上的引擎也同样禁止使用。
+* 未指定引擎时，临时表使用 Memory 表引擎；也可以使用除 Replicated 和 `KeeperMap` 外的任何表引擎。
 * 临时表不能指定 DB，而是在数据库之外创建。
 * 无法通过分布式 DDL 查询在集群中的所有服务器上创建临时表 (即使用 `ON CLUSTER`) ：该表仅存在于当前会话中。
 * 如果临时表与另一张表同名，且查询中仅指定表名而未指定 DB，则会使用临时表。
 * 在分布式查询处理中，查询中使用的 Memory 引擎临时表会传递到远程服务器。
-* 可以通过 [max&#95;temporary&#95;tables](/zh/reference/settings/session-settings/max-temporary#max_temporary_tables)、[max&#95;temporary&#95;table&#95;memory&#95;usage](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (适用于 `Memory` 引擎) 、[max&#95;temporary&#95;table&#95;size&#95;bytes&#95;compressed](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) 和 [max&#95;temporary&#95;table&#95;size&#95;bytes&#95;uncompressed](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (适用于 `MergeTree` 系列) 设置来限制会话中临时表的数量及其大小。
+* 可以通过 [max&#95;temporary&#95;tables](/zh/reference/settings/session-settings/max-temporary#max_temporary_tables)、[max&#95;temporary&#95;table&#95;memory&#95;usage](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (适用于 `Memory` 引擎) 、[max&#95;temporary&#95;table&#95;size&#95;bytes&#95;compressed](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) 和 [max&#95;temporary&#95;table&#95;size&#95;bytes&#95;uncompressed](/zh/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (适用于 `MergeTree` 家族) 设置来限制会话中临时表的数量及其大小。
 
 ## 语法 {#syntax}
 

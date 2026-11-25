@@ -1,4 +1,5 @@
 {
+  "icon": "/images/icons/icon-get-started.svg",
   "item": "Get started",
   "pages": [
     {
@@ -64,10 +65,10 @@
           "group": "Use cases",
           "pages": [
             "ko/get-started/use-cases/overview",
-            "ko/get-started/use-cases/choosing-a-service",
             "ko/get-started/use-cases/real-time-analytics",
             "ko/get-started/use-cases/observability",
-            "ko/get-started/use-cases/data-warehousing"
+            "ko/get-started/use-cases/data-warehousing",
+            "ko/get-started/use-cases/agentic-analytics"
           ]
         },
         "ko/get-started/about/deployment-modes"

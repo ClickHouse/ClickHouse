@@ -186,7 +186,7 @@ ORDER BY per_trace_sum ASC
 
 يوفّر ClickHouse واجهة مستخدم ويب مدمجة لعرض إحصاءات ذاكرة jemalloc عند نقطة نهاية HTTP ‏`/jemalloc`.
 وتعرض مقاييس الذاكرة المباشرة مع مخططات، بما في ذلك الذاكرة المخصصة والنشطة والمقيمة والمعيّنة، بالإضافة إلى إحصاءات كل ساحة وكل bin.
-ويمكنك أيضًا جلب ملفات تعريف ذاكرة الكومة العامة وملفات تعريف ذاكرة الكومة لكل استعلام مباشرةً من الواجهة.
+ويمكنك أيضًا جلب ملفات ملف تعريف الكومة العامة وملفات ملف تعريف الكومة لكل استعلام مباشرةً من الواجهة.
 
 <Tabs>
   <Tab title="ClickHouse">
@@ -228,7 +228,7 @@ ORDER BY per_trace_sum ASC
 
     * `GET /jemalloc/stats` — مخرجات `malloc_stats_print` الخام
     * `GET /jemalloc/status` — حالة profiling بصيغة JSON ‏(`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — يُفرغ ملف تعريف ذاكرة الكومة مع حل الرموز على جانب الخادم، ويعيد مكدسات مطوية مناسبة لعرض مخطط اللهب ‏(افتراضيًا) أو ملف تعريف ذاكرة الكومة بالصيغة نفسها التي تُنتجها صيغة `raw` في `system.jemalloc_profile_text`
+    * `GET /jemalloc/profile?format={collapsed|raw}` — يُفرغ ملف ملف تعريف الكومة مع تحويل الرموز على جانب الخادم، ويعيد collapsed stacks المناسبة لعرض مخطط اللهب ‏(افتراضيًا) أو dump jemalloc الخام
   </Tab>
 </Tabs>
 
@@ -254,9 +254,9 @@ SELECT * FROM system.jemalloc_profile_text
 
 ### تنسيق الإخراج {#output-format}
 
-يُتحكَّم في تنسيق الإخراج بواسطة الإعداد `jemalloc_profile_text_output_format`، الذي يدعم ثلاث قيم:
+يُتحكَّم في تنسيق الإخراج بواسطة الإعداد `jemalloc_profile_text_output_format`، الذي يدعم ثلاث قيم:
 
-* `raw` — ملف تعريف ذاكرة الكومة كما يُنتجه jemalloc، باستثناء أن عناوين وقت التشغيل لا تُنشر: إذ تُستبدَل عناوين المكدس الواقعة داخل ملف ClickHouse التنفيذي بالإزاحات المقابلة لها فيه، وتُستبدَل العناوين الأخرى (المكتبات المشتركة وشيفرة التجميع الفوري) بـ `0`، كما تُزال خريطة الذاكرة (`MAPPED_LIBRARIES`). ويحلّله `jeprof` باستخدام ملف ClickHouse التنفيذي: `jeprof /path/to/clickhouse profile.heap`.
+* `raw` — ملف تعريف الكومة خام كما يُنتجه jemalloc.
 * `symbolized` — تنسيق متوافق مع jeprof مع تضمين رموز الدوال. وبما أن الرموز مضمنة بالفعل، يمكن لـ `jeprof` تحليل المخرجات دون الحاجة إلى ملف ClickHouse التنفيذي.
 * `collapsed` (الافتراضي) — مكدسات مطوية متوافقة مع FlameGraph، بمكدس واحد في كل سطر مع عدد البايتات.
 

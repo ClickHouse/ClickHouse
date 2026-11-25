@@ -1,27 +1,25 @@
 ---
 slug: /use-cases/observability/clickstack/deployment/docker-compose
 title: 'Docker Compose'
-description: 'نشر ClickStack Open Source باستخدام Docker Compose - حزمة ClickHouse لإمكانية المراقبة'
-doc_type: 'guide'
-keywords: ['ClickStack Docker Compose', 'Docker Compose لـ ClickHouse', 'نشر واجهة مستخدم ClickStack عبر Docker', 'دليل نشر ClickStack', 'OpenTelemetry Docker Compose']
+description: 'نشر ClickStack Open Source باستخدام Docker Compose - حزمة ClickHouse للـ observability'
+doc_type: 'دليل'
+keywords: ['ClickStack Docker Compose', 'Docker Compose لـ ClickHouse', 'نشر HyperDX عبر Docker', 'دليل نشر ClickStack', 'OpenTelemetry Docker Compose']
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 import JSONSupport from '/snippets/ar/_json_support.mdx';
 
-تُوزَّع جميع مكونات ClickStack Open Source بشكل منفصل على هيئة صور Docker مستقلة:
+تُوزَّع جميع مكونات ClickStack Open Source بشكل منفصل على هيئة صور Docker مستقلة:
 
 * **ClickHouse**
-* **واجهة مستخدم ClickStack**
-* **مُجمِّع OpenTelemetry (OTel)**
+* **HyperDX**
+* **مجمّع OpenTelemetry (OTel)**
 * **MongoDB**
 
 يمكن دمج هذه الصور ونشرها محليًا باستخدام Docker Compose.
 
-<Tip>
-  ارتقِ بإمكانية المراقبة إلى ما هو أبعد من النشر المحلي دون الحاجة إلى إدارة البنية التحتية، وذلك باستخدام [ClickHouse Observability](/ar/clickstack/observability). [سجّل في ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-docker-compose-inline) للبدء.
-</Tip>
-
-يُتيح Docker Compose منافذ إضافية لإمكانية المراقبة واستقبال البيانات استنادًا إلى إعداد `otel-collector` الافتراضي:
+يُتيح Docker Compose منافذ إضافية للأوبزرفابيليتي واستقبال البيانات استنادًا إلى إعداد `otel-collector` الافتراضي:
 
 * `13133`: نقطة نهاية للتحقق من السلامة الخاصة بامتداد `health_check`
 * `24225`: مستقبِل Fluentd لاستقبال السجلات
@@ -29,10 +27,10 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 * `4318`: مستقبِل OTLP HTTP (بديل لـ gRPC)
 * `8888`: نقطة نهاية مقاييس Prometheus لمراقبة المجمّع نفسه
 
-تُتيح هذه المنافذ عمليات تكامل مع مجموعة متنوعة من مصادر telemetry، وتجعل مُجمِّع OpenTelemetry جاهزًا للإنتاج لتلبية احتياجات استقبال البيانات المتنوعة.
+تُتيح هذه المنافذ عمليات تكامل مع مجموعة متنوعة من مصادر telemetry، وتجعل مجمّع OpenTelemetry جاهزًا للإنتاج لتلبية احتياجات استقبال البيانات المتنوعة.
 
 <div id="suitable-for">
-  ### مناسب لـ {#suitable-for}
+  ### مناسب لـ
 </div>
 
 * الاختبار المحلي
@@ -40,7 +38,9 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 * عمليات النشر في بيئة الإنتاج التي لا تتطلب تحمّل الأعطال، ويكفي فيها خادم واحد لاستضافة جميع بيانات ClickHouse
 * عند نشر ClickStack مع استضافة ClickHouse بشكل منفصل، على سبيل المثال باستخدام ClickHouse Cloud.
 
-## خطوات النشر {#deployment-steps}
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
 
 <br />
 
@@ -54,8 +54,8 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     ```
   </Step>
 
-  <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-hyperdx-ui">
-    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة مستخدم ClickStack.
+  <Step title="انتقل إلى واجهة HyperDX" id="navigate-to-hyperdx-ui">
+    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
 
     أنشئ مستخدمًا، وأدخِل اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
 
@@ -64,16 +64,12 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
     <Info>
       **تجاوز الاتصال الافتراضي**
 
-      يمكنك تجاوز الاتصال الافتراضي بمثيل ClickHouse المدمج. لمزيد من التفاصيل، راجع [&quot;استخدام ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+      يمكنك تجاوز الاتصال الافتراضي بمثيل ClickHouse المدمج. لمزيد من التفاصيل، راجع [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
     </Info>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![واجهة مستخدم ClickStack](/images/use-cases/observability/hyperdx-login.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="واجهة HyperDX" size="lg" />
 
-    للاطلاع على مثال لاستخدام مثيل ClickHouse بديل، راجع [&quot;استخدام ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    للاطلاع على مثال لاستخدام مثيل ClickHouse بديل، راجع [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
   <Step title="أكمل تفاصيل الاتصال" id="complete-connection-details">
@@ -83,16 +79,12 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 
     إذا طُلب منك إنشاء مصدر، فاحتفظ بجميع القيم الافتراضية وأكمِل الحقل `Table` بالقيمة `otel_logs`. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![إنشاء مصدر سجلات](/images/use-cases/observability/hyperdx-logs.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="إنشاء مصدر سجلات" size="md" />
   </Step>
 </Steps>
 
 <div id="modifying-settings">
-  ## تعديل إعدادات Compose {#modifying-settings}
+  ## تعديل إعدادات Compose
 </div>
 
 يمكنك تعديل إعدادات الحزمة البرمجية، مثل الإصدار المستخدم، عبر ملف متغيرات البيئة:
@@ -123,16 +115,16 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 
 <div id="configuring-collector">
-  ### تهيئة OTel collector {#configuring-collector}
+  ### تهيئة OTel collector
 </div>
 
 يمكن تعديل إعدادات OTel collector عند الحاجة - راجع [&quot;تعديل الإعدادات&quot;](/ar/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
 
 <div id="using-clickhouse-cloud">
-  ## استخدام ClickHouse Cloud {#using-clickhouse-cloud}
+  ## استخدام ClickHouse Cloud
 </div>
 
-يمكن استخدام هذا التوزيع مع ClickHouse Cloud، لكنه يختلف عن [Self-managed ClickHouse Observability](/ar/clickstack/self-configured/deployment/managed). في هذا الإعداد، تتولى إدارة واجهة مستخدم ClickStack بنفسك، مع استخدام ClickHouse Cloud فقط للحوسبة والتخزين. ما لم تكن لديك حاجة محددة لتشغيل الواجهة بشكل مستقل، فنوصي باستخدام Self-managed ClickHouse Observability، لأنه يتضمن مصادقة مدمجة وميزات Enterprise إضافية، ويغنيك عن إدارة واجهة مستخدم ClickStack بنفسك.
+يمكن استخدام هذا التوزيع مع ClickHouse Cloud، لكنه يختلف عن [Managed ClickStack](/ar/clickstack/deployment/managed). في هذا الإعداد، تتولى إدارة واجهة ClickStack بنفسك، مع استخدام ClickHouse Cloud فقط للحوسبة والتخزين. ما لم تكن لديك حاجة محددة لتشغيل الواجهة بشكل مستقل، فنوصي باستخدام Managed ClickStack، لأنه يتضمن مصادقة مدمجة وميزات Enterprise إضافية، ويغنيك عن إدارة واجهة ClickStack بنفسك.
 
 يجب عليك:
 
@@ -163,6 +155,6 @@ HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 
   يجب أن تكون قيمة `CLICKHOUSE_ENDPOINT` هي نقطة نهاية HTTPS الخاصة بـ ClickHouse Cloud، بما في ذلك المنفذ `8443`، مثل `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
 
-* عند الاتصال بواجهة مستخدم ClickStack وإنشاء اتصال بـ ClickHouse، استخدم بيانات اعتماد Cloud الخاصة بك.
+* عند الاتصال بواجهة HyperDX وإنشاء اتصال بـ ClickHouse، استخدم بيانات اعتماد Cloud الخاصة بك.
 
 <JSONSupport />

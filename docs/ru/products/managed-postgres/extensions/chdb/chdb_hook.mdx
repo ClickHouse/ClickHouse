@@ -38,24 +38,18 @@ COPY 18
 Загрузите chdb&#95;hook одним из следующих способов от имени суперпользователя. Выберите тот,
 который лучше всего подходит для вашего сценария:
 
-<Note>
-  В ClickHouse Managed Postgres:
-
-  * Консоль SQL в ClickHouse Cloud пока не поддерживает команду `LOAD 'chdb_hook'`,
-    однако её можно выполнить через psql или любое другое подключение к базе данных.
-  * Использовать `ALTER SYSTEM` нельзя, а `postgresql.conf` недоступен для редактирования, поэтому
-    приведённые ниже примеры с ними неприменимы. Вместо этого используйте `ALTER DATABASE` или
-    `ALTER ROLE`.
-  * Также можно обратиться в [службу поддержки](https://clickhouse.com/support/program), чтобы
-    добавить `chdb_hook` в конфигурацию вашего сервиса Postgres, после чего расширение
-    можно будет использовать и в консоли SQL.
-</Note>
-
 * Явно, командой [LOAD]; действует на протяжении сеанса:
 
   ```sql
   LOAD 'chdb_hook';
   ```
+
+  <Note>
+    SQL Console в ClickHouse Cloud пока не поддерживает команду `LOAD 'chdb_hook'`,
+    однако её можно выполнить через psql или любое другое подключение к базе данных.
+    Либо обратитесь к своему представителю службы поддержки, чтобы её добавили
+    в конфигурацию вашего сервиса Postgres, после чего её можно будет использовать в SQL Console.
+  </Note>
 
 * Для всех сеансов — с помощью настройки [session&#95;preload&#95;libraries] в
   `postgresql.conf`:
@@ -321,7 +315,7 @@ URL-адресов S3.
 
 #### `encoding_check` {#encoding_check}
 
-Определяет, как обрабатывать недопустимые символы в [кодировке базы данных] при
+Определяет, как обрабатывать недопустимые символы в [database encoding] при
 преобразовании значений chDB типов String и JSON. Возможные значения:
 
 * `fail` (по умолчанию): сгенерировать ошибку
@@ -771,7 +765,7 @@ chdb&#95;hook придерживается [Semantic Versioning] для свои
 * Минорная версия увеличивается при обратно совместимых изменениях SQL
 * Патч-версия увеличивается при изменениях, затрагивающих только бинарный файл
 
-После установки PostgreSQL сообщает версию с помощью функции
+После установки версию можно узнать с помощью функции
 [`pg_get_loaded_modules()`] в Postgres 18.
 
 ```sql
@@ -857,4 +851,4 @@ Copyright (c) 2026, ClickHouse
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: настройка сеанса max_parsing_threads"
 
-[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "Документация PostgreSQL: поддержка кодировок"
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: поддержка кодировок"

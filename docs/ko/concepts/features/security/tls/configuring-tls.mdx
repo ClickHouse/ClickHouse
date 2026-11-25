@@ -9,9 +9,11 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <SelfManaged />
 
-이 가이드는 OpenSSL 인증서를 사용해 연결을 검증하도록 ClickHouse를 구성하는 간단하고 최소한의 설정을 제공합니다. 이 데모에서는 적절한 설정으로 연결할 수 있도록 자체 서명된 인증 기관(CA) 인증서와 키(Key)를 생성하고, 노드 인증서도 함께 생성합니다.
+이 가이드는 OpenSSL 인증서를 사용해 연결을 검증하도록 ClickHouse를 구성하는 간단하고 최소한의 설정을 제공합니다. 이 데모에서는 적절한 설정으로 연결할 수 있도록 자체 서명된 인증 기관(CA) 인증서와 키를 생성하고, 노드 인증서도 함께 생성합니다.
 
 <Note>
   TLS 구현은 복잡하며, 완전히 안전하고 견고한 배포를 위해 고려해야 할 옵션이 많습니다. 이 문서는 기본 TLS 구성 예시를 다루는 기초 튜토리얼입니다. 조직 환경에 맞는 올바른 인증서를 생성하려면 PKI/보안 팀과 상의하십시오.
@@ -318,6 +320,7 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
            <transport_compression_level>0</transport_compression_level>
            <max_send_message_size>-1</max_send_message_size>
            <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
        </grpc>
        ```
 
@@ -458,11 +461,7 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 
     5. `https` 인터페이스를 통해 `https://chnode1.marsnet.local:8443/play`의 Play UI에 로그인하세요.
 
-       <div className="ch-image-md">
-         <Frame>
-           ![TLS 구성](/images/guides/sre/configuring-ssl_01.webp)
-         </Frame>
-       </div>
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS 구성" size="md" border />
 
     <Note>
       브라우저는 워크스테이션에서 접속하고 있으며 인증서가 클라이언트 머신의 루트 CA 저장소에 없기 때문에 신뢰되지 않는 인증서로 표시합니다.
@@ -514,7 +513,7 @@ import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## 독립 실행형 ClickHouse Keeper용 OpenSSL 구성 {#configure-openssl-for-standalone-clickhouse-keeper}
+  ## 독립 실행형 ClickHouse Keeper용 OpenSSL 구성
 </div>
 
 ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 서버에 내장되지 않은 형태)로 실행하는 경우, OpenSSL 인증서와 설정은 Keeper 설정 파일에서 별도로 구성해야 합니다. 이를 구성하지 않으면 Keeper는 클라이언트 통신(`tcp_port_secure`)이나 Keeper 노드 간 Raft 복제를 위한 보안 연결을 설정할 수 없습니다.
@@ -558,13 +557,13 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 </Note>
 
 <div id="openssl-verification-modes">
-  ## OpenSSL 검증 모드 및 인증서 핸들러 {#openssl-verification-modes}
+  ## OpenSSL 검증 모드 및 인증서 핸들러
 </div>
 
 `<openSSL>` 구성은 ClickHouse가 TLS 인증서를 검증하는 방식을 제어하는 `<verificationMode>` 및 `<invalidCertificateHandler>`에 대해 여러 옵션을 지원합니다. 이러한 설정은 clickhouse-server, clickhouse-client 및 독립 실행형 ClickHouse Keeper에 적용됩니다.
 
 <div id="verification-modes">
-  ### 검증 모드 {#verification-modes}
+  ### 검증 모드
 </div>
 
 `<openSSL>`의 `<server>` 또는 `<client>` 섹션에서 `<verificationMode>`를 설정합니다:
@@ -577,7 +576,7 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 | `strict`  | 피어 인증서를 요구하고 완전히 검증합니다. 인증서가 없거나 만료되었거나 신뢰할 수 있는 CA가 서명하지 않은 경우 연결이 실패합니다. 프로덕션 환경에 권장됩니다. |
 
 <div id="invalid-certificate-handlers">
-  ### 유효하지 않은 인증서 핸들러 {#invalid-certificate-handlers}
+  ### 유효하지 않은 인증서 핸들러
 </div>
 
 `<openSSL>`의 `<server>` 또는 `<client>` 섹션 내에 `<invalidCertificateHandler>`를 설정합니다. 이 핸들러는 인증서 검증에 실패했을 때 어떻게 처리할지를 결정합니다. server 측에서는 유효하지 않은 클라이언트 인증서에 대한 응답을 제어합니다. client 측에서는 유효하지 않은 server 인증서에 대한 응답을 제어합니다.
@@ -588,7 +587,7 @@ ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 
 | `AcceptCertificateHandler` | 인증서가 유효하지 않아도 connection을 허용합니다. 테스트 용도로만 사용하십시오.  |
 
 <div id="disabling-certificate-verification">
-  ### 예시: 인증서 검증 비활성화 {#disabling-certificate-verification}
+  ### 예시: 인증서 검증 비활성화
 </div>
 
 <Warning>
@@ -680,7 +679,7 @@ ClickHouse 서버와 ClickHouse Keeper는 `openSSL.server` 및 `openSSL.client` 
 인증서와 클라이언트 인증서를 새 CA가 발급한 것으로 전환한 다음, 마지막으로 해당 번들을 새 CA 인증서만 담은 것으로 대체하십시오.
 
 <div id="summary">
-  ## 요약 {#summary}
+  ## 요약
 </div>
 
 이 문서에서는 TLS가 적용된 ClickHouse 환경을 구성하는 방법을 중점적으로 살펴보았습니다. 프로덕션 환경에서는 요구 사항에 따라 설정이 달라질 수 있습니다. 예를 들어 인증서 검증 수준, 프로토콜, 암호군 등이 달라질 수 있습니다. 이제 보안 연결을 구성하고 구현하는 데 필요한 단계는 충분히 이해할 수 있을 것입니다.

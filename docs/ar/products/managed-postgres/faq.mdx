@@ -3,9 +3,13 @@ slug: /cloud/managed-postgres/faq
 sidebarTitle: 'FAQ'
 title: 'FAQ الخاصة بـ ClickHouse Managed Postgres'
 description: 'الأسئلة الشائعة حول ClickHouse Managed Postgres'
-keywords: ['FAQ الخاصة بـ Managed Postgres', 'أسئلة Postgres', 'المقاييس', 'الامتدادات', 'الترحيل', 'terraform', 'pgbouncer', 'العبارات المُحضَّرة']
-doc_type: 'reference'
+keywords: ['FAQ الخاصة بـ Managed Postgres', 'أسئلة Postgres', 'المقاييس', 'الامتدادات', 'الترحيل', 'terraform', 'pgbouncer', 'العبارات المُحضَّرة']
+doc_type: 'مرجع'
 ---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
 ## المراقبة والمقاييس {#monitoring-and-metrics}
 
@@ -23,23 +27,11 @@ doc_type: 'reference'
 
 للاطلاع على التفاصيل الكاملة بشأن وتيرة النسخ الاحتياطي، وفترة الاحتفاظ، وكيفية إجراء الاستعادة إلى نقطة زمنية محددة، راجع وثائق [النسخ الاحتياطي والاستعادة](/ar/products/managed-postgres/backup-and-restore).
 
-## الفوترة {#billing}
-
-### ما تكلفة Managed Postgres، وما الذي تشمله؟ {#billing-what-is-included}
-
-على AWS، تشمل الخدمة مساحة تخزين للنسخ الاحتياطية تعادل حجم القرص الذي تم توفيره، وتُفوتَر أي مساحة إضافية لتخزين النسخ الاحتياطية وفق سعر التخزين في ClickHouse Cloud المعتمد لمنطقتك. ويُفوتَر نقل البيانات وفق أسعار ClickHouse Cloud. أما ClickPipes وWalShadow فمجانيان عند نسخ البيانات من Managed Postgres إلى ClickHouse. ويُتاح GCP مجانًا خلال مرحلة المعاينة الخاصة. راجع [تسعير Managed Postgres](/ar/products/managed-postgres/pricing#cloud-provider-pricing).
-
-### ماذا يحدث لخدمتي إذا لم تُسدَّد فواتير مؤسستي؟ {#service-deactivation}
-
-يُلغى تنشيط الخدمة، وهو ما يشبه إيقافها. تُحظر الاتصالات الحالية والجديدة، ولا تُحتسب على الخدمة أي رسوم. تُحفظ بياناتك ونسخك الاحتياطية ولا تُحذف. للاطلاع على سياسة الاحتفاظ بالبيانات والنسخ الاحتياطية، راجع [الامتثال لمتطلبات الفوترة](/ar/products/cloud/reference/billing/billing-compliance).
-
-لاستعادة الوصول، سدِّد الرصيد المستحق، ثم انقر على **بدء** في علامة التبويب **إعداد** الخاصة بالخدمة. لا يظهر هذا الزر إلا عند إلغاء تنشيط الخدمة، ويظل معطّلًا إلى أن تُسدَّد الفواتير. للاطلاع على المهل الزمنية للسداد، راجع [الامتثال لمتطلبات الفوترة](/ar/products/cloud/reference/billing/billing-compliance). انظر أيضًا [إلغاء تنشيط الخدمة](/ar/products/managed-postgres/pricing#service-deactivation).
-
 ## البنية التحتية والأتمتة {#infrastructure-and-automation}
 
 ### ما هي مزوّدات السحابة المدعومة؟ {#supported-cloud-providers}
 
-يُعدّ ClickHouse Managed Postgres متاحًا عمومًا على AWS، بينما يوجد GCP في مرحلة المعاينة الخاصة. يمكنك التسجيل في قائمة انتظار المعاينة الخاصة الخاصة بـ GCP [من هنا](https://clickhouse.com/cloud/postgres#gcp-waitlist)، والاطلاع على [الإعلان](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) لمعرفة المزيد. راجع [مزوّدات السحابة المدعومة](/ar/products/managed-postgres/overview#supported-cloud-providers) لمزيد من التفاصيل.
+يتوفّر ClickHouse Managed Postgres على AWS ضمن مرحلة Public Beta، بينما يوجد GCP في مرحلة private preview. يمكنك التسجيل في قائمة انتظار private preview الخاصة بـ GCP [من هنا](https://clickhouse.com/cloud/postgres#gcp-waitlist)، والاطلاع على [الإعلان](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) لمعرفة المزيد. راجع [مزوّدات السحابة المدعومة](/ar/products/managed-postgres/overview#supported-cloud-providers) لمزيد من التفاصيل.
 
 ### هل يتوفر دعم Terraform لـ ClickHouse Managed Postgres؟ {#terraform-support}
 

@@ -36,8 +36,6 @@ SQL 標準の `OFFSET ... FETCH` 形式は、[`LIMIT ... AFTER ... UNTIL`](/ja/r
 > • 計算の結果、行数が小数になる場合は、次の整数に切り上げられます。
 
 `FETCH` は、クエリの結果に含めることができる行の最大数を指定します。
-`FETCH ... ONLY` は `LIMIT` と同様に `ORDER BY` がなくても動作しますが、返される行が決定論的になる保証はありません。
-`FETCH ... WITH TIES` では、最後に選択された行と同順位の行を判定するために `ORDER BY` が必要です。
 
 `ONLY` オプションは、`OFFSET` で省略された行の直後の行を返すために使用されます。この場合、`FETCH` は [LIMIT](/ja/reference/statements/select/limit) 句の代替となります。たとえば、次のクエリ
 
@@ -61,7 +59,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
   実際のオフセットは、[offset](/ja/reference/settings/session-settings/other#offset) 設定によっても変わる場合があります。
 </Note>
 
-## 例 {#examples}
+## 例
 
 入力テーブル：
 

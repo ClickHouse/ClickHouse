@@ -378,42 +378,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## Orden de las filas y paginación {#row-order-and-paging}
-
-`ARRAY JOIN` conserva el orden de las filas que recibe. Para cada fila, genera los elementos en el mismo orden en que aparecen en el array. Si una consulta contiene más de una cláusula `ARRAY JOIN`, la primera actúa como bucle externo:
-
-```sql
-SELECT x, y
-FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
-ARRAY JOIN xs AS x
-ARRAY JOIN ys AS y;
-```
-
-```response
-┌─x─┬─y─┐
-│ a │ 1 │
-│ a │ 2 │
-│ b │ 1 │
-│ b │ 2 │
-└───┴───┘
-```
-
-Si una cláusula `ARRAY JOIN` tiene más de un array, por ejemplo `ARRAY JOIN xs AS x, ys AS y`, los elementos que ocupan la misma posición van a la misma fila. En este ejemplo, el resultado son las dos filas `('a', 1)` y `('b', 2)`.
-
-Sin `ORDER BY`, no se garantiza el orden de las filas que recibe `ARRAY JOIN`. Por ejemplo, una consulta puede leer una tabla en varios flujos en paralelo. Para obtener un orden estable, añada `ORDER BY` con las columnas que identifican la fila de origen y la posición del elemento. Esto es imprescindible para leer el resultado por páginas con `LIMIT` y `OFFSET`:
-
-```sql
-SELECT id, num, x
-FROM t
-ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
-ORDER BY id, num
-LIMIT 10 OFFSET 20;
-```
-
-Si `ORDER BY` comienza con las columnas de la clave de ordenación de una tabla `MergeTree`, la consulta lee la tabla en el orden de la clave. En el ejemplo, esto ocurre cuando la tabla tiene `ORDER BY id`. En ese caso, la consulta se detiene en cuanto obtiene las filas necesarias para `LIMIT` y no expande los arrays de las demás filas. Para obtener más información, consulte [Optimización de la lectura de datos](/es/reference/statements/select/order-by#optimization-of-data-reading) y el parámetro de configuración [optimize&#95;read&#95;in&#95;order](/es/reference/settings/session-settings/optimize#optimize_read_in_order). Si `ORDER BY` comienza con un elemento del array, por ejemplo `ORDER BY num, id`, la consulta expande y ordena todas las filas.
-
-La función [arrayJoin](/es/reference/functions/regular-functions/array-join) también devuelve los elementos de cada array en el mismo orden en que aparecen en él. Sin embargo, si una consulta contiene más de una llamada a `arrayJoin`, la primera llamada no siempre corresponde al bucle externo. Para obtener más información, consulte [Orden de las filas](/es/reference/functions/regular-functions/array-join#row-order).
-
 ## Detalles de implementación {#implementation-details}
 
 El orden de ejecución de la consulta se optimiza al ejecutar `ARRAY JOIN`. Aunque `ARRAY JOIN` siempre debe especificarse antes de la cláusula [WHERE](/es/reference/statements/select/where)/[PREWHERE](/es/reference/statements/select/prewhere) en una consulta, técnicamente pueden ejecutarse en cualquier orden, a menos que el resultado de `ARRAY JOIN` se use como filtro. El optimizador de consultas controla el orden de ejecución.

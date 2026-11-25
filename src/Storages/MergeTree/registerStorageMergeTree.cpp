@@ -43,7 +43,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
-#include <Databases/IDatabase.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -68,7 +67,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
-    extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
@@ -732,14 +730,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
-    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
-    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
-        MergeTreeData::checkLossyCodecOnLowCardinality(columns);
-
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
-
-    const bool check_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 
     if (is_extended_storage_def)
     {
@@ -951,13 +943,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
 
-        /// Analyzed with the query context, as `ALTER TABLE ... MODIFY TTL` does, so that the settings of the query and the
-        /// session gate the codec of `RECOMPRESS` (`allow_suspicious_codecs`, `enable_*_codec`) like a column `CODEC`.
-        /// `getTTLForTableFromAST` checks itself that the TTL can also be analyzed in the global context, where it is loaded.
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, args.getLocalContext(), metadata.primary_key, ttl_validation_mode);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -971,8 +960,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
-            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE,
-            /* stored_definition */ args.query.attach_short_syntax || is_stored_definition);
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE, /* stored_definition */ args.query.attach_short_syntax);
 
         /// What this query changes from the settings the server has in effect, which already include the
         /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
@@ -983,7 +971,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// After the constraints, so a forbidden `storage_policy` is reported as such and not as an unknown policy.
         if ((*storage_settings)[MergeTreeSetting::storage_policy].changed)
-            (void)args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
+            args.getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
 
         /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
         /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
@@ -997,7 +985,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-            metadata.setSettingsChanges(args.storage_def->settings->ptr());
+            metadata.settings_changes = args.storage_def->settings->ptr();
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
@@ -1048,6 +1036,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
@@ -1061,21 +1050,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
-                    /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
-                    /// as regular indices. Skip one identical to the index generated below, keep any other one.
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
+                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
+                    auto & added = metadata.secondary_indices.back();
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if (((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(col_name)->formatWithSecretsOneLine())
-                            continue;
+                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            added.is_implicitly_created = true;
                     }
                 }
-
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
             }
         }
 
@@ -1085,16 +1072,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.addImplicitIndicesForColumn(column, context);
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
-
-        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
-        if (check_aliases)
-        {
-            for (const auto & index : metadata.secondary_indices)
-            {
-                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
-                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
-            }
-        }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -1158,8 +1135,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            if (check_aliases)
-                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1173,8 +1148,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
-        if (check_aliases)
-            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
@@ -1218,11 +1191,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
-    /// Not for a full-definition `ATTACH` either, so an existing table with such an expression stays loadable.
-    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
-        && !(*storage_settings)[MergeTreeSetting::allow_suspicious_indices])
-        MergeTreeData::checkKeyExpressionNamesForCollision(metadata, nullptr);
-
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
         MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
 
@@ -1246,10 +1214,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 merging_params.getModeName());
     }
-
-    if (metadata.secondary_indices.hasType("vector_similarity") && args.mode == LoadingStrictnessLevel::CREATE && !is_ddl_replay
-        && !is_stored_definition)
-        MergeTreeData::checkVectorSimilarityIndexIsAllowed(merging_params, *storage_settings);
 
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
@@ -1331,12 +1295,13 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        .stores_data_on_disk = true,
-        .supports_temporary = true,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.
@@ -1405,7 +1370,7 @@ Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled
 
 #### PARTITION BY {#partition-by}
 
-`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning is primarily a data management technique, not a query optimization tool: to speed up queries, rely on the ORDER BY expression first. You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
@@ -2048,7 +2013,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/reference/operators/index#operators-for-working-with-dates-and-times) operators, for example:
+To define `interval`, use [time interval](/reference/operators#operators-for-working-with-dates-and-times) operators, for example:
 
 ```sql
 TTL date_time + INTERVAL 1 MONTH
@@ -2317,7 +2282,7 @@ Tags:
 - `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
-- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to an online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 - `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
   * If _all_ volumes are tagged, they are prioritized in given order.
@@ -2400,7 +2365,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/reference/statements/alter/index#mutations).
+- During background merges and [mutations](/reference/statements/alter#mutations).
 - When downloading from another replica.
 - As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/reference/statements/alter/partition#freeze-partition).
 
@@ -2633,8 +2598,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
   - for any column: the number of rows equal to the type's default value (`0` for integers and floats, `''` for `String`, `[]` for `Array`, `NULL` for `Nullable`, etc.), which lets the optimizer estimate `col = <default>` predicates and `IS NULL` filters;
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
-  - for integer and `Decimal` columns that are not `Nullable` or `LowCardinality`: the exact sum of values, from which `sum`, `avg` and `sumCount` without `GROUP BY` and filters are answered (see the `use_statistics_for_sum_avg_aggregation` setting).
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
 
     A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
@@ -2670,14 +2634,14 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | UUID | Any other type |
-|----------|----------------------------------------------------|------|-----------------------|------|----------------|
-| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) | ✔ (default count only) |
-| countmin | ✔                                                  | ✔    | ✔                     | ✗    | ✗              |
-| minmax   | ✔                                                  | ✔    | ✗                     | ✗    | ✗              |
-| tdigest  | ✔                                                  | ✗    | ✗                     | ✗    | ✗              |
-| uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
-| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
@@ -2706,10 +2670,8 @@ pruning are not driven by it.
 
 Certain MergeTree settings can be overridden at column level:
 
-- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. Data written in larger blocks by older versions cannot be read.
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
-
-For a column with a `Quantized` codec, both settings apply only to its vectors (the array elements); its array sizes and quantized codes use the table-level values. Array sizes shared by several columns of a `Nested` structure are written once, with the settings of the column that writes them first.
 
 Example:
 
@@ -2769,7 +2731,7 @@ increasing the efficiency of `SELECT` queries as a consequence.
 All parameters of this table engine, with the exception of the `Sign` parameter,
 have the same meaning as in [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint). It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `CollapsingMergeTree(meta.sign)`.
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint).
 
 ## Creating a table {#creating-a-table}
 
@@ -3147,7 +3109,7 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 ### `ver` {#ver}
 
-`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter. It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `ReplacingMergeTree(meta.ver)`.
+`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
@@ -3201,7 +3163,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
-Column data type — `UInt8`. Like `ver`, it can be a subcolumn of another column.
+Column data type — `UInt8`.
 
 <Note>
 `is_deleted` can only be enabled when `ver` is used.
@@ -3506,9 +3468,7 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 You can see an example of how to use the AggregatingMergeTree and Aggregate functions in the below video:
 <div class='vimeo-container'>
-<Frame>
-<iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</Frame>
+<iframe width="1030" height="579" src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </div>
 
 The engine processes all columns with the following types:
@@ -4461,8 +4421,6 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
-    /// A replicated/shared MergeTree is not a lightweight session object and must not be a temporary table.
-    features.supports_temporary = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(

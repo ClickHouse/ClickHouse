@@ -3,7 +3,7 @@ description: 'توثيق الدوال الخاصة بالتعامل مع الق�
 sidebarTitle: 'القواميس'
 slug: /sql-reference/functions/ext-dict-functions
 title: 'دوال للتعامل مع القواميس'
-doc_type: 'reference'
+doc_type: 'مرجع'
 ---
 
 <Note>
@@ -392,7 +392,7 @@ LIMIT 3;
 
 أُضيفت في: v23.5.0
 
-تسترجع قيم السمات لجميع العُقد التي طابقت كل مفتاح في [قاموس شجرة التعبيرات النمطية](/ar/reference/statements/create/dictionary/layouts/regexp-tree).
+تسترجع قيم السمات لجميع العُقد التي طابقت كل مفتاح في [قاموس شجرة التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).
 
 وباستثناء أنها تُرجع قيمًا من النوع `Array(T)` بدلًا من `T`، تعمل هذه الدالة بصورة مماثلة لـ [`dictGet`](#dictGet).
 
@@ -400,7 +400,7 @@ LIMIT 3;
   هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصيغة**
+**البنية**
 
 ```sql
 dictGetAll(dict_name, attr_names, id_expr[, limit])
@@ -411,7 +411,7 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 * `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
 * `attr_names` — اسم عمود القاموس، أو Tuple من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
 * `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
-* `limit` — اختياري. الحد الأقصى لطول كل مصفوفة قيم مُعادة. عند الاقتطاع، تُمنح العقد الفرعية أولوية على العقد الأصلية، وبخلاف ذلك يُراعى ترتيب القائمة المحدد لقاموس شجرة التعبيرات النمطية. إذا لم يُحدَّد، فسيكون طول المصفوفة غير محدود. [`UInt*`](/ar/reference/data-types/int-uint)
+* `limit` — اختياري. الحد الأقصى لطول كل مصفوفة قيم مُعادة. عند الاقتطاع، تُمنح العقد الفرعية أولوية على العقد الأصلية، وبخلاف ذلك يُراعى ترتيب القائمة المحدد لقاموس شجرة Regexp. إذا لم يُحدَّد، فسيكون طول المصفوفة غير محدود. [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
@@ -2178,13 +2178,13 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 
 أُضيف في: v1.1.0
 
-يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
 
 <Note>
   هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصيغة**
+**البنية**
 
 ```sql
 dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
@@ -2194,16 +2194,16 @@ dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 * `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
 * `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
-* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 * `default_value_expr` — القيمة (أو القيم) التي تُرجع إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
 
 **القيمة المُعادة**
 
 تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
-وإلا فتُرجع القيمة المُمرَّرة في المعلمة `default_value_expr`.
+وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
 
 <Note>
-  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
 </Note>
 
 **أمثلة**
@@ -2217,7 +2217,7 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- for key which does not exist, returns the provided default value (0)
+-- for key which does not exist, returns the provideddefault value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 

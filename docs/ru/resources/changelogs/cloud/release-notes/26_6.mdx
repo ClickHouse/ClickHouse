@@ -9,10 +9,6 @@ doc_type: 'changelog'
 
 ## Обратно несовместимые изменения {#backward-incompatible-changes}
 
-### Учётные данные источника для словаря {#dictionary-source-credentials}
-
-* Начиная с версии ClickHouse Cloud 26.6.1.240, пользователи, отличные от `default`, больше не могут создавать словарь, у которого пользователем источника `CLICKHOUSE` указан `default`, независимо от переданного пароля. Это относится и к случаям, когда учётные данные источника берутся из именованной коллекции. Указывать и `user`, и `password` требовалось и раньше; теперь явное указание `default` отклоняется с ошибкой `BAD_ARGUMENTS` (код 36): ``A non-default user cannot create a dictionary that connects as passwordless dictionary source user `default`.`` Обновите DDL для создания и миграции словарей так, чтобы в нём использовался отдельный пользователь источника с правом `SELECT` на исходную таблицу. См. [пример источника ClickHouse для словаря](/ru/reference/statements/create/dictionary/sources/clickhouse).
-
 ### Изменения в запросах и синтаксисе {#query-and-syntax-changes}
 
 * Оконные функции `RANK` и `DENSE_RANK` теперь отклоняют аргументы и генерируют исключение `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` в соответствии со стандартом SQL. Ранее запросы вида `RANK(x) OVER (ORDER BY id)` принимались без каких-либо сообщений, а аргумент игнорировался, что часто вводило пользователей в заблуждение. Чтобы вернуть прежнее нестрогое поведение, установите `allow_rank_dense_rank_arguments = 1`. [#104324](https://github.com/ClickHouse/ClickHouse/pull/104324) ([groeneai](https://github.com/groeneai)).

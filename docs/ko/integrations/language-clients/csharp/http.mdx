@@ -11,13 +11,15 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 ClickHouse에 연결하는 공식 C# 클라이언트입니다.
 클라이언트의 소스 코드는 [GitHub 리포지토리](https://github.com/ClickHouse/clickhouse-cs)에서 확인할 수 있습니다.
 최초 개발자는 [Oleg V. Kozlyuk](https://github.com/DarkWanderer)입니다.
 
 이 라이브러리는 2가지 주요 API를 제공합니다.
 
-* **`ClickHouseClient`** (권장): 싱글턴으로 사용하도록 설계된 thread-safe 고수준 클라이언트입니다. 쿼리와 대량 삽입을 위한 간편한 비동기 API를 제공하며, 대부분의 애플리케이션에 적합합니다.
+* **`ClickHouseClient`** (권장): 하나의 인스턴스를 공유하도록 설계된 스레드 안전 고수준 클라이언트입니다. 쿼리와 대량 삽입을 위한 간편한 비동기 API를 제공하며, 대부분의 애플리케이션에 적합합니다.
 
 * **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): 표준 .NET 데이터베이스 추상화입니다. ORM 통합(Dapper, Linq2db) 또는 ADO.NET 호환성이 필요할 때 사용합니다. `ClickHouseBulkCopy`는 ADO.NET 연결을 통해 데이터를 효율적으로 삽입하는 도우미 클래스입니다. `ClickHouseBulkCopy`는 사용 중단 예정이며 향후 릴리스에서 제거될 예정입니다. 대신 `ClickHouseClient.InsertBinaryAsync`를 사용하세요.
 
@@ -308,19 +310,11 @@ ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확
 
 서비스를 선택한 후 **Connect**를 클릭하세요.
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Cloud 서비스 연결 버튼](/images/_snippets/cloud-connect-button.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 서비스 연결 버튼" border />
 
-**C#**&#xC744; 선택하세요. 연결 정보가 아래에 표시됩니다.
+**C#**을 선택하세요. 연결 정보가 아래에 표시됩니다.
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Cloud C# 연결 정보](/images/_snippets/connection-details-csharp.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# 연결 정보" border />
 
 자가 관리형 ClickHouse를 사용한다면 ClickHouse 관리자가 연결 정보를 설정합니다.
 
@@ -1929,13 +1923,13 @@ var settings = new ClickHouseClientSettings("Host=localhost")
 
 | DateTime.Kind | HTTP 매개변수                                    | 대량 복사                         |
 | ------------- | -------------------------------------------- | ----------------------------- |
-| Utc           | 동일한 시점이 유지됩니다                                  | 동일한 시점이 유지됩니다                   |
-| Local         | 동일한 시점이 유지됩니다                                  | 동일한 시점이 유지됩니다                   |
-| Unspecified   | 매개변수 타입의 시간대(기본값은 UTC)를 기준으로 현지 시각으로 처리됨 | 컬럼의 시간대를 기준으로 현지 시각으로 처리됨 |
+| Utc           | 정확한 시점이 유지됨                                  | 정확한 시점이 유지됨                   |
+| Local         | 정확한 시점이 유지됨                                  | 정확한 시점이 유지됨                   |
+| Unspecified   | 매개변수 타입의 시간대(기본값은 UTC)를 기준으로 해당 지역의 시각으로 처리됨 | 컬럼의 시간대를 기준으로 해당 지역의 시각으로 처리됨 |
 
 `DateTimeOffset` 값은 항상 정확한 시점을 유지합니다.
 
-**예시: UTC DateTime (동일한 시점이 유지됩니다)**
+**예시: UTC DateTime (정확한 시점 유지)**
 
 ```csharp
 var utcTime = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc);

@@ -7,12 +7,8 @@ title: '수평 자동 스케일링'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <Note>
-  수평 자동 스케일링은 베타로 제공되며 Scale 및 Enterprise 요금제에서 사용할 수 있습니다. 동작과 기능은 정식 출시 전에 변경될 수 있습니다.
+  수평 자동 스케일링은 비공개 프리뷰로 제공되며 Scale 및 Enterprise 요금제에서 사용할 수 있습니다. 액세스를 요청하려면 ClickHouse 계정 팀 또는 지원팀에 문의하십시오.
 </Note>
 
 수평 자동 스케일링은 워크로드 수요에 따라 서비스의 레플리카를 자동으로 추가하거나 제거합니다. 수직 자동 스케일링이 각 레플리카의 크기를 조정하는 반면, 수평 자동 스케일링은 레플리카 수를 조정합니다. 따라서 더 무거운 쿼리보다 쿼리 수 증가로 수요가 발생하는 워크로드에 적합합니다.
@@ -78,6 +74,7 @@ ClickHouse Cloud 콘솔의 서비스 메트릭 대시보드에서 스케일링 �
 
 ## 알려진 제한 사항 {#known-limitations}
 
+* 수평 자동 스케일링은 비공개 프리뷰로 제공되며, ClickHouse 지원팀에서 조직에 대해 활성화해야 합니다.
 * 최소 메모리를 최대 메모리와 동일하게 설정하여 수직 레플리카 크기를 고정해야 합니다.
 * 레플리카 제한이 적용됩니다. 서비스에 적용되는 제한은 [사용량 제한](/ko/cloud/bestpractices/usage-limits)을 참조하고, 추가 레플리카가 필요하면 지원팀에 문의하십시오.
 * 권장 사항은 10분마다 생성됩니다. 수평 자동 스케일링은 1분 미만의 급격한 트래픽 증가를 처리하도록 설계되지 않았습니다. 예측 가능한 피크에는 [예약 스케일링](/ko/products/cloud/features/autoscaling/scheduled-scaling)을 고려하십시오.

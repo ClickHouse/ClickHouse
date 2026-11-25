@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'java
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
 [node-postgres](https://node-postgres.com/) (le paquet `pg`) est le driver Postgres le plus utilisé pour Node.js. Dans ce guide, vous allez vous connecter à ClickHouse Managed Postgres via un `pg.Pool` avec une vérification complète du certificat TLS, créer deux tables, transférer de l&#39;argent d&#39;un compte à l&#39;autre au sein d&#39;une transaction, puis exposer les données à l&#39;aide d&#39;un petit serveur `node:http`.
 
 ## Prérequis {#prerequisites}

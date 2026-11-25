@@ -6,11 +6,9 @@ slug: /integrations/migration/object-storage-to-clickhouse
 doc_type: 'guide'
 ---
 
-<div className="ch-image-md">
-  <Frame>
-    ![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/object-storage-01.webp)
-  </Frame>
-</div>
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="자가 관리형 ClickHouse 마이그레이션" />
 
 클라우드 객체 스토리지를 데이터 레이크로 사용하며 이 데이터를 ClickHouse Cloud로 가져오려는 경우,
 또는 현재 데이터베이스 시스템이 데이터를 클라우드 객체 스토리지로 직접 오프로드할 수 있는 경우, 다음
@@ -28,4 +26,4 @@ doc_type: 'guide'
 페타바이트 규모까지 확장할 수 있다는 점입니다.
 또한 [Parquet](/ko/reference/formats/Parquet/Parquet)와 같은 정교한 압축 포맷도 활용할 수 있습니다.
 
-S3를 사용해 데이터를 ClickHouse Cloud로 가져오는 방법을 구체적인 코드 예시와 함께 보여주는 [블로그 글](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)도 있습니다.
+S3를 사용해 데이터를 ClickHouse Cloud로 가져오는 방법을 구체적인 코드 예시와 함께 보여주는 [블로그 글](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)도 있습니다。

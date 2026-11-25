@@ -206,8 +206,6 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
-**別名**: `from_base32`
-
 **引数**
 
 * `encoded` — String 型のカラムまたは定数。[`String`](/ja/reference/data-types/string)
@@ -241,8 +239,6 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
-
-**別名**: `to_base32`
 
 **引数**
 
@@ -420,7 +416,7 @@ SELECT base64Encode('clickhouse')
 
 RFC 4648 に従い、URL セーフなアルファベットを使用した [Base64](https://en.wikipedia.org/wiki/Base64) 表現から文字列をデコードします。
 デコード時には、標準アルファベット (`+` および `/`) も受け付けます。
-バージョン 26.7 以降では、入力内の空白文字である space、tab (`\t`) 、改行 (`\n`) 、キャリッジリターン (`\r`) 、および フォームフィード (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。垂直タブ (`\v`) および Base64 アルファベットに含まれないその他の文字は拒否されます。
+バージョン 26.7 以降では、入力内の空白文字である space、tab (`\t`) 、line feed (`\n`) 、carriage return (`\r`) 、および form feed (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。Vertical tab (`\v`) および Base64 アルファベットに含まれないその他の文字は拒否されます。
 エラー時には例外をスローします。
 
 **構文**
@@ -428,8 +424,6 @@ RFC 4648 に従い、URL セーフなアルファベットを使用した [Base6
 ```sql
 base64URLDecode(encoded)
 ```
-
-**別名**: `from_base64url`
 
 **引数**
 
@@ -464,8 +458,6 @@ URLセーフなアルファベットを使用して、文字列を [Base64](http
 ```sql
 base64URLEncode(plaintext)
 ```
-
-**別名**: `to_base64url`
 
 **引数**
 
@@ -1094,82 +1086,6 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
-## editDistanceRatio {#editDistanceRatio}
-
-導入バージョン: v26.11.0
-
-2つのバイト列間の正規化された[編集距離](https://en.wikipedia.org/wiki/Edit_distance)に基づく類似度を計算します:
-`1 - editDistance(s1, s2) / max(length(s1), length(s2))`。
-戻り値は `0`(`'ab'` と `'ba'` のように、編集距離が長い方の文字列の長さと等しい場合)から `1`(文字列が等しい場合)までの値です。空文字列同士は等しいものとみなされます。
-
-**構文**
-
-```sql
-editDistanceRatio(s1, s2)
-```
-
-**別名**: `levenshteinRatio`
-
-**引数**
-
-* `s1` — 1 つ目の入力文字列。[`String`](/ja/reference/data-types/string)
-* `s2` — 2 つ目の入力文字列。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-2 つの文字列間の、正規化された編集距離に基づく類似度を返します。[`Float64`](/ja/reference/data-types/float)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT editDistanceRatio('kitten', 'sitting')
-```
-
-```response title=Response
-┌─editDistanceRatio('kitten', 'sitting')─┐
-│                     0.5714285714285714 │
-└────────────────────────────────────────┘
-```
-
-## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
-
-導入バージョン: v26.11.0
-
-[`editDistanceRatio`](#editDistanceRatio) と同様ですが、UTF8-encoded の文字列を対象とします。編集距離と長さはコードポイント単位で計算されます。
-
-**構文**
-
-```sql
-editDistanceRatioUTF8(s1, s2)
-```
-
-**別名**: `levenshteinRatioUTF8`
-
-**引数**
-
-* `s1` — 1 つ目の入力 UTF-8 文字列。[`String`](/ja/reference/data-types/string)
-* `s2` — 2 つ目の入力 UTF-8 文字列。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-2 つの UTF-8 文字列間の、正規化された編集距離に基づく類似度を返します。[`Float64`](/ja/reference/data-types/float)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
-```
-
-```response title=Response
-┌──────────────ratio─┐
-│ 0.6666666666666667 │
-└────────────────────┘
-```
-
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 導入バージョン: v24.6.0
@@ -1182,7 +1098,7 @@ SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
 editDistanceUTF8(s1, s2)
 ```
 
-**別名**: `levenshteinDistanceUTF8`, `levenshtein_distance`
+**別名**: `levenshteinDistanceUTF8`
 
 **引数**
 
@@ -1254,8 +1170,6 @@ SELECT
 ```sql
 endsWith(s, suffix)
 ```
-
-**別名**: `ends_with`
 
 **引数**
 
@@ -1398,7 +1312,7 @@ HTML または XHTML からテキストコンテンツを抽出します。
 この関数は HTML タグ、コメント、script/style 要素を削除し、テキストコンテンツのみを残します。具体的には、次の処理を行います。
 
 * すべての HTML/XML タグの削除
-* コメント (`<!-- -->`) の削除
+* コメント (`{/* */}`) の削除
 * script 要素および style 要素とその内容の削除
 * CDATA セクションの処理 (そのままコピー)
 * 空白の適切な処理と正規化
@@ -2969,8 +2883,6 @@ SELECT sparseGramsUTF8('алиса', 3)
 startsWith(s, prefix)
 ```
 
-**別名**: `starts_with`
-
 **引数**
 
 * `s` — 判定対象の文字列。[`String`](/ja/reference/data-types/string)
@@ -3239,92 +3151,6 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
-```
-
-## stringSimilarityRatio {#stringSimilarityRatio}
-
-導入バージョン: v26.11.0
-
-2つのバイト列間の正規化された indel 類似度を計算します。これは Python の `Levenshtein.ratio` と同じ値です。
-`2 * LCS / (length(s1) + length(s2))`。ここで `LCS` は[最長共通部分列](https://en.wikipedia.org/wiki/Longest_common_subsequence)の長さです。
-これは `1 - (insertions + deletions) / (length(s1) + length(s2))` と同等です。
-`0` (共通部分なし) から `1` (文字列が等しい) までの値を返します。2つの空文字列は等しいものとして扱われます。
-
-**構文**
-
-```sql
-stringSimilarityRatio(s1, s2)
-```
-
-**引数**
-
-* `s1` — 1 番目の入力文字列。[`String`](/ja/reference/data-types/string)
-* `s2` — 2 番目の入力文字列。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-2 つの文字列間の正規化された indel 類似度を返します。[`Float64`](/ja/reference/data-types/float)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT stringSimilarityRatio('kitten', 'sitting')
-```
-
-```response title=Response
-┌─stringSimilarityRatio('kitten', 'sitting')─┐
-│                         0.6153846153846154 │
-└────────────────────────────────────────────┘
-```
-
-**名前のあいまい一致**
-
-```sql title=Query
-SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
-```
-
-```response title=Response
-┌─name─────────┐
-│ Equinix      │
-│ Equinix Inc. │
-└──────────────┘
-```
-
-## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
-
-導入バージョン: v26.11.0
-
-[`stringSimilarityRatio`](#stringSimilarityRatio) と同様ですが、UTF8-encoded の文字列を対象とします。長さはコードポイント単位で数えられます。
-
-**構文**
-
-```sql
-stringSimilarityRatioUTF8(s1, s2)
-```
-
-**引数**
-
-* `s1` — 1つ目の入力 UTF-8 文字列。[`String`](/ja/reference/data-types/string)
-* `s2` — 2つ目の入力 UTF-8 文字列。[`String`](/ja/reference/data-types/string)
-
-**戻り値**
-
-2つの UTF-8 文字列間の正規化された indel 類似度を返します。[`Float64`](/ja/reference/data-types/float)
-
-**例**
-
-**使用例**
-
-```sql title=Query
-SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
-```
-
-```response title=Response
-┌──────────────ratio─┐
-│ 0.6666666666666667 │
-└────────────────────┘
 ```
 
 ## substring {#substring}

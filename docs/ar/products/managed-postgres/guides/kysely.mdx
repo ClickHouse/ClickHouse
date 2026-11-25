@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'kysely', 'typescript', 'node.js', 'node-postgres
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-kysely-beta" />
+
 [Kysely](https://kysely.dev) أداة لبناء استعلامات SQL بأمان الأنواع (type-safe) في TypeScript. في هذا الدليل، ستربط Kysely بخدمة ClickHouse Managed Postgres عبر المشغّل [`pg`](https://node-postgres.com/) باتصال TLS موثَّق، ثم تنشئ جدولًا باستخدام عمليات الترحيل (migrations) في Kysely، وأخيرًا تشغّل واجهة برمجة تطبيقات صغيرة لإدارة قائمة المهام باستخدام Node.js.
 
 ## المتطلبات الأساسية {#prerequisites}

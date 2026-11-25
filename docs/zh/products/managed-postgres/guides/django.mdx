@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
 [Django](https://www.djangoproject.com/) 是一个 Python Web 框架，内置 ORM 和迁移系统，并通过 [psycopg 3](https://www.psycopg.org/psycopg3/) 驱动程序与 PostgreSQL 通信。在本指南中，您将通过 PgBouncer 把一个新建的 Django 项目连接到 ClickHouse Managed Postgres，借助迁移创建 `todos` 表，并通过一个小型 JSON 视图处理增删改查请求。所有连接均使用 TLS，并启用完整的证书验证。
 
 ## 前置条件 {#prerequisites}

@@ -51,25 +51,25 @@ Utilise l’adresse d’origine pour authentifier les clients connectés via un 
 
 Paramètres de sauvegarde utilisés lors de l&#39;exécution des instructions [`BACKUP` and `RESTORE`](/fr/concepts/features/backup-restore/overview).
 
-Les paramètres suivants peuvent être configurés à l&#39;aide de sous-balises :
+Les paramètres suivants peuvent être configurés à l&#39;aide de sous-balises :
 
 {/* SQL
   WITH settings AS (
   SELECT arrayJoin([
     ('allow_concurrent_backups', 'Bool','Détermine si plusieurs opérations de sauvegarde peuvent s’exécuter simultanément sur le même hôte.', 'true'),
     ('allow_concurrent_restores', 'Bool', 'Détermine si plusieurs opérations de restauration peuvent s’exécuter simultanément sur le même hôte.', 'true'),
-    ('allowed_disk', 'String', 'Disque de destination lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
-    ('allowed_path', 'String', 'Chemin de destination lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
+    ('allowed_disk', 'String', 'Disque de destination de la sauvegarde lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
+    ('allowed_path', 'String', 'Chemin de destination de la sauvegarde lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
     ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Nombre de tentatives de collecte des métadonnées avant l’attente en cas d’incohérence après comparaison des métadonnées collectées.', '2'),
     ('collect_metadata_timeout', 'UInt64', 'Délai d’expiration, en millisecondes, pour la collecte des métadonnées pendant la sauvegarde.', '600000'),
     ('compare_collected_metadata', 'Bool', 'Si true, compare les métadonnées collectées aux métadonnées existantes afin de s’assurer qu’elles ne sont pas modifiées pendant la sauvegarde.', 'true'),
     ('create_table_timeout', 'UInt64', 'Délai d’expiration, en millisecondes, pour la création des tables pendant la restauration.', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', 'Nombre maximal de tentatives après une erreur de version incorrecte lors d’une sauvegarde/restauration coordonnée.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente maximal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '5000'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente minimal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '100'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente maximal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '100'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente minimal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '5000'),
     ('remove_backup_files_after_failure', 'Bool', 'Si la commande `BACKUP` échoue, ClickHouse tentera de supprimer les fichiers déjà copiés dans la sauvegarde avant l’échec ; sinon, il laissera les fichiers copiés tels quels.', 'true'),
     ('sync_period_ms', 'UInt64', 'Période de synchronisation, en millisecondes, pour la sauvegarde/restauration coordonnée.', '5000'),
-    ('test_inject_sleep', 'Bool', 'Mise en veille liée aux tests', 'false'),
+    ('test_inject_sleep', 'Bool', 'Attente liée aux tests', 'false'),
     ('test_randomize_order', 'Bool', 'Si true, randomise l’ordre de certaines opérations à des fins de test.', 'false'),
     ('zookeeper_path', 'String', 'Chemin dans ZooKeeper où sont stockées les métadonnées de sauvegarde et de restauration lors de l’utilisation de la clause `ON CLUSTER`.', '/clickhouse/backups')
   ]) AS t )
@@ -80,22 +80,22 @@ Les paramètres suivants peuvent être configurés à l&#39;aide de sous-balises
 | :-------------------------------------------------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------- |
 | `allow_concurrent_backups`                          | Bool   | Détermine si plusieurs opérations de sauvegarde peuvent s&#39;exécuter simultanément sur le même hôte.                                                                                | `true`                |
 | `allow_concurrent_restores`                         | Bool   | Détermine si plusieurs opérations de restauration peuvent s&#39;exécuter simultanément sur le même hôte.                                                                              | `true`                |
-| `allowed_disk`                                      | String | Disque de destination lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
-| `allowed_path`                                      | String | Chemin de destination lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
+| `allowed_disk`                                      | String | Disque cible de la sauvegarde lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
+| `allowed_path`                                      | String | Chemin cible de la sauvegarde lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
 | `attempts_to_collect_metadata_before_sleep`         | UInt   | Nombre de tentatives de collecte des métadonnées avant une mise en attente en cas d&#39;incohérence après comparaison des métadonnées collectées.                                     | `2`                   |
 | `collect_metadata_timeout`                          | UInt64 | Délai d&#39;expiration, en millisecondes, pour la collecte des métadonnées pendant la sauvegarde.                                                                                     | `600000`              |
 | `compare_collected_metadata`                        | Bool   | Si la valeur est `true`, compare les métadonnées collectées aux métadonnées existantes pour vérifier qu&#39;elles ne changent pas pendant la sauvegarde.                              | `true`                |
 | `create_table_timeout`                              | UInt64 | Délai d&#39;expiration, en millisecondes, pour la création des tables pendant la restauration.                                                                                        | `300000`              |
-| `max_attempts_after_bad_version`                    | UInt64 | Nombre maximal de nouvelles tentatives après une erreur de version incorrecte lors d&#39;une sauvegarde/restauration coordonnée.                                                        | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente maximal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `5000`                |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente minimal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `100`                 |
+| `max_attempts_after_bad_version`                    | UInt64 | Nombre maximal de nouvelles tentatives après une erreur de mauvaise version lors d&#39;une sauvegarde/restauration coordonnée.                                                        | `3`                   |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente maximal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `100`                 |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente minimal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `5000`                |
 | `remove_backup_files_after_failure`                 | Bool   | Si la commande `BACKUP` échoue, ClickHouse tentera de supprimer les fichiers déjà copiés dans la sauvegarde avant l&#39;échec ; sinon, il laissera les fichiers copiés en l&#39;état. | `true`                |
 | `sync_period_ms`                                    | UInt64 | Période de synchronisation, en millisecondes, pour la sauvegarde/restauration coordonnée.                                                                                             | `5000`                |
-| `test_inject_sleep`                                 | Bool   | Mise en veille liée aux tests                                                                                                                                                        | `false`               |
+| `test_inject_sleep`                                 | Bool   | Mise en attente liée aux tests                                                                                                                                                        | `false`               |
 | `test_randomize_order`                              | Bool   | Si la valeur est `true`, modifie aléatoirement l&#39;ordre de certaines opérations à des fins de test.                                                                                | `false`               |
 | `zookeeper_path`                                    | String | Chemin dans ZooKeeper où sont stockées les métadonnées de sauvegarde et de restauration lors de l&#39;utilisation de la clause `ON CLUSTER`.                                          | `/clickhouse/backups` |
 
-Ce paramètre est configuré par défaut comme suit :
+Ce paramètre est configuré par défaut comme suit :
 
 ```xml
 <backups>
@@ -187,8 +187,8 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
 
 **Champs `<case>`** :
 
-* `min_part_size` – Taille minimale d’une part.
-* `min_part_size_ratio` – Ratio entre la taille de la part et celle de la table.
+* `min_part_size` – Taille minimale d’une partie de données.
+* `min_part_size_ratio` – Ratio entre la taille de la partie de données et celle de la table.
 * `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 * `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table/codec#general-purpose-codecs).
 
@@ -198,11 +198,11 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
 
 **Actions lorsque les conditions sont remplies** :
 
-* Si une part correspond à un jeu de conditions, ClickHouse utilise la méthode de compression spécifiée.
-* Si une part correspond à plusieurs jeux de conditions, ClickHouse utilise le dernier jeu de conditions correspondant (les sections `<case>` sont vérifiées dans l’ordre, et chaque correspondance remplace le choix précédent).
+* Si une partie de données correspond à un jeu de conditions, ClickHouse utilise la méthode de compression spécifiée.
+* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le dernier jeu de conditions correspondant (les sections `<case>` sont vérifiées dans l’ordre, et chaque correspondance remplace le choix précédent).
 
 <Note>
-  Si aucune condition n’est remplie pour une part, ClickHouse applique la valeur par défaut intégrée qui tient compte de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : la taille non compressée du bloc inséré pour une part fraîchement insérée, et la taille des parts sources pour une fusion ou une mutation. Ainsi, les petites insertions sont écrites en `LZ4`, et les grandes insertions sont écrites directement en `ZSTD(3)`. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou une fusion avec collapsing, est donc classée selon la taille d’entrée et peut produire une part sous le seuil mais tout de même compressée en `ZSTD(3)`.
+  Si aucune condition n’est remplie pour une partie de données, ClickHouse applique la valeur par défaut intégrée qui tient compte de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : `0` pour une partie fraîchement insérée, et la taille des parties sources pour une fusion ou une mutation. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou une fusion avec collapsing, est donc classée selon la taille d’entrée et peut produire une partie sous le seuil mais tout de même compressée en `ZSTD(3)`.
 </Note>
 
 **Exemple**
@@ -548,15 +548,15 @@ Exemple :
 La page affichée par défaut lorsque vous accédez au serveur HTTP(s) de ClickHouse.
 La valeur par défaut est &quot;Ok.&quot; (avec un caractère de saut de ligne à la fin)
 
-* **Par défaut :** `"Ok.\n"`
+* **Par défaut :** `"Ok.\n"`
 
 **Exemple**
 
-Ouvre l&#39;interface utilisateur web intégrée (`/play`) lorsque vous accédez à `http://localhost: http_port`.
+Ouvre `https://tabix.io/` lorsque vous accédez à `http://localhost: http_port`.
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
+  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```
 
@@ -759,7 +759,7 @@ Exemples :
 
 ## logger {#logger}
 
-L’emplacement et le format des messages de journalisation.
+L’emplacement et le format des messages de log.
 
 **Clés**:
 
@@ -767,28 +767,28 @@ L’emplacement et le format des messages de journalisation.
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `async`                      | Lorsque `true` (par défaut), la journalisation s’effectue de manière asynchrone (un thread d’arrière-plan par canal de sortie). Sinon, elle s’effectue dans le thread qui appelle LOG                                                                                                                                                                                           |
 | `async_queue_max_size`       | En cas de journalisation asynchrone, nombre maximal de messages conservés dans la file d’attente avant leur flush. Les messages supplémentaires sont ignorés                                                                                                                                                                                                                    |
-| `console`                    | Active la journalisation vers la console. Définissez cette valeur sur `1` ou `true` pour l’activer. La valeur par défaut est `1` si ClickHouse ne s’exécute pas en mode démon, `0` sinon.                                                                                                                                                                                      |
-| `console_log_level`          | Niveau de journalisation pour la sortie console. La valeur par défaut est `level`.                                                                                                                                                                                                                                                                                                         |
-| `console_shutdown_log_level` | Le Shutdown level est utilisé pour définir le niveau de journalisation de la console lors de l’arrêt du Serveur.                                                                                                                                                                                                                                                                           |
-| `console_startup_log_level`  | Le Startup level est utilisé pour définir le niveau de journalisation de la console au démarrage du Serveur. Après le démarrage, le niveau de journalisation revient au paramètre `console_log_level`                                                                                                                                                                                                 |
-| `count`                      | Politique de rotation : nombre maximal de fichiers de log historiques conservés par ClickHouse.                                                                                                                                                                                                                                                                                 |
+| `console`                    | Active la journalisation vers la console. Définissez cette valeur sur `1` ou `true` pour l’activer. La valeur par défaut est `1` si ClickHouse ne s’exécute pas en mode daemon, `0` sinon.                                                                                                                                                                                      |
+| `console_log_level`          | Niveau de log pour la sortie console. La valeur par défaut est `level`.                                                                                                                                                                                                                                                                                                         |
+| `console_shutdown_log_level` | Le Shutdown level est utilisé pour définir le niveau de log de la console lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                           |
+| `console_startup_log_level`  | Le Startup level est utilisé pour définir le niveau de log de la console au démarrage du serveur. Après le démarrage, le niveau de log revient au paramètre `console_log_level`                                                                                                                                                                                                 |
+| `count`                      | Politique de rotation : nombre maximal de fichiers de log historiques conservés par ClickHouse.                                                                                                                                                                                                                                                                                 |
 | `errorlog`                   | Chemin vers le fichier de log des erreurs.                                                                                                                                                                                                                                                                                                                                      |
 | `formatting.type`            | Format de log pour la sortie console. Actuellement, seul `json` est pris en charge                                                                                                                                                                                                                                                                                              |
-| `level`                      | Niveau de journalisation. Valeurs acceptées : `none` (désactive la journalisation), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                              |
+| `level`                      | Niveau de log. Valeurs acceptées : `none` (désactive la journalisation), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                              |
 | `log`                        | Chemin vers le fichier de log.                                                                                                                                                                                                                                                                                                                                                  |
-| `rotation`                   | Politique de rotation : contrôle quand les fichiers de log sont pivotés. La rotation peut être basée sur la taille, le temps ou une combinaison des deux. Exemples : 100M, daily, 100M,daily. Une fois que le fichier de log dépasse la taille spécifiée ou que l’intervalle de temps spécifié est atteint, il est renommé et archivé, puis un nouveau fichier de log est créé. |
-| `shutdown_level`             | Le Shutdown level est utilisé pour définir le niveau du logger racine lors de l’arrêt du Serveur.                                                                                                                                                                                                                                                                               |
-| `size`                       | Politique de rotation : taille maximale des fichiers de log en octets. Une fois que la taille du fichier de log dépasse ce seuil, il est renommé et archivé, puis un nouveau fichier de log est créé.                                                                                                                                                                           |
-| `startup_level`              | Le Startup level est utilisé pour définir le niveau du logger racine au démarrage du Serveur. Après le démarrage, le niveau de journalisation revient au paramètre `level`                                                                                                                                                                                                                 |
-| `stream_compress`            | Compresse les messages de journalisation avec LZ4. Définissez cette valeur sur `1` ou `true` pour l’activer.                                                                                                                                                                                                                                                                               |
-| `syslog_level`               | Niveau de journalisation pour la journalisation vers syslog.                                                                                                                                                                                                                                                                                                                               |
+| `rotation`                   | Politique de rotation : contrôle quand les fichiers de log sont pivotés. La rotation peut être basée sur la taille, le temps ou une combinaison des deux. Exemples : 100M, daily, 100M,daily. Une fois que le fichier de log dépasse la taille spécifiée ou que l’intervalle de temps spécifié est atteint, il est renommé et archivé, puis un nouveau fichier de log est créé. |
+| `shutdown_level`             | Le Shutdown level est utilisé pour définir le niveau du logger racine lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                               |
+| `size`                       | Politique de rotation : taille maximale des fichiers de log en octets. Une fois que la taille du fichier de log dépasse ce seuil, il est renommé et archivé, puis un nouveau fichier de log est créé.                                                                                                                                                                           |
+| `startup_level`              | Le Startup level est utilisé pour définir le niveau du logger racine au démarrage du serveur. Après le démarrage, le niveau de log revient au paramètre `level`                                                                                                                                                                                                                 |
+| `stream_compress`            | Compresse les messages de log avec LZ4. Définissez cette valeur sur `1` ou `true` pour l’activer.                                                                                                                                                                                                                                                                               |
+| `syslog_level`               | Niveau de log pour la journalisation vers syslog.                                                                                                                                                                                                                                                                                                                               |
 | `use_syslog`                 | Transfère également la sortie des logs vers syslog.                                                                                                                                                                                                                                                                                                                             |
 
 **Spécificateurs de format de log**
 
 Les noms de fichiers dans les chemins `log` et `errorLog` prennent en charge les spécificateurs de format ci-dessous pour le nom de fichier résultant (la partie répertoire ne les prend pas en charge).
 
-La colonne « Example » montre la sortie à `2023-07-06 18:32:07`.
+La colonne « Example » montre la sortie à `2023-07-06 18:32:07`.
 
 | Spécificateur | Description                                                                                                                                                                                                   | Exemple                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -1186,14 +1186,14 @@ Paramètres de la table système [`opentelemetry_span_log`](/fr/reference/system
 
 <SystemLogParameters />
 
-Exemple :
+Exemple :
 
 ```xml
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(event_date)
-        order by (event_date, finish_time_us, trace_id)
+        partition by toYYYYMM(finish_date)
+        order by (finish_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1526,15 +1526,15 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
 
 ## text_log {#text_log}
 
-Paramètres de la [table système text&#95;log](/fr/reference/system-tables/text_log) pour la journalisation des messages texte.
+Paramètres de la [table système text&#95;log](/fr/reference/system-tables/text_log) pour consigner les messages texte.
 
 <SystemLogParameters />
 
-En outre :
+En outre :
 
-| Paramètre | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Valeur par défaut                                                                 |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `level`   | Niveau de message maximal stocké dans la table. Lorsqu&#39;il est défini explicitement, le niveau du journaliseur racine est relevé au moins jusqu&#39;à cette valeur, de sorte que `text_log` peut être plus verbeux que le fichier journal du serveur (`logger.level`). S&#39;il n&#39;est pas défini, sont stockés tous les messages jusqu&#39;au niveau le plus verbeux parmi les sorties de journaux configurées (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`). | `Trace` (limité par les autres sorties de journaux s&#39;il n&#39;est pas défini) |
+| Paramètre | Description                                                                   | Valeur par défaut |
+| --------- | ----------------------------------------------------------------------------- | ----------------- |
+| `level`   | Niveau de message maximal (par défaut `Trace`) qui sera stocké dans la table. | `Trace`           |
 
 **Exemple**
 
@@ -1801,7 +1801,6 @@ Lors de l’ajout d’un compartiment S3 unique avec la balise XML `\<s3_bucket\
 * c’est utile lorsque l’endpoint est partagé par de nombreux utilisateurs, par exemple l’endpoint AWS de type path-style `s3.us-west-2.amazonaws.com` : autoriser l’hôte entier reviendrait à autoriser tous les buckets qu’il héberge.
 * le bucket est extrait de l’URL S3 analysée ; l’entrée correspond donc à la fois à `https://s3.us-west-2.amazonaws.com/my-bucket/...` et à `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
 * cela s’applique uniquement aux URL S3 : les fonctions de table et moteurs `s3`, le moteur de base de données `S3`, `BACKUP`/`RESTORE` vers `S3`, ainsi que les disques S3 créés en SQL avec la fonction `disk`.
-* un disque S3 créé en SQL est vérifié au moment où la requête le crée. Un disque qui existait déjà lorsque la liste a été définie, ou qui a été créé par une version dépourvue de cette vérification, est tout de même chargé au démarrage du serveur, y compris pour une table supprimée mais pas encore effacée, afin que `UNDROP TABLE` continue de fonctionner ; le serveur le signale dans le journal et dans `system.warnings`.
 * une redirection permanente (301) renvoyée par S3 est également vérifiée par rapport aux entrées de bucket, mais une redirection temporaire (307) n’est vérifiée que sur l’hôte ; elle est donc rejetée lorsque la liste ne contient que des entrées `\<s3_bucket\>`.
 
 Par exemple :
@@ -1935,7 +1934,6 @@ Paramètres des améliorations facultatives du système de contrôle d’accès.
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `enable_read_write_grants`                      | Active la séparation des privilèges `READ` et `WRITE` pour les sources de données externes telles que `S3`, `HDFS`, `Kafka`, etc. Disponible à partir de la version 25.7. Lorsque ce paramètre est défini sur `true`, vous pouvez accorder `READ` et `WRITE` séparément pour les sources, au lieu d’un privilège unique couvrant les deux.                                                                                                                                                                                                                                                | `false` |
 | `on_cluster_queries_require_cluster_grant`      | Définit si les requêtes `ON CLUSTER` nécessitent le privilège `CLUSTER`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `true`  |
-| `readonly_restricts_set_role`                   | Définit si l’instruction `SET ROLE` est refusée lorsque la session ou la requête est en mode readonly. Lorsque ce paramètre vaut `false`, `readonly` ne restreint pas `SET ROLE`. Le paramètre de requête HTTP `role` n’est pas concerné.                                                                                                                                                                                                                                                                                                                                                 | `false` |
 | `role_cache_expiration_time_seconds`            | Définit le nombre de secondes après le dernier accès pendant lesquelles un rôle est conservé dans le cache des rôles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `600`   |
 | `select_from_information_schema_requires_grant` | Définit si `SELECT * FROM information_schema.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON information_schema.<table>`, comme pour les tables ordinaires.                                                                                                                                                                                                                                                                                                   | `true`  |
 | `select_from_system_db_requires_grant`          | Définit si `SELECT * FROM system.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON system.<table>`, comme pour les tables non système. Exceptions : quelques tables système (`tables`, `columns`, `databases` et certaines tables constantes comme `one`, `contributors`) restent accessibles à tous ; et si un privilège `SHOW` (par exemple `SHOW USERS`) a été accordé, alors la table système correspondante (c’est-à-dire `system.users`) sera accessible. | `true`  |
@@ -1955,7 +1953,6 @@ Exemple :
     <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
-    <readonly_restricts_set_role>false</readonly_restricts_set_role>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>

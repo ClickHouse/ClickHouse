@@ -8,9 +8,9 @@ keywords: ['Elasticsearch']
 doc_type: 'guide'
 ---
 
-## الانتقال من Elastic إلى ClickStack {#migrating-to-clickstack-from-elastic}
+## الانتقال إلى ClickStack من Elastic {#migrating-to-clickstack-from-elastic}
 
-هذا الدليل موجّه للمستخدمين الذين ينتقلون من Elastic Stack — وتحديدًا من يستخدمون Kibana لمراقبة السجلات والتتبعات والمقاييس التي يجمعها Elastic Agent وتُخزَّن في Elasticsearch. ويعرض المفاهيم وأنواع البيانات المقابلة في ClickStack، ويشرح كيفية ترجمة الاستعلامات المعتمدة على Lucene في Kibana إلى صياغة واجهة مستخدم ClickStack، كما يقدّم إرشادات لنقل كلٍّ من البيانات والوكلاء لضمان انتقال سلس.
+هذا الدليل موجّه للمستخدمين الذين ينتقلون من Elastic Stack — وتحديدًا من يستخدمون Kibana لمراقبة السجلات والتتبعات والمقاييس التي يجمعها Elastic Agent وتُخزَّن في Elasticsearch. ويعرض المفاهيم وأنواع البيانات المقابلة في ClickStack، ويشرح كيفية ترجمة الاستعلامات المعتمدة على Lucene في Kibana إلى صياغة HyperDX، كما يقدّم إرشادات لنقل كلٍّ من البيانات والوكلاء لضمان انتقال سلس.
 
 قبل البدء في عملية الترحيل، من المهم فهم المفاضلات بين ClickStack وElastic Stack.
 
@@ -26,4 +26,4 @@ doc_type: 'guide'
 
 * تستخدم بيانات الرصد أساسًا لحالات الاستخدام الأمنية وتحتاج إلى منتج يركّز على SIEM.
 * يشكّل التحليل الشامل للأداء جزءًا بالغ الأهمية من سير عملك.
-* تحتاج إلى منصة لوحات معلومات لذكاء الأعمال (BI). يوفّر ClickStack عمدًا سبل سير عمل مرئية موجّهة لمهندسي SREs والمطوّرين، ولم يُصمَّم كأداة لذكاء الأعمال (BI). وللحصول على قدرات مكافئة، نوصي باستخدام [Grafana with the ClickHouse plugin](/ar/integrations/connectors/data-visualization/grafana/index) أو [Superset](/ar/integrations/connectors/data-visualization/superset-and-clickhouse).
+* تحتاج إلى منصة لوحات معلومات لذكاء الأعمال (BI). يوفّر ClickStack عمدًا مسارات عمل مرئية موجّهة لمهندسي SREs والمطوّرين، ولم يُصمَّم كأداة لذكاء الأعمال (BI). وللحصول على قدرات مكافئة، نوصي باستخدام [Grafana with the ClickHouse plugin](/ar/integrations/connectors/data-visualization/grafana/index) أو [Superset](/ar/integrations/connectors/data-visualization/superset-and-clickhouse).

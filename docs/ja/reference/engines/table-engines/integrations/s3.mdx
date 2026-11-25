@@ -39,18 +39,16 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### エンジンパラメーター {#parameters}
+### エンジンパラメータ {#parameters}
 
 * `path` — ファイルへのパスを含むバケット URL。readonly モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}` および `{N..M}`。ここで、`N`, `M` は数値、`'abc'`, `'def'` は文字列です。詳細は[以下](#wildcards-in-path)を参照してください。
 * `NOSIGN` - 認証情報の代わりにこのキーワードを指定すると、すべてのリクエストに署名が行われません。
 * `format` — ファイルの[フォーマット](/ja/reference/formats/index#formats-overview)。
-* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザー向けの長期認証情報です。これらを使用してリクエストを認証できます。このパラメーターは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。詳細は [Using S3 for Data Storage](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) を参照してください。
-* `compression` — 圧縮タイプ。サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。このパラメーターは任意です。デフォルトでは、ファイル拡張子から圧縮方式を自動検出します。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。
+* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザー向けの長期認証情報です。これらを使用してリクエストを認証できます。このパラメータは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。詳細は [Using S3 for Data Storage](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) を参照してください。
+* `compression` — 圧縮タイプ。サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。このパラメータは任意です。デフォルトでは、ファイル拡張子から圧縮方式を自動検出します。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。
 * `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` では、パス内に `{_partition_id}` が必要で、これがパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスがテーブルのルートであるとみなし、ファイル名に Snowflake ID、拡張子にファイルフォーマットを使用した Hive スタイルのパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の glob を含むパスではパーティション方式を使用せず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` を使用し、それ以外の場合はパーティション方式を使用しません。
 * `partition_columns_in_data_file` - `hive` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして ClickHouse が扱うかどうかを指定します。デフォルトは `false` です。
 * `storage_class_name` - オプション: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`。即時取り出しが可能な S3 の storage classes のみサポートされます (`GLACIER` や `DEEP_ARCHIVE` などのアーカイブクラスはサポートされません) 。[AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) を指定できます。
-* `upload_checksum_algorithm` - 任意。アップロード時に使用するチェックサムアルゴリズム: `MD5` (`Content-MD5` として送信) 、`CRC32` または `SHA256` (`x-amz-checksum-*` として送信) 。空の場合は `Content-MD5` を使用し、S3Express バケットでは `CRC32` を使用します。GCS では無視されます。
-* `delete_checksum_algorithm` - 任意。バッチ `DeleteObjects` リクエストで使用するチェックサムアルゴリズム: `MD5` (`Content-MD5` として送信) 、`CRC32` または `SHA256`。空の場合は `MD5` を使用します。ただし、S3Express バケットでは `CRC32` を使用し、`MD5` が利用できない場合 (FIPS モード) やサーバーに拒否された場合は `SHA256` を使用します。GCS では無視されます。
 * `extra_credentials` - 任意。ClickHouse Cloud でロールベースのアクセス用の `role_arn` を渡すために使用します。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
 
 ### データキャッシュ {#data-cache}
@@ -86,9 +84,9 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化は主にデータ管理のための手法であり、各パーティションは個別のファイルに書き込まれます。`hive` パーティション方式では、パーティションカラムでフィルタするクエリは、一致するパーティションのファイルのみを読み取ります。細かすぎるパーティション化は絶対に避けてください。クライアント識別子や名前でデータをパーティション化しないでください。
+`PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化してもクエリは高速化されません (ORDER BY 式とは対照的です) 。細かすぎるパーティション化は絶対に避けてください。クライアント識別子や名前でデータをパーティション化しないでください (代わりに、クライアント識別子または名前を ORDER BY 式の最初のカラムにしてください) 。
 
-`file_like_engine_default_partition_strategy` で設定されるデフォルトの `hive` パーティション方式では、パーティションキーはテーブルのカラムで構成する必要があります (例: `PARTITION BY (year, month)`) 。`toYYYYMM(date_column)` のような式を使用するには、パスに `{_partition_id}` を含めた `wildcard` 戦略が必要です。`wildcard` 戦略を使用するテーブルは、書き込みはできますが読み取りはできません。
+月単位でパーティション化するには、`toYYYYMM(date_column)` 式を使用します。ここで、`date_column` は [Date](/ja/reference/data-types/date) 型の日付カラムです。ここでのパーティション名は `"YYYYMM"` フォーマットになります。
 
 #### パーティション方式 {#partition-strategy}
 
@@ -96,7 +94,7 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 `partition_strategy` が設定されていない場合、別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` を使用し、それ以外の場合はパーティション方式を使用しません。
 
-`hive` は、読み取りと書き込みに hive スタイルのパーティション化を実装します。読み取りは再帰的な glob パターンを使って実装され、`SELECT * FROM s3('table_root/**.parquet')` と同等ですが、Hive エコシステムの慣例に従い、隠しパス (テーブルルート以下で `_` または `.` で始まるセグメント。例: `_temporary/`、`.spark-staging-<id>/`、`_SUCCESS`) はスキップされます。パーティション方式を使用しない通常の glob パスでは、`s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files` 設定によって同じフィルタリングを利用できます。
+`hive` は、読み取りと書き込みに hive スタイルのパーティション化を実装します。読み取りは再帰的な glob パターンを使って実装され、`SELECT * FROM s3('table_root/**.parquet')` と同等です。
 書き込みでは、次のフォーマットでファイルが生成されます: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
 
 注: `hive` パーティション方式を使用する場合、`use_hive_partitioning` 設定は効果を持ちません。

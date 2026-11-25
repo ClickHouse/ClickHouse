@@ -7,15 +7,15 @@ title: 'Vue d’ensemble de l’architecture'
 doc_type: 'reference'
 ---
 
-ClickHouse est un véritable SGBD orienté colonnes. Les données sont stockées par colonnes et traitées sous forme de tableaux (vecteurs ou fragments de colonnes) lors de l’exécution des requêtes.
+ClickHouse est un véritable SGBD orienté colonnes. Les données sont stockées par colonnes et, pendant l’exécution, traitées sous forme de tableaux (vecteurs ou fragments de colonnes).
 Chaque fois que possible, les opérations sont appliquées à des tableaux plutôt qu’à des valeurs individuelles.
-C’est ce qu’on appelle l’« exécution vectorisée des requêtes », et cela permet de réduire le coût réel du traitement des données.
+C’est ce qu’on appelle l’« exécution vectorisée des requêtes », et cela permet de réduire le coût réel du traitement des données.
 
 Cette idée n’est pas nouvelle.
-Elle remonte à `APL` (un langage de programmation, 1957) et à ses descendants : `A +` (dialecte d’APL), `J` (1990), `K` (1993) et `Q` (langage de programmation de Kx Systems, 2003).
+Elle remonte à `APL` (un langage de programmation, 1957) et à ses descendants : `A +` (dialecte d’APL), `J` (1990), `K` (1993) et `Q` (langage de programmation de Kx Systems, 2003).
 La programmation par tableaux est utilisée dans le traitement des données scientifiques. Cette idée n’est pas nouvelle non plus dans les bases de données relationnelles. Par exemple, elle est utilisée dans le système `VectorWise` (également connu sous le nom d’Actian Vector Analytic Database d’Actian Corporation).
 
-Il existe deux approches différentes pour accélérer le query processing : l’exécution vectorisée des requêtes et la génération de code à l’exécution. Cette dernière élimine toute indirection et tout dispatch dynamique. Aucune de ces approches n’est intrinsèquement supérieure à l’autre. La génération de code à l’exécution peut être plus efficace lorsqu’elle fusionne de nombreuses opérations, exploitant ainsi pleinement les unités d’exécution du CPU et le pipeline. L’exécution vectorisée des requêtes peut être moins pratique, car elle implique des vecteurs temporaires qui doivent être écrits dans le cache puis relus. Si les données temporaires ne tiennent pas dans le cache L2, cela devient problématique. En revanche, l’exécution vectorisée des requêtes exploite plus facilement les capabilities SIMD du CPU. Un [article de recherche](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) rédigé par des collègues montre qu’il est préférable de combiner les deux approches. ClickHouse utilise l’exécution vectorisée des requêtes et prend en charge, de façon encore limitée, la génération de code à l’exécution.
+Il existe deux approches différentes pour accélérer le query processing : l’exécution vectorisée des requêtes et la génération de code à l’exécution. Cette dernière élimine toute indirection et tout dispatch dynamique. Aucune de ces approches n’est intrinsèquement supérieure à l’autre. La génération de code à l’exécution peut être plus efficace lorsqu’elle fusionne de nombreuses opérations, exploitant ainsi pleinement les unités d’exécution du CPU et le pipeline. L’exécution vectorisée des requêtes peut être moins pratique, car elle implique des vecteurs temporaires qui doivent être écrits dans le cache puis relus. Si les données temporaires ne tiennent pas dans le cache L2, cela devient problématique. En revanche, l’exécution vectorisée des requêtes exploite plus facilement les capabilities SIMD du CPU. Un [article de recherche](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) rédigé par des collègues montre qu’il est préférable de combiner les deux approches. ClickHouse utilise l’exécution vectorisée des requêtes et prend en charge, de façon encore limitée, la génération de code à l’exécution.
 
 ## Colonnes {#columns}
 

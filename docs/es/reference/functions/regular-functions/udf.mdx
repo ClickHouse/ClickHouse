@@ -6,17 +6,21 @@ title: 'Funciones definidas por el usuario (UDFs)'
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse admite varios tipos de funciones definidas por el usuario (UDFs):
 
-* [UDF ejecutables](#executable-user-defined-functions) inician un programa o script externo (Python, Bash, etc.) y envían bloques de datos a través de STDIN / STDOUT. Úselas para integrar código o herramientas existentes sin recompilar ClickHouse. Tienen una mayor sobrecarga por llamada en comparación con las opciones dentro del proceso y son más adecuadas para lógica más pesada o cuando se requiere un tiempo de ejecución diferente.
+* [Executable UDFs](#executable-user-defined-functions) inician un programa o script externo (Python, Bash, etc.) y envían bloques de datos a través de STDIN / STDOUT. Úselas para integrar código o herramientas existentes sin recompilar ClickHouse. Tienen una mayor sobrecarga por llamada en comparación con las opciones dentro del proceso y son más adecuadas para lógica más pesada o cuando se requiere un entorno de ejecución diferente.
 * [SQL UDFs](#sql-user-defined-functions) se definen con `CREATE FUNCTION` únicamente en SQL. Se insertan o expanden en el plan de consulta (sin cambiar de proceso), lo que las hace ligeras e ideales para reutilizar lógica de expresiones o simplificar columnas calculadas complejas.
-* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) ejecutan código compilado en WebAssembly dentro de un sandbox en el proceso del servidor. Ofrecen una menor sobrecarga por llamada que los ejecutables externos, con mejor aislamiento que las extensiones nativas, lo que las hace adecuadas para algoritmos personalizados escritos en lenguajes que pueden compilarse a WASM (p. ej., C/C++/Rust).
-* [UDF ejecutables experimentales basadas en controlador](#driver-based-executable-user-defined-functions) permiten que un &quot;controlador&quot; proporcionado por el operador convierta, en el momento de crear la función, un fragmento de código proporcionado en `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en una UDF ejecutable (por ejemplo, compilándolo). Se basan en las UDF ejecutables y requieren configuración del controlador del lado del servidor.
+* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) ejecutan código compilado en WebAssembly dentro de un entorno aislado en el proceso del servidor. Ofrecen una menor sobrecarga por llamada que los ejecutables externos, con mejor aislamiento que las extensiones nativas, lo que las hace adecuadas para algoritmos personalizados escritos en lenguajes que pueden compilarse a WASM (p. ej., C/C++/Rust).
+* [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) permiten que un &quot;driver&quot; proporcionado por el operador convierta, en el momento de crear la función, un fragmento de código proporcionado en `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en una UDF ejecutable (por ejemplo, compilándolo). Se basan en las UDFs ejecutables y requieren configuración del driver del lado del servidor.
 
-## Funciones Definidas por el Usuario Ejecutables {#executable-user-defined-functions}
+## Funciones ejecutables definidas por el usuario {#executable-user-defined-functions}
+
+<BetaBadge />
 
 <Note>
   En ClickHouse Cloud, las UDF ejecutables están disponibles de forma general y se crean a través de la consola de ClickHouse Cloud, la Cloud API o Terraform. Consulte [Funciones definidas por el usuario en Cloud](/es/products/cloud/features/sql-console-features/user-defined-functions) para ver el flujo de trabajo específico de Cloud, incluido el tiempo de ejecución Native para binarios compilados.
@@ -24,7 +28,7 @@ ClickHouse admite varios tipos de funciones definidas por el usuario (UDFs):
 
 ClickHouse puede invocar cualquier programa ejecutable externo o script para procesar datos.
 
-La configuración de las funciones definidas por el usuario ejecutables puede encontrarse en uno o varios archivos XML.
+La configuración de las funciones ejecutables definidas por el usuario puede encontrarse en uno o varios archivos XML.
 La ruta de la configuración se especifica en el parámetro [`user_defined_executable_functions_config`](/es/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
 
 La configuración de una función contiene las siguientes opciones:
@@ -52,14 +56,7 @@ La configuración de una función contiene las siguientes opciones:
 
 El comando debe leer los argumentos desde `STDIN` y escribir el resultado en `STDOUT`. El comando debe procesar los argumentos de forma iterativa. Es decir, después de procesar un fragmento de argumentos, debe esperar al siguiente fragmento.
 
-<Note>
-  Con el formato `TabSeparated`, ClickHouse aplica escape a los caracteres especiales de los argumentos que envía y deshace el escape en la salida del comando, siguiendo las [reglas de escape de TabSeparated](/es/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). Por ejemplo, una barra invertida en un argumento llega al comando como `\\`, y una tabulación o un salto de línea, como `\t` o `\n`. El comando debe aplicar escape a su salida de la misma forma. De lo contrario, una barra invertida en la salida (por ejemplo, en texto JSON) se interpreta como el inicio de una secuencia de escape, y el resultado es incorrecto o no se puede analizar.
-
-  Si el comando no aplica escape a su salida, utilice en su lugar uno de estos formatos:
-
-  * [`TabSeparatedRaw`](/es/reference/formats/TabSeparated/TabSeparatedRaw): los valores no se escapan, por lo que no deben contener tabulaciones ni saltos de línea.
-  * [`JSONEachRow`](/es/reference/formats/JSON/JSONEachRow): las cadenas pueden contener barras invertidas, tabulaciones y saltos de línea. Consulte el [ejemplo de JSON](#udf-stdin) más abajo.
-</Note>
+## Funciones ejecutables definidas por el usuario {#executable-user-defined-functions}
 
 ## Ejemplos {#examples}
 
@@ -615,17 +612,6 @@ El árbol del código fuente incluye drivers de prueba de concepto en `programs/
 * `UnsafeC` - compila y ejecuta el código directamente en el host sin aislamiento. Como indica el nombre, no proporciona ningún aislamiento y está pensado solo para entornos de confianza y pruebas.
 
 Estos drivers de ejemplo sirven como punto de partida; revise y endurezca el aislamiento según su entorno antes de exponerlos a usuarios no confiables.
-
-### Controladores de terceros {#third-party-drivers}
-
-Los controladores también pueden proceder de fuera de ClickHouse. Sus autores, y no ClickHouse, se encargan de mantenerlos; revíselos igual que haría con los controladores de ejemplo antes de ponerlos a disposición de usuarios que no sean de confianza:
-
-* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - ejecuta el cuerpo de una función de Python en una micro-VM de [Hyperlight](https://github.com/hyperlight-dev/hyperlight) con su propio núcleo. Hyperlight es un proyecto de sandbox de la [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). Cada bloque de filas parte de una instantánea del invitado, por lo que el código no tiene acceso a la red ni a los archivos del servidor, ni conserva estado entre consultas. Requiere Linux con `/dev/kvm`.
-
-  ```sql
-  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
-  ENGINE = HyperlightPython AS 'return len(s.split())';
-  ```
 
 ## Contenido relacionado {#related-content}
 

@@ -73,8 +73,6 @@ ClickHouse への挿入のアトミック性、分離性、耐久性を確認し
 
 アプリケーションワークロードには、[ClickHouse Managed Postgres](/ja/products/managed-postgres/overview#transactions-and-analytics) の利用を検討してください。
 
-トランザクションを制御する文については、[`BEGIN TRANSACTION`](/ja/reference/statements/transactions) のリファレンスページで説明しています。
-
 ### 要件 {#requirements}
 
 * トランザクションを追跡するため、ClickHouse Keeper または ZooKeeper をデプロイします
@@ -90,7 +88,7 @@ ClickHouse への挿入のアトミック性、分離性、耐久性を確認し
 ### 注意事項 {#notes-1}
 
 * これは実験的な機能であり、今後変更される可能性があります。
-* トランザクション中に例外が発生した場合、そのトランザクションをコミットすることはできません。これには、タイプミスによって発生する `UNKNOWN_FUNCTION` 例外を含む、あらゆる例外が含まれます。ただし、解析できないクエリや、クエリパラメータが指定されていないか無効なクエリは対象外です。このようなクエリは実行されず、トランザクションは実行中のまま維持されます。
+* トランザクション中に例外が発生した場合、そのトランザクションをコミットすることはできません。これには、タイプミスによって発生する `UNKNOWN_FUNCTION` 例外を含む、あらゆる例外が含まれます。
 * ネストされたトランザクションはサポートされていません。代わりに、現在のトランザクションを終了してから新しいトランザクションを開始してください
 
 ### 設定 {#configuration}
@@ -211,16 +209,6 @@ Ok.
 ```
 
 #### トランザクションを開始し、行を挿入する {#begin-a-transaction-and-insert-a-row}
-
-トランザクション内では非同期挿入はサポートされていません。また、[`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert) はデフォルトで有効になっているため、まず session でこれを無効化してください：
-
-```sql
-SET async_insert = 0
-```
-
-```response
-Ok.
-```
 
 ```sql
 BEGIN TRANSACTION

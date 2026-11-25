@@ -52,7 +52,7 @@ Ensuite, vous devrez configurer les variables d&#39;environnement suivantes dans
   </Tab>
 </Tabs>
 
-*La variable d&#39;environnement `OTEL_SERVICE_NAME` sert à identifier votre service dans l&#39;interface utilisateur de ClickStack ; vous pouvez lui donner le nom de votre choix.*
+*La variable d&#39;environnement `OTEL_SERVICE_NAME` sert à identifier votre service dans l&#39;application HyperDX ; vous pouvez lui donner le nom de votre choix.*
 
 ### Lancer l&#39;application avec l&#39;agent Python OpenTelemetry {#run-the-application-with-otel-python-agent}
 
@@ -124,7 +124,7 @@ logger.setLevel(logging.DEBUG)
 
 Le SDK Python OpenTelemetry affiche généralement les erreurs dans la console
 lorsqu&#39;elles se produisent. Cependant, si vous ne rencontrez aucune erreur mais
-constatez que vos données n&#39;apparaissent pas dans l&#39;interface utilisateur de ClickStack comme prévu, vous
+constatez que vos données n&#39;apparaissent pas dans HyperDX comme prévu, vous
 pouvez activer le mode de débogage.
 Lorsque le mode de débogage est activé, toutes les données de télémétrie sont affichées dans la console,
 ce qui vous permet de vérifier si votre application est correctement instrumentée avec les
@@ -134,5 +134,5 @@ données attendues.
 export DEBUG=true
 ```
 
-Pour en savoir plus sur l’instrumentation Python d’OpenTelemetry, consultez :
+Pour en savoir plus sur l’instrumentation Python d’OpenTelemetry, consultez :
 [https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)

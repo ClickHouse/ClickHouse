@@ -76,8 +76,6 @@ ClickHouse Cloud admite HTTPS, interfaces nativas y el [protocolo de red de MySQ
 
 Los diccionarios son una forma habitual de acelerar las búsquedas en ClickHouse. Actualmente, ClickHouse Cloud admite diccionarios de PostgreSQL, MySQL, servidores remotos y locales de ClickHouse, Redis, MongoDB y fuentes HTTP.
 
-Al crear un diccionario que lea de una tabla de ClickHouse, incluya en la cláusula `SOURCE` el nombre de usuario y la contraseña de un usuario dedicado. Dicho usuario necesita el permiso `SELECT` sobre la tabla de origen. Consulte el [ejemplo de origen del diccionario de ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse).
-
 ### Consultas federadas {#federated-queries}
 
 Ofrecemos compatibilidad con consultas federadas de ClickHouse para la comunicación entre clústeres en la nube y con clústeres externos autogestionados de ClickHouse. Actualmente, ClickHouse Cloud admite consultas federadas mediante los siguientes motores de integración:

@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
 
 本指南介绍了 ClickHouse Cloud 中备份的工作方式、可为你的服务配置备份的选项，以及如何从备份中恢复。
 
@@ -18,13 +19,9 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 ## 备份状态列表 {#backup-status-list}
 
-无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **备份** 选项卡中查看所有可用的恢复点。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
+无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用的恢复点。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Cloud 中的备份状态列表](/images/cloud/manage/backup-status-list.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud 中的备份状态列表" border />
 
 ## 了解备份成本 {#understanding-backup-cost}
 
@@ -34,11 +31,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 要了解备份成本，你可以在用量页面中查看每个服务的备份成本 (如下所示) 。当你按自定义计划运行备份几天后，就可以大致了解相关成本，并据此推算出每月的备份成本。
 
-<div className="ch-image-md">
-  <Frame>
-    ![ClickHouse Cloud 中的备份使用情况图表](/images/cloud/manage/backup-usage.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud 中的备份使用情况图表" border />
 
 要估算备份的总成本，你需要先设定备份计划。在设置计划之前，你可以使用[定价计算器](https://clickhouse.com/pricing)，通过提供以下信息来获取每月成本估算：
 
@@ -55,24 +48,16 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 备份会恢复到新的 ClickHouse Cloud 服务，而不是恢复到创建该备份的现有服务。
 
-点击 **恢复** 备份图标后，您可以指定将要创建的新服务名称，然后恢复此备份：
+点击 **Restore** 备份图标后，您可以指定将要创建的新服务名称，然后恢复此备份：
 
-<div className="ch-image-md">
-  <Frame>
-    ![在 ClickHouse Cloud 中恢复备份](/images/cloud/manage/backup-restore.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="在 ClickHouse Cloud 中恢复备份" />
 
 在新服务就绪之前，它会在服务列表中显示为 `Provisioning`：
 
-<div className="ch-image-md">
-  <Frame>
-    ![服务正在预配](/images/cloud/manage/backup-service-provisioning.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="服务正在预配中" border />
 
 <div id="working-with-your-restored-service">
-  ## 使用已恢复的服务 {#working-with-your-restored-service}
+  ## 使用已恢复的服务
 </div>
 
 备份恢复后，您现在会有两个相似的服务：需要恢复的**原始服务**，以及一个从原始服务备份中恢复出来的新的**已恢复服务**。
@@ -83,7 +68,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 将数据从新的已恢复服务迁回原始服务，并删除新的已恢复服务。
 
 <div id="use-the-new-restored-service">
-  ### 使用**新已恢复服务** {#use-the-new-restored-service}
+  ### 使用**新已恢复服务**
 </div>
 
 要使用这个新服务，请执行以下步骤：
@@ -92,15 +77,17 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 2. 确认新服务包含您需要的数据。
 3. 删除原始服务。
 
-### 将数据从**已恢复服务**迁移回**原服务** {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### 将数据从**已恢复服务**迁移回**原始服务**
+</div>
 
-假设由于某种原因，你无法使用已恢复服务，例如仍有用户或应用连接到现有服务。此时，你可以选择将新恢复的数据迁移到原服务。可按以下步骤完成迁移：
+假设由于某种原因，你无法使用已恢复服务，例如仍有用户或应用连接到现有服务。此时，你可以选择将新恢复的数据迁移到原始服务。可按以下步骤完成迁移：
 
 **允许远程访问已恢复服务**
 
-新服务应从备份恢复，并使用与原服务相同的 IP 允许列表。这是必需的，因为除非你此前已允许从 **Anywhere** 访问，否则将无法连接到其他 ClickHouse Cloud 服务。请修改允许列表，临时允许从 **Anywhere** 访问。详情请参阅 [IP Access List](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 文档。
+新服务应从备份恢复，并使用与原始服务相同的 IP 允许列表。这是必需的，因为除非你此前已允许从 **Anywhere** 访问，否则将无法连接到其他 ClickHouse Cloud 服务。请修改允许列表，临时允许从 **Anywhere** 访问。详情请参阅 [IP Access List](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 文档。
 
-**在新恢复的 ClickHouse 服务上 (即托管已恢复数据的系统)**
+**在新恢复的 ClickHouse 服务上 (即托管已恢复数据的系统)&#x20;**
 
 <Note>
   你需要先重置新服务的密码才能访问它。可在服务列表的 **Settings** 选项卡中执行此操作。
@@ -109,21 +96,21 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 添加一个只读用户，使其能够读取源表 (本例中为 `db.table`) ：
 
 ```sql
-CREATE USER exporter
-IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
-SETTINGS readonly = 1;
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
 ```
 
 ```sql
-GRANT SELECT ON db.table TO exporter;
+  GRANT SELECT ON db.table TO exporter;
 ```
 
 复制表定义：
 
 ```sql
-SELECT create_table_query
-FROM system.tables
-WHERE database = 'db' AND table = 'table'
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
 ```
 
 **在目标端 ClickHouse Cloud 系统上 (即包含已损坏表的那个系统) ：**
@@ -131,7 +118,7 @@ WHERE database = 'db' AND table = 'table'
 创建目标端数据库：
 
 ```sql
-CREATE DATABASE db
+  CREATE DATABASE db
 ```
 
 使用源端的 `CREATE TABLE` 语句创建目标端：
@@ -141,23 +128,23 @@ CREATE DATABASE db
 </Tip>
 
 ```sql
-CREATE TABLE db.table ...
-ENGINE = ReplicatedMergeTree
-ORDER BY ...
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
 ```
 
-使用 `remoteSecure` 函数，将数据从已恢复服务拉取到原服务中：
+使用 `remoteSecure` 函数，将数据从已恢复服务拉取到原有服务中：
 
 ```sql
-INSERT INTO db.table
-SELECT *
-FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 ```
 
-在成功将数据插入原服务后，请务必核实该服务中的数据。确认数据无误后，您还应删除这个新的  服务。
+在成功将数据插入原始服务后，请务必核实该服务中的数据。确认数据无误后，您还应删除这个新的  服务。
 
 <div id="undeleting-or-undropping-tables">
-  ## 取消删除或恢复表 {#undeleting-or-undropping-tables}
+  ## 取消删除或恢复表
 </div>
 
 ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastructure/shared-catalog) 支持 `UNDROP` 命令。
@@ -193,7 +180,7 @@ ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastruct
 </Note>
 
 <div id="configurable-backups">
-  ## 可配置备份 {#configurable-backups}
+  ## 可配置备份
 </div>
 
 如果您想设置不同于默认备份计划的备份计划，请参阅[可配置备份](/zh/products/cloud/guides/backups/configurable-backups)。

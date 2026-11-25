@@ -39,50 +39,52 @@ Passez ensuite ce fichier via l’entrée standard de `clickhouse-benchmark` :
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-## Options en ligne de commande {#clickhouse-benchmark-command-line-options}
+<div id="clickhouse-benchmark-command-line-options">
+  ## Options en ligne de commande
+</div>
 
 * `--query=QUERY` — Requête à exécuter. Si ce paramètre n&#39;est pas fourni, `clickhouse-benchmark` lira les requêtes depuis l&#39;entrée standard.
 * `--query_id=ID` — ID de requête.
 * `--query_id_prefix=ID_PREFIX` — Préfixe d&#39;ID de requête.
-* `--queries-format=FORMAT` — Format des requêtes lues depuis l&#39;entrée standard. Valeurs possibles : `tsv` (par défaut, une requête par ligne avec les tabulations échappées) et `script` (analyse l&#39;entrée comme un script contenant plusieurs requêtes séparées par des points-virgules). Limitation de `script` : les requêtes `INSERT ... FORMAT` doivent tenir sur une seule ligne.
-* `-c N`, `--concurrency=N` — Nombre de requêtes que `clickhouse-benchmark` envoie simultanément. Valeur par défaut : 1.
+* `--queries-format=FORMAT` — Format des requêtes lues depuis l&#39;entrée standard. Valeurs possibles : `tsv` (par défaut, une requête par ligne avec les tabulations échappées) et `script` (analyse l&#39;entrée comme un script contenant plusieurs requêtes séparées par des points-virgules). Limitation de `script` : les requêtes `INSERT ... FORMAT` doivent tenir sur une seule ligne.
+* `-c N`, `--concurrency=N` — Nombre de requêtes que `clickhouse-benchmark` envoie simultanément. Valeur par défaut : 1.
 * `-C N`, `--max_concurrency=N` — Augmente progressivement le nombre de requêtes parallèles jusqu&#39;à la valeur spécifiée, en produisant un rapport pour chaque niveau de concurrence.
 * `--precise` — Active des rapports précis par intervalle avec des métriques pondérées.
-* `-d N`, `--delay=N` — Intervalle en secondes entre les rapports intermédiaires (pour désactiver les rapports, définissez cette valeur sur 0). Valeur par défaut : 1.
-* `-h HOST`, `--host=HOST` — Hôte du serveur. Valeur par défaut : `localhost`. Pour le [mode de comparaison](#clickhouse-benchmark-comparison-mode), vous pouvez utiliser plusieurs clés `-h`.
-* `-i N`, `--iterations=N` — Nombre total de requêtes. Valeur par défaut : 0 (répéter indéfiniment).
+* `-d N`, `--delay=N` — Intervalle en secondes entre les rapports intermédiaires (pour désactiver les rapports, définissez cette valeur sur 0). Valeur par défaut : 1.
+* `-h HOST`, `--host=HOST` — Hôte du serveur. Valeur par défaut : `localhost`. Pour le [mode de comparaison](#clickhouse-benchmark-comparison-mode), vous pouvez utiliser plusieurs clés `-h`.
+* `-i N`, `--iterations=N` — Nombre total de requêtes. Valeur par défaut : 0 (répéter indéfiniment).
 * `-r`, `--randomize` — Exécute les requêtes dans un ordre aléatoire s&#39;il y a plus d&#39;une requête en entrée.
-* `--arrival-rate=R` — Active le [mode en boucle ouverte](#clickhouse-benchmark-open-loop-mode) : les requêtes arrivent à des instants aléatoires, au rythme moyen de `R` requêtes par seconde. Une liste de rythmes séparés par des virgules, comme `--arrival-rate=5,10,20`, exécute le test de performance successivement pour chaque rythme et produit un rapport par rythme ; elle nécessite `--iterations` ou `--timelimit`.
-* `--max-in-flight=N` — Nombre maximal de requêtes s&#39;exécutant simultanément en mode en boucle ouverte. Valeur par défaut : 256.
-* `--seed=N` — Graine du générateur aléatoire utilisée pour les instants d&#39;arrivée, l&#39;ordre des requêtes avec `--randomize` et le choix d&#39;un serveur en mode en boucle ouverte. Une même graine associée aux mêmes options reproduit la même exécution. Les instants d&#39;arrivée dépendent uniquement de la graine et du rythme, et non des requêtes ou des serveurs : il est donc possible de comparer différents mélanges de requêtes ou différents serveurs selon le même échéancier d&#39;arrivées. Par défaut : une graine aléatoire, affichée au démarrage en mode en boucle ouverte.
-* `--per-query` — Affiche à la fin les statistiques de chaque requête : le nombre de requêtes et d&#39;erreurs, le QPS, les percentiles de latence, la latence maximale et le temps CPU moyen d&#39;une requête sur le serveur.
 * `-s`, `--secure` — Utilise une connexion `TLS`.
-* `-t N`, `--timelimit=N` — Limite de temps en secondes. `clickhouse-benchmark` cesse d&#39;envoyer des requêtes lorsque la limite de temps spécifiée est atteinte. Valeur par défaut : 0 (limite de temps désactivée).
-* `--port=N` — Port du serveur. Valeur par défaut : 9000. Pour le [mode de comparaison](#clickhouse-benchmark-comparison-mode), vous pouvez utiliser plusieurs clés `--port`.
-* `--confidence=N` — Niveau de confiance pour le t-test. Valeurs possibles : 0 (80 %), 1 (90 %), 2 (95 %), 3 (98 %), 4 (99 %), 5 (99,5 %). Valeur par défaut : 5. Dans le [mode de comparaison](#clickhouse-benchmark-comparison-mode), `clickhouse-benchmark` effectue le [test t de Student indépendant à deux échantillons](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) afin de déterminer si les deux distributions ne diffèrent pas au niveau de confiance sélectionné.
+* `-t N`, `--timelimit=N` — Limite de temps en secondes. `clickhouse-benchmark` cesse d&#39;envoyer des requêtes lorsque la limite de temps spécifiée est atteinte. Valeur par défaut : 0 (limite de temps désactivée).
+* `--port=N` — Port du serveur. Valeur par défaut : 9000. Pour le [mode de comparaison](#clickhouse-benchmark-comparison-mode), vous pouvez utiliser plusieurs clés `--port`.
+* `--confidence=N` — Niveau de confiance pour le t-test. Valeurs possibles : 0 (80 %), 1 (90 %), 2 (95 %), 3 (98 %), 4 (99 %), 5 (99,5 %). Valeur par défaut : 5. Dans le [mode de comparaison](#clickhouse-benchmark-comparison-mode), `clickhouse-benchmark` effectue le [test t de Student indépendant à deux échantillons](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) afin de déterminer si les deux distributions ne diffèrent pas au niveau de confiance sélectionné.
 * `--cumulative` — Affiche des données cumulées au lieu des données par intervalle.
-* `--database=DATABASE_NAME` — Nom de la base de données ClickHouse. Valeur par défaut : `default`.
-* `--user=USERNAME` — Nom d&#39;utilisateur ClickHouse. Valeur par défaut : `default`.
-* `--password=PSWD` — Mot de passe de l&#39;utilisateur ClickHouse. Valeur par défaut : chaîne vide.
+* `--database=DATABASE_NAME` — Nom de la base de données ClickHouse. Valeur par défaut : `default`.
+* `--user=USERNAME` — Nom d&#39;utilisateur ClickHouse. Valeur par défaut : `default`.
+* `--password=PSWD` — Mot de passe de l&#39;utilisateur ClickHouse. Valeur par défaut : chaîne vide.
 * `--stacktrace` — Affichage des traces de pile. Lorsque cette clé est définie, `clickhouse-benchmark` affiche les traces de pile des exceptions.
-* `--stage=WORD` — Étape du traitement de la requête sur le serveur. ClickHouse arrête le traitement de la requête et renvoie une réponse à `clickhouse-benchmark` à l&#39;étape spécifiée. Valeurs possibles : `complete`, `fetch_columns`, `with_mergeable_state`. Valeur par défaut : `complete`.
+* `--stage=WORD` — Étape du traitement de la requête sur le serveur. ClickHouse arrête le traitement de la requête et renvoie une réponse à `clickhouse-benchmark` à l&#39;étape spécifiée. Valeurs possibles : `complete`, `fetch_columns`, `with_mergeable_state`. Valeur par défaut : `complete`.
 * `--roundrobin` — Au lieu de comparer les requêtes pour différents `--host`/`--port`, sélectionnez simplement un `--host`/`--port` aléatoire pour chaque requête et envoyez-lui la requête.
-* `--reconnect=N` — Contrôle le comportement de reconnexion. Valeurs possibles : 0 (ne jamais se reconnecter), 1 (se reconnecter pour chaque requête) ou N (se reconnecter après chaque N requêtes). Valeur par défaut : 0.
-* `--max-consecutive-errors=N` — Nombre d&#39;erreurs consécutives autorisées. Valeur par défaut : 0.
+* `--reconnect=N` — Contrôle le comportement de reconnexion. Valeurs possibles : 0 (ne jamais se reconnecter), 1 (se reconnecter pour chaque requête) ou N (se reconnecter après chaque N requêtes). Valeur par défaut : 0.
+* `--max-consecutive-errors=N` — Nombre d&#39;erreurs consécutives autorisées. Valeur par défaut : 0.
 * `--ignore-error`,`--continue_on_errors` — Continue le test même si certaines requêtes ont échoué.
-* `--client-side-time` — Affiche le temps incluant la communication réseau au lieu du temps côté serveur ; notez que, pour les versions du serveur antérieures à 22.8, le temps affiché est toujours le temps côté client.
-* `--proto-caps` — Active/désactive le chunking lors du transfert des données. Choix possibles (séparés par des virgules) : `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Valeur par défaut : `notchunked`.
+* `--client-side-time` — Affiche le temps incluant la communication réseau au lieu du temps côté serveur ; notez que, pour les versions du serveur antérieures à 22.8, le temps affiché est toujours le temps côté client.
+* `--proto-caps` — Active/désactive le chunking lors du transfert des données. Choix possibles (séparés par des virgules) : `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Valeur par défaut : `notchunked`.
 * `--help` — Affiche le message d&#39;aide.
 * `--verbose` — Augmente le niveau de détail du message d&#39;aide.
 
 Si vous souhaitez appliquer certains [paramètres](/fr/concepts/features/configuration/settings/overview) aux requêtes, indiquez-les sous la forme d’une clé `--<session setting name>= SETTING_VALUE`. Par exemple, `--max_memory_usage=1048576`.
 
-## Options des variables d&#39;environnement {#clickhouse-benchmark-environment-variable-options}
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## Options des variables d&#39;environnement
+</div>
 
 Le nom d&#39;utilisateur, le mot de passe et l&#39;hôte peuvent être définis à l&#39;aide des variables d&#39;environnement `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` et `CLICKHOUSE_HOST`.
 Les arguments de ligne de commande `--user`, `--password` ou `--host` sont prioritaires sur les variables d&#39;environnement.
 
-## Sortie {#clickhouse-benchmark-output}
+<div id="clickhouse-benchmark-output">
+  ## Sortie
+</div>
 
 Par défaut, `clickhouse-benchmark` génère un rapport à chaque intervalle `--delay`.
 
@@ -125,58 +127,17 @@ Dans le rapport, vous trouverez :
 
 * Les percentiles des temps d’exécution des requêtes.
 
-## Mode en boucle ouverte {#clickhouse-benchmark-open-loop-mode}
-
-Par défaut, `clickhouse-benchmark` fonctionne en boucle fermée : chacun des `--concurrency` clients envoie la requête suivante dès que la précédente a renvoyé son résultat. Lorsque le serveur ralentit, il reçoit moins de requêtes ; la charge s’adapte donc au serveur.
-
-Avec `--arrival-rate`, la charge ne dépend pas du serveur. Les requêtes arrivent à des instants aléatoires selon un débit moyen fixe, comme des requêtes émises par de nombreux utilisateurs indépendants : l’intervalle entre deux arrivées est une variable aléatoire qui suit une loi exponentielle de moyenne `1 / R` (processus de Poisson). Chaque requête est envoyée à son instant d’arrivée, même si les requêtes précédentes sont encore en cours d’exécution.
-
-Au maximum `--max-in-flight` requêtes s’exécutent simultanément. Une arrivée qui les trouve toutes occupées attend dans une file d’attente côté client jusqu’à ce que l’une d’elles se termine. La latence d’une requête est mesurée de la même manière qu’en boucle fermée (voir `--client-side-time`) ; elle n’inclut donc pas le temps passé dans la file d’attente. Le nombre d’arrivées mises en file d’attente est indiqué séparément.
-
-L’option `--iterations` définit le nombre d’arrivées ; `clickhouse-benchmark` attend qu’elles soient toutes terminées. L’option `--timelimit` interrompt les arrivées une fois la limite de temps atteinte ; les requêtes en cours se terminent, et les arrivées restées dans la file d’attente sont signalées comme non envoyées.
-
-Le rapport contient deux lignes supplémentaires, par exemple :
-
-```text
-Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
-In flight: mean 0.223, max 4 of 256.
-```
-
-* `Arrivals` : le nombre d’arrivées.
-* `target rate` : le débit défini par `--arrival-rate`.
-* `achieved rate` : le nombre d’arrivées divisé par la durée du processus d’arrivée. Il s’écarte du débit cible d’une erreur aléatoire, d’autant plus faible que l’exécution est longue.
-* `queued` : le nombre d’arrivées qui ont trouvé tous les créneaux `--max-in-flight` occupés et ont attendu dans la file d’attente côté client, ainsi que la longueur maximale de cette file.
-* `not sent` : le nombre d’arrivées encore présentes dans la file d’attente à l’arrêt de l’exécution. Cette valeur n’est affichée que si elle est non nulle.
-* `In flight` : la moyenne pondérée dans le temps et le nombre maximal de requêtes exécutées simultanément.
-
-Avec des arrivées en boucle ouverte, le QPS suit le débit d’arrivée et renseigne donc peu sur le coût de la charge. En mode boucle ouverte, la chaîne d’état de chaque serveur contient également :
-
-* `CPU` : le temps CPU consommé par seconde par les requêtes sur le serveur, exprimé en cœurs.
-* `CPU per query` : le temps CPU moyen d’une requête sur le serveur, en secondes.
-
-Ces deux valeurs incluent les requêtes ayant échoué en cours d’exécution (avec `--ignore-error`), car elles sollicitent elles aussi le serveur.
-
-Le temps CPU correspond à la somme des événements de profilage `UserTimeMicroseconds` et `SystemTimeMicroseconds` que le serveur envoie pour chaque requête. Il couvre donc les fils d’exécution qui traitent la requête et constitue une approximation de son coût CPU total. Pour une requête distribuée, il est cumulé sur tous les serveurs où la requête s’exécute, car l’initiateur transmet les événements de profilage des serveurs distants. Si le serveur n’envoie aucun événement de profilage (par exemple avec `--send_profile_events=0`), la chaîne d’état affiche `CPU: not reported by the server`.
-
-Pour exécuter une charge de travail mixte, lancez simultanément plusieurs processus `clickhouse-benchmark`, un par classe de requêtes. Chaque processus rapporte les statistiques de sa propre classe. Attribuez à chaque processus sa propre graine (`--seed`), ou aucune : des processus utilisant la même graine tirent la même séquence aléatoire, si bien que leurs arrivées coïncident (ou, avec des débits différents, sont des copies mises à l’échelle les unes des autres). Avec des graines indépendantes, les arrivées combinées de tous les processus forment elles aussi un processus de Poisson.
-
-Exemples :
-
-```bash
-# 100 queries per second for 10 seconds; the lines above are from this run.
-$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
-
-# A sweep over four rates, 60 seconds each, with per-query statistics.
-$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
-```
-
-## Mode de comparaison {#clickhouse-benchmark-comparison-mode}
+<div id="clickhouse-benchmark-comparison-mode">
+  ## Mode de comparaison
+</div>
 
 `clickhouse-benchmark` peut comparer les performances de deux serveurs ClickHouse en fonctionnement.
 
 Pour utiliser le mode de comparaison, indiquez les endpoints des deux serveurs à l’aide de deux paires de clés `--host`, `--port`. Les clés sont associées selon leur position dans la liste des arguments : le premier `--host` correspond au premier `--port`, et ainsi de suite. `clickhouse-benchmark` établit des connexions avec les deux serveurs, puis envoie des requêtes. Chaque requête est adressée à un serveur sélectionné aléatoirement. Les résultats sont affichés dans un tableau.
 
-## Exemple {#clickhouse-benchmark-example}
+<div id="clickhouse-benchmark-example">
+  ## Exemple
+</div>
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10

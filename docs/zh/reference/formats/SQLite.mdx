@@ -45,7 +45,7 @@ clickhouse-local --input-format SQLite --structure "number UInt64, s String" --q
 
 对于 `Float32` 和 `Float64` 列，非 `NaN` 值以 SQLite 原生存储类写入，`NaN` 值则以 ClickHouse 文本序列化形式写入。`Bool` 和普通整数值同样以 SQLite 原生存储类写入。宽整数和复杂类型以 ClickHouse 文本序列化形式写入。`NULL` 值写入为 SQLite `NULL`。
 
-ClickHouse 从 SQLite 输入推断 schema 时，采用与 [SQLite 数据库引擎](/zh/reference/engines/database-engines/sqlite#data_types-support)相同的映射规则：
+ClickHouse 从 SQLite 输入推断 schema 时，采用与 [SQLite 数据库引擎](/zh/engines/database-engines/sqlite#data_types-support)相同的映射规则：
 
 | SQLite 声明类型               | ClickHouse 推断类型 |
 | ------------------------- | --------------- |

@@ -7,10 +7,12 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'autenticación']
 doc_type: 'guide'
 ---
 
-ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg almacenados en almacenamiento de objetos (normalmente S3) mediante una relación de confianza de AWS IAM basada en ARN. Esta guía sigue el mismo patrón de configuración segura que [Acceso seguro a datos de S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) y añade la configuración específica de Iceberg en ClickHouse.
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg almacenados en almacenamiento de objetos (normalmente S3) mediante una relación de confianza de AWS IAM basada en ARN. Esta guía sigue el mismo patrón de configuración segura que [Acceder de forma segura a datos de S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) y añade la configuración específica de Iceberg en ClickHouse.
 
 <div id="overview">
-  ## Descripción general {#overview}
+  ## Descripción general
 </div>
 
 * Obtenga el ID del rol de servicio de ClickHouse Cloud (IAM).
@@ -18,7 +20,9 @@ ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg alm
 * Adjunte al rol las políticas específicas de Iceberg para objetos y catálogos.
 * Use funciones de tabla de Iceberg o el motor de tabla IcebergS3 con credenciales basadas en roles.
 
-## Obtén el ID del rol de servicio de ClickHouse (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## Obtén el ID del rol de servicio de ClickHouse (ARN)
+</div>
 
 <Steps>
   <Step title="1. Inicia sesión en tu cuenta de ClickHouse Cloud." id="login" />
@@ -32,16 +36,12 @@ ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg alm
   <Step title={<>5. Copia el valor de <strong>ID del rol de servicio (IAM)</strong>.</>} id="service-role-iam-value">
     Este ARN es necesario para la política de confianza del rol de IAM de AWS que accederá a tus datos de Iceberg.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Obtención del ARN del rol de IAM del servicio de ClickHouse](/images/cloud/security/secures3_arn.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtención del ARN del rol de IAM del servicio de ClickHouse" border />
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## Configurar la asunción de un rol de IAM {#setting-up-iam-assume-role}
+  ## Configurar la asunción de un rol de IAM
 </div>
 
 <Steps>
@@ -122,11 +122,11 @@ ClickHouse Cloud permite el acceso seguro basado en roles a datos de Iceberg alm
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## Configurar el acceso a Iceberg en ClickHouse Cloud {#configure-iceberg-access}
+  ## Configurar el acceso a Iceberg en ClickHouse Cloud
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### Opción A: función de tabla Iceberg con ARN del rol {#iceberg-table-function-with-role-arn}
+  ### Opción A: función de tabla Iceberg con ARN del rol
 </div>
 
 Utilice la función de tabla `icebergS3` con la opción `NOSIGN` y credenciales basadas en roles. ClickHouse Cloud llamará a STS para asumir el rol.
@@ -141,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### Opción B: motor de tabla persistente de Iceberg {#persistent-iceberg-table-engine}
+  ### Opción B: motor de tabla persistente de Iceberg
 </div>
 
 ```sql
@@ -158,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### Opción C: catálogo de Glue + IcebergS3 {#glue-catalog-plus-icebergs3}
+  ### Opción C: catálogo de Glue + IcebergS3
 </div>
 
 ```sql
@@ -179,7 +179,7 @@ SETTINGS
 > Nota: Al usar el catálogo de Glue, asegúrese de que su rol de IAM tenga permisos de lectura y de listado tanto en S3 como en Glue.
 
 <div id="datalake-catalog-for-glue">
-  ### Opción D: Catálogo de DataLake para Glue {#datalake-catalog-for-glue}
+  ### Opción D: Catálogo de DataLake para Glue
 </div>
 
 <Note>
@@ -199,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## Verificar el acceso {#validate-access}
+  ## Verificar el acceso
 </div>
 
 1. Ejecuta una consulta sencilla:
@@ -212,7 +212,7 @@ LIMIT 5;
 2. Comprueba si hay errores de IAM, como `AccessDenied` o `InvalidAccessKeyId`.
 
 <div id="troubelshooting">
-  ## Solución de problemas {#troubelshooting}
+  ## Solución de problemas
 </div>
 
 * Verifique el ARN del rol en la configuración del servicio de ClickHouse Cloud.

@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'p
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
+
 [FastAPI](https://fastapi.tiangolo.com/)는 async Python 웹 프레임워크이고, [SQLAlchemy](https://www.sqlalchemy.org/)는 가장 널리 쓰이는 Python ORM입니다. 이 가이드에서는 타입이 지정된 SQLAlchemy 모델을 정의하고, [Alembic](https://alembic.sqlalchemy.org/) 마이그레이션(migration)으로 테이블을 생성한 뒤, FastAPI로 생성(create), 조회(read), 수정(update), 삭제(delete) 엔드포인트를 제공합니다. 앱은 [asyncpg](https://magicstack.github.io/asyncpg/) 드라이버를 사용하며, 모든 연결에는 TLS와 함께 전체 인증서 검증(certificate verification)이 적용됩니다.
 
 ## 사전 요구 사항 {#prerequisites}

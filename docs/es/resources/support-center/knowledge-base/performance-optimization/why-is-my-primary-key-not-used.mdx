@@ -6,11 +6,15 @@ tags: ['Rendimiento y optimizaciones']
 keywords: ['Clave primaria']
 ---
 
-## Comprobar la clave primaria {#checking-your-primary-key}
+<div id="checking-your-primary-key">
+  ## Comprobar la clave primaria
+</div>
 
 En algunos casos, los usuarios pueden observar que una consulta es más lenta de lo esperado, pese a creer que están ordenando o filtrando por una clave primaria. En este artículo mostramos cómo confirmar que la clave se está usando y destacamos los motivos más habituales por los que no ocurre.
 
-## Crear una tabla {#create-table}
+<div id="create-table">
+  ## Crear una tabla
+</div>
 
 Considere la siguiente tabla sencilla:
 
@@ -26,7 +30,9 @@ ORDER BY (code, toUnixTimestamp(timestamp))
 
 Observa que nuestra clave de ordenación incluye `toUnixTimestamp(timestamp)` como segundo elemento.
 
-## Cargar datos {#populate-data}
+<div id="populate-data">
+  ## Cargar datos
+</div>
 
 Carga esta tabla con 100 millones de filas:
 
@@ -48,7 +54,9 @@ FROM logs
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-## Filtrado básico {#basic-filtering}
+<div id="basic-filtering">
+  ## Filtrado básico
+</div>
 
 Si filtramos por código, podemos ver en el resultado el número de filas escaneadas: `49,15 mil`. Observa que esto es un subconjunto del total de 100m filas.
 
@@ -58,10 +66,10 @@ FROM logs
 WHERE code = '200'
 
 ┌────────c─┐
-│ 65607542 │ -- 65.61 million
+│ 65607542 │ -- 65,61 millones
 └──────────┘
 
-1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
+1 fila en el conjunto. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
 Peak memory usage: 92.70 KiB.
 ```
 
@@ -104,7 +112,9 @@ Los gránulos son la unidad de procesamiento de datos en ClickHouse, y cada uno 
   Filtrar por claves situadas más adelante en una clave de ordenación no será tan eficiente como filtrar por las que aparecen antes en la tupla. Para saber por qué, consulte [aquí](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
 </Note>
 
-## Filtrado por varias claves {#multi-key-filtering}
+<div id="multi-key-filtering">
+  ## Filtrado por varias claves
+</div>
 
 Supongamos que filtramos por `code` y `timestamp`:
 
@@ -146,7 +156,9 @@ WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= 
 
 En este caso, ambas claves de ordenación se utilizan para filtrar filas, por lo que solo es necesario leer `87` gránulos.
 
-## Uso de claves en la ordenación {#using-keys-in-sorting}
+<div id="using-keys-in-sorting">
+  ## Uso de claves en la ordenación
+</div>
 
 ClickHouse también puede aprovechar las claves de ordenación para ordenar de forma eficiente. En concreto,
 

@@ -110,12 +110,6 @@ TEST(RegexpUtils, extractFixedPrefixFromAlternation)
     check("^(abc\\(1|abc\\(2)", {.prefix = "abc("});
     check("^(abc|abc)", {.prefix = "abc"});
 
-    /// The group may be non-capturing, which is how `fullMatch` and PromQL matchers anchor a top-level alternation.
-    check("^(?:abc-xx|abc-yy)$", {.prefix = "abc-"});
-    check("^(?:abc|def)$", {});
-    check("^(?i:abc-xx|abc-yy)$", {});
-    check("^(?abc|abd)", {});
-
     /// Branches without a common prefix.
     check("^(abc|def)", {});
     check("^(abc|)", {});

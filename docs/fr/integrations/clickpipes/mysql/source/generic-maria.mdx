@@ -14,11 +14,13 @@ integration:
   Si vous utilisez l’un des fournisseurs pris en charge (dans la barre latérale), consultez le guide propre à ce fournisseur.
 </Info>
 
-## Activer la conservation des journaux binaires {#enable-binlog-retention}
+<div id="enable-binlog-retention">
+  ## Activer la conservation des journaux binaires
+</div>
 
 Les journaux binaires contiennent des informations sur les modifications de données effectuées sur une instance de serveur MariaDB et sont nécessaires à la réplication.
 
-Pour activer la journalisation binaire sur votre instance MariaDB, assurez-vous que les paramètres suivants sont définis :
+Pour activer la journalisation binaire sur votre instance MariaDB, assurez-vous que les paramètres suivants sont définis :
 
 ```sql
 server_id = 1               -- or greater; anything but 0
@@ -26,10 +28,10 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  -- introduced in 10.5.0
-expire_logs_days = 3        -- or higher; 0 would mean logs are preserved forever
+expire_logs_days = 1        -- or higher; 0 would mean logs are preserved forever
 ```
 
-Pour vérifier ces paramètres, exécutez les commandes SQL suivantes :
+Pour vérifier ces paramètres, exécutez les commandes SQL suivantes :
 
 ```sql
 SHOW VARIABLES LIKE 'server_id';
@@ -40,7 +42,7 @@ SHOW VARIABLES LIKE 'binlog_row_metadata';
 SHOW VARIABLES LIKE 'expire_logs_days';
 ```
 
-Si les valeurs ne correspondent pas, vous pouvez les configurer dans le fichier de configuration (généralement dans `/etc/my.cnf` ou `/etc/my.cnf.d/mariadb-server.cnf`) :
+Si les valeurs ne correspondent pas, vous pouvez les configurer dans le fichier de configuration (généralement dans `/etc/my.cnf` ou `/etc/my.cnf.d/mariadb-server.cnf`) :
 
 ```ini
 [mysqld]
@@ -49,7 +51,7 @@ log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
 binlog_row_metadata = FULL  ; only in 10.5.0 and newer
-expire_logs_days = 3
+expire_logs_days = 1
 ```
 
 Si la base de données source est une réplique, veillez également à activer `log_slave_updates`.
@@ -60,35 +62,38 @@ Vous DEVEZ REDÉMARRER l’instance MariaDB pour que les modifications prennent 
   L’exclusion de colonnes n’est pas prise en charge pour MariaDB &lt;= 10.4, car le paramètre `binlog_row_metadata` n’avait pas encore été introduit.
 </Note>
 
-## Configurer un utilisateur de base de données {#configure-database-user}
+<div id="configure-database-user">
+  ## Configurer un utilisateur de base de données
+</div>
 
-Connectez-vous à votre instance MariaDB en tant qu&#39;utilisateur root et exécutez les commandes suivantes :
+Connectez-vous à votre instance MariaDB en tant qu&#39;utilisateur root et exécutez les commandes suivantes :
 
-1. Créez un utilisateur dédié pour ClickPipes :
+1. Créez un utilisateur dédié pour ClickPipes :
 
    ```sql
    CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
    ```
 
-2. Accordez des autorisations sur le schéma. L&#39;exemple suivant montre les autorisations pour la base de données `clickpipes`. Répétez ces commandes pour chaque base de données et hôte que vous souhaitez répliquer :
+2. Accordez des autorisations sur le schéma. L&#39;exemple suivant montre les autorisations pour la base de données `clickpipes`. Répétez ces commandes pour chaque base de données et hôte que vous souhaitez répliquer :
 
    ```sql
    GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
    ```
 
-3. Accordez à l&#39;utilisateur les autorisations de réplication. MariaDB 10.5.9 et les versions ultérieures requièrent également `SLAVE MONITOR` :
+3. Accordez à l&#39;utilisateur les autorisations de réplication :
 
    ```sql
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
-   GRANT SLAVE MONITOR ON *.* TO 'clickpipes_user'@'%';
    ```
 
 <Note>
   Veillez à remplacer `clickpipes_user` et `some_secure_password` par le nom d&#39;utilisateur et le mot de passe de votre choix.
 </Note>
 
-## Configuration SSL/TLS (recommandée) {#ssl-tls-configuration}
+<div id="ssl-tls-configuration">
+  ## Configuration SSL/TLS (recommandée)
+</div>
 
 Les certificats SSL garantissent des connexions sécurisées à votre base de données MariaDB. La configuration dépend de votre type de certificat :
 
@@ -102,7 +107,9 @@ Les certificats SSL garantissent des connexions sécurisées à votre base de do
 
 Pour plus d&#39;informations sur les options SSL/TLS, consultez notre [FAQ](/fr/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
 
-## Et ensuite ? {#whats-next}
+<div id="whats-next">
+  ## Et ensuite ?
+</div>
 
 Vous pouvez maintenant [créer votre ClickPipe](/fr/integrations/clickpipes/mysql/index) et commencer à ingérer des données de votre instance MariaDB dans ClickHouse Cloud.
 Veillez à noter les informations de connexion utilisées lors de la configuration de votre instance MariaDB, car vous en aurez besoin lors de la création du ClickPipe.

@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
 يُعدّ [pgx](https://github.com/jackc/pgx) مشغّل PostgreSQL الأكثر استخدامًا في لغة Go، ويمثّل `pgxpool` مجمّع الاتصالات الخاص به. ستتعلّم في هذا الدليل كيفية ربط خدمة مكتوبة بلغة Go بـ ClickHouse Managed Postgres عبر اتصال TLS مع التحقق من الشهادة، وإنشاء جدول `todos` من خلال عملية ترحيل باستخدام [golang-migrate](https://github.com/golang-migrate/migrate)، ثم معالجة طلبات الإنشاء والقراءة والتحديث والحذف عبر خادم `net/http`.
 
 ## المتطلبات الأساسية {#prerequisites}

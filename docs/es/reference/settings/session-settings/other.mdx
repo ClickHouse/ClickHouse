@@ -17,16 +17,6 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## adaptive_aggregator_disable_thaw {#adaptive_aggregator_disable_thaw}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para mantener congeladas las tablas locales del agregador adaptativo independientemente de cuánto se repitan las claves preparadas, ignorando el veredicto de descongelación recordado en las estadísticas de la tabla hash."}]}]} />
-
-Deshabilita la protección de descongelación por thread del agregador adaptativo (consulte `enable_adaptive_aggregator`). De forma predeterminada, un thread cuyos registros preparados temporalmente repiten una y otra vez las mismas claves puede descongelar su tabla y reanudar la agregación ordinaria. Cuando al menos la mitad de los threads congelados se descongelan, el veredicto se recuerda en las estadísticas de la tabla hash (`collect_hash_table_stats_during_aggregation`), de modo que las ejecuciones posteriores de la consulta no utilizan el agregador adaptativo. Una consulta de la forma `GROUP BY ... ORDER BY count() DESC LIMIT n` solo fusiona los grupos que pueden llegar a los primeros puestos (poda top-K), y recuerda su veredicto por separado del de la misma agregación sin el `LIMIT`. Si `count()` es su única función de agregación, un thread también mantiene su tabla congelada mientras se prevea que la poda descartará la mayoría de las filas que prepara la tabla.
-
-Con este parámetro de configuración, las claves preparadas repetidas no descongelan la tabla y se ignora cualquier veredicto recordado. Los ajustes de agregación externa siguen permitiendo que una tabla congelada que crece se escriba en disco y se reemplace por una nueva tabla de aprendizaje.
-
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
@@ -41,23 +31,13 @@ El número de claves a partir del cual el agregador adaptativo congela la tabla 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nueva configuración que limita en bytes las tablas locales congeladas del agregador adaptativo; se aplica el límite que se alcance primero entre este y el umbral de recuento de claves. 0 desactiva el límite de bytes."}]}]} />
 
-El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla hash local de un thread (consulta `enable_adaptive_aggregator`). Una tabla se congela al alcanzarse primero este valor o `adaptive_aggregator_freeze_threshold`. El tamaño corresponde al búfer de tabla hash de la tabla local y se comprueba entre bloques: se trata de las celdas que recorre cada búsqueda, que contienen las claves (referencias a los bytes de las claves de tipo cadena) y los punteros a los estados de agregación, o bien los propios estados cuando se almacenan en línea. El límite de bytes es relevante cuando las celdas son anchas: el umbral de recuento de claves por sí solo permitiría que estas tablas superaran la capacidad de las cachés de CPU. La memoria de los estados de agregación no se contabiliza, ya que crece a través de las claves que la tabla ya contiene, y la congelación no impide ese crecimiento. Con el valor predeterminado, las tablas con claves de ancho normal siguen congelándose según el recuento de claves. 0 desactiva el límite de bytes, por lo que decide el umbral de recuento de claves.
+El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla hash local de un hilo (consulta `enable_adaptive_aggregator`). Una tabla se congela al alcanzarse primero este valor o `adaptive_aggregator_freeze_threshold`. El tamaño corresponde a los bytes asignados por la propia tabla local (su búfer de tabla hash más sus arenas) y se comprueba entre bloques. El límite de bytes es relevante cuando las claves o los estados de agregación son anchos: el umbral de recuento de claves por sí solo permitiría que estas tablas superaran la capacidad de las cachés de CPU. Con el valor predeterminado, las tablas con claves y estados de ancho normal siguen congelándose según el recuento de claves. 0 desactiva el límite de bytes, por lo que decide únicamente el umbral de recuento de claves.
 
 ## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Escribe el encabezado HTTP CORS adicional.
-
-## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración que permite que una sola condición restrinja varias columnas de clave durante el análisis de índices."}]}]} />
-
-Permite que una única condición atómica de la expresión `WHERE`/`PREWHERE` (una sola comparación, `IN`, `has`, etc.) restrinja varias columnas de clave durante el análisis de índices.
-
-Por ejemplo, si una tabla tiene `ORDER BY (toDate(ts), ts)` y la consulta incluye `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, la primera de las dos condiciones restringe ambas columnas de clave: se analiza como si se hubiera escrito `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Si el parámetro de configuración está deshabilitado, este predicado solo restringe `ts`. Los predicados de pertenencia a tuplas, como `(a, b) IN ((1, 2), (3, 4))`, pueden seguir restringiendo varias columnas de clave.
 
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
@@ -158,14 +138,6 @@ Posibles valores:
 
 Tiempo de espera, en segundos, para una única solicitud de Arrow Flight. Se aplica a la solicitud completa: en una lectura, abarca todo el stream de resultados y no solo la espera del primer lote de registros. El valor cero desactiva el tiempo de espera; en ese caso, un servidor de Flight que acepte una solicitud y nunca responda bloqueará la consulta hasta que se cierre la conexión.
 
-## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
-
-<SettingsInfoBlock type="UInt64" default_value="120000" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Reintenta las solicitudes a S3 de copia de seguridad y restauración tras un token expirado; 0 restablece el comportamiento anterior."}]}]} />
-
-Tiempo máximo, en milisegundos, durante el que se reintenta una solicitud a S3 cuya respuesta indica `ExpiredToken` durante una copia de seguridad o una restauración. Los reintentos también se detienen al alcanzar `backup_restore_s3_retry_attempts`. Un valor de cero deshabilita estos reintentos. Las respuestas `HEAD` de AWS S3 solo devuelven un código de estado HTTP genérico, por lo que este reintento no se aplica a las solicitudes de metadata `HEAD`.
-
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -219,7 +191,7 @@ Valida las sumas de comprobación al leer. Está habilitada de forma predetermin
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración para aplicar compresión genérica al cuerpo de la respuesta."}]}]} />
 
-Aplica compresión genérica al cuerpo de la respuesta, por ejemplo, `compression=gz`. Tenga en cuenta que es independiente de `Content-Encoding` (compresión HTTP) y del parámetro heredado `compress` (compresión nativa de ClickHouse). En las solicitudes basadas en ruta que generan una respuesta, especificar una extensión de archivo comprimido en la ruta de la URL tiene el mismo efecto. En cambio, en una carga HTTP `PUT` basada en ruta, el sufijo de compresión describe el cuerpo de la solicitud, que se descomprime antes de la inserción.
+Aplica compresión genérica al cuerpo de la respuesta, por ejemplo, `compression=gz`. Tenga en cuenta que es independiente de `Content-Encoding` (compresión HTTP) y del parámetro heredado `compress` (compresión nativa de ClickHouse). Especificar una extensión de archivo comprimido en la ruta de la URL tiene el mismo efecto.
 
 Esta configuración de la interfaz HTTP da forma a la respuesta: se procesa antes de ejecutar la consulta (los búferes de respuesta se configuran de antemano), por lo que debe proporcionarse mediante el parámetro URL de HTTP, la extensión de archivo de la ruta de la URL o un perfil de usuario, y no mediante una cláusula `SETTINGS` dentro de la consulta (donde no tiene efecto y se rechaza).
 
@@ -344,7 +316,6 @@ Usa inner join en lugar de comma join/cross join si hay expresiones de join en l
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite que los tipos de datos sin modificadores explícitos [NULL o NOT NULL](/es/reference/statements/create/table#null-or-not-null-modifiers) en la definición de columnas sean [Nullable](/es/reference/data-types/nullable).
-Se aplica a `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` y `ALTER TABLE ... MODIFY COLUMN`.
 
 Valores posibles:
 
@@ -418,13 +389,14 @@ El dialecto que se utilizará para analizar la consulta.
 Valores admitidos:
 
 * `clickhouse` (predeterminado) — SQL estándar de ClickHouse.
-* `kusto` — Kusto Query Language. Requiere la configuración Beta `enable_kusto_dialect`.
-* `prql` — PRQL. Requiere la configuración experimental `enable_prql_dialect`.
-* `polyglot` — transpila SQL de otros dialectos (MySQL, PostgreSQL, etc.) a SQL de ClickHouse. Requiere la configuración experimental `enable_polyglot_dialect`.
+* `kusto` — Kusto Query Language. Requiere la configuración experimental `allow_experimental_kusto_dialect`.
+* `prql` — PRQL. Requiere la configuración experimental `allow_experimental_prql_dialect`.
+* `polyglot` — transpila SQL de otros dialectos (MySQL, PostgreSQL, etc.) a ClickHouse SQL. Requiere la configuración experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
 * `logsql` — LogsQL, el lenguaje de consulta de logs de VictoriaLogs, traducido a consultas `SELECT` sobre la tabla de logs configurada mediante las opciones `logsql_database` y `logsql_table`. Requiere la configuración experimental `enable_logsql_dialect`.
-* `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración Beta `enable_trino_dialect`.
+
+- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -618,8 +590,6 @@ Estrategia de partición predeterminada para motores tipo archivo. Se aplica sol
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Número máximo de prefetches. Cero significa que no hay límite. Se recomienda más la configuración `filesystem_prefetches_max_memory_usage` si desea limitar el número de prefetches
-
-También se aplica a las fusiones y mutaciones.
 
 ## filter {#filter}
 
@@ -847,10 +817,10 @@ La función &#39;geoToH3&#39; acepta (lon, lat) si se establece en &#39;lon&#95;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "nueva configuración"}]}]} />
 
-Define cuántos milisegundos espera una consulta por un Client de Keeper: por el mutex de `Context` del Client y por un intento de conexión que otro thread está realizando en su nombre. Cuando se supera este tiempo, la consulta falla con `TIMEOUT_EXCEEDED`. La consulta también deja de esperar si se cancela.
+Define cuántos milisegundos espera un Client de Keeper para adquirir el mutex de `Context` correspondiente antes de fallar.
 
-El valor se obtiene del contexto de la consulta, por lo que se aplica a las operaciones que lo utilizan, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
-Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, esperan hasta que finaliza el intento de conexión y obtienen su Client o su error de Keeper.
+El valor se obtiene del `Context` que realiza la adquisición. Una sobrescritura a nivel de consulta solo se aplica cuando la operación utiliza el contexto de la consulta, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
+Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, utilizan en su lugar el valor de ese contexto y reciben el tiempo de espera agotado como un error de Keeper (`ZOPERATIONTIMEOUT`), que gestionan como cualquier otro error de Keeper.
 `SYSTEM RELOAD CONFIG` y `SYSTEM RELOAD ASYNCHRONOUS METRICS` quedan excluidos, ya que utilizan rutas de recarga serializadas de forma independiente.
 
 Valores posibles:
@@ -879,29 +849,6 @@ La función &#39;h3ToGeo&#39; devuelve (lon, lat) si es true; de lo contrario, (
 <SettingsInfoBlock type="Milisegundos" default_value="10000" />
 
 Tiempo de espera, en milisegundos, para recibir el paquete Hello de las réplicas durante el handshake.
-
-## hash_join_layout {#hash_join_layout}
-
-<SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "Nueva configuración para forzar la disposición de una unión hash. Con `auto`, se sigue eligiendo mediante `parallel_hash_join_threshold`."}]}]} />
-
-Determina cómo una unión hash `INNER`, `LEFT`, `RIGHT` o `FULL` construye su tabla hash.
-Con `auto`, el valor predeterminado, el planificador elige la disposición mediante `parallel_hash_join_threshold`; establezca `serial` o `parallel` para forzar una de ellas.
-
-Valores posibles:
-
-* `auto` — decide `parallel_hash_join_threshold`, a partir del número estimado de filas de la tabla derecha. Para una unión sin estimación, consulte ese parámetro de configuración.
-* `serial` — la tabla hash consta de una sola parte, rellenada por un único thread, independientemente de la estimación.
-* `parallel` — la tabla hash se divide en partes que rellenan simultáneamente hasta `max_threads` threads (un solo thread con `max_threads = 1`), independientemente de la estimación.
-
-Algunas uniones siempre construyen una sola parte, sea cual sea el valor:
-
-* las uniones de otros tipos, como `CROSS`;
-* una unión con una tabla `Join` o un almacenamiento clave-valor en el lado derecho;
-* cada bucket de una unión hash Grace;
-* la unión hash con la que comienza `join_algorithm = 'auto'` cuando la unión no puede hacer volcado a disco (por ejemplo, con `max_bytes_before_external_join` y `max_bytes_ratio_before_external_join` ambos a `0`) y, en su lugar, puede cambiar a una unión por fusión parcial;
-* cada unión por segmento de `query_plan_join_shard_by_pk_ranges`.
 
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
@@ -953,9 +900,9 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
-Si está habilitada, inserta `SHUFFLE` en las consultas SELECT sin cláusula ORDER BY.
+Si está habilitada, inserta &#39;ORDER BY rand()&#39; en las consultas SELECT sin cláusula ORDER BY.
 Se aplica solo cuando la profundidad de la subconsulta = 0. Las subconsultas e INSERT INTO ... SELECT no se ven afectados.
-Si la estructura de nivel superior es UNION, `SHUFFLE` se inserta en cada rama de forma independiente.
+Si la estructura de nivel superior es UNION, &#39;ORDER BY rand()&#39; se inserta en cada rama de forma independiente.
 Solo es útil para pruebas y desarrollo (la ausencia de ORDER BY es una fuente de resultados no deterministas en las consultas).
 
 ## input_format {#input_format}
@@ -976,37 +923,15 @@ El intervalo, en microsegundos, para comprobar si se ha cancelado la ejecución 
 
 Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cadena vacía, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si está vacío, una consulta sin modo generará una excepción.
 
-## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+## kill_throw_if_noop {#kill_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para que la familia `JSONExtract` rellene las tuplas con nombre únicamente a partir de objetos JSON, en lugar del relleno posicional histórico a partir de arrays. Las tuplas sin nombre siempre se rellenan de forma posicional, y la extracción desde una columna del tipo de datos `JSON` no se ve afectada."}]}]} />
-
-Rellena las tuplas con nombre únicamente a partir de objetos JSON en la familia de funciones `JSONExtract`. Cuando está deshabilitado, un array JSON rellena una tupla con nombre de forma posicional (el comportamiento histórico), por lo que el campo con nombre en el que termina cada elemento del array depende del orden en que se declaró la tupla. Las tuplas sin nombre siempre se rellenan de forma posicional a partir de arrays, independientemente de este parámetro de configuración.
-
-Este parámetro de configuración se aplica al JSON que se pasa como cadena. No afecta a la extracción desde una columna del tipo de datos `JSON`, ni para rutas tipadas ni para rutas no tipadas: en ese caso se leen las subcolumnas de la columna en lugar de analizar un documento JSON, por lo que nunca se llega al código que controla este parámetro. Las *columnas* de tupla con nombre en los formatos de entrada JSON se rigen por otro parámetro de configuración, [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/es/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects); este parámetro solo abarca las funciones de extracción.
-
-Deshabilitado de forma predeterminada.
-
-## json_extract_use_cast_string_to_date_time_mode {#json_extract_use_cast_string_to_date_time_mode}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`JSONExtract` analiza los valores `DateTime` según `cast_string_to_date_time_mode` en lugar de `date_time_input_format`. Establecer `compatibility` con versiones anteriores a la 26.8 restaura el comportamiento anterior."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "Nueva configuración para elegir si la familia `JSONExtract` analiza los valores `DateTime` según `cast_string_to_date_time_mode` (desde la 26.8) o según `date_time_input_format` (antes de la 26.8)."}]}]} />
-
-Controla qué parámetro de configuración sigue la familia de funciones `JSONExtract` al analizar un valor de cadena JSON como `DateTime` o `DateTime64`. Si está habilitado, el modo de análisis se toma de [cast&#95;string&#95;to&#95;date&#95;time&#95;mode](/es/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode), de forma coherente con `CAST`. Si está deshabilitado, se toma de [date&#95;time&#95;input&#95;format](/es/reference/settings/formats/date-time#date_time_input_format), como ocurría antes de la versión 26.8.
-
-Si el analizador elegido no puede leer el valor, la función devuelve el valor predeterminado del tipo (`1970-01-01 00:00:00`) sin generar ningún error, por lo que una discrepancia entre ambos ajustes altera los valores extraídos sin previo aviso.
-
-## kill_throw_if_noop {#kill_throw_if_noop}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Se habilita `kill_throw_if_noop` de forma predeterminada para que `KILL QUERY` y `KILL MUTATION` informen cuando no hay coincidencias."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
 
 Controla si [`KILL QUERY`](/es/reference/statements/kill#kill-query) y [`KILL MUTATION`](/es/reference/statements/kill#kill-mutation) lanzan una excepción cuando sus cláusulas `WHERE` no coinciden con ninguna fila.
 
-Habilitado de forma predeterminada. `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. Establézcalo en `false` para que la sentencia finalice sin lanzar ninguna excepción cuando no haya coincidencias. Las ejecuciones de prueba con `TEST` devuelven una vista previa vacía sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
+Si se establece en true, `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. De forma predeterminada, si no hay coincidencias, la sentencia finaliza sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
 
 Valores posibles:
 
@@ -1083,11 +1008,11 @@ Carga las marks de MergeTree de forma asíncrona en un thread pool en segundo pl
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<SettingsInfoBlock type="Seconds" default_value="120" />
+<SettingsInfoBlock type="Segundos" default_value="120" />
 
 Define cuántos segundos espera una solicitud de bloqueo antes de fallar.
 
-El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;El intento de bloqueo excedió el tiempo de espera. Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
+El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;¡El intento de bloqueo excedió el tiempo de espera! Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
 
 Valores posibles:
 
@@ -1151,14 +1076,6 @@ No añadir alias a la lista de expresiones de nivel superior al reescribir múlt
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "Normalizar los nombres de las funciones a su forma canónica; esto era necesario para el enrutamiento de consultas de proyección"}]}]} />
 
 Normalizar los nombres de las funciones a su forma canónica
-
-## obfuscate_seed {#obfuscate_seed}
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nueva configuración: cadena de semilla para la función de tabla obfuscate."}]}]} />
-
-Semilla para la función de tabla `obfuscate`. Es una cadena arbitraria: la semilla de cada columna se deriva de ella y del nombre de columna, por lo que una misma semilla siempre produce la misma ofuscación. Si se deja como cadena vacía, se genera una semilla aleatoria para cada consulta.
-
-La semilla es un parámetro de configuración ordinario, no un secreto: su valor se almacena y se muestra en texto sin cifrar, como cualquier otro parámetro de configuración, por ejemplo en `system.query_log` y `system.settings`. No utilice una contraseña ni ningún otro secreto como semilla. Si las salidas ofuscadas de distintas consultas no deben poder correlacionarse entre sí, mantenga el valor vacío predeterminado (una semilla aleatoria nueva por consulta) en lugar de establecer una semilla fija.
 
 ## offset {#offset}
 
@@ -1363,18 +1280,6 @@ Cuando se llama a una función de distancia de `QBit` (`L2DistanceTransposed`, `
 
 De forma predeterminada, con precisión 1 el vector de referencia conserva su precisión completa y solo el vector almacenado se reduce a signos (una distancia asimétrica). La distancia simétrica es varias veces más rápida, pero ignora las magnitudes de los elementos de referencia: una dimensión en la que la referencia es grande pesa lo mismo que una en la que es cercana a cero.
 
-## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Float" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nuevo ajuste experimental: paso de la cuadrícula que se utiliza al derivar condiciones deterministas a partir de condiciones que dependen de la hora actual en la caché de condiciones de consulta, expresado como una fracción de la distancia entre la constante de tiempo y la hora actual."}]}]} />
-
-Para las condiciones que dependen de la hora actual en la [caché de condiciones de consulta](/es/concepts/features/performance/caches/query-condition-cache) de las tablas `MergeTree` (consulte [`use_query_condition_cache_for_time_conditions`](/es/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)), define el tamaño de la cuadrícula sobre la que se redondean las constantes de tiempo, expresado como una fracción de la distancia entre la constante y la hora actual. Por ejemplo, con el factor predeterminado de 1.0, la constante de `WHERE time >= now() - INTERVAL 10 DAY` se redondea a una cuadrícula de un día (con un máximo de un día), y la de `WHERE time >= now() - INTERVAL 1 HOUR`, a una cuadrícula de una hora.
-
-Los valores más pequeños mantienen la condición derivada más próxima a la original (menos lectura adicional cerca del límite), a costa de que la clave de la caché rote con mayor frecuencia. El paso de la cuadrícula tiene un mínimo de un segundo, por lo que un factor pequeño hace que la condición derivada converja hacia la original en lugar de desactivarla. Los valores menores o iguales a 0 desactivan la derivación por completo.
-
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1565,7 +1470,7 @@ Si está habilitado, ClickHouse proporcionará el valor exacto de la estadístic
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para ejecutar una consulta en segundo plano, desconectada de la conexión que la envió y descartando el resultado."}]}]} />
 
-Si está habilitada, el servidor programa la consulta en segundo plano, espera a que la consulta supere sus comprobaciones (por ejemplo, que las tablas existan y que el usuario tenga los permisos necesarios) y esté a punto de iniciar su trabajo principal, devuelve un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión. Si se lanza un error antes de ese momento, se devuelve al client; si se produce después, solo se registra en `system.query_log`.
+Si está habilitada, el servidor programa la consulta en segundo plano, devuelve inmediatamente un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión.
 
 Una consulta en segundo plano no sobrevive a un reinicio del servidor. Durante el apagado, respeta la misma configuración del servidor que una consulta en primer plano: `shutdown_wait_unfinished_queries` determina si se cancela o se espera a que finalice (en ambos casos, las entradas en cola se descartan sin generar una entrada en `system.query_log`), y `shutdown_wait_unfinished` limita cuánto tiempo espera el servidor.
 
@@ -1835,73 +1740,57 @@ Valores posibles:
 * `0` - La cadena restante no se incluirá en el último elemento del array de resultados.
 * `1` - La cadena restante se incluirá en el último elemento del array de resultados. Este es el comportamiento de la función [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark y del método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
 
-## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Se usa el nombre compatible con SQL para el parámetro de configuración de división entera."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la división entera exacta en `\/` y `divide`."}]}]} />
-
-Hace que `/` y `divide` devuelvan un entero cuando ambos operandos son de tipos enteros, incluidos `Int128`, `UInt128`, `Int256` y `UInt256`.
-El cociente se trunca hacia cero. El resultado tiene el ancho del primer operando y es con signo si cualquiera de los operandos lo es.
-Tanto la división por cero como un cociente fuera del rango del tipo de resultado lanzan una excepción. Los operandos `Nullable` propagan `NULL`.
-
-De forma predeterminada, la división de dos enteros devuelve `Float64`. Este parámetro de configuración no afecta a las divisiones con operandos `Decimal` o de coma flotante,
-ni a las funciones explícitas `intDiv`, `divideDecimal` y `divideOrNull`.
-
-La elección queda registrada en el SQL recién enviado antes de que las expresiones se almacenen en la metadata de tablas, vistas, funciones SQL o mutaciones.
-Las definiciones existentes y las consultas `ATTACH` conservan su semántica de división original, con independencia de este parámetro de configuración.
-
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 <VersionHistory
   rows={[
-  {
-    id: "row-1",
-    items: [
-      { label: "26.9" },
-      { label: "10000" },
-      {
-        label:
-          "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
-      }
-    ]
-  },
-  {
-    id: "row-2",
-    items: [
-      { label: "26.8" },
-      { label: "10000" },
-      {
-        label:
-          "Nueva configuración para limitar el coste de estimar la selectividad de `IN` con un conjunto grande: por encima del límite, el estimador usa el tamaño del conjunto y su rango acotado en lugar de los rangos exactos. El valor anterior se ha establecido deliberadamente igual al nuevo, de modo que `compatibility` con una versión anterior mantenga el límite en lugar de restaurar la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
-      }
-    ]
-  },
-  {
-    id: "row-3",
-    items: [
-      { label: "26.7" },
-      { label: "10000" },
-      {
-        label:
-          "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
-      }
-    ]
-  },
-  {
-    id: "row-4",
-    items: [
-      { label: "26.6" },
-      { label: "10000" },
-      {
-        label:
-          "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
-      }
-    ]
-  }
-  ]}
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "10000" },
+    {
+      label:
+        "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "10000" },
+    {
+      label:
+        "Nueva configuración para limitar el coste de estimar la selectividad de `IN` con un conjunto grande: por encima del límite, el estimador usa el tamaño del conjunto y su rango acotado en lugar de los rangos exactos. El valor anterior se ha establecido deliberadamente igual al nuevo, de modo que `compatibility` con una versión anterior mantenga el límite en lugar de restaurar la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
+    }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.7" },
+    { label: "10000" },
+    {
+      label:
+        "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
+    }
+  ]
+},
+{
+  id: "row-4",
+  items: [
+    { label: "26.6" },
+    { label: "10000" },
+    {
+      label:
+        "El límite del coste de estimar la selectividad de `IN` con un conjunto grande se mantiene con `compatibility` de una versión anterior: el valor anterior se ha establecido deliberadamente igual al nuevo, de modo que no se restaure la estimación sin límite, que podría añadir cientos de milisegundos a la planificación de una sola consulta."
+    }
+  ]
+}
+]}
 />
 
 El tamaño máximo del conjunto situado en el lado derecho del operador `IN` para el que el estimador de selectividad determina los rangos exactos que abarca el conjunto. Determinarlos requiere un `Field` por elemento, una ordenación y una sonda de estadísticas por elemento, lo que, en conjuntos grandes, domina la planificación de consultas. Por encima de este límite, el estimador calcula la selectividad a partir del tamaño del conjunto y de su rango acotado, mediante una única pasada lineal por el conjunto, sin ordenación ni sondas de estadísticas por elemento. Cero significa que no hay límite.
@@ -1950,25 +1839,6 @@ Lee de la tabla de muestras recientes de una tabla [TimeSeries](/es/reference/en
 
 Comprueba que la velocidad de ejecución no sea demasiado baja (no inferior a `min_execution_speed`)
 una vez transcurrido el tiempo especificado en segundos.
-
-Si se establece en `0`, los límites de velocidad de ejecución se comprueban desde el inicio de la consulta,
-pero [`max_estimated_execution_time`](/es/reference/settings/session-settings/max#max_estimated_execution_time)
-no se comprueba en absoluto.
-
-## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "La función `toStartOfInterval` devuelve un valor del mismo tipo que su argumento en lugar de un tipo determinado por la unidad del intervalo, lo que provocaba un desbordamiento circular en los valores fuera del rango del tipo más estrecho"}]}]} />
-
-Hace que la función `toStartOfInterval` (y sus alias `time_bucket` y `date_bin`) devuelva un valor del mismo tipo que su primer argumento:
-`Date` para `Date`, `Date32` para `Date32`, `DateTime` para `DateTime` y `DateTime64` con la misma escala para `DateTime64`, independientemente de la unidad del intervalo.
-La única excepción es una unidad inferior al segundo con mayor precisión que la escala de un argumento `DateTime64`, por ejemplo, `INTERVAL 1500 MILLISECOND` para un `DateTime64(0)`: el resultado tiene la escala de la unidad, porque la escala del argumento no permite representar los límites del bucket.
-
-Valores posibles:
-
-* `1` — El resultado tiene el tipo del primer argumento. El parámetro de configuración `enable_extended_results_for_datetime_functions` no afecta a la función.
-* `0` — Comportamiento heredado: el tipo de resultado depende de la unidad del intervalo. Las unidades `WEEK` y superiores producen un `Date`, las unidades de `DAY` a `SECOND` producen un `DateTime` y las unidades inferiores al segundo producen un `DateTime64` con la escala de la unidad (para argumentos `Date32` y `DateTime64`, se obtienen `Date32` y `DateTime64` en lugar de `Date` y `DateTime` si `enable_extended_results_for_datetime_functions = 1`). Si un valor no cabe en el rango del tipo de resultado más estrecho, se produce un desbordamiento circular: por ejemplo, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` devuelve `2036-02-07 06:28:16`. Esto se aplica a la sobrecarga sin `origin`. La sobrecarga con `origin` conserva el tipo del argumento incluso con el comportamiento heredado, salvo que, para un argumento `DateTime64` y una unidad inferior al segundo, el resultado tiene la escala de la unidad.
 
 ## transfer_overflow_mode {#transfer_overflow_mode}
 
@@ -2084,23 +1954,7 @@ controla qué ocurre con las filas cuyo tipo real es incompatible con la funció
 
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
-Lo que espera `COMMIT`:
-
-* `wait_commit`: la solicitud de commit. Si su resultado es desconocido (se perdió la conexión con Keeper), `COMMIT` lanza `UNKNOWN_STATUS_OF_TRANSACTION`.
-* `wait_unknown`: además, el resultado de un commit cuyo estado es desconocido.
-* `wait_visible`: además, espera hasta que una nueva transacción en esta réplica vea los cambios, como máximo `wait_changes_become_visible_timeout_ms`; transcurrido ese tiempo, `COMMIT` lanza `TIMEOUT_EXCEEDED`, aunque la transacción sí se haya confirmado.
-
-## wait_changes_become_visible_timeout_ms {#wait_changes_become_visible_timeout_ms}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="UInt64" default_value="10000" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "10000"},{"label": "Nueva configuración que limita cuánto tiempo esperan `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` y `COMMIT` a que los commits sean visibles en esta réplica."}]}]} />
-
-Tiempo que `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` de una tabla con transacciones y `COMMIT` con
-`wait_changes_become_visible_after_commit_mode = 'wait_visible'` esperan hasta que los commits sean visibles para una nueva
-transacción en esta réplica. Si se agota el tiempo de espera, lanzan `TIMEOUT_EXCEEDED`.
+Esperar a que los cambios confirmados sean realmente visibles en la instantánea más reciente
 
 ## weight {#weight}
 
@@ -2155,7 +2009,7 @@ Prioridad de planificación de la consulta dentro de su workload, utilizada por 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
 
-Escribir rutas completas (incluido s3://) en los archivos de metadatos de Iceberg. Las tablas creadas en una base de datos `DataLakeCatalog` siempre usan rutas completas.
+Escribir rutas completas (incluido s3://) en los archivos de metadatos de Iceberg.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

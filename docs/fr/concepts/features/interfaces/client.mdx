@@ -6,6 +6,8 @@ title: "Client ClickHouse"
 doc_type: "reference"
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 ClickHouse fournit un client en ligne de commande natif permettant d’exécuter des requêtes SQL directement sur un serveur ClickHouse.
 Il prend en charge à la fois le mode interactif (pour l’exécution en direct des requêtes) et le mode batch (pour les scripts et l’automatisation).
 Les résultats des requêtes peuvent être affichés dans le terminal ou exportés vers un fichier, avec la prise en charge de tous les [formats](/fr/reference/formats/index) de sortie de ClickHouse, tels que Pretty, CSV, JSON, etc.
@@ -64,31 +66,23 @@ Pour obtenir la liste complète des options de ligne de commande, voir [Options 
 
 ### Se connecter à ClickHouse Cloud {#connecting-cloud}
 
-Les informations de votre service ClickHouse Cloud sont disponibles dans la console ClickHouse Cloud. Sélectionnez le service auquel vous souhaitez vous connecter, puis cliquez sur **Connect** :
+Les informations de votre service ClickHouse Cloud sont disponibles dans la console ClickHouse Cloud. Sélectionnez le service auquel vous souhaitez vous connecter, puis cliquez sur **Connect** :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Bouton Connect du service ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Bouton Connect du service ClickHouse Cloud" />
 
 <br />
 
 <br />
 
-Choisissez **Native** : les informations de connexion s’affichent avec un exemple de commande `clickhouse-client` :
+Choisissez **Native** : les informations de connexion s’affichent avec un exemple de commande `clickhouse-client` :
 
-<div className="ch-image-md">
-  <Frame>
-    ![Informations de connexion TCP natif de ClickHouse Cloud](/images/_snippets/connection-details-native.webp)
-  </Frame>
-</div>
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Détails de connexion Native TCP du service ClickHouse Cloud" />
 
-### Stocker les connexions dans un fichier de configuration {#connection-credentials}
+### Stocker des connexions dans un fichier de configuration {#connection-credentials}
 
-Vous pouvez stocker les informations de connexion d&#39;un ou de plusieurs serveurs ClickHouse dans un [fichier de configuration](#configuration_files).
+Vous pouvez enregistrer les détails de connexion d&#39;un ou de plusieurs serveurs ClickHouse dans un [fichier de configuration](#configuration_files).
 
-Le format est le suivant :
+Le format est le suivant :
 
 ```xml
 <config>
@@ -109,10 +103,10 @@ Le format est le suivant :
 </config>
 ```
 
-Pour plus d&#39;informations, consultez la [section consacrée aux fichiers de configuration](#configuration_files).
+Voir la [section sur les fichiers de configuration](#configuration_files) pour plus d’informations.
 
 <Note>
-  Afin de mettre l&#39;accent sur la syntaxe des requêtes, les exemples suivants omettent les informations de connexion (`--host`, `--port`, etc.). Pensez à les ajouter lorsque vous exécutez les commandes.
+  Afin de se concentrer sur la syntaxe des requêtes, les exemples suivants omettent les informations de connexion (`--host`, `--port`, etc.). N’oubliez pas de les ajouter lorsque vous utilisez ces commandes.
 </Note>
 
 ## Mode interactif {#interactive-mode}
@@ -260,14 +254,6 @@ La liste complète des raccourcis clavier disponibles est consultable sur [replx
 
   iTerm2 : accédez à Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key, puis cliquez sur Esc+
 </Tip>
-
-### Mode Vim {#vim-mode}
-
-Lancez le client avec le paramètre `--vim` pour modifier les requêtes à l&#39;aide de raccourcis clavier de type `vim`.
-La saisie démarre en mode insertion ; `Esc` permet de passer en mode normal, dans lequel sont disponibles les déplacements (`h`, `j`, `k`, `l`, `w`, `b`, `e`, `0`, `$`, `f`, `t`, `%`, `gg`, `G`, ...), les opérateurs (`d`, `c`) avec nombre de répétitions et objets texte (`iw`, `aw`, `i(`, `a(`, ...), ainsi que des commandes telles que `x`, `r`, `s`, `o`, `A`, `I`, `D`, `C`.
-En mode Vim, `Enter` insère une nouvelle ligne en mode insertion et passe à la ligne suivante en mode normal ; appuyez sur `Ctrl + j` pour envoyer la requête.
-En mode normal, `v` ouvre la requête en cours dans l&#39;éditeur (fonctionnalité non disponible dans le client intégré).
-Les raccourcis de recherche dans l&#39;historique (`Ctrl + r`, `Ctrl + s`, `Ctrl + t`, `Alt + r`) et `Alt + #` fonctionnent également en mode normal.
 
 ## Mode batch {#batch-mode}
 
@@ -883,7 +869,6 @@ Toutes les options en ligne de commande peuvent être spécifiées directement s
 | `--history_max_entries`                             | Nombre maximal d’entrées dans le fichier d’historique.                                                                                                                  | `1000000` (1 million)        |
 | `--prompt <prompt>`                                 | Spécifie une invite personnalisée.                                                                                                                                      | Le `display_name` du serveur |
 | `--verbose`                                         | Augmente le niveau de verbosité de la sortie.                                                                                                                           | -                            |
-| `--vim`                                             | Émule le mode d’édition `vim` en mode interactif. Voir [Mode Vim](#vim-mode).                                                                                           | -                            |
 | `-V [ --version ]`                                  | Affiche la version puis quitte.                                                                                                                                         | -                            |
 
 ### Options de connexion {#command-line-options-connection}

@@ -74,7 +74,7 @@ bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
     return StatisticsUtils::isSame(*collector, *other_uniq->collector);
 }
 
-void StatisticsUniq::serialize(WriteBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsUniq::serialize(WriteBuffer & buf)
 {
     if (collector->getNestedFunction())
         writeBinary(true, buf);
@@ -118,7 +118,7 @@ bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type) || isUUID(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

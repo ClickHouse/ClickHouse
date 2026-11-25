@@ -162,11 +162,7 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
-When writing C++ code, use the `*WithMemoryTracking` containers from `src/Common/` (`VectorWithMemoryTracking`, `UnorderedMapWithMemoryTracking`, `MapWithMemoryTracking`, `SetWithMemoryTracking`, `ListWithMemoryTracking`, `DequeWithMemoryTracking`, `StringWithMemoryTracking`, etc.) instead of the corresponding `std::` containers by default. Allocations of `std::` containers are counted by the `MemoryTracker` but never refused, while the `*WithMemoryTracking` containers enforce the memory limit by throwing a `MEMORY_LIMIT_EXCEEDED` exception. Using one must not add a copy: if a value would have to be converted to or from a `std::` container to fit the surrounding code (passed to a function taking `const std::vector<T> &`, assigned from a function returning `std::vector<T>`, and so on), keep the `std::` container. Do not change interfaces that the current change does not otherwise touch just to make room for a `*WithMemoryTracking` container. If the new throw point exposes an exception-safety bug, fix the code: allocate before irreversible side effects, keep ownership in something that survives unwinding, or roll back. Do not switch back to the `std::` container, because `std::` allocations can throw `std::bad_alloc` too, so the code was never exception-safe.
-
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
-
-When a job runs on another thread (`ThreadPool`, `ThreadPoolCallbackRunnerLocal`, `ThreadFromGlobalPool`), it must not use by reference anything that can be destroyed before the job is joined, including when a later scheduling throws. Capture by value, or declare everything the job uses, including a lambda it calls, before whatever joins the job: objects are destroyed in reverse order of declaration.
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
 
@@ -190,8 +186,6 @@ Link related pull requests and issues explicitly, using full GitHub URLs, one re
 - For any other relevant pull request or issue, put `Related: <full link>` on its own line.
 
 Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even though GitHub also auto-closes on `Fixes` and `Resolves`. `Caused by` and `Related` are not GitHub keywords and trigger no automatic closing; they are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
-
-When creating an issue about a bug or regression, try to find where it was introduced. If you can identify the pull request that caused it (for example with `git blame`, the bisect skill, or CI history), add `Caused by: <full link to the pull request>` to the issue body. If you can only narrow it down to a release, add the `v<major>.<minor>-affected` label (for example `v26.8-affected`) for each affected release; check which versions are affected by testing released binaries or by checking which release branches contain the causing commit (`git merge-base --is-ancestor <sha> origin/<branch>`). Add both when both are known. If you could not determine the origin, say so in the issue instead of guessing.
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 

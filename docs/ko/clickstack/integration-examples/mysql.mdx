@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['MySQL', '로그', 'OTEL', 'ClickStack', '데이터베이스 모니터링', '느린 쿼리']
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -16,7 +18,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-mysql">
-  ## 기존 MySQL 통합 {#existing-mysql}
+  ## 기존 MySQL 통합
 </div>
 
 이 섹션에서는 ClickStack OTel collector 구성을 수정하여 기존 MySQL 설치에서 ClickStack으로 로그를 전송하도록 설정하는 방법을 설명합니다.
@@ -24,7 +26,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 기존 환경을 직접 구성하기 전에 MySQL 로그 통합을 테스트해 보려면, [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/mysql#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용해 테스트할 수 있습니다.
 
 <div id="prerequisites">
-  ##### 사전 요구 사항 {#prerequisites}
+  ##### 사전 요구 사항
 </div>
 
 * 실행 중인 ClickStack 인스턴스
@@ -86,7 +88,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="사용자 지정 OTel collector 구성 생성" id="custom-otel">
-    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 ClickStack UI가 관리하는 기본 구성과 병합됩니다.
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 병합됩니다.
 
     다음 내용으로 `mysql-logs-monitoring.yaml` 파일을 생성하세요:
 
@@ -162,7 +164,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     * 여러 줄로 이루어진 로그 항목을 처리합니다(느린 쿼리는 여러 줄에 걸쳐 있습니다)
     * 두 로그 포맷을 모두 파싱하여 구조화된 필드(level, error&#95;code, query&#95;time, rows&#95;examined)를 추출합니다
     * 원본 로그 타임스탬프를 유지합니다
-    * ClickStack UI에서 필터링할 수 있도록 `source: mysql-error` 및 `source: mysql-slow` 속성을 추가합니다
+    * HyperDX에서 필터링할 수 있도록 `source: mysql-error` 및 `source: mysql-slow` 속성을 추가합니다
     * 전용 파이프라인을 통해 로그를 ClickHouse exporter로 라우팅합니다
 
     <Note>
@@ -193,30 +195,22 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="ClickStack UI에서 로그 확인" id="verifying-logs">
-    구성이 완료되면 ClickStack UI에 로그인하여 로그가 정상적으로 유입되는지 확인합니다:
+  <Step title="HyperDX에서 로그 확인" id="verifying-logs">
+    구성이 완료되면 HyperDX에 로그인하여 로그가 정상적으로 유입되는지 확인합니다:
 
     1. Search view로 이동합니다
     2. source를 Logs로 설정합니다
     3. `source:mysql-error` 또는 `source:mysql-slow`로 필터링하여 MySQL 관련 로그를 확인합니다
     4. `level`, `error_code`, `message`(오류 로그), `query_time`, `rows_examined`, `query`(느린 쿼리 로그) 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view](/images/clickstack/mysql/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/mysql/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트 {#demo-dataset}
+  ## 데모 데이터세트
 </div>
 
 운영 시스템을 구성하기 전에 MySQL 로그 통합을 테스트하려는 사용자를 위해, 실제와 유사한 패턴의 미리 생성된 MySQL 로그 예제 데이터세트를 제공합니다.
@@ -321,11 +315,11 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="ClickStack UI에서 로그 확인" id="verify-demo-logs">
+  <Step title="HyperDX에서 로그 확인" id="verify-demo-logs">
     ClickStack이 실행되면 다음을 수행하십시오:
 
     1. ClickStack이 완전히 초기화될 때까지 잠시 기다리십시오(일반적으로 30~60초).
-    2. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인하십시오(먼저 계정을 만들어야 할 수 있습니다).
+    2. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인하십시오(먼저 계정을 만들어야 할 수 있습니다).
     3. Search view로 이동한 다음 source를 `Logs`로 설정하십시오.
     4. 시간 범위를 **2025-11-13 00:00:00 - 2025-11-16 00:00:00**으로 설정하십시오.
     5. 총 40개의 로그가 표시되어야 합니다(`source:mysql-demo-error` 오류 로그 30개 + `source:mysql-demo-slow` 느린 쿼리 10개).
@@ -334,75 +328,57 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       40개의 로그가 바로 모두 표시되지 않으면 collector가 처리를 마칠 때까지 약 1분 정도 기다리십시오. 기다린 후에도 로그가 표시되지 않으면 `docker restart clickstack-demo`를 실행한 뒤 1분 후 다시 확인하십시오. 이는 `start_at: beginning`으로 기존 파일을 일괄 로드할 때 OpenTelemetry filelog 수신기에서 발생하는 알려진 문제입니다. `start_at: end`를 사용하는 프로덕션 배포에서는 로그가 기록되는 즉시 실시간으로 처리되므로 이 문제가 발생하지 않습니다.
     </Note>
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Search view](/images/clickstack/mysql/search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Log view](/images/clickstack/mysql/log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
 
     <Info>
       **시간대 표시**
 
-      ClickStack UI는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터 범위는 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**&#xC785;니다. 넓은 시간 범위를 지정했기 때문에 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터 범위는 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**입니다. 넓은 시간 범위를 지정했기 때문에 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
 
-## 대시보드 및 시각화 {#dashboards}
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
 
 ClickStack로 MySQL 모니터링을 시작할 수 있도록 MySQL 로그용 핵심 시각화를 제공합니다.
 
 <Steps>
   <Step title="대시보드 구성 파일 다운로드" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">대시보드 설정 파일 다운로드</TrackedLink>.
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">대시보드 구성 파일 다운로드</TrackedLink>.
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다
-    2. 오른쪽 상단의 점 3개 메뉴에서 **대시보드 가져오기**를 클릭합니다
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
 
-    3. `mysql-logs-dashboard.json` 파일을 업로드한 다음 **가져오기 완료**를 클릭합니다
+    3. `mysql-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![가져오기 완료](/images/clickstack/mysql/finish-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/finish-import.webp" alt="가져오기 완료" />
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     대시보드는 모든 시각화가 미리 구성된 상태로 생성됩니다.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![예시 대시보드](/images/clickstack/mysql/example-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="예시 대시보드" />
 
     <Note>
-      데모 데이터세트를 사용하는 경우 시간 범위를 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+      데모 데이터세트를 사용하는 경우 시간 범위를 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결 {#troubleshooting}
+  ## 문제 해결
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### 사용자 지정 구성이 로드되지 않음 {#troubleshooting-not-loading}
+  ### 사용자 지정 구성이 로드되지 않음
 </div>
 
 환경 변수가 설정되어 있는지 확인하세요:
@@ -417,7 +393,9 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-### ClickStack UI에 로그가 표시되지 않음 {#no-logs}
+<div id="no-logs">
+  ### HyperDX에 로그가 표시되지 않음
+</div>
 
 적용 중인 구성에 filelog 수신기가 포함되어 있는지 확인하세요:
 
@@ -439,7 +417,7 @@ docker exec <container> cat /tmp/mysql-demo/mysql-slow.log | wc -l
 ```
 
 <div id="no-slow-queries">
-  ### 느린 쿼리 로그가 표시되지 않는 경우 {#no-slow-queries}
+  ### 느린 쿼리 로그가 표시되지 않는 경우
 </div>
 
 MySQL에서 느린 쿼리 로그가 활성화되어 있는지 확인하십시오:
@@ -462,7 +440,7 @@ SELECT SLEEP(2);
 ```
 
 <div id="logs-not-parsing">
-  ### 로그가 올바르게 파싱되지 않는 경우 {#logs-not-parsing}
+  ### 로그가 올바르게 파싱되지 않는 경우
 </div>
 
 MySQL 로그 포맷이 예상한 포맷과 일치하는지 확인하세요. 이 가이드의 정규식 패턴은 MySQL 5.7+ 및 8.0+의 기본 포맷에 맞게 설계되었습니다.
@@ -482,13 +460,15 @@ head -5 /var/log/mysql/error.log
 포맷이 크게 다르면 구성에서 정규식 패턴을 조정하십시오.
 
 <div id="next-steps">
-  ## 다음 단계 {#next-steps}
+  ## 다음 단계
 </div>
 
 * 중요한 이벤트(연결 실패, 임계값을 초과한 느린 쿼리, 오류 급증)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
 * 쿼리 패턴별로 느린 쿼리를 분석할 수 있는 맞춤형 대시보드를 생성하세요
 * 확인된 쿼리 성능 패턴에 따라 `long_query_time`을 조정하세요
 
-## 프로덕션 환경으로 전환 {#going-to-production}
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환
+</div>
 
 이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

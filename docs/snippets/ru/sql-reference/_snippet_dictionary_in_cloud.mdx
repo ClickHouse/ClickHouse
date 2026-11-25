@@ -2,10 +2,7 @@
 title: Фрагмент словаря в Cloud
 ---
 
-<Note title="ClickHouse Cloud">
-  Для создания словарей используйте [`CREATE DICTIONARY`](/ru/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query).
-
-  При создании словаря, который читает данные из таблицы ClickHouse, укажите в секции `SOURCE` имя пользователя и пароль специально выделенного для этого пользователя. Этому пользователю необходимо разрешение `SELECT` на исходную таблицу. См. [пример источника для словаря ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse).
-
-  Проверьте список поддерживаемых источников для словарей в [руководстве по совместимости с Cloud](/ru/products/cloud/guides/cloud-compatibility).
-</Note>
+<Tip>
+  Если вы используете словарь с ClickHouse Cloud, для создания словарей используйте вариант с DDL-запросом и создавайте словарь от имени пользователя `default`.
+  Также проверьте список поддерживаемых источников для словарей в [руководстве по совместимости с Cloud](/ru/products/cloud/guides/cloud-compatibility).
+</Tip>

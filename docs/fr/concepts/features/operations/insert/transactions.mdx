@@ -63,17 +63,15 @@ Identique au cas 1 ci-dessus, avec ce détail :
 * la « cohérence » au sens d’ACID ne couvre pas la sémantique des systèmes distribués, voir https://jepsen.io/consistency ; cet aspect est contrôlé par d’autres paramètres (`select_sequential_consistency`)
 * cette explication ne couvre pas la nouvelle fonctionnalité de transactions, qui permet d’avoir des transactions complètes sur plusieurs tables, des vues matérialisées, pour plusieurs SELECT, etc. (voir la section suivante sur Transactions, Commit, and Rollback)
 
-## Transactions, validation et annulation {#transactions-commit-and-rollback}
+## Transactions, commit et rollback {#transactions-commit-and-rollback}
 
 <ExperimentalBadge />
 
 <CloudNotSupportedBadge />
 
-Outre les fonctionnalités décrites au début de ce document, ClickHouse prend en charge, à titre expérimental, les transactions, les validations et les annulations.
+Outre les fonctionnalités décrites au début de ce document, ClickHouse prend en charge, à titre expérimental, les transactions, les commits et les rollbacks.
 
 Pour les charges de travail applicatives, envisagez [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview#transactions-and-analytics).
-
-Les statements qui contrôlent les transactions sont décrits sur la page de référence [`BEGIN TRANSACTION`](/fr/reference/statements/transactions).
 
 ### Prérequis {#requirements}
 
@@ -90,8 +88,8 @@ Les statements qui contrôlent les transactions sont décrits sur la page de ré
 ### Remarques {#notes-1}
 
 * Il s’agit d’une fonctionnalité expérimentale et des modifications sont à prévoir.
-* Si une exception se produit pendant une transaction, vous ne pouvez pas valider la transaction.  Cela inclut toutes les exceptions, y compris les exceptions `UNKNOWN_FUNCTION` causées par des fautes de frappe, sauf dans le cas d’une requête qui ne peut pas être analysée ou dont les paramètres de requête sont manquants ou invalides : une telle requête n’est pas exécutée et la transaction reste en cours.
-* Les transactions imbriquées ne sont pas prises en charge ; terminez la transaction en cours et démarrez-en une nouvelle
+* Si une exception se produit pendant une transaction, vous ne pouvez pas valider la transaction.  Cela inclut toutes les exceptions, y compris les exceptions `UNKNOWN_FUNCTION` causées par des fautes de frappe.
+* Les transactions imbriquées ne sont pas prises en charge ; terminez la transaction en cours et démarrez-en une nouvelle
 
 ### Configuration {#configuration}
 
@@ -211,16 +209,6 @@ Ok.
 ```
 
 #### Démarrer une transaction et insérer une ligne {#begin-a-transaction-and-insert-a-row}
-
-Les insertions asynchrones ne sont pas prises en charge dans une transaction, et [`async_insert`](/fr/reference/settings/session-settings/async-insert#async_insert) est activé par défaut : commencez donc par le désactiver dans la session :
-
-```sql
-SET async_insert = 0
-```
-
-```response
-Ok.
-```
 
 ```sql
 BEGIN TRANSACTION

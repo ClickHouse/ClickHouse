@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -28,20 +29,16 @@ El executor nunca aplica un paquete que no hayas aprobado. Rechaza cualquier sin
 
 ## Aprobar una actualización de la plataforma {#approve-a-platform-update}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Flujo de aprobación de la plataforma del Conector de ClickHouse](/images/cloud/reference/byoc-connector-platform-approval.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flujo de aprobación de la plataforma de ClickHouse Connector" />
 
-### Credenciales del registro {#registry-credentials}
+### Credenciales del registry {#registry-credentials}
 
-La autenticación en el registro depende del modo de distribución de imágenes registrado para su entorno:
+La authentication del registry depende del modo de distribución de imágenes registrado para su entorno:
 
-* **Acceso directo al registro de ClickHouse.** Ejecute la aprobación en la VM EC2 del connector. Tanto `approve` como la sincronización de plataforma del ejecutor asumen el rol de extracción de ECR de solo lectura de su entorno con credenciales obtenidas del servicio de metadatos de instancia de EC2. Ese rol inicia sesión en el registro de charts; el ejecutor también lo utiliza para comprobar que existen las imágenes de la plataforma. Los perfiles de AWS, las credenciales del entorno o las credenciales de SSO de una estación de trabajo no sustituyen al perfil de instancia. Su kubeconfig sigue proporcionando las credenciales de cluster-admin, independientes, con las que se aplica la mitad de permisos.
-* **Charts en otro registro de ECR, incluido su propio mirror.** El inicio de sesión en el registro de charts utiliza las credenciales de AWS del entorno del proceso que ejecuta `approve` o el ejecutor. Esas credenciales deben tener permiso de lectura sobre dicho registro.
+* **Acceso directo al registry de ClickHouse.** Ejecute la aprobación en la VM de EC2 del connector. Tanto `approve` como la sincronización de plataforma del executor asumen el rol de extracción de ECR de solo lectura de su entorno con credenciales del instance metadata service de EC2. Ese rol inicia sesión en el registry de charts, y el executor también lo usa para comprobar que existen las imágenes de la plataforma. Los perfiles de AWS, las credenciales de entorno o las credenciales de SSO en una workstation no sustituyen al perfil de instancia. Su kubeconfig sigue aportando las credenciales independientes de administración del cluster que aplican la mitad de permisos.
+* **Charts en otro registry de ECR, incluido su propio mirror.** El inicio de sesión en el chart utiliza las credenciales de AWS ambientales del proceso que ejecuta `approve` o el executor. Esas credenciales deben tener permiso de lectura sobre ese registry.
 
-Utilice el procedimiento de estación de trabajo de Kubernetes que se describe a continuación solo en implementaciones con registro replicado que tengan habilitada la aprobación de plataforma de Kubernetes. Para el acceso directo, pida primero a su account team que confirme un entorno de ejecución compatible con el perfil de instancia de EC2 requerido.
+Utilice el procedimiento de workstation de Kubernetes que se describe a continuación únicamente para implementaciones con registry replicado y con la aprobación de plataforma de Kubernetes habilitada. En el caso del acceso directo, solicite primero a su account team que confirme un entorno de ejecución compatible con el perfil de instancia de EC2 requerido.
 
 <Steps>
   <Step title="Busque el paquete en preparación" id="find-the-staged-bundle">

@@ -38,26 +38,21 @@ sus filas desde cualquiera de esos mismos destinos.
 Cargue chdb&#95;hook de una de las siguientes maneras como super user. Utilice la
 que resulte más adecuada para su caso de uso:
 
-<Note>
-  En ClickHouse Managed Postgres:
-
-  * La SQL Console de ClickHouse Cloud aún no admite el comando `LOAD 'chdb_hook'`,
-    pero puede ejecutarse mediante psql o cualquier otra conexión a la base de datos.
-  * `ALTER SYSTEM` no está permitido y `postgresql.conf` no se puede editar, por lo que
-    los ejemplos siguientes que dependen de ellos no son aplicables. Utilice `ALTER DATABASE` o
-    `ALTER ROLE` en su lugar.
-  * Como alternativa, póngase en contacto con [soporte](https://clickhouse.com/support/program) para
-    añadir `chdb_hook` a la configuración de su service de Postgres, tras lo cual también
-    podrá utilizarse en la SQL Console.
-</Note>
-
-* Explícitamente mediante el comando [LOAD]; se mantiene durante toda la sesión:
+* Explícitamente mediante el comando [LOAD]; se mantiene durante toda la session:
 
   ```sql
   LOAD 'chdb_hook';
   ```
 
-* Para todas las sesiones, mediante el parámetro de configuración [session&#95;preload&#95;libraries], en
+  <Note>
+    La SQL Console de ClickHouse Cloud aún no admite el comando `LOAD 'chdb_hook'`,
+    pero puede ejecutarse mediante psql o cualquier otra conexión a la base de datos.
+    De lo contrario, póngase en contacto con su representante de soporte para añadirlo
+    a la configuración de su service de Postgres, tras lo cual podrá utilizarse en la
+    SQL Console.
+  </Note>
+
+* Para todas las sessions, mediante el setting [session&#95;preload&#95;libraries], en
   `postgresql.conf`:
 
   ```ini
@@ -70,7 +65,7 @@ que resulte más adecuada para su caso de uso:
   ALTER SYSTEM SET session_preload_libraries = 'chdb_hook';
   ```
 
-  Este parámetro de configuración también puede establecerse por base de datos mediante [ALTER DATABASE]:
+  Este setting también puede establecerse por base de datos mediante [ALTER DATABASE]:
 
   ```sql
   ALTER DATABASE name SET session_preload_libraries = 'chdb_hook';
@@ -82,8 +77,8 @@ que resulte más adecuada para su caso de uso:
   ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
   ```
 
-* Al iniciar el servidor, mediante el parámetro de configuración [shared&#95;preload&#95;libraries], de modo que
-  esté siempre disponible para todas las sesiones y bases de datos:
+* Al iniciar el servidor, mediante el setting [shared&#95;preload&#95;libraries], de modo que
+  esté siempre disponible para todas las sessions y bases de datos:
 
   ```ini
   shared_preload_libraries = chdb_hook
@@ -328,7 +323,7 @@ El valor predeterminado es `30000` (30 s).
 Define cómo gestionar los caracteres no válidos según la [codificación de la base de datos] al
 convertir valores String y JSON de chDB. Valores posibles:
 
-* `fail` (predeterminado): lanza un error
+* `fail` (predeterminado): genera un error
 * `remove` elimina los bytes no válidos
 * `replace`: con la codificación UTF-8, reemplaza los bytes no válidos por el
   carácter de reemplazo de Unicode (`�`); en otras codificaciones, equivale
@@ -784,7 +779,7 @@ chdb&#95;hook sigue el [control de versiones semántico] en sus releases públic
 * La versión menor se incrementa ante cambios de SQL retrocompatibles
 * La versión de patch se incrementa ante cambios que solo afectan al binary
 
-Una vez instalado, PostgreSQL informa la versión mediante la función
+Una vez instalado, PostgreSQL la versión mediante la función
 [`pg_get_loaded_modules()`] de Postgres 18.
 
 ```sql
@@ -802,7 +797,7 @@ Copyright (c) 2026, ClickHouse
 
 [chDB]: https://clickhouse.com/chdb "chDB: base de datos in-process rápida, fiable y escalable"
 
-[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "control de versiones semántico 2.0.0"
+[control de versiones semántico]: https://semver.org/spec/v2.0.0.html "control de versiones semántico 2.0.0"
 
 [COPY]: https://www.postgresql.org/docs/current/sql-copy.html "Documentación de Postgres: COPY"
 

@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'node.js', 'nodejs', 'node-postgres', 'pg', 'java
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-nodejs-beta" />
+
 [node-postgres](https://node-postgres.com/) (即 `pg` 包) 是 Node.js 生态中使用最广泛的 Postgres 驱动程序。在本指南中，您将通过启用完整 TLS 证书验证的 `pg.Pool` 连接到 ClickHouse Managed Postgres，创建两张表，在事务中完成账户间转账，并通过一个简单的 `node:http` 服务器对外提供数据。
 
 ## 前置条件 {#prerequisites}

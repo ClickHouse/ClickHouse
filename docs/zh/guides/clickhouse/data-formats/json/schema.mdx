@@ -7,10 +7,12 @@ score: 20
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 虽然可以使用 [schema inference](/zh/guides/clickhouse/data-formats/json/inference) 为 JSON 数据建立初始 schema，并直接查询 JSON 数据文件 (例如 S3 中的数据文件) ，但你应尽量为数据建立一个经过优化、带版本的 schema。下面我们将讨论对 JSON 结构进行建模的推荐方法。
 
 <div id="static-vs-dynamic-json">
-  ## 静态 JSON 与动态 JSON {#static-vs-dynamic-json}
+  ## 静态 JSON 与动态 JSON
 </div>
 
 为 JSON 定义 schema 的核心任务，是为每个键对应的值确定合适的类型。我们建议用户对 JSON 层级中的每个键递归应用以下规则，以确定其适当类型。
@@ -86,7 +88,7 @@ doc_type: 'guide'
 </Note>
 
 <div id="handling-static-structures">
-  ## 处理静态结构 {#handling-static-structures}
+  ## 处理静态结构
 </div>
 
 我们建议使用命名元组，即 `Tuple`，来处理静态结构。对象数组可以用元组数组，即 `Array(Tuple)`，来表示。在元组内部，列及其对应的类型也应按相同规则定义。这样一来，就可以像下面所示那样，使用嵌套的 Tuple 来表示嵌套对象。
@@ -202,7 +204,7 @@ ORDER BY company.name
 ```
 
 <div id="handling-default-values">
-  ### 处理默认值 {#handling-default-values}
+  ### 处理默认值
 </div>
 
 即使 JSON 对象具有结构，通常也是稀疏的，只会提供一部分已知的键。幸运的是，`Tuple` 类型并不要求 JSON 载荷中包含所有列。若未提供，则会使用默认值。
@@ -288,7 +290,7 @@ FORMAT PrettyJSONEachRow
 </Info>
 
 <div id="handling-new-columns">
-  ### 处理新增列 {#handling-new-columns}
+  ### 处理新增列
 </div>
 
 虽然在 JSON 键固定不变时，采用结构化方法最简单，但如果 schema 的变更可以提前规划，也就是说，能够预先知道会新增哪些键，并据此调整 schema，那么这种方法仍然适用。
@@ -371,7 +373,7 @@ SELECT id, nickname FROM people
 ```
 
 <div id="handling-semi-structured-dynamic-structures">
-  ## 处理半结构化/动态结构 {#handling-semi-structured-dynamic-structures}
+  ## 处理半结构化/动态结构
 </div>
 
 如果 JSON 数据属于半结构化，即键可能会动态新增和/或具有多种类型，建议使用 [`JSON`](/zh/reference/data-types/newjson) 类型。
@@ -502,7 +504,9 @@ SELECT id, nickname FROM people
 * **避免列数爆炸风险** - 尽管 JSON 类型可扩展到潜在的数千列，其中 subcolumns 会作为独立列存储，但这可能导致列文件数量激增，即创建过多列文件，从而影响性能。为缓解这一问题，JSON 所使用的底层 [Dynamic 类型](/zh/reference/data-types/dynamic) 提供了 [`max_dynamic_paths`](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns) 参数，用于限制以独立列文件形式存储的唯一路径数量。一旦达到该阈值，额外路径会以紧凑编码格式存储到共享列文件中，从而在支持灵活数据摄取的同时兼顾性能和存储效率。不过，访问该共享列文件时，性能会有所下降。不过还要注意，JSON 列也可以结合[类型提示](#using-type-hints-and-skipping-paths)使用。带有“提示”的列可提供与独立列相同的性能。
 * **更便于查看路径和类型的内部信息** - 尽管 JSON 类型支持使用[内部信息函数](/zh/reference/data-types/newjson#introspection-functions)来确定已推断出的类型和路径，但静态结构通常更容易查看，例如使用 `DESCRIBE`。
 
-### 单个 JSON 列 {#single-json-column}
+<div id="single-json-column">
+  ### 单个 JSON 列
+</div>
 
 这种方法适用于原型设计和数据工程任务。对于生产环境，建议仅在确有必要时，才将 `JSON` 用于动态子结构。
 
@@ -515,6 +519,8 @@ SELECT id, nickname FROM people
 这里的单个 JSON 列 schema 很简单：
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -525,10 +531,6 @@ ORDER BY json.username;
 
 <Note>
   由于我们会在排序键/主键中使用 `username` 列，因此在 JSON 定义中为其提供了一个[类型提示](#using-type-hints-and-skipping-paths)。这有助于 ClickHouse 确认该列不会为 NULL，并明确应使用哪个 `username` 子列 (每种类型都可能对应多个子列，否则这里会有歧义) 。
-</Note>
-
-<Note>
-  在 24.8 至 25.2 版本中，请先使用 `SET allow_experimental_json_type = 1;` 启用 `JSON` 类型，再创建表。
 </Note>
 
 可以使用 `JSONAsObject` 格式将行插入上述表中：
@@ -700,7 +702,7 @@ FROM people
 ```
 
 <div id="targeted-json-column">
-  ### 目标 JSON 列 {#targeted-json-column}
+  ### 目标 JSON 列
 </div>
 
 虽然在原型设计和数据工程场景中很有用，但我们建议在生产环境中尽可能使用显式 schema。
@@ -806,7 +808,7 @@ FORMAT PrettyJsonEachRow
 ```
 
 <div id="using-type-hints-and-skipping-paths">
-  ### 使用类型提示和跳过路径 {#using-type-hints-and-skipping-paths}
+  ### 使用类型提示和跳过路径
 </div>
 
 类型提示让我们能够为某个路径及其子列指定类型，从而避免不必要的类型推断。请看下面的示例，其中我们为 JSON 列 `company.labels` 中的 JSON 键 `dissolved`、`employees` 和 `founded` 指定了类型
@@ -972,7 +974,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 <div id="optimizing-performance-with-type-hints">
-  #### 使用类型提示优化性能 {#optimizing-performance-with-type-hints}
+  #### 使用类型提示优化性能
 </div>
 
 类型提示不仅能避免不必要的类型推断，还能彻底消除存储和处理中的间接开销，并支持指定[最优的基本类型](/zh/guides/clickhouse/data-modelling/schema-design#optimizing-types)。带有类型提示的 JSON 路径会始终像传统列一样存储，从而无需依赖[**判别列**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)或在查询时进行动态解析。
@@ -981,35 +983,25 @@ FORMAT PrettyJSONEachRow
 
 因此，对于那些整体上较为一致、但仍希望利用 JSON 灵活性的数据集来说，类型提示提供了一种便捷方式，无需重构 schema 或摄取管道也能保住性能。
 
-### 配置动态路径 {#configuring-dynamic-paths}
+<div id="configuring-dynamic-paths">
+  ### 配置动态路径
+</div>
 
 ClickHouse 会在真正的列式布局中将每个 JSON 路径存储为子列，从而获得与传统列相同的性能优势，例如压缩、SIMD 加速处理以及尽可能减少磁盘 I/O。JSON 数据中每个唯一的路径和类型组合，都可能在磁盘上形成各自独立的列文件。
 
-<div className="ch-image-md">
-  <Frame>
-    ![每个 JSON 路径一个列](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="每个 JSON 路径一个列" />
 
 例如，当插入两个类型不同的 JSON 路径时，ClickHouse 会将每种[具体类型的值存储在不同的子列中](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)。这些子列可以独立访问，从而尽量减少不必要的 I/O。请注意，查询包含多种类型的列时，其值仍会作为单个列式响应返回。
 
-此外，借助偏移量，ClickHouse 可确保这些子列保持紧凑，且不会为缺失的 JSON 路径存储默认值。这种方式可以最大化压缩效果，并进一步减少 I/O。
+此外，借助 offset，ClickHouse 可确保这些子列保持紧凑，且不会为缺失的 JSON 路径存储默认值。这种方式可以最大化压缩效果，并进一步减少 I/O。
 
-<div className="ch-image-md">
-  <Frame>
-    ![JSON 偏移量](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON 偏移量" />
 
 但是，在高基数或变化频繁的 JSON 结构场景中——例如遥测管道、日志或机器学习特征存储——这种行为可能会导致列文件数量激增。每出现一个新的唯一 JSON 路径，就会新增一个列文件；该路径下每多一种类型变体，又会额外新增一个列文件。虽然这对读取性能最为有利，但也会带来运维挑战：文件描述符耗尽、内存使用增加，以及由于大量小文件导致合并变慢。
 
 为缓解这一问题，ClickHouse 引入了溢出子列 (overflow subcolumn) 的概念：一旦不同 JSON 路径的数量超过某个阈值，额外路径就会使用紧凑编码格式存储在一个共享文件中。该文件仍可查询，但无法享受专用子列所具备的相同性能特征。
 
-<div className="ch-image-md">
-  <Frame>
-    ![共享 JSON 列](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="共享 JSON 列" />
 
 该阈值由 JSON 类型声明中的 [`max_dynamic_paths`](/zh/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) 参数控制。
 

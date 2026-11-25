@@ -18,23 +18,33 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 * تكاليف الأجهزة
 * تكاليف الصيانة
 
-## القرص {#disk}
+<div id="disk">
+  ## القرص
+</div>
 
 تعتمد أنواع الأقراص التي ينبغي استخدامها مع ClickHouse على حجم البيانات ومتطلبات زمن الاستجابة أو معدل النقل.
 
-### تحسين الأداء {#optimizing-for-performance}
+<div id="optimizing-for-performance">
+  ### تحسين الأداء
+</div>
 
 لزيادة الأداء إلى أقصى حد، نوصي بإرفاق [وحدات تخزين SSD ذات IOPS مخصّصة مسبقًا من AWS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html) مباشرةً، أو الخيار المكافئ من موفّر السحابة الذي تستخدمه، لما يوفّره ذلك من تحسين لعمليات IO.
 
-### تحسين تكاليف التخزين {#optimizing-for-storage-costs}
+<div id="optimizing-for-storage-costs">
+  ### تحسين تكاليف التخزين
+</div>
 
 لخفض التكاليف، يمكنك استخدام [وحدات تخزين EBS ذات أغراض عامة من نوع SSD](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html).
 
 يمكنك أيضًا اعتماد تخزين متدرج باستخدام أقراص SSD وHDD ضمن [معمارية hot/warm/cold](/ar/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture). أو يمكنك استخدام [AWS S3](https://aws.amazon.com/s3/) للتخزين بهدف فصل الحوسبة عن التخزين. يُرجى الاطلاع على دليلنا لاستخدام ClickHouse مفتوح المصدر مع فصل الحوسبة عن التخزين [هنا](/ar/guides/oss/deployment-and-scaling/separation-storage-compute). ويكون فصل الحوسبة عن التخزين متاحًا افتراضيًا في ClickHouse Cloud.
 
-## CPU {#cpu}
+<div id="cpu">
+  ## CPU
+</div>
 
-### ما نوع CPU الذي ينبغي أن أستخدمه؟ {#which-cpu-should-i-use}
+<div id="which-cpu-should-i-use">
+  ### ما نوع CPU الذي ينبغي أن أستخدمه؟
+</div>
 
 يعتمد نوع CPU المناسب على نمط استخدامك. وبوجه عام، فإن التطبيقات التي تتضمن عددًا كبيرًا من الاستعلامات المتزامنة والمتكررة، أو التي تعالج كميات أكبر من البيانات، أو التي تستخدم UDFs كثيفة الحوسبة، ستحتاج إلى عدد أكبر من أنوية CPU.
 
@@ -52,11 +62,15 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
 ***
 
-### ما النسبة المناسبة لاستخدام CPU؟ {#what-should-cpu-utilization-be}
+<div id="what-should-cpu-utilization-be">
+  ### ما النسبة المناسبة لاستخدام CPU؟
+</div>
 
 لا توجد نسبة قياسية مستهدفة لاستخدام CPU في ClickHouse. استخدم أداة مثل [iostat](https://linux.die.net/man/1/iostat) لقياس متوسط استخدام CPU، ثم اضبط حجم خوادمك وفقًا لذلك للتعامل مع الارتفاعات المفاجئة في حركة المرور. ومع ذلك، في حالات استخدام التحليلات أو مستودعات البيانات التي تتضمن استعلامات آنية، ينبغي أن تستهدف استخدام CPU بين 10% و20%.
 
-### كم عدد أنوية CPU التي ينبغي أن أستخدمها؟ {#how-many-cpu-cores-should-i-use}
+<div id="how-many-cpu-cores-should-i-use">
+  ### كم عدد أنوية CPU التي ينبغي أن أستخدمها؟
+</div>
 
 يعتمد عدد أنوية CPU التي ينبغي أن تستخدمها على عبء العمل لديك. ومع ذلك، نوصي عمومًا بنسب الذاكرة إلى نواة CPU التالية استنادًا إلى نوع CPU لديك:
 
@@ -66,7 +80,9 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
 على سبيل المثال، عند استخدام وحدات CPU من النوع M، نوصي بتخصيص 100GB من الذاكرة لكل 25 نواة CPU. ولتحديد مقدار الذاكرة المناسب لتطبيقك، من الضروري إجراء profiling لاستخدام الذاكرة. يمكنك قراءة [هذا الدليل حول استكشاف مشكلات الذاكرة وإصلاحها](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues) أو استخدام [لوحة observability المدمجة](/ar/guides/oss/deployment-and-scaling/monitoring/monitoring) لمراقبة ClickHouse.
 
-## الذاكرة {#memory}
+<div id="memory">
+  ## الذاكرة
+</div>
 
 كما هو الحال مع اختيارك لـ CPU، فإن اختيارك لنسبة الذاكرة إلى التخزين ونسبة الذاكرة إلى CPU يعتمد على حالة الاستخدام لديك.
 
@@ -78,7 +94,9 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 ومع ذلك، وبوجه عام، كلما زادت الذاكرة المتاحة لديك، زادت سرعة تنفيذ استعلاماتك.
 إذا كانت حالة الاستخدام لديك حساسة من ناحية التكلفة، فقد تكفي كميات أقل من الذاكرة، إذ يمكن تمكين الإعدادات ([`max_bytes_before_external_group_by`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) و [`max_bytes_before_external_sort`](/ar/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) للسماح بترحيل البيانات إلى القرص، لكن تجدر الإشارة إلى أن ذلك قد يؤثر بشكل كبير في أداء الاستعلامات.
 
-### ما نسبة الذاكرة إلى التخزين التي ينبغي اعتمادها؟ {#what-should-the-memory-to-storage-ratio-be}
+<div id="what-should-the-memory-to-storage-ratio-be">
+  ### ما نسبة الذاكرة إلى التخزين التي ينبغي اعتمادها؟
+</div>
 
 بالنسبة إلى أحجام البيانات الصغيرة، تكون نسبة الذاكرة إلى التخزين 1:1 مقبولة، لكن يجب ألا تقل الذاكرة الإجمالية عن 8GB.
 
@@ -86,7 +104,9 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
 بالنسبة إلى حالات الاستخدام التي تتطلب وصولًا متكررًا، مثل أعباء العمل الموجّهة للعملاء، نوصي باستخدام ذاكرة أكبر، بنسبة ذاكرة إلى تخزين تتراوح بين 1:30 و1:50.
 
-## النسخ المتماثلة {#replicas}
+<div id="replicas">
+  ## النسخ المتماثلة
+</div>
 
 نوصي بوجود ثلاث نسخ متماثلة على الأقل لكل شارد (أو نسختين متماثلتين مع [Amazon EBS](https://aws.amazon.com/ebs/)). بالإضافة إلى ذلك، نوصي بالتحجيم الرأسي لجميع النسخ المتماثلة قبل إضافة نسخ متماثلة أخرى (التحجيم الأفقي).
 
@@ -94,13 +114,17 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
 ننصح باستخدام [ClickHouse Cloud](https://clickhouse.com/cloud)، إذ يتوسّع تلقائيًا ويتيح لك التحكّم بسهولة في عدد النسخ المتماثلة بما يناسب حالة الاستخدام لديك.
 
-## تهيئات نموذجية لأعباء العمل الكبيرة {#example-configurations-for-large-workloads}
+<div id="example-configurations-for-large-workloads">
+  ## تهيئات نموذجية لأعباء العمل الكبيرة
+</div>
 
 تعتمد تهيئات ClickHouse بدرجة كبيرة على المتطلبات المحددة لتطبيقك. يُرجى [التواصل مع فريق المبيعات](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations) إذا كنت ترغب في أن نساعدك على تحسين معمارية نظامك من حيث التكلفة والأداء.
 
 ولتقديم إرشادات (لا توصيات)، فيما يلي أمثلة على تهيئات يستخدمها مستخدمو ClickHouse في بيئات الإنتاج:
 
-### شركة SaaS للأعمال من Fortune 500 {#fortune-500-b2b-saas}
+<div id="fortune-500-b2b-saas">
+  ### شركة SaaS للأعمال من Fortune 500
+</div>
 
 <table>
   <tr>
@@ -176,7 +200,9 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
   </tr>
 </table>
 
-### شركة اتصالات من قائمة Fortune 500 لحالة استخدام التسجيل {#fortune-500-telecom-operator-for-a-logging-use-case}
+<div id="fortune-500-telecom-operator-for-a-logging-use-case">
+  ### شركة اتصالات من قائمة Fortune 500 لحالة استخدام التسجيل
+</div>
 
 <table>
   <tr>
@@ -200,7 +226,7 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
 
   <tr>
     <td><strong>سعة القرص لكل عقدة</strong></td>
-    <td>16TB</td>
+    <td>13TB</td>
   </tr>
 
   <tr>
@@ -247,7 +273,9 @@ keywords: ['التحجيم', 'الأجهزة', 'تخطيط السعة', 'أفض�
   </tr>
 </table>
 
-## قراءات إضافية {#further-reading}
+<div id="further-reading">
+  ## قراءات إضافية
+</div>
 
 فيما يلي مقالات مدوّنة منشورة حول معماريات من شركات تستخدم ClickHouse مفتوح المصدر:
 

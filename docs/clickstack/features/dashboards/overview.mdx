@@ -7,17 +7,19 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
+
 import Tagging from '/snippets/_clickstack_tagging.mdx';
 
-ClickStack supports visualizing events, with built-in support for charting in ClickStack UI. These charts can be added to dashboards for sharing with other users.
+ClickStack supports visualizing events, with built-in support for charting in ClickStack UI (HyperDX). These charts can be added to dashboards for sharing with other users.
 
 Visualizations can be created from traces, metrics, logs, or any user-defined wide event schemas.
 
 ## Creating visualizations {#creating-visualizations}
 
-The **Chart Explorer** interface in ClickStack UI allows you to visualize metrics, traces, and logs over time, making it easy to create quick visualizations for data analysis. This interface is also reused when creating dashboards. The following section walks through the process of creating a visualization using Chart Explorer.
+The **Chart Explorer** interface in HyperDX allows you to visualize metrics, traces, and logs over time, making it easy to create quick visualizations for data analysis. This interface is also reused when creating dashboards. The following section walks through the process of creating a visualization using Chart Explorer.
 
-Each visualization begins by selecting a **data source**, followed by a **metric**, with optional **filter expressions** and **group by** fields. Conceptually, visualizations in ClickStack UI map to a SQL `GROUP BY` query under the hood — you define metrics to aggregate across selected dimensions.
+Each visualization begins by selecting a **data source**, followed by a **metric**, with optional **filter expressions** and **group by** fields. Conceptually, visualizations in HyperDX map to a SQL `GROUP BY` query under the hood — you define metrics to aggregate across selected dimensions.
 
 <Tip>
 **AI-powered chart generation**
@@ -34,15 +36,7 @@ For the examples below, we use the remote dataset available at [sql.clickhouse.c
 
 Select `Chart Explorer` from the left menu.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg"/>
 </Step>
 <Step title="Create visualization" id="create-visualization">
 
@@ -56,41 +50,17 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Tra
 - Group By: `ServiceName`  
 - Alias: `Average Time`
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Simple visualization](/images/use-cases/observability/clickstack-visualization-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Simple visualization" size="lg"/>
 
 Note that you can filter events using either a SQL `WHERE` clause or Lucene syntax and set the time frame over which events should be visualized. Multiple series are also supported.
 
 For example, filter by the service `frontend` by adding the filter `ServiceName:"frontend"`. Add a second series for the count of events over time with the alias `Count` by clicking `Add Series`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Simple visualization 2](/images/use-cases/observability/clickstack-visualization-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg"/>
 
 To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![The Duplicate series copy icon and its tooltip on a chart series row](/images/use-cases/observability/clickstack-duplicate-series.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg"/>
 
 <Note>
 Visualizations can be created from any data source — metrics, traces, or logs. ClickStack treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
@@ -113,15 +83,7 @@ We create a dashboard with two visualizations below using the log and trace data
 
 Select `Dashboards` from the left menu. Then click `New Dashboard` to create a temporary or saved dashboard.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Create Dashboard](/images/use-cases/observability/hyperdx-dashboard-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Create Dashboard" size="lg"/>
 </Step>
 <Step title="Create a visualization – average request time by service" id="create-a-tile">
 
@@ -138,27 +100,11 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Tra
 
 Click the **play** button before clicking `Save`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Create Dashboard Visualization](/images/use-cases/observability/hyperdx-dashboard-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="Create Dashboard Visualization" size="lg"/>
 
 Resize the visualization to occupy the full width of the dashboard.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard with visuals](/images/use-cases/observability/hyperdx-dashboard-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Dashboard with visuals" size="lg"/>
 </Step>
 <Step title="Create a visualization – events over time by service" id="create-a-tile-2">
 
@@ -174,27 +120,11 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Log
 
 Click the **play** button before clicking `Save`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard Visualization 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="Dashboard Visualization 2" size="lg"/>
 
 Resize the visualization to occupy the full width of the dashboard.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard with visuals 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Dashboard with visuals 2" size="lg"/>
 </Step>
 <Step title="Add a heatmap tile for span duration" id="create-a-tile-heatmap">
 
@@ -219,27 +149,11 @@ To customize the heatmap further, click **Display Settings** to open a drawer fo
 
 Click `Run` to preview the chart, then `Save`.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Heatmap tile editor with span duration defaults pre-filled, ServiceName payment filter, and Display Settings button](/images/clickstack/dashboards/heatmap-tile-editor.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="Heatmap tile editor with span duration defaults pre-filled, ServiceName payment filter, and Display Settings button" size="lg"/>
 
 The saved tile renders as a heatmap on the dashboard. Hover any cell to see the bucket bounds and event count.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Heatmap dashboard tile showing payment service span duration distribution over 24 hours](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="Heatmap dashboard tile showing payment service span duration distribution over 24 hours" size="lg"/>
 
 <Tip>
 **Two ClickHouse queries per heatmap**
@@ -251,15 +165,7 @@ The heatmap runs as two sequential queries: a small **bounds query** that resolv
 
 Click any cell on a rendered heatmap tile to open a **View in Event Deltas** action.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Heatmap cell click revealing the View in Event Deltas action](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="Heatmap cell click revealing the View in Event Deltas action" size="lg"/>
 
 Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
 </Step>
@@ -267,29 +173,13 @@ Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view wi
 
 Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all visualizations.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard with filtering](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="Dashboard with filtering" size="lg"/>
 
 To demonstrate, apply the Lucene filter `ServiceName:"frontend"` to the dashboard and modify the time window to cover the Last 3 hours. Note how the visualizations now reflect data only from the `frontend` service.
 
 The dashboard will be auto-saved. To set the dashboard name, select the title and modify it before clicking `Save Name`. 
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard save](/images/use-cases/observability/hyperdx-dashboard-save.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="Dashboard save" size="lg"/>
 </Step>
 </Steps>
 
@@ -297,15 +187,7 @@ The dashboard will be auto-saved. To set the dashboard name, select the title an
 
 To remove, edit, or duplicate a visualization, hover over it and use the corresponding action buttons.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard edit](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Dashboard edit" size="lg"/>
 
 ### Tile display settings {#tile-display-settings}
 
@@ -352,15 +234,7 @@ Number tiles can show a **background chart**: a trend sparkline drawn behind the
 
 With a number tile selected, open **Display Settings** and set **Background chart** to **Line** or **Area** (or **None** to turn it off). The sparkline is derived from a time-bucketed version of the tile's query, so no extra configuration is needed. It inherits the tile color by default; set a **Background color** to override it with a specific palette color.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Display Settings drawer for a number tile, with Background chart set to Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Display Settings drawer for a number tile, with Background chart set to Area" size="lg"/>
 
 Background charts apply to query-builder number tiles. Raw SQL number tiles return a single value with no time dimension to bucket, so the option appears but is disabled for them.
 
@@ -368,15 +242,7 @@ Table tiles can stripe their rows with **Alternate Row Background**, which tints
 
 With a table tile selected, open **Display Settings** and turn on **Alternate Row Background**. Striping is purely visual, so it works on both query-builder and raw SQL table tiles.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Display Settings drawer for a table tile, with Alternate Row Background turned on](/images/clickstack/dashboards/table-tile-display-settings.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Display Settings drawer for a table tile, with Alternate Row Background turned on" size="lg"/>
 
 Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
 
@@ -424,114 +290,58 @@ Dashboards are accessible on the dashboards page. They are organized by tag, wit
 
 Dashboards can be favorited for easy access on the sidebar and at the top of the listing page. Favorites are individual to each user.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard search](/images/use-cases/observability/hyperdx-dashboard-search.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="Dashboard search" size="lg"/>
 
 ## Dashboards - tagging {#tagging}
 <Tagging />
 
 ## Custom filters and variables {#custom-filters}
 
-In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom filters and variables. These provide reusable, point-and-click controls so that dashboard viewers can filter without writing expressions manually. Their values can come from a column queried from a source, a hand-written list, a SQL query, Prometheus label values, or freely chosen key-value conditions. Variables can also determine which data source or connection a tile queries. See [Filter types](#filter-types) for the full list.
+In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Services dropdown filter showing available service names](/images/clickstack/dashboards/filter-dropdown.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Services dropdown filter showing available service names" size="lg"/>
 
 Each filter allows the viewer to choose one or more values, and does one or both of the following with them:
 
 - **Broadcast** — applies the selection as a filter condition on matching tiles. Tiles do not need to be updated to reference the filter.
 - **Variable** — exposes the selection to tile queries as `$variableName`, so each tile decides where and how the value is used.
 
-Which of the two a filter supports depends on its [type](#filter-types). A **SQL expression values** filter must do at least one of the two, and broadcasts by default.
+A filter must do at least one of the two. Broadcast is enabled by default when creating a filter.
 
 The following steps demonstrate adding a filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
 
 <Steps>
 <Step title="Open the Edit Filters dialog" id="open-edit-filters">
 
-Open a saved dashboard and select **Edit filters and variables** from the toolbar.
+Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Edit Filters button in the dashboard toolbar](/images/clickstack/dashboards/edit-filters.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Edit Filters button in the dashboard toolbar" size="lg"/>
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
-Click **Add new filter**. Choose a **Type** — this example uses the default, **SQL expression values** — then configure the filter by providing a **Display name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
+Click **Add new filter**. Configure the filter by providing a **Display Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Add filter dialog with Display Name, Data source, and Filter expression fields](/images/clickstack/dashboards/add-filter.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/add-filter.webp" alt="Add filter dialog with Display Name, Data source, and Filter expression fields" size="md"/>
 
 The same dialog also controls whether the filter [broadcasts](#broadcast-filters) its value and whether it is [available as a variable](#dashboard-variables), both described below.
 
 The Filters modal shows all configured filters for the dashboard. From here you can edit or delete existing filters, or add additional ones.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Filters modal showing a configured Services filter](/images/clickstack/dashboards/saved-filters.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Filters modal showing a configured Services filter" size="md"/>
 </Step>
 <Step title="Use the filter" id="use-filter">
 
 Close the Filters modal. The new dropdown filter appears below the search bar. Click it to see the available values, then select one to filter all visualizations on the dashboard.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard filtered to the frontend service](/images/clickstack/dashboards/filtered-dashboard.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Dashboard filtered to the frontend service" size="lg"/>
 </Step>
 <Step title="(Optional) Save filter values as default" id="save-default-filters">
 
 To persist a filter selection as the dashboard default, choose **Save Query & Filters as Default** from the dashboard menu. The dashboard will always open with the selected filters applied. To reset, select **Remove Default Query & Filters** from the same menu.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Dashboard menu showing Save Query and Filters as Default option](/images/clickstack/dashboards/save-filter-values.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Dashboard menu showing Save Query and Filters as Default option" size="lg"/>
 </Step>
 </Steps>
 
@@ -539,138 +349,15 @@ To persist a filter selection as the dashboard default, choose **Save Query & Fi
 Custom dropdown filters are available on saved dashboards. For an example of this pattern in action, see the [Kubernetes dashboard](#kubernetes-dashboard), which provides built-in dropdown filters for Pod, Deployment, Node name, Namespace, and Cluster.
 </Note>
 
-### Filter types {#filter-types}
-
-The **Type** selector in the filter dialog decides where a filter's values come from and how they reach tiles.
-
-| Type | Values come from | Broadcast | Variable |
-|------|------------------|-----------|----------|
-| [SQL expression values](#sql-expression-values-filters) | The distinct values of an expression, queried from a source | Optional, enabled by default | Optional |
-| [Static values](#static-values-filters) | A hand-written list | No | Always |
-| [SQL query values](#sql-query-filters) | The first column of a SQL query | No | Always |
-| [PromQL label values](#promql-label-filters) | The values of a Prometheus label | No | Always |
-| [Ad hoc keys and values](#adhoc-filters) | `key operator value` conditions built from the keys and values of one or more sources | Always | No |
-| [Data source](#data-source-variables) | The team's sources | No | Always, as a [source reference](#source-connection-variables) |
-| [Connection](#connection-variables) | The team's ClickHouse connections | No | Always, as a [connection reference](#source-connection-variables) |
-
-#### SQL expression values {#sql-expression-values-filters}
-
-Its dropdown lists the distinct values of the **Filter expression** in the selected **Data source**, optionally narrowed by a **Dropdown values filter**. For metric sources, also choose a **Metric type**. A SQL expression values filter can [broadcast](#broadcast-filters) its selection, be [available as a variable](#dashboard-variables), or both.
-
-#### Static values {#static-values-filters}
-
-Its dropdown offers a hand-written list of values. Type each value in **Options** and press Enter. A filter can hold up to 1000 options.
-
-A static values filter is always a variable and never broadcasts, so tiles use it by referencing its variable, for example `$__filter(SeverityText, $severity)`. This is useful for values that aren't stored in a column, or for a fixed, curated list.
-
-#### SQL query values {#sql-query-filters}
-
-Its dropdown lists the first column returned by a ClickHouse SQL query, in the order the query returns rows, up to 10,000 values. Configure:
-
-- **Connection** — the ClickHouse connection the query runs on, or a [connection variable](#connection-variables).
-- **Source** — optional. A source on the same connection, or a [data source variable](#data-source-variables). With a source selected, the query can use `$__sourceTable` and `$__filters`, which applies the dashboard's broadcast filter selections for that source, the same way [raw SQL tiles](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) do.
-- **SQL query** — the query itself. It can use the [time macros](/clickstack/features/dashboards/sql-visualizations#time-filter-macros) and reference the dashboard's other variables. The editor previews the values the query returns for the dashboard's current time range.
-
-For example, the following query lists the services that logged events in the dashboard's time range, limited to the environments selected in an `environment` filter:
-
-```sql
-SELECT DISTINCT ServiceName
-FROM otel_logs
-WHERE $__timeFilter(TimestampTime)
-  AND $__filter(ResourceAttributes['deployment.environment'], $environment)
-ORDER BY ServiceName
-```
-
-A SQL query values filter is always a variable and never broadcasts.
-
-#### PromQL label values {#promql-label-filters}
-
-<Note>
-PromQL support is in preview. In Open Source deployments, enable it by setting `ENABLE_PROMQL=true` for the API and `NEXT_PUBLIC_ENABLE_PROMQL=true` for the app (see [optional features](/clickstack/managing/config#optional-features-and-deployment-modes)), and enable the PromQL schema in the collector (see [Prometheus-compatible metrics](/clickstack/managing/config#collector-prometheus-metrics)). See [PromQL source settings](/clickstack/managing/config#promql-source-settings) to create a PromQL source.
-</Note>
-
-Its dropdown lists the values of a Prometheus label. Select a PromQL **Data source**, and enter the **Label** whose values populate the dropdown, such as `job`, `instance`, or `__name__`. Optionally, enter **Series matchers** — a Prometheus series selector, such as `up{job="api"}`, that narrows which series the values are read from. Series matchers can reference the dashboard's other variables.
-
-A PromQL label values filter is always a variable and never broadcasts. In PromQL tiles, reference it inside a label matcher, for example `rate(http_requests_total{job=~"$job"}[$__rate_interval])`. See [Referencing a variable](#referencing-variables) for how values are rendered.
-
-#### Ad hoc keys and values {#adhoc-filters}
-
-Instead of offering a single dropdown, an ad hoc filter lets the viewer build a list of `key operator value` conditions from the keys of its sources: columns and map keys for SQL sources, or labels for Prometheus sources. Keys and values are suggested as the viewer types. Configure:
-
-- **Source type** — SQL (log, trace, or session sources) or Prometheus.
-- **Data sources** — the sources whose keys and values the filter suggests.
-- **Keys and values filter** — optional, SQL sources only. A SQL or Lucene condition that narrows the rows keys and values are suggested from. It can reference the dashboard's other variables.
-- **Applies to sources** — the sources the conditions are broadcast to. Leave it empty to broadcast to every tile that uses one of the filter's data sources.
-- **Unique name** — identifies the filter's conditions in the [dashboard URL](/clickstack/url-parameters#dashboard-filter-values).
-
-Conditions on SQL sources support the following operators: `=`, `!=`, `=~` (regex), `!~` (regex), `LIKE`, `NOT LIKE`, `IN`. Conditions on Prometheus sources support `=`, `!=`, `=~` (regex), `!~` (regex), and `IN` — `LIKE` and `NOT LIKE` are SQL-only.
-
-Viewers can also add a condition by clicking a value in a table, time series, or search tile on the dashboard.
-
-Ad hoc conditions are always broadcast, and can't be referenced as variables. Chart builder tiles and PromQL tiles on the matching sources pick them up automatically, and raw SQL tiles apply them through the [`$__filters` macro](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro).
-
-#### Data source {#data-source-variables}
-
-A data source variable lets the viewer choose which source a tile queries. Select the **Source kinds** offered in its dropdown, for example only log sources, and optionally limit them to one **Connection**, which can itself be a connection variable. See [Data source and connection variables](#source-connection-variables) for how tiles and filters use it.
-
-#### Connection {#connection-variables}
-
-A connection variable lets the viewer choose which ClickHouse connection raw SQL tiles, SQL query values filters, and data source variables use. It has no settings beyond its name.
-
-### Data source and connection variables {#source-connection-variables}
-
-Data source and connection variables stand in for a source or connection ID, rather than for a value in query text. Wherever a source or connection picker accepts them, the dashboard's variables are listed under a **Variables** group. Choosing one stores a `$name` reference that resolves to the viewer's current selection. This makes it possible to build one dashboard that switches between, for example, the logs of several environments, or several ClickHouse clusters.
-
-| Used in | Accepts a data source variable | Accepts a connection variable |
-|---------|--------------------------------|-------------------------------|
-| Chart builder tiles | Source | — |
-| Raw SQL tiles | Source | Connection |
-| PromQL tiles | Source | — |
-| SQL expression values filters | Data source, Applies to sources | — |
-| PromQL label values filters | Data source | — |
-| Ad hoc filters | Data sources, Applies to sources | — |
-| SQL query values filters | Source | Connection |
-| Data source variables | — | Connection |
-
-A data source variable is only offered where at least one of its source kinds fits. For example, a PromQL tile only offers data source variables that allow PromQL sources.
-
-Data source and connection variables are always single-select and required, since a tile can't query without a source or connection. Until a value is selected, the tiles and filters that reference the variable wait for it. Enable **Block every tile** to hold the whole dashboard instead. A [dashboard link](/clickstack/url-parameters#dashboard-filter-values) can select a source or connection by name as well as by ID.
-
-<Note>
-Alerts aren't available on tiles that use a data source or connection variable. Saving such a tile removes its alert.
-</Note>
-
-### Selection options {#filter-selection-options}
-
-SQL expression values, static values, SQL query values, and PromQL label values filters have these additional options:
-
-- **Single select** — only one value can be selected at a time.
-- **Required** — tiles that use the filter, through its variable or through broadcast, don't load until the filter has a selection.
-  - **Block every tile** — block every tile on the dashboard until the filter has a selection, not only the tiles that use it.
-
-### Chained filters {#chained-filters}
-
-A filter's own configuration can reference the dashboard's other variables, so that its values depend on another filter's selection. For example, a service filter can list only the services in the environment selected by an `environment` filter. Variables can be referenced in:
-
-- A SQL expression values filter's **Dropdown values filter**, for example `$__filter(ResourceAttributes['deployment.environment'], $environment)`.
-- A SQL query values filter's **SQL query**.
-- A PromQL label values filter's **Series matchers**, for example `up{env="$env"}`.
-- An ad hoc filter's **Keys and values filter**.
-- Source and connection fields, through [data source and connection variables](#source-connection-variables).
-
-When the referenced filter's selection changes, the dependent filter's values are queried again. While a referenced required filter has nothing selected, an ad hoc filter that depends on it can't add or edit conditions, and names the filter it's waiting on.
-
 ### Broadcasting {#broadcast-filters}
 
-SQL expression values filters can broadcast their selection, and ad hoc filters always broadcast their conditions. With **Broadcast filter condition** enabled on a SQL expression values filter, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
+With **Broadcast filter condition** enabled, the selected values are applied as a filter condition on the dashboard's tiles, without any tile explicitly referencing the filter. By default the condition reaches every tile. Use **Applies to sources** to restrict it to tiles that use a given set of sources — useful when the filter's expression only makes sense for some of the data on the dashboard.
 
 Chart builder tiles pick up broadcast filters automatically. Raw SQL tiles must include the [`$__filters` macro](/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) and have a source selected, since ClickStack cannot infer where the condition belongs in a hand-written query.
 
 ### Variables {#dashboard-variables}
 
-Static values, SQL query values, and PromQL label values filters are always variables. A SQL expression values filter becomes a variable when **Available as variable** is enabled. A variable exposes the filter's selection to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
-
-Ad hoc filters are never variables, and data source and connection variables are [references to a source or connection](#source-connection-variables) rather than values in query text.
+With **Available as variable** enabled, the filter's selection is also exposed to tile queries as `$variableName`. The **Variable name** defaults to the filter's display name with illegal characters removed, and can be overridden. Names must start with a letter and may contain only letters, digits, and underscores.
 
 Use a variable when broadcasting a `WHERE` condition is not what you want — for example, to put the value in a `SELECT` expression, a `HAVING` clause, or a join key, or to filter a tile on a column other than the filter's own expression.
 
@@ -685,7 +372,6 @@ A variable expands to the values currently selected in its dropdown. The referen
 | `${name:csv}`         | Unquoted and comma-separated: `a,b`. Not escaped for SQL.                                         | empty string    |
 | `${name:regex}`       | A regex alternation, regex-escaped: `(a\|b)`.                                                     | `.*`            |
 | `${name:lucene}`      | An `OR` of quoted terms, for Lucene inputs: `("a" OR "b")`.                                       | `("")`          |
-| `${name:promql}`      | The default in PromQL tiles. For a single-select filter, the selected value, for use in `label="$name"`. Otherwise a regex alternation, for use in `label=~"$name"`. | `.*` (empty string when single-select) |
 
 Because `$name` renders as `NULL` before anything is selected, prefer the following macros wherever a SQL predicate is expected. Both macros expand to `1=1` while their variable has no selection, so the query stays valid:
 
@@ -739,35 +425,19 @@ Dashboard tiles support drilldown to the Search page. Click on a data point in a
 - **View All Events** — navigates to the Search page showing all events from the selected time window.
 - **Filter by group** — navigates to the Search page filtered to a specific series.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Drilldown context menu showing View All Events and Filter by group options](/images/clickstack/dashboards/drilldown.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/clickstack/dashboards/drilldown.webp" alt="Drilldown context menu showing View All Events and Filter by group options" size="lg"/>
 
 This is useful for investigating specific spikes or anomalies spotted in a dashboard — you can quickly pivot from an aggregated view to the underlying individual events.
 
 ## Presets {#presets}
 
-ClickStack UI is deployed with out-of-the-box dashboards.
+HyperDX is deployed with out-of-the-box dashboards.
 
 ### ClickHouse dashboard {#clickhouse-dashboard}
 
 This dashboard provides visualizations for monitoring ClickHouse. To navigate to this dashboard, select it from the left menu.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse dashboard](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="ClickHouse dashboard" size="lg"/>
 
 This dashboard uses tabs to separate monitoring of **Selects**, **Inserts**, and **ClickHouse Infrastructure**.
 
@@ -793,15 +463,7 @@ Service names are auto-detected from the trace data, with a series of prebuilt v
 
 Visualizations can be filtered using Lucene or SQL syntax, and the time window can be adjusted for focused analysis.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse services](/images/use-cases/observability/hyperdx-dashboard-services.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="ClickHouse services" size="lg"/>
 
 ### Kubernetes dashboard {#kubernetes-dashboard}
 
@@ -809,12 +471,4 @@ This dashboard allows you to explore Kubernetes events collected via OpenTelemet
 
 Kubernetes data is organized across three tabs for easy navigation: Pods, Nodes, and Namespaces.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg"/>

@@ -30,7 +30,7 @@ If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
 
 Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
-The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`, or use the [`fullMatch`](#fullMatch) function.
+The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`.
 
 If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
 

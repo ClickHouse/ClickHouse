@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -17,9 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/indexHint.h>
@@ -27,7 +24,6 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -277,7 +273,7 @@ static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
         {
             /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
             /// window functions are deterministic within the scope of the query.
-            if (function_node->isOrdinaryCall() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
                 return true;
         }
 
@@ -409,7 +405,7 @@ struct ComparisonFilterInfo
     ComparisonFunction function;
     QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
     std::optional<Field> converted_value;    /// Constant converted to the column type.
-    size_t original_index = 0;               /// Slot in the AND argument list: its own position, or the earliest one of the filters it replaced.
+    size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
     /// (e.g. for an Int32 column, `i < 3.5` is internally rewritten to `i <= 3`, with
     /// `function = LESS_OR_EQUALS` and `converted_value = 3`).  In that case `original_node`
     /// still references the old literal (3.5) and any later rebuild must substitute it with
@@ -898,7 +894,6 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
-NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,
@@ -918,14 +913,6 @@ static AddComparisonFilterResult addComparisonFilter(
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = getComparisonFilterExpressionNode(expression)->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
-
-    /// A converted constant is not an exact orderable point for a `Variant` expression, so it must not
-    /// drive pruning. Staying opaque also vetoes the global fold-to-false collapse.
-    if (anyInTypeTree(*expr_type, [](const IDataType & type) { return isVariant(type); }))
-    {
-        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
-        return AddComparisonFilterResult::ADDED;
-    }
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
@@ -967,12 +954,6 @@ static AddComparisonFilterResult addComparisonFilter(
         return result;
     }
 
-    /// A filter that replaces others takes the earliest of their slots, ahead of the operands they may guard.
-    auto take_slot = [&new_filter](const ComparisonFilterInfo & removed)
-    {
-        new_filter.original_index = std::min(new_filter.original_index, removed.original_index);
-    };
-
     /// Step 3: compare against the existing equals/range filters.
     auto & range_filters = filters.range_filters;
     for (size_t i = 0; i < range_filters.size(); ++i)
@@ -981,7 +962,6 @@ static AddComparisonFilterResult addComparisonFilter(
         switch (result)
         {
         case ValueComparisonResult::PRUNE_LEFT:
-            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -1010,7 +990,6 @@ static AddComparisonFilterResult addComparisonFilter(
         case ValueComparisonResult::STRENGTHEN_RIGHT:
             new_filter.function = strengthenComparison(new_filter.function);
             rebuildComparisonNode(new_filter, context);
-            take_slot(range_filters[i]);
             range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
             --i;
             break;
@@ -1023,12 +1002,6 @@ static AddComparisonFilterResult addComparisonFilter(
 
     auto & not_equals_filters = filters.not_equals_filters;
     Field key = canonicalizeNotEqualsKey(*new_filter.converted_value);
-    auto erase_not_equals = [&](auto first, auto last)
-    {
-        for (auto it = first; it != last; ++it)
-            take_slot(it->second);
-        not_equals_filters.erase(first, last);
-    };
 
     /// notEquals interact only through exact duplicates: one lookup replaces the pairwise scan,
     /// which was quadratic for long `x != c1 AND x != c2 ...` chains.
@@ -1047,7 +1020,7 @@ static AddComparisonFilterResult addComparisonFilter(
         /// `expr = c AND expr != c` is always false; any other `expr != v` is implied.
         if (not_equals_filters.contains(key))
             return AddComparisonFilterResult::ALWAYS_FALSE;
-        erase_not_equals(not_equals_filters.begin(), not_equals_filters.end());
+        not_equals_filters.clear();
     }
     else
     {
@@ -1055,29 +1028,27 @@ static AddComparisonFilterResult addComparisonFilter(
         {
         case ComparisonFunction::LESS:
             /// `expr < c` makes `expr != v` redundant for all v >= c; similar below.
-            erase_not_equals(not_equals_filters.lower_bound(key), not_equals_filters.end());
+            not_equals_filters.erase(not_equals_filters.lower_bound(key), not_equals_filters.end());
             break;
         case ComparisonFunction::LESS_OR_EQUALS:
-            erase_not_equals(not_equals_filters.upper_bound(key), not_equals_filters.end());
+            not_equals_filters.erase(not_equals_filters.upper_bound(key), not_equals_filters.end());
             /// `expr != c AND expr <= c` tightens to `expr < c`.
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
-                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
         case ComparisonFunction::GREATER:
-            erase_not_equals(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
+            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
             break;
         case ComparisonFunction::GREATER_OR_EQUALS:
-            erase_not_equals(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
+            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
             if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
             {
                 new_filter.function = strengthenComparison(new_filter.function);
                 rebuildComparisonNode(new_filter, context);
-                take_slot(it->second);
                 not_equals_filters.erase(it);
             }
             break;
@@ -1218,13 +1189,6 @@ struct CommonExpressionExtractionResult
     size_t leading_common_expressions = 0;
 };
 
-/// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
-/// Dropping such an element from a filter also drops the rows its `arrayJoin` produces.
-static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const QueryTreeNodePtrWithHashSet & kept)
-{
-    return std::ranges::any_of(nodes, [&kept](const auto & node) { return !kept.contains(node) && hasFunctionNode(node.node, "arrayJoin"); });
-}
-
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
@@ -1274,7 +1238,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
                 }
             }
 
-            if (is_subset && !hasArrayJoinOutside(disjunct_sets[j], current_set))
+            if (is_subset)
             {
                 should_keep[j] = false;
                 ++removed;
@@ -1412,7 +1376,8 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
-            continue;
+            // As we will discard new_or_arguments, no need for further processing
+            break;
         }
         else if (filtered_and_arguments.size() == 1)
         {
@@ -1431,12 +1396,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     // If all the arguments of the OR expression is eliminated or one argument is completely eliminated, there is no need for new node.
     if (new_or_arguments.empty() || has_completely_extracted_and_expression)
-    {
-        /// Discarding `new_or_arguments` also discards the rows of an `arrayJoin` inside one of them.
-        if (std::ranges::any_of(new_or_arguments, [](const QueryTreeNodePtr & argument) { return hasFunctionNode(argument, "arrayJoin"); }))
-            return {};
         return CommonExpressionExtractionResult{nullptr, std::move(common_exprs)};
-    }
 
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
@@ -1868,7 +1828,7 @@ public:
     /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
     /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
     /// A budget of 0 means unlimited, so the optimization is never stopped early.
-    [[nodiscard]] bool andCompareChainHashBudgetExceeded() const
+    bool andCompareChainHashBudgetExceeded() const
     {
         return and_compare_chain_max_hash_work != 0
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start + and_compare_chain_reused_hash_work
@@ -1939,7 +1899,7 @@ public:
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
     /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
-    [[nodiscard]] bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
+    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
     {
         if (preserved_join_tables.empty())
             return false;
@@ -2201,8 +2161,7 @@ private:
             /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
             /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
             /// operands as-is.
-            /// Same for aggregate functions: removing the operand can leave the query without any.
-            if (hasNonDeterministicFunction(expression) || hasAggregateFunctionNodes(expression))
+            if (hasNonDeterministicFunction(expression))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2241,10 +2200,6 @@ private:
 
             /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
             if (isNothing(function_node.getResultType()))
-                return;
-
-            /// The constant would also drop the kept operands, and with them the query's aggregation or `arrayJoin`.
-            if (hasAggregateFunctionNodes(node) || hasFunctionNode(node, "arrayJoin"))
                 return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
@@ -2896,14 +2851,6 @@ private:
                 continue;
             }
 
-            /// `equals` on a `Variant` may compare the constant within each row's own alternative, while
-            /// the set stores it in one alternative, so the two can match different rows.
-            if (anyInTypeTree(*expression.node->getResultType(), [](const IDataType & type) { return isVariant(type); }))
-            {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
-                continue;
-            }
-
             /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
             const auto in_function_name
                 = getInFunctionNameForPassCreatedNode("in", expression.node->getResultType(), getContext());
@@ -2917,13 +2864,6 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
-            /// A `Field` does not keep the type of a `Dynamic` value or a `Variant` alternative, so the set may
-            /// put such a constant into a different type than the one `equals` compares.
-            const auto loses_type_in_field = [](const IDataType & type)
-            {
-                const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
-                return isDynamic(type) || (variant && variant->getVariants().size() > 1);
-            };
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2950,9 +2890,6 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
-                    all_constants_convert_losslessly = false;
-
-                if (anyInTypeTree(*literal->getResultType(), loses_type_in_field))
                     all_constants_convert_losslessly = false;
             }
 

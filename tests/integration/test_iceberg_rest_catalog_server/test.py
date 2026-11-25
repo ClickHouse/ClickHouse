@@ -2,14 +2,10 @@
 
 import base64
 import gzip
-import http.client
 import json
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import quote
 
-import pyarrow as pa
 import pytest
 import requests
 import urllib3
@@ -19,25 +15,20 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
-from test_storage_s3.test_sts import run_s3_mocks
 
 cluster = ClickHouseCluster(__file__)
-
-# Ambient credentials of the server. Only the STS call is signed with them.
-AWS_ENV = {"AWS_ACCESS_KEY_ID": "aws", "AWS_SECRET_ACCESS_KEY": "aws123"}
 
 node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/iceberg_rest_catalog.xml",
-        "configs/s3.xml",
+        "configs/named_collections.xml",
         "configs/ssl_conf.xml",
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
     ],
     user_configs=["configs/users.xml"],
-    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
@@ -48,40 +39,20 @@ node_aux = cluster.add_instance(
     main_configs=[
         "configs/iceberg_rest_catalog_aux.xml",
         "configs/auxiliary_zookeeper.xml",
-        "configs/s3.xml",
+        "configs/named_collections.xml",
     ],
-    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
 )
-
-# Mock STS. It hands out the MinIO credentials when the session name and external id match.
-sts = cluster.add_instance(
-    name="sts.amazonaws.com",
-    hostname="sts.amazonaws.com",
-    image="clickhouse/python-bottle",
-    tag="latest",
-    stay_alive=True,
-)
-sts.stop_clickhouse(kill=True)
 
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
-KEEPER_PARENT = "/clickhouse/iceberg_rest_catalog"
-KEEPER_ROOT = f"{KEEPER_PARENT}/my_warehouse"
-FORMAT_VERSION = 3
+KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
-ROLE_SESSION_NAME = "miniorole"
-EXTERNAL_ID = "miniexternalid"
-CREDENTIAL = {
-    "type": "aws_role",
-    "role_arn": "arn:aws:iam::123456789012:role/warehouse",
-    "external_id": EXTERNAL_ID,
-    "role_session_name": ROLE_SESSION_NAME,
-}
 
 # Iceberg JSON schema as a client sends it in CreateTableRequest.
 DEFAULT_SCHEMA = {
@@ -95,9 +66,6 @@ DEFAULT_SCHEMA = {
 }
 
 
-keeper = None
-
-
 def wait_catalog_ready(timeout=60, instance=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -109,64 +77,17 @@ def wait_catalog_ready(timeout=60, instance=None):
     raise AssertionError("Catalog port did not start accepting connections")
 
 
-def warehouse_definition(base_location, warehouse_uuid, credential=CREDENTIAL):
-    return {"format_version": FORMAT_VERSION, "uuid": warehouse_uuid, "base_location": base_location, "credential": credential}
-
-
-WAREHOUSES_URL = "/management/v1/warehouses"
-
-
-def create_warehouse(name, base_location, expected_code=200, auth=None, instance=None):
-    body = {"name": name, "base_location": base_location, "credential": CREDENTIAL}
-    return catalog_request("POST", WAREHOUSES_URL, json=body, expected_code=expected_code, auth=auth, instance=instance)
-
-
-def delete_warehouse(name, expected_code=204, auth=None):
-    return catalog_request("DELETE", f"{WAREHOUSES_URL}/{name}", expected_code=expected_code, auth=auth)
-
-
-HIDDEN_CREDENTIAL = {**CREDENTIAL, "external_id": "[HIDDEN]", "role_session_name": "[HIDDEN]"}
-
-
-def stored_warehouse_definition(name, keeper_parent=KEEPER_PARENT):
-    return json.loads(get_keeper().get(f"{keeper_parent}/{name}")[0])
-
-
-# The uuid subtree of `my_warehouse`. The server generates the uuid, so it is read from the definition.
-def keeper_store_root(keeper_parent=KEEPER_PARENT):
-    warehouse_uuid = stored_warehouse_definition("my_warehouse", keeper_parent)["uuid"]
-    return f"{keeper_parent}/my_warehouse/{warehouse_uuid}"
-
-
-# There is no drop-namespace endpoint yet. The tables must be dropped first.
-def remove_namespace_in_keeper(warehouse, ns):
-    warehouse_uuid = stored_warehouse_definition(warehouse)["uuid"]
-    get_keeper().delete(f"{KEEPER_PARENT}/{warehouse}/{warehouse_uuid}/namespaces/{ns}", recursive=True)
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
-    global keeper
     try:
         cluster.start()
-        run_s3_mocks(cluster, [ROLE_SESSION_NAME, EXTERNAL_ID])
-        # One Keeper session for the whole module. It reconnects on its own if Keeper restarts.
-        keeper = cluster.get_kazoo_client("zoo1")
-        keeper.ensure_path("/aux_root")
+        get_keeper().ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
-        # The first warehouse of each node. The catalog parent node does not exist in Keeper yet.
-        create_warehouse("my_warehouse", BASE_LOCATION)
-        # A bucket root with a trailing slash as the base location.
-        create_warehouse("my_warehouse", f"s3://{BUCKET}/", instance=node_aux)
         yield cluster
     finally:
-        if keeper is not None:
-            keeper.stop()
-            keeper.close()
-            keeper = None
         cluster.shutdown()
 
 
@@ -176,10 +97,7 @@ def catalog_url(path, instance=None):
 
 
 def get_keeper():
-    # The server may write through another Keeper replica, and a replica answers reads from its own state.
-    # `sync` makes this client's replica apply every acknowledged write, so the reads after the call see them.
-    keeper.sync("/")
-    return keeper
+    return cluster.get_kazoo_client("zoo1")
 
 
 def restart_node():
@@ -188,10 +106,10 @@ def restart_node():
 
 
 def catalog_request(
-    method, path, json=None, params=None, expected_code=200, auth=None, headers=None, instance=None
+    method, path, json=None, params=None, expected_code=200, auth=None, headers=None
 ):
     response = requests.request(
-        method, catalog_url(path, instance), json=json, params=params, auth=auth, headers=headers
+        method, catalog_url(path), json=json, params=params, auth=auth, headers=headers
     )
     assert response.status_code == expected_code, (
         f"Expected {expected_code}, got {response.status_code}. "
@@ -214,30 +132,6 @@ def create_namespace(name_levels, properties=None, expected_code=200):
     return catalog_request(
         "POST", "/v1/my_warehouse/namespaces", json=body, expected_code=expected_code
     )
-
-
-def update_namespace_properties(
-    name_levels, updates=None, removals=None, expected_code=200, auth=None
-):
-    body = {}
-    if updates is not None:
-        body["updates"] = updates
-    if removals is not None:
-        body["removals"] = removals
-    namespace = "\x1f".join(name_levels)
-    return catalog_request(
-        "POST",
-        f"/v1/my_warehouse/namespaces/{namespace}/properties",
-        json=body,
-        expected_code=expected_code,
-        auth=auth,
-    )
-
-
-def load_namespace_properties(name_levels):
-    namespace = "\x1f".join(name_levels)
-    response = catalog_request("GET", f"/v1/my_warehouse/namespaces/{namespace}")
-    return response.json()["properties"]
 
 
 def list_namespaces(parent=None):
@@ -278,16 +172,6 @@ def drop_table(ns, table, expected_code=204, auth=None):
     )
 
 
-def rename_table(source_ns, source, dest_ns, dest, expected_code=204, auth=None):
-    body = {
-        "source": {"namespace": source_ns, "name": source},
-        "destination": {"namespace": dest_ns, "name": dest},
-    }
-    return catalog_request(
-        "POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=expected_code, auth=auth
-    )
-
-
 def metadata_key(metadata_location):
     prefix = f"s3://{BUCKET}/"
     assert metadata_location.startswith(prefix), metadata_location
@@ -302,118 +186,6 @@ def list_metadata_files(location):
     ]
 
 
-def commit_table(ns, table, requirements, updates, expected_code=200, auth=None):
-    return catalog_request(
-        "POST",
-        tables_url(ns, table),
-        json={"requirements": requirements, "updates": updates},
-        expected_code=expected_code,
-        auth=auth,
-    )
-
-
-# The server does not open the manifest list, so a fake path is enough for HTTP-level tests.
-def fake_snapshot(snapshot_id, sequence_number):
-    return {
-        "snapshot-id": snapshot_id,
-        "sequence-number": sequence_number,
-        "timestamp-ms": int(time.time() * 1000),
-        "manifest-list": f"{BASE_LOCATION}/fake/snap-{snapshot_id}.avro",
-        "summary": {"operation": "append"},
-        "schema-id": 0,
-    }
-
-
-def append_updates(snapshot):
-    return [
-        {"action": "add-snapshot", "snapshot": snapshot},
-        {
-            "action": "set-snapshot-ref",
-            "ref-name": "main",
-            "type": "branch",
-            "snapshot-id": snapshot["snapshot-id"],
-        },
-    ]
-
-
-# `None` means "main must not exist yet", as pyiceberg sends it.
-def assert_main_at(snapshot_id):
-    return [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": snapshot_id}]
-
-
-def table_change(ns, table, requirements, updates):
-    return {
-        "identifier": {"namespace": [ns], "name": table},
-        "requirements": requirements,
-        "updates": updates,
-    }
-
-
-def commit_transaction(changes, expected_code=204, auth=None):
-    return catalog_request(
-        "POST",
-        "/v1/my_warehouse/transactions/commit",
-        json={"table-changes": changes},
-        expected_code=expected_code,
-        auth=auth,
-    )
-
-
-def load_table(ns, table):
-    return catalog_request("GET", tables_url(ns, table)).json()
-
-
-def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
-    return create_table(ns, name, schema=schema, expected_code=expected_code, **{"stage-create": True, **extra})
-
-
-# The updates a client sends to finish a staged create.
-def create_updates_from_metadata(metadata):
-    return [
-        {"action": "assign-uuid", "uuid": metadata["table-uuid"]},
-        {"action": "upgrade-format-version", "format-version": metadata["format-version"]},
-        {"action": "add-schema", "schema": metadata["schemas"][0]},
-        {"action": "set-current-schema", "schema-id": -1},
-        {"action": "add-spec", "spec": metadata["partition-specs"][0]},
-        {"action": "set-default-spec", "spec-id": -1},
-        {"action": "add-sort-order", "sort-order": metadata["sort-orders"][0]},
-        {"action": "set-default-sort-order", "sort-order-id": -1},
-        {"action": "set-location", "location": metadata["location"]},
-        {"action": "set-properties", "updates": metadata["properties"]},
-    ]
-
-
-ASSERT_CREATE = [{"type": "assert-create"}]
-
-
-def load_pyiceberg_catalog():
-    return load_catalog(
-        "ch",
-        **{
-            "uri": catalog_url(""),
-            "type": "rest",
-            "warehouse": "my_warehouse",
-            "auth": {"type": "basic", "basic": {"username": "default", "password": ""}},
-            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-            "s3.access-key-id": minio_access_key,
-            "s3.secret-access-key": minio_secret_key,
-        },
-    )
-
-
-def create_database_query():
-    token = base64.b64encode(":".join(DEFAULT_AUTH).encode()).decode()
-    return f"""
-        DROP DATABASE IF EXISTS rest_tables_db;
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE rest_tables_db
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}',
-            auth_header = 'Authorization: Basic {token}'
-        """
-
-
 def test_config(started_cluster):
     response = catalog_request(
         "GET", "/v1/config", params={"warehouse": "my_warehouse"}
@@ -423,20 +195,15 @@ def test_config(started_cluster):
     assert result["defaults"] == {}
     assert result["endpoints"] == [
         "GET /v1/config",
-        "POST /v1/{prefix}/tables/rename",
-        "POST /v1/{prefix}/transactions/commit",
         "GET /v1/{prefix}/namespaces",
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
-        "POST /v1/{prefix}/namespaces/{namespace}/properties",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
         "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
-        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}",
-        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics",
     ]
 
     response = catalog_request("GET", "/v1/config", expected_code=400)
@@ -444,11 +211,6 @@ def test_config(started_cluster):
 
     response = catalog_request(
         "GET", "/v1/config", params={"warehouse": "unknown"}, expected_code=404
-    )
-    assert_error_shape(response, "NoSuchWarehouseException")
-
-    response = catalog_request(
-        "GET", "/v1/config", params={"warehouse": ""}, expected_code=404
     )
     assert_error_shape(response, "NoSuchWarehouseException")
 
@@ -503,18 +265,6 @@ def test_namespaces(started_cluster):
     assert_error_shape(response, "NoSuchNamespaceException")
 
 
-def test_namespace_location_with_embedded_bucket(started_cluster):
-    # `s3://warehouse/s3://other/x` names bucket `warehouse` on the surface, but the S3 layer
-    # re-parses the key and would write to `other`. Refuse it like a plain other-bucket location.
-    ns = f"esc_{uuid.uuid4().hex[:8]}"
-    for location in (
-        f"s3://other/{ns}",
-        f"s3://{BUCKET}/s3://other/{ns}",
-        f"s3://{BUCKET}/{ns}/s3://other/x",
-    ):
-        create_namespace([ns], properties={"location": location}, expected_code=400)
-
-
 def test_create_namespace_creates_parents(started_cluster):
     ns = f"parents_{uuid.uuid4().hex[:8]}"
 
@@ -552,65 +302,24 @@ def test_load_namespace(started_cluster):
     catalog_request("GET", "/v1/my_warehouse/namespaces/missing", expected_code=404)
 
 
-def test_update_namespace_properties(started_cluster):
-    ns = f"props_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns], properties={"owner": "asya", "a": "1"})
-
-    response = update_namespace_properties(
-        [ns], updates={"owner": "bob", "b": "2"}, removals=["a", "zzz"]
-    )
-    assert response.json() == {
-        "updated": ["b", "owner"],
-        "removed": ["a"],
-        "missing": ["zzz"],
-    }
-    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
-
-    response = update_namespace_properties(
-        [ns], updates={"owner": "x"}, removals=["owner"], expected_code=422
-    )
-    assert_error_shape(response, "UnprocessableEntityException")
-
-    response = update_namespace_properties(
-        ["missing"], updates={"owner": "x"}, expected_code=404
-    )
-    assert_error_shape(response, "NoSuchNamespaceException")
-
-    # The location must be inside the warehouse bucket, same as on create.
-    for location in ["http://x", "s3://other-bucket/x"]:
-        response = update_namespace_properties(
-            [ns], updates={"location": location}, expected_code=400
-        )
-        assert_error_shape(response, "BadRequestException")
-    assert load_namespace_properties([ns]) == {"b": "2", "owner": "bob"}
-
-    location = f"s3://{BUCKET}/props/"
-    update_namespace_properties([ns], updates={"location": location})
-    assert load_namespace_properties([ns])["location"] == location
-
-    for body in [{"updates": "x"}, {"removals": "x"}, []]:
-        response = requests.post(
-            catalog_url(f"/v1/my_warehouse/namespaces/{ns}/properties"), json=body
-        )
-        assert response.status_code == 400, response.text
-        assert_error_shape(response, "BadRequestException")
-
-
 def test_malformed_create_namespace(started_cluster):
-    for body in [
-        None,
-        {},
-        {"namespace": []},
-        {"namespace": [""]},
-        {"namespace": ["a\x1fb"]},
-        {"namespace": ["ok", "a\x1fb"]},
-    ]:
+    for body in [None, {}, {"namespace": []}, {"namespace": [""]}]:
         response = requests.post(catalog_url("/v1/my_warehouse/namespaces"), json=body)
         assert response.status_code == 400, response.text
         assert_error_shape(response, "BadRequestException")
 
 
 def test_not_implemented(started_cluster):
+    response = catalog_request(
+        "POST", "/v1/my_warehouse/tables/rename", expected_code=406
+    )
+    assert_error_shape(response, "UnsupportedOperationException")
+
+    response = catalog_request(
+        "POST", "/v1/my_warehouse/namespaces/sales/tables/t", expected_code=406
+    )
+    assert_error_shape(response, "UnsupportedOperationException")
+
     response = catalog_request(
         "POST", "/v1/my_warehouse/namespaces/sales/register", expected_code=406
     )
@@ -639,32 +348,6 @@ def test_not_found_shape(started_cluster):
         "GET", "/v1/other_warehouse/namespaces", expected_code=404
     )
     assert_error_shape(response, "NotFoundException")
-
-
-def test_error_response_keeps_connection_usable(started_cluster):
-    # Routing rejects each POST. Its body must not leak into the next request on the same connection.
-    # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
-    body = json.dumps({"name": "t"})
-    connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
-    try:
-        for path, expected_code in [
-            ("/v1/other_warehouse/namespaces/ns/tables", 404),
-            ("/v1/my_warehouse/namespaces/ns/register", 406),
-        ]:
-            connection.request(
-                "POST", path, body=body, headers={"Content-Type": "application/json"}
-            )
-            response = connection.getresponse()
-            text = response.read().decode()
-            assert response.status == expected_code, text
-            assert response.getheader("Connection", "").lower() != "close", text
-            connection.request("GET", "/v1/config?warehouse=my_warehouse")
-            response = connection.getresponse()
-            text = response.read().decode()
-            assert response.status == 200, text
-            assert json.loads(text)["overrides"]["prefix"] == "my_warehouse"
-    finally:
-        connection.close()
 
 
 def wait_listening(url, expected):
@@ -714,6 +397,9 @@ def test_survives_server_restart(started_cluster):
     response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}%1Feu"))
     assert response.status_code == 204, response.text
 
+    zk = get_keeper()
+    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
+
 
 def test_authentication(started_cluster):
     # (basic auth, headers, is_ok)
@@ -740,31 +426,35 @@ def test_create_namespace_rejects_readonly(started_cluster):
     ns = f"forbidden_{uuid.uuid4().hex[:8]}"
     body = {"namespace": [ns]}
 
-    # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
-    for user, word in [("readonly_user", "readonly"), ("no_ddl_user", "DDL")]:
-        # Reading is allowed for everyone who can log in.
-        catalog_request("GET", "/v1/my_warehouse/namespaces", auth=(user, ""))
+    # Reading is allowed for everyone who can log in.
+    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("readonly_user", ""))
 
-        response = catalog_request(
-            "POST",
-            "/v1/my_warehouse/namespaces",
-            json=body,
-            auth=(user, ""),
-            expected_code=403,
-        )
-        assert_error_shape(response, "ForbiddenException")
-        assert word in response.json()["error"]["message"]
-        assert [ns] not in list_namespaces()
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        auth=("readonly_user", ""),
+        expected_code=403,
+    )
+    assert_error_shape(response, "ForbiddenException")
+    assert "readonly" in response.json()["error"]["message"]
+    assert [ns] not in list_namespaces()
+
+    # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
+    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("no_ddl_user", ""))
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        auth=("no_ddl_user", ""),
+        expected_code=403,
+    )
+    assert_error_shape(response, "ForbiddenException")
+    assert "DDL" in response.json()["error"]["message"]
+    assert [ns] not in list_namespaces()
 
     create_namespace([ns])
     assert [ns] in list_namespaces()
-
-    for user in ["readonly_user", "no_ddl_user"]:
-        response = update_namespace_properties(
-            [ns], updates={"owner": "bob"}, auth=(user, ""), expected_code=403
-        )
-        assert_error_shape(response, "ForbiddenException")
-    assert load_namespace_properties([ns]) == {}
 
 
 def test_table_ddl_rejects_readonly(started_cluster):
@@ -782,18 +472,6 @@ def test_table_ddl_rejects_readonly(started_cluster):
         assert_error_shape(response, "ForbiddenException")
         response = drop_table(ns, "existing", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
-        response = rename_table([ns], "existing", [ns], "renamed", auth=auth, expected_code=403)
-        assert_error_shape(response, "ForbiddenException")
-
-    response = commit_table(ns, "existing", [], [], auth=("readonly_user", ""), expected_code=403)
-    assert_error_shape(response, "ForbiddenException")
-    # A commit is a data change, so `allow_ddl = 0` does not block it.
-    commit_table(ns, "existing", [], [], auth=("no_ddl_user", ""))
-
-    change = [table_change(ns, "existing", [], [])]
-    response = commit_transaction(change, auth=("readonly_user", ""), expected_code=403)
-    assert_error_shape(response, "ForbiddenException")
-    commit_transaction(change, auth=("no_ddl_user", ""))
 
     assert list_tables(ns) == ["existing"]
 
@@ -839,10 +517,6 @@ def test_clickhouse_rest_catalog_client(started_cluster):
     ns = f"client_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
     create_table(ns, "events")
-    level = "a b?#%41+/é&:;=@"
-    create_namespace([ns, level], properties={"location": f"s3://{BUCKET}/{ns}_special"})
-    create_table(f"{ns}%1F{quote(level, safe='')}", "events")
-    create_table(ns, "t?#x")
 
     node.query(f"""
         DROP DATABASE IF EXISTS rest_client_db;
@@ -853,128 +527,14 @@ def test_clickhouse_rest_catalog_client(started_cluster):
             storage_endpoint = 'http://minio1:9001/{BUCKET}'
         """)
     try:
-        tables = node.query("SHOW TABLES FROM rest_client_db").splitlines()
+        tables = node.query("SHOW TABLES FROM rest_client_db").split()
         assert f"{ns}.events" in tables
         assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.events`") == "0\n"
         assert node.query(
             f"DESCRIBE rest_client_db.`{ns}.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
         ) == "id\tInt64\nname\tNullable(String)\n"
-        assert f"{ns}.{level}.events" in tables
-        assert node.contains_in_log(f"Requesting: .*/namespaces/{ns}%1F{quote(level, safe='')}/tables")
-        assert f"{ns}.t%3F%23x" in tables
-        assert node.query(f"SELECT count() FROM rest_client_db.`{ns}.{level}.events`") == "0\n"
-        assert node.query(f"EXISTS TABLE rest_client_db.`{ns}.t%3F%23x`") == "1\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_client_db")
-
-
-def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
-    # A location is an object key, so it may hold characters that a URI cannot.
-    suffix = uuid.uuid4().hex[:8]
-    directories = {
-        f"client_location_{suffix}": "a b \u00e9#50%",
-        # Readable before with `%41` read literally, so it must stay that way.
-        f"client_location_q_{suffix}": "q?x%41y",
-    }
-    for ns, directory in directories.items():
-        create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
-        create_table(ns, "events")
-    encoded_ns = f"client_location_e_{suffix}"
-    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
-    create_table(encoded_ns, "events")
-
-    node.query(f"""
-        DROP DATABASE IF EXISTS rest_client_location_db;
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE rest_client_location_db
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
-        """)
-    try:
-        for ns in directories:
-            assert node.query(f"SELECT count() FROM rest_client_location_db.`{ns}.events`") == "0\n"
-        # A location the catalog returns already encoded keeps its escape.
-        assert f"/custom/{encoded_ns}/a%20b/events" in node.query(
-            f"SHOW CREATE TABLE rest_client_location_db.`{encoded_ns}.events`"
-        )
-    finally:
-        node.query("DROP DATABASE IF EXISTS rest_client_location_db")
-
-
-def test_clickhouse_client_creates_table(started_cluster):
-    """A pathless CREATE TABLE lets the embedded catalog choose the location and write the first metadata file."""
-    ns = f"client_create_{uuid.uuid4().hex[:8]}"
-    db = "rest_client_create_db"
-    node.query(f"""
-        DROP DATABASE IF EXISTS {db};
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE {db}
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
-        """)
-
-    def create_query(table, if_not_exists=False):
-        clause = "IF NOT EXISTS " if if_not_exists else ""
-        return f"CREATE TABLE {clause}{db}.`{ns}.{table}` (id Int64, name String) ENGINE = IcebergS3"
-
-    create_settings = {"allow_experimental_database_iceberg": 1}
-
-    try:
-        # The client creates the namespace on the way.
-        node.query(create_query("events"), settings=create_settings)
-        assert [ns] in list_namespaces()
-
-        result = catalog_request("GET", tables_url(ns, "events")).json()
-        location = result["metadata"]["location"]
-        table_uuid = result["metadata"]["table-uuid"]
-        assert location == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
-        assert result["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
-
-        node.query(create_query("events", if_not_exists=True), settings=create_settings)
-        error = node.query_and_get_error(create_query("events"), settings=create_settings)
-        assert "already exists" in error, error
-
-        # The catalog schema has no column kinds, so a special column cannot be sent.
-        error = node.query_and_get_error(
-            f"CREATE TABLE {db}.`{ns}.special` (id Int64, doubled Int64 MATERIALIZED id * 2) ENGINE = IcebergS3",
-            settings=create_settings,
-        )
-        assert "Special columns" in error, error
-
-        # The server does not implement UpdateTable yet, so the table stays empty.
-        assert node.query(f"SELECT count() FROM {db}.`{ns}.events`") == "0\n"
-
-        # The codec setting reaches the catalog as a table property, so the catalog writes a gzip file.
-        node.query(create_query("zipped"), settings={**create_settings, "iceberg_metadata_compression_method": "gzip"})
-        result = catalog_request("GET", tables_url(ns, "zipped")).json()
-        assert result["metadata"]["properties"] == {"write.metadata.compression-codec": "gzip"}
-        assert result["metadata-location"].endswith(".gz.metadata.json")
-        assert node.query(f"SELECT count() FROM {db}.`{ns}.zipped`") == "0\n"
-
-        # PARTITION BY becomes the partition spec and ORDER BY becomes the sort order of the create request.
-        node.query(
-            f"CREATE TABLE {db}.`{ns}.sorted` (id Int64, name String) ENGINE = IcebergS3 PARTITION BY name ORDER BY id",
-            settings=create_settings,
-        )
-        metadata = catalog_request("GET", tables_url(ns, "sorted")).json()["metadata"]
-        spec_fields = metadata["partition-specs"][0]["fields"]
-        assert [(f["source-id"], f["field-id"], f["transform"]) for f in spec_fields] == [(2, 1000, "identity")]
-        assert metadata["default-spec-id"] == 0
-        order_fields = metadata["sort-orders"][0]["fields"]
-        assert [(f["source-id"], f["transform"], f["direction"]) for f in order_fields] == [(1, "identity", "asc")]
-        assert metadata["default-sort-order-id"] == 1
-
-        # Iceberg has no equivalent of PRIMARY KEY or SAMPLE BY.
-        for clause in ("PRIMARY KEY id", "SAMPLE BY id"):
-            error = node.query_and_get_error(
-                f"CREATE TABLE {db}.`{ns}.unsupported` (id Int64, name String) ENGINE = IcebergS3 ORDER BY id {clause}",
-                settings=create_settings,
-            )
-            assert "PRIMARY KEY and SAMPLE BY clauses are not supported" in error, error
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db}")
 
 
 def test_keeper_layout(started_cluster):
@@ -983,26 +543,24 @@ def test_keeper_layout(started_cluster):
     result = create_table(f"{ns}\x1feu-west", "my.table").json()
 
     zk = get_keeper()
-    stored = stored_warehouse_definition("my_warehouse")
-    assert stored == warehouse_definition(BASE_LOCATION, stored["uuid"])
-    store_root = keeper_store_root()
+    assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
-    parent_path = f"{store_root}/namespaces/{escaped}"
+    parent_path = f"{KEEPER_ROOT}/namespaces/{escaped}"
     child_path = f"{parent_path}/namespaces/eu%2Dwest"
     assert sorted(zk.get_children(parent_path)) == ["namespaces", "tables"]
     assert sorted(zk.get_children(child_path)) == ["namespaces", "tables"]
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
-    # The guard child binds the name to the uuid, so a drop or rename cannot act on a table re-created under the same name.
+    # The uuid is in the path, so a commit cannot target a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
     assert zk.get_children(table_path) == [table_uuid]
-    assert zk.get(f"{store_root}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
+    assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -1182,24 +740,21 @@ def test_malformed_create_table(started_cluster):
     duplicate_ids = {"type": "struct", "fields": [{"id": 1, "name": "a", "type": "int"}, {"id": 1, "name": "b", "type": "int"}]}
     bad_spec = {"fields": [{"source-id": 9, "field-id": 1000, "name": "p", "transform": "identity"}]}
     unknown_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": "bogus"}]}
-    unknown_v3_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": False, "type": "unknown"}]}
     numeric_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": 123}]}
     bad_element_type = {"type": "struct", "fields": [{"id": 1, "name": "x", "required": True, "type": {"type": "list", "element-id": 2, "element-required": True, "element": "bogus"}}]}
     bad_transform_spec = {"fields": [{"source-id": 1, "name": "p", "transform": "bogus"}]}
     bad_transform_order = {"fields": [{"source-id": 1, "transform": "bucket[x]", "direction": "asc", "null-order": "nulls-first"}]}
     bad_direction_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "up", "null-order": "nulls-first"}]}
     bad_null_order = {"fields": [{"source-id": 1, "transform": "identity", "direction": "asc", "null-order": "first"}]}
-    optional_identifier = dict(DEFAULT_SCHEMA, **{"identifier-field-ids": [2]})
     bodies = [
         {"schema": DEFAULT_SCHEMA},  # no name
         {"name": "", "schema": DEFAULT_SCHEMA},
         {"name": "t"},  # no schema
         {"name": "t", "schema": duplicate_ids},
         {"name": "t", "schema": unknown_type},
-        {"name": "t", "schema": unknown_v3_type},
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
-        {"name": "t", "schema": optional_identifier},
+        {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
         {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": {"fields": [{"source-id": 1}]}},
@@ -1217,101 +772,6 @@ def test_malformed_create_table(started_cluster):
 
     response = create_table("missing", "t", expected_code=404)
     assert_error_shape(response, "NoSuchNamespaceException")
-
-
-def test_rename_table(started_cluster):
-    ns = f"rename_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_namespace([ns, "other"])
-    other = f"{ns}\x1fother"
-    created = create_table(ns, "a").json()
-    table_uuid = created["metadata"]["table-uuid"]
-
-    # The uuid and the metadata location do not change. Nothing is written to S3.
-    rename_table([ns], "a", [ns], "b")
-    assert not table_exists(ns, "a")
-    loaded = catalog_request("GET", tables_url(ns, "b")).json()
-    assert loaded["metadata-location"] == created["metadata-location"]
-    assert loaded["metadata"]["table-uuid"] == table_uuid
-    assert list_metadata_files(created["metadata"]["location"]) == [
-        metadata_key(created["metadata-location"])
-    ]
-
-    rename_table([ns], "b", [ns, "other"], "c")
-    assert list_tables(ns) == []
-    assert list_tables(other) == ["c"]
-
-    # The moved table still accepts commits.
-    committed = commit_table(
-        other,
-        "c",
-        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
-        append_updates(fake_snapshot(100, 1)),
-    ).json()
-    assert committed["metadata"]["table-uuid"] == table_uuid
-    assert committed["metadata"]["current-snapshot-id"] == 100
-
-    response = rename_table([ns], "missing", [ns], "x", expected_code=404)
-    assert_error_shape(response, "NoSuchTableException")
-
-    response = rename_table([ns, "other"], "c", [ns, "missing"], "c", expected_code=404)
-    assert_error_shape(response, "NoSuchNamespaceException")
-    assert table_exists(other, "c")
-
-    create_table(ns, "d")
-    response = rename_table([ns, "other"], "c", [ns], "d", expected_code=409)
-    assert_error_shape(response, "AlreadyExistsException")
-    assert table_exists(other, "c")
-    assert table_exists(ns, "d")
-
-    response = rename_table([ns], "d", [ns], "d", expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-
-    bodies = [
-        {"source": {"namespace": [ns], "name": "d"}},  # no destination
-        {"source": {"namespace": ns, "name": "d"}, "destination": {"namespace": [ns], "name": "e"}},
-        {"source": {"namespace": [ns]}, "destination": {"namespace": [ns], "name": "e"}},  # no name
-        {"source": {"namespace": [ns], "name": "d"}, "destination": {"namespace": [ns], "name": ""}},
-    ]
-    for body in bodies:
-        response = catalog_request("POST", "/v1/my_warehouse/tables/rename", json=body, expected_code=400)
-        assert_error_shape(response, "BadRequestException")
-    assert list_tables(ns) == ["d"]
-    assert list_tables(other) == ["c"]
-
-
-def test_rename_keeps_commit_version(started_cluster):
-    ns = f"rename_version_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    table_uuid = create_table(ns, "a").json()["metadata"]["table-uuid"]
-    commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
-
-    # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
-    store_root = keeper_store_root()
-    uuid_path = f"{store_root}/tables_by_uuid/{table_uuid}"
-    assert get_keeper().get(uuid_path)[1].version == 1
-
-    # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
-    rename_table([ns], "a", [ns], "b")
-    rename_table([ns], "b", [ns], "a")
-    assert get_keeper().get(uuid_path)[1].version == 1
-    assert get_keeper().get(f"{store_root}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
-
-    committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
-    assert committed["metadata"]["current-snapshot-id"] == 200
-    assert get_keeper().get(uuid_path)[1].version == 2
-
-
-def test_report_metrics(started_cluster):
-    ns = f"metrics_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_table(ns, "t")
-
-    report = {"report-type": "scan-report", "table-name": "t"}
-    catalog_request("POST", tables_url(ns, "t") + "/metrics", json=report, expected_code=204)
-
-    response = catalog_request("POST", tables_url(ns, "missing") + "/metrics", json=report, expected_code=404)
-    assert_error_shape(response, "NoSuchTableException")
 
 
 def pyiceberg_catalog():
@@ -1352,14 +812,9 @@ def test_pyiceberg_client(started_cluster):
     assert catalog.list_tables(ns) == [(ns, "events")]
     assert catalog.table_exists(f"{ns}.events")
 
-    # PyIceberg loads the table under the new name after the rename.
-    renamed = catalog.rename_table(f"{ns}.events", f"{ns}.renamed")
-    assert renamed.metadata_location == table.metadata_location
-    assert catalog.list_tables(ns) == [(ns, "renamed")]
-
-    catalog.drop_table(f"{ns}.renamed")
+    catalog.drop_table(f"{ns}.events")
     assert catalog.list_tables(ns) == []
-    assert not catalog.table_exists(f"{ns}.renamed")
+    assert not catalog.table_exists(f"{ns}.events")
 
 
 def test_names_with_slash(started_cluster):
@@ -1394,198 +849,26 @@ def test_slash_at_name_edge_does_not_retarget(started_cluster):
 
 def test_unsupported_format_is_refused(started_cluster):
     zk = get_keeper()
-    definition = stored_warehouse_definition("my_warehouse")
-    zk.set(KEEPER_ROOT, json.dumps({**definition, "format_version": 999}).encode())
+    zk.set(KEEPER_ROOT, b"IcebergRESTCatalog\nformat_version: 999")
     try:
+        # The marker is checked when a new Keeper session is opened.
+        restart_node()
         for _ in range(2):
             response = catalog_request(
                 "GET", "/v1/my_warehouse/namespaces", expected_code=500
             )
             assert_error_shape(response, "InternalServerError")
-        assert node.contains_in_log("has an unsupported format version")
+        assert node.contains_in_log("has an unsupported format")
     finally:
-        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
+        zk.set(KEEPER_ROOT, FORMAT_MARKER)
+        restart_node()
 
     list_namespaces()
-
-
-def test_invalid_definition_is_server_error(started_cluster):
-    # A damaged definition in Keeper is not a client error.
-    zk = get_keeper()
-    definition = stored_warehouse_definition("my_warehouse")
-    damaged = {k: v for k, v in definition.items() if k != "base_location"}
-    zk.set(KEEPER_ROOT, json.dumps(damaged).encode())
-    try:
-        response = catalog_request(
-            "GET", "/v1/my_warehouse/namespaces", expected_code=500
-        )
-        assert_error_shape(response, "InternalServerError")
-        assert node.contains_in_log(
-            "is invalid: Missing or empty string 'base_location'"
-        )
-    finally:
-        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
-
-    list_namespaces()
-
-
-def test_warehouse_discovery(started_cluster):
-    # The server has no fixed list of warehouses. It looks a warehouse up in Keeper on each request.
-    # So a warehouse created or deleted through the management API takes effect at once, with no restart.
-    warehouse = f"fresh_{uuid.uuid4().hex[:8]}"
-    config_params = {"warehouse": warehouse}
-    namespaces_url = f"/v1/{warehouse}/namespaces"
-
-    # Before the warehouse exists it is unknown.
-    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
-
-    # After the warehouse is created it is served, and tables land under its base location.
-    create_warehouse(warehouse, f"s3://{BUCKET}/{warehouse}")
-    response = catalog_request("GET", "/v1/config", params=config_params)
-    assert response.json()["overrides"]["prefix"] == warehouse
-    catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
-    result = catalog_request("POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}).json()
-    assert result["metadata"]["location"].startswith(f"s3://{BUCKET}/{warehouse}/ns/t-")
-
-    # After the warehouse is deleted it is unknown again.
-    catalog_request("DELETE", f"{namespaces_url}/ns/tables/t", expected_code=204)
-    remove_namespace_in_keeper(warehouse, "ns")
-    delete_warehouse(warehouse)
-    catalog_request("GET", "/v1/config", params=config_params, expected_code=404)
-    response = catalog_request("GET", namespaces_url, expected_code=404)
-    assert_error_shape(response, "NotFoundException")
-
-
-def test_warehouse_management_crud(started_cluster):
-    warehouse = f"crud_{uuid.uuid4().hex[:8]}"
-    base_location = f"s3://{BUCKET}/{warehouse}"
-    expected = {"name": warehouse, "base_location": base_location, "credential": HIDDEN_CREDENTIAL}
-
-    # The response and `GET` hide the secret fields and do not expose the storage format.
-    assert create_warehouse(warehouse, base_location).json() == expected
-    assert catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}").json() == expected
-    assert expected in catalog_request("GET", WAREHOUSES_URL).json()["warehouses"]
-
-    # Keeper holds the real secrets, so the catalog can assume the role.
-    stored = stored_warehouse_definition(warehouse)
-    assert stored == warehouse_definition(base_location, stored["uuid"])
-
-    response = create_warehouse(warehouse, base_location, expected_code=409)
-    assert_error_shape(response, "AlreadyExistsException")
-
-    delete_warehouse(warehouse)
-    response = catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
-    assert_error_shape(response, "NoSuchWarehouseException")
-    assert expected not in catalog_request("GET", WAREHOUSES_URL).json()["warehouses"]
-    response = delete_warehouse(warehouse, expected_code=404)
-    assert_error_shape(response, "NoSuchWarehouseException")
-
-
-def test_warehouse_management_validation(started_cluster):
-    warehouse = f"invalid_{uuid.uuid4().hex[:8]}"
-    base_location = f"s3://{BUCKET}/{warehouse}"
-
-    def bad_request(body):
-        response = catalog_request("POST", WAREHOUSES_URL, json=body, expected_code=400)
-        assert_error_shape(response, "BadRequestException")
-        return response.json()["error"]["message"]
-
-    valid = {"name": warehouse, "base_location": base_location, "credential": CREDENTIAL}
-    for name in ["", "a/b", "a b", "a.b", "x" * 65]:
-        bad_request({**valid, "name": name})
-    bad_request({**valid, "base_location": f"http://{BUCKET}/{warehouse}"})  # not an s3:// URI
-    bad_request({k: v for k, v in valid.items() if k != "credential"})  # no credential
-    bad_request({**valid, "credential": {**CREDENTIAL, "type": "static"}})  # unsupported type
-    bad_request({**valid, "credential": {"type": "aws_role"}})  # no role_arn
-
-    # The mock STS hands out a wrong secret key when the external id is wrong. MinIO rejects the signature.
-    # The server checks the role against the location before it stores anything.
-    message = bad_request({**valid, "credential": {**CREDENTIAL, "external_id": "wrong"}})
-    assert warehouse in message
-    assert "SignatureDoesNotMatch" in message, message
-
-    assert not get_keeper().exists(f"{KEEPER_PARENT}/{warehouse}")
-    catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", expected_code=404)
-
-
-def test_warehouse_delete_refuses_with_namespaces(started_cluster):
-    warehouse = f"nonempty_{uuid.uuid4().hex[:8]}"
-    create_warehouse(warehouse, f"s3://{BUCKET}/{warehouse}")
-    catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})
-
-    response = delete_warehouse(warehouse, expected_code=409)
-    assert_error_shape(response, "WarehouseNotEmptyException")
-    # Nothing was removed. The warehouse still serves requests.
-    assert catalog_request("GET", f"/v1/{warehouse}/namespaces").json()["namespaces"] == [["ns"]]
-
-    remove_namespace_in_keeper(warehouse, "ns")
-    delete_warehouse(warehouse)
-
-
-def test_warehouse_credential_rotation(started_cluster):
-    warehouse = f"rotate_{uuid.uuid4().hex[:8]}"
-    base_location = f"s3://{BUCKET}/{warehouse}"
-    credential_url = f"{WAREHOUSES_URL}/{warehouse}/credential"
-    create_warehouse(warehouse, base_location)
-    catalog_request("POST", f"/v1/{warehouse}/namespaces", json={"namespace": ["ns"]})
-
-    def create_table_in_warehouse(name):
-        return catalog_request("POST", f"/v1/{warehouse}/namespaces/ns/tables", json={"name": name, "schema": DEFAULT_SCHEMA})
-
-    create_table_in_warehouse("before")
-    stored_before = stored_warehouse_definition(warehouse)
-
-    # A credential that cannot access the location is refused and the stored one is kept.
-    wrong = {**CREDENTIAL, "external_id": "wrong"}
-    response = catalog_request("PUT", credential_url, json={"credential": wrong}, expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-    assert stored_warehouse_definition(warehouse) == stored_before
-
-    # The mock STS accepts a request without an external id. The new credential is used by the next
-    # request, with no restart: the registry rebuilds the S3 client when the node changed.
-    rotated = {k: v for k, v in CREDENTIAL.items() if k != "external_id"}
-    catalog_request("PUT", credential_url, json={"credential": rotated}, expected_code=204)
-    assert stored_warehouse_definition(warehouse) == {**stored_before, "credential": rotated}
-    create_table_in_warehouse("after")
-
-    response = catalog_request("PUT", f"{WAREHOUSES_URL}/missing/credential", json={"credential": CREDENTIAL}, expected_code=404)
-    assert_error_shape(response, "NoSuchWarehouseException")
-
-    for table in ["before", "after"]:
-        catalog_request("DELETE", f"/v1/{warehouse}/namespaces/ns/tables/{table}", expected_code=204)
-    remove_namespace_in_keeper(warehouse, "ns")
-    delete_warehouse(warehouse)
-
-
-def test_warehouse_management_access(started_cluster):
-    warehouse = f"access_{uuid.uuid4().hex[:8]}"
-    base_location = f"s3://{BUCKET}/{warehouse}"
-
-    # Every endpoint needs a login.
-    response = create_warehouse(warehouse, base_location, auth=("default", "wrong"), expected_code=401)
-    assert_error_shape(response, "NotAuthorizedException")
-    response = catalog_request("GET", WAREHOUSES_URL, auth=("default", "wrong"), expected_code=401)
-    assert_error_shape(response, "NotAuthorizedException")
-
-    # Reading is allowed for everyone who can log in. Changes follow `readonly` and `allow_ddl`.
-    create_warehouse(warehouse, base_location)
-    for user in ["readonly_user", "no_ddl_user"]:
-        auth = (user, "")
-        catalog_request("GET", WAREHOUSES_URL, auth=auth)
-        catalog_request("GET", f"{WAREHOUSES_URL}/{warehouse}", auth=auth)
-        response = create_warehouse(f"{warehouse}_2", base_location, auth=auth, expected_code=403)
-        assert_error_shape(response, "ForbiddenException")
-        response = catalog_request("PUT", f"{WAREHOUSES_URL}/{warehouse}/credential", json={"credential": CREDENTIAL}, auth=auth, expected_code=403)
-        assert_error_shape(response, "ForbiddenException")
-        response = delete_warehouse(warehouse, auth=auth, expected_code=403)
-        assert_error_shape(response, "ForbiddenException")
-
-    delete_warehouse(warehouse)
 
 
 def test_bucket_root_base_location(started_cluster):
-    # The warehouse of node_aux has a base location of `s3://warehouse/`.
-    # Verify that for a bucket root with a trailing slash, tables land directly under the bucket, with no extra slash.
+    # node_aux is configured with `s3://warehouse/`, the bucket root with a trailing slash.
+    # The server accepted that config at startup. Tables land directly under the bucket.
     ns = f"root_{uuid.uuid4().hex[:8]}"
     ns_url = catalog_url("/v1/my_warehouse/namespaces", node_aux)
     assert requests.post(ns_url, json={"namespace": [ns]}).status_code == 200
@@ -1604,369 +887,8 @@ def test_auxiliary_keeper(started_cluster):
     assert ["aux_ns"] in requests.get(url).json()["namespaces"]
 
     zk = get_keeper()
-    assert zk.exists(f"{keeper_store_root(f'/aux_root{KEEPER_PARENT}')}/namespaces/aux_ns")
-    assert not zk.exists(f"{keeper_store_root()}/namespaces/aux_ns")
-
-
-def test_commit_append(started_cluster):
-    ns = f"commit_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    created = create_table(ns, "events").json()
-    location = created["metadata"]["location"]
-
-    # First append, the way the ClickHouse client sends it: no `snapshot-id` key means `main` must not exist yet.
-    first = commit_table(
-        ns,
-        "events",
-        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
-        append_updates(fake_snapshot(100, 1)),
-    ).json()
-    metadata = first["metadata"]
-    assert first["metadata-location"].startswith(f"{location}/metadata/v2-")
-    assert metadata["current-snapshot-id"] == 100
-    assert metadata["refs"] == {"main": {"type": "branch", "snapshot-id": 100}}
-    assert metadata["last-sequence-number"] == 1
-    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [100]
-    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [100]
-    assert [e["metadata-file"] for e in metadata["metadata-log"]] == [
-        created["metadata-location"]
-    ]
-
-    second = commit_table(
-        ns,
-        "events",
-        assert_main_at(100),
-        append_updates(fake_snapshot(200, 2)),
-    ).json()
-    assert second["metadata-location"].startswith(f"{location}/metadata/v3-")
-    assert second["metadata"]["current-snapshot-id"] == 200
-    assert [e["metadata-file"] for e in second["metadata"]["metadata-log"]] == [
-        created["metadata-location"],
-        first["metadata-location"],
-    ]
-
-    # Load returns the latest file, and every version is kept on storage.
-    loaded = catalog_request("GET", tables_url(ns, "events")).json()
-    assert loaded["metadata-location"] == second["metadata-location"]
-    assert loaded["metadata"] == second["metadata"]
-    assert len(list_metadata_files(location)) == 3
-
-
-def test_commit_empty(started_cluster):
-    ns = f"commit_empty_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    created = create_table(ns, "events").json()
-    location = created["metadata"]["location"]
-    first = commit_table(ns, "events", [], append_updates(fake_snapshot(100, 1))).json()
-
-    # Requirements are still checked.
-    commit_table(ns, "events", assert_main_at(None), [], expected_code=409)
-
-    # An empty commit returns the current state and writes nothing.
-    result = commit_table(ns, "events", assert_main_at(100), []).json()
-    assert result["metadata-location"] == first["metadata-location"]
-    assert result["metadata"] == first["metadata"]
-    assert len(list_metadata_files(location)) == 2
-
-    loaded = catalog_request("GET", tables_url(ns, "events")).json()
-    assert loaded["metadata-location"] == first["metadata-location"]
-    assert len(loaded["metadata"]["metadata-log"]) == 1
-
-
-def test_commit_rejected(started_cluster):
-    ns = f"commit_rejected_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    created = create_table(ns, "events").json()
-    location = created["metadata"]["location"]
-    commit_table(ns, "events", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
-
-    conflicts = [
-        [{"type": "assert-table-uuid", "uuid": str(uuid.uuid4())}],
-        [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": None}],
-        [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 999}],
-        [{"type": "assert-current-schema-id", "current-schema-id": 5}],
-        [{"type": "assert-create"}],
-    ]
-    for requirements in conflicts:
-        response = commit_table(ns, "events", requirements, [], expected_code=409)
-        assert_error_shape(response, "CommitFailedException")
-
-    bad_updates = [
-        ({"action": "no-such-action"}, "BadRequestException"),
-        ({"action": "add-schema", "schema": DEFAULT_SCHEMA}, "UnsupportedOperationException"),
-        # Snapshot id 100 is taken.
-        ({"action": "add-snapshot", "snapshot": fake_snapshot(100, 2)}, "BadRequestException"),
-        # Optional snapshot fields keep their spec types.
-        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"schema-id": "bad"}}, "BadRequestException"),
-        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"parent-snapshot-id": "100"}}, "BadRequestException"),
-        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"summary": {"operation": "append", "added-records": 10}}}, "BadRequestException"),
-        # Snapshot 5 does not exist.
-        ({"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 5}, "BadRequestException"),
-        # Retention settings must be positive integers.
-        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "min-snapshots-to-keep": 0}, "BadRequestException"),
-        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "max-ref-age-ms": "soon"}, "BadRequestException"),
-        # Tags carry only max-ref-age-ms.
-        ({"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-snapshot-age-ms": 1000}, "BadRequestException"),
-    ]
-    before = catalog_request("GET", tables_url(ns, "events")).json()
-    for update, expected_type in bad_updates:
-        response = commit_table(ns, "events", [], [update], expected_code=400)
-        assert_error_shape(response, expected_type)
-
-    # Rejected updates leave the metadata pointer and its content untouched.
-    after = catalog_request("GET", tables_url(ns, "events")).json()
-    assert after["metadata-location"] == before["metadata-location"]
-    assert after["metadata"] == before["metadata"]
-
-    # Sequence number 1 is not greater than the current one, so another commit landed first.
-    stale = {"action": "add-snapshot", "snapshot": fake_snapshot(101, 1)}
-    response = commit_table(ns, "events", [], [stale], expected_code=409)
-    assert_error_shape(response, "CommitFailedException")
-
-    response = commit_table(ns, "events", [{"type": "assert-something-else"}], [], expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-
-    response = catalog_request(
-        "POST", tables_url(ns, "events"), json={"updates": []}, expected_code=400
-    )
-    assert_error_shape(response, "BadRequestException")
-    response = commit_table(ns, "missing", [], [], expected_code=404)
-    assert_error_shape(response, "NoSuchTableException")
-
-    # Rejected commits leave no files behind: create plus one successful commit.
-    assert len(list_metadata_files(location)) == 2
-    assert catalog_request("GET", tables_url(ns, "events")).json()["metadata"]["current-snapshot-id"] == 100
-
-
-def test_commit_properties_and_refs(started_cluster):
-    ns = f"commit_props_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_table(ns, "events", properties={"owner": "alice"})
-
-    metadata = commit_table(
-        ns,
-        "events",
-        [],
-        [
-            {"action": "set-properties", "updates": {"team": "data", "owner": "bob"}},
-            {"action": "remove-properties", "removals": ["team", "unknown"]},
-        ],
-    ).json()["metadata"]
-    assert metadata["properties"] == {"owner": "bob"}
-
-    commit_table(ns, "events", [], append_updates(fake_snapshot(100, 1)))
-    metadata = commit_table(
-        ns,
-        "events",
-        [],
-        [{"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-ref-age-ms": 1000}],
-    ).json()["metadata"]
-    assert metadata["refs"]["v1"] == {"type": "tag", "snapshot-id": 100, "max-ref-age-ms": 1000}
-    assert metadata["current-snapshot-id"] == 100
-
-    metadata = commit_table(
-        ns,
-        "events",
-        [],
-        [
-            {"action": "remove-snapshot-ref", "ref-name": "v1"},
-            {"action": "remove-snapshot-ref", "ref-name": "main"},
-        ],
-    ).json()["metadata"]
-    assert metadata["refs"] == {}
-    assert metadata["current-snapshot-id"] == -1
-    assert len(metadata["snapshots"]) == 1
-
-
-def test_commit_concurrent(started_cluster):
-    ns = f"commit_concurrent_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    location = create_table(ns, "events").json()["metadata"]["location"]
-
-    # Both writers expect no `main`. One wins. The other fails the requirement or, in a real race, the Keeper version check.
-    def commit(snapshot_id):
-        return requests.post(
-            catalog_url(tables_url(ns, "events")),
-            json={
-                "requirements": assert_main_at(None),
-                "updates": append_updates(fake_snapshot(snapshot_id, 1)),
-            },
-        ).status_code
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        codes = sorted(executor.map(commit, [100, 200]))
-    assert codes == [200, 409]
-    assert len(list_metadata_files(location)) == 2
-
-
-def test_commit_transaction(started_cluster):
-    ns = f"transaction_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    locations = {t: create_table(ns, t).json()["metadata"]["location"] for t in ["a", "b"]}
-
-    # Both tables move in one commit. The response has no body, unlike a single-table commit.
-    response = commit_transaction(
-        [
-            table_change(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1))),
-            table_change(ns, "b", assert_main_at(None), append_updates(fake_snapshot(200, 1))),
-        ]
-    )
-    assert response.text == ""
-    committed_locations = {}
-    for table, snapshot_id in [("a", 100), ("b", 200)]:
-        loaded = load_table(ns, table)
-        assert loaded["metadata-location"].startswith(f"{locations[table]}/metadata/v2-")
-        assert loaded["metadata"]["current-snapshot-id"] == snapshot_id
-        assert len(list_metadata_files(locations[table])) == 2
-        committed_locations[table] = loaded["metadata-location"]
-
-    # A failed requirement on the second table rejects the whole transaction. No file is written for either table.
-    response = commit_transaction(
-        [
-            table_change(ns, "a", assert_main_at(100), append_updates(fake_snapshot(101, 2))),
-            table_change(ns, "b", assert_main_at(999), append_updates(fake_snapshot(201, 2))),
-        ],
-        expected_code=409,
-    )
-    assert_error_shape(response, "CommitFailedException")
-    for table in ["a", "b"]:
-        assert load_table(ns, table)["metadata-location"] == committed_locations[table]
-        assert len(list_metadata_files(locations[table])) == 2
-
-    # A table with empty updates only has its requirements checked. Its pointer and files stay.
-    files_of_a = list_metadata_files(locations["a"])
-    commit_transaction(
-        [
-            table_change(ns, "a", assert_main_at(100), []),
-            table_change(ns, "b", assert_main_at(200), append_updates(fake_snapshot(201, 2))),
-        ]
-    )
-    assert load_table(ns, "a")["metadata-location"] == committed_locations["a"]
-    assert list_metadata_files(locations["a"]) == files_of_a
-    assert load_table(ns, "b")["metadata"]["current-snapshot-id"] == 201
-
-    # An empty transaction is a no-op.
-    commit_transaction([])
-
-
-def test_commit_transaction_rejects_bad_request(started_cluster):
-    ns = f"transaction_bad_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_table(ns, "a")
-    location = load_table(ns, "a")["metadata-location"]
-    change_a = table_change(ns, "a", assert_main_at(None), append_updates(fake_snapshot(1, 1)))
-
-    # A missing table fails the transaction before anything is written.
-    response = commit_transaction(
-        [change_a, table_change(ns, "missing", [], append_updates(fake_snapshot(1, 1)))],
-        expected_code=404,
-    )
-    assert_error_shape(response, "NoSuchTableException")
-    assert load_table(ns, "a")["metadata-location"] == location
-
-    # Each table may appear once.
-    response = commit_transaction([change_a, change_a], expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-    assert "more than once" in response.json()["error"]["message"]
-
-    # A staged create cannot be committed through a transaction.
-    response = commit_transaction(
-        [table_change(ns, "a", [{"type": "assert-create"}], [])], expected_code=400
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    # `table-changes` must be an array.
-    response = catalog_request(
-        "POST",
-        "/v1/my_warehouse/transactions/commit",
-        json={"table-changes": {}},
-        expected_code=400,
-    )
-    assert_error_shape(response, "BadRequestException")
-
-
-def test_pyiceberg_append(started_cluster):
-    ns = f"pyiceberg_append_{uuid.uuid4().hex[:8]}"
-    catalog = load_pyiceberg_catalog()
-    catalog.create_namespace(ns)
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
-        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
-    )
-    table = catalog.create_table(f"{ns}.events", schema=schema)
-
-    rows = pa.Table.from_pylist(
-        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
-        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
-    )
-    table.append(rows)
-    table.append(rows)
-    assert len(table.metadata.snapshots) == 2
-    assert table.scan().to_arrow().num_rows == 4
-
-    table.transaction().set_properties(owner="alice").commit_transaction()
-    assert catalog.load_table(f"{ns}.events").properties["owner"] == "alice"
-
-
-def test_pyiceberg_transaction_history(started_cluster):
-    ns = f"pyiceberg_txn_{uuid.uuid4().hex[:8]}"
-    catalog = load_pyiceberg_catalog()
-    catalog.create_namespace(ns)
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
-        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
-    )
-    table = catalog.create_table(f"{ns}.events", schema=schema)
-    rows = pa.Table.from_pylist(
-        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
-        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
-    )
-    table.append(rows)
-
-    # Two appends in one transaction are one commit. Only the final snapshot was ever current.
-    with table.transaction() as txn:
-        txn.append(rows)
-        txn.append(rows)
-    table = catalog.load_table(f"{ns}.events")
-    assert len(table.metadata.snapshots) == 3
-    assert [e.snapshot_id for e in table.metadata.snapshot_log] == [
-        table.metadata.snapshots[0].snapshot_id,
-        table.metadata.snapshots[2].snapshot_id,
-    ]
-
-    # A timestamp read at the commit time sees both appends of the transaction.
-    node.query(create_database_query())
-    try:
-        commit_ms = table.metadata.snapshot_log[-1].timestamp_ms
-        query = f"SELECT count() FROM rest_tables_db.`{ns}.events` SETTINGS iceberg_timestamp_ms = {commit_ms}"
-        assert node.query(query) == "6\n"
-    finally:
-        node.query("DROP DATABASE IF EXISTS rest_tables_db")
-
-
-def test_clickhouse_insert(started_cluster):
-    ns = f"chinsert_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_table(ns, "events")
-    table = f"rest_tables_db.`{ns}.events`"
-
-    node.query(create_database_query())
-    try:
-        insert = f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')"
-        node.query(insert)
-        node.query(insert)
-        assert node.query(f"SELECT count() FROM {table}") == "4\n"
-
-        # Parallel inserts hit 409 on the catalog and retry.
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            list(executor.map(lambda _: node.query(insert), range(4)))
-        assert node.query(f"SELECT count() FROM {table}") == "12\n"
-
-        # pyiceberg reads what ClickHouse wrote.
-        pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
-        assert pyiceberg_table.scan().to_arrow().num_rows == 12
-    finally:
-        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+    assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
+    assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
 
 
 def test_secure_port(started_cluster):
@@ -1988,162 +910,3 @@ def test_secure_port(started_cluster):
         requests.get(
             f"http://{node.ip_address}:{CATALOG_SECURE_PORT}{path}", auth=DEFAULT_AUTH
         )
-
-
-def test_stage_create(started_cluster):
-    ns = f"staged_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    spec = {"fields": [{"source-id": 1, "name": "id_bucket", "transform": "bucket[16]"}]}
-
-    # Stage: the server returns the metadata.
-    staged = stage_create_table(ns, "events", **{"partition-spec": spec, "properties": {"owner": "alice"}}).json()
-    assert "metadata-location" not in staged
-    metadata = staged["metadata"]
-    table_uuid = metadata["table-uuid"]
-    location = metadata["location"]
-    assert location == f"{BASE_LOCATION}/{ns}/events-{table_uuid}"
-    assert metadata["partition-specs"][0]["fields"][0]["field-id"] == 1000
-
-    # Nothing is stored.
-    assert not table_exists(ns, "events")
-    assert list_tables(ns) == []
-    assert list_metadata_files(location) == []
-    assert get_keeper().get_children(f"{keeper_store_root()}/namespaces/{ns}/tables") == []
-
-    # Commit: the updates describe the whole table and create it, with the first snapshot.
-    snapshot = fake_snapshot(1001, 1)
-    committed = commit_table(
-        ns, "events", ASSERT_CREATE, create_updates_from_metadata(metadata) + append_updates(snapshot)
-    ).json()
-    assert committed["metadata-location"].startswith(f"{location}/metadata/v1-")
-    assert committed["metadata-location"].endswith(".metadata.json")
-    created = committed["metadata"]
-
-    # The table is the staged one.
-    for key in [
-        "table-uuid", "location", "properties",
-        "schemas", "current-schema-id",
-        "partition-specs", "default-spec-id", "last-partition-id",
-        "sort-orders", "default-sort-order-id",
-    ]:
-        assert created[key] == metadata[key], key
-
-    # The snapshot is applied on top. It is the first version, so the metadata log is empty.
-    assert created["current-snapshot-id"] == 1001
-    assert created["refs"]["main"]["snapshot-id"] == 1001
-    assert created["snapshot-log"] == [{"snapshot-id": 1001, "timestamp-ms": created["last-updated-ms"]}]
-    assert created["metadata-log"] == []
-
-    # The table now exists.
-    assert table_exists(ns, "events")
-    loaded = catalog_request("GET", tables_url(ns, "events")).json()
-    assert loaded["metadata-location"] == committed["metadata-location"]
-    assert loaded["metadata"] == created
-    assert len(list_metadata_files(location)) == 1
-
-    # Later commits continue from v1.
-    second = fake_snapshot(1002, 2)
-    committed = commit_table(ns, "events", assert_main_at(1001), append_updates(second)).json()
-    assert f"{location}/metadata/v2-" in committed["metadata-location"]
-    assert committed["metadata"]["current-snapshot-id"] == 1002
-    assert len(list_metadata_files(location)) == 2
-
-
-def test_stage_create_conflicts(started_cluster):
-    ns = f"staged_conflicts_{uuid.uuid4().hex[:8]}"
-    create_namespace([ns])
-    create_table(ns, "existing")
-    staged = stage_create_table(ns, "t").json()["metadata"]
-    create_updates = create_updates_from_metadata(staged)
-
-    # Name conflicts.
-
-    # Staging a name that is taken fails early.
-    response = stage_create_table(ns, "existing", expected_code=409)
-    assert_error_shape(response, "TableAlreadyExistsException")
-
-    # Someone created the table between staging and the commit.
-    existing_location = f"{BASE_LOCATION}/{ns}/existing-{staged['table-uuid']}"
-    existing_updates = create_updates_from_metadata({**staged, "location": existing_location})
-    response = commit_table(ns, "existing", ASSERT_CREATE, existing_updates, expected_code=409)
-    assert_error_shape(response, "CommitFailedException")
-    assert list_metadata_files(existing_location) == []
-
-    # Requirements.
-
-    # Without `assert-create` a missing table is simply missing.
-    response = commit_table(ns, "t", [], create_updates, expected_code=404)
-    assert_error_shape(response, "NoSuchTableException")
-
-    # A create commit allows only `assert-create`, like the Iceberg reference catalog.
-    assert_uuid = [{"type": "assert-table-uuid", "uuid": staged["table-uuid"]}]
-    response = commit_table(ns, "t", ASSERT_CREATE + assert_uuid, create_updates, expected_code=400)
-    assert_error_shape(response, "BadRequestException")
-
-    # Updates.
-
-    # Invalid updates.
-    bad_updates = [
-        create_updates[2:],  # no assign-uuid
-        create_updates + [{"action": "set-location", "location": "s3://other-bucket/t"}],
-        create_updates + [{"action": "assign-uuid", "uuid": "not-a-uuid"}],
-    ]
-    for updates in bad_updates:
-        response = commit_table(ns, "t", ASSERT_CREATE, updates, expected_code=400)
-        assert_error_shape(response, "BadRequestException")
-
-    # Valid updates that the server does not support yet.
-    unsupported_updates = [
-        create_updates + [{"action": "upgrade-format-version", "format-version": 3}],
-        create_updates + [{"action": "set-default-spec", "spec-id": 0}],
-        create_updates + create_updates[2:3],  # a second add-schema
-    ]
-    for updates in unsupported_updates:
-        response = commit_table(ns, "t", ASSERT_CREATE, updates, expected_code=400)
-        assert_error_shape(response, "UnsupportedOperationException")
-
-    # The structural updates still apply only to a create.
-    response = commit_table(ns, "existing", [], create_updates[2:4], expected_code=400)
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    # Access.
-
-    # A create commit is DDL.
-    response = commit_table(ns, "t", ASSERT_CREATE, create_updates, auth=("no_ddl_user", ""), expected_code=403)
-    assert_error_shape(response, "ForbiddenException")
-
-    # No failed commit created the table.
-    assert not table_exists(ns, "t")
-    assert list_metadata_files(staged["location"]) == []
-
-
-def test_pyiceberg_create_table_transaction(started_cluster):
-    ns = f"pyiceberg_ctas_{uuid.uuid4().hex[:8]}"
-    catalog = load_pyiceberg_catalog()
-    catalog.create_namespace(ns)
-    schema = Schema(
-        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
-        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
-    )
-    rows = pa.Table.from_pylist(
-        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
-        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
-    )
-
-    # CTAS: the table appears together with its first data.
-    transaction = catalog.create_table_transaction(f"{ns}.events", schema=schema)
-    transaction.append(rows)
-    assert not table_exists(ns, "events")
-    transaction.commit_transaction()
-
-    # pyiceberg reads it back.
-    table = catalog.load_table(f"{ns}.events")
-    assert len(table.metadata.snapshots) == 1
-    assert table.scan().to_arrow().num_rows == 2
-
-    # ClickHouse reads it too.
-    node.query(create_database_query())
-    try:
-        assert node.query(f"SELECT id, name FROM rest_tables_db.`{ns}.events` ORDER BY id") == "1\ta\n2\tb\n"
-    finally:
-        node.query("DROP DATABASE IF EXISTS rest_tables_db")

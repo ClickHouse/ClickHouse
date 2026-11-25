@@ -6,7 +6,9 @@ title: 'gRPC インターフェイス'
 doc_type: 'reference'
 ---
 
-## はじめに {#grpc-interface-introduction}
+<div id="grpc-interface-introduction">
+  ## はじめに
+</div>
 
 ClickHouse は [gRPC](https://grpc.io/) インターフェイスをサポートしています。gRPC は、HTTP/2 と [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers) を使用するオープンソースのリモートプロシージャコールシステムです。ClickHouse の gRPC 実装では、以下をサポートしています。
 
@@ -21,7 +23,9 @@ ClickHouse は [gRPC](https://grpc.io/) インターフェイスをサポート�
 
 このインターフェイスの仕様は [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) に記載されています。
 
-## gRPC 設定 {#grpc-interface-configuration}
+<div id="grpc-interface-configuration">
+  ## gRPC 設定
+</div>
 
 gRPC インターフェイスを使用するには、メインの[サーバー設定](/ja/concepts/features/configuration/server-config/configuration-files)で `grpc_port` を設定します。その他の設定オプションについては、次の例を参照してください。
 
@@ -30,31 +34,36 @@ gRPC インターフェイスを使用するには、メインの[サーバー�
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- The following two files are used only if SSL is enabled -->
+        <!-- 以下の2つのファイルはSSLが有効な場合にのみ使用されます -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
-        <!-- Whether server requests client for a certificate -->
+        <!-- サーバーがクライアントに証明書を要求するかどうか -->
         <ssl_require_client_auth>false</ssl_require_client_auth>
 
-        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <!-- 以下のファイルはssl_require_client_auth=trueの場合にのみ使用されます -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
-             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <!-- デフォルトの圧縮アルゴリズム（クライアントが別のアルゴリズムを指定しない場合に適用されます。QueryInfoのresult_compressionを参照）。
+             サポートされているアルゴリズム: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
-             Supported levels: none, low, medium, high -->
+        <!-- デフォルトの圧縮レベル（クライアントが別のレベルを指定しない場合に適用されます。QueryInfoのresult_compressionを参照）。
+             サポートされているレベル: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
-        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <!-- 送受信メッセージサイズの上限（バイト単位）。-1は無制限を意味します -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
+
+        <!-- 詳細ログを取得する場合は有効にしてください -->
+        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-## 組み込みクライアント {#grpc-client}
+<div id="grpc-client">
+  ## 組み込みクライアント
+</div>
 
 提供されている[仕様](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)を使用して、gRPC がサポートする任意のプログラミング言語でクライアントを作成できます。
 また、組み込みの Python クライアントを使用することもできます。これはリポジトリ内の [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) にあります。組み込みクライアントには、Python モジュールの [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart) が必要です。

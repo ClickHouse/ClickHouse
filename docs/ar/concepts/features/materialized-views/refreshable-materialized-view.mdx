@@ -6,15 +6,13 @@ keywords: ['العرض المادي القابل للتحديث', 'التحدي�
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 تُعد [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) مشابهة من حيث الفكرة للعروض المادية في قواعد بيانات OLTP التقليدية؛ إذ تخزّن ناتج استعلام محدد لسرعة استرجاعه وتقليل الحاجة إلى إعادة تنفيذ الاستعلامات كثيفة الاستهلاك للموارد بشكل متكرر. وعلى عكس [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) في ClickHouse، يتطلب هذا النوع تنفيذ الاستعلام دوريًا على مجموعة البيانات كاملة، ثم تخزين نتائجه في جدول هدف للاستعلام عنها. ومن الناحية النظرية، ينبغي أن تكون مجموعة النتائج هذه أصغر من مجموعة البيانات الأصلية، مما يتيح تنفيذ الاستعلامات اللاحقة بسرعة أكبر.
 
 يوضح المخطط التالي آلية عمل العروض المادية القابلة للتحديث:
 
-<div className="ch-image-lg">
-  <Frame>
-    ![مخطط العرض المادي القابل للتحديث](/images/materialized-view/refreshable-materialized-view-diagram.webp)
-  </Frame>
-</div>
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="مخطط العرض المادي القابل للتحديث" />
 
 يمكنك أيضًا مشاهدة الفيديو التالي:
 
@@ -23,7 +21,7 @@ doc_type: 'guide'
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## متى ينبغي استخدام العروض المادية القابلة للتحديث؟ {#when-should-refreshable-materialized-views-be-used}
+  ## متى ينبغي استخدام العروض المادية القابلة للتحديث؟
 </div>
 
 تُعد العروض المادية التزايدية في ClickHouse قوية للغاية، وعادةً ما تكون قابليتها للتوسع أفضل بكثير من النهج المستخدم في العروض المادية القابلة للتحديث، خاصةً في الحالات التي يلزم فيها إجراء aggregation على جدول واحد. فمن خلال احتساب aggregation فقط لكل block من البيانات عند insertه، ثم دمج الحالات التزايدية في الجدول النهائي، لا يُنفَّذ الـ query إلا على مجموعة فرعية من البيانات. ويمكن لهذا الأسلوب أن يتوسع ليصل إلى بيتابايتات من البيانات، وهو عادةً الأسلوب المفضل.
@@ -57,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟ {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟
 </div>
 
 لمعرفة وقت آخر تحديث للعرض المادي القابل للتحديث، يمكنك الاستعلام عن جدول النظام [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes)، كما هو موضح أدناه:
@@ -76,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## كيف يمكنني تغيير معدل التحديث؟ {#how-can-i-change-the-refresh-rate}
+  ## كيف يمكنني تغيير معدل التحديث؟
 </div>
 
 لتغيير معدل التحديث لعرض مادي قابل للتحديث، استخدم صيغة [`ALTER TABLE...MODIFY REFRESH`](/ar/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -95,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## استخدام `APPEND` لإضافة صفوف جديدة {#using-append-to-add-new-rows}
+  ## استخدام `APPEND` لإضافة صفوف جديدة
 </div>
 
 تتيح لك وظيفة `APPEND` إضافة صفوف جديدة إلى نهاية الجدول بدلًا من استبدال العرض بأكمله.
@@ -201,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## أمثلة {#examples}
+  ## أمثلة
 </div>
 
 لنرَ الآن كيفية استخدام العروض المادية القابلة للتحديث مع بعض مجموعات البيانات النموذجية.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 يوضح [دليل إزالة تطبيع البيانات](/ar/guides/clickhouse/data-modelling/denormalization) تقنيات متنوعة لإزالة تطبيع البيانات باستخدام مجموعة بيانات Stack Overflow. نملأ هذه الجداول بالبيانات التالية: `votes` و`users` و`badges` و`posts` و`postlinks`.
@@ -259,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 في [دليل تكامل dbt وClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index)، ملأنا مجموعة بيانات IMDb بالجداول التالية: `actors` و`directors` و`genres` و`movie_directors` و`movies` و`roles`.

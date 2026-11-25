@@ -6,13 +6,17 @@ title: 'Руководство по настройке AlloyDB Postgres как �
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <div id="supported-versions">
-  ## Поддерживаемые версии {#supported-versions}
+  ## Поддерживаемые версии
 </div>
 
 Чтобы передавать данные из экземпляра AlloyDB в ClickHouse Cloud с помощью ClickPipes, ваш экземпляр должен быть настроен для **логической репликации**. Это поддерживается **начиная с AlloyDB версии 14**.
 
-## Включите логическую репликацию {#enable-logical-replication}
+<div id="enable-logical-replication">
+  ## Включите логическую репликацию
+</div>
 
 Чтобы проверить, включена ли логическая репликация в вашем экземпляре AlloyDB, выполните следующий запрос на основном экземпляре:
 
@@ -28,24 +32,16 @@ SHOW  wal_level;
 
 Чтобы включить эти флаги:
 
-1. В консоли Google Cloud перейдите на страницу AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). В меню **Actions** для основного экземпляра нажмите **Изменить**.
+1. В консоли Google Cloud перейдите на страницу AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). В меню **Actions** для основного экземпляра нажмите **Edit**.
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Изменение конфигурации основного экземпляра](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="Изменение конфигурации основного экземпляра" size="lg" border />
 
 2. Прокрутите страницу вниз до раздела **Advanced configuration options** и разверните его. В разделе **Flags** нажмите **Add a database flag**.
 
    * Добавьте флаг [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) и установите для него значение `on`
    * Добавьте флаг [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) и установите для него значение `on`
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Установка флагов allowdb.enable_pglogical и alloydb.logical_decoding в значение on](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="Установка флагов allowdb.enable_pglogical и alloydb.logical_decoding в значение on" size="lg" border />
 
 3. Нажмите **Update instance**, чтобы сохранить изменения конфигурации. Важно: это действие **приводит к перезапуску основного экземпляра.**
 
@@ -57,13 +53,11 @@ SHOW  wal_level;
 
    Результат должен быть `logical`.
 
-   <div className="ch-image-lg">
-     <Frame>
-       ![Проверка того, что логическая репликация включена](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
-     </Frame>
-   </div>
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="Проверка того, что логическая репликация включена" size="lg" border />
 
-## Создайте пользователя ClickPipes и настройте разрешения для репликации {#create-a-clickpipes-user-and-manage-replication-permissions}
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## Создайте пользователя ClickPipes и настройте разрешения для репликации
+</div>
 
 Подключитесь к своему экземпляру AlloyDB от имени администратора и выполните следующие команды:
 
@@ -99,15 +93,17 @@ SHOW  wal_level;
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-* Чтобы создать публикацию для всех таблиц в определённой схеме:
+  * Чтобы создать публикацию для всех таблиц в определённой схеме:
 
-  ```sql
-  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-  ```
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
 
 Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не планируете реплицировать каждую таблицу, поскольку включение ненужных таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
 
-## Настройка сетевого доступа {#configure-network-access}
+<div id="configure-network-access">
+  ## Настройка сетевого доступа
+</div>
 
 Затем выберите способ подключения ClickPipes к экземпляру AlloyDB.
 
@@ -123,11 +119,7 @@ SHOW  wal_level;
 
     3. Установите флажок **Enable Public IP**, чтобы разрешить подключения к экземпляру через общедоступный интернет. В разделе **Authorized external networks** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развёрнут ваш сервис.
 
-       <div className="ch-image-lg">
-         <Frame>
-           ![Настройка сети для публичного доступа со списком разрешённых IP-адресов](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
-         </Frame>
-       </div>
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="Настройка сети для публичного доступа со списком разрешённых IP-адресов" size="lg" border />
 
     <Note>
       AlloyDB ожидает, что адреса будут указаны в [нотации CIDR](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). Вы можете привести предоставленный список статических IP-адресов ClickPipes к этому формату, добавив `/32` к каждому адресу.
@@ -152,7 +144,7 @@ SHOW  wal_level;
 </Tabs>
 
 <div id="whats-next">
-  ## Что дальше? {#whats-next}
+  ## Что дальше?
 </div>
 
 Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/postgres/index) и начать ингестию данных из вашего экземпляра Postgres в ClickHouse Cloud.

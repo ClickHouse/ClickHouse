@@ -12,7 +12,6 @@
 #include <IO/copyData.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTFormatting.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/obfuscateQueries.h>
@@ -27,9 +26,7 @@
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/WindowFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <WindowFunctions/registerWindowFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
@@ -85,7 +82,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
-            ("wrap_width", po::value<size_t>()->default_value(0), "wrap multiline queries at this display width (0 disables wrapping)")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
@@ -117,7 +113,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool quiet = options.contains("quiet");
         bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        size_t wrap_width = options["wrap_width"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
         bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");
@@ -182,7 +177,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         registerInterpreters();
         registerFunctions();
         registerAggregateFunctions();
-        registerWindowFunctions();
         registerTableFunctions();
         registerDatabases();
         registerStorages();
@@ -246,7 +240,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                 if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
-                    || WindowFunctionFactory::instance().isWindowFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
@@ -305,11 +298,13 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
 
+                        WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        String formatted_query = formatASTWithWrapping(*res, settings, wrap_width);
+                        res->format(query_buf, settings);
+                        String formatted_query = query_buf.str();
 #if USE_REPLXX
                         if (hilite)
                             formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
@@ -361,8 +356,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        String formatted_query = formatASTWithWrapping(*res, settings, wrap_width);
-                        str_buf.write(formatted_query.data(), formatted_query.size());
+                        res->format(str_buf, settings);
 
                         if (insert_query_payload)
                         {
@@ -370,7 +364,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             copyData(*insert_query_payload, str_buf);
                         }
 
-                        formatted_query = str_buf.str();
+                        String formatted_query = str_buf.str();
 #if USE_REPLXX
                         if (hilite)
                             formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);

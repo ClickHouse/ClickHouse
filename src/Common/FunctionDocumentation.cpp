@@ -37,7 +37,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         if (type == "NULL")
             result += "`](/reference/syntax#null)";
         else if (type == "Any")
-            result += "`](/reference/data-types/index)";
+            result += "`](/reference/data-types)";
         else if (type == "String" || type == "String literal")
             result += "`](/reference/data-types/string)";
         else if (type.starts_with("FixedString"))
@@ -117,7 +117,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         else if (type == "Nothing")
             result += "`](/reference/data-types/special-data-types/nothing)";
         else if (type.starts_with("Nested")) /// "Nested(N1 T1, N2 T2, ...)", ...
-            result += "`](/reference/data-types/nested-data-structures/index)";
+            result += "`](/reference/data-types/nested-data-structures)";
         else if (type == "Dynamic")
             result += "`](/reference/data-types/dynamic)";
         else if (type == "JSON")
@@ -278,8 +278,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Internal, "Internal"},
 
         {Category::AggregateFunction, "Aggregate Functions"},
-        {Category::TableFunction, "Table Functions"},
-        {Category::WindowFunction, "Window Functions"}
+        {Category::TableFunction, "Table Functions"}
     };
 
     if (auto it = category_to_string.find(category); it != category_to_string.end())

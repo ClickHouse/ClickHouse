@@ -53,18 +53,6 @@ FixedString 型のカラムでは、Binary ではなく Arrow FIXED&#95;SIZE&#95
 
 出力時に LowCardinality 型を Dictionary Arrow 型として有効にします
 
-## output_format_arrow_max_record_batch_size_bytes {#output_format_arrow_max_record_batch_size_bytes}
-
-<SettingsInfoBlock type="UInt64" default_value="2147483646" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "2147483646"},{"label": "`Arrow` および `ArrowStream` 出力における 1 つのレコードバッチのサイズを制限する新しい設定です。デフォルト値は Arrow 自体のアドレス指定上限であるため、動作は変わりません。"}]}]} />
-
-`Arrow` および `ArrowStream` 出力フォーマットにおける単一のレコードバッチ、ならびに `Vortex` 出力フォーマットの書き込み元となる Arrowレコードバッチについて、`Utf8`、`Binary`、`List` バッファのサイズ上限を指定します。文字列、バイナリ値、またはリストの要素がこの値を超えるブロックは、複数のレコードバッチに分けて書き込まれます。
-
-小さなブロックをまとめるための目標値である [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ja/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes) とは異なり、この設定は大きなブロックを分割するための上限です。Arrow はこれらのバッファのオフセットを 32 ビット整数で表すため、デフォルト値は Arrow がアドレス指定できる最大値になっています。これより大きな値を指定しても効果はありません。
-
-制限の対象となるのは上記のバッファのみです。固定幅型のカラムにはオーバーフローし得るオフセットがないため、1 つのバッチに収まったままになります。また、単一の行が分割されることもないため、上限を超える行がある場合は、上限を超えるバッチがそのまま生成されます。
-
 ## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -153,18 +141,9 @@ Arrow フォーマットの辞書索引には、常に 64 ビット整数を使�
 
 Arrow format の辞書の索引に符号付き整数を使用します
 
-## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "UUID を `arrow.uuid` 拡張型を使わずに通常の FixedSizeBinary(16) として書き込むための新しい設定。"}]}]} />
-
-`UUID` 値を、フィールドのメタデータに `arrow.uuid` 拡張型を付与せず、通常の Arrow `FixedSizeBinary(16)` として書き込みます。
-`arrow.uuid` 拡張型に対応していない Arrow リーダー向けに使用してください。
-
 ## output_format_avro_codec {#output_format_avro_codec}
 
-出力時に使用する圧縮コーデック。設定可能な値: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;, &#39;bzip2&#39;, &#39;xz&#39;。
+出力時に使用する圧縮コーデック。設定可能な値: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;。
 
 ## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
@@ -216,7 +195,7 @@ String 型のカラムでは、Binary ではなく BSON String 型を使用し�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "クエリ出力の圧縮レベルを変更できるようになりました"}]}]} />
 
-クエリ出力が圧縮される場合のデフォルトの圧縮レベルです。この設定は、`SELECT` クエリで `INTO OUTFILE` を使用する場合、またはテーブル関数 `file`、`url`、`hdfs`、`s3`、`azureBlobStorage` に書き込む場合に適用されます。また、`gzip` および `deflate` 以外の方式で圧縮された HTTPリクエストへの応答にも適用されます (`gzip` と `deflate` の場合は [http&#95;zlib&#95;compression&#95;level](/ja/reference/settings/session-settings/http#http_zlib_compression_level) が使用されます) 。
+クエリ出力が圧縮される場合のデフォルトの圧縮レベルです。この設定は、`SELECT` クエリで `INTO OUTFILE` を使用する場合、またはテーブル関数 `file`、`url`、`hdfs`、`s3`、`azureBlobStorage` に書き込む場合に適用されます。
 
 設定可能な値: `1` ～ `22`
 
@@ -752,8 +731,8 @@ Parquet ブルームフィルタで、個々の一意な値に使用するビッ
 Parquetファイル内でブルームフィルタをどこに配置するかを指定します。ブルームフィルタは、おおよそこのサイズごとにまとめて書き込まれます。具体的には、次のとおりです。
 
 * 0 の場合、各行グループのブルームフィルタは、その行グループの直後に書き込まれます。
-* すべてのブルームフィルタの合計サイズより大きい場合、すべての行グループのブルームフィルタはメモリ内に蓄積され、その後ファイル末尾付近にまとめて書き込まれます。
-* それ以外の場合、ブルームフィルタはメモリ内に蓄積され、合計サイズがこの値を超えるたびに書き出されます。
+  * すべてのブルームフィルタの合計サイズより大きい場合、すべての行グループのブルームフィルタはメモリ内に蓄積され、その後ファイル末尾付近にまとめて書き込まれます。
+  * それ以外の場合、ブルームフィルタはメモリ内に蓄積され、合計サイズがこの値を超えるたびに書き出されます。
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -809,14 +788,6 @@ FixedString 型のカラムでは、Binary ではなく Parquet FIXED&#95;LEN&#9
 
 Geoカラムの情報をParquetメタデータに書き込み、カラムをWKB形式でエンコードできるようにします。
 
-## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
-
-WKB として書き込まれる geo カラム (`output_format_parquet_geometadata` を参照) に Parquet の `GEOMETRY` 論理型のアノテーションを付与し、min/max 統計の代わりに `GeospatialStatistics` (バウンディングボックスとジオメトリ型) を書き込みます。この論理型をサポートするリーダーは、GeoParquet の `geo` メタデータがなくても、これらのカラムをジオメトリとして認識します。`output_format_parquet_geometadata` が無効の場合、この設定は効果がありません。また、`Geometry` カラムも GeoParquet の `geo` メタデータに記述され、その際のジオメトリ型のリストは空になります。無効にした場合、これらのカラムは地理空間アノテーションなし、かつ min/max 統計付きの `BYTE_ARRAY` として書き込まれ、`Geometry` カラムは `geo` メタデータに記述されません。この論理型を認識しないリーダー (例: バージョン 20 より前の Arrow C++ や `pyarrow`) ではファイル全体を開けなくなるため、デフォルトでは無効になっています。
-
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -851,14 +822,6 @@ Parquetのエンコードを複数スレッドで行います。
 
 String 型のカラムでは、Binary ではなく Parquet String 型を使用します。
 
-## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
-
-`Float32` および `Float64` カラム (Parquet の `FLOAT` および `DOUBLE`) を `ALP` (Adaptive Lossless floating-Point) エンコーディングでエンコードします。`ALP` はロスレスであり、10 進数的な値を持つ浮動小数点データ (価格、測定値、座標など) を `PLAIN` よりもはるかに効率よく圧縮します。これらのカラムは辞書を使用せずに書き込まれ、`ALP` を使うと `PLAIN` よりもサイズが大きくなるページは `PLAIN` で書き込まれます。このエンコーディングは Parquet形式に最近追加されたばかりであるため、まだすべての Parquet リーダーがサポートしているわけではありません。ファイルを読み込むリーダーがこのエンコーディングに対応している場合にのみ有効化してください。
-
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -882,16 +845,6 @@ Parquet ファイルにブルームフィルタを書き込みます。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
 Parquet のページヘッダーに crc32 チェックサムを書き込みます。
-
-## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet の `FILE` 論理型のフィールドを持つ名前付き `Tuple` を、`FILE` アノテーション付きグループとして書き込むための新しい設定。"}]}]} />
-
-要素名がすべて Parquet の `FILE` 論理型のフィールド (`uri`、`offset`、`size`、`content_type`、`checksum`、`inline`。空でない任意の部分集合を任意の順序で指定可能) である名前付き `Tuple` を、`FILE` 論理型のアノテーションが付いたグループとして書き込みます。このグループは、インラインまたは外部ファイルに保存されたバイト範囲への参照を表します。`offset` 要素と `size` 要素は整数でなければならず (`INT64` として書き込まれます) 、その他の要素は `String` または `FixedString` でなければなりません (`inline` はアノテーションなしの `BYTE_ARRAY` として、それ以外は `STRING` として書き込まれます) 。仕様の要件に従い、すべてのフィールドは `OPTIONAL` として書き込まれます。値は有効な参照になっているかどうかを確認せず、そのまま書き込まれます。
-
-読み込み時には、`FILE` アノテーション付きグループは常に、`Nullable` 要素から成る上記のような `Tuple` として読み込まれます。
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
@@ -1223,14 +1176,6 @@ true に設定すると、TSV フォーマットの行末は \n ではなく \r\
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "true の場合は ' を '' にエスケープし、そうでない場合は \\' でクォートします"}]}]} />
 
 true の場合は &#39; を &#39;&#39; にエスケープし、そうでない場合は \&#39; でクォートします
-
-## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`Vortex` フォーマットの `String` 型のカラムを `Utf8` として書き込むための新しい設定。Vortex は `Utf8` を `Binary` よりも効率よく圧縮できます。"}]}]} />
-
-`Vortex` フォーマットの `String` 型のカラムを、`Binary` ではなく `Utf8` として書き込みます。Vortex は `Utf8` をより効率よく圧縮します。`Utf8` の値は有効なUTF-8である必要がありますが、Vortex のライターはこれをチェックしません。そのため ClickHouse がすべての値をチェックし、有効なUTF-8でない値があれば例外をスローします。そのようなデータを `Binary` として書き込むには、この設定を無効化してください。`FixedString` カラムは常に `Binary` として書き込まれます。どちらの型も読み込み時には `String` として読み戻されます。
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

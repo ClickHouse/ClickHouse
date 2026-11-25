@@ -6,7 +6,7 @@ toc_priority: 26
 toc_title: '소개'
 title: '테이블 엔진'
 sidebarTitle: '개요'
-doc_type: 'reference'
+doc_type: '참고'
 ---
 
 테이블 엔진(테이블의 유형)은 다음을 결정합니다:
@@ -18,9 +18,13 @@ doc_type: 'reference'
 * 요청을 멀티스레드로 실행할 수 있는지 여부
 * 데이터 복제 매개변수
 
-## 엔진 계열 {#engine-families}
+<div id="engine-families">
+  ## 엔진 계열
+</div>
 
-### MergeTree {#mergetree}
+<div id="mergetree">
+  ### MergeTree
+</div>
 
 고부하 작업에 가장 범용적이고 기능이 풍부한 테이블 엔진입니다. 이 엔진들의 공통적인 특징은 데이터를 빠르게 삽입한 뒤 백그라운드에서 후속 처리를 수행한다는 점입니다. `MergeTree` 계열 엔진은 데이터 복제([Replicated*](/ko/reference/engines/table-engines/mergetree-family/replication) 버전의 엔진 사용), 파티셔닝, 보조 데이터 스키핑 인덱스, 그리고 다른 엔진에서는 지원되지 않는 기타 기능을 지원합니다.
 
@@ -42,7 +46,9 @@ doc_type: 'reference'
 | [Replicated* 테이블 엔진](/ko/reference/engines/table-engines/mergetree-family/replication)                            |
 | [텍스트 인덱스를 사용한 전문 검색](/ko/reference/engines/table-engines/mergetree-family/textindexes)                            |
 
-### Log {#log}
+<div id="log">
+  ### Log
+</div>
 
 최소한의 기능만 제공하는 경량 [엔진](/ko/reference/engines/table-engines/log-family/index)입니다. 많은 수의 작은 테이블(약 100만 행 이하)을 빠르게 생성하고, 나중에 이를 통째로 읽어야 할 때 가장 효과적입니다.
 
@@ -55,7 +61,9 @@ doc_type: 'reference'
 | [StripeLog](/ko/reference/engines/table-engines/log-family/stripelog) |
 | [Log](/ko/reference/engines/table-engines/log-family/log)             |
 
-### 통합 엔진 {#integration-engines}
+<div id="integration-engines">
+  ### 통합 엔진
+</div>
 
 다른 데이터 저장 및 처리 시스템과 연동하기 위한 엔진입니다.
 
@@ -91,7 +99,9 @@ doc_type: 'reference'
 | [SQLite](/ko/reference/engines/table-engines/integrations/sqlite)                                  |
 | [YTsaurus](/ko/reference/engines/table-engines/integrations/ytsaurus)                              |
 
-### 특수 엔진 {#special-engines}
+<div id="special-engines">
+  ### 특수 엔진
+</div>
 
 이 계열에 속한 엔진:
 
@@ -116,7 +126,9 @@ doc_type: 'reference'
 | [KeeperMap](/ko/reference/engines/table-engines/special/keepermap)     |
 | [FileLog](/ko/reference/engines/table-engines/special/filelog)         |
 
-## 가상 컬럼 {#table_engines-virtual_columns}
+<div id="table_engines-virtual_columns">
+  ## 가상 컬럼
+</div>
 
 가상 컬럼은 엔진 소스 코드에 정의되는 테이블 엔진의 고유 속성입니다.
 
@@ -124,7 +136,7 @@ doc_type: 'reference'
 
 가상 컬럼의 데이터를 선택하려면 `SELECT` 쿼리에서 해당 이름을 명시해야 합니다. `SELECT *`는 가상 컬럼의 값을 반환하지 않습니다.
 
-테이블의 가상 컬럼 중 하나와 같은 이름의 컬럼을 사용해 테이블을 생성하면 해당 가상 컬럼에 접근할 수 없게 됩니다. 이는 권장되지 않습니다. 충돌을 방지하기 위해 가상 컬럼 이름에는 일반적으로 밑줄 접두사가 붙습니다. `MergeTree` 엔진 계열 테이블에서는 `allow_reserved_column_names` 설정이 활성화되어 있지 않으면 이러한 컬럼이 거부됩니다.
+테이블의 가상 컬럼 중 하나와 같은 이름의 컬럼을 사용해 테이블을 생성하면 해당 가상 컬럼에 접근할 수 없게 됩니다. 이는 권장되지 않습니다. 충돌을 방지하기 위해 가상 컬럼 이름에는 일반적으로 밑줄 접두사가 붙습니다.
 
 * `_table` — 데이터를 읽어온 테이블의 이름을 포함합니다. 유형: [String](/ko/reference/data-types/string).
 

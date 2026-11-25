@@ -52,12 +52,12 @@ public:
         expressions.pop_back();
     }
 
-    [[nodiscard]] [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
+    [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
         return expressions.front();
     }
 
-    [[nodiscard]] const QueryTreeNodePtr & getTop() const
+    const QueryTreeNodePtr & getTop() const
     {
         return expressions.back();
     }
@@ -69,7 +69,7 @@ public:
         return expressions[n];
     }
 
-    [[nodiscard]] [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
+    [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);
     }
@@ -82,12 +82,12 @@ public:
       * function only identify GROUP BY keys and are compared with them in their original form
       * by `GroupingFunctionsResolvePass`.
       */
-    [[nodiscard]] bool hasAggregateOrGroupingFunction() const
+    bool hasAggregateOrGroupingFunction() const
     {
         return aggregate_or_grouping_functions_counter > 0;
     }
 
-    [[nodiscard]] QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
+    QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
     {
         auto expression_it = alias_name_to_expressions.find(alias);
         if (expression_it == alias_name_to_expressions.end())
@@ -101,12 +101,12 @@ public:
         return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
     }
 
-    [[nodiscard]] [[maybe_unused]] size_t size() const
+    [[maybe_unused]] size_t size() const
     {
         return expressions.size();
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         return expressions.empty();
     }
@@ -128,7 +128,7 @@ public:
         }
     }
 
-    [[nodiscard]] [[maybe_unused]] String dump() const
+    [[maybe_unused]] String dump() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);
@@ -140,11 +140,11 @@ private:
     static bool isAggregateOrGroupingFunction(const FunctionNode & function)
     {
         /// A window function is evaluated after aggregation: its arguments and window specification see GROUP BY keys
-        /// already converted to Nullable. `isWindowCall` tests only the window child, so it holds before resolution.
+        /// already converted to Nullable. `isWindowFunction` tests only the window child, so it holds before resolution.
         /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
         /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
         return (AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
-                && !function.isWindowCall())
+                && !function.isWindowFunction())
             || function.getFunctionName() == "grouping";
     }
 

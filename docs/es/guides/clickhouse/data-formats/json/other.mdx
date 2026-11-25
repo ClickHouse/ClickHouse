@@ -14,7 +14,9 @@ doc_type: 'reference'
   Se pueden aplicar distintas técnicas a diferentes objetos dentro del mismo esquema. Por ejemplo, algunos objetos pueden resolverse mejor con un tipo `String` y otros con un tipo `Map`. Tenga en cuenta que, una vez que se usa un tipo `String`, ya no es necesario tomar más decisiones sobre el esquema. Por el contrario, es posible anidar subobjetos dentro de una clave `Map`, incluido un `String` que represente JSON, como se muestra a continuación:
 </Info>
 
-## Uso del tipo String {#using-string}
+<div id="using-string">
+  ## Uso del tipo String
+</div>
 
 Si los objetos son muy dinámicos, no tienen una estructura predecible y contienen objetos anidados arbitrarios, debe usar el tipo `String`. Los valores pueden extraerse en tiempo de consulta mediante funciones JSON, como se muestra a continuación.
 
@@ -37,7 +39,7 @@ CREATE TABLE people
     `tags` String
 )
 ENGINE = MergeTree
-ORDER BY username;
+ORDER BY username
 
 INSERT INTO people FORMAT JSONEachRow
 {"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
@@ -165,7 +167,9 @@ Las funciones de String son considerablemente más lentas (&gt; 10x) que las con
 
 La flexibilidad de este enfoque tiene un claro coste en términos de rendimiento y sintaxis, y solo debe utilizarse para objetos muy dinámicos en el esquema.
 
-### Funciones JSON simples {#simple-json-functions}
+<div id="simple-json-functions">
+  ### Funciones JSON simples
+</div>
 
 Los ejemplos anteriores usan la familia de funciones JSON*. Estas utilizan un parser JSON completo basado en [simdjson](https://github.com/simdjson/simdjson), que realiza un parsing riguroso y distingue entre el mismo campo anidado en distintos niveles. Estas funciones pueden manejar JSON sintácticamente correcto pero mal formateado; por ejemplo, con espacios dobles entre claves.
 

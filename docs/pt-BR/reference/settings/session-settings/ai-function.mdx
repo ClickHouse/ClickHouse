@@ -52,25 +52,6 @@ Número máximo de textos a serem incluídos em uma única requisição HTTP fei
 
 Número máximo de requisições HTTP que as funções de IA podem encaminhar em uma consulta. 0 (padrão) desabilita o limite. Aplicado independentemente por cada servidor e fragmento de consulta: em um contexto de execução, é um limite exato compartilhado por todas as funções de IA, blocos e threads nele, mas uma consulta distribuída (entre shards ou fragmentos de réplicas paralelas) pode encaminhar até esse número de requisições por shard/fragmento. Deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada.
 
-## ai_function_max_concurrent_requests_per_thread {#ai_function_max_concurrent_requests_per_thread}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "Nova configuração"}]}]} />
-
-Número máximo de requisições ao provedor que uma thread de consulta pode manter em andamento simultaneamente. Com `1`, as requisições são enviadas uma de cada vez.
-
-Uma consulta executada em várias threads (no máximo `max_threads`) pode ter até esse número de requisições em andamento por thread. Use uma [restrição de perfil de configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) para definir um limite que a consulta não possa aumentar. O limite continua sendo por thread.
-
-Um valor acima de `1` enfraquece duas garantias:
-
-* O uso de tokens de uma requisição só é conhecido quando a resposta chega, portanto as cotas de tokens (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) podem ser ultrapassadas no equivalente a uma requisição para cada requisição em andamento — ou seja, no equivalente a até esse número de requisições, e não apenas a uma.
-* Uma leva inteira de requisições é encaminhada antes que qualquer erro delas seja detectado, portanto uma consulta que falha já na primeira linha ainda pode ter enviado até esse número de requisições, e ter sido cobrada por elas.
-
-`ai_function_max_api_calls_per_query` não é afetada e continua sendo um limite exato, pois um slot é reservado antes que cada requisição seja encaminhada.
-
 ## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
 
 <BetaBadge />
@@ -79,7 +60,7 @@ Um valor acima de `1` enfraquece duas garantias:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nova configuração"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "As cotas por consulta das funções de IA estão desabilitadas por padrão: 0 significa que não há limite."}]}]} />
 
-Número máximo total de tokens de entrada (`prompt`) em todas as chamadas de API da função de IA em uma única consulta, incluindo leituras e gravações de cache. 0 (padrão) desabilita o limite. O total é contabilizado de forma cumulativa com base nas respostas dos provedores. Observe que esse limite pode ser excedido pelo volume de tokens de entrada de até uma chamada por requisição em andamento, já que os tokens de entrada de uma chamada não são conhecidos até que sua resposta chegue. Assim como as outras cotas de IA, ele é aplicado por servidor / fragmento de consulta, não sendo somado em uma consulta distribuída, e deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada.
+Número máximo total de tokens de entrada (`prompt`) em todas as chamadas de API da função de IA em uma única consulta. 0 (padrão) desabilita o limite. O total é contabilizado de forma cumulativa com base nas respostas dos provedores. Observe que esse limite pode ser excedido pelo volume de tokens de entrada de até uma chamada por solicitação em andamento, já que os tokens de entrada de uma chamada não são conhecidos até que sua resposta chegue. Assim como as outras cotas de IA, ele é aplicado por servidor / fragmento de consulta, não sendo somado em uma consulta distribuída, e deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada.
 
 Esse limite só é aplicado a provedores que informam um objeto `usage` na resposta (OpenAI, Anthropic, vLLM). Provedores que omitem o uso de tokens (principalmente o HuggingFace TEI) fazem com que o contador permaneça em 0 — use `ai_function_max_api_calls_per_query` para limitar essas chamadas.
 
@@ -99,11 +80,11 @@ Esse limite só é aplicado a provedores que informam um objeto `usage` na respo
 
 <BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="3" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Por padrão, tenta novamente uma vez em caso de erro transitório da API, para que um único 429 ou 5xx do provedor não faça a consulta falhar."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Por padrão, tenta novamente até três vezes em caso de erro transitório da API, para reduzir a carga sobre um provedor sobrecarregado e com limite de taxa em cenários de requisições concorrentes."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Por padrão, tenta novamente uma vez em caso de erro transitório da API, para que um único 429 ou 5xx do provedor não faça a consulta falhar."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Número máximo de retentativas para erros transitórios por requisição individual à API. Cada retentativa usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`. No máximo 5.
+Número máximo de retentativas para erros transitórios por solicitação individual à API. Cada retentativa usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
 
 ## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
 
@@ -123,7 +104,7 @@ Timeout em segundos para requisições HTTP individuais feitas por funções de 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Nova configuração"}]}]} />
 
-Atraso inicial, em milissegundos, antes da primeira retentativa de uma requisição à API com falha da função de IA. O atraso dobra a cada tentativa subsequente (backoff exponencial). Por exemplo, com as configurações padrão: 1000ms, 2000ms, 4000ms. No máximo 10000.
+Atraso inicial, em milissegundos, antes da primeira retentativa de uma solicitação de API com falha da função de IA. O atraso dobra a cada tentativa subsequente (backoff exponencial). Por exemplo, com as configurações padrão: 1000ms, 2000ms, 4000ms.
 
 ## ai_function_text_default_credentials {#ai_function_text_default_credentials}
 

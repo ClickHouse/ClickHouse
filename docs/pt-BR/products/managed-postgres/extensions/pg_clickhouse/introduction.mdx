@@ -2,7 +2,7 @@
 sidebarTitle: 'Introdução'
 description: 'Execute consultas analíticas no ClickHouse diretamente do PostgreSQL sem precisar reescrever o SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'documentação do pg_clickhouse'
+title: 'documentação de referência do pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extensão']
 ---
@@ -65,8 +65,6 @@ com 36 GB de memória.
 | [Query 20] |     473 ms |             28 ms |          |
 | [Query 21] |    1145 ms |           4470 ms |          |
 | [Query 22] |     270 ms |             45 ms |     ✼    |
-
-## Instalação {#installation}
 
 ### Compilar a partir do código-fonte {#compile-from-source}
 
@@ -212,42 +210,6 @@ Você precisa executar a suíte de testes com um superusuário, como o superusu�
 make installcheck PGUSER=postgres
 ```
 
-### CloudNativePG {#cloudnativepg}
-
-Adicione o pg&#95;clickhouse a um cluster [CloudNativePG] usando [ExtensionConfiguration]:
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: cluster-example
-spec:
-  # ... <snip>
-  postgresql:
-    # ExtensionConfiguration
-    extensions:
-      - name: pg_clickhouse
-        image:
-        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
-```
-
-Para carregá-la em um banco de dados, use [ExtensionSpec]:
-
-```yaml
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: pg_clickhouse-cluster
-spec:
-  name: app
-  owner: app
-  cluster:
-    name: pg_clickhouse-cluster
-  extensions:
-    - name: pg_clickhouse
-      version: {pg_clickhouse_version}
-```
-
 ### Carregando {#loading}
 
 Depois que `pg_clickhouse` estiver instalado, você poderá adicioná-lo a um banco de dados conectando-se
@@ -283,6 +245,8 @@ de adicionar recursos de DML. Nosso roadmap:
 * Permitir configurações do ClickHouse no nível do servidor e da sessão via CREATE SERVER
   e GUCs
 * Oferecer suporte a todos os tipos de dados do ClickHouse
+* Oferecer suporte a DELETEs leves e UPDATEs
+* Oferecer suporte à inserção em lote via COPY
 * Adicionar uma função para executar uma consulta arbitrária do ClickHouse e retornar seus
   resultados como uma tabela
 * Adicionar suporte ao pushdown de consultas UNION quando todas forem executadas no
@@ -293,7 +257,6 @@ de adicionar recursos de DML. Nosso roadmap:
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
-* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -339,14 +302,6 @@ de adicionar recursos de DML. Nosso roadmap:
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: funções de regex compatíveis com ClickHouse usando RE2"
-
-[CloudNativePG]: https://cloudnative-pg.io/ "Execute o PostgreSQL do jeito Kubernetes"
-
-[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
-
-&quot;Documentação do CloudNativePG: ExtensionConfiguration:
-[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
-&quot;Documentação do CloudNativePG: ExtensionSpec:
 
 [Consulta 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [Consulta 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql

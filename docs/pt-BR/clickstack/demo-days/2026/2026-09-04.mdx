@@ -83,19 +83,19 @@ Essa é a base para paginar a página de alertas mantendo o suporte a busca e fi
 
 ## Um protótipo do Explore {#an-explore-prototype}
 
-*Demonstração por [@elizabetdev](https://github.com/elizabetdev)*
+*Demo por [@elizabetdev](https://github.com/elizabetdev)*
 
 <iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 **Este é um trabalho exploratório, sem compromisso de lançamento.**
 
-O protótipo é uma única página Explore que substituiria tanto a página de busca quanto o explorador de gráficos. Ele está em rascunho no repositório da Interface do ClickStack. Pode substituir essas páginas, pode conviver com elas como uma terceira página, ou pode não dar em nada.
+O protótipo é uma única página Explore que substituiria tanto a página de busca quanto o chart explorer. Ele está em rascunho no repositório do HyperDX. Pode substituir essas páginas, pode conviver com elas como uma terceira página, ou pode não dar em nada.
 
-O problema que ele ataca é a transição entre as duas páginas que temos hoje. Os clientes nos dizem que levar uma pergunta da busca para o explorador de gráficos é incômodo: muitas vezes é preciso selecionar novamente a data source e reconstruir a mesma consulta do outro lado. O Explore mantém tudo em uma única página, alternando a visualização entre events, patterns, deltas e gráficos em vez de trocar a página sob os seus pés.
+O problema que ele ataca é a transição entre as duas páginas que temos hoje. Os clientes nos dizem que levar uma pergunta da busca para o chart explorer é incômodo: muitas vezes é preciso selecionar novamente a data source e reconstruir a mesma consulta do outro lado. O Explore mantém tudo em uma única página, alternando a visualização entre events, patterns, deltas e charts em vez de trocar a página sob os seus pés.
 
-O segundo tema é reduzir a barreira para quem não domina as query languages. Adicionar uma coluna à table, ordenar e escolher um group-by são ações feitas por menus suspensos, e o SQL continua ali quando você quiser. O group-by é um bom exemplo da lacuna atual: o histogram na página de busca é agrupado por status code sem nenhuma forma de alterar isso, então quem quiser um agrupamento diferente precisa recorrer ao explorador de gráficos. Aqui você define o group-by na visualização de events, muda para um gráfico de time series ou de barras quando o histogram pequeno não dá conta, altera a aggregation para algo como `p99` e salva o resultado em um dashboard.
+O segundo tema é reduzir a barreira para quem não domina as query languages. Adicionar uma coluna à table, ordenar e escolher um group-by são ações feitas por menus suspensos, e o SQL continua ali quando você quiser. O group-by é um bom exemplo da lacuna atual: o histogram na página de busca é agrupado por status code sem nenhuma forma de alterar isso, então quem quiser um agrupamento diferente precisa recorrer ao chart explorer. Aqui você define o group-by na visualização de events, muda para um gráfico de time series ou de barras quando o histogram pequeno não dá conta, altera a aggregation para algo como `p99` e salva o resultado em um dashboard.
 
-A barra de filtro é um pequeno query builder que abstrai tanto o Lucene quanto o SQL: escolha um field, escolha um operator e digite um value, com o editor de consultas completo e macros à disposição de usuários avançados. Saber se ter duas query languages é realmente a resposta certa é uma das questões em aberto por aqui.
+A barra de filter é um pequeno query builder que abstrai tanto o Lucene quanto o SQL: escolha um field, escolha um operator e digite um value, com o editor de consultas completo e macros à disposição de usuários avançados. Saber se ter duas query languages é realmente a resposta certa é uma das questões em aberto por aqui.
 
 Muita coisa segue sem resposta. Ainda não há PromQL, e não está decidido se as metrics cabem nessa página ou se isso é pedir demais de uma única página. O protótipo foca na experiência de logs e traces.
 

@@ -10,8 +10,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -54,7 +52,6 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
-#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -90,7 +87,6 @@
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
-#include <Databases/IDatabase.h>
 
 
 namespace ProfileEvents
@@ -104,7 +100,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char sleep_in_logs_flush[];
-    extern const char system_log_flush_throw[];
 }
 
 namespace ServerSetting
@@ -115,7 +110,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -372,9 +366,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
 
     readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
-
-    log_settings.flush_overcommit_wait_time_microseconds
-        = getSystemTableOption<size_t>("flush_overcommit_wait_time_microseconds", config, config_prefix).value_or(5'000'000);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
@@ -671,10 +662,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
-        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
-        if (trace_log && !ignore_errors)
-            TraceCollector::flush();
-
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -739,8 +726,6 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
-            else if (log == trace_log.get())
-                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -784,21 +769,9 @@ void SystemLogs::flushAndShutdown()
 
 void SystemLogs::shutdown()
 {
-    /// Shut down every log even if one of them throws: otherwise the saving threads of the remaining logs are not
-    /// joined. Also, the constructor calls this in its `catch` block, where an exception from here would replace the
-    /// original error.
     auto logs = getAllLogs();
     for (auto & log : logs)
-    {
-        try
-        {
-            log->shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+        log->shutdown();
 }
 
 void SystemLogs::handleCrash()
@@ -848,8 +821,6 @@ SystemLog<LogElement>::SystemLog(
     , storage_def(settings_.engine)
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
-    , flush_overcommit_wait_time_microseconds(settings_.flush_overcommit_wait_time_microseconds)
-    , flush_memory_tracker_description("System log flush of " + table_id.getFullTableName())
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(getSystemTableSkipAliasColumnsOption(context_->getConfigRef())))
 {
     for (const auto * column : {"clickhouse_version", "system_processor"})
@@ -860,8 +831,6 @@ SystemLog<LogElement>::SystemLog(
     if (union_table_merge_rotated_tables || !union_table_cluster.empty())
         union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
     chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
-
-    SystemLogMetrics::createFlushCounters(table_id.getDatabaseName(), table_id.getTableName());
 }
 
 template <typename LogElement>
@@ -938,11 +907,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
             sleepForSeconds(30);
         });
 
-        fiu_do_on(FailPoints::system_log_flush_throw,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to flush system log {}", table_id.getNameForLogs());
-        });
-
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
         /// (new empty table will be created automatically). BTW, flush method
@@ -950,18 +914,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
         prepare_table_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
-
-        /// With its own thread group, the flush (also in pool threads that inherit the group) asks the overcommit tracker
-        /// to stop another query when the server memory limit is reached, instead of failing. It is not in `ProcessList`,
-        /// so it is never stopped itself.
-        ThreadGroupPtr flush_thread_group;
-        if (flush_overcommit_wait_time_microseconds != 0)
-        {
-            flush_thread_group = ThreadGroup::createWithoutQueryContext(getContext());
-            flush_thread_group->memory_tracker.setDescription(flush_memory_tracker_description.c_str());
-            flush_thread_group->memory_tracker.setOvercommitWaitingTime(flush_overcommit_wait_time_microseconds);
-        }
-        ThreadGroupSwitcher thread_group_switcher(flush_thread_group, ThreadName::SYSTEM_LOG_FLUSH);
 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
@@ -1021,17 +973,12 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
-
-        /// This must stay the last statement of the `try` block: if a later statement throws,
-        /// the same flush is counted both as a success and as a failure.
-        SystemLogMetrics::onFlushSuccess(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
     }
     catch (...)
     {
         if (is_manual_flush)
             flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
-        SystemLogMetrics::onFlushFailure(table_id.getDatabaseName(), table_id.getTableName(), flush_size);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
@@ -1257,7 +1204,6 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
-
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
@@ -1414,21 +1360,6 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// with an unlimited query size, so the limit must not fail this internal `ALTER`
         /// (e.g. marking a rotated table as readonly).
         mutable_context->setSetting("max_query_size", Field{UInt64{0}});
-    }
-    else if (query_kind == IAST::QueryKind::Create)
-    {
-        /// Ensure system tables keep a stable schema.
-        /// Disable user-configurable type-related settings to avoid implicit data type changes.
-        /// This applies to the log table as well as to its union table: both are created from
-        /// the same explicit column list, so a session that flips one of these settings would
-        /// otherwise be able to give them different structures, which makes the union table
-        /// mismatch its definition on every check and be recreated on every flush.
-        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
-        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
-        /// defensive: no system log element currently declares a `Nested` column, so it only
-        /// protects future schema additions and cannot be exercised by a regression test today.
-        mutable_context->setSetting("flatten_nested", false);
-        mutable_context->setSetting("data_type_default_nullable", false);
     }
 }
 

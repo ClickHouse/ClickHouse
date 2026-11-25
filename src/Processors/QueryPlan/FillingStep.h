@@ -17,26 +17,23 @@ public:
         InterpolateDescriptionPtr interpolate_description_,
         bool use_with_fill_by_sorting_prefix);
 
-    [[nodiscard]] String getName() const override { return "Filling"; }
+    String getName() const override { return "Filling"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] const SortDescription & getSortDescription() const override { return sort_description; }
-    [[nodiscard]] const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
+    const SortDescription & getSortDescription() const override { return sort_description; }
+    const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    bool isSerializable() const override { return true; }
+    QueryPlanStepPtr clone() const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    /// How many leading `ORDER BY` keys the output is still sorted by.
-    [[nodiscard]] size_t getPreservedSortPrefixSize() const;
 
 private:
     void updateOutputHeader() override;

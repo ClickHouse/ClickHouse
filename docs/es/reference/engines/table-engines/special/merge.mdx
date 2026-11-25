@@ -13,47 +13,37 @@ El motor `Merge` (no debe confundirse con `MergeTree`) no almacena datos por sí
 
 La lectura se paraleliza automáticamente. No se admite la escritura en una tabla. Al leer, se utilizan los índices de las tablas que efectivamente se están leyendo, si existen.
 
-## Crear una tabla {#creating-a-table}
+## Crear una tabla
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Parámetros del motor {#engine-parameters}
+## Parámetros del motor
 
-### `db_name` {#db_name}
+### `db_name`
 
 `db_name` — Valores posibles:
 
 * nombre de la base de datos,
-* expresión constante que devuelve una cadena con el nombre de una base de datos; por ejemplo, `currentDatabase()`,
-* `REGEXP(expression)`, donde `expression` es una expresión regular para hacer coincidir los nombres de las BD.
+  * expresión constante que devuelve una cadena con el nombre de una base de datos; por ejemplo, `currentDatabase()`,
+  * `REGEXP(expression)`, donde `expression` es una expresión regular para hacer coincidir los nombres de las bases de datos.
 
-### `tables_regexp` {#tables_regexp}
+### `tables_regexp`
 
 `tables_regexp` — Una expresión regular para coincidir con los nombres de las tablas en la DB o las DB especificadas.
 
 Expresiones regulares: [re2](https://github.com/google/re2) (admite un subconjunto de PCRE), sensible a mayúsculas y minúsculas.
 Consulte las notas sobre el escape de símbolos en las expresiones regulares en la sección &quot;match&quot;.
 
-## Uso {#usage}
+## Uso
 
 Al seleccionar tablas para leer, la propia tabla `Merge` no se selecciona, aunque coincida con la expresión regular. Esto se hace para evitar bucles.
 Es posible crear dos tablas `Merge` que intenten leer indefinidamente los datos de la otra, pero no es una buena idea.
 
 La forma habitual de usar el motor `Merge` es trabajar con una gran cantidad de tablas `TinyLog` como si fueran una sola tabla.
 
-## Derechos de acceso {#access-rights}
-
-Para leer de una tabla `Merge` se requiere el privilegio [`SELECT`](/es/reference/statements/grant#select) sobre la tabla `Merge` y, en cada tabla subyacente que se lea, sobre las columnas que lea la consulta.
-
-Los datos se leen únicamente de las tablas coincidentes que el usuario actual puede ver, es decir, aquellas sobre las que tiene el privilegio [`SHOW TABLES`](/es/reference/statements/grant#show). Cualquier privilegio sobre una tabla implica `SHOW TABLES` sobre ella. Las tablas coincidentes que el usuario no puede ver se omiten sin generar ningún error ni advertencia. Si el usuario puede ver una tabla coincidente pero no tiene el privilegio `SELECT` sobre ella, la consulta falla con `ACCESS_DENIED`.
-
-Cuando se crea una tabla `Merge` sin lista de columnas, su estructura se deriva únicamente de las tablas coincidentes que puede ver el usuario que la crea, y este necesita el privilegio [`SHOW COLUMNS`](/es/reference/statements/grant#show) sobre las tablas de las que se deriva.
-
-Para leer todas las tablas coincidentes, otorgue el privilegio `SELECT` sobre cada una de ellas. Si quiere que la consulta falle en lugar de omitir una tabla coincidente sobre la que el usuario no tiene el privilegio `SELECT`, otorgue el privilegio `SHOW TABLES` sobre esa tabla.
-
-## Ejemplos {#examples}
+## Ejemplos
 
 **Ejemplo 1**
 
@@ -106,7 +96,7 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## Columnas virtuales {#virtual-columns}
+## Columnas virtuales
 
 * `_table` — El nombre de la tabla desde la que se leyeron los datos. Tipo: [String](/es/reference/data-types/string).
 

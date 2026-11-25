@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', '系统日志', 'systemctl']
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
   **简而言之**
 
-  使用 OpenTelemetry Collector 的 journald receiver 在 ClickStack 中采集并可视化 systemd journal 中的日志。包含演示数据集和预构建仪表板。
+  使用 OpenTelemetry Collector 的 journald receiver 在 ClickStack 中采集并可视化 systemd journal 中的日志。包含演示数据集和预置仪表板。
 </Info>
 
 <div id="existing-systems">
-  ## 与现有系统集成 {#existing-systems}
+  ## 与现有系统集成
 </div>
 
 运行启用了 journald receiver 的 OpenTelemetry Collector，收集系统日志，并通过 OTLP 将其发送到 ClickStack，以监控现有 Linux 系统的 journald 日志。
@@ -24,7 +26,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 如果您想先测试此集成，而不修改现有设置，请跳转到[演示数据集部分](#demo-dataset)。
 
 <div id="prerequisites">
-  ##### 前置条件 {#prerequisites}
+  ##### 前置条件
 </div>
 
 * 正在运行的 ClickStack 实例
@@ -35,16 +37,12 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step title="获取 ClickStack API key" id="get-api-key">
     OpenTelemetry Collector 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要进行身份验证。
 
-    1. 在你的 ClickStack URL 中打开 ClickStack 用户界面 (例如 http://localhost:8080)
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
     2. 创建账户，或按需登录
     3. 进入 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStack API Key](/images/clickstack/api-key.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
 
     5. 将其设置为环境变量：
 
@@ -57,13 +55,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     请确保你的系统使用的是 systemd，并且存在 journal 日志：
 
     ```bash
-    # Check systemd version
+    # 检查 systemd 版本
     systemctl --version
 
-    # View recent journal entries
+    # 查看最近的 journal 条目
     journalctl -n 20
 
-    # Check journal disk usage
+    # 检查 journal 磁盘占用情况
     journalctl --disk-usage
     ```
 
@@ -179,29 +177,23 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="在 ClickStack 用户界面中验证日志" id="verifying-logs">
-    配置完成后，登录 ClickStack 用户界面并确认日志已开始流入：
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
+    配置完成后，登录 HyperDX 并确认日志已开始流入：
 
     1. 进入搜索视图
     2. 将 source 设置为 Logs
     3. 按 `service.name:systemd-logs` 进行过滤
     4. 你应该能看到结构化日志条目，其中包含 `unit`、`priority`、`MESSAGE`、`_HOSTNAME` 等字段
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![日志搜索视图](/images/clickstack/systemd/systemd-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="日志搜索视图" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![日志视图](/images/clickstack/systemd/systemd-log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="日志视图" />
   </Step>
 </Steps>
 
-## 演示数据集 {#demo-dataset}
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
 
 对于希望在配置生产系统之前先测试 systemd 日志集成的用户，我们提供了一个预先生成的 systemd 日志样本数据集，其中包含逼真的日志模式。
 
@@ -267,34 +259,28 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="在 ClickStack 用户界面中验证日志" id="verify-demo-logs">
+  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
     ClickStack 运行后：
 
-    1. 打开 [ClickStack 用户界面](http://localhost:8080/) 并登录你的账户
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户
     2. 进入搜索视图，并将 source 设置为 `Logs`
     3. 将时间范围设置为 **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![日志搜索视图](/images/clickstack/systemd/systemd-search-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="日志搜索视图" />
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![日志视图](/images/clickstack/systemd/systemd-log-view.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="日志视图" />
 
     <Info>
       **时区显示**
 
-      ClickStack 用户界面会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**。更宽的时间范围可确保无论你身在何处，都能看到这些演示日志。
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**。更宽的时间范围可确保无论你身在何处，都能看到这些演示日志。
     </Info>
   </Step>
 </Steps>
 
-## 仪表盘与可视化 {#dashboards}
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
 
 为帮助你快速开始使用 ClickStack 监控 systemd 日志，我们提供了 systemd journal 数据的核心可视化内容。
 
@@ -303,23 +289,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step title="导入预构建仪表板" id="import-dashboard">
-    1. 打开 ClickStack 用户界面并进入仪表盘页面
+  <Step title="导入预置仪表盘" id="import-dashboard">
+    1. 打开 HyperDX 并进入仪表盘页面
     2. 点击右上角省略号菜单中的 **导入仪表盘**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
 
     3. 上传 `systemd-logs-dashboard.json` 文件，然后点击 **完成导入**
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![完成导入](/images/clickstack/systemd/finish-import-systemd.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="完成导入" />
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
@@ -331,11 +309,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 服务故障
     * 错误率
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![仪表盘示例](/images/clickstack/systemd/systemd-logs-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="仪表盘示例" />
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (可根据你的本地时区调整) 。
@@ -344,10 +318,12 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## 故障排查 {#troubleshooting}
+  ## 故障排查
 </div>
 
-### ClickStack 用户界面中没有显示日志 {#no-logs}
+<div id="no-logs">
+  ### HyperDX 中没有显示日志
+</div>
 
 检查日志是否已写入 ClickHouse：
 
@@ -366,7 +342,7 @@ docker logs otel-collector | grep -i "error\|journald" | tail -20
 ```
 
 <div id="journalctl-not-found">
-  ### 找不到 journalctl 错误 {#journalctl-not-found}
+  ### 找不到 journalctl 错误
 </div>
 
 如果你看到 `exec: "journalctl": executable file not found in $PATH`：
@@ -385,14 +361,16 @@ otelcol-contrib --config=otel-config.yaml
 2. **使用文本导出方式** (如演示所示) ，让 `filelog` receiver 读取 journald 导出的内容
 
 <div id="next-steps">
-  ## 后续步骤 {#next-steps}
+  ## 后续步骤
 </div>
 
 * 为关键系统事件设置[告警](/zh/clickstack/features/alerts) (如服务故障、身份验证失败、OOM kill)
 * 针对特定用例创建更多[仪表盘](/zh/clickstack/features/dashboards/overview) (如 SSH 安全监控、服务健康)
 * 按特定 systemd 单元进行过滤，以减少噪声，并将重点放在重要服务上
 
-## 面向生产环境 {#going-to-production}
+<div id="going-to-production">
+  ## 面向生产环境
+</div>
 
 本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是生产环境中的推荐做法。
 

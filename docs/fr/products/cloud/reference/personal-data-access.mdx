@@ -7,8 +7,10 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'données personnelles', 'DSAR', "demande d'accès aux données personnelles", 'Politique de confidentialité', 'RGPD']
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 <div id="intro">
-  ## Introduction {#intro}
+  ## Introduction
 </div>
 
 En tant qu&#39;utilisateur enregistré, ClickHouse vous permet de consulter et de gérer les données personnelles de votre compte, y compris vos coordonnées. Selon votre rôle, cela peut également inclure l&#39;accès aux coordonnées d&#39;autres utilisateurs de votre organisation, aux détails des clés API et à d&#39;autres informations pertinentes. Vous pouvez gérer ces informations directement depuis la console ClickHouse, en libre-service.
@@ -22,7 +24,7 @@ Selon votre lieu de résidence, la législation applicable peut également vous 
 Veuillez consulter la Politique de confidentialité de ClickHouse pour plus d&#39;informations sur les données personnelles que ClickHouse collecte et sur la manière dont elles peuvent être utilisées.
 
 <div id="self-service">
-  ## En libre-service {#self-service}
+  ## En libre-service
 </div>
 
 Par défaut, ClickHouse permet aux utilisateurs de consulter directement leurs données personnelles dans la console ClickHouse.
@@ -41,31 +43,29 @@ Vous trouverez ci-dessous un résumé des données que ClickHouse collecte lors 
 
 Remarque : les URL contenant `OrgID` doivent être mises à jour pour correspondre à l’`OrgID` de votre compte.
 
-### Clients actuels {#current-customers}
+<div id="current-customers">
+  ### Clients actuels
+</div>
 
-Si vous avez un compte chez nous et que l’option libre-service n’a pas résolu votre problème lié à vos données personnelles, vous pouvez soumettre une demande d’accès aux données personnelles au titre de la Politique de confidentialité. Pour ce faire, connectez-vous à votre compte ClickHouse et ouvrez une [demande d’assistance](https://console.clickhouse.cloud/support). Cela nous aide à vérifier votre identité et à simplifier le traitement de votre demande.
+Si vous avez un compte chez nous et que l’option libre-service n’a pas résolu votre problème lié à vos données personnelles, vous pouvez soumettre une demande d’accès aux données personnelles au titre de la Politique de confidentialité. Pour ce faire, connectez-vous à votre compte ClickHouse et ouvrez un [support case](https://console.clickhouse.cloud/support). Cela nous aide à vérifier votre identité et à simplifier le traitement de votre demande.
 
-Veillez à inclure les informations suivantes dans votre demande d’assistance :
+Veillez à inclure les informations suivantes dans votre support case :
 
 | Champ       | Texte à inclure dans votre demande                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | Sujet       | demande d’accès aux données personnelles (DSAR)                                                               |
 | Description | Description détaillée des informations que vous souhaitez que ClickHouse recherche, collecte et/ou fournisse. |
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Formulaire de demande d’assistance dans ClickHouse Cloud](/images/cloud/security/support-case-form.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="Formulaire de support case dans ClickHouse Cloud" border />
 
 <div id="individuals-without-an-account">
-  ### Personnes sans compte {#individuals-without-an-account}
+  ### Personnes sans compte
 </div>
 
 Si vous n’avez pas de compte chez nous, que l’option en libre-service ci-dessus n’a pas permis de résoudre votre problème concernant vos données personnelles, et que vous souhaitez soumettre une demande d’accès aux données personnelles conformément à la Politique de confidentialité, vous pouvez envoyer cette demande par e-mail à [privacy@clickhouse.com](mailto:privacy@clickhouse.com).
 
 <div id="identity-verification">
-  ## Vérification de l’identité {#identity-verification}
+  ## Vérification de l’identité
 </div>
 
 Si vous soumettez une demande d’accès aux données personnelles par e-mail, nous pourrons vous demander certaines informations afin de confirmer votre identité et de traiter votre demande. La législation applicable peut nous imposer ou nous autoriser à refuser votre demande. Si nous refusons votre demande, nous vous en indiquerons les raisons, sous réserve des restrictions légales.

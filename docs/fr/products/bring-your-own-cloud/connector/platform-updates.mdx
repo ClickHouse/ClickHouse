@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/fr/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -28,20 +29,16 @@ L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé
 
 ## Approuver une mise à jour de la plateforme {#approve-a-platform-update}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Flux d'approbation de la plateforme du Connecteur ClickHouse](/images/cloud/reference/byoc-connector-platform-approval.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flux d'approbation de la plateforme ClickHouse Connector" />
 
-### Identifiants du registre {#registry-credentials}
+### Identifiants de registry {#registry-credentials}
 
-L’authentification auprès du registre dépend du mode de distribution des images enregistré pour votre environnement :
+L&#39;authentication auprès du registry dépend du mode de distribution d&#39;image enregistré pour votre environnement :
 
-* **Accès direct au registre de ClickHouse.** Lancez l’approbation sur la VM EC2 du connector. La commande `approve` et la synchronisation de plateforme de l’executor assument toutes deux le rôle d’extraction ECR en lecture seule de votre environnement, à l’aide d’identifiants obtenus auprès du service de métadonnées d’instance EC2. Ce rôle s’authentifie auprès du registre des charts ; l’executor s’en sert également pour vérifier que les images de la plateforme existent. Les profils AWS, les identifiants d’environnement ou les identifiants SSO présents sur un poste de travail ne remplacent pas le profil d’instance. Votre kubeconfig fournit toujours les identifiants cluster-admin distincts qui appliquent le volet permissions.
-* **Charts dans un autre registre ECR, y compris votre propre mirror.** La connexion au registre des charts utilise les identifiants AWS implicites du processus qui exécute `approve` ou l’executor. Ces identifiants doivent disposer d’un accès en lecture à ce registre.
+* **Accès direct au registry de ClickHouse.** Exécutez l&#39;approbation sur la VM EC2 du connector. La commande `approve` comme la synchronisation de plateforme de l&#39;executor assument le rôle ECR puller en lecture seule de votre environnement à l&#39;aide des identifiants de l&#39;instance metadata service EC2. Ce rôle assure la connexion au registry de charts ; l&#39;executor s&#39;en sert également pour vérifier l&#39;existence des images de plateforme. Les profils AWS, les identifiants d&#39;environnement ou les identifiants SSO présents sur un poste de travail ne remplacent pas le profil d&#39;instance. Votre kubeconfig fournit toujours les identifiants cluster-admin distincts qui appliquent le volet permissions.
+* **Charts dans un autre registry ECR, y compris votre propre mirror.** La connexion au chart utilise les identifiants AWS ambiants du processus qui exécute `approve` ou l&#39;executor. Ces identifiants doivent être autorisés à lire ce registry.
 
-N’utilisez la procédure ci-dessous depuis un poste de travail Kubernetes que pour les déploiements avec registre en miroir dont l’approbation de plateforme Kubernetes est activée. Pour l’accès direct, demandez d’abord à l’équipe chargée de votre compte de confirmer un environnement d’exécution pris en charge disposant du profil d’instance EC2 requis.
+Réservez la procédure depuis un poste de travail Kubernetes décrite ci-dessous aux deployments avec registry mirroré et approbation de plateforme Kubernetes activée. Pour l&#39;accès direct, demandez au préalable à votre account team de confirmer que votre environnement d&#39;exécution est pris en charge et dispose du profil d&#39;instance EC2 requis.
 
 <Steps>
   <Step title="Recherchez le bundle préconfiguré" id="find-the-staged-bundle">

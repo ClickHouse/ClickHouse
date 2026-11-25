@@ -11,11 +11,15 @@ integration:
   - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 Dans certains cas, il peut être utile d’ajouter des tables spécifiques à un pipe. Cela devient souvent nécessaire à mesure que votre charge de travail transactionnelle ou analytique prend de l’ampleur.
 
-## Étapes pour ajouter des tables spécifiques à un ClickPipe {#add-tables-steps}
+<div id="add-tables-steps">
+  ## Étapes pour ajouter des tables spécifiques à un ClickPipe
+</div>
 
-Pour ce faire, suivez les étapes ci-dessous :
+Pour ce faire, suivez les étapes ci-dessous :
 
 1. [Mettez en pause](/fr/integrations/clickpipes/mongodb/pause-and-resume) le pipe.
 2. Cliquez sur Edit Table settings.
@@ -24,11 +28,7 @@ Pour ce faire, suivez les étapes ci-dessous :
 
 <br />
 
-<div className="ch-image-md">
-  <Frame>
-    ![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
 
 5. Cliquez sur Update.
 6. Une fois la mise à jour effectuée, le pipe affichera successivement les statuts `Setup`, `Snapshot` et `Running`. Le chargement initial de la table peut être suivi dans l’onglet **Tables**.

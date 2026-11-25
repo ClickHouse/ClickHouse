@@ -14,7 +14,7 @@ doc_type: 'guide'
 </Frame>
 
 <div id="abstract">
-  ## 摘要 {#abstract}
+  ## 摘要
 </div>
 
 在过去几十年里，存储和分析的数据量一直呈指数级增长。各行业的企业开始依赖这些数据来改进产品、评估绩效，并做出关乎业务成败的决策。然而，随着数据规模日益达到互联网级，企业必须以兼顾成本效益和可扩展性的方式管理历史数据和新增数据，同时还要支持大量并发查询，并满足实时低时延的要求 (例如，根据具体用例不同，时延需低于一秒) 。
@@ -190,7 +190,7 @@ ClickHouse 提供了一种更轻量的替代方案，其依据是每次插入最
 本节其余部分将先更详细地介绍数据元素、数据块和分片粒度上的并行处理。随后，我们将介绍若干能够最大化查询性能的关键优化。最后，我们将讨论 ClickHouse 在存在并发查询时如何管理共享系统资源。
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 SIMD 并行化 {#4-1-simd-parallelization}
+  ### 4.1 SIMD 并行化
 </div>
 
 在算子之间传递多行数据，为向量化提供了机会。向量化要么基于手写的 intrinsic 函数 <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup>，要么基于编译器自动向量化 <sup>[[25]](#page-12-19)</sup>。能从向量化中获益的代码会被编译为不同的计算内核。例如，查询算子内部的热点循环可以分别用非向量化内核、自动向量化的 AVX2 内核以及手写向量化的 AVX-512 内核来实现。运行时会根据 cpuid 指令[选择最快的内核](https://clickhou.se/cpu-dispatch)。这种方法使 ClickHouse 能够运行在最老可追溯到 15 年前的系统上 (最低要求为 SSE 4.2) ，同时仍能在较新的硬件上带来显著的性能提升。
@@ -216,7 +216,7 @@ ClickHouse 采用传统方法 <sup>[&#91;31&#93;](#page-12-13)</sup>，将 SQL �
 ClickHouse 的查询执行引擎以及 morsel-driven parallelism <sup>[[44]](#page-12-20)</sup> 的相似之处在于，lane 通常运行在不同的核心 / NUMA 套接字上，并且工作线程可以从其他 lane 窃取任务。此外，它们都没有中央调度组件；相反，工作线程会通过持续遍历算子计划，各自选择要执行的任务。与 morsel-driven parallelism 不同，ClickHouse 会将最大并行度预先固化在计划中，并且在对源表进行分区时，使用的范围也远大于默认约 100,000 行的 morsel 大小。尽管这在某些情况下可能会造成停滞 (例如，不同 lane 中过滤算子的运行时间差异悬殊时) ，但我们发现，广泛使用 Repartition 之类的 exchange 算子，至少可以避免这类不均衡在各个阶段持续累积。
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 多节点并行化 {#4-3-multi-node-parallelization}
+  ### 4.3 多节点并行化
 </div>
 
 如果查询的源表已分片，那么接收该查询的节点 (发起节点) 上的查询优化器会尽可能将更多工作下推到其他节点执行。来自其他节点的结果可以并入查询计划的不同位置。根据具体查询情况，远程节点可能会：1. 将源表的原始列以流式方式传输到发起节点；2. 过滤源列并发送保留下来的行；3. 执行过滤和聚合步骤，并发送带有部分聚合状态的本地结果分组；或者 4. 执行完整查询，包括过滤、聚合和排序。
@@ -295,13 +295,13 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 兼容性接口。除原生二进制 wire protocol 和 HTTP 外，客户端还可以通过兼容 MySQL 或 PostgreSQL wire protocol 的接口与 ClickHouse 交互。这项兼容性功能有助于支持专有应用程序 (例如某些商业智能工具) 访问 ClickHouse，因为这些厂商尚未实现原生 ClickHouse 连接能力。
 
 <div id="6-performance-as-a-feature">
-  ## 6 性能即特性 {#6-performance-as-a-feature}
+  ## 6 性能即特性
 </div>
 
 本节介绍内置的性能分析工具，并通过真实场景查询和基准测试查询来评估性能。
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 内置性能分析工具 {#6-1-built-in-performance-analysis-tools}
+  ### 6.1 内置性能分析工具
 </div>
 
 可使用多种工具来分析单个查询或后台操作中的性能瓶颈。用户通过基于系统表的统一接口使用这些工具。
@@ -315,7 +315,7 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 **查询解释**。与其他数据库类似，可在 SELECT 查询前加上 EXPLAIN，以详细了解查询的 AST、逻辑和物理算子计划，以及运行时行为。
 
 <div id="6-2-benchmarks">
-  ### 6.2 基准测试 {#6-2-benchmarks}
+  ### 6.2 基准测试
 </div>
 
 尽管基准测试因与真实场景不够贴近而受到批评 <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>，但它仍然有助于识别数据库的优势与不足。下面我们将讨论如何使用基准测试来评估 ClickHouse 的性能。
@@ -367,7 +367,7 @@ Photon <sup>[&#91;5&#93;](#page-12-39)</sup> 和 Velox <sup>[&#91;62&#93;](#page
 DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还提供了查询优化和事务。它的设计目标是以 OLAP 查询为主、夹杂少量 OLTP 语句的场景。因此，DuckDB 选择了 DataBlocks <sup>[[43]](#page-12-43)</sup> 存储格式，该格式采用轻量级压缩方法，例如保序字典或 frame-of-reference <sup>[[2]](#page-12-10)</sup>，以在混合负载下获得良好性能。相比之下，ClickHouse 针对只追加写入的用例进行了优化，也就是没有更新和删除，或更新和删除极少。块使用 LZ4 等较重的技术进行压缩，其前提是用户会充分利用数据裁剪来加速频繁查询，并且对其余查询而言，I/O 成本远高于解压缩成本。DuckDB 还基于 Hyper 的 MVCC 方案 <sup>[[55]](#page-13-35)</sup> 提供了可串行化事务，而 ClickHouse 仅提供快照隔离。
 
 <div id="8-conclusion-and-outlook">
-  ## 8 结论与展望 {#8-conclusion-and-outlook}
+  ## 8 结论与展望
 </div>
 
 我们介绍了 ClickHouse 的架构，它是一款开源的高性能 OLAP 数据库。ClickHouse 以面向写入优化的存储层和先进的向量化查询引擎为基础，能够以高摄取速率对 PB 级数据集进行实时分析。通过在后台异步合并和转换数据，ClickHouse 高效地将数据维护与并行插入解耦。其存储层借助稀疏主索引、跳过索引和投影表，实现了高效的数据裁剪。我们还介绍了 ClickHouse 在更新和删除、幂等插入以及跨节点数据复制以实现高可用性方面的实现机制。查询处理层利用多种技术优化查询，并可在所有服务器和集群资源上并行执行。集成表引擎和函数提供了一种便捷方式，可与其他数据管理系统和数据格式无缝交互。通过基准测试，我们证明了 ClickHouse 是市场上速度最快的分析型数据库之一，并展示了多年来 ClickHouse 在真实部署环境中典型查询性能的显著提升。
@@ -375,17 +375,17 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
 2024 年计划中的所有功能和增强都可以在公开路线图 <sup>[[18]](#page-12-33)</sup> 中找到。计划中的改进包括支持用户事务、将 PromQL <sup>[[69]](#page-13-36)</sup> 作为替代查询语言、为半结构化数据 (如 JSON) 提供新的数据类型、进一步改进 JOIN 的执行计划级优化，以及实现轻量级更新以补充轻量级删除。
 
 <div id="acknowledgements">
-  ## 致谢 {#acknowledgements}
+  ## 致谢
 </div>
 
 截至 24.6 版本，SELECT * FROM system.contributors 会返回 1994 位为 ClickHouse 作出贡献的贡献者。我们谨向 ClickHouse Inc. 的全体工程团队以及 ClickHouse 卓越的开源社区致以诚挚谢意，感谢他们为共同打造这一数据库所付出的辛勤努力与奉献。
 
 <div id="references">
-  ## 参考 {#references}
+  ## 参考
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>
-  * <a id="page-12-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>1</sup> Daniel Abadi、Peter Boncz、Stavros Harizopoulos、Stratos Idreos 和 Samuel Madden。2013。《现代列式数据库系统的设计与实现》。https://doi.org/10.1561/9781601987556
+  * <a id="page-12-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>1</sup> Daniel Abadi、Peter Boncz、Stavros Harizopoulos、Stratos Idreaos 和 Samuel Madden。2013。《现代列式数据库系统的设计与实现》。https://doi.org/10.1561/9781601987556
   * <a id="page-12-10" style={{display:"block",scrollMarginTop:"80px"}} /><sup>2</sup> Daniel Abadi、Samuel Madden 和 Miguel Ferreira。2006。《Integrating Compression and Execution in Column-Oriented Database Systems》。载于《Proceedings of the 2006 ACM SIGMOD International Conference on Management of Data (SIGMOD &#39;06)》。671–682。https://doi.org/10.1145/1142473.1142548
   * <a id="page-12-41" style={{display:"block",scrollMarginTop:"80px"}} /><sup>3</sup> Anastassia Ailamaki、David J. DeWitt、Mark D. Hill 和 Marios Skounakis. 2001. Weaving Relations for Cache Performance. 载于第 27 届超大型数据库国际会议论文集 (VLDB &#39;01) . Morgan Kaufmann Publishers Inc.，美国加利福尼亚州旧金山，169–180.
   * <a id="page-12-38" style={{display:"block",scrollMarginTop:"80px"}} /><sup>4</sup> Nikos Armenatzoglou, Sanuj Basu, Naga Bhanoori, Mengchu Cai, Naresh Chainani, Kiran Chinta, Venkatraman Govindaraju, Todd J. Green, Monish Gupta, Sebastian Hillig, Eric Hotinger, Yan Leshinksy, Jintian Liang, Michael McCreedy, Fabian Nagel, Ippokratis Pandis, Panos Parchas, Rahul Pathak, Orestis Polychroniou, Foyzur Rahman, Gaurav Saxena, Gokul Soundararajan, Sriram Subramanian, and Doug Terry. 2022. Amazon Redshift Re-Invented. 收录于 Proceedings of the 2022 International Conference on Management of Data (Philadelphia, PA, USA) (SIGMOD &#39;22). Association for Computing Machinery, New York, NY, USA, 2205–2217. https://doi.org/10.1145/3514221.3526045
@@ -393,11 +393,11 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
   * <a id="page-12-18" style={{display:"block",scrollMarginTop:"80px"}} /><sup>6</sup> Philip A. Bernstein 与 Nathan Goodman. 1981. Concurrency Control in Distributed Database Systems. ACM Computing Survey 13, 2 (1981), 185–221. https://doi.org/10.1145/356842.356846
   * <a id="page-12-23" style={{display:"block",scrollMarginTop:"80px"}} /><sup>7</sup> Spyros Blanas、Yinan Li 和 Jignesh M. Patel. 2011. Design and evaluation of main memory hash join algorithms for multi-core CPUs. 载于 Proceedings of the 2011 ACM SIGMOD International Conference on Management of Data (Athens, Greece) (SIGMOD &#39;11). Association for Computing Machinery, New York, NY, USA, 37–48. https://doi.org/10.1145/1989323.1989328
   * <a id="page-12-26" style={{display:"block",scrollMarginTop:"80px"}} /><a id="page-12-14" style={{display:"block",scrollMarginTop:"80px"}} /><sup>8</sup> Daniel Gomez Blanco. 2023. Practical OpenTelemetry. Springer Nature.
-  * <sup>9</sup> Burton H. Bloom. 1970. Space/Time Trade-offs in Hash Coding with Allowable Errors. Commun. ACM 13, 7 (1970), 422–426. [https://doi.org/10.1145/362686.](https://doi.org/10.1145/362686.362692) [362692](https://doi.org/10.1145/362686.362692)
-  * <a id="page-12-27" style={{display:"block",scrollMarginTop:"80px"}} /><sup>10</sup> Peter Boncz、Thomas Neumann 和 Orri Erling。2014。TPC-H Analyzed: Hidden Messages and Lessons Learned from an Influential Benchmark。收录于 Performance Characterization and Benchmarking。61–76。 [https://doi.org/10.1007/978-3-319-](https://doi.org/10.1007/978-3-319-04936-6_5) [04936-6&#95;5](https://doi.org/10.1007/978-3-319-04936-6_5)
+  * <sup>9</sup> Burton H. Bloom. 1970. Space/Time Trade-Ofs in Hash Coding with Allowable Errors. Commun. ACM 13, 7 (1970), 422–426. [https://doi.org/10.1145/362686.](https://doi.org/10.1145/362686.362692) [362692](https://doi.org/10.1145/362686.362692)
+  * <a id="page-12-27" style={{display:"block",scrollMarginTop:"80px"}} /><sup>10</sup> Peter Boncz、Thomas Neumann 和 Orri Erling。2014。TPC-H Analyzed: Hidden Messages and Lessons Learned from an Infuential Benchmark。收录于 Performance Characterization and Benchmarking。61–76。 [https://doi.org/10.1007/978-3-319-](https://doi.org/10.1007/978-3-319-04936-6_5) [04936-6&#95;5](https://doi.org/10.1007/978-3-319-04936-6_5)
   * <a id="page-12-0" style={{display:"block",scrollMarginTop:"80px"}} /><sup>11</sup> Peter Boncz、Marcin Zukowski 和 Niels Nes。2005。MonetDB/X100: Hyper-Pipelining Query Execution。载于 CIDR。
   * <a id="page-12-8" style={{display:"block",scrollMarginTop:"80px"}} /><sup>12</sup> Martin Burtscher and Paruj Ratanaworabhan. 2007. 双精度浮点数据的高吞吐量压缩。载于 Data Compression Conference (DCC). 293–302. https://doi.org/10.1109/DCC.2007.44
-  * <a id="page-12-6" style={{display:"block",scrollMarginTop:"80px"}} /><sup>13</sup> Jeff Carpenter 与 Eben Hewitt。2016。Cassandra: The Definitive Guide (第 2 版) 。O&#39;Reilly Media, Inc.
+  * <a id="page-12-6" style={{display:"block",scrollMarginTop:"80px"}} /><sup>13</sup> Jef Carpenter 与 Eben Hewitt。2016。Cassandra: The Defnitive Guide (第 2 版) 。O&#39;Reilly Media, Inc.
   * <a id="page-12-17" style={{display:"block",scrollMarginTop:"80px"}} /><sup>14</sup> Bernadette Charron-Bost、Fernando Pedone 和 André Schiper (编) . 2010. Replication: Theory and Practice. Springer-Verlag.
   * <a id="page-12-3" style={{display:"block",scrollMarginTop:"80px"}} /><sup>15</sup> chDB. 2024. chDB - 一款嵌入式 OLAP SQL 引擎。检索日期：2024-06-20，来源：https://github.com/chdb-io/chdb
   * <a id="page-12-29" style={{display:"block",scrollMarginTop:"80px"}} /><sup>16</sup> ClickHouse. 2024. ClickBench: a Benchmark For Analytical Databases. 检索日期：2024-06-20，来源：https://github.com/ClickHouse/ClickBench
@@ -415,7 +415,7 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
   * <a id="page-12-12" style={{display:"block",scrollMarginTop:"80px"}} /><sup>28</sup> Ted Dunning. 2021. The t-digest：分布的高效估计。Software Impacts 7 (2021). https://doi.org/10.1016/j.simpa.2020.100049
   * <a id="page-12-16" style={{display:"block",scrollMarginTop:"80px"}} /><sup>29</sup> Martin Faust, Martin Boissier, Marvin Keller, David Schwalb, Holger Bischof, Katrin Eisenreich, Franz Färber, and Hasso Plattner. 2016. SAP HANA 中利用哈希索引缩减存储占用并强制保证唯一性。载于《Database and Expert Systems Applications》。137–151. [https://doi.org/10.1007/978-3-319-44406-](https://doi.org/10.1007/978-3-319-44406-2_11) [2&#95;11](https://doi.org/10.1007/978-3-319-44406-2_11)
   * <a id="page-12-11" style={{display:"block",scrollMarginTop:"80px"}} /><sup>30</sup> Philippe Flajolet、Eric Fusy、Olivier Gandouet 和 Frederic Meunier。2007。HyperLogLog：一种近乎最优的基数估计算法分析。载于《AofA: Analysis of Algorithms》，DMTCS Proceedings 第 AH 卷，2007 Conference on Analysis of Algorithms (AofA 07)。Discrete Mathematics and Theoretical Computer Science，137–156。https://doi.org/10.46298/dmtcs.3545
-  * <a id="page-12-13" style={{display:"block",scrollMarginTop:"80px"}} /><sup>31</sup> Hector Garcia-Molina、Jeffrey D. Ullman 和 Jennifer Widom。2009。《Database Systems - The Complete Book》 (第 2 版) 。
+  * <a id="page-12-13" style={{display:"block",scrollMarginTop:"80px"}} /><sup>31</sup> Hector Garcia-Molina、Jefrey D. Ullman 和 Jennifer Widom。2009。《Database Systems - The Complete Book》 (第 2 版) 。
   * <a id="page-12-24" style={{display:"block",scrollMarginTop:"80px"}} /><sup>32</sup> Pawan Goyal、Harrick M. Vin 和 Haichen Chen。1996。Start-time fair queueing: a scheduling algorithm for integrated services packet switching networks. 26, 4 (1996) ，157–168。https://doi.org/10.1145/248157.248171
   * <a id="page-12-21" style={{display:"block",scrollMarginTop:"80px"}} /><sup>33</sup> Goetz Graefe. 1993. Query Evaluation Techniques for Large Databases. ACM Comput. Surv. 25, 2 (1993), 73–169. https://doi.org/10.1145/152610.152611
   * <a id="page-12-40" style={{display:"block",scrollMarginTop:"80px"}} /><sup>34</sup> Jean-François Im, Kishore Gopalakrishna, Subbu Subramaniam, Mayank Shrivastava, Adwait Tumbde, Xiaotian Jiang, Jennifer Dai, Seunghyun Lee, Neha Pawar, Jialiang Li, and Ravi Aringunram. 2018. Pinot: 面向 5.3 亿用户的实时 OLAP。载于 2018 年数据管理国际会议论文集 (美国得克萨斯州休斯敦)  (SIGMOD &#39;18) 。Association for Computing Machinery, New York, NY, USA, 583–594. https://doi.org/10.1145/3183713.3190661
@@ -428,15 +428,15 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
   * <a id="page-12-42" style={{display:"block",scrollMarginTop:"80px"}} /><sup>41</sup> André Kohn、Viktor Leis 和 Thomas Neumann. 2018. Adaptive Execution of Compiled Queries. 见 2018 IEEE 34th International Conference on Data Engineering (ICDE). 197–208. https://doi.org/10.1109/ICDE.2018.00027
   * <a id="page-12-36" style={{display:"block",scrollMarginTop:"80px"}} /><sup>42</sup> Andrew Lamb、Matt Fuller、Ramakrishna Varadarajan、Nga Tran、Ben Vandiver、Lyric Doshi 和 Chuck Bear。2012。《Vertica 分析型数据库：C-Store 七年之后》。Proc. VLDB Endow. 5, 12 (2012 年 8 月) ，1790–1801。[https://doi.org/10.](https://doi.org/10.14778/2367502.2367518) [14778/2367502.2367518](https://doi.org/10.14778/2367502.2367518)
   * <a id="page-12-43" style={{display:"block",scrollMarginTop:"80px"}} /><sup>43</sup> Harald Lang、Tobias Mühlbauer、Florian Funke、Peter A. Boncz、Thomas Neumann 和 Alfons Kemper. 2016. Data Blocks: Hybrid OLTP and OLAP on Compressed Storage using both Vectorization and Compilation. 载于 Proceedings of the 2016 International Conference on Management of Data (San Francisco, California, USA) (SIGMOD &#39;16). Association for Computing Machinery, New York, NY, USA, 311–326. https://doi.org/10.1145/2882903.2882925
-  * <a id="page-12-20" style={{display:"block",scrollMarginTop:"80px"}} /><sup>44</sup> Viktor Leis、Peter Boncz、Alfons Kemper 和 Thomas Neumann。2014。Morsel-driven parallelism: a NUMA-aware query evaluation framework for the many-core age。载于 Proceedings of the 2014 ACM SIGMOD International Conference on Management of Data (美国犹他州斯诺伯德)  (SIGMOD &#39;14) 。Association for Computing Machinery，New York, NY, USA，743–754。[https://doi.org/10.1145/2588555.](https://doi.org/10.1145/2588555.2610507) [2610507](https://doi.org/10.1145/2588555.2610507)
+  * <a id="page-12-20" style={{display:"block",scrollMarginTop:"80px"}} /><sup>44</sup> Viktor Leis、Peter Boncz、Alfons Kemper 和 Thomas Neumann。2014。Morseldriven parallelism: a NUMA-aware query evaluation framework for the manycore age。载于 Proceedings of the 2014 ACM SIGMOD International Conference on Management of Data (美国犹他州斯诺伯德)  (SIGMOD &#39;14) 。Association for Computing Machinery，New York, NY, USA，743–754。[https://doi.org/10.1145/2588555.](https://doi.org/10.1145/2588555.2610507) [2610507](https://doi.org/10.1145/2588555.2610507)
   * <a id="page-13-17" style={{display:"block",scrollMarginTop:"80px"}} /><sup>45</sup> Viktor Leis、Alfons Kemper 和 Thomas Neumann. 2013. The adaptive radix tree: ARTful indexing for main-memory databases. 收录于 2013 IEEE 第 29 届 International Conference on Data Engineering (ICDE). 38–49. [https://doi.org/10.1109/ICDE.](https://doi.org/10.1109/ICDE.2013.6544812) [2013.6544812](https://doi.org/10.1109/ICDE.2013.6544812)
   * <a id="page-13-34" style={{display:"block",scrollMarginTop:"80px"}} /><sup>46</sup> Chunwei Liu、Anna Pavlenko、Matteo Interlandi 和 Brandon Haynes. 2023. 深入解析分析型数据库管理系统中常见的开放格式。16, 11 (2023年7月) ，3044–3056. https://doi.org/10.14778/3611479.3611507
   * <a id="page-13-30" style={{display:"block",scrollMarginTop:"80px"}} /><sup>47</sup> Zhenghua Lyu, Huan Hubert Zhang, Gang Xiong, Gang Guo, Haozhou Wang, Jinbao Chen, Asim Praveen, Yu Yang, Xiaoming Gao, Alexandra Wang, Wen Lin, Ashwin Agrawal, Junfeng Yang, Hao Wu, Xiaoliang Li, Feng Guo, Jiang Wu, Jesse Zhang, and Venkatesh Raghavan. 2021. Greenplum：一种面向事务和分析工作负载的混合数据库 (SIGMOD &#39;21) 。美国计算机协会，美国纽约州纽约市，2530–2542。[https:](https://doi.org/10.1145/3448016.3457562) [//doi.org/10.1145/3448016.3457562](https://doi.org/10.1145/3448016.3457562)
   * <a id="page-13-28" style={{display:"block",scrollMarginTop:"80px"}} /><sup>48</sup> Roger MacNicol 和 Blaine French。2004。Sybase IQ Multiplex - Designed for Analytics。见 Proceedings of the Thirtieth International Conference on Very Large Data Bases - Volume 30 (Toronto, Canada) (VLDB &#39;04)。VLDB Endowment，1227–1230。
-  * <a id="page-13-31" style={{display:"block",scrollMarginTop:"80px"}} /><sup>49</sup> Sergey Melnik, Andrey Gubarev, Jing Jing Long, Geoffrey Romer, Shiva Shivakumar, Matt Tolton, Theo Vassilakis, Hossein Ahmadi, Dan Delorey, Slava Min, Mosha Pasumansky, and Jeff Shute. 2020. Dremel: A Decade of Interactive SQL Analysis at Web Scale. Proc. VLDB Endow. 13, 12 (aug 2020), 3461–3472. https://doi.org/10.14778/3415478.3415568
+  * <a id="page-13-31" style={{display:"block",scrollMarginTop:"80px"}} /><sup>49</sup> Sergey Melnik, Andrey Gubarev, Jing Jing Long, Geofrey Romer, Shiva Shivakumar, Matt Tolton, Theo Vassilakis, Hossein Ahmadi, Dan Delorey, Slava Min, Mosha Pasumansky, and Jef Shute. 2020. Dremel: A Decade of Interactive SQL Analysis at Web Scale. Proc. VLDB Endow. 13, 12 (aug 2020), 3461–3472. https://doi.org/10.14778/3415478.3415568
   * <a id="page-13-2" style={{display:"block",scrollMarginTop:"80px"}} /><sup>50</sup> Microsoft. 2024. Kusto 查询语言。2024-06-20 检索自 [https:](https://github.com/microsoft/Kusto-Query-Language) [//github.com/microsoft/Kusto-Query-Language](https://github.com/microsoft/Kusto-Query-Language)
   * <a id="page-13-14" style={{display:"block",scrollMarginTop:"80px"}} /><sup>51</sup> Guido Moerkotte. 1998. Small Materialized Aggregates: A Light Weight Index Structure for Data Warehousing. 收录于第 24 届超大型数据库国际会议论文集 (VLDB &#39;98) . 476–487.
-  * <a id="page-13-22" style={{display:"block",scrollMarginTop:"80px"}} /><sup>52</sup> Jalal Mostafa、Sara Wehbi、Suren Chilingaryan 和 Andreas Kopmann。2022。SciTS：A Benchmark for Time-Series Databases in Scientific Experiments and Industrial Internet of Things。见 Proceedings of the 34th International Conference on Scientific and Statistical Database Management (SSDBM &#39;22)。Article 12。[https:](https://doi.org/10.1145/3538712.3538723) [//doi.org/10.1145/3538712.3538723](https://doi.org/10.1145/3538712.3538723)
+  * <a id="page-13-22" style={{display:"block",scrollMarginTop:"80px"}} /><sup>52</sup> Jalal Mostafa、Sara Wehbi、Suren Chilingaryan 和 Andreas Kopmann。2022。SciTS：A Benchmark for Time-Series Databases in Scientifc Experiments and Industrial Internet of Things。见 Proceedings of the 34th International Conference on Scientifc and Statistical Database Management (SSDBM &#39;22)。Article 12。[https:](https://doi.org/10.1145/3538712.3538723) [//doi.org/10.1145/3538712.3538723](https://doi.org/10.1145/3538712.3538723)
   * <a id="page-13-0" style={{display:"block",scrollMarginTop:"80px"}} /><sup>53</sup> Thomas Neumann. 2011. efficiently Compiling efficient Query Plans for Modern Hardware. Proc. VLDB Endow. 4, 9 (2011年6月) , 539–550. [https://doi.org/10.14778/](https://doi.org/10.14778/2002938.2002940) [2002938.2002940](https://doi.org/10.14778/2002938.2002940)
   * <a id="page-13-25" style={{display:"block",scrollMarginTop:"80px"}} /><sup>54</sup> Thomas Neumann 和 Michael J. Freitag. 2020. Umbra: A Disk-Based System with In-Memory Performance. 见第 10 届创新数据系统研究大会 (CIDR 2020) ，荷兰阿姆斯特丹，2020 年 1 月 12–15 日，在线论文集。 www.cidrdb.org. [http://cidrdb.org/cidr2020/papers/p29-neumann](http://cidrdb.org/cidr2020/papers/p29-neumann-cidr20.pdf)[cidr20.pdf](http://cidrdb.org/cidr2020/papers/p29-neumann-cidr20.pdf)
   * <a id="page-13-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>55</sup> Thomas Neumann、Tobias Mühlbauer 和 Alfons Kemper. 2015. Fast Serializable Multi-Version Concurrency Control for Main-Memory Database Systems. 载于 Proceedings of the 2015 ACM SIGMOD International Conference on Management of Data (Melbourne, Victoria, Australia) (SIGMOD &#39;15). Association for Computing Machinery, New York, NY, USA, 677–689. [https://doi.org/10.1145/2723372.](https://doi.org/10.1145/2723372.2749436) [2749436](https://doi.org/10.1145/2723372.2749436)

@@ -109,15 +109,13 @@ ClickHouse 访问实体包括：
 
 行策略是一种过滤器，用于定义用户或角色可以访问哪些行。行策略包含针对特定表的过滤条件，以及应应用此行策略的角色和/或用户列表。
 
-行策略仅在本地读取表数据时生效。对于 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表，或其他将读取操作委托给远程服务端的表，请在每台服务端的底层表上定义策略：无法将远程表本身的策略应用于发送过去的查询，因此会拒绝通过该表进行读取。当发起方发送已构建的读取计划时，此类底层表策略不会生效，因此，对于必须强制执行行策略的用户，请保持 [`serialize_query_plan = 0`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) (请参阅 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)) 。
-
-行策略只过滤查询返回的行，并不会隐藏行数：表元数据 (例如 [`system.tables`](/zh/reference/system-tables/tables) 中的 `total_rows` 和 [`system.parts`](/zh/reference/system-tables/parts) 中的 `rows`) 以及查询统计信息 (例如 [`EXPLAIN ESTIMATE`](/zh/reference/statements/explain#explain-estimate)、查询进度中的 `read_rows` 以及 [`max_rows_to_read`](/zh/reference/settings/session-settings/max-rows#max_rows_to_read) 限制) 都可能将被该策略隐藏的行计算在内。
+行策略仅在本地读取表数据时生效。对于 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表，或其他将读取操作委托给远程服务器的表，请在每台服务器的底层表上定义策略：无法将远程表本身的策略应用于发送过去的查询，因此会拒绝通过该表进行读取。当发起方发送已构建的读取计划时，此类底层表策略不会生效，因此，对于必须强制执行行策略的用户，请保持 [`serialize_query_plan = 0`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) (请参阅 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)) 。
 
 <Note>
   只有在你拥有只读访问权限时，行策略才有意义。如果你可以修改表，或在表之间复制分区，行策略的限制就会被绕过。
 </Note>
 
-管理查询：
+管理语句：
 
 * [CREATE ROW POLICY](/zh/reference/statements/create/row-policy)
 * [ALTER ROW POLICY](/zh/reference/statements/alter/row-policy)

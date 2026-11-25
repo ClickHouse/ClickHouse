@@ -57,10 +57,9 @@ bool expressionHasUnescapedAlternation(std::string_view expression)
 }
 
 /// Extracts the longest prefix common to all branches of "^(branch1|branch2|...)$?", where every branch
-/// is a plain literal, for example "abc-" for "^(abc-xx|abc-yy)". The group may be non-capturing,
-/// "^(?:branch1|branch2|...)$?", which is how `fullMatch` and PromQL matchers anchor a top-level alternation.
-/// Returns empty for anything more complex: a branch containing a metacharacter or a nested group,
-/// a single branch, or a group followed by something other than '$'.
+/// is a plain literal, for example "abc-" for "^(abc-xx|abc-yy)". Returns empty for anything more complex:
+/// a branch containing a metacharacter or a nested group, a single branch, or a group followed by something
+/// other than '$'.
 String extractCommonPrefixFromAlternationBranches(std::string_view expression)
 {
     if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
@@ -68,10 +67,6 @@ String extractCommonPrefixFromAlternationBranches(std::string_view expression)
 
     const char * pos = expression.data() + 2; /// Start right after "^("
     const char * end = expression.data() + expression.size();
-
-    /// A non-capturing group "^(?:" matches the same strings; any other "(?" form is rejected below.
-    if (pos + 1 < end && pos[0] == '?' && pos[1] == ':')
-        pos += 2;
 
     std::vector<String> branches;
     String current_branch;
@@ -335,116 +330,6 @@ RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regex
         return {};
 
     return result;
-}
-
-String anchorRegexpToMatchWholeString(std::string_view regexp)
-{
-    size_t depth = 0;
-    bool in_class = false;
-    bool in_quote = false;
-    bool top_level_alternation = false;
-    bool top_level_multiline = false;
-    bool ends_with_anchor = false;
-    bool trailing_escape = false;
-    for (size_t pos = 0; pos < regexp.size(); ++pos)
-    {
-        char c = regexp[pos];
-        ends_with_anchor = false;
-        if (in_quote)
-        {
-            /// Everything after `\Q` is literal up to `\E` or the end of the regex.
-            if (c == '\\' && pos + 1 < regexp.size() && regexp[pos + 1] == 'E')
-            {
-                in_quote = false;
-                ++pos;
-            }
-        }
-        else if (c == '\\')
-        {
-            if (pos + 1 < regexp.size() && regexp[pos + 1] == 'Q')
-                in_quote = true;
-            trailing_escape = pos + 1 >= regexp.size();
-            ++pos;
-        }
-        else if (in_class)
-        {
-            if (c == ']')
-                in_class = false;
-            else if (c == '[' && pos + 1 < regexp.size() && regexp[pos + 1] == ':')
-            {
-                /// A POSIX named class such as `[:alpha:]` is a part of the enclosing class, its `]` does not close it.
-                /// RE2 treats `[:` without a following `:]` as literal characters.
-                if (size_t end_of_named_class = regexp.find(":]", pos + 2); end_of_named_class != String::npos)
-                    pos = end_of_named_class + 1;
-            }
-        }
-        else if (c == '[')
-        {
-            in_class = true;
-            /// A `]` right after `[` or `[^` is literal.
-            if (pos + 1 < regexp.size() && regexp[pos + 1] == '^')
-                ++pos;
-            if (pos + 1 < regexp.size() && regexp[pos + 1] == ']')
-                ++pos;
-        }
-        else if (c == '(')
-        {
-            /// An inline flag group like `(?m)` at the top level would also apply to the `$` appended after the regex,
-            /// and in the multiline mode `$` matches before every newline, so the regex must be wrapped into a group.
-            if (depth == 0 && pos + 1 < regexp.size() && regexp[pos + 1] == '?')
-            {
-                bool negated = false;
-                bool multiline = false;
-                size_t flag_pos = pos + 2;
-                for (; flag_pos < regexp.size(); ++flag_pos)
-                {
-                    char flag = regexp[flag_pos];
-                    if (flag == '-')
-                        negated = true;
-                    else if (flag == 'm')
-                        multiline = !negated;
-                    else if (flag != 'i' && flag != 's' && flag != 'U')
-                        break;
-                }
-                if (multiline && flag_pos < regexp.size() && regexp[flag_pos] == ')')
-                    top_level_multiline = true;
-            }
-            ++depth;
-        }
-        else if (c == ')')
-        {
-            if (depth > 0)
-                --depth;
-        }
-        else if (c == '|' && depth == 0)
-            top_level_alternation = true;
-        else if (c == '$')
-            ends_with_anchor = true;
-    }
-
-    String res{regexp};
-    /// A quote can extend to the end of the regex, and it must not swallow the anchor or the group added after it.
-    if (in_quote)
-        res += "\\E";
-
-    /// The added anchors must not become a part of the regex's own syntax: a quantifier at the position
-    /// of the leading '^' (e.g. "^?a", "+a", "^(?i)*a") would apply to the anchor, and a trailing
-    /// backslash would escape the appended '$'. Wrap such regexes into a group too — they have no fixed
-    /// prefix anyway, so the prefix extraction loses nothing.
-    const char * end = res.data() + res.size();
-    const char * after_start_anchor = skipZeroWidthConstructs(res.data() + (res.starts_with('^') ? 1 : 0), end);
-    const bool quantifier_after_start_anchor = after_start_anchor < end
-        && (*after_start_anchor == '*' || *after_start_anchor == '?' || *after_start_anchor == '+' || *after_start_anchor == '{');
-
-    /// The non-capturing group isolates the regex from the added anchors.
-    if (top_level_alternation || top_level_multiline || trailing_escape || quantifier_after_start_anchor)
-        return "^(?:" + res + ")$";
-
-    if (!res.starts_with('^'))
-        res = '^' + res;
-    if (!ends_with_anchor)
-        res += '$';
-    return res;
 }
 
 }

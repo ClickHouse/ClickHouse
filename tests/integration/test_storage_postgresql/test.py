@@ -969,15 +969,6 @@ def test_limit_pushdown(started_cluster):
     assert result == "99"
     assert len(queries) == 1 and "LIMIT" not in queries[0]
 
-    # A `LIMIT` above the signed 64-bit range is valid in ClickHouse, while the `LIMIT` of PostgreSQL
-    # is a `bigint`. Such a limit cuts off nothing, so it is not sent, instead of failing the query
-    # with `bigint out of range`.
-    result, queries = run(
-        "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 9223372036854775808)"
-    )
-    assert result == "100"
-    assert len(queries) == 1 and "LIMIT" not in queries[0]
-
     # A real `LIMIT 0` returns nothing and never asks PostgreSQL for a single row.
     result, _ = run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 0)")
     assert result == "0"

@@ -11,8 +11,8 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCMessages.h>
-#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/ArrowFlightSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -23,6 +23,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <arrow/flight/client.h>
 
 
 const int ARROWFLIGHT_DEFAULT_PORT = 8815;
@@ -152,61 +153,40 @@ VirtualColumnsDescription StorageArrowFlight::createVirtuals()
     return desc;
 }
 
-namespace
-{
-
-/// The descriptor of a dataset: its path, or a query reading it with `arrow_flight_request_descriptor_type = 'command'`.
-arrow::flight::protocol::FlightDescriptor makeDescriptor(const String & dataset_name, const ContextPtr & context)
-{
-    arrow::flight::protocol::FlightDescriptor descriptor;
-    if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
-    {
-        descriptor.set_type(arrow::flight::protocol::FlightDescriptor::CMD);
-        descriptor.set_cmd("SELECT * FROM " + dataset_name);
-    }
-    else
-    {
-        descriptor.set_type(arrow::flight::protocol::FlightDescriptor::PATH);
-        descriptor.add_path(dataset_name);
-    }
-    return descriptor;
-}
-
-}
-
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_,
     ContextPtr context_)
 {
     UInt64 timeout_sec = context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
-    auto stub = connection_->getStub(timeout_sec);
+    auto client = connection_->getClient(timeout_sec);
+    auto options = connection_->getCallOptions(timeout_sec);
 
-    auto descriptor = makeDescriptor(dataset_name_, context_);
-    grpc::ClientContext call;
-    connection_->prepareCall(call, timeout_sec);
-    arrow::flight::protocol::SchemaResult schema_result;
-    auto status = stub->GetSchema(&call, descriptor, &schema_result);
-    if (!status.ok())
-        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", ArrowFlightConnection::formatError(status, call));
-
-    /// The schema is a serialized `Schema` message; it is read as a stream of that message only.
-    auto schema_message = ArrowIPC::splitStream(schema_result.schema());
-    if (schema_message.empty())
-        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: the server returned an empty schema");
-    ArrowIPC::IPCMessagesReadBuffer buffer([&schema_message, done = false](ArrowIPC::IPCMessage & message) mutable
+    arrow::flight::FlightDescriptor descriptor;
+    if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
     {
-        if (done)
-            return false;
-        message = schema_message.front();
-        done = true;
-        return true;
-    });
-    auto format_settings = getFormatSettings(context_);
-    /// The `geo` metadata of a schema is not interpreted: a binary column stays binary, as `ArrowFlightSource` reads it.
-    format_settings.parquet.allow_geoparquet_parser = false;
-    ArrowIPCSchemaReader schema_reader(buffer, /* stream_ */ true, format_settings);
-    return ColumnsDescription(schema_reader.readSchema());
+        String query = "SELECT * FROM " + dataset_name_;
+        descriptor = arrow::flight::FlightDescriptor::Command(query);
+    }
+    else
+    {
+        descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
+    }
+    auto status = client->GetSchema(options, descriptor);
+    if (!status.ok())
+    {
+        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", status.status().ToString());
+    }
+    arrow::ipc::DictionaryMemo dict;
+    auto schema_result = status.ValueOrDie()->GetSchema(&dict);
+    if (!schema_result.ok())
+    {
+        throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", schema_result.status().ToString());
+    }
+    auto schema = std::move(schema_result).ValueOrDie();
+
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", getFormatSettings(context_));
+    return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
 Pipe StorageArrowFlight::read(
@@ -253,64 +233,96 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        if (chunk.getNumRows() == 0)
-            return;
+        auto client = connection->getClient(request_timeout_sec);
+        auto options = connection->getCallOptions(request_timeout_sec);
 
-        auto stub = connection->getStub(request_timeout_sec);
-        auto descriptor = makeDescriptor(dataset_name, context);
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        /// Mirrors `ArrowFlight::flightFormatSettings`, including which schema settings it does not read from the
-        /// context; see the note there.
-        FormatSettings format_settings;
+        arrow::flight::FlightDescriptor descriptor;
+        if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+        {
+            String query = "SELECT * FROM " + dataset_name;
+            descriptor = arrow::flight::FlightDescriptor::Command(query);
+        }
+        else
+        {
+            descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
+        }
+
+        /// Mirrors `ArrowFlight::arrowConversionSettings`, including which schema settings it does not read
+        /// from the context; see the note there.
+        CHColumnToArrowColumn::Settings arrow_settings;
+        arrow_settings.output_string_as_string = true;
         /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
         /// silently push it to the remote server as opaque bytes.
-        auto unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
         if (context)
         {
-            format_settings = getFormatSettings(context);
-            unsupported_types = format_settings.arrow.output_unsupported_types;
+            arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
+            arrow_settings.format_settings = getFormatSettings(context);
         }
-        format_settings.arrow = FormatSettings{}.arrow;
-        format_settings.arrow.output_string_as_string = true;
-        format_settings.arrow.output_unsupported_types = unsupported_types;
 
-        Chunks chunks;
+        CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
+        std::shared_ptr<arrow::Table> table;
+        std::vector<Chunk> chunks;
         chunks.emplace_back(std::move(chunk));
-        auto encoded = ArrowIPC::encodeStream(getHeader(), chunks, format_settings);
+        converter.chChunkToArrowTable(table, chunks, getHeader().columns());
 
-        grpc::ClientContext call;
-        connection->prepareCall(call, request_timeout_sec);
-        auto stream = stub->DoPut(&call);
-
-        auto write = [&](const ArrowIPC::IPCMessage & message, bool with_descriptor)
+        auto reader_res = arrow::RecordBatchReader::MakeFromIterator(
+            arrow::Iterator<std::shared_ptr<arrow::RecordBatch>>{arrow::TableBatchReader{table}}, converter.getArrowSchema());
+        if (!reader_res.ok())
         {
-            arrow::flight::protocol::FlightData data;
-            if (with_descriptor)
-                *data.mutable_flight_descriptor() = descriptor;
-            data.set_data_header(message.header);
-            data.set_data_body(message.body);
-            return stream->Write(data);
-        };
-
-        /// A failed write means that the call has ended: its status says why.
-        bool written = write(encoded.schema, /* with_descriptor */ true);
-        for (size_t i = 0; written && i < encoded.batches.size(); ++i)
-            written = write(encoded.batches[i], /* with_descriptor */ false);
-        if (written)
-            stream->WritesDone();
-
-        arrow::flight::protocol::PutResult result;
-        while (stream->Read(&result))
-        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert chunk to arrow stream: {}", reader_res.status().ToString());
         }
-        auto status = stream->Finish();
-        if (!status.ok())
+        const auto & reader = reader_res.ValueOrDie();
+
+        std::shared_ptr<arrow::RecordBatch> batch;
+        bool first_batch = true;
+        std::unique_ptr<arrow::flight::FlightStreamWriter> writer;
+
+        while (true)
+        {
+            auto status = reader->ReadNext(&batch);
+            if (!status.ok())
+            {
+                throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to read record batch: {}", status.ToString());
+            }
+
+            if (!batch)
+                break;
+
+            if (first_batch)
+            {
+                auto write_result = client->DoPut(options, descriptor, batch->schema());
+                if (!write_result.ok())
+                {
+                    throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "DoPut failed: {}", write_result.status().ToString());
+                }
+
+                auto stream = std::move(write_result).ValueOrDie();
+                writer = std::move(stream.writer);
+                if (!writer)
+                {
+                    throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "No data was written: writer was never initialized.");
+                }
+                first_batch = false;
+            }
+
+            auto write_result = writer->WriteRecordBatch(*batch);
+            if (!write_result.ok())
+            {
+                throw Exception(
+                    ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
+                    "Failed to write record batch to Arrow Flight server: {}",
+                    write_result.ToString());
+            }
+        }
+
+        auto close_result = writer->Close();
+        if (!close_result.ok())
+        {
             throw Exception(
-                ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
-                "Failed to write record batch to Arrow Flight server: {}",
-                ArrowFlightConnection::formatError(status, call));
-        if (!written)
-            throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to write record batch to Arrow Flight server: the stream was closed");
+                ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "Failed to close writer after sending record batches: {}", close_result.ToString());
+        }
     }
 
 

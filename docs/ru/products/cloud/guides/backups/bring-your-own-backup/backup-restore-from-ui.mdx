@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['резервные копии', 'аварийное восстановление', 'защита данных', 'восстановление', 'возможности Cloud']
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 <Note>
   Автоматические резервные копии в ваш внешний бакет являются полными и независимыми. Они выполняются с той частотой и в то время начала, которые настроены для сервиса (по умолчанию каждые 24 часа). ClickHouse также каждые 24 часа создаёт отдельную резервную копию в бакете, управляемом ClickHouse; эта периодичность фиксирована.
 </Note>
 
 <div id="AWS">
-  ## AWS {#AWS}
+  ## AWS
 </div>
 
 <div id="taking-backups-to-aws">
-  ### Создание резервных копий в AWS {#taking-backups-to-aws}
+  ### Создание резервных копий в AWS
 </div>
 
 #### 1. Шаги, которые нужно выполнить в AWS {#aws-steps}
@@ -37,11 +39,7 @@ keywords: ['резервные копии', 'аварийное восстано
 
     * a. Получите ARN на странице настроек сервиса ClickHouse Cloud в разделе Network security information. Он выглядит примерно так:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
 
     * b. Для этой роли создайте политику доверия следующим образом:
 
@@ -114,28 +112,20 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="configure-external-bucket">
     На странице Settings нажмите Set up external backup:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
   <Step title="Настройка ARN роли AWS IAM и параметров S3 бакета" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     На следующем экране укажите ARN только что созданной роли AWS IAM и URL S3 бакета в следующем формате:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Настройка ARN роли AWS IAM и параметров S3 бакета](/images/cloud/manage/backups/configure_arn_s3_details.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Настройка ARN роли AWS IAM и параметров S3 бакета" size="lg" />
   </Step>
 
   <Step title="Сохранение изменений" id="save-changes">
     Нажмите “Save External Bucket”, чтобы сохранить настройки
   </Step>
 
-  <Step title="Изменение расписания резервного копирования, заданного по умолчанию" id="changing-the-backup-schedule">
+  <Step title="Изменение стандартного расписания резервного копирования" id="changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице “Settings”.
     Если задана другая конфигурация, пользовательское расписание и настройка срока хранения применяются
@@ -147,11 +137,7 @@ keywords: ['резервные копии', 'аварийное восстано
     На странице Backups эти резервные копии из вашего бакета будут отображаться в отдельной таблице,
     как показано ниже:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="lg" />
   </Step>
 </Steps>
 
@@ -171,18 +157,14 @@ keywords: ['резервные копии', 'аварийное восстано
     чтобы новый сервис мог получить доступ к S3 бакету.
   </Step>
 
-  <Step title="Получите SQL-команду для восстановления из резервной копии" id="obtain-sql-command-to-restore-backup">
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="obtain-sql-command-to-restore-backup">
     Нажмите ссылку “access or restore a backup” над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть так:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Получите SQL-команду для восстановления из резервной копии](/images/cloud/manage/backups/backup_command.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
 
     <Warning>
-      **Перемещение резервных копий в другое расположение**
+      **Перемещение резервных копий в другое место**
 
       Если вы переместите резервные копии в другое место, вам потребуется изменить команду восстановления так, чтобы она ссылалась на новое расположение.
     </Warning>
@@ -190,7 +172,7 @@ keywords: ['резервные копии', 'аварийное восстано
     <Tip>
       **Команда ASYNC**
 
-      Для команды восстановления при необходимости можно также добавить в конец команду `ASYNC` для крупных восстановлений.
+      Для команды Restore при необходимости можно также добавить в конец команду `ASYNC` для крупных восстановлений.
       Это позволяет выполнять восстановление асинхронно, поэтому даже при потере соединения оно продолжится.
       Важно отметить, что команда ASYNC сразу возвращает статус успешного выполнения.
       Это не означает, что восстановление действительно прошло успешно.
@@ -205,11 +187,11 @@ keywords: ['резервные копии', 'аварийное восстано
 </Steps>
 
 <div id="gcp">
-  ## GCP {#gcp}
+  ## GCP
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### Создание резервных копий в GCP {#taking-backups-to-gcp}
+  ### Создание резервных копий в GCP
 </div>
 
 Чтобы создать резервные копии в GCP, выполните следующие действия:
@@ -251,28 +233,20 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="gcp-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
-  <Step title="Настройка ключа и секрета HMAC GCP" id="gcp-configure-gcp-hmac-key-and-secret">
-    Во всплывающем окне укажите путь к бакету GCP, ключ и секрет HMAC, созданные в предыдущем разделе.
+  <Step title="Настройка HMAC-ключа и секрета GCP" id="gcp-configure-gcp-hmac-key-and-secret">
+    Во всплывающем окне укажите путь к бакету GCP, HMAC-ключ и Secret, созданные в предыдущем разделе.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Настройка ключа и секрета HMAC GCP](/images/cloud/manage/backups/gcp_configure.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Настройка HMAC-ключа и секрета GCP" size="md" />
   </Step>
 
   <Step title="Save External Bucket" id="gcp-save-external-bucket">
     Нажмите `Save External Bucket`, чтобы сохранить настройки.
   </Step>
 
-  <Step title="Изменение расписания резервного копирования, заданного по умолчанию" id="gcp-changing-the-backup-schedule">
+  <Step title="Изменение расписания резервного копирования по умолчанию" id="gcp-changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию.
     При необходимости вы можете изменить расписание резервного копирования на странице `Settings`.
     Если задана другая конфигурация, пользовательское расписание и настройка срока хранения применяются к
@@ -283,11 +257,7 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Просмотр резервных копий, сохранённых в вашем бакете" id="gcp-view-backups-stored-in-your-bucket">
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице, как показано ниже:
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/gcp_stored_backups.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="lg" />
   </Step>
 </Steps>
 
@@ -300,17 +270,13 @@ keywords: ['резервные копии', 'аварийное восстано
     Создайте новый сервис, в который будет восстановлена резервная копия.
   </Step>
 
-  <Step title="Получите SQL-команду для восстановления из резервной копии" id="gcp-obtain-sql-command-to-restore-backup">
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="gcp-obtain-sql-command-to-restore-backup">
     Нажмите ссылку `access or restore a backup` над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда будет выглядеть примерно так;
     вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить команду восстановления
     именно для неё. В команду также потребуется добавить свой секретный ключ доступа:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Получите SQL-команду для восстановления из резервной копии](/images/cloud/manage/backups/gcp_restore_command.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Получение SQL-команды для восстановления резервной копии" size="md" />
 
     <Warning>
       **Перемещение резервных копий в другое расположение**
@@ -321,7 +287,7 @@ keywords: ['резервные копии', 'аварийное восстано
     <Tip>
       **Команда ASYNC**
 
-      Для команды восстановления при больших объёмах восстановления вы также можете при необходимости добавить в конец команду `ASYNC`.
+      Для команды Restore при больших объёмах восстановления вы также можете при необходимости добавить в конец команду `ASYNC`.
       Это позволяет выполнять восстановление асинхронно, поэтому даже при потере соединения восстановление продолжится.
       Важно отметить, что команда ASYNC сразу возвращает статус успешного выполнения.
       Это не означает, что восстановление действительно прошло успешно.
@@ -336,11 +302,11 @@ keywords: ['резервные копии', 'аварийное восстано
 </Steps>
 
 <div id="azure">
-  ## Azure {#azure}
+  ## Azure
 </div>
 
 <div id="taking-backups-to-azure">
-  ### Создание резервных копий в Azure {#taking-backups-to-azure}
+  ### Создание резервных копий в Azure
 </div>
 
 Чтобы создать резервные копии в Azure, выполните следующие действия:
@@ -367,29 +333,21 @@ keywords: ['резервные копии', 'аварийное восстано
   <Step title="Change external backup" id="azure-configure-external-bucket">
     На странице `Settings` нажмите `Change external backup`
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
   </Step>
 
   <Step title="Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure" id="azure-provide-connection-string-and-container-name-azure">
-    На следующем экране укажите строку подключения и имя контейнера для вашей
+    На следующем экране укажите Connection String и Container Name для вашей
     учётной записи хранилища Azure, созданной в предыдущем разделе:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure](/images/cloud/manage/backups/azure_connection_details.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Укажите строку подключения и имя контейнера для вашей учётной записи хранилища Azure" size="md" />
   </Step>
 
   <Step title="Save External Bucket" id="azure-save-external-bucket">
     Нажмите `Save External Bucket`, чтобы сохранить настройки
   </Step>
 
-  <Step title="Изменение расписания резервного копирования, заданного по умолчанию" id="azure-changing-the-backup-schedule">
+  <Step title="Изменение расписания резервного копирования по сравнению с расписанием по умолчанию" id="azure-changing-the-backup-schedule">
     Теперь внешние резервные копии будут создаваться в вашем бакете по расписанию по умолчанию. Либо
     вы можете настроить расписание резервного копирования на странице `Settings`. Если задана другая конфигурация,
     пользовательское расписание и настройка срока хранения применяются к резервным копиям, записываемым в ваш бакет.
@@ -401,11 +359,7 @@ keywords: ['резервные копии', 'аварийное восстано
     На странице Backups эти резервные копии из вашего бакета должны отображаться в отдельной таблице,
     как показано ниже:
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Просмотр резервных копий, сохранённых в вашем бакете](/images/cloud/manage/backups/view_backups_azure.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Просмотр резервных копий, сохранённых в вашем бакете" size="md" />
   </Step>
 </Steps>
 
@@ -419,21 +373,17 @@ keywords: ['резервные копии', 'аварийное восстано
     восстановление резервной копии только в новый сервис.
   </Step>
 
-  <Step title="Получите SQL-команду для восстановления из резервной копии" id="azure-obtain-sql-command-to-restore-backup">
+  <Step title="Получите SQL-команду для восстановления резервной копии" id="azure-obtain-sql-command-to-restore-backup">
     Нажмите ссылку `access or restore a backup` над списком резервных копий в
     интерфейсе, чтобы получить SQL-команду для восстановления резервной копии. Команда должна выглядеть
     примерно так. Вы можете выбрать нужную резервную копию в раскрывающемся списке, чтобы получить
     команду восстановления именно для нее. В команду нужно будет добавить строку подключения
     к вашей учетной записи хранилища Azure.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![Восстановление резервных копий в Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Восстановление резервных копий в Azure" size="md" />
 
     <Warning>
-      **Перемещение резервных копий в другое расположение**
+      **Перемещение резервных копий в другое место**
 
       Если вы переместите резервные копии в другое место, вам потребуется изменить команду восстановления так, чтобы она ссылалась на новое расположение.
     </Warning>
@@ -441,7 +391,7 @@ keywords: ['резервные копии', 'аварийное восстано
     <Tip>
       **Команда ASYNC**
 
-      Для команды восстановления при больших объемах восстановления при необходимости можно также добавить в конец команду `ASYNC`.
+      Для команды Restore при больших объемах восстановления при необходимости можно также добавить в конец команду `ASYNC`.
       Это позволяет выполнять восстановление асинхронно, поэтому при потере соединения восстановление продолжится.
       Важно отметить, что команда ASYNC сразу возвращает статус успешного выполнения.
       Это не означает, что восстановление действительно прошло успешно.

@@ -1,5 +1,5 @@
 import { galaxyOnClick } from '/snippets/lib/galaxy.jsx';
-export const BetaBadge = ({ link, galaxyTrack, galaxyEvent, label }) => {
+export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
     if (link) {
         return (
             <a
@@ -9,7 +9,7 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent, label }) => {
                 className="betaBadge"
                 onClick={galaxyTrack && galaxyEvent ? galaxyOnClick(galaxyEvent) : undefined}
             >
-                <span>{label ?? 'Бета'}</span>
+                <span>Бета</span>
             </a>
         )
     }
@@ -19,7 +19,7 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent, label }) => {
             href="https://clickhouse.com/docs/reference/settings/beta-and-experimental-features#beta-features"
             className="betaBadge"
         >
-            <span>{label ?? 'Возможность в статусе бета'}</span>
+            <span>Возможность в статусе бета</span>
         </a>
     )
 }

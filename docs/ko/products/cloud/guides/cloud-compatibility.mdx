@@ -70,11 +70,9 @@ ClickHouse Cloud는 기본적으로 [SharedMergeTree](/ko/products/cloud/feature
 
 ClickHouse Cloud는 HTTPS, 네이티브 인터페이스, 그리고 [MySQL wire protocol](/ko/concepts/features/interfaces/mysql)을 지원합니다. Postgres와 같은 추가 인터페이스도 곧 지원될 예정입니다.
 
-### 딕셔너리 {#dictionaries}
+### Dictionaries {#dictionaries}
 
-딕셔너리는 ClickHouse에서 키 조회 속도를 높이는 데 널리 사용되는 기능입니다. 현재 ClickHouse Cloud에서는 PostgreSQL, MySQL, 원격 및 로컬 ClickHouse 서버, Redis, MongoDB, HTTP 소스의 딕셔너리를 지원합니다.
-
-ClickHouse 테이블(table)에서 데이터를 읽는 딕셔너리를 생성할 때는 `SOURCE` 절에 전용 사용자의 사용자 이름과 비밀번호를 지정하십시오. 해당 사용자에게는 원본 테이블에 대한 `SELECT` 권한(permission)이 필요합니다. 자세한 내용은 [ClickHouse 딕셔너리 소스 예시](/ko/reference/statements/create/dictionary/sources/clickhouse)를 참고하십시오.
+Dictionaries는 ClickHouse에서 키 조회 속도를 높이는 데 널리 사용되는 기능입니다. 현재 ClickHouse Cloud에서는 PostgreSQL, MySQL, 원격 및 로컬 ClickHouse 서버, Redis, MongoDB, HTTP 소스의 Dictionaries를 지원합니다.
 
 ### 페더레이티드 쿼리 {#federated-queries}
 

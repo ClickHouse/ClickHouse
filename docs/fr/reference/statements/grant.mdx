@@ -167,15 +167,6 @@ La hiérarchie des privilèges dans ClickHouse est présentée ci-dessous :
       * `SHOW ROW POLICIES`
       * `SHOW SETTINGS PROFILES`
       * `SHOW USERS`
-  * [`AI FUNCTIONS`](#ai-functions)
-    * `aiClassify`
-    * `aiEmbed`
-    * `aiExtract`
-    * `aiFilter`
-    * `aiGenerate`
-    * `aiRedact`
-    * `aiSimilarity`
-    * `aiTranslate`
   * [`ALTER`](#alter)
     * `ALTER DATABASE`
       * `ALTER DATABASE SETTINGS`
@@ -227,25 +218,20 @@ La hiérarchie des privilèges dans ClickHouse est présentée ci-dessous :
     * `CREATE DATABASE`
     * `CREATE DICTIONARY`
     * `CREATE FUNCTION`
+    * `CREATE RESOURCE`
     * `CREATE TABLE`
     * `CREATE VIEW`
-  * `CREATE RESOURCE`
-  * `CREATE WORKLOAD`
+    * `CREATE WORKLOAD`
   * [`dictGet`](#dictget)
   * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
   * [`DROP`](#drop)
     * `DROP DATABASE`
     * `DROP DICTIONARY`
     * `DROP FUNCTION`
+    * `DROP RESOURCE`
     * `DROP TABLE`
     * `DROP VIEW`
-  * `DROP RESOURCE`
-  * `DROP WORKLOAD`
-  * `HANDLER ADMIN`
-    * `ALTER HANDLER`
-    * `CREATE HANDLER`
-    * `DROP HANDLER`
-    * `SHOW HANDLERS`
+    * `DROP WORKLOAD`
   * [`INSERT`](#insert)
   * [`INTROSPECTION`](#introspection)
     * `addressToLine`
@@ -649,29 +635,10 @@ Permet d&#39;utiliser les fonctions [d&#39;introspection](/fr/concepts/features/
   * `addressToSymbol`. Niveau : `GLOBAL`
   * `demangle`. Niveau : `GLOBAL`
 
-### AI FUNCTIONS {#ai-functions}
-
-Permet d’utiliser les [fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions). L’appel d’une fonction d’IA nécessite également le privilège `NAMED COLLECTION` sur les identifiants sélectionnés.
-
-* `AI FUNCTIONS`. Niveau : `GROUP`
-  * `aiClassify`. Niveau : `GLOBAL`
-  * `aiEmbed`. Niveau : `GLOBAL`
-  * `aiExtract`. Niveau : `GLOBAL`
-  * `aiFilter`. Niveau : `GLOBAL`
-  * `aiGenerate`. Niveau : `GLOBAL`
-  * `aiRedact`. Niveau : `GLOBAL`
-  * `aiSimilarity`. Niveau : `GLOBAL`
-  * `aiTranslate`. Niveau : `GLOBAL`
-
-Exemples :
-
-* `GRANT AI FUNCTIONS ON *.* TO john`
-* `GRANT aiGenerate, aiClassify ON *.* TO john`
-
 ### SOURCES {#sources}
 
 Permet d’utiliser des sources de données externes. S’applique aux [moteurs de base de données](/fr/reference/engines/database-engines/index), [moteurs de table](/fr/reference/engines/table-engines/index) et [fonctions de table](/fr/reference/functions/table-functions/index) adossés à une source.
-Également requis pour les emplacements de sauvegarde : `BACKUP`/`RESTORE` et `ENGINE = Backup` autorisent leur emplacement en fonction de ces privilèges accordés.
+Également requis pour les emplacements de sauvegarde : `BACKUP`/`RESTORE` et `ENGINE = Backup` autorisent leur emplacement en fonction de ces privilèges.
 
 * `READ`. Niveau : `GLOBAL_WITH_PARAMETER`
 * `WRITE`. Niveau : `GLOBAL_WITH_PARAMETER`
@@ -681,7 +648,6 @@ Paramètres possibles :
 * `AZURE`
 * `BIGQUERY`
 * `DISK`
-* `ELASTICSEARCH`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -700,7 +666,7 @@ Paramètres possibles :
 * `URL`
 
 <Note>
-  La distinction entre les privilèges accordés READ et WRITE pour les sources est disponible à partir de la version 25.7, et uniquement avec le paramètre du serveur
+  La distinction entre les privilèges READ et WRITE pour les sources est disponible à partir de la version 25.7, et uniquement avec le paramètre du serveur
   `access_control_improvements.enable_read_write_grants`
 
   Sinon, vous devez utiliser la syntaxe `GRANT AZURE ON *.* TO user`, qui équivaut au nouveau `GRANT READ, WRITE ON AZURE TO user`
@@ -711,7 +677,7 @@ Exemples :
 * Pour créer une table avec le [moteur de table MySQL](/fr/reference/engines/table-engines/integrations/mysql), vous devez disposer de `CREATE TABLE (ON db.table_name)` et des privilèges `MYSQL`.
 * Pour utiliser la [fonction de table mysql](/fr/reference/functions/table-functions/mysql), vous devez disposer de `CREATE TEMPORARY TABLE` et des privilèges `MYSQL`.
 
-### Grants de filtres de source {#source-filter-grants}
+### Privilèges de filtrage des sources {#source-filter-grants}
 
 <Note>
   Cette fonctionnalité est disponible à partir de la version 25.8 et uniquement avec le paramètre serveur
@@ -720,17 +686,17 @@ Exemples :
 
 Vous pouvez accorder l&#39;accès à des URI de sources spécifiques en utilisant des filtres par expression régulière. Cela permet de contrôler avec précision les sources de données externes auxquelles les utilisateurs peuvent accéder.
 
-**Syntaxe :**
+**Syntaxe :**
 
 ```sql
 GRANT READ ON S3('regexp_pattern') TO user
 ```
 
-Ce grant permet à l&#39;utilisateur de lire uniquement des URI S3 correspondant au motif d&#39;expression régulière spécifié.
+Cette autorisation permet à l&#39;utilisateur de lire uniquement des URI S3 correspondant au motif d&#39;expression régulière spécifié.
 
-**Exemples :**
+**Exemples :**
 
-Accorder l&#39;accès à des chemins spécifiques dans un bucket S3 :
+Accorder l&#39;accès à des chemins spécifiques dans un bucket S3 :
 
 ```sql
 -- Allow user to read only from s3://foo/ paths
@@ -745,7 +711,7 @@ GRANT READ ON S3('s3://bar/.*') TO john
 ```
 
 <Warning>
-  Le filtre de source prend **regexp** comme paramètre ; ainsi, le grant
+  Le filtre source prend **regexp** comme paramètre ; ainsi, l’autorisation
   `GRANT READ ON URL('http://www.google.com') TO john;`
 
   autorisera les requêtes
@@ -756,16 +722,16 @@ GRANT READ ON S3('s3://bar/.*') TO john
   ```
 
   car `.` est interprété comme un `Any Single Character` dans les expressions régulières.
-  Cela peut entraîner une vulnérabilité potentielle. Le grant correct doit être
+  Cela peut entraîner une vulnérabilité potentielle. L’autorisation correcte doit être
 
   ```sql
   GRANT READ ON URL('https://www\.google\.com') TO john;
   ```
 </Warning>
 
-**Nouvelle attribution avec GRANT OPTION :**
+**Nouvelle attribution avec GRANT OPTION :**
 
-Si le grant d’origine inclut `WITH GRANT OPTION`, il peut être réattribué à l’aide de `GRANT CURRENT GRANTS` :
+Si l’autorisation d’origine inclut `WITH GRANT OPTION`, il peut être réattribué à l’aide de `GRANT CURRENT GRANTS` :
 
 ```sql
 -- Original grant with GRANT OPTION
@@ -775,21 +741,10 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
-**Révocation :**
+**Limitations importantes :**
 
-```sql
--- Revokes only this filter, other filters on S3 are kept
-REVOKE READ ON S3('s3://foo/.*') FROM john
-
--- Revokes READ on S3, including all filters
-REVOKE READ ON S3 FROM john
-```
-
-**Limitations importantes :**
-
-* **Les filtres sont comparés en tant que chaînes de caractères :** `REVOKE` supprime uniquement le filtre strictement identique à celui qui a été accordé. La révocation de `S3('s3://foo/bar/.*')` lève une exception au lieu de restreindre un grant portant sur `S3('s3://foo/.*')`.
-* **Les révocations partielles ne sont pas autorisées :** vous ne pouvez pas révoquer une partie d’un filtre déjà accordé. Vous devez révoquer le grant dans son intégralité, puis l’accorder de nouveau avec de nouveaux motifs si nécessaire.
-* **Les autorisations avec caractères génériques ne sont pas autorisées :** vous ne pouvez pas utiliser `GRANT READ ON *('regexp')` ni d’autres motifs composés uniquement de caractères génériques. Vous devez fournir une source spécifique.
+* **Les révocations partielles ne sont pas autorisées :** vous ne pouvez pas révoquer une partie d’un filtre déjà accordé. Vous devez révoquer l’autorisation dans son intégralité, puis l’accorder de nouveau avec de nouveaux motifs si nécessaire.
+* **Les autorisations avec caractères génériques ne sont pas autorisées :** vous ne pouvez pas utiliser `GRANT READ ON *('regexp')` ni d’autres motifs composés uniquement de caractères génériques. Vous devez fournir une source spécifique.
 
 ### dictGet {#dictget}
 

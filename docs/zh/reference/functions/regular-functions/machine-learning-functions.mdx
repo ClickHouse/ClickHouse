@@ -18,15 +18,168 @@ doc_type: 'reference'
 
 [stochasticLogisticRegression](/zh/reference/functions/aggregate-functions/stochasticLogisticRegression) 聚合函数实现了用于二元分类问题的随机梯度下降方法。使用 `evalMLMethod` 对新数据进行预测。
 
+## naiveBayesClassifier {#naivebayesclassifier}
+
+使用带有 n-gram 和拉普拉斯平滑的朴素贝叶斯模型对输入文本进行分类。该模型必须先在 ClickHouse 中配置后方可使用。
+
+**语法**
+
+```sql
+naiveBayesClassifier(model_name, input_text);
+```
+
+**参数**
+
+* `model_name` — 预配置模型的名称。[String](/zh/reference/data-types/string)
+  该模型必须在 ClickHouse 的配置文件中定义 (见下文) 。
+* `input_text` — 要分类的文本。[String](/zh/reference/data-types/string)
+  输入会完全按原样处理 (保留大小写和标点) 。
+
+**返回值**
+
+* 预测类别 ID，以无符号整数表示。[UInt32](/zh/reference/data-types/int-uint)
+  类别 ID 对应于模型构建时定义的类别。
+
+**示例**
+
+使用语言检测模型对文本进行分类：
+
+```sql
+SELECT naiveBayesClassifier('language', 'How are you?');
+```
+
+```response
+┌─naiveBayesClassifier('language', 'How are you?')─┐
+│ 0                                                │
+└──────────────────────────────────────────────────┘
+```
+
+*结果 `0` 可能表示英语，而 `1` 可能表示法语——具体类别含义取决于你的训练数据。*
+
+***
+
+### 实现细节 {#implementation-details}
+
+**算法**
+使用朴素贝叶斯分类算法，并结合 [拉普拉斯平滑](https://en.wikipedia.org/wiki/Additive_smoothing) 处理未见过的 n-gram；n-gram 概率的计算方法参考了[这份资料](https://web.stanford.edu/~jurafsky/slp3/4.pdf)。
+
+**主要特性**
+
+* 支持任意长度的 n-gram
+* 三种标记化模式：
+  * `byte`：基于原始字节进行处理。每个字节都是一个标记。
+  * `codepoint`：基于从 UTF‑8 解码得到的 Unicode 标量值进行处理。每个码点都是一个标记。
+  * `token`：按连续的 Unicode 空白字符 (正则 `\s+`) 拆分。标记是非空白的子字符串；如果与标点符号相邻，标点符号也会被视为该标记的一部分 (例如，&quot;you?&quot; 是一个标记) 。
+
+***
+
+### 模型配置 {#model-configuration}
+
+你可以在[这里](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models)找到用于创建语言检测朴素贝叶斯模型的示例源代码。
+
+此外，[这里](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models)还提供了示例模型及其对应的配置文件。
+
+下面是 ClickHouse 中朴素贝叶斯模型的一个示例配置：
+
+```xml
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>sentiment</name>
+            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
+            <n>2</n>
+            <mode>token</mode>
+            <alpha>1.0</alpha>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.6</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.4</value>
+                </prior>
+            </priors>
+        </model>
+    </nb_models>
+</clickhouse>
+```
+
+**配置参数**
+
+| 参数         | 说明                                                                         | 示例                                                       | 默认值   |
+| ---------- | -------------------------------------------------------------------------- | -------------------------------------------------------- | ----- |
+| **name**   | 唯一模型标识符                                                                    | `language_detection`                                     | *必填*  |
+| **path**   | 模型二进制文件的完整路径                                                               | `/etc/clickhouse-server/config.d/language_detection.bin` | *必填*  |
+| **mode**   | 标记化方式：<br />- `byte`：字节序列<br />- `codepoint`：Unicode 字符<br />- `token`：标记 | `token`                                                  | *必填*  |
+| **n**      | N-gram 大小 (`token` 模式) ：<br />- `1`=单个词<br />- `2`=词对<br />- `3`=三个词一组     | `2`                                                      | *必填*  |
+| **alpha**  | 分类时使用的 拉普拉斯平滑 系数，用于处理模型中未出现的 n-grams                            | `0.5`                                                    | `1.0` |
+| **priors** | 类别概率 (属于某一类别的文档占比)                                                         | 类别 0 占 60%，类别 1 占 40%                                    | 均匀分布  |
+
+**模型训练指南**
+
+**文件格式**
+在可读性较高的格式中，对于 `n=1` 且 `token` 模式，模型可能如下所示：
+
+```text
+<class_id> <n-gram> <count>
+0 excellent 15
+1 refund 28
+```
+
+当 `n=3` 且为 `codepoint` 模式时，可能如下所示：
+
+```text
+<class_id> <n-gram> <count>
+0 exc 15
+1 ref 28
+```
+
+ClickHouse 不会直接使用人类可读格式；必须先将其转换为下文所述的二进制格式。
+
+**二进制格式详情**
+每个存储的 n-gram 格式如下：
+
+1. 4 字节 `class_id` (UInt，小端序)
+2. 4 字节 `n-gram` 字节长度 (UInt，小端序)
+3. 原始 `n-gram` 字节
+4. 4 字节 `count` (UInt，小端序)
+
+**预处理要求**
+在根据文档语料库创建模型之前，必须先按照指定的 `mode` 和 `n` 对文档进行预处理，以提取 n-gram。以下步骤概述了预处理过程：
+
+1. **根据标记化模式，在每个文档的开头和结尾添加边界标记：**
+
+   * **Byte**：`0x01` (起始) ，`0xFF` (结束)
+   * **Codepoint**：`U+10FFFE` (起始) ，`U+10FFFF` (结束)
+   * **Token**：`<s>` (起始) ，`</s>` (结束)
+
+   *注意：* 文档开头和结尾各添加 `(n - 1)` 个标记。
+
+2. **`token` 模式下 `n=3` 的示例：**
+
+   * **文档：** `"ClickHouse is fast"`
+   * **处理结果：** `<s> <s> ClickHouse is fast </s> </s>`
+   * **生成的三元组：**
+     * `<s> <s> ClickHouse`
+     * `<s> ClickHouse is`
+     * `ClickHouse is fast`
+     * `is fast </s>`
+     * `fast </s> </s>`
+
+为简化 `byte` 和 `codepoint` 模式下的模型创建，可先将文档标记化为标记 (`byte` 模式下为 `byte` 列表，`codepoint` 模式下为 `codepoint` 列表) 。然后，在文档开头添加 `n - 1` 个起始标记，在文档末尾添加 `n - 1` 个结束标记。最后，生成 n-grams 并将其写入序列化文件。
+
+***
+
 {/* 
-  以下标签内的内容会在文档框架构建时替换为 
-  根据 system.functions 生成的文档。请勿修改或删除这些标签。
-  参见：https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-  */}
+    以下标签内的内容会在文档框架构建时被替换为
+    根据 system.functions 生成的文档。请勿修改或删除这些标签。
+    参见：https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+    */}
 
 {/*AUTOGENERATED_START*/}
 
-## assignCentroid {#assignCentroid}
+## assignCentroid
 
 引入版本：v26.8.0
 
@@ -63,7 +216,7 @@ SELECT assignCentroid([1.0, 2.0]::Array(Float32), [[0.0, 0.0], [1.0, 2.0]]::Arra
 1
 ```
 
-## evalMLMethod {#evalMLMethod}
+## evalMLMethod
 
 引入版本：v20.1.0
 
@@ -124,7 +277,7 @@ LIMIT 5
 └───────────────┴───────────┴──────────────┘
 ```
 
-## naiveBayesClassifier {#naiveBayesClassifier}
+## naiveBayesClassifier
 
 引入版本：v25.11.0
 
@@ -173,7 +326,7 @@ SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
 └──────────┘
 ```
 
-## naiveBayesClassifierWithAllProbs {#naiveBayesClassifierWithAllProbs}
+## naiveBayesClassifierWithAllProbs
 
 引入版本：v26.7.0
 
@@ -222,7 +375,7 @@ SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sen
 └─────────────────────────┘
 ```
 
-## naiveBayesClassifierWithProb {#naiveBayesClassifierWithProb}
+## naiveBayesClassifierWithProb
 
 引入版本：v26.7.0
 
@@ -270,69 +423,6 @@ SELECT (p.1, round(p.2, 4)) AS prediction;
 ┌─prediction─┐
 │ (0,0.9677) │
 └────────────┘
-```
-
-## predictXGBoost {#predictXGBoost}
-
-引入版本：v26.10.0
-
-使用 [`XGBOOST`](/zh/reference/statements/create/dictionary/layouts/xgboost) 字典，根据特征向量预测数值型目标值。特征按位置传入，顺序须与该字典声明键列的顺序一致。这是查询 `XGBOOST` 字典的唯一方式：该字典存储的是训练好的模型而非行数据，因此不支持通用的字典接口 (`dictGet`、`dictHas`、`SELECT * FROM dict`) 。XGBoost 集成目前仍处于实验性阶段，因此必须启用 `enable_xgboost` 设置。
-
-**语法**
-
-```sql
-predictXGBoost(dictionary_name, feature1[, feature2, ...][, params])
-```
-
-**参数**
-
-* `dictionary_name` — 采用 XGBOOST 布局的字典名称。有关如何创建该字典及其支持的训练参数，请参阅 [XGBOOST 字典布局](/zh/reference/statements/create/dictionary/layouts/xgboost)。[`String`](/zh/reference/data-types/string)
-* `featureN` — 数值特征值，按字典键的顺序依次按位置传入。值为 NULL 的特征会作为缺失值传给模型，XGBoost 会按照训练时的方式处理缺失值，因此预测结果永远不会为 NULL。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Nullable((U)Int*)`](/zh/reference/data-types/nullable) 或 [`Nullable(Float*)`](/zh/reference/data-types/nullable)
-* `params` — 可选的 XGBoost 预测参数常量 Map，键为参数名称，值为整数，例如 `map('type', 0, 'iteration_end', 0)`。所有支持的参数均为整数或布尔类型，因此不接受小数值。有关支持的键，请参阅[预测参数](/zh/reference/statements/create/dictionary/layouts/xgboost#prediction-parameters)。[`Map(String, (U)Int8/16/32/64)`](/zh/reference/data-types/map)
-
-**返回值**
-
-模型预测结果，类型为 Float64，每行返回一个值。[`Float64`](/zh/reference/data-types/float)
-
-**示例**
-
-**预测**
-
-```sql title=Query
--- A model trained on the linear target y = 2 * x1 + 3 * x2. The XGBoost integration is experimental.
-SET enable_xgboost = 1;
-
-CREATE TABLE training_data (x1 Float64, x2 Float64, y Float64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO training_data SELECT number AS x1, number * 2 AS x2, 2 * x1 + 3 * x2 AS y FROM numbers(100);
-
-CREATE DICTIONARY model (x1 Float64, x2 Float64, y Float64)
-PRIMARY KEY (x1, x2)
-SOURCE(CLICKHOUSE(TABLE 'training_data'))
-LAYOUT(XGBOOST(objective 'reg:squarederror' num_iterations 100 max_depth 6))
-LIFETIME(0);
-
--- The ground truth is 2 * 1 + 3 * 2 = 8.
-SELECT round(predictXGBoost('model', 1.0, 2.0), 1) AS prediction;
-```
-
-```response title=Response
-┌─prediction─┐
-│          8 │
-└────────────┘
-```
-
-**使用参数进行预测**
-
-```sql title=Query
--- The raw margin of the model above, before the objective's transformation. For `reg:squarederror` it is the
--- prediction itself, while for `binary:logistic` it is the log-odds rather than the probability.
-SELECT round(predictXGBoost('model', 1.0, 2.0, map('type', 1)), 1) AS margin;
-```
-
-```response title=Response
-┌─margin─┐
-│      8 │
-└────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

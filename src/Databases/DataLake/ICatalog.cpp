@@ -3,7 +3,6 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
-#include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
@@ -70,9 +69,6 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
-    if (storage_type_str == "hdfs")
-        return StorageType::HDFS;
-
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
@@ -105,32 +101,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     return *storage_type;
 }
 
-std::string encodeLocationForURI(std::string_view location)
-{
-    /// `S3::URI` reads every `%` of a URL with a raw `?` literally, see `URI::URI`.
-    const bool keep_escapes = !location.contains('?');
-    std::string result;
-    result.reserve(location.size());
-    for (size_t i = 0; i < location.size(); ++i)
-    {
-        const char c = location[i];
-        const auto byte = static_cast<UInt8>(c);
-        const bool is_escape = keep_escapes && c == '%' && i + 2 < location.size()
-            && isHexDigit(location[i + 1]) && isHexDigit(location[i + 2]);
-        if (byte <= 0x20 || byte >= 0x7F || c == '?' || c == '#' || (c == '%' && !is_escape))
-        {
-            char hex[2];
-            writeHexByteUppercase(byte, hex);
-            result += '%';
-            result.append(hex, 2);
-        }
-        else
-            result += c;
-    }
-    return result;
-}
-
-void TableMetadata::setLocation(std::string_view location_)
+void TableMetadata::setLocation(const std::string & location_)
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -177,7 +148,7 @@ void TableMetadata::setLocation(std::string_view location_)
 
     /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
     /// The bucket (container) is the part before '@', not the whole string before '/'
-    String bucket_part(location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket));
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
     auto at_pos = bucket_part.find('@');
     if (at_pos != std::string::npos)
     {
@@ -235,10 +206,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        /// An Azure host never names a container, only a segment of the endpoint path can.
-        std::vector<std::string> endpoint_path_segments;
-        Poco::URI(location, /* enable_url_encoding */ false).getPathSegments(endpoint_path_segments);
-        if (!force_add_bucket && std::ranges::contains(endpoint_path_segments, bucket))
+        if (!force_add_bucket && location.contains("/" + bucket))
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
@@ -331,11 +299,6 @@ StorageType TableMetadata::getStorageType() const
     return parseStorageTypeFromLocation(location_without_path);
 }
 
-bool TableMetadata::isS3Location() const
-{
-    return tryParseStorageTypeFromString(storage_type_str) == StorageType::S3;
-}
-
 bool TableMetadata::hasLocation() const
 {
     return !location_without_path.empty();
@@ -406,7 +369,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     DB::SettingsChanges changes;
     changes.emplace_back("storage_endpoint", storage_endpoint);
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", String(aws_secret_access_key));
+    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
@@ -504,11 +467,6 @@ std::optional<std::string> ICatalog::getDefaultTableLocation(const std::string &
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
-}
-
-void ICatalog::createTableAtDefaultLocation(const String & /*namespace_name*/, const String & /*table_name*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTableAtDefaultLocation is not implemented");
 }
 
 void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const

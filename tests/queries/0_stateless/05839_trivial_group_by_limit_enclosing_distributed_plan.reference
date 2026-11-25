@@ -1,5 +1,0 @@
-without aggregates	5
-without aggregates, DEFAULT	5
-with aggregates	5	50
-with aggregates, without top-K	5	50
-view	5	50

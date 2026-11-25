@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Formats/FormatSettings.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -264,8 +263,7 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 {
     size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
-    /// `cut_to + hysteresis` could overflow for a huge `cut_to`, turning short names into names "cut" to that width.
-    if (!cut_to || length <= cut_to || length - cut_to <= hysteresis || isValidIdentifier(name))
+    if (!cut_to || length <= cut_to + hysteresis || isValidIdentifier(name))
         return {name, length};
 
     /// We cut characters in the middle and insert filler there.
@@ -275,16 +273,12 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
     size_t suffix_chars = (cut_to - 1) / 2;
     size_t suffix_chars_begin = length - suffix_chars;
 
-    const auto * data = reinterpret_cast<const UInt8 *>(name.data());
-    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(data, name.size(), 0, prefix_chars);
-    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(data, name.size(), 0, suffix_chars_begin);
-    /// A wide character across the start of the suffix would make it wider than `suffix_chars`.
-    if (suffix_bytes_begin < name.size() && UTF8::computeWidth(data, suffix_bytes_begin) < suffix_chars_begin)
-        suffix_bytes_begin += std::min<size_t>(UTF8::seqLength(data[suffix_bytes_begin]), name.size() - suffix_bytes_begin);
+    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, prefix_chars);
+    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, suffix_chars_begin);
 
     name = name.substr(0, prefix_bytes) + filler + name.substr(suffix_bytes_begin, std::string::npos);
 
-    return {name, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size())};
+    return {name, cut_to};
 }
 
 }

@@ -2,7 +2,7 @@
 sidebarTitle: 'المقدمة'
 description: 'استيراد وتصدير البيانات من Postgres إلى مجموعة واسعة من تنسيقات البيانات ومخازن الكائنات.'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'وثائق امتدادات chdb'
+title: 'الوثائق المرجعية لامتداد chdb'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'امتداد', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -143,7 +143,7 @@ CREATE TABLE reviews () WITH (
 على خلاف worker الخلفي، لا يحتفظ المساعد بأي ذاكرة مشتركة خاصة بـ Postgres ولا تديره عملية postmaster. وهذا يعزل حالات الـ crash فلا تؤثر على Postgres. فالمساعد الذي يتوقف يؤدي إلى ظهور error في الـ backend الذي شغّله فقط، بينما تبقى بقية الـ sessions دون تأثر.
 
 <Important>
-  لكل استعلام، يتصل المساعد بقاعدة بيانات جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ جدولًا وتتوقع أن تستعلم عنه في استعلام لاحق.
+  لكل استعلام، يتصل المساعد بـ database جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ table وتتوقع أن تستعلم عنها في استعلام لاحق.
 </Important>
 
 ## التبعيات {#dependencies}
@@ -290,7 +290,7 @@ dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 
 [NYC Taxi dataset]: /get-started/sample-datasets/nyc-taxi "ClickHouse Docs: بيانات سيارات الأجرة في نيويورك"
 
-[benchmark]: https://github.com/ClickHouse/pg_chdb/tree/main/dev/benchmark "Postgres Lake Copy اختبار الأداء"
+[benchmark]: https://github.com/ClickHouse/pg_chdb/tree/main/dev/benchmark "Postgres Lake Copy Benchmark"
 
 [JSONCompact]: /reference/formats/JSON/JSONCompact "ClickHouse Docs: JSONCompact"
 

@@ -108,7 +108,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## 设置 {#settings}
 
-`PostgreSQL` 表引擎 (以及 [`postgresql`](/zh/reference/functions/table-functions/postgresql) 表函数) 使用的连接池可以通过 `SETTINGS` 子句按表配置。若未指定某项设置，则默认使用对应查询级别 `postgresql_*` 设置的值。新建的表 (从备份恢复的表除外) 会将以此方式获取、且与服务器值不同的值 (例如通过 `SET` 或用户的设置配置文件设置的值) 写入自身的 `SETTINGS`，从而在服务器重启后仍能保留这些值。与服务器值相同的值不会被存储，因此若服务器值日后发生变化，此类表会随之采用新值。由命名集合设置的设置项不会从查询级别设置中获取，因此也不会为其存储任何值。已存储的值属于表的 `SETTINGS` 的一部分，因此会覆盖之后添加到命名集合中的同名键；若该键为 `NOT OVERRIDABLE`，表将加载失败并报错 `Override not allowed`。在表的 `SETTINGS` 子句中，通过 `name = DEFAULT` 重置的设置不会从查询级别设置中获取。
+`PostgreSQL` 表引擎 (以及 [`postgresql`](/zh/reference/functions/table-functions/postgresql) 表函数) 使用的连接池可以通过 `SETTINGS` 子句按表配置。若未指定某项设置，则默认使用对应查询级别 `postgresql_*` 设置的值。
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -159,7 +159,7 @@ PostgreSQL 端的 `SELECT` 查询会在只读的 PostgreSQL 事务中以 `COPY (
 
 简单的 `WHERE` 子句，如 `=`, `!=`, `>`, `>=`, `<`, `<=` 和 `IN`，会在 PostgreSQL 服务器上执行。
 
-所有 JOIN、聚合、排序以及 `IN [ array ]` 条件，都会在对 PostgreSQL 的查询结束后于 ClickHouse 中执行。只有在安全且已启用 [external&#95;storage&#95;push&#95;down&#95;limit](/zh/reference/settings/session-settings/external-storage#external_storage_push_down_limit) 的情况下，`LIMIT` 采样约束才会下推到 PostgreSQL；否则将在 ClickHouse 中执行。
+所有 JOIN、聚合、排序、`IN [ array ]` 条件以及 `LIMIT` 采样约束，都只会在对 PostgreSQL 的查询结束后于 ClickHouse 中执行。
 
 ## 传递查询而不是表名 {#passing-a-query}
 

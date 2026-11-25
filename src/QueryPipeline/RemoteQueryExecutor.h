@@ -31,8 +31,6 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
-using ProfileEventsCallback = std::function<void(const Block & block)>;
-
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
@@ -40,8 +38,7 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// Takes the number of the replica and a flag that becomes true when the replica's query executor is cancelled or finished.
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t, const std::atomic_bool &)>;
+using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -177,7 +174,7 @@ public:
             chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
-        [[nodiscard]] Type getType() const { return type; }
+        Type getType() const { return type; }
 
         Block getBlock()
         {
@@ -185,7 +182,7 @@ public:
             return std::move(block);
         }
 
-        [[nodiscard]] int getFileDescriptor() const
+        int getFileDescriptor() const
         {
             chassert(type == Type::FileDescriptor);
             return fd;
@@ -221,9 +218,6 @@ public:
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback);
-
-    /// Set callback for profile events. It will be called on ProfileEvents packet.
-    void setProfileEventsCallback(ProfileEventsCallback callback);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -295,7 +289,6 @@ private:
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
-    ProfileEventsCallback profile_events_callback;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
@@ -344,10 +337,6 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
-
-    /// Set by `cancel` and `finish` before they take `was_cancelled_mutex`, which is held while the task iterator
-    /// chooses a task, so that it can stop waiting for one.
-    std::atomic_bool stop_waiting_for_read_task = false;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
     /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier
@@ -417,10 +406,6 @@ private:
     void sendExternalTables();
 
     void processReadTaskRequest();
-
-    /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
-    /// passes it on to the client.
-    void processProfileEventsPacket(Block block);
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);

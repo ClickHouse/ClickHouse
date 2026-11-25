@@ -1,22 +1,24 @@
 ---
 sidebarTitle: 'تنبيهات الإنفاق'
 slug: /cloud/manage/billing/spend-alerts
-title: 'إعداد تنبيهات الإنفاق للمؤسسة'
-description: 'اضبط تنبيهات الإنفاق لمراقبة استخدام ClickHouse Cloud مقارنةً بالعتبات المحددة ضمن فترة الفوترة.'
-keywords: ['الفوترة', 'تنبيهات الإنفاق', 'عتبات الاستخدام', 'الإشعارات', 'مراقبة التكلفة', 'فوترة المؤسسة']
+title: 'إعداد تنبيهات إنفاق المؤسسة'
+description: 'اضبط تنبيهات الإنفاق لمراقبة استخدام ClickHouse Cloud مقارنةً بالحدود المحددة ضمن فترة الفوترة.'
+keywords: ['الفوترة', 'تنبيهات الإنفاق', 'حدود الاستخدام', 'الإشعارات', 'مراقبة التكلفة', 'فوترة المؤسسة']
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُخطرك تنبيهات الإنفاق عندما يصل استخدام مؤسستك إلى العتبات المُعدّة خلال فترة الفوترة، مما يساعدك على تجنّب الرسوم غير المتوقعة. وهي تقتصر على إرسال الإشعارات فقط؛ أما العتبات التي تؤدي إلى إصدار الفواتير تلقائيًا، فراجع [عتبات الدفع](/ar/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
-  ## المتطلبات المسبقة {#prerequisites}
+  ## المتطلبات المسبقة
 </div>
 
 * يجب أن يكون لديك دور **Organization Admin** أو **Billing Admin** لتهيئة تنبيهات الإنفاق وعرضها.
 
 <div id="how-spend-alerts-work">
-  ## كيف تعمل تنبيهات الإنفاق {#how-spend-alerts-work}
+  ## كيف تعمل تنبيهات الإنفاق
 </div>
 
 * تستند التنبيهات إلى إجمالي الاستخدام خلال فترة الفوترة، وتُعاد ضبطها مع بداية كل دورة جديدة.
@@ -28,35 +30,29 @@ doc_type: 'guide'
   إن الوصول إلى 100% من تنبيه الإنفاق لا يقيّد استخدامك ولا يفرض عليه حدًا أقصى — بل يستمر تراكم الإنفاق بعد تجاوز عتبة 100%.
 </Info>
 
-## إعداد تنبيه الإنفاق {#set-up-spend-alert}
+<div id="set-up-spend-alert">
+  ## إعداد تنبيه الإنفاق
+</div>
 
 <Steps>
   <Step title="افتح مربع حوار تنبيهات الإنفاق" id="open-spend-alerts-dialog">
-    1. انتقل إلى **المؤسسة &gt; الفوترة** في وحدة تحكم ClickHouse Cloud.
-    2. انقر على **Actions &gt; إضافة تنبيهات الإنفاق**.
+    1. انتقل إلى **Organization &gt; Billing** في وحدة تحكم ClickHouse Cloud.
+    2. انقر على **Actions &gt; Add spend alerts**.
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![صفحة الفوترة مع فتح قائمة Actions وتمييز إضافة تنبيهات الإنفاق](/images/cloud/reference/billing/spend-alerts-actions.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="صفحة Billing مع فتح قائمة Actions وتمييز Add spend alerts" size="lg" />
   </Step>
 
   <Step title="اضبط التنبيه واحفظه" id="configure-and-save">
-    1. أدخل مبلغ تنبيه الإنفاق بالدولار أو الأرصدة لكل فترة فوترة.
-    2. حدِّد قنوات الإشعارات: **البريد الإلكتروني** و**UI** و/أو **Slack**.
+    1. أدخل قيمة تنبيه الإنفاق بالدولار أو الأرصدة لكل فترة فوترة.
+    2. حدِّد قنوات الإشعارات: **Email** و**UI** و/أو **Slack**.
     3. انقر على **Save**.
 
-    <div className="ch-image-md">
-      <Frame>
-        ![مربع حوار تنبيهات الإنفاق للمؤسسة مع حد الإنفاق وتنبيهات العتبة التلقائية وقنوات الإشعارات](/images/cloud/reference/billing/spend-alerts-config.png)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="مربع حوار تنبيهات إنفاق Organization مع حد الإنفاق وتنبيهات العتبة التلقائية وقنوات الإشعارات" size="md" />
   </Step>
 </Steps>
 
 <div id="threshold-alerts">
-  ## تنبيهات العتبة التلقائية {#threshold-alerts}
+  ## تنبيهات العتبة التلقائية
 </div>
 
 تُنشأ أربعة تنبيهات تلقائيًا ويتم إطلاقها استنادًا إلى مبلغ تنبيه الإنفاق الذي قمت بتعيينه:
@@ -69,7 +65,7 @@ doc_type: 'guide'
 | **100%** | الوصول إلى كامل الإنفاق            | $10                    |
 
 <div id="notification-channels">
-  ## قنوات الإشعارات {#notification-channels}
+  ## قنوات الإشعارات
 </div>
 
 | القناة                | الوصف                                                                                         |

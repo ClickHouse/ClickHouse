@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 ## ClickHouse にトレースコンテキストを渡す {#supplying-trace-context-to-clickhouse}
 
-ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。Prometheusプロトコル(メトリクスの公開、リモート書き込み、リモート読み取り、クエリ API)のHTTPハンドラーも、同様にトレースコンテキストの HTTP ヘッダーを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
+ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
 
 親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 設定で制御されます。
 
@@ -37,16 +37,6 @@ ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明さ�
 * `UNSET` — 成功でも失敗でもない。こうしたスパンには、状況をより詳しく示す属性が付与されます。
 
 `Distributed`テーブルへの`INSERT`クエリでも、同じ`clickhouse.cluster`および`clickhouse.shard_num`という属性 keyを持つ同様のスパンが`DistributedSink`で生成されます。
-
-### 分散実行計画タスクのスパン {#spans-of-distributed-plan-tasks}
-
-実験的な `make_distributed_plan` 設定を使用すると、クエリはステージからなる実行計画に分割され、各ステージはさらにタスクに分割されて、HTTP 経由でステートレスワーカーに送出されます。ディスパッチリクエストは `traceparent` および `tracestate` ヘッダーでトレースコンテキストを伝搬するため、worker 上のスパンはイニシエーターのトレースに組み込まれます。
-
-* `StatelessWorkerClient::sendTask` (種類 `CLIENT`) — イニシエーター上で、送出されるタスクごとに 1 つ作成されるスパンです。対象となるのは開始リクエストのみで、タスク自体は worker 上で非同期に実行され、その完了はポーリングによって確認されます。属性: `clickhouse.distributed.task_id`、`clickhouse.initial_query_id`、`clickhouse.target_host`、およびディスパッチが失敗した場合は `clickhouse.exception`。
-* `InterserverIOHTTPHandler` (種類 `SERVER`) — トレースコンテキストを伝搬するリクエストの worker 側のスパンで、`clickhouse.uri`、`http.method`、`clickhouse.http_status` を持ちます。タスクの開始前にリクエストが失敗した場合 (認証の失敗やエンドポイントでの例外など) は、このスパンに `clickhouse.exception` と `clickhouse.exception_code` が記録され、このスパンがディスパッチに関する worker 側の唯一のトレースとなります。`traceparent` ヘッダーを持たないリクエスト (例えばレプリカ間のパーツの取得処理) はトレースされません。
-* `DistributedPlanTask::execute` (種類 `SERVER`) — worker 上での 1 つのタスクの実行を表すスパンで、通常のクエリにおける `query` スパンに相当します。`query` スパンと同様に `db.statement`、`clickhouse.query_id`、および `clickhouse.query_status` または例外を持つほか、タスクのアイデンティティとして `clickhouse.distributed.task_id`、`clickhouse.initial_query_id`、`clickhouse.distributed.plan_hash` (シリアル化された実行計画フラグメントのハッシュ) 、`clickhouse.distributed.serialization_version`、`clickhouse.distributed.execute_locally`、およびタスクが読み書きする `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` ストリームを持ちます。
-
-タスクのスパンは、それを開始したリクエストのスパンが終了した後も存続します。`distributed_plan_execute_locally = 1` の場合、リクエストは送信されません。タスクはイニシエーターのスレッド上で実行され、その `DistributedPlanTask::execute` スパンはイニシエーターのトレースに直接紐付けられます。
 
 ## ClickHouse Keeper リクエストのトレーシング {#tracing-clickhouse-keeper-requests}
 

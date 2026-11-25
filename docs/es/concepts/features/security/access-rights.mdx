@@ -111,8 +111,6 @@ La política de filas es un filtro que define qué filas están disponibles para
 
 Una política de filas se aplica cuando los datos de la tabla se leen localmente. Para una tabla [Distributed](/es/reference/engines/table-engines/special/distributed), u otra tabla que delega la lectura en servidores remotos, defina la política en las tablas subyacentes de cada servidor: una política en la propia tabla respaldada por servidores remotos no puede aplicarse a la consulta enviada, por lo que se rechazan las lecturas a través de ella. Esta política en una tabla subyacente no se aplica cuando el iniciador envía un plan de lectura ya creado, por lo que mantenga [`serialize_query_plan = 0`](/es/reference/settings/session-settings/serialize#serialize_query_plan) para los usuarios cuyas políticas de filas deban aplicarse (consulte el [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
-Una política de filas filtra las filas que devuelve una consulta, pero no oculta el número de filas: los metadata de la tabla, como `total_rows` en [`system.tables`](/es/reference/system-tables/tables) y `rows` en [`system.parts`](/es/reference/system-tables/parts), y las estadísticas de la consulta, como [`EXPLAIN ESTIMATE`](/es/reference/statements/explain#explain-estimate), `read_rows` en el progreso de la consulta y el límite [`max_rows_to_read`](/es/reference/settings/session-settings/max-rows#max_rows_to_read), pueden incluir filas que la política oculta.
-
 <Note>
   Las políticas de filas solo tienen sentido si tienes acceso de solo lectura. Si puedes modificar una tabla o copiar particiones entre tablas, las restricciones de las políticas de filas dejan de tener efecto.
 </Note>

@@ -2,7 +2,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <unordered_map>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -60,7 +59,7 @@ public:
     /// Be careful to not discard the returned id without calling removeUsage;
     /// in particular, make sure nothing can fail after convertACLs call but before
     /// storing the ACLId somewhere (e.g. in a list of Delta-s that would be rolled back on error).
-    ACLId NO_SANITIZE_UNSIGNED_OVERFLOW convertACLs(const Coordination::ACLs & acls);
+    ACLId convertACLs(const Coordination::ACLs & acls);
 
     /// Convert number to ACL vector. If number is unknown for map
     /// than throws LOGICAL ERROR

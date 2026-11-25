@@ -6,7 +6,9 @@ title: 'واجهة gRPC'
 doc_type: 'reference'
 ---
 
-## مقدمة {#grpc-interface-introduction}
+<div id="grpc-interface-introduction">
+  ## مقدمة
+</div>
 
 يدعم ClickHouse واجهة [gRPC](https://grpc.io/). وهي نظام مفتوح المصدر لاستدعاء الإجراءات عن بُعد يستخدم HTTP/2 و[Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). ويدعم تطبيق gRPC في ClickHouse ما يلي:
 
@@ -21,7 +23,9 @@ doc_type: 'reference'
 
 ترد مواصفات الواجهة في [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 
-## تهيئة gRPC {#grpc-interface-configuration}
+<div id="grpc-interface-configuration">
+  ## تهيئة gRPC
+</div>
 
 لاستخدام واجهة gRPC، اضبط `grpc_port` في [إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files) الرئيسية. اطّلع على خيارات التهيئة الأخرى في المثال التالي:
 
@@ -51,10 +55,15 @@ doc_type: 'reference'
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
         <max_receive_message_size>-1</max_receive_message_size>
+
+        <!-- Enable if you want to get detailed logs -->
+        <verbose_logs>false</verbose_logs>
     </grpc>
 ```
 
-## العميل المضمّن {#grpc-client}
+<div id="grpc-client">
+  ## العميل المضمّن
+</div>
 
 يمكنك كتابة عميل بأي لغة برمجة من اللغات التي يدعمها gRPC باستخدام [المواصفة](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) المتاحة.
 أو يمكنك استخدام عميل بايثون مضمّن. وهو موجود في [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) في المستودع. ويتطلب العميل المضمّن وحدات بايثون [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart).

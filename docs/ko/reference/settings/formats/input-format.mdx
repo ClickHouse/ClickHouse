@@ -131,8 +131,8 @@ CapnProto 포맷의 스키마 추론 시 지원되지 않는 타입의 컬럼을
 지원되는 모드:
 
 * match&#95;case: 대소문자를 구분하여 일치
-* ignore&#95;case: 대소문자를 구분하지 않고 일치
-* auto: 먼저 대소문자를 구분하여 일치를 시도하고, 실패하면 대소문자를 구분하지 않고 일치를 시도합니다.
+  * ignore&#95;case: 대소문자를 구분하지 않고 일치
+  * auto: 먼저 대소문자를 구분하여 일치를 시도하고, 실패하면 대소문자를 구분하지 않고 일치를 시도합니다.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
@@ -855,7 +855,7 @@ ORC 포맷에서 스키마 추론 시 지원되지 않는 타입의 컬럼을 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일의 geo 컬럼을 사용하기 위한 새로운 설정"}]}]} />
 
-Parquet 파일을 읽을 때 지오메트리 컬럼을 ClickHouse 기하 데이터 타입(geo types)(`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` 또는 `Geometry`)으로 디코딩합니다. GeoParquet `geo` 메타데이터에 기술된 컬럼과 Parquet `GEOMETRY` 또는 `GEOGRAPHY` 논리 타입이 지정된 컬럼에 적용됩니다. 비활성화하면 지리 데이터 타입(geo type)을 명시적으로 요청하지 않는 한 이러한 컬럼은 원시 WKB(또는 WKT) 바이트를 담은 `String`으로 읽힙니다. 이때 GeoParquet 1.1의 네이티브(GeoArrow) 인코딩을 사용하는 컬럼은 기반이 되는 중첩된 `Array` 및 `Tuple` 타입으로 읽힙니다.
+geo 컬럼 파서를 사용해 Array(UInt8)을 Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon 타입으로 변환합니다
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -878,14 +878,6 @@ Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE 표현식과 블�
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Parquet 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.
-
-## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`VARIANT` 논리 타입이 없는 Spark variant 컬럼을 `Tuple` 대신 `Dynamic`으로 읽기 위한 새로운 설정"}]}]} />
-
-`VARIANT` 논리 타입은 없지만 shredding되지 않은 variant의 레이아웃(layout)(`BYTE_ARRAY` 타입의 `metadata` 필드와 `value` 필드)을 갖는 Parquet 그룹을 `Tuple`이 아닌 variant, 즉 `Dynamic`으로 읽습니다. Spark 4.0은 variant 컬럼을 이러한 방식으로 기록합니다. `VARIANT` 논리 타입이 지정된 그룹은 항상 variant로 읽습니다.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -921,9 +913,9 @@ Parquet 파일을 읽을 때 WHERE/PREWHERE 표현식과 Parquet 메타데이터
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet 푸터 초기 읽기 크기에 대한 새로운 설정입니다. 0으로 설정하면 로컬 파일은 64 KiB를 읽고, 그 외 소스에서는 읽기 크기를 적응적으로 결정합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "적응형 Parquet 푸터 초기 읽기 크기를 고정 바이트 수로 재정의하는 새로운 설정입니다. 0으로 설정하면 적응형 동작이 유지됩니다."}]}]} />
 
-리더 v3으로 파일을 열 때 Parquet 푸터(`FileMetaData`)를 가져오기 위해 파일 끝부분에서 처음 읽어 들이는 크기(바이트 단위)입니다. `0`(기본값)이면 로컬 파일 시스템에서 파일을 직접 읽을 때는 끝부분 64 KiB를 읽고, 그 외 소스(객체 스토리지, URL, HDFS)에서는 읽기 크기가 적응적으로 결정됩니다. 즉, 파일 크기의 1%를 `[128 KiB, 2 MiB]` 범위로 제한한 값을 사용하므로, 컬럼이 수백 개인 wide 파일이라도 대개 한 번의 읽기로 푸터 전체를 가져올 수 있습니다. 적응형 크기 대신 고정된 초기 읽기 크기를 사용하려면 0이 아닌 값을 설정하십시오. 이 설정은 지연 시간이 매우 긴 객체 스토리지에서 유용하며, 처음부터 끝부분을 더 크게 읽어 두 번째 왕복 요청을 피할 수 있습니다. 이 값은 파일 크기를 초과하지 않도록 제한됩니다.
+리더 v3으로 파일을 열 때 Parquet 푸터(`FileMetaData`)를 가져오기 위해 파일 끝부분에서 처음 읽어 들이는 크기(바이트 단위)입니다. `0`(기본값)이면 읽기 크기가 파일에 맞춰 적응적으로 결정됩니다. 즉, 파일 크기의 1%를 `[128 KiB, 2 MiB]` 범위로 제한한 값을 사용하므로, 컬럼이 수백 개인 wide 파일이라도 대개 한 번의 읽기로 푸터 전체를 가져올 수 있습니다. 적응형 크기 대신 고정된 초기 읽기 크기를 사용하려면 0이 아닌 값을 설정하십시오. 이 설정은 지연 시간이 매우 긴 객체 스토리지에서 유용하며, 처음부터 끝부분을 더 크게 읽어 두 번째 왕복 요청을 피할 수 있습니다. 이 값은 파일 크기를 초과하지 않도록 제한됩니다.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
@@ -1217,22 +1209,6 @@ Values 형식의 경우: 필드를 streaming parser로 구문 분석할 수 없�
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Values 형식에서 필드를 streaming parser로 파싱할 수 없으면 SQL parser를 실행하여 이를 SQL 표현식으로 해석하려고 시도합니다.
-
-## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "최상위 정수(integer), floating-point, 문자열/바이너리, `Bool`, `Date`, `Date32`, `DateTime64` 컬럼에 대한 WHERE 조건 중 변환 가능한 부분을 Vortex 포맷 스캔(Scan) 단계로 푸시다운하는 새로운 설정입니다. 이를 통해 디코딩되는 행(rows) 수를 줄일 수 있습니다. 일부만 변환 가능한 조건은 일치하는 행을 모두 포함하도록 범위가 확장되며, ClickHouse는 스캔 후 전체 필터(filter)를 다시 적용합니다."}]}]} />
-
-Vortex 파일을 읽을 때 최상위 정수(integer), floating-point, 문자열/바이너리, `Bool`, `Date`, `Date32`, `DateTime64` 컬럼에 대한 WHERE 조건 중 변환 가능한 부분을 스캔 단계로 푸시다운하여, 선택도가 높은 쿼리에서 읽고 디코딩하는 데이터 양을 줄입니다. 스캔 내부에서는 조건 중 변환된 부분만 적용됩니다. 일부만 변환 가능한 조건은 일치하는 행을 모두 포함하도록 범위가 확장되므로, 일치하지 않는 행도 읽히고 디코딩될 수 있습니다. ClickHouse는 스캔 후 전체 필터를 다시 적용합니다.
-
-## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Vortex 파일의 행을 파일 순서대로 반환하는 새로운 설정입니다. 기본적으로 파일은 병렬로 디코딩되므로 행 순서가 보장되지 않습니다."}]}]} />
-
-Vortex 파일의 행을 파일에 저장된 순서대로 반환합니다. 기본적으로 파일은 행 단위 분할 구간으로 나뉘어 병렬로 디코딩되며(`max_parsing_threads` 참조), 준비되는 즉시 반환되므로 행 순서가 보장되지 않습니다. 이 설정을 사용하면 느린 분할 구간이 있을 때 그 뒤의 분할 구간도 함께 지연됩니다. 일반적으로 행 순서는 보장되지 않으며 쿼리 파이프라인(query pipeline)의 다른 단계에서 순서가 바뀔 수 있으므로 이 설정은 권장하지 않습니다.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

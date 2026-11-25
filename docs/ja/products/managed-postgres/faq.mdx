@@ -7,6 +7,10 @@ keywords: ['ClickHouse Managed Postgres よくある質問', 'Postgres に関す
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
 ## 監視とメトリクス {#monitoring-and-metrics}
 
 ### ClickHouse Managed Postgres インスタンスのメトリクスにアクセスするにはどうすればよいですか？ {#metrics-access}
@@ -23,23 +27,11 @@ ClickHouse Managed Postgres には、毎日の自動バックアップと継続�
 
 バックアップの頻度、保持期間、ポイントインタイム リカバリの実行方法の詳細については、[バックアップと復元](/ja/products/managed-postgres/backup-and-restore) のドキュメントを参照してください。
 
-## 請求 {#billing}
-
-### Managed Postgres の料金と含まれる内容は？ {#billing-what-is-included}
-
-AWS では、プロビジョニング済みのディスクと同容量のバックアップストレージが料金に含まれます。これを超えるバックアップストレージは、ご利用のリージョンにおける ClickHouse Cloud のストレージ料金で請求されます。データ転送は ClickHouse Cloud の料金で請求されます。Managed Postgres から ClickHouse へのデータ複製に使用する場合、ClickPipes および WalShadow は無料です。GCP はプライベートプレビュー期間中は無料です。詳細は [Managed Postgres の料金体系](/ja/products/managed-postgres/pricing#cloud-provider-pricing) を参照してください。
-
-### 組織の請求が未払いの場合、サービスはどうなりますか？ {#service-deactivation}
-
-サービスは無効化されます。これはサービスを停止した状態とほぼ同じです。既存の接続と新規接続はブロックされ、サービスへの課金も行われません。データとバックアップは削除されず、そのまま保持されます。データおよびバックアップの保持期間については、[請求コンプライアンス](/ja/products/cloud/reference/billing/billing-compliance)を参照してください。
-
-アクセスを回復するには、未払い残高を支払ったうえで、サービスの **Settings** タブで **Start** をクリックします。このボタンはサービスが無効化されている場合にのみ表示され、支払いが完了するまでは無効になっています。支払い期限については、[請求コンプライアンス](/ja/products/cloud/reference/billing/billing-compliance)を参照してください。[サービスの無効化](/ja/products/managed-postgres/pricing#service-deactivation)も併せて参照してください。
-
 ## インフラストラクチャと自動化 {#infrastructure-and-automation}
 
 ### どのクラウドプロバイダーがサポートされていますか？ {#supported-cloud-providers}
 
-ClickHouse Managed Postgres は、AWS で一般提供されています。GCP はプライベートプレビュー中です。GCP プライベートプレビューの順番待ちリストには[こちら](https://clickhouse.com/cloud/postgres#gcp-waitlist)から登録できます。詳細は[発表記事](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview)をご覧ください。詳しくは[サポートされているクラウドプロバイダー](/ja/products/managed-postgres/overview#supported-cloud-providers)を参照してください。
+ClickHouse Managed Postgres は、AWS でパブリックベータとして利用できます。GCP はプライベートプレビュー中です。GCP プライベートプレビューの順番待ちリストには[こちら](https://clickhouse.com/cloud/postgres#gcp-waitlist)から登録できます。詳細は[発表記事](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview)をご覧ください。詳しくは[サポートされているクラウドプロバイダー](/ja/products/managed-postgres/overview#supported-cloud-providers)を参照してください。
 
 ### ClickHouse Managed Postgres で Terraform は利用できますか？ {#terraform-support}
 

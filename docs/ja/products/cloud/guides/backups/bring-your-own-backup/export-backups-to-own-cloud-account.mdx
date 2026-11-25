@@ -13,12 +13,6 @@ ClickHouse Cloud のバックアップの仕組み (「フル」バックアッ�
 
 このガイドでは、AWS、GCP、Azure のオブジェクトストレージにフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例を紹介します。
 
-<Warning>
-  **規制対象のサービスでは利用できません**
-
-  **HIPAA 準拠** または **PCI準拠** のリージョンの種類で作成されたサービスでは、お客様所有のバケットにバックアップをエクスポートできません。規制環境では環境外のストレージへの書き込みが許可されていないため、これらのサービスではコンソールの **Set up external backup** オプションが無効化されており、以下で説明する `BACKUP` 権限も付与されません。設定可能なスケジュールを含め、ClickHouse が管理するバックアップは引き続き利用できます。詳しくは [HIPAA オンボーディング](/ja/products/cloud/guides/security/compliance/hipaa-onboarding#backups) および [PCI オンボーディング](/ja/products/cloud/guides/security/compliance/pci-onboarding#backups) を参照してください。
-</Warning>
-
 <Note>
   同じクラウドプロバイダー内であっても、バックアップを別のリージョンにエクスポートする場合は、[データ転送](/ja/products/cloud/reference/billing/network-data-transfer)料金が発生します。
 
@@ -43,19 +37,19 @@ ClickHouse Cloud のバックアップの仕組み (「フル」バックアッ�
 1. 以下の形式の AWS S3 エンドポイント:
 
 ```text
-s3://<bucket_name>.s3.amazonaws.com/<directory>
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
 ```
 
 例:
 
 ```text
-s3://testchbackups.s3.amazonaws.com/backups/
+  s3://testchbackups.s3.amazonaws.com/backups/
 ```
 
 各項目の意味は次のとおりです。
 
 * `testchbackups` は、バックアップのエクスポート先となる S3 バケットの名前です。
-* `backups` は省略可能なサブディレクトリです。
+  * `backups` は省略可能なサブディレクトリです。
 
 2. AWS アクセスキーとシークレットアクセスキー。AWS ロールベース認証もサポートされており、AWS アクセスキーとシークレットアクセスキーの代わりに使用できます。
 

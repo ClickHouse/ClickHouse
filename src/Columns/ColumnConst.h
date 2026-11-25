@@ -133,11 +133,7 @@ public:
     void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
 #endif
     {
-        /// `data` is shared with `ColumnConst` instances cloned via `cut`, etc.,
-        /// so dereferencing the non-const `WrappedPtr` would fail the
-        /// `use_count() == 1` assertion. `compareAt` is a const method, so
-        /// access via the underlying immutable pointer.
-        chassert(!typeid_cast<const ColumnConst *>(&src) || std::as_const(*this).data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
+        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -250,7 +246,6 @@ public:
                         size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     size_t byteSize() const override
     {

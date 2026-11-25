@@ -18,7 +18,7 @@ doc_type: 'reference'
 O ClickHouse oferece suporte a tabelas temporárias, que têm as seguintes características:
 
 * As tabelas temporárias desaparecem quando a sessão termina, inclusive se a conexão for perdida.
-* Uma tabela temporária usa o mecanismo de tabela `Memory` quando nenhum mecanismo é especificado. Somente mecanismos leves podem ser usados em uma tabela temporária: `Memory`, a família `MergeTree` não replicada, `Log`, `TinyLog`, `StripeLog`, `File`, `URL`, `Null`, `Join` e `Set`. Com `cloud_mode` habilitado, os mecanismos que armazenam dados no disco local também são proibidos.
+* Uma tabela temporária usa o mecanismo de tabela Memory quando nenhum mecanismo é especificado e pode usar qualquer mecanismo de tabela, exceto Replicated e `KeeperMap`.
 * Não é possível especificar o DB de uma tabela temporária. Ela é criada fora dos bancos de dados.
 * Não é possível criar uma tabela temporária com uma consulta DDL distribuída em todos os servidores do cluster (usando `ON CLUSTER`): essa tabela existe apenas na sessão atual.
 * Se uma tabela temporária tiver o mesmo nome que outra tabela e uma consulta especificar o nome da tabela sem especificar o DB, a tabela temporária será usada.

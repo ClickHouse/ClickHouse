@@ -14,52 +14,58 @@ keywords: ['ClickStack 구성', 'Helm 시크릿', 'API Key 설정', '인그레�
 
 이 가이드에서는 ClickStack Helm 배포의 구성 옵션을 다룹니다. 기본 설치 방법은 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm)를 참조하십시오.
 
-## values 구성 {#values-organization}
+<div id="values-organization">
+  ## values 구성
+</div>
 
 v2.x 차트는 `hyperdx:` 블록 아래에서 Kubernetes 리소스 유형별로 values를 구성합니다:
 
 ```yaml
 hyperdx:
-  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+  ports:          # 공유 포트 번호 (배포, Service, ConfigMap, 인그레스)
     api: 8000
     app: 3000
     opamp: 4320
 
   frontendUrl: "http://localhost:3000"
 
-  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+  config:         # → clickstack-config ConfigMap (비민감 환경 변수)
     APP_PORT: "3000"
     HYPERDX_LOG_LEVEL: "info"
 
-  secrets:        # → clickstack-secret Secret (sensitive env vars)
+  secrets:        # → clickstack-secret Secret (민감 환경 변수)
     HYPERDX_API_KEY: "..."
     CLICKHOUSE_PASSWORD: "otelcollectorpass"
     CLICKHOUSE_APP_PASSWORD: "hyperdx"
     MONGODB_PASSWORD: "hyperdx"
 
-  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
-  service:        # K8s Service spec (type, annotations)
-  ingress:        # K8s Ingress spec (host, tls, annotations)
-  podDisruptionBudget:  # K8s PDB spec
-  tasks:          # K8s CronJob specs
+  deployment:     # K8s 배포 스펙 (이미지, 레플리카, 프로브 등)
+  service:        # K8s Service 스펙 (유형, 어노테이션)
+  ingress:        # K8s 인그레스 스펙 (호스트, tls, 어노테이션)
+  podDisruptionBudget:  # K8s PDB 스펙
+  tasks:          # K8s CronJob 스펙
 ```
 
-모든 환경 변수는 `envFrom`을 통해 ClickStack UI 배포 **및** OTel collector가 공유하는, 이름이 고정된 두 개의 리소스를 통해 전달됩니다:
+모든 환경 변수는 `envFrom`을 통해 HyperDX 배포 **및** OTel collector가 공유하는, 이름이 고정된 두 개의 리소스를 통해 전달됩니다:
 
 * **`clickstack-config`** ConfigMap — `hyperdx.config`로 채워집니다
-* **`clickstack-secret`** Secret — `hyperdx.secrets`로 채워집니다
+* **`clickstack-secret`** 시크릿 — `hyperdx.secrets`로 채워집니다
 
 더 이상 OTel 전용 ConfigMap이 별도로 존재하지 않습니다. 두 워크로드는 동일한 소스에서 값을 읽습니다.
 
-## API Key 설정 {#api-key-setup}
+<div id="api-key-setup">
+  ## API Key 설정
+</div>
 
 ClickStack 배포가 완료되면 텔레메트리 데이터 수집을 활성화할 수 있도록 API Key를 구성하십시오:
 
-1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **ClickStack UI 인스턴스에 접속합니다**
-2. **ClickStack UI 대시보드에 로그인**한 다음 Team Settings로 이동하여 API Key를 생성하거나 확인합니다
+1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **HyperDX 인스턴스에 접속합니다**
+2. **HyperDX 대시보드에 로그인**한 다음 Team Settings로 이동하여 API Key를 생성하거나 확인합니다
 3. 다음 방법 중 하나를 사용하여 API Key로 **배포를 업데이트합니다**:
 
-### 방법 1: values file을 사용해 Helm upgrade로 업데이트 {#api-key-values-file}
+<div id="api-key-values-file">
+  ### 방법 1: values file을 사용해 Helm upgrade로 업데이트
+</div>
 
 `values.yaml`에 API Key를 추가하세요:
 
@@ -75,14 +81,18 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-### 방법 2: `--set` 플래그를 사용해 Helm 업그레이드로 업데이트 {#api-key-set-flag}
+<div id="api-key-set-flag">
+  ### 방법 2: --set 플래그를 사용해 Helm upgrade로 업데이트
+</div>
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack \
   --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
 ```
 
-### 변경 사항을 적용하려면 파드를 다시 시작하세요 {#restart-pods}
+<div id="restart-pods">
+  ### 변경 사항을 적용하려면 파드를 다시 시작하세요
+</div>
 
 API Key를 업데이트한 후 새 구성이 반영되도록 파드를 다시 시작하세요:
 
@@ -94,11 +104,15 @@ kubectl rollout restart deployment my-clickstack-clickstack-app
   이 차트는 구성 값으로 Kubernetes 시크릿(`clickstack-secret`)을 자동으로 생성합니다. 외부 시크릿을 사용하려는 경우가 아니라면 추가 시크릿 구성은 필요하지 않습니다.
 </Note>
 
-## 시크릿 관리 {#secret-management}
+<div id="secret-management">
+  ## 시크릿 관리
+</div>
 
 API Key나 데이터베이스 자격 증명과 같은 민감한 데이터를 처리할 때 v2.x 차트는 `hyperdx.secrets`를 기반으로 채워지는 통합 `clickstack-secret` 리소스를 제공합니다.
 
-### 시크릿 기본값 {#default-secret-values}
+<div id="default-secret-values">
+  ### 시크릿 기본값
+</div>
 
 이 차트는 모든 시크릿에 대한 기본값을 함께 제공합니다. `values.yaml`에서 이를 재정의하세요:
 
@@ -111,7 +125,9 @@ hyperdx:
     MONGODB_PASSWORD: "your-mongodb-password"
 ```
 
-### 외부 시크릿 사용 {#using-external-secret}
+<div id="using-external-secret">
+  ### 외부 시크릿 사용
+</div>
 
 프로덕션 배포에서 자격 증명을 Helm values와 분리해 관리하려면 외부 Kubernetes 시크릿을 사용하세요:
 
@@ -132,11 +148,15 @@ hyperdx:
   existingConfigSecret: "my-clickstack-secrets"
 ```
 
-## 인그레스 설정 {#ingress-setup}
+<div id="ingress-setup">
+  ## 인그레스 설정
+</div>
 
-도메인 이름으로 ClickStack UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
+도메인 이름으로 HyperDX UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
 
-### 일반적인 인그레스 구성 {#general-ingress-configuration}
+<div id="general-ingress-configuration">
+  ### 일반적인 인그레스 구성
+</div>
 
 ```yaml
 hyperdx:
@@ -153,7 +173,9 @@ hyperdx:
   `hyperdx.frontendUrl`은 인그레스 호스트와 일치해야 하며 프로토콜(예: `https://hyperdx.yourdomain.com`)도 포함해야 합니다. 이렇게 해야 생성되는 모든 링크, 쿠키, 리디렉션이 올바르게 동작합니다.
 </Info>
 
-### TLS(HTTPS) 활성화 {#enabling-tls}
+<div id="enabling-tls">
+  ### TLS(HTTPS) 활성화
+</div>
 
 배포를 HTTPS로 안전하게 보호하려면 다음과 같이 하십시오:
 
@@ -177,7 +199,9 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-### 예시 인그레스 구성 {#example-ingress-configuration}
+<div id="example-ingress-configuration">
+  ### 예시 인그레스 구성
+</div>
 
 참고로, 생성된 인그레스 리소스는 다음과 같습니다:
 
@@ -208,7 +232,9 @@ spec:
       secretName: hyperdx-tls
 ```
 
-### 일반적인 인그레스 관련 문제 {#common-ingress-pitfalls}
+<div id="common-ingress-pitfalls">
+  ### 일반적인 인그레스 관련 문제
+</div>
 
 **경로 및 재작성 구성:**
 
@@ -233,7 +259,9 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-## OTEL collector 인그레스 {#otel-collector-ingress}
+<div id="otel-collector-ingress">
+  ## OTEL collector 인그레스
+</div>
 
 인그레스를 통해 OTEL collector 엔드포인트(트레이스, 메트릭, 로그)를 외부에 노출해야 한다면 `additionalIngresses` 구성을 사용하십시오. 이 방법은 클러스터 외부에서 텔레메트리 데이터를 전송하거나 collector에 사용자 지정 도메인을 적용할 때 유용합니다.
 
@@ -271,7 +299,9 @@ hyperdx:
 
 또는 [`additionalManifests`](/ko/clickstack/deployment/helm-additional-manifests)를 사용하여 AWS ALB Ingress와 같이 완전히 사용자 지정된 인그레스 리소스를 정의할 수 있습니다.
 
-## OTEL collector 구성 {#otel-collector-configuration}
+<div id="otel-collector-configuration">
+  ## OTEL collector 구성
+</div>
 
 OTEL Collector는 공식 OpenTelemetry Collector Helm 차트의 `otel-collector:` 서브차트로 배포됩니다. values에서 `otel-collector:` 아래에 직접 구성하세요:
 
@@ -300,7 +330,9 @@ otel-collector:
 
 사용 가능한 모든 서브차트 values는 [OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)에서 확인하십시오.
 
-## MongoDB 구성 {#mongodb-configuration}
+<div id="mongodb-configuration">
+  ## MongoDB 구성
+</div>
 
 MongoDB는 `MongoDBCommunity` 사용자 지정 리소스를 통해 MCK operator가 관리합니다. CR spec은 `mongodb.spec`의 내용을 그대로 렌더링합니다:
 
@@ -329,7 +361,9 @@ mongodb:
 
 MongoDB password는 `hyperdx.secrets.MONGODB_PASSWORD`에 설정됩니다. 사용 가능한 모든 CRD 필드는 [MCK documentation](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)을 참조하십시오.
 
-## ClickHouse 구성 {#clickhouse-configuration}
+<div id="clickhouse-configuration">
+  ## ClickHouse 구성
+</div>
 
 ClickHouse는 `ClickHouseCluster` 및 `KeeperCluster` 사용자 지정 리소스를 통해 ClickHouse Operator가 관리됩니다. 두 CR spec은 모두 values에 정의된 내용이 그대로 반영됩니다:
 
@@ -362,7 +396,9 @@ clickhouse:
 
 ClickHouse 사용자 자격 증명은 `hyperdx.secrets`에서 가져옵니다(v1.x의 `clickhouse.config.users`가 아님). 사용할 수 있는 모든 CRD 필드는 [ClickHouse Operator 구성 가이드](/ko/products/kubernetes-operator/guides/configuration)를 참조하십시오.
 
-## 인그레스 문제 해결 {#troubleshooting-ingress}
+<div id="troubleshooting-ingress">
+  ## 인그레스 문제 해결
+</div>
 
 **인그레스 리소스 확인:**
 
@@ -399,7 +435,9 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * 변경 후에는 오래된 정적 파일이 남지 않도록 브라우저 캐시와 CDN/프록시 캐시를 모두 지우세요
 
-## values 사용자 지정 {#customizing-values}
+<div id="customizing-values">
+  ## values 사용자 지정
+</div>
 
 `--set` 플래그를 사용해 설정을 사용자 지정할 수 있습니다:
 
@@ -419,7 +457,9 @@ helm show values clickstack/clickstack > values.yaml
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-## 다음 단계 {#next-steps}
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 * [배포 옵션](/ko/clickstack/deployment/helm-deployment-options) - 외부 시스템 및 최소 배포
 * [Cloud 배포](/ko/clickstack/deployment/helm-cloud) - GKE, EKS 및 AKS 구성

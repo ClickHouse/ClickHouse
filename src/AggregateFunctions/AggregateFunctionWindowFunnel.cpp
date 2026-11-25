@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
@@ -33,15 +32,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Whether `timestamp` is at most `window` after `first_timestamp`, as `timestamp <= first_timestamp + window`, but
-/// without wrapping around for a window close to the maximum of `UInt64`. The timestamps keep their types, which can
-/// be wider than `UInt64`.
-template <typename First, typename Timestamp>
-bool isInWindow(First first_timestamp, Timestamp timestamp, UInt64 window)
-{
-    return timestamp <= first_timestamp || timestamp - first_timestamp <= window;
-}
 
 constexpr size_t MAX_EVENTS = 32;
 
@@ -79,7 +69,7 @@ struct AggregateFunctionWindowFunnelData
     bool sorted = true;
     TimestampEvents events_list;
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return events_list.size();
     }
@@ -188,13 +178,9 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     /// Next unique identifier for events
     /// Used to distinguish events with the same timestamp that matches several conditions.
     UInt64 next_unique_id = 1;
-
-    /// The identifiers count the rows, so only a malformed state can come close to this bound. Keeping the identifiers
-    /// of the deserialized and merged states below it leaves `advanceId` room to never wrap around.
-    static constexpr UInt64 max_unique_id = UInt64(1) << 62;
     bool sorted = true;
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return events_list.size();
     }
@@ -225,12 +211,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         for (auto other_event : other.events_list)
         {
             /// Assign unique IDs to the new events to prevent conflicts
-            UInt64 next_after_event = 0;
-            if (common::addOverflow(other_event.unique_id, next_unique_id, other_event.unique_id)
-                || common::addOverflow(other_event.unique_id, UInt64(1), next_after_event)
-                || next_after_event > max_unique_id)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
-            new_next_unique_id = std::max(new_next_unique_id, next_after_event);
+            other_event.unique_id += next_unique_id;
+            new_next_unique_id = std::max(new_next_unique_id, other_event.unique_id + 1);
             events_list.push_back(other_event);
         }
         next_unique_id = new_next_unique_id;
@@ -285,8 +267,6 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             readBinary(timestamp, buf);
             readBinary(event_type, buf);
             readBinary(unique_id, buf);
-            if (unique_id >= max_unique_id)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too large event identifier in the state of windowFunnel");
             next_unique_id = std::max(next_unique_id, unique_id + 1);
             events_list.emplace_back(timestamp, event_type, unique_id);
         }
@@ -326,8 +306,7 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        /// The timestamps keep their type: `UInt128` and `UInt256` ones must not be narrowed.
-        VectorWithMemoryTracking<std::optional<std::pair<T, T>>> events_timestamp(events_size);
+        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -341,7 +320,7 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(timestamp, timestamp);
+                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -372,12 +351,12 @@ private:
             else if (events_timestamp[event_idx - 1].has_value())
             {
                 auto first_timestamp = events_timestamp[event_idx - 1]->first;
-                bool time_matched = isInWindow(first_timestamp, timestamp, window);
+                bool time_matched = timestamp <= first_timestamp + window;
                 if (strict_increase)
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -400,12 +379,12 @@ private:
         /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
-            T first_timestamp{};
-            T last_timestamp{};
+            UInt64 first_timestamp{};
+            UInt64 last_timestamp{};
             std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
-            EventMatchTimeWindow(T first_ts, T last_ts)
+            EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
                 : first_timestamp(first_ts), last_timestamp(last_ts) {}
         };
 
@@ -433,7 +412,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
+                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
@@ -466,7 +445,7 @@ private:
                 for (auto it = prev_level.begin(); it != prev_level.end();)
                 {
                     auto first_ts = it->first_timestamp;
-                    bool time_matched = isInWindow(first_ts, timestamp, window);
+                    bool time_matched = timestamp <= first_ts + window;
                     if (!time_matched && prev_level.size() > 1)
                     {
                         // Remove old events that are out of the window, but keep at least one
@@ -492,7 +471,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;
@@ -527,7 +506,7 @@ private:
     }
 
 public:
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return "windowFunnel";
     }
@@ -569,7 +548,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {

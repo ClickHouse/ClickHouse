@@ -7,11 +7,13 @@ keywords: ['chdb', '嵌入式', 'clickhouse-lite', '进程内', '进程内']
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/zh/components/Image.jsx";
+
 chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://github.com/clickhouse/clickhouse) v25.8.2.1 提供支持。
 如果你想在编程语言中使用 ClickHouse 的强大能力，而无需连接到 ClickHouse server，就可以使用它。
 
 <div id="key-features">
-  ## 主要特性 {#key-features}
+  ## 主要特性
 </div>
 
 * **进程内 SQL OLAP 引擎** - 由 ClickHouse 驱动，无需安装 ClickHouse server
@@ -22,7 +24,7 @@ chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://gith
 * **DataStore API** - 与 pandas 兼容的 API，具备 SQL 优化能力，支持 630+ 个方法
 
 <div id="datastore">
-  ## DataStore: 与 pandas 兼容的 API {#datastore}
+  ## DataStore: 与 pandas 兼容的 API
 </div>
 
 **全新推出！** DataStore 提供与 pandas 兼容的 API，将熟悉的 pandas 语法与 ClickHouse 的高性能结合起来。
@@ -35,7 +37,7 @@ chDB 是一个快速的进程内 SQL OLAP 引擎，由 [ClickHouse](https://gith
 </Tip>
 
 <div id="one-line-migration">
-  ### 一行代码迁移 {#one-line-migration}
+  ### 一行代码迁移
 </div>
 
 ```python
@@ -48,7 +50,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### 性能亮点 {#performance-highlights}
+  ### 性能亮点
 </div>
 
 | 操作         | pandas  | DataStore | 加速比        |
@@ -60,7 +62,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *基于 1000 万行数据的基准测试*
 
 <div id="datastore-features">
-  ### DataStore 功能 {#datastore-features}
+  ### DataStore 功能
 </div>
 
 * **630+ 个 API 方法** - 209 个 pandas DataFrame 方法，185+ 个 Accessor 方法
@@ -71,7 +73,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 了解更多：[DataStore 文档](/zh/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## chDB 支持哪些语言？ {#what-languages-are-supported-by-chdb}
+  ## chDB 支持哪些语言？
 </div>
 
 chDB 提供以下语言绑定：
@@ -83,13 +85,15 @@ chDB 提供以下语言绑定：
 * [Bun](/zh/chdb/install/bun)
 * [C 和 C++](/zh/chdb/install/c)
 
-## 如何开始使用？ {#how-do-i-get-started}
+<div id="how-do-i-get-started">
+  ## 如何开始使用？
+</div>
 
 * 如果你使用的是 [Go](/zh/chdb/install/go)、[Rust](/zh/chdb/install/rust)、[Node.js](/zh/chdb/install/nodejs)、[Bun](/zh/chdb/install/bun) 或 [C 和 C++](/zh/chdb/install/c)，请查看对应语言的页面。
-* 如果你使用的是 Python，请参阅[入门开发者指南](/zh/chdb/getting-started)或 [chDB 点播课程](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)。
+* 如果你使用的是 Python，请参阅[入门开发者指南](/zh/chdb/getting-started)或 [chDB 按需课程](https://learn.clickhouse.com/user_catalog_class/show/1901178)。
 
 <div id="for-pandas-users">
-  ### 面向 pandas 用户 {#for-pandas-users}
+  ### 面向 pandas 用户
 </div>
 
 如果你熟悉 pandas，可先从 DataStore API 开始，获得兼具 pandas 体验和 ClickHouse 性能的使用方式：
@@ -101,7 +105,7 @@ chDB 提供以下语言绑定：
 * [性能指南](/zh/chdb/guides/pandas-performance) - 优化技巧
 
 <div id="datastore-reference">
-  ### DataStore API 参考文档 {#datastore-reference}
+  ### DataStore API 参考文档
 </div>
 
 * [工厂方法](/zh/chdb/datastore/factory-methods) - 从文件、数据库、云存储创建
@@ -112,7 +116,7 @@ chDB 提供以下语言绑定：
 * [调试](/zh/chdb/debugging/index) - explain()、性能分析、日志
 
 <div id="sql-guides">
-  ### SQL API 指南 {#sql-guides}
+  ### SQL API 指南
 </div>
 
 * [Python API 参考文档](/zh/chdb/api/python) - 完整的 SQL API 参考文档
@@ -125,7 +129,7 @@ chDB 提供以下语言绑定：
 * [使用 clickhouse-local 数据库](/zh/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## 介绍视频 {#an-introductory-video}
+  ## 介绍视频
 </div>
 
 观看一段关于 chDB 的简短介绍，了解它如何将 ClickHouse 的强大能力带到你的 Python 环境中：
@@ -137,7 +141,7 @@ chDB 提供以下语言绑定：
 </div>
 
 <div id="performance-benchmarks">
-  ## 性能基准测试 {#performance-benchmarks}
+  ## 性能基准测试
 </div>
 
 chDB 在各种场景下都展现出卓越的性能：
@@ -146,22 +150,20 @@ chDB 在各种场景下都展现出卓越的性能：
 * **[DataFrame Benchmark](https://benchmark.clickhouse.com/#eyJzeXN0ZW0iOnsiQWxsb3lEQiI6dHJ1ZSwiQWxsb3lEQiAodHVuZWQpIjp0cnVlLCJBdGhlbmEgKHBhcnRpdGlvbmVkKSI6dHJ1ZSwiQXRoZW5hIChzaW5nbGUpIjp0cnVlLCJBdXJvcmEgZm9yIE15U1FMIjp0cnVlLCJBdXJvcmEgZm9yIFBvc3RncmVTUUwiOnRydWUsIkJ5Q29uaXR5Ijp0cnVlLCJCeXRlSG91c2UiOnRydWUsImNoREIgKERhdGFGcmFtZSkiOnRydWUsImNoREIgKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiY2hEQiI6dHJ1ZSwiQ2l0dXMiOnRydWUsIkNsaWNrSG91c2UgQ2xvdWQgKGF3cykiOnRydWUsIkNsaWNrSG91c2UgQ2xvdWQgKGF6dXJlKSI6dHJ1ZSwiQ2xpY2tIb3VzZSBDbG91ZCAoZ2NwKSI6dHJ1ZSwiQ2xpY2tIb3VzZSAoZGF0YSBsYWtlLCBwYXJ0aXRpb25lZCkiOnRydWUsIkNsaWNrSG91c2UgKGRhdGEgbGFrZSwgc2luZ2xlKSI6dHJ1ZSwiQ2xpY2tIb3VzZSAoUGFycXVldCwgcGFydGl0aW9uZWQpIjp0cnVlLCJDbGlja0hvdXNlIChQYXJxdWV0LCBzaW5nbGUpIjp0cnVlLCJDbGlja0hvdXNlICh3ZWIpIjp0cnVlLCJDbGlja0hvdXNlIjp0cnVlLCJDbGlja0hvdXNlICh0dW5lZCkiOnRydWUsIkNsaWNrSG91c2UgKHR1bmVkLCBtZW1vcnkpIjp0cnVlLCJDbG91ZGJlcnJ5Ijp0cnVlLCJDcmF0ZURCIjp0cnVlLCJDcnVuY2h5IEJyaWRnZSBmb3IgQW5hbHl0aWNzIChQYXJxdWV0KSI6dHJ1ZSwiRGF0YWJlbmQiOnRydWUsIkRhdGFGdXNpb24gKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiRGF0YUZ1c2lvbiAoUGFycXVldCwgc2luZ2xlKSI6dHJ1ZSwiQXBhY2hlIERvcmlzIjp0cnVlLCJEcnVpZCI6dHJ1ZSwiRHVja0RCIChEYXRhRnJhbWUpIjp0cnVlLCJEdWNrREIgKFBhcnF1ZXQsIHBhcnRpdGlvbmVkKSI6dHJ1ZSwiRHVja0RCIjp0cnVlLCJFbGFzdGljc2VhcmNoIjp0cnVlLCJFbGFzdGljc2VhcmNoICh0dW5lZCkiOmZhbHNlLCJHbGFyZURCIjp0cnVlLCJHcmVlbnBsdW0iOnRydWUsIkhlYXZ5QUkiOnRydWUsIkh5ZHJhIjp0cnVlLCJJbmZvYnJpZ2h0Ijp0cnVlLCJLaW5ldGljYSI6dHJ1ZSwiTWFyaWFEQiBDb2x1bW5TdG9yZSI6dHJ1ZSwiTWFyaWFEQiI6ZmFsc2UsIk1vbmV0REIiOnRydWUsIk1vbmdvREIiOnRydWUsIk1vdGhlcmR1Y2siOnRydWUsIk15U1FMIChNeUlTQU0pIjp0cnVlLCJNeVNRTCI6dHJ1ZSwiT3hsYSI6dHJ1ZSwiUGFuZGFzIChEYXRhRnJhbWUpIjp0cnVlLCJQYXJhZGVEQiAoUGFycXVldCwgcGFydGl0aW9uZWQpIjp0cnVlLCJQYXJhZGVEQiAoUGFycXVldCwgc2luZ2xlKSI6dHJ1ZSwiUGlub3QiOnRydWUsIlBvbGFycyAoRGF0YUZyYW1lKSI6dHJ1ZSwiUG9zdGdyZVNRTCAodHVuZWQpIjpmYWxzZSwiUG9zdGdyZVNRTCI6dHJ1ZSwiUXVlc3REQiAocGFydGl0aW9uZWQpIjp0cnVlLCJRdWVzdERCIjp0cnVlLCJSZWRzaGlmdCI6dHJ1ZSwiU2luZ2xlU3RvcmUiOnRydWUsIlNub3dmbGFrZSI6dHJ1ZSwiU1FMaXRlIjp0cnVlLCJTdGFyUm9ja3MiOnRydWUsIlRhYmxlc3BhY2UiOnRydWUsIlRlbWJvIE9MQVAgKGNvbHVtbmFyKSI6dHJ1ZSwiVGltZXNjYWxlREIgKGNvbXByZXNzaW9uKSI6dHJ1ZSwiVGltZXNjYWxlREIiOnRydWUsIlVtYnJhIjp0cnVlfSwidHlwZSI6eyJDIjpmYWxzZSwiY29sdW1uLW9yaWVudGVkIjpmYWxzZSwiUG9zdGdyZVNRTCBjb21wYXRpYmxlIjpmYWxzZSwibWFuYWdlZCI6ZmFsc2UsImdjcCI6ZmFsc2UsInN0YXRlbGVzcyI6ZmFsc2UsIkphdmEiOmZhbHNlLCJDKysiOmZhbHNlLCJNeVNRTCBjb21wYXRpYmxlIjpmYWxzZSwicm93LW9yaWVudGVkIjpmYWxzZSwiQ2xpY2tIb3VzZSBkZXJpdmF0aXZlIjpmYWxzZSwiZW1iZWRkZWQiOmZhbHNlLCJzZXJ2ZXJsZXNzIjpmYWxzZSwiZGF0YWZyYW1lIjp0cnVlLCJhd3MiOmZhbHNlLCJhenVyZSI6ZmFsc2UsImFuYWx5dGljYWwiOmZhbHNlLCJSdXN0IjpmYWxzZSwic2VhcmNoIjpmYWxzZSwiZG9jdW1lbnQiOmZhbHNlLCJzb21ld2hhdCBQb3N0Z3JlU1FMIGNvbXBhdGlibGUiOmZhbHNlLCJ0aW1lLXNlcmllcyI6ZmFsc2V9LCJtYWNoaW5lIjp7IjE2IHZDUFUgMTI4R0IiOnRydWUsIjggdkNQVSA2NEdCIjp0cnVlLCJzZXJ2ZXJsZXNzIjp0cnVlLCIxNmFjdSI6dHJ1ZSwiYzZhLjR4bGFyZ2UsIDUwMGdiIGdwMiI6dHJ1ZSwiTCI6dHJ1ZSwiTSI6dHJ1ZSwiUyI6dHJ1ZSwiWFMiOnRydWUsImM2YS5tZXRhbCwgNTAwZ2IgZ3AyIjp0cnVlLCIxOTJHQiI6dHJ1ZSwiMjRHQiI6dHJ1ZSwiMzYwR0IiOnRydWUsIjQ4R0IiOnRydWUsIjcyMEdCIjp0cnVlLCI5NkdCIjp0cnVlLCJkZXYiOnRydWUsIjcwOEdCIjp0cnVlLCJjNW4uNHhsYXJnZSwgNTAwZ2IgZ3AyIjp0cnVlLCJBbmFseXRpY3MtMjU2R0IgKDY0IHZDb3JlcywgMjU2IEdCKSI6dHJ1ZSwiYzUuNHhsYXJnZSwgNTAwZ2IgZ3AyIjp0cnVlLCJjNmEuNHhsYXJnZSwgMTUwMGdiIGdwMiI6dHJ1ZSwiY2xvdWQiOnRydWUsImRjMi44eGxhcmdlIjp0cnVlLCJyYTMuMTZ4bGFyZ2UiOnRydWUsInJhMy40eGxhcmdlIjp0cnVlLCJyYTMueGxwbHVzIjp0cnVlLCJTMiI6dHJ1ZSwiUzI0Ijp0cnVlLCIyWEwiOnRydWUsIjNYTCI6dHJ1ZSwiNFhMIjp0cnVlLCJYTCI6dHJ1ZSwiTDEgLSAxNkNQVSAzMkdCIjp0cnVlLCJjNmEuNHhsYXJnZSwgNTAwZ2IgZ3AzIjp0cnVlfSwiY2x1c3Rlcl9zaXplIjp7IjEiOnRydWUsIjIiOnRydWUsIjQiOnRydWUsIjgiOnRydWUsIjE2Ijp0cnVlLCIzMiI6dHJ1ZSwiNjQiOnRydWUsIjEyOCI6dHJ1ZSwic2VydmVybGVzcyI6dHJ1ZX0sIm1ldHJpYyI6ImhvdCIsInF1ZXJpZXMiOlt0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlLHRydWUsdHJ1ZSx0cnVlXX0=)** - DataFrame 引擎对比
 * **[DataStore 与 Pandas 对比](/zh/chdb/datastore/index#performance)** - 在常见操作中，速度最高可达 pandas 的 20 倍
 
-<div className="ch-image-md">
-  <Frame>
-    ![DataFrame 基准测试结果](/images/chdb/df_bench.webp)
-  </Frame>
-</div>
+<Image img="/images/chdb/df_bench.webp" alt="DataFrame 性能测试结果" size="md" />
 
-## 关于 chDB {#about-chdb}
+<div id="about-chdb">
+  ## 关于 chDB
+</div>
 
 * 在[博客](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)上阅读 chDB 项目诞生的完整故事
 * 在[博客](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)上了解 chDB 及其用例
-* 学习 [chDB 点播课程](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
+* 学习 [chDB 点播课程](https://learn.clickhouse.com/user_catalog_class/show/1901178)
 * 通过 [codapi 示例](https://antonz.org/trying-chdb/)在浏览器中体验 chDB
 * 更多示例请参见 (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## 许可证 {#license}
+  ## 许可证
 </div>
 
 chDB 采用 Apache License 2.0 许可证。更多信息，请参阅 [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt)。

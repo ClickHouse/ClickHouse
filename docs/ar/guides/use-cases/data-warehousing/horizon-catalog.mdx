@@ -5,7 +5,7 @@ title: 'كتالوج Snowflake Horizon'
 description: 'استعلم عن جداول Iceberg التي تديرها Snowflake واكتب إليها عبر Snowflake Horizon Catalog باستخدام ClickHouse DataLakeCatalog.'
 keywords: ['Horizon', 'Snowflake', 'Iceberg', 'بحيرة البيانات', 'Polaris']
 show_related_blogs: true
-doc_type: 'guide'
+doc_type: 'دليل'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
@@ -24,16 +24,17 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | نقطة النهاية    | عنوان URI لـ Open Catalog أو Polaris المستضاف ذاتيًا | `https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog`                                                             |
 | المستودع        | اسم Polaris catalog / warehouse                      | اسم **قاعدة بيانات** Snowflake (عادةً بأحرف كبيرة)                                                                               |
 | نطاق المصادقة   | `PRINCIPAL_ROLE:ALL` (شائع)                          | `session:role:<ROLE>`                                                                                                            |
-| بيانات الاعتماد | `client_id:client_secret`                            | PAT أو JWT لزوج مفاتيح بصفته `catalog_credential` (OAuth client&#95;secret؛ لا يُقسَّم على &#39;:&#39;)، أو `auth_header` للحامل |
+| بيانات الاعتماد | `client_id:client_secret`                            | PAT أو JWT لزوج مفاتيح بصفته `catalog_credential` (OAuth client&#95;secret؛ لا يُقسَّم على &#39;:&#39;)، أو `auth_header` للحامل |
 
 <Note>
   بما أن هذه الميزة في مرحلة Beta، فعّلها باستخدام:
-  `SET allow_database_iceberg = 1;`
-
-  يتوفر نوع الكتالوج `horizon` بدءًا من الإصدار 26.8.
+  `SET allow_experimental_database_iceberg = 1;`
+  (أو `SET allow_database_iceberg = 1;`، حسب إصدار ClickHouse لديك).
 </Note>
 
-## المتطلبات المسبقة {#prerequisites}
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
 
 * حساب Snowflake يتضمن جداول Iceberg مُدارة من Snowflake
 * نقطة نهاية Horizon Iceberg REST:
@@ -46,12 +47,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * تخزين كائنات يمكن لـ ClickHouse الوصول إليه (يُنصح باستخدام بيانات اعتماد موفَّرة)
 * ClickHouse مع دعم DataLakeCatalog لـ Iceberg
 
-## إنشاء اتصال {#connecting}
+<div id="connecting">
+  ## إنشاء اتصال
+</div>
 
-### الخيار أ: رمز وصول برمجي (موصى به) {#option-a-programmatic-access-token-recommended}
+<div id="option-a-programmatic-access-token-recommended">
+  ### الخيار أ: رمز وصول برمجي (موصى به)
+</div>
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
@@ -67,7 +72,9 @@ SETTINGS
 يجب أن يكون `warehouse` اسم **قاعدة البيانات** في Snowflake (وليس مستودع Snowflake افتراضيًا).
 تُكتب معرّفات Snowflake غير المقتبسة بأحرف كبيرة.
 
-### الخيار ب: رمز وصول للحامل تم تبادله مسبقًا {#option-b-pre-exchanged-bearer-access-token}
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### الخيار ب: رمز وصول للحامل تم تبادله مسبقًا
+</div>
 
 ```sql
 CREATE DATABASE horizon_catalog
@@ -79,7 +86,9 @@ SETTINGS
     vended_credentials = 1;
 ```
 
-## الاستعلام عن جداول Iceberg {#query}
+<div id="query">
+  ## الاستعلام عن جداول Iceberg
+</div>
 
 ```sql
 USE horizon_catalog;
@@ -94,7 +103,9 @@ SHOW CREATE TABLE `PUBLIC.test_table`;
   تكن مساحات أسماء الجداول التجريبية مفعّلة.
 </Note>
 
-## مسار الكتابة {#write}
+<div id="write">
+  ## مسار الكتابة
+</div>
 
 باستخدام دور لديه صلاحيات INSERT/UPDATE/DELETE (وCREATE ICEBERG TABLE عند إنشاء الجداول)،
 يمكن لـClickHouse الكتابة من خلال الكتالوج نفسه:
@@ -119,7 +130,9 @@ ENGINE = Iceberg;
 تعتمد صياغة `CREATE TABLE` الدقيقة على دعم ClickHouse Iceberg / DataLakeCatalog للكتابة في كتالوجات REST
 في إصدارك؛ وتظهر حالات فشل الامتيازات من Snowflake كأخطاء HTTP للكتالوج.
 
-## تحميل البيانات إلى MergeTree {#loading}
+<div id="loading">
+  ## تحميل البيانات إلى MergeTree
+</div>
 
 ```sql
 CREATE TABLE my_clickhouse_table

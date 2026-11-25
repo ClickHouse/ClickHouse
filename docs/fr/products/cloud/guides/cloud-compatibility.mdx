@@ -70,11 +70,9 @@ Les moteurs de table expérimentaux `PaimonS3` et `PaimonAzure` peuvent être ac
 
 ClickHouse Cloud prend en charge HTTPS, les interfaces natives et le [MySQL wire protocol](/fr/concepts/features/interfaces/mysql). D’autres interfaces, comme Postgres, seront bientôt prises en charge.
 
-### Dictionnaires {#dictionaries}
+### Dictionaries {#dictionaries}
 
 Les dictionnaires sont un moyen courant d’accélérer les recherches dans ClickHouse. ClickHouse Cloud prend actuellement en charge les dictionnaires issus de PostgreSQL, MySQL, de serveurs ClickHouse distants et locaux, de Redis, de MongoDB et de sources HTTP.
-
-Lorsque vous créez un dictionnaire qui lit les données d’une table ClickHouse, indiquez le nom d’utilisateur et le mot de passe d’un utilisateur dédié dans la clause `SOURCE`. Cet utilisateur doit disposer de la permission `SELECT` sur la table source. Consultez l’[exemple de source de dictionnaire ClickHouse](/fr/reference/statements/create/dictionary/sources/clickhouse).
 
 ### Requêtes fédérées {#federated-queries}
 

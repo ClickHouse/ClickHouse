@@ -153,19 +153,7 @@ class GitHub(github.Github):
         )  # type: Callable[[Issues], Issues]
         threads = kwargs.pop("threads", DEFAULT_FETCH_THREADS)
         issues = self.search_issues(*args, **kwargs)
-        return self.get_pulls_from_issues(
-            issues, progress_func=progress_func, threads=threads
-        )
 
-    def get_pulls_from_issues(
-        self,
-        issues: Issues,
-        progress_func: Any = lambda x: x,
-        threads: int = DEFAULT_FETCH_THREADS,
-    ) -> PullRequests:
-        """Fetch the PullRequests of the issues returned by `search_issues`, one
-        request per issue. Separate from `get_pulls_from_search` for a caller
-        that does not need every pull request of its search."""
         # See https://github.com/PyGithub/PyGithub/issues/2202,
         # obj._rawData doesn't spend additional API requests
         # pylint: disable=protected-access

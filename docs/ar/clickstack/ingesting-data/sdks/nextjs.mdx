@@ -8,71 +8,103 @@ keywords: ['clickstack', 'sdk', 'logging', 'تكامل', 'مراقبة التط�
 
 import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-اختر إضافة أدوات الرصد من جانب الخادم المناسبة لطريقة نشر تطبيق Next.js لديك:
+يمكن لـ ClickStack استيعاب تتبعات OpenTelemetry الأصلية من
+[وظائف Next.js بلا خادم](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
+في Next 13.2+.
 
-* **مستضاف ذاتيًا، بيئة تشغيل Node.js:** استخدم حزمة ClickStack Node.js SDK.
-* **Vercel أو بيئة تشغيل Edge:** استخدم `@vercel/otel`.
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-لجمع بيانات القياس عن بُعد من المتصفح وإعادة تشغيل الجلسة، راجع [دليل SDK للمتصفح](/ar/clickstack/ingesting-data/sdks/browser).
+<Note>
+  إذا كنت تبحث عن إعادة تشغيل الجلسات/المراقبة من جانب المتصفح، فستحتاج بدلًا من ذلك إلى تثبيت [تكامل المتصفح](/ar/clickstack/ingesting-data/sdks/browser).
+</Note>
 
-<ClickStackIntegrates signals={['traces']} />
+## التثبيت {#installing}
 
-## Next.js المستضاف ذاتيًا {#self-hosted-nextjs}
+### فعِّل خطاف أدوات الرصد (مطلوب للإصدار v15 وما دونه) {#enable-instrumentation-hook}
 
-استخدم Node.js 22.15 أو إصدارًا أحدث، ثم ثبّت حزمة SDK:
+للبدء، عليك تفعيل خطاف أدوات الرصد في Next.js عبر ضبط `experimental.instrumentationHook = true;` في ملف `next.config.js`.
 
-```shell
-npm install @clickhouse/clickstack-node
+**مثال:**
+
+```javascript
+const nextConfig = {
+  experimental: {
+    instrumentationHook: true,
+  },
+  // Ignore otel pkgs warnings 
+  // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
+  webpack: (
+    config,
+    { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+  ) => {
+    if (isServer) {
+      config.ignoreWarnings = [{ module: /opentelemetry/ }];
+    }
+    return config;
+  },
+};
+
+module.exports = nextConfig;
 ```
 
-أنشئ الملف `instrumentation.ts` في المجلد الجذر لمشروعك، أو في `src` إذا كان تطبيقك يستخدم هذا الدليل. هيّئ SDK في بيئة تشغيل Node.js فقط:
+### ثبّت حزمة ClickHouse OpenTelemetry SDK {#install-sdk}
 
-```typescript
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+### إنشاء ملفات أدوات الرصد {#create-instrumentation-files}
+
+أنشئ ملفًا باسم `instrumentation.ts` (أو `.js`) في الدليل الجذر لمشروع Next.js بالمحتوى التالي:
+
+```javascript
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { init } = await import('@clickhouse/clickstack-node');
-    init();
+    const { init } = await import('@hyperdx/node-opentelemetry');
+    init({
+      apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
+      service: '<YOUR_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      additionalInstrumentations: [], // optional, default: []
+    });
   }
 }
 ```
 
-أضف حزمة SDK إلى `serverExternalPackages` في تهيئة Next.js الحالية لديك كي تُحمَّل خارج حزمة الخادم:
+سيتيح ذلك لـ Next.js استيراد أدوات الرصد الخاصة بـ OpenTelemetry عند أي استدعاء لدالة بلا خادم.
 
-```javascript
-// next.config.mjs
-export default {
-  serverExternalPackages: ['@clickhouse/clickstack-node'],
-};
-```
+### إعداد متغيرات البيئة {#configure-environment-variables}
 
-هيّئ الوجهة أدناه، واضبط `OTEL_SERVICE_NAME` لتعريف تطبيقك. ولا تُجرِ تحميلًا مسبقًا لـ SDK، ولا تُهيّئ أي OpenTelemetry SDK آخر إلى جانبه. للاطلاع على مزيد من الخيارات، راجع [دليل Node.js](/ar/clickstack/ingesting-data/sdks/nodejs).
+إذا كنت ترسل التتبعات مباشرةً إلى ClickStack عبر OpenTelemetry، فستحتاج إلى تشغيل خادم
+Next.js باستخدام متغيرات البيئة التالية لتوجيه المقاطع إلى OTel collector:
 
-للاطلاع على اعتبارات الإنهاء والنشر، راجع [إرشادات Next.js في SDK](https://github.com/ClickHouse/clickstack-node#nextjs).
+<Tabs>
+  <Tab title="ClickStack المُدار">
+    ```sh copy
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
 
-## Vercel وبيئة تشغيل Edge {#vercel-or-edge}
+  <Tab title="ClickStack مفتوح المصدر">
+    ```sh copy
+    HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
+    npm run dev
+    ```
+  </Tab>
+</Tabs>
 
-استخدم `@vercel/otel` باتباع [تعليمات إعداد OpenTelemetry في Next.js](https://nextjs.org/docs/app/guides/open-telemetry)، واعتمد هذا الإعداد بدلاً من تهيئة ClickStack Node.js SDK الموضّحة أعلاه.
-
-هيّئ [تصدير OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) باستخدام إعدادات الاتصال أدناه. استبدل أي وجهات واردة في الأمثلة وأي تجاوزات لنقاط النهاية الخاصة بإشارات بعينها، ثم عيّن المتغيرات في تهيئة النشر لديك.
-
-إذا كان نشر Vercel لديك يستخدم بالفعل تكاملاً للتتبّع، فهيّئ [مُصدِّراً مخصصاً](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters) لهذه الوجهة؛ إذ لا تكفي متغيرات البيئة الخاصة بنقطة النهاية وحدها لتجاوز ذلك التكامل.
-
-## تهيئة الوجهة {#configure-destination}
-
-حدّد اسم الخدمة لأيٍّ من خيارَي إضافة أدوات الرصد:
-
-```shell
-export OTEL_SERVICE_NAME='my-nextjs-app'
-```
-
-عيّن نقطة نهاية OTLP HTTP ومفتاح الإدخال الخاصين بمُجمِّع ClickStack لديك. استخدم `http://` إذا لم يكن TLS مهيّأً على جامع البيانات. لمعرفة كيفية إعداد جامع البيانات، راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
-
-```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
-export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
-```
-
-## التحقق من إدخال البيانات {#verify-ingestion}
-
-شغّل تطبيقك وأرسل طلبات إلى صفحة مُصيَّرة على الخادم أو إلى مسار في واجهة برمجة التطبيقات. بعد ذلك، اختر في ClickStack نطاقًا زمنيًا حديثًا، وابحث عن اسم الخدمة الخاص بتطبيقك ضمن Traces.
+إذا كنت تنشر على Vercel، فتأكد من إعداد جميع متغيرات البيئة المذكورة أعلاه
+لعملية النشر الخاصة بك.

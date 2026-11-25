@@ -209,7 +209,7 @@ SELECT toTypeName(0::UInt32);
 
 ### تقييد تشغيل الاختبارات {#restricting-test-runs}
 
-يمكن أن يتضمن الاختبار صفرًا أو أكثر من *الوسوم* التي تحدد القيود على السياقات التي يُشغَّل فيها الاختبار ضمن بيئة CI.
+يمكن أن يتضمن الاختبار صفرًا أو أكثر من *الوسوم* التي تحدد القيود على السياقات التي يُشغَّل فيها الاختبار ضمن بيئة CI.
 
 بالنسبة لاختبارات `.sql`، تُوضَع الوسوم في السطر الأول على شكل تعليق SQL:
 
@@ -237,27 +237,27 @@ SELECT 1
 | `disabled`                     | لا يتم تشغيل الاختبار                                                            |                                                                                          |
 | `long`                         | تمتد مدة تنفيذ الاختبار من دقيقة واحدة إلى 10 دقائق                              |                                                                                          |
 | `deadlock`                     | يتم تشغيل الاختبار في حلقة لمدة طويلة                                            |                                                                                          |
-| `race`                         | مثل `deadlock`. يُفضَّل استخدام `deadlock`                                       |                                                                                          |
+| `race`                         | مثل `deadlock`. يُفضَّل استخدام `deadlock`                                       |                                                                                          |
 | `shard`                        | يجب أن يستمع الخادم إلى `127.0.0.*`                                              |                                                                                          |
-| `distributed`                  | مثل `shard`. يُفضَّل استخدام `shard`                                             |                                                                                          |
-| `global`                       | مثل `shard`. يُفضَّل استخدام `shard`                                             |                                                                                          |
+| `distributed`                  | مثل `shard`. يُفضَّل استخدام `shard`                                             |                                                                                          |
+| `global`                       | مثل `shard`. يُفضَّل استخدام `shard`                                             |                                                                                          |
 | `zookeeper`                    | يتطلب الاختبار تشغيل Zookeeper أو ClickHouse Keeper                              | يستخدم الاختبار `ReplicatedMergeTree`                                                    |
-| `replica`                      | مثل `zookeeper`. يُفضَّل استخدام `zookeeper`                                     |                                                                                          |
-| `no-fasttest`                  | لا يتم تشغيل الاختبار ضمن [اختبار سريع](#test-types)                               | يستخدم الاختبار محرك الجداول `MySQL` المعطَّل في اختبار سريع                               |
-| `fasttest-only`                | لا يتم تشغيل الاختبار إلا ضمن [اختبار سريع](#test-types)                           |                                                                                          |
-| `no-[asan, tsan, msan, ubsan]` | يعطّل الاختبارات في إصدارات البناء التي تستخدم [أدوات اكتشاف الأخطاء](#sanitizers)         | يتم تشغيل الاختبار تحت QEMU، الذي لا يعمل مع أدوات اكتشاف الأخطاء                                  |
+| `replica`                      | مثل `zookeeper`. يُفضَّل استخدام `zookeeper`                                     |                                                                                          |
+| `no-fasttest`                  | لا يتم تشغيل الاختبار ضمن [Fast test](#test-types)                               | يستخدم الاختبار محرك الجداول `MySQL` المعطَّل في Fast test                               |
+| `fasttest-only`                | لا يتم تشغيل الاختبار إلا ضمن [Fast test](#test-types)                           |                                                                                          |
+| `no-[asan, tsan, msan, ubsan]` | يعطّل الاختبارات في إصدارات البناء التي تستخدم [sanitizers](#sanitizers)         | يتم تشغيل الاختبار تحت QEMU، الذي لا يعمل مع sanitizers                                  |
 | `no-replicated-database`       | يعطّل الاختبار عندما تستخدم قاعدة البيانات الافتراضية `ReplicatedDatabaseEngine` |                                                                                          |
 | `no-ordinary-database`         | يعطّل الاختبار عندما يكون محرك قاعدة البيانات الافتراضية هو `Ordinary`           |                                                                                          |
 | `no-parallel`                  | يعطّل تشغيل اختبارات أخرى بالتوازي مع هذا الاختبار                               | يقرأ الاختبار من جداول `system` وقد تنكسر الثوابت                                        |
 | `no-parallel-replicas`         | يعطّل الاختبار عندما تكون parallel replicas مفعّلة                               |                                                                                          |
 | `no-debug`                     | يعطّل الاختبارات في إصدارات Debug                                                |                                                                                          |
 | `no-release`                   | يعطّل الاختبارات في إصدارات Release                                              |                                                                                          |
-| `no-darwin`                    | يعطّل الاختبار على macOS (Darwin)                                                | يعتمد الاختبار على ميزات خاصة بـ Linux، مثل الاستعلامات الموزّعة أو `procfs` أو خادم HTTP |
+| `no-darwin`                    | يعطّل الاختبار على macOS (Darwin)                                                | يعتمد الاختبار على ميزات خاصة بـ Linux، مثل distributed queries أو `procfs` أو خادم HTTP |
 
-تُدعَم أيضًا الخيارات التالية: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+تُدعَم أيضًا الخيارات التالية: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 بالإضافة إلى الإعدادات المذكورة أعلاه، يمكنك استخدام العلامات `USE_*` من `system.build_options` لتحديد استخدام ميزات معيّنة في ClickHouse.
-على سبيل المثال، إذا كان اختبارك يستخدم جدول MySQL، فيجب إضافة الوسم `use-mysql`.
+على سبيل المثال، إذا كان اختبارك يستخدم جدول `MySQL`، فيجب إضافة الوسم `use-mysql`.
 
 ### تحديد حدود الإعدادات العشوائية {#specifying-limits-for-random-settings}
 

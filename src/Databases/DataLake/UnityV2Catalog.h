@@ -25,12 +25,11 @@ public:
     UnityV2Catalog(
         const std::string & catalog_,
         const std::string & base_url_,
-        std::string_view catalog_credential_,
+        const std::string & catalog_credential_,
         const std::string & auth_scope_,
-        std::string_view auth_header_,
+        const std::string & auth_header_,
         const std::string & oauth_server_uri_,
-        DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
+        DB::ContextPtr context_);
 
     ~UnityV2Catalog() override;
 
@@ -40,8 +39,6 @@ public:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
-    /// TODO: Managed Iceberg tables could be created through the inner Iceberg REST catalog without a location.
-    /// Override `writesInitialMetadata` and `createTableAtDefaultLocation` and forward them to `getIcebergRestCatalog`.
     void createTable(
         const String & namespace_name,
         const String & table_name,
@@ -54,8 +51,6 @@ public:
 
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name) const override;
-
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     void getTableMetadata(
         const std::string & namespace_name,
@@ -122,11 +117,10 @@ private:
     /// Auth state: a user-supplied header, or a Bearer token (static or minted via OAuth).
     std::optional<DB::HTTPHeaderEntry> auth_header;
     std::string client_id;
-    DB::SecretString client_secret;
+    std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
-    const DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
     mutable std::mutex token_mutex;
@@ -148,18 +142,13 @@ private:
         const std::string & route,
         std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
 
-    void deleteRequest(const std::string & route) const;
-
-    /// The `table_type` field of the table, such as `MANAGED` or `EXTERNAL`.
-    String getTableType(const String & full_table_name) const;
-
-    DB::SecretString getBearerToken(bool force_refresh = false) const;
+    std::string getBearerToken(bool force_refresh = false) const;
 
     /// `auth_header` when set, otherwise the Bearer token.
     DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh) const;
 
     /// Uses `auth_header_` only when `catalog_credential_` is empty, as in `RestCatalog`.
-    void maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_);
+    void maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_);
 
     void checkNamespaceExists(const std::string & schema_name) const;
 

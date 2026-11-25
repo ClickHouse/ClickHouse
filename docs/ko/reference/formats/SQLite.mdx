@@ -45,7 +45,7 @@ ClickHouse는 `SQLite` 포맷으로 데이터를 기록할 때 다음과 같은 
 
 `Float32` 및 `Float64` 컬럼에서 `NaN`이 아닌 값은 SQLite 네이티브 저장 클래스(storage class)로 기록되고, `NaN` 값은 ClickHouse 텍스트 직렬화 방식으로 기록됩니다. `Bool` 및 일반 정수 값도 SQLite 네이티브 저장 클래스로 기록됩니다. 확장 정수(wide integer)와 복합 타입은 ClickHouse 텍스트 직렬화 방식으로 기록됩니다. `NULL` 값은 SQLite `NULL`로 기록됩니다.
 
-ClickHouse는 SQLite 입력에서 스키마를 추론할 때 [SQLite 데이터베이스 엔진](/ko/reference/engines/database-engines/sqlite#data_types-support)과 동일한 매핑을 사용합니다.
+ClickHouse는 SQLite 입력에서 스키마를 추론할 때 [SQLite 데이터베이스 엔진](/ko/engines/database-engines/sqlite#data_types-support)과 동일한 매핑을 사용합니다.
 
 | SQLite 선언 타입              | ClickHouse 추론 타입 |
 | ------------------------- | ---------------- |

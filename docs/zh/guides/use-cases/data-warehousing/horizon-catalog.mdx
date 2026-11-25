@@ -2,7 +2,7 @@
 slug: /use-cases/data-lake/horizon-catalog
 sidebarTitle: 'Horizon catalog'
 title: 'Snowflake Horizon catalog'
-description: '通过 ClickHouse DataLakeCatalog 使用 Snowflake Horizon Catalog 查询和写入由 Snowflake 管理的 Iceberg 表。'
+description: '通过 ClickHouse DataLakeCatalog 使用 Snowflake Horizon Catalog 查询和写入 Snowflake 托管的 Iceberg 表。'
 keywords: ['Horizon', 'Snowflake', 'Iceberg', '数据湖', 'Polaris']
 show_related_blogs: true
 doc_type: 'guide'
@@ -26,12 +26,13 @@ Horizon 与 Snowflake Open Catalog / 自托管 Polaris 相关，但并不相同�
 
 <Note>
   此功能目前处于 Beta 阶段，请通过以下命令启用：
-  `SET allow_database_iceberg = 1;`
-
-  `horizon` 目录类型自 26.8 版本起可用。
+  `SET allow_experimental_database_iceberg = 1;`
+   (或者，根据您的 ClickHouse 版本，使用 `SET allow_database_iceberg = 1;`。) 
 </Note>
 
-## 前置条件 {#prerequisites}
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
 * 拥有 Snowflake 托管的 Iceberg 表的 Snowflake 账户
 * Horizon Iceberg REST 端点：
@@ -44,12 +45,16 @@ Horizon 与 Snowflake Open Catalog / 自托管 Polaris 相关，但并不相同�
 * 可供 ClickHouse 访问的对象存储 (建议使用下发的凭据) 
 * 支持 DataLakeCatalog Iceberg 的 ClickHouse
 
-## 创建连接 {#connecting}
+<div id="connecting">
+  ## 创建连接
+</div>
 
-### 选项 A：程序化访问令牌 (推荐) {#option-a-programmatic-access-token-recommended}
+<div id="option-a-programmatic-access-token-recommended">
+  ### 选项 A：程序化访问令牌 (推荐)
+</div>
 
 ```sql
-SET allow_database_iceberg = 1;
+SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE horizon_catalog
 ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
@@ -65,7 +70,9 @@ SETTINGS
 `warehouse` 必须是 Snowflake **数据库**名称 (而不是 Snowflake 虚拟仓库) 。
 未加引号的 Snowflake 标识符均为大写。
 
-### 选项 B：预先换取的 Bearer 访问令牌 {#option-b-pre-exchanged-bearer-access-token}
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### 选项 B：预先换取的 Bearer 访问令牌
+</div>
 
 ```sql
 CREATE DATABASE horizon_catalog
@@ -77,7 +84,9 @@ SETTINGS
     vended_credentials = 1;
 ```
 
-## 查询 Iceberg 表 {#query}
+<div id="query">
+  ## 查询 Iceberg 表
+</div>
 
 ```sql
 USE horizon_catalog;
@@ -92,7 +101,9 @@ SHOW CREATE TABLE `PUBLIC.test_table`;
   已启用 Experimental 表命名空间。
 </Note>
 
-## 写入路径 {#write}
+<div id="write">
+  ## 写入路径
+</div>
 
 拥有 INSERT/UPDATE/DELETE 权限 (创建表时还需 CREATE ICEBERG TABLE 权限) 的角色
 可以让 ClickHouse 通过同一目录写入：
@@ -116,7 +127,9 @@ ENGINE = Iceberg;
 
 具体的 `CREATE TABLE` 语法取决于您所用版本中 ClickHouse Iceberg / DataLakeCatalog 对 REST 目录写入的支持；Snowflake 的权限问题会表现为目录 HTTP 错误。
 
-## 加载到 MergeTree {#loading}
+<div id="loading">
+  ## 加载到 MergeTree
+</div>
 
 ```sql
 CREATE TABLE my_clickhouse_table

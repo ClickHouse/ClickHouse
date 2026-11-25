@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'drizzle', 'drizzle orm', 'drizzle-kit', 'typescr
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-drizzle-beta" />
+
 [Drizzle ORM](https://orm.drizzle.team/) هي أداة ربط الكائنات بقواعد البيانات مكتوبة بلغة TypeScript، وتوفّر أداة لبناء الاستعلامات بصيغة قريبة من SQL، في حين أن `drizzle-kit` هي واجهة سطر الأوامر المصاحبة لها، وتُستخدم لتوليد عمليات الترحيل وتنفيذها. في هذا الدليل، ستُعرّف جدول `todos` بلغة TypeScript، ثم تنشئه عبر عملية ترحيل باستخدام `drizzle-kit`، وبعد ذلك تعالج استعلامات الإنشاء والقراءة والتحديث والحذف من خلال خادم HTTP صغير مبني على Node.js. ويعتمد كل اتصال على بروتوكول TLS مع التحقق الكامل من الشهادة.
 
 ## المتطلبات الأساسية {#prerequisites}

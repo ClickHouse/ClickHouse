@@ -38,23 +38,6 @@ Posibles valores:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
-
-<SettingsInfoBlock type="UInt64" default_value="128" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "Nueva configuración; anteriormente el límite estaba fijado en el código en 32"}]}]} />
-
-Número máximo de elementos en la representación interna (RPN) de un filtro WHERE para el que se aplica `use_skip_indexes_for_disjunctions`.
-A grandes rasgos, cada condición y cada `AND`, `OR` y `NOT` cuentan como un elemento: por ejemplo, `A = 5 OR B = 5 OR C = 5` tiene 5 elementos.
-Los elementos se cuentan después de reescribir el filtro para el análisis de índices: por ejemplo, `A = 1 OR A = 2 OR A = 3` se convierte en `A IN (1, 2, 3)`, que es un solo elemento (consulte `optimize_min_equality_disjunction_chain_length`), y `coalesce(A, B) = 5` se expande en varias condiciones (consulte `allow_key_condition_coalesce_rewrite`).
-En filtros con más elementos, cada índice de omisión de datos se evalúa por separado y no puede omitir gránulos para condiciones sobre distintas columnas unidas por `OR`.
-Durante el análisis de índices, los resultados parciales ocupan un bit por elemento y por gránulo de cada parte de datos, y combinarlos requiere un tiempo proporcional al número de elementos en cada gránulo. Téngalo en cuenta si establece el valor 0 (sin límite).
-
-Valores posibles:
-
-* 0 — Sin límite.
-* Entero positivo — Número máximo de elementos.
-
 ## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

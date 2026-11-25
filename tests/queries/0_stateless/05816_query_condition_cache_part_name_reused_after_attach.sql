@@ -1,6 +1,5 @@
--- Tags: no-replicated-database, no-shared-merge-tree, no-parallel-replicas
+-- Tags: no-replicated-database, no-shared-merge-tree
 -- no-replicated-database, no-shared-merge-tree: their block numbers do not restart, so no part name is reused.
--- no-parallel-replicas: a replica cancelled by the initiator can still hold the part when TRUNCATE runs, so it is kept.
 
 -- Attaching a MergeTree table again numbers its parts from those on disk, so after TRUNCATE the next INSERT
 -- writes part `all_1_1_0` again. The query condition cache must not return the removed part's verdicts.

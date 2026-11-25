@@ -33,24 +33,18 @@ chdb&#95;hook 모듈은 PostgreSQL [COPY](#copy-overloading) 명령에 후크를
 수퍼유저(super user) 권한으로 다음 방법 중 하나를 사용해 chdb&#95;hook을 로드하십시오. 사용 사례에
 가장 적합한 방법을 선택하십시오:
 
-<Note>
-  ClickHouse Managed Postgres에서는 다음 사항에 유의하십시오:
-
-  * ClickHouse Cloud SQL 콘솔은 아직 `LOAD 'chdb_hook'`
-    명령을 지원하지 않지만, psql이나 다른 데이터베이스 연결을 통해 실행할 수 있습니다.
-  * `ALTER SYSTEM`은 허용되지 않으며 `postgresql.conf`도 편집할 수 없으므로,
-    이를 사용하는 아래 예시는 적용되지 않습니다. 대신 `ALTER DATABASE` 또는
-    `ALTER ROLE`을 사용하십시오.
-  * 또는 [지원팀](https://clickhouse.com/support/program)에 문의하여
-    Postgres 서비스 구성에 `chdb_hook`을 추가할 수도 있으며, 추가한 후에는 SQL 콘솔에서도
-    사용할 수 있습니다.
-</Note>
-
 * [LOAD] 명령으로 명시적으로 로드하며, 해당 세션이 유지되는 동안에만 적용됩니다:
 
   ```sql
   LOAD 'chdb_hook';
   ```
+
+  <Note>
+    ClickHouse Cloud SQL 콘솔은 아직 `LOAD 'chdb_hook'` 명령을 지원하지 않지만,
+    psql이나 다른 데이터베이스 연결을 통해 실행할 수 있습니다.
+    그렇지 않은 경우 지원 담당자에게 문의하여 Postgres 서비스 구성에 추가하면,
+    이후 SQL 콘솔에서도 사용할 수 있습니다.
+  </Note>
 
 * 모든 세션에 적용하려면 `postgresql.conf`에서 [session&#95;preload&#95;libraries]
   설정을 사용하십시오:
@@ -727,8 +721,8 @@ chdb&#95;hook는 공개 릴리스에 [Semantic Versioning]을 따릅니다.
 * 마이너 버전은 하위 호환되는 SQL 변경 시 증가합니다
 * 패치 버전은 바이너리 전용 변경 시 증가합니다
 
-설치 후에는 PostgreSQL이 Postgres 18의
-[`pg_get_loaded_modules()`] 함수를 통해 버전을 표시합니다.
+설치 후에는 Postgres 18의
+[`pg_get_loaded_modules()`] 함수를 통해 PostgreSQL에서 버전을 확인할 수 있습니다.
 
 ```sql
 SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
@@ -753,7 +747,7 @@ Copyright (c) 2026, ClickHouse
 
 [`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse Docs: DESCRIBE TABLE"
 
-[formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB Docs: Complete Format Names Table"
+[포맷]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB Docs: Complete Format Names Table"
 
 [access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management: Manage access keys for IAM users"
 
@@ -799,7 +793,7 @@ Copyright (c) 2026, ClickHouse
 
 [`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse Docs: hdfs Table Function"
 
-[ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
+[ClickHouse 데이터 타입]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
 
 [composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "PostgreSQL Docs: Declaring Composite Types"
 
@@ -807,7 +801,7 @@ Copyright (c) 2026, ClickHouse
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
 
-[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* 세션 설정"
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
 
 [`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* 세션 설정"
 

@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <list>
 #include <mutex>
-#include <set>
+#include <unordered_set>
 
 #include <base/UUID.h>
 
@@ -22,13 +22,13 @@ public:
     explicit WorkloadEntityStorageBase(ContextPtr global_context_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ~WorkloadEntityStorageBase() override;
 
-    ASTPtr get(WorkloadEntityType entity_type, const String & entity_name) const override;
+    ASTPtr get(const String & entity_name) const override;
 
-    ASTPtr tryGet(WorkloadEntityType entity_type, const String & entity_name) const override;
+    ASTPtr tryGet(const String & entity_name) const override;
 
-    bool has(WorkloadEntityType entity_type, const String & entity_name) const override;
+    bool has(const String & entity_name) const override;
 
-    WorkloadEntities getAllEntities() const override;
+    std::vector<std::pair<String, ASTPtr>> getAllEntities() const override;
 
     bool empty() const override;
 
@@ -105,7 +105,7 @@ private:
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 
     /// Return true iff `references` has a path from `source` to `target`
-    bool isIndirectlyReferenced(const WorkloadEntityKey & target, const WorkloadEntityKey & source);
+    bool isIndirectlyReferenced(const String & target, const String & source);
 
     /// Adds references that are described by `entity` to `references`
     void insertReferences(const ASTPtr & entity);
@@ -115,7 +115,7 @@ private:
 
     /// Returns an ordered vector of `entities`
     std::vector<Event> orderEntities(
-        const WorkloadEntities & all_entities,
+        const std::unordered_map<String, ASTPtr> & all_entities,
         std::optional<Event> change = {});
 
     /// Creates all workload entities accumulated from a backup (see restore()) in a proper order, in a single data restore task.
@@ -144,21 +144,21 @@ private:
     std::shared_ptr<Handlers> handlers;
 
     mutable std::recursive_mutex mutex;
-    WorkloadEntities entities; /// Maps entity into CREATE entity query (including entities from the next storage)
-    WorkloadEntities local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
-    WorkloadEntities other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
+    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query (including entities from the next storage)
+    std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
+    std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
 
     // Workload entities collected from a backup before being restored together (see restore()).
     // Keyed by the restore operation's UUID so concurrent restores do not share or overwrite each other's accumulated entities.
-    std::unordered_map<UUID, WorkloadEntities> entities_to_restore;
+    std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_restore;
 
     // A single consistent snapshot of local_entities taken once per backup operation (keyed by the backup UUID),
     // so that system.workloads and system.resources -- backed up via two separate backup() calls on this shared
     // storage -- are captured from the same view (see backup()).
-    mutable std::unordered_map<UUID, WorkloadEntities> entities_to_backup;
+    mutable std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_backup;
 
     // Validation
-    std::map<WorkloadEntityKey, std::set<WorkloadEntityKey>> references; /// Keep track of references between entities. Key is target. Value is set of sources
+    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String master_thread_resource; /// current resource name for worker threads
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries

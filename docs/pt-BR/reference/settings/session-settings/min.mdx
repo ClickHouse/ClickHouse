@@ -17,6 +17,9 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
+* Tipo: inteiro sem sinal
+* Valor padrão: 1 MiB
+
 O tamanho mínimo do fragmento, em bytes, que cada thread analisará em paralelo.
 
 ## min_compress_block_size {#min_compress_block_size}
@@ -50,23 +53,6 @@ Razão mínima de marcas filtradas pela análise de índice para a otimização 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 Taxa mínima de acertos de um cache usada na otimização de chaves consecutivas na agregação para mantê-la ativada
-
-## min_marks_per_part_to_load_statistics {#min_marks_per_part_to_load_statistics}
-
-<SettingsInfoBlock type="UInt64" default_value="64" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "64"},{"label": "Nova configuração para pular o carregamento de estatísticas quando a chave primária deixa apenas uma leitura pequena."}]}]} />
-
-O número mínimo de marcas que restam para leitura após a análise da chave primária, por parte de dados cujas estatísticas ainda não estão em memória, para que as estatísticas de coluna sejam carregadas para a poda de partes e para a ordenação das condições de `PREWHERE`.
-
-Carregar estatísticas custa algumas leituras por parte de dados e, em uma inicialização a frio, pode demorar mais do que ler os próprios dados quando a chave primária já restringe a leitura a um pequeno número de grânulos. Se restarem para leitura menos marcas do que o valor desta configuração multiplicado pelo número de partes cujas estatísticas seriam carregadas, as estatísticas não são carregadas para essas otimizações: as partes não são descartadas com base em estatísticas, e as condições de `PREWHERE` são ordenadas pelo tamanho de suas colunas, como ocorre em tabelas sem estatísticas. As estatísticas que já estão em memória são usadas independentemente do tamanho da leitura.
-
-Responder a `min`, `max` e `count` a partir de estatísticas (consulte `use_statistics_for_min_max_aggregation`) substitui a leitura e não é afetado por esta configuração.
-
-Valores possíveis:
-
-* 0 — Carrega as estatísticas independentemente do tamanho da leitura.
-* Inteiro positivo — O número de marcas por parte de dados.
 
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
@@ -116,18 +102,6 @@ A configuração `min_outstreams_per_resize_after_split` garante que a divisão 
 
 Para desativar a divisão de nós `Resize`, defina esta configuração como 0. Isso impedirá a divisão de nós `Resize` durante a geração do pipeline, permitindo que mantenham sua estrutura original sem serem divididos em nós menores.
 
-## min_rows_for_packed_string_keys_in_hash_join {#min_rows_for_packed_string_keys_in_hash_join}
-
-<SettingsInfoBlock type="UInt64" default_value="100000" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "100000"},{"label": "Nova configuração: `enable_packed_string_keys_in_hash_join` só se aplica quando o lado direito da junção tem estimativa de 100000 linhas ou mais, ou quando não há estimativa."}]}]} />
-
-Número mínimo estimado de linhas no lado direito de uma junção para que `enable_packed_string_keys_in_hash_join` seja aplicada. Junções menores ganham pouco com ela e podem ficar mais lentas com chaves longas.
-
-A estimativa é o número de linhas do lado direito em uma execução anterior da mesma junção, se `collect_hash_table_stats_during_joins` estiver habilitado. Caso contrário, usa-se a estimativa do otimizador de consultas. `parallel_hash_join_threshold` usa a mesma estimativa. Uma junção sem estimativa sempre usa `enable_packed_string_keys_in_hash_join`.
-
-0 significa que não há valor mínimo.
-
 ## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
 
 <SettingsInfoBlock type="Double" default_value="3" />
@@ -135,14 +109,6 @@ A estimativa é o número de linhas do lado direito em uma execução anterior d
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Nova configuração para controlar a razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "Redução da razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação que habilita o armazenamento orientado a linhas do hash join."}]}]} />
 
 Razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida.
-
-## min_string_column_bytes_for_hash_join_row_store {#min_string_column_bytes_for_hash_join_row_store}
-
-<SettingsInfoBlock type="UInt64" default_value="8388608" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8388608"},{"label": "Nova configuração que controla o tamanho estimado mínimo de uma coluna `String` do lado de compilação para que ela seja armazenada no armazenamento orientado a linhas do hash join."}]}]} />
-
-Tamanho estimado mínimo de uma coluna `String` do lado de compilação para que ela seja armazenada no armazenamento orientado a linhas do hash join. Esse tamanho é estimado multiplicando o número estimado de linhas pelo tamanho médio dos valores obtido das estatísticas. O valor 0 significa que as colunas `String` não são armazenadas no armazenamento orientado a linhas.
 
 ## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
 

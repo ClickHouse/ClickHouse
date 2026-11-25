@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'go', 'golang', 'pgx', 'pgxpool', 'golang-migrate
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-go-beta" />
+
 [pgx](https://github.com/jackc/pgx) — самый распространённый драйвер PostgreSQL для Go, а `pgxpool` — его пул соединений. В этом руководстве вы подключите сервис на Go к ClickHouse Managed Postgres по TLS с проверкой сертификата, создадите таблицу `todos` с помощью миграции [golang-migrate](https://github.com/golang-migrate/migrate) и научите сервер на базе `net/http` обрабатывать запросы на создание, чтение, обновление и удаление.
 
 ## Предварительные требования {#prerequisites}

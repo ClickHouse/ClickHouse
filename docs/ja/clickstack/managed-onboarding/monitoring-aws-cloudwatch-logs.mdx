@@ -1,32 +1,25 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
-title: 'ClickHouse Observability による AWS CloudWatch ログの監視'
-sidebarTitle: 'AWS CloudWatch ログの監視'
-description: 'OpenTelemetry の CloudWatchレシーバーを使用して、AWS CloudWatch ログをセルフマネージド環境の ClickHouse Observability に転送します'
+title: 'Managed ClickStack で AWS CloudWatch Logs を監視する'
+description: 'OpenTelemetry CloudWatch receiver を使用して AWS CloudWatch Logs を Managed ClickStack に転送します'
 doc_type: 'guide'
-keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-managed', 'ClickHouse Observability', 'otel']
+keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'managed', 'observability', 'otel']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-<Note>
-  **セルフマネージドのルートを選択しています**
+このガイドでは、OpenTelemetry の [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) を使用して AWS CloudWatch Logs を Managed ClickStack に転送し、ClickStack UI で表示する方法を説明します。
 
-  [セルフマネージド版のエクスペリエンス](/ja/clickstack/self-configured/overview)を使用して、ClickHouse Observability を自分でセットアップする方法を選択しました。このルートでは、OpenTelemetry collector の実行、ClickHouse Cloud サービスへのインジェストの管理、スキーマのチューニング、ウェアハウスによるインジェストとクエリのワークロードの分離をすべて自分で行います。詳しくは、[OpenTelemetry collector](/ja/clickstack/self-configured/ingesting-data/collector)、[パフォーマンスチューニング](/ja/clickstack/self-configured/managing/performance-tuning)、[読み取りと書き込みのワークロードの分離](/ja/clickstack/self-configured/managing/isolating-read-write)を参照してください。
+このガイドでは、AWS API 経由で CloudWatch をポーリングし、イベントを OTLP 経由で ClickStack collector に転送する別の collector を実行します。API のレイテンシーとコストを最小限に抑えるため、この collector は log groups と同じ AWS account および region に配置してください。
 
-  インジェスト、スキーマ、コンピュートを ClickHouse に任せられるサーバーレスのエクスペリエンスをご希望の場合は、デフォルトの ClickHouse Observability エクスペリエンスを使用し、[OpenTelemetry による AWS CloudWatch ログの収集](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless)の手順に従ってください。
-</Note>
+このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) を完了し、ClickStack collector が稼働していることを前提としています。
 
-このガイドでは、OpenTelemetry の [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) を使用して AWS CloudWatch のログを ClickHouse Observability に転送し、ClickStack UI で表示するまでの手順を説明します。
-
-ここでは、AWS API 経由で CloudWatch をポーリングし、OTLP でイベントを ClickStack コレクターに転送する collector を別途実行します。API のレイテンシーとコストを最小限に抑えるため、この collector はロググループと同じ AWS アカウントおよびリージョンに配置してください。
-
-このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)を完了し、ClickStack コレクターが稼働していることを前提としています。
-
-ClickStack コレクターは、**Docker コンテナ**としてデプロイする方法 ([OpenTelemetry Collector のセットアップ](/ja/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)を参照) と、アップストリームの OpenTelemetry Helm チャートと ClickStack コレクターイメージを使用して Kubernetes 上に **Helm リリース**としてデプロイする方法 ([collector のデプロイ](/ja/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured)を参照) があります。**OTLP エンドポイント**と、デプロイ時に設定した `OTLP_AUTH_TOKEN` **を必ず控えておいてください**。
+ClickStack collector は、**Docker コンテナー** としてデプロイすることも ([OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) を参照) 、Kubernetes 上でアップストリームの OpenTelemetry Helm チャートと ClickStack collector イメージを使用して **Helm リリース** としてデプロイすることもできます ([collector のデプロイ](/ja/clickstack/ingesting-data/collector#configuring-the-collector) を参照) 。**その OTLP endpoint** と、デプロイ時に設定した `OTLP_AUTH_TOKEN` **は必ず控えておいてください**。
 
 <Steps>
   <Step title="前提条件を確認する" id="gather-prerequisites">
@@ -65,15 +58,12 @@ ClickStack コレクターは、**Docker コンテナ**としてデプロイす�
       "Version": "2012-10-17",
       "Statement": [
         {
-          "Sid": "CloudWatchLogsList",
-          "Effect": "Allow",
-          "Action": "logs:DescribeLogGroups",
-          "Resource": "*"
-        },
-        {
           "Sid": "CloudWatchLogsRead",
           "Effect": "Allow",
-          "Action": "logs:FilterLogEvents",
+          "Action": [
+            "logs:DescribeLogGroups",
+            "logs:FilterLogEvents"
+          ],
           "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
         }
       ]
@@ -267,19 +257,11 @@ ClickStack コレクターは、**Docker コンテナ**としてデプロイす�
   <Step title="ClickStack UIで確認する" id="confirm-in-ui">
     [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、左側のメニューから **ClickStack** を選択します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStackを起動" border />
 
     **Search** ビューで、ソースを `Logs` に切り替え、時間範囲を **Last 15 minutes** に設定します。CloudWatch のイベントは、通常は数回のポーリング間隔以内に表示されます。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![CloudWatch logs を表示した ClickStack Search ビュー](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="CloudWatch logs を表示した ClickStack Search ビュー" />
 
     各イベントには、送信元のロググループとログストリームがリソース属性として含まれます:
 
@@ -290,19 +272,11 @@ ClickStack コレクターは、**Docker コンテナ**としてデプロイす�
 
     これらの属性を含めるには、検索を `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` に変更します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![CloudWatch logs と属性を表示した ClickStack Search ビュー](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="CloudWatch logs と属性を表示した ClickStack Search ビュー" />
 
     ログエントリを選択して、そのメタデータを確認します。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ログ詳細ビュー内の CloudWatch 属性](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="ログ詳細ビュー内の CloudWatch 属性" />
 
     何も表示されない場合:
 
@@ -317,25 +291,17 @@ ClickStack コレクターは、**Docker コンテナ**としてデプロイす�
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json`をダウンロード</TrackedLink>し、ClickStack UIで **Dashboards** に移動して **Import** をクリックします。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![ダッシュボードのインポートボタン](/images/clickstack/clickstack-import-dashboard.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="ダッシュボードのインポートボタン" />
 
     JSONファイルをアップロードし、**Finish Import** をクリックします。
 
-    <div className="ch-image-lg">
-      <Frame>
-        ![インポート完了ダイアログ](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
-      </Frame>
-    </div>
+    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="インポート完了ダイアログ" />
   </Step>
 
   <Step title="関連情報" id="further-reading">
-    * デモデータセット、詳細なトラブルシューティング、チューニングオプションについては、[AWS CloudWatch Logs インテグレーションのリファレンス](/ja/clickstack/observability/integration-examples/cloudwatch#self-managed) を参照してください。
-    * OTLP エンドポイントでの TLS と最小権限のインジェストユーザーによる [collector の保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured)。
-    * collector でのイベントの[処理、フィルタリング、エンリッチ](/ja/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured)。
-    * 本番環境へ移行する際の推奨事項については、[本番環境への移行](/ja/clickstack/self-configured/managing/production) を参照してください。
+    * デモデータセット、詳細なトラブルシューティング、チューニングオプションについては、[AWS CloudWatch Logs インテグレーションのリファレンス](/ja/clickstack/integration-examples/cloudwatch) を参照してください。
+    * OTLP エンドポイントでの TLS と最小権限のインジェストユーザーによる [collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector)。
+    * collector でのイベントの[処理、フィルタリング、エンリッチ](/ja/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)。
+    * 本番環境へ移行する際の推奨事項については、[本番環境への移行](/ja/clickstack/managing/production) を参照してください。
   </Step>
 </Steps>

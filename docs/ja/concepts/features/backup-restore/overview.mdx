@@ -119,9 +119,9 @@ BACKUP TABLE test.table
   SETTINGS compression_method='lzma', compression_level=3
 ```
 
-## 名前付きコレクション の使用 {#using-named-collections}
+## named collections の使用 {#using-named-collections}
 
-名前付きコレクション を使用すると、バックアップ/復元操作で再利用できるキー・バリューの組 (S3 の認証情報、エンドポイント、設定など) を保存できます。
+named collections を使用すると、バックアップ/復元操作で再利用できるキー・バリューの組 (S3 の認証情報、エンドポイント、設定など) を保存できます。
 これにより、次のことが可能になります。
 
 * 管理者アクセス権のないユーザーに認証情報を見せない
@@ -129,11 +129,7 @@ BACKUP TABLE test.table
 * 操作間の一貫性を保つ
 * クエリログに認証情報が露出するのを防ぐ
 
-詳細については、[&quot;名前付きコレクション&quot;](/ja/concepts/features/configuration/server-config/named-collections) を参照してください。
-
-SQL で作成した 名前付きコレクション 自体も、`system.named_collections` テーブルを介してバックアップにエクスポートし、そこから
-復元できます。詳しくは
-[&quot;名前付きコレクションのバックアップと復元&quot;](/ja/concepts/features/backup-restore/named-collections) を参照してください。
+詳細については、[&quot;named collections&quot;](/ja/concepts/features/configuration/server-config/named-collections) を参照してください。
 
 ## システム、ログ、またはアクセス管理テーブルのバックアップ {#system-backups}
 
@@ -163,13 +159,6 @@ ClickHouse クラスターのアクセス制御設定を、
 ([&quot;SQL-driven Access Control and Account Management&quot;](/ja/concepts/features/security/access-rights#enabling-access-control) と呼ばれます) 。
 ClickHouse server の設定ファイル (例: `users.xml`) で定義されたアクセス設定は
 バックアップに含まれず、この方法では復元できません。
-
-<Note>
-  ClickHouse 26.10 より前のバージョンでは、`RESTORE` で復元した行ポリシー、設定プロファイル、クォータは
-  `system.row_policies`、`system.settings_profiles`、`system.quotas` には表示されますが、クエリにはすぐに
-  適用されません。適用するには、復元の完了後に [`SYSTEM RELOAD USERS`](/ja/reference/statements/system#reload-users) を
-  実行してください。
-</Note>
 
 ## 基本構文 {#syntax}
 

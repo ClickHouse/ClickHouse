@@ -71,7 +71,7 @@ class ISystemLog
 public:
     using Index = int64_t;
 
-    [[nodiscard]] virtual String getName() const = 0;
+    virtual String getName() const = 0;
 
     /// For implementations that buffer data in memory and flush it to the log periodically,
     /// this method forces an immediate write to the log.
@@ -105,7 +105,7 @@ public:
 
     virtual void savingThreadFunction() = 0;
 
-    [[nodiscard]] virtual bool mustBePreparedAtStartup() const { return false; }
+    virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;
@@ -113,21 +113,6 @@ protected:
 
     bool is_shutdown = false;
 };
-
-/// Updates of the dimensional metrics of the system logs.
-/// They are not templates, so that their code is compiled once and not for every system log.
-namespace SystemLogMetrics
-{
-    /// Create the counters with the value 0, so that a rate calculated from them does not miss the first event.
-    void createQueueCounters(const String & database, const String & table);
-    void createFlushCounters(const String & database, const String & table);
-
-    void onFlushSuccess(const String & database, const String & table, size_t rows);
-    /// The rows of a failed flush are lost.
-    void onFlushFailure(const String & database, const String & table, size_t rows);
-    /// Rows that were not accepted because the queue was full.
-    void onQueueFull(const String & database, const String & table, size_t rows);
-}
 
 struct SystemLogQueueSettings
 {
@@ -154,13 +139,6 @@ public:
     explicit SystemLogQueue(const SystemLogQueueSettings & settings_);
 
     void shutdown();
-
-    /// If a previous owner shut this queue down, puts it back into its constructed state so that
-    /// it can serve a new one; otherwise does nothing. Only meaningful for queues that outlive
-    /// their SystemLog, i.e. TextLog's process-wide static one. Note that `settings` is fixed at
-    /// construction and is NOT re-applied: a second owner in the same process keeps the first
-    /// one's flush interval and size limits.
-    void restart();
 
     // producer method: fill the element in place under a memory-tracker blocker, then enqueue it (moved).
     template <typename FillElement>
@@ -275,7 +253,7 @@ public:
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;
 
-    [[nodiscard]] String getName() const override { return LogElement::name(); }
+    String getName() const override { return LogElement::name(); }
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }

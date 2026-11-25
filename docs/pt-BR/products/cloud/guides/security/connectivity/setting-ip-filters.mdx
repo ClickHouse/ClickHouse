@@ -7,8 +7,10 @@ doc_type: 'guide'
 keywords: ['filtros de IP', 'lista de acesso IP']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="setting-ip-filters">
-  ## Configurar filtros de IP {#setting-ip-filters}
+  ## Configurar filtros de IP
 </div>
 
 As listas de acesso IP filtram o tráfego para serviços do ClickHouse ou chaves de API ao especificar quais endereços de origem têm permissão para se conectar. Essas listas podem ser configuradas para cada serviço e para cada chave de API. Elas podem ser definidas durante a criação do serviço ou da chave de API, ou posteriormente.
@@ -20,14 +22,16 @@ As listas de acesso IP filtram o tráfego para serviços do ClickHouse ou chaves
 </Warning>
 
 <div id="prepare">
-  ## Preparação {#prepare}
+  ## Preparação
 </div>
 
 Antes de começar, reúna os endereços IP ou intervalos que devem ser adicionados à lista de acesso. Leve em consideração equipes remotas, locais de plantão, VPNs etc. A interface da lista de acesso IP aceita endereços individuais e notação CIDR.
 
 A notação Classless Inter-domain Routing (CIDR) permite especificar intervalos de endereços IP menores do que os tamanhos tradicionais de máscara de sub-rede das classes A, B ou C (8, 6 ou 24). A [ARIN](https://account.arin.net/public/cidrCalculator) e várias outras organizações fornecem calculadoras de CIDR, caso você precise de uma. Se quiser mais informações sobre a notação CIDR, consulte a RFC [Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html).
 
-## Criar ou modificar uma lista de acesso IP {#create-or-modify-an-ip-access-list}
+<div id="create-or-modify-an-ip-access-list">
+  ## Criar ou modificar uma lista de acesso IP
+</div>
 
 <Info>
   **Aplicável apenas a conexões fora do PrivateLink**
@@ -60,23 +64,17 @@ A notação Classless Inter-domain Routing (CIDR) permite especificar intervalos
 
 Esta captura de tela mostra uma lista de acesso que permite tráfego de um intervalo de endereços IP, descrito como &quot;faixa do escritório de NY&quot;:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Lista de acesso existente no ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="Lista de acesso existente no ClickHouse Cloud" border />
 
-### Ações possíveis {#possible-actions}
+<div id="possible-actions">
+  ### Ações possíveis
+</div>
 
 1. Para adicionar uma entrada, você pode usar **+ Add new IP**
 
 Este exemplo adiciona um único endereço IP, com a descrição `London server`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Adicionando um único IP à lista de acesso no ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="Adicionando um único IP à lista de acesso no ClickHouse Cloud" border />
 
 2. Exclua uma entrada existente
 
@@ -88,12 +86,12 @@ Modificando a entrada diretamente
 
 4. Alterne para permitir acesso de **Anywhere**
 
-Isso não é recomendado, mas é permitido. Recomendamos que você exponha ao público um aplicativo criado sobre o ClickHouse e restrinja o acesso ao serviço do ClickHouse Cloud de back-end.
+Isso não é recomendado, mas é permitido. Recomendamos que você exponha ao público um aplicativo criado sobre o ClickHouse e restrinja o acesso ao serviço ClickHouse Cloud de back-end.
 
 Para aplicar as alterações feitas, você deve clicar em **Save**.
 
 <div id="verification">
-  ## Verificação {#verification}
+  ## Verificação
 </div>
 
 Depois de criar seu filtro, confirme a conectividade com um serviço a partir de um endereço dentro da faixa e confirme que conexões de fora da faixa permitida sejam negadas. Um comando `curl` simples pode ser usado para verificar:
@@ -121,7 +119,7 @@ Ok.
 ```
 
 <div id="limitations">
-  ## Limitações {#limitations}
+  ## Limitações
 </div>
 
 * No momento, as listas de acesso IP oferecem suporte apenas a IPv4

@@ -74,8 +74,6 @@ ClickHouse Cloud は、HTTPS、ネイティブインターフェイス、[MySQL 
 
 Dictionaries は、ClickHouse におけるルックアップを高速化する一般的な方法です。ClickHouse Cloud は現在、PostgreSQL、MySQL、リモートおよびローカルの ClickHouse サーバー、Redis、MongoDB、HTTP ソースの Dictionaries をサポートしています。
 
-ClickHouse テーブルからデータを読み取る Dictionary を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` のアクセス許可が必要です。詳しくは、[ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse)を参照してください。
-
 ### フェデレーテッドクエリ {#federated-queries}
 
 クラウド内でのクラスター間通信、および外部のセルフマネージド ClickHouse クラスターとの通信向けに、フェデレーテッド ClickHouse クエリをサポートしています。現在、ClickHouse Cloud では、以下のインテグレーションエンジンを使用したフェデレーテッドクエリをサポートしています。

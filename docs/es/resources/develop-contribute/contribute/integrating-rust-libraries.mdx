@@ -8,18 +8,18 @@ doc_type: 'guide'
 
 La integración de bibliotecas de Rust se describirá a partir de la integración de la función hash BLAKE3.
 
-El primer paso de la integración consiste en crear un proyecto de Rust vacío en `contrib/<library>-cmake` e incluir la biblioteca requerida en su Cargo.toml. El proyecto es miembro del workspace de cargo en `contrib/rust-contrib-workspace`: añade `workspace = "../rust-contrib-workspace"` en `[package]` e incluye la carpeta en `members` de `contrib/rust-contrib-workspace/Cargo.toml`. Mantenlo como una biblioteca simple, sin `crate-type`. Los miembros no se compilan como bibliotecas independientes: el paquete raíz del workspace, `_ch_rust_workspace`, reexporta cada miembro habilitado y es la única biblioteca estática que ClickHouse enlaza. En `contrib/rust-contrib-workspace/Cargo.toml`, asigna al paquete raíz una funcionalidad y una dependencia opcional para el miembro (`blake3 = ["dep:_ch_rust_blake3"]` y `_ch_rust_blake3 = { path = "../blake3-cmake", optional = true }`), y reexpórtalo en `contrib/rust-contrib-workspace/src/lib.rs` (`#[cfg(feature = "blake3")] pub use _ch_rust_blake3;`).
+El primer paso de la integración consiste en añadir la biblioteca a la carpeta /rust. Para ello, debes crear un proyecto de Rust vacío e incluir la biblioteca requerida en Cargo.toml. También es necesario configurar la compilación de la nueva biblioteca como estática añadiendo `crate-type = ["staticlib"]` a Cargo.toml.
 
-A continuación, debes vincular la biblioteca con CMake mediante la biblioteca Corrosion. El primer paso es añadir la carpeta de la biblioteca a `contrib/CMakeLists.txt` con `add_contrib`, junto a los demás miembros del workspace. Después, debes añadir el archivo CMakeLists.txt al directorio de la biblioteca. En él, debes añadir el miembro con `clickhouse_add_rust_member`: esto crea un target de interfaz que enlaza la biblioteca estática del workspace y habilita la funcionalidad correspondiente del paquete raíz, que `contrib/rust-contrib-workspace/CMakeLists.txt` importa con Corrosion después de todos los miembros. Para BLAKE3, estas líneas serían:
+A continuación, debes vincular la biblioteca con CMake mediante la biblioteca Corrosion. El primer paso es añadir la carpeta de la biblioteca al CMakeLists.txt dentro de la carpeta /rust. Después, debes añadir el archivo CMakeLists.txt al directorio de la biblioteca. En él, debes llamar a la función de importación de Corrosion. Estas líneas se utilizaron para importar BLAKE3:
 
 ```CMake
-clickhouse_add_rust_member(_ch_rust_blake3 FEATURE blake3)
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
 
 target_include_directories(_ch_rust_blake3 INTERFACE include)
 add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
 ```
 
-Así, crearemos un target de CMake para el miembro y luego le daremos un nombre más práctico. Tenga en cuenta que el nombre `_ch_rust_blake3` proviene de Cargo.toml, donde se usa como nombre del proyecto (`name = "_ch_rust_blake3"`).
+Así, crearemos un target de CMake correcto con Corrosion y luego le cambiaremos el nombre por otro más práctico. Tenga en cuenta que el nombre `_ch_rust_blake3` proviene de Cargo.toml, donde se usa como nombre del proyecto (`name = "_ch_rust_blake3"`).
 
 Como los tipos de datos de Rust no son compatibles con los de C/C++, usaremos nuestro proyecto de biblioteca vacío para crear métodos shim que permitan convertir los datos recibidos desde C/C++, llamar a los métodos de la biblioteca y realizar la conversión inversa de los datos de salida. Por ejemplo, este método se escribió para BLAKE3:
 
@@ -56,9 +56,9 @@ Este método recibe como entrada una cadena compatible con C, su tamaño y un pu
 
 Cabe señalar que el atributo `#[no_mangle]` y `extern "C"` son obligatorios para todos esos métodos. Sin ellos, no será posible realizar una compilación compatible con C/C++ correctamente. Además, son necesarios para el siguiente paso de la integración.
 
-Después de escribir el código para los métodos shim, debemos preparar el archivo de cabecera de la biblioteca. Esto puede hacerse manualmente, o puede usar la biblioteca cbindgen para generarlo automáticamente. En caso de usar cbindgen, tendrá que escribir un script de build build.rs e incluir cbindgen como build-dependency.
+Después de escribir el código para los métodos shim, debemos preparar el archivo de cabecera de la biblioteca. Esto puede hacerse manualmente, o puede usar la biblioteca cbindgen para generarlo automáticamente. En caso de usar cbindgen, tendrá que escribir un script de compilación build.rs e incluir cbindgen como build-dependency.
 
-Un ejemplo de un script de build que puede generar automáticamente un archivo de cabecera:
+Un ejemplo de un script de compilación que puede generar automáticamente un archivo de cabecera:
 
 ```rust
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -76,19 +76,7 @@ Un ejemplo de un script de build que puede generar automáticamente un archivo d
     }
 ```
 
-## Generar la cabecera en este repositorio {#generating-the-header-in-this-repository}
-
-El script de build anterior escribe la cabecera en el árbol de código fuente en cada build, por lo que no queda nada que comprobar: una cabecera confirmada que ya no coincide con la parte de Rust simplemente se sobrescribe en local y sigue siendo incorrecta para todos los demás. Por eso, los crates de este repositorio usan una de estas dos estrategias:
-
-* generar la cabecera en el directorio de compilación y hacer que `target_include_directories` apunte a ella, como hace `contrib/delta-kernel-rs`. Como no se confirma nada, nada puede quedar desactualizado;
-* confirmar la cabecera y hacer que el script de build la compare con la recién generada y haga fallar el build si difieren, como hace `contrib/vortex-cmake`. Las dos mitades de una FFI son unidades de traducción independientes enlazadas por nombre de símbolo, por lo que una firma modificada en un solo lado produce un comportamiento no definido silencioso en lugar de un error de compilación; la comparación es lo que impide olvidarse de regenerarla. Mantén una variable de entorno que reescriba el archivo confirmado, para que actualizarlo siga requiriendo un único comando.
-
-Dos cosas que conviene saber antes de añadir `cbindgen` a un crate de `contrib/rust-contrib-workspace`:
-
-* fija la versión exacta. Su salida cambia entre versiones de parche, así que, con un requisito laxo, la comprobación acaba detectando la versión del generador en lugar de una diferencia real. Además, la versión debe ser una de las que incluye `contrib/rust_vendor`; de lo contrario, habrá que volver a ejecutar `contrib/rust-contrib-workspace/vendor.sh` y actualizar el submódulo;
-* analiza el archivo fuente con `Builder::with_src` en lugar del crate con `cbindgen::generate`. La vía basada en el crate hace que cbindgen ejecute `cargo metadata` en un proceso anidado, y ese proceso no hereda el `--config` que dirige cargo a las fuentes incluidas (vendored).
-
-Además, debes usar el atributo #[no&#95;mangle] y `extern "C"` en cada atributo compatible con C. Sin ellos, la biblioteca puede compilarse incorrectamente y cbindgen no iniciará la generación automática de cabeceras.
+Además, debes usar el atributo #[no&#95;mangle] y `extern "C"` para cada atributo compatible con C. De lo contrario, la biblioteca puede compilarse de forma incorrecta y cbindgen no podrá autogenerar el archivo de cabecera.
 
 Después de todos estos pasos, puedes probar tu biblioteca en un proyecto pequeño para detectar cualquier problema de compatibilidad o de generación de cabeceras. Si surge algún problema durante la generación de cabeceras, puedes intentar configurarla con el archivo cbindgen.toml (puedes encontrar una plantilla aquí: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
 

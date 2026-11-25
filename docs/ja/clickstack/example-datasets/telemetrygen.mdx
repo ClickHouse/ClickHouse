@@ -12,94 +12,214 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
 
 このガイドでは、collector がすでに稼働しており、`4317` (gRPC) と `4318` (HTTP) で OTLP エンドポイントを公開していることを前提としています。
 
-<Steps>
-  <Step title="前提条件" id="prerequisites-oss">
-    このガイドは、[オールインワンイメージの手順](/ja/clickstack/getting-started/oss)に従ってオープンソース版 ClickStack を起動済みであり、OTLPエンドポイント (gRPC 用の `4317` と HTTP 用の `4318`) に接続可能であることを前提としています。また、ClickStack UI の `Team Settings > API Keys` で確認できるインジェスト API key も必要です。
-  </Step>
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Steps>
+      <Step title="前提条件" id="prerequisites-managed">
+        このガイドは、[Managed ClickStack の Getting Started Guide](/ja/clickstack/deployment/managed) を完了しており、`telemetrygen` を実行するマシンから OTLP gRPC (`4317`) および HTTP (`4318`) のエンドポイントにアクセスできる OpenTelemetry collector が稼働していることを前提としています。collector を [`OTLP_AUTH_TOKEN` で保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) している場合は、その値をすぐ使えるようにしておいてください。
+      </Step>
 
-  <Step title="telemetrygen をインストール" id="install-telemetrygen-oss">
-    `telemetrygen` は Docker イメージから実行します (インストールは不要です)。以下のコマンドを読みやすくするため、小さなラッパーを定義します。`--add-host` を指定すると、コンテナからホスト上でリッスンしている collector にアクセスできるようになります:
+      <Step title="telemetrygen をインストールする" id="install-telemetrygen-managed">
+        Dockerイメージから `telemetrygen` を実行します (インストールは不要です) 。以下のコマンドを読みやすくするため、簡単なラッパーを定義します。`--add-host` を指定すると、コンテナーからホスト上で待ち受けている collector に接続できます。
 
-    ```shell
-    telemetrygen() {
-      docker run --rm --add-host=host.docker.internal:host-gateway \
-        ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
-    }
-    export OTEL_ENDPOINT=host.docker.internal:4317
-    ```
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
 
-    または、Go でバイナリをインストールし、代わりに `localhost` を接続先として指定します。
+        または、Go でバイナリをインストールし、代わりに `localhost` を対象にします。
 
-    ```shell
-    go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
-    export OTEL_ENDPOINT=localhost:4317
-    ```
-  </Step>
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
 
-  <Step title="環境変数を設定する" id="set-env-vars-oss">
-    インジェスト API key を環境変数としてエクスポートします：
+      <Step title="環境変数を設定する" id="set-env-vars-managed">
+        collector が保護されている場合は、認証トークンを設定します。
 
-    ```shell
-    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
-    ```
+        ```shell
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
 
-    小さな `tg` ヘルパーを定義して、各コマンドでは異なる部分 (サービス、重大度、ステータス、属性) だけを指定すれば済むようにします。
+        <Info>
+          **認証されていない collector**
 
-    ```shell
-    tg() { local signal=$1; shift; telemetrygen "$signal" \
-      --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
-      --otlp-header "authorization=\"${CLICKSTACK_API_KEY}\"" \
-      --rate 5 --duration 30s "$@"; }
-    ```
-  </Step>
+          ClickStack OpenTelemetry collector はデフォルトで認証されていません。`OTLP_AUTH_TOKEN` を設定するために [collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) の手順を実施していない場合は、以下のヘルパーから `--otlp-header` の行を削除してください。
+        </Info>
 
-  <Step title="ログを生成" id="generate-logs-oss">
-    ログは、単一の均質なストリームではなく、複数のサービスにまたがる現実的な重大度の組み合わせで送信します。大半は情報レベルとし、警告とエラーを1件ずつ含めます。
+        各コマンドでは変わる部分 (service、severity、status、属性) だけを指定すればよいように、小さな `tg` ヘルパーを定義します:
 
-    ```shell
-    tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
-      --otlp-attributes 'deployment.environment="production"' \
-      --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
-    tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
-      --otlp-attributes 'deployment.environment="production"' \
-      --telemetry-attributes 'http.method="POST"'
-    tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
-      --otlp-attributes 'deployment.environment="production"' \
-      --telemetry-attributes 'http.status_code="500"'
-    ```
-  </Step>
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
 
-  <Step title="トレースを生成" id="generate-traces-oss">
-    複数の正常なサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップは大部分が正常で 1 つのサービスだけがエラーを返すという現実的な構成になり、エラー関連のビューにもデータが表示されます。
+      <Step title="ログを生成する" id="generate-logs-managed">
+        ログは、単一で均一なストリームではなく、複数のサービスにまたがって、主に情報レベルを中心に警告やエラーも含めた現実的な重大度の組み合わせで送信します。
 
-    ```shell
-    # Healthy services: the bulk of the traffic, all spans Ok
-    for svc in frontend checkout cart; do
-      tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
-        --otlp-attributes 'deployment.environment="production"' \
-        --telemetry-attributes "http.route=\"/$svc\""
-    done
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
 
-    # One slow dependency returning errors
-    tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
-      --otlp-attributes 'deployment.environment="production"' \
-      --telemetry-attributes 'http.route="/charge"'
-    ```
-  </Step>
+        特に便利なログフラグ:
 
-  <Step title="メトリクスを生成" id="generate-metrics-oss">
-    チャートにカウンター、Gauge、分布の3種類のデータが揃うよう、代表的な3種類のメトリクス型を送信します。
+        * `--service` は `service.name` を設定し、イベントをサービスに紐付けられるようにします。
+        * `--severity-text` と `--severity-number` はレベルを設定します (`severity-number` は 1 ～ 24 の範囲です) 。
+        * `--body` はログメッセージを設定します。
+        * `--otlp-attributes` はリソースレベルの属性を設定します (`key="value"`、`key=true`、または `key=<integer>`) 。
+        * `--telemetry-attributes` はレコード単位の属性を設定します。
+      </Step>
 
-    ```shell
-    tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
-    tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
-    tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
-    ```
+      <Step title="トレースを生成する" id="generate-traces-managed">
+        正常な複数のサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップは大半が正常で 1 つのサービスのみがエラーを返す、より現実的な構成となり、エラービューにもデータが投入されます。
 
-    `--metric-type` には `Gauge`、`Sum`、`Histogram`、`ExponentialHistogram` のいずれかを指定できます。
-  </Step>
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
 
-  <Step title="ClickStack で確認" id="verify-oss">
-    [http://localhost:8080](http://localhost:8080) にアクセスして ClickStack UI を開きます。`Search` ビューで時間範囲を `Last 15 minutes` に設定し、ログソースを `Logs` と `Traces` で切り替えます。`ServiceName` でフィルタすると `frontend`、`checkout`、`cart`、`payment` の各サービスが表示され、`SeverityText` でフィルタすると警告およびエラーのログ行を確認できます。`payment` のトレースを開くと、子スパンとエラーステータスを確認できます。最後に `Chart Explorer` を開いて `Metrics` を選択し、上で設定したメトリクス名のいずれか (例: `http.server.requests`) をチャートに表示して、メトリクスのインジェストが正しく行われていることを確認します。
-  </Step>
-</Steps>
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        特に便利な trace フラグ:
+
+        * `--child-spans` は、trace ごとに指定した数の子 span を生成し、各 trace に実際の深さを持たせます。
+        * `--span-duration` は、各 span の継続時間を設定します (例: `120ms`、`2s`) 。
+        * `--status-code` は、`Unset`、`Error`、`Ok` (または `0`、`1`、`2`) のいずれかです。エラービューを試すには `Error` を使用します。
+        * `--span-links` は、span 間にリンクを追加します。
+        * `--workers` は、より多く、より変化に富んだボリュームを得るために、複数のジェネレーターを並列に実行します。
+      </Step>
+
+      <Step title="メトリクスを生成" id="generate-metrics-managed">
+        ダッシュボードでカウンター、Gauge、分布を利用できるよう、一般的な3種類のメトリクスタイプを送信します。一部のジェネレーターとは異なり、`telemetrygen` はメトリクスでも `--duration` を尊重するため、手動で停止する必要はありません。
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` には `Gauge`、`Sum`、`Histogram`、または `ExponentialHistogram` を指定できます。`--otlp-metric-name` は series 名を指定するオプションで、UI で見つけやすくなります。`--aggregation-temporality` には `delta` または `cumulative` を指定します。
+      </Step>
+
+      <Step title="ClickStack で確認する" id="verify-managed">
+        ClickHouse Cloud コンソールから ClickStack UI を開きます。`Search` ビューで、時間範囲を `Last 15 minutes` に設定し、ログソースを `Logs` と `Traces` に切り替えます。`ServiceName` で絞り込んで `frontend`、`checkout`、`cart`、`payment` の各サービスを表示し、`SeverityText` で絞り込んで warning と error のログ行を探します。`payment` の trace を開き、子 span とエラーステータスを確認します。`Chart Explorer` を開き、`Metrics` を選択して、上で設定したメトリクス名の 1 つ (たとえば `http.server.requests`) をチャート化し、メトリクスのインジェストを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Steps>
+      <Step title="前提条件" id="prerequisites-oss">
+        このガイドでは、[all-in-one イメージの手順](/ja/clickstack/getting-started/oss)に従って Open Source ClickStack を起動しており、OTLP エンドポイント (`4317` gRPC および `4318` HTTP) に接続できることを前提としています。また、`Team Settings > API Keys` にある HyperDX UI のインジェスト API key も必要です。
+      </Step>
+
+      <Step title="telemetrygen をインストールする" id="install-telemetrygen-oss">
+        Dockerイメージから `telemetrygen` を実行します (インストールは不要です) 。以下のコマンドを読みやすくするため、簡単なラッパーを定義します。`--add-host` を指定すると、コンテナーからホスト上で待ち受けている collector に接続できます。
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        または、Go でバイナリをインストールし、代わりに `localhost` を対象にします。
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step title="環境変数を設定する" id="set-env-vars-oss">
+        インジェスト API key をエクスポートします。
+
+        ```shell
+        export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+        ```
+
+        各コマンドでは変わる部分 (service、severity、status、属性) だけを指定すればよいように、小さな `tg` ヘルパーを定義します:
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${CLICKSTACK_API_KEY}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step title="ログを生成する" id="generate-logs-oss">
+        ログは、単一で均一なストリームではなく、複数のサービスにまたがって、主に情報レベルを中心に警告やエラーも含めた現実的な重大度の組み合わせで送信します。
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+      </Step>
+
+      <Step title="トレースを生成する" id="generate-traces-oss">
+        正常な複数のサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップは大半が正常で 1 つのサービスのみがエラーを返す、より現実的な構成となり、エラービューにもデータが投入されます。
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+      </Step>
+
+      <Step title="メトリクスを生成する" id="generate-metrics-oss">
+        チャートにカウンター、Gauge、分布を表示できるように、一般的な 3 種類のメトリクスを送信します。
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` には `Gauge`、`Sum`、`Histogram`、または `ExponentialHistogram` を指定できます。
+      </Step>
+
+      <Step title="ClickStack で確認する" id="verify-oss">
+        [http://localhost:8080](http://localhost:8080) にアクセスして ClickStack UI を開きます。`Search` ビューで、時間範囲を `Last 15 minutes` に設定し、ログソースを `Logs` と `Traces` の間で切り替えます。`ServiceName` で絞り込むと `frontend`、`checkout`、`cart`、`payment` の各サービスを確認でき、`SeverityText` で絞り込むと `warning` と `error` のログ行を見つけられます。`payment` のトレースを開き、子スパンとエラーのステータスを確認します。`Chart Explorer` を開いて `Metrics` を選択し、先ほど設定したメトリクス名の 1 つ (たとえば `http.server.requests`) をチャート化して、メトリクスのインジェストを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

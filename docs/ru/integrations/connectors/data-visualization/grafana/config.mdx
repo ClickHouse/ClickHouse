@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -24,11 +26,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Экран с примером конфигурации:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Пример безопасной конфигурации для native-протокола](/images/integrations/data-visualization/grafana/config_common.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Пример безопасной конфигурации для native-протокола" border />
 
 Пример YAML-конфигурации для общих настроек:
 
@@ -60,14 +58,10 @@ secureJsonData:
 
 Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Дополнительные параметры конфигурации HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Дополнительные параметры конфигурации HTTP" border />
 
 <div id="http-path">
-  #### HTTP-путь {#http-path}
+  #### HTTP-путь
 </div>
 
 Если ваш HTTP-сервер доступен по другому URL-пути, укажите его здесь.
@@ -79,7 +73,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### Пользовательские HTTP-заголовки {#custom-http-headers}
+  #### Пользовательские HTTP-заголовки
 </div>
 
 Вы можете добавлять пользовательские заголовки в запросы, отправляемые на сервер.
@@ -112,11 +106,7 @@ secureJsonData:
 
 Эти настройки необязательны.
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Пример дополнительных настроек](/images/integrations/data-visualization/grafana/config_additional.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Пример дополнительных настроек" border />
 
 Пример YAML:
 
@@ -131,7 +121,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 OpenTelemetry (OTel) тесно интегрирован в плагин.
@@ -151,11 +141,7 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Пример экрана конфигурации журналов:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Конфигурация журналов](/images/integrations/data-visualization/grafana/config_logs.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Конфигурация журналов" border />
 
 Пример YAML-конфигурации журналов:
 
@@ -193,11 +179,7 @@ jsonData:
 
 Пример экрана конфигурации трассировки:
 
-<div className="ch-image-sm">
-  <Frame>
-    ![Конфигурация трассировки](/images/integrations/data-visualization/grafana/config_traces.webp)
-  </Frame>
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Конфигурация трассировки" border />
 
 Пример YAML-конфигурации трассировки:
 
@@ -233,7 +215,7 @@ jsonData:
 Чтобы скрыть эти ссылки, выключите переключатель или задайте в YAML `showTraceLinks: false`.
 
 <div id="column-aliases">
-  ### Псевдонимы столбцов {#column-aliases}
+  ### Псевдонимы столбцов
 </div>
 
 Псевдонимы столбцов — это удобный способ выполнять запросы к данным, используя другие имена и типы.
@@ -247,7 +229,7 @@ jsonData:
 * Вы часто применяете функции для преобразования выбираемых столбцов
 
 <div id="table-defined-alias-columns">
-  #### ALIAS-столбцы, заданные в таблице {#table-defined-alias-columns}
+  #### ALIAS-столбцы, заданные в таблице
 </div>
 
 ClickHouse изначально поддерживает псевдонимы столбцов и сразу работает с Grafana.
@@ -300,19 +282,11 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Пример конфигурации таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Пример конфигурации таблицы псевдонимов" border />
 
 Теперь Grafana будет видеть результаты таблицы псевдонимов вместо результатов `DESC example_table`:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Пример выборки из таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
-  </Frame>
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Пример выборки из таблицы псевдонимов" border />
 
 Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
 

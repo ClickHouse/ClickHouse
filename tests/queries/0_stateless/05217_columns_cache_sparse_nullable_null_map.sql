@@ -4,8 +4,6 @@
 -- any other - it is not a column absent from the part - and cache it like any other.
 
 SET max_threads = 1;
--- `sum` must read the columns, not answer from statistics: the test checks how they are read and cached.
-SET use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS t_cc_sparse_null;
 

@@ -378,42 +378,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## 行顺序与分页 {#row-order-and-paging}
-
-`ARRAY JOIN` 会保留其接收到的行的顺序。对于每一行，它按元素在 array 中的原有顺序依次输出。如果一个查询包含多个 `ARRAY JOIN` 子句，则第一个子句作为外层循环：
-
-```sql
-SELECT x, y
-FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
-ARRAY JOIN xs AS x
-ARRAY JOIN ys AS y;
-```
-
-```response
-┌─x─┬─y─┐
-│ a │ 1 │
-│ a │ 2 │
-│ b │ 1 │
-│ b │ 2 │
-└───┴───┘
-```
-
-如果一个 `ARRAY JOIN` 子句包含多个 array，例如 `ARRAY JOIN xs AS x, ys AS y`，则位于相同位置的元素会进入同一行。在此示例中，结果为两行：`('a', 1)` 和 `('b', 2)`。
-
-如果没有 `ORDER BY`，则无法保证 `ARRAY JOIN` 接收到的行的顺序。例如，查询可能会通过多个并行流读取表。要获得稳定的顺序，请添加 `ORDER BY`，并在其中指定能够标识源行的列以及元素所在的位置。如果要使用 `LIMIT` 和 `OFFSET` 分页读取结果，则必须这样做：
-
-```sql
-SELECT id, num, x
-FROM t
-ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
-ORDER BY id, num
-LIMIT 10 OFFSET 20;
-```
-
-如果 `ORDER BY` 以 `MergeTree` 表 sorting key 中的列开头，查询会按该键的顺序读取表。在本示例中，当表定义为 `ORDER BY id` 时即满足这一条件。此时，查询在取得 `LIMIT` 所需的行后便会停止，不会再展开其余行的 array。有关更多信息，请参阅 [数据读取优化](/zh/reference/statements/select/order-by#optimization-of-data-reading) 以及设置 [optimize&#95;read&#95;in&#95;order](/zh/reference/settings/session-settings/optimize#optimize_read_in_order)。如果 `ORDER BY` 以 array 元素开头，例如 `ORDER BY num, id`，查询则会展开所有行并对其排序。
-
-[arrayJoin](/zh/reference/functions/regular-functions/array-join) 函数同样会按照元素在 array 中的顺序输出每个 array 的元素。但如果一个查询中包含多个 `arrayJoin` 调用，第一个调用并不一定是外层循环。有关更多信息，请参阅 [行顺序](/zh/reference/functions/regular-functions/array-join#row-order)。
-
 ## 实现细节 {#implementation-details}
 
 执行 `ARRAY JOIN` 时，查询的执行顺序会被优化。虽然在查询中，`ARRAY JOIN` 必须始终写在 [WHERE](/zh/reference/statements/select/where)/[PREWHERE](/zh/reference/statements/select/prewhere) 子句之前，但从技术上讲，它们实际上可以按任意顺序执行，除非过滤会用到 `ARRAY JOIN` 的结果。执行顺序由查询优化器控制。

@@ -38,23 +38,6 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
-
-<SettingsInfoBlock type="UInt64" default_value="128" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "새로운 설정입니다. 이전에는 제한이 32로 하드코딩되어 있었습니다"}]}]} />
-
-`use_skip_indexes_for_disjunctions`가 적용되는 WHERE 필터(filter)의 내부 표현(RPN)에 포함될 수 있는 원소의 최대 개수입니다.
-대략적으로 각 조건과 각 `AND`, `OR`, `NOT`이 하나의 원소로 계산됩니다. 예를 들어 `A = 5 OR B = 5 OR C = 5`는 원소가 5개입니다.
-원소 개수는 인덱스 분석(Index Analysis)을 위해 필터가 재작성된 후에 계산됩니다. 예를 들어 `A = 1 OR A = 2 OR A = 3`은 `A IN (1, 2, 3)`으로 변환되어 하나의 원소가 되며(`optimize_min_equality_disjunction_chain_length` 참조), `coalesce(A, B) = 5`는 여러 조건으로 확장됩니다(`allow_key_condition_coalesce_rewrite` 참조).
-원소가 이보다 많은 필터에서는 각 스킵 인덱스가 개별적으로 평가되므로, `OR`로 연결된 서로 다른 컬럼에 대한 조건으로는 그래뉼을 건너뛸 수 없습니다.
-인덱스 분석 중 부분 결과는 각 데이터 파트(data part)의 그래뉼마다 원소당 1비트를 차지하며, 이를 결합하는 데에는 그래뉼마다 원소 개수에 비례하는 시간이 소요됩니다. 0(제한 없음)으로 설정할 때는 이 점에 유의하십시오.
-
-가능한 값:
-
-* 0 — 제한 없음.
-* 양의 정수 — 원소의 최대 개수.
-
 ## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

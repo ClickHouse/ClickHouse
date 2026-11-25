@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "시작하기",
       "pages": [
         "ko/products/cloud/getting-started/cloud-get-started",
         "ko/products/cloud/getting-started/intro",
@@ -9,27 +9,25 @@
       ]
     },
     {
-      "group": "Services and infrastructure",
+      "group": "서비스 및 인프라",
       "pages": [
         "ko/products/cloud/reference/architecture",
         "ko/products/cloud/features/cli",
         {
           "expanded": false,
-          "group": "Plan and deploy",
+          "group": "계획 및 배포",
           "pages": [
             "ko/products/cloud/features/cloud-tiers",
             "ko/products/cloud/reference/supported-regions",
             "ko/products/cloud/features/infrastructure/deployment-options",
             "ko/products/cloud/guides/cloud-compatibility",
-            "ko/products/cloud/features/public-preview-features",
-            "ko/products/cloud/features/self-service-previews",
             "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
             "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
           ]
         },
         {
           "expanded": false,
-          "group": "Configure and scale",
+          "group": "구성 및 확장",
           "pages": [
             "ko/products/cloud/features/autoscaling/overview",
             "ko/products/cloud/reference/settings",
@@ -39,13 +37,12 @@
             "ko/products/cloud/features/autoscaling/make-before-break",
             "ko/products/cloud/features/autoscaling/idling",
             "ko/products/cloud/features/autoscaling/scaling-recommendations",
-            "ko/products/cloud/features/autoscaling/scheduled-scaling",
-            "ko/products/cloud/features/scaling/preparing-for-traffic-spikes"
+            "ko/products/cloud/features/autoscaling/scheduled-scaling"
           ]
         },
         {
           "expanded": false,
-          "group": "Compute and storage",
+          "group": "컴퓨팅 및 저장소",
           "pages": [
             "ko/products/cloud/features/infrastructure/on-demand-compute",
             "ko/products/cloud/features/large-single-replica-services",
@@ -58,20 +55,18 @@
         },
         {
           "expanded": false,
-          "group": "Reliability and maintenance",
+          "group": "안정성 및 유지 관리",
           "pages": [
             "ko/products/cloud/reference/service-uptime",
             "ko/products/cloud/reference/data-resiliency",
-            "ko/products/cloud/guides/deletion-protection",
             "ko/products/cloud/features/admin-features/upgrades"
           ]
         },
         {
           "expanded": false,
-          "group": "Production planning",
+          "group": "프로덕션 환경 계획",
           "pages": [
             "ko/products/cloud/guides/best-practices/index",
-            "ko/products/cloud/guides/best-practices/performance-optimization-playbook",
             "ko/products/cloud/guides/production-readiness",
             "ko/products/cloud/guides/best-practices/multitenancy",
             "ko/products/cloud/guides/best-practices/usagelimits"
@@ -83,14 +78,14 @@
       "$ref": "../bring-your-own-cloud/navigation.json"
     },
     {
-      "group": "Data and integrations",
+      "group": "데이터 및 통합",
       "pages": [
         "ko/products/cloud/features/integrations",
         "ko/products/cloud/features/data-catalogs",
         "ko/products/cloud/guides/migration/upload-a-csv-file",
         {
           "expanded": false,
-          "group": "Data sources",
+          "group": "데이터 소스",
           "pages": [
             "ko/products/cloud/guides/data-sources/index",
             "ko/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -103,14 +98,14 @@
       ]
     },
     {
-      "group": "Connect and query",
+      "group": "연결 및 쿼리 실행",
       "pages": [
         "ko/products/cloud/features/sql-console-features/sql-console",
         "ko/products/cloud/guides/sql-console/connection-details",
         "ko/products/cloud/features/sql-console-features/query-insights",
         {
           "expanded": false,
-          "group": "Query API endpoints",
+          "group": "Query API endpoint",
           "pages": [
             "ko/products/cloud/features/sql-console-features/query-endpoints",
             "ko/products/cloud/guides/sql-console/query-endpoints"
@@ -122,23 +117,22 @@
       ]
     },
     {
-      "group": "Access management",
+      "group": "접근 관리",
       "pages": [
         "ko/products/cloud/guides/security/cloud-access-management/index",
         {
           "expanded": false,
-          "group": "Cloud accounts and roles",
+          "group": "Cloud 계정 및 역할",
           "pages": [
             "ko/products/cloud/guides/security/cloud-access-management/manage-my-account",
             "ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
-            "ko/products/cloud/guides/security/cloud-access-management/approved-domains",
             "ko/products/cloud/reference/security/console-roles",
             "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles"
           ]
         },
         {
           "expanded": false,
-          "group": "Database users and permissions",
+          "group": "데이터베이스 사용자 및 권한",
           "pages": [
             "ko/products/cloud/guides/security/cloud-access-management/manage-database-users",
             "ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
@@ -147,43 +141,41 @@
         },
         {
           "expanded": false,
-          "group": "Identity providers",
+          "group": "ID 공급자",
           "pages": [
             "ko/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
             "ko/products/cloud/guides/security/saml-sso-removal",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
-            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
+            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
           ]
         }
       ]
     },
     {
-      "group": "Security and compliance",
+      "group": "보안 및 컴플라이언스",
       "pages": [
         "ko/products/cloud/features/security",
         {
           "expanded": false,
-          "group": "Network access",
+          "group": "네트워크 액세스",
           "pages": [
             "ko/products/cloud/guides/security/connectivity/setting-ip-filters",
             {
               "expanded": false,
-              "group": "Private networking",
+              "group": "사설 네트워킹",
               "pages": [
                 "ko/products/cloud/guides/security/connectivity/private-networking/index",
                 "ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                 "ko/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                 "ko/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
               ]
-            },
-            "ko/products/cloud/guides/security/connectivity/org-network-connectivity"
+            }
           ]
         },
         {
           "expanded": false,
-          "group": "Audit logging",
+          "group": "감사 로깅",
           "pages": [
             "ko/products/cloud/guides/security/audit-logging/index",
             "ko/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -194,7 +186,7 @@
         },
         {
           "expanded": false,
-          "group": "Data security",
+          "group": "데이터 보안",
           "pages": [
             "ko/products/cloud/guides/security/data-masking",
             "ko/products/cloud/guides/security/cmek"
@@ -202,7 +194,7 @@
         },
         {
           "expanded": false,
-          "group": "Compliance and privacy",
+          "group": "컴플라이언스 및 개인정보 보호",
           "pages": [
             "ko/products/cloud/reference/security/compliance-overview",
             "ko/products/cloud/guides/security/compliance/hipaa-onboarding",
@@ -214,11 +206,11 @@
       ]
     },
     {
-      "group": "Monitoring and backups",
+      "group": "모니터링 및 백업",
       "pages": [
         {
           "expanded": false,
-          "group": "Monitoring",
+          "group": "모니터링",
           "pages": [
             "ko/products/cloud/features/monitoring/overview",
             "ko/products/cloud/features/monitoring/cloud-console",
@@ -231,12 +223,12 @@
         },
         {
           "expanded": false,
-          "group": "Backups",
+          "group": "백업",
           "pages": [
             "ko/products/cloud/features/backups/overview",
             {
               "expanded": false,
-              "group": "Manage backups",
+              "group": "백업 관리",
               "pages": [
                 "ko/products/cloud/guides/backups/index",
                 "ko/products/cloud/guides/backups/review-and-restore-backups",
@@ -257,19 +249,46 @@
       ]
     },
     {
-      "group": "AI tools and agents",
+      "group": "AI 도구 및 에이전트",
       "pages": [
         "ko/products/cloud/features/ai-ml/index",
+        "ko/products/cloud/features/ai-ml/aichat/using-ai-chat",
+        "ko/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
         "ko/products/cloud/features/ai-ml/langfuse",
         {
           "expanded": false,
-          "group": "Remote MCP",
+          "group": "원격 MCP",
           "pages": [
             "ko/products/cloud/features/ai-ml/remote-mcp",
             "ko/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
-        "ko/products/cloud/features/ai-ml/linked-billing-claude-platform",
+        {
+          "group": "ClickHouse Agents",
+          "pages": [
+            "ko/products/cloud/features/ai-ml/agents/index",
+            "ko/products/cloud/features/ai-ml/agents/quickstart",
+            "ko/products/cloud/features/ai-ml/agents/chat",
+            {
+              "group": "Agent Builder",
+              "pages": [
+                "ko/products/cloud/features/ai-ml/agents/builder/index",
+                "ko/products/cloud/features/ai-ml/agents/builder/model-parameters",
+                "ko/products/cloud/features/ai-ml/agents/builder/code-interpreter",
+                "ko/products/cloud/features/ai-ml/agents/builder/web-search",
+                "ko/products/cloud/features/ai-ml/agents/builder/image-generation",
+                "ko/products/cloud/features/ai-ml/agents/builder/vision",
+                "ko/products/cloud/features/ai-ml/agents/builder/mcp-servers",
+                "ko/products/cloud/features/ai-ml/agents/builder/skills",
+                "ko/products/cloud/features/ai-ml/agents/builder/subagents"
+              ]
+            },
+            "ko/products/cloud/features/ai-ml/agents/prompts",
+            "ko/products/cloud/features/ai-ml/agents/memory",
+            "ko/products/cloud/features/ai-ml/agents/marketplace",
+            "ko/products/cloud/features/ai-ml/agents/sharing-and-access"
+          ]
+        },
         "ko/products/cloud/features/ai-ml/model-developer-terms"
       ]
     },
@@ -280,10 +299,10 @@
         "ko/products/cloud/features/admin-features/api/openapi",
         "ko/products/cloud/features/admin-features/api/postman",
         {
-          "group": "API reference",
+          "group": "API 참조",
           "openapi": {
-            "source": "_specs/cloud-openapi.json",
-            "directory": "ko/products/cloud/api-reference"
+            "directory": "ko/products/cloud/api-reference",
+            "source": "_specs/cloud-openapi.json"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"
@@ -292,12 +311,12 @@
       ]
     },
     {
-      "group": "Billing",
+      "group": "청구",
       "pages": [
         "ko/products/cloud/reference/billing/billing-overview",
         {
           "expanded": false,
-          "group": "Marketplace",
+          "group": "마켓플레이스",
           "pages": [
             "ko/products/cloud/reference/billing/marketplace/overview",
             "ko/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -327,7 +346,7 @@
       ]
     },
     {
-      "group": "Support",
+      "group": "지원",
       "pages": [
         "ko/products/cloud/features/support",
         "ko/products/cloud/reference/account-close"
@@ -337,5 +356,6 @@
       "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
 }

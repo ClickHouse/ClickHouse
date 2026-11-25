@@ -7,6 +7,8 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'resiliencia de datos', 'recuperación ante desastres']
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 Esta página describe las recomendaciones de recuperación ante desastres para ClickHouse Cloud y ofrece orientación para que los clientes se recuperen de una interrupción.
 Actualmente, ClickHouse Cloud no admite la conmutación por error automática ni la sincronización automática entre varias regiones geográficas.
 
@@ -15,7 +17,7 @@ Actualmente, ClickHouse Cloud no admite la conmutación por error automática ni
 </Tip>
 
 <div id="definitions">
-  ## Definiciones {#definitions}
+  ## Definiciones
 </div>
 
 Conviene repasar primero algunas definiciones.
@@ -58,7 +60,7 @@ Las copias de seguridad disponibles actualmente para el servicio se muestran en 
 Esta sección también muestra el estado de éxito o fallo de cada copia de seguridad.
 
 <div id="restoring-from-a-backup">
-  ## Restauración desde una copia de seguridad {#restoring-from-a-backup}
+  ## Restauración desde una copia de seguridad
 </div>
 
 1. Las copias de seguridad predeterminadas, en el bucket de ClickHouse Cloud, pueden restaurarse en un servicio nuevo de la misma región.
@@ -80,13 +82,13 @@ Dado que la duración depende en gran medida de sus datos, su esquema y la confi
 </Note>
 
 <div id="recovery-process">
-  ## Proceso de recuperación {#recovery-process}
+  ## Proceso de recuperación
 </div>
 
 En esta sección se explican las distintas opciones de recuperación y el proceso que puede seguirse en cada caso.
 
 <div id="primary-service-data-corruption">
-  ### Corrupción de datos del servicio principal {#primary-service-data-corruption}
+  ### Corrupción de datos del servicio principal
 </div>
 
 En este caso, los datos [se pueden restaurar](/es/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a otro servicio de la misma región a partir de la copia de seguridad.
@@ -100,14 +102,10 @@ Para restaurar a partir de una copia de seguridad existente
 2. Haga clic en los tres puntos de “Actions” de la copia de seguridad específica desde la que desea restaurar.
 3. Asigne un nombre al nuevo servicio y restáurelo a partir de esta copia de seguridad
 
-<div className="ch-image-md">
-  <Frame>
-    ![Restaurar desde una copia de seguridad](/images/cloud/guides/restore_backup.webp)
-  </Frame>
-</div>
+<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de una copia de seguridad" />
 
 <div id="primary-region-downtime">
-  ### Caída de la región primaria {#primary-region-downtime}
+  ### Caída de la región primaria
 </div>
 
 Puede [exportar copias de seguridad](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) a un bucket de su propio proveedor de nube.
@@ -127,7 +125,7 @@ Esto puede implicar:
 </Note>
 
 <div id="additional-options">
-  ## Opciones adicionales {#additional-options}
+  ## Opciones adicionales
 </div>
 
 Hay algunas opciones adicionales que conviene tener en cuenta.

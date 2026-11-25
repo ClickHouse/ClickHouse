@@ -58,11 +58,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ## text_index_posting_list_codec {#text_index_posting_list_codec}
 
-<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="pfor" />
+<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "pfor"},{"label": "テキスト索引のポスティングリストコーデックとして、デフォルトで `pfor` を使用するように変更"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "新しい設定"}]}]} />
 
-テキスト索引の既定のポスティングリストコーデックです。`none`、`bitpacking`、`pfor` のいずれかです。
+テキスト索引の既定のポスティングリスト用コーデックです。`none`、`bitpacking`、`pfor` のいずれかです。
 明示的に `posting_list_codec` 索引引数を指定すると上書きできます。
 
 ## text_index_serialization_version {#text_index_serialization_version}

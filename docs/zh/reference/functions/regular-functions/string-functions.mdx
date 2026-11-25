@@ -206,8 +206,6 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
-**别名**：`from_base32`
-
 **参数**
 
 * `encoded` — String 类型的列或常量。[`String`](/zh/reference/data-types/string)
@@ -232,7 +230,7 @@ SELECT base32Decode('IVXGG33EMVSA====');
 
 ## base32Encode {#base32Encode}
 
-引入版本：v25.6.0
+引入于：v25.6.0
 
 使用 [Base32](https://datatracker.ietf.org/doc/html/rfc4648#section-6) 对字符串进行编码。
 
@@ -241,8 +239,6 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
-
-**别名**: `to_base32`
 
 **参数**
 
@@ -428,8 +424,6 @@ SELECT base64Encode('clickhouse')
 base64URLDecode(encoded)
 ```
 
-**别名**: `from_base64url`
-
 **参数**
 
 * `encoded` — 要进行编码的 String 类型列或常量。如果该字符串不是有效的 Base64 编码字符串，则会抛出异常。[`String`](/zh/reference/data-types/string)
@@ -440,7 +434,7 @@ base64URLDecode(encoded)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
@@ -463,8 +457,6 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 ```sql
 base64URLEncode(plaintext)
 ```
-
-**别名**：`to_base64url`
 
 **参数**
 
@@ -1093,82 +1085,6 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
-## editDistanceRatio {#editDistanceRatio}
-
-引入版本：v26.11.0
-
-计算两个字节字符串之间经归一化的[编辑距离](https://en.wikipedia.org/wiki/Edit_distance)相似度：
-`1 - editDistance(s1, s2) / max(length(s1), length(s2))`。
-返回值介于 `0` (编辑距离等于较长字符串的长度，例如 `'ab'` 和 `'ba'`) 与 `1` (两个字符串相等) 之间。两个空字符串视为相等。
-
-**语法**
-
-```sql
-editDistanceRatio(s1, s2)
-```
-
-**别名**：`levenshteinRatio`
-
-**参数**
-
-* `s1` — 第一个输入字符串。[`String`](/zh/reference/data-types/string)
-* `s2` — 第二个输入字符串。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回两个字符串之间经归一化的编辑距离相似度。[`Float64`](/zh/reference/data-types/float)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT editDistanceRatio('kitten', 'sitting')
-```
-
-```response title=Response
-┌─editDistanceRatio('kitten', 'sitting')─┐
-│                     0.5714285714285714 │
-└────────────────────────────────────────┘
-```
-
-## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
-
-引入版本：v26.11.0
-
-与 [`editDistanceRatio`](#editDistanceRatio) 类似，但适用于 UTF8-encoded 字符串：编辑距离和长度均按码点计算。
-
-**语法**
-
-```sql
-editDistanceRatioUTF8(s1, s2)
-```
-
-**别名**：`levenshteinRatioUTF8`
-
-**参数**
-
-* `s1` — 第一个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
-* `s2` — 第二个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回两个 UTF8 字符串之间基于归一化编辑距离的相似度。[`Float64`](/zh/reference/data-types/float)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
-```
-
-```response title=Response
-┌──────────────ratio─┐
-│ 0.6666666666666667 │
-└────────────────────┘
-```
-
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 引入版本：v24.6.0
@@ -1181,7 +1097,7 @@ SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
 editDistanceUTF8(s1, s2)
 ```
 
-**别名**: `levenshteinDistanceUTF8`, `levenshtein_distance`
+**别名**: `levenshteinDistanceUTF8`
 
 **参数**
 
@@ -1194,7 +1110,7 @@ editDistanceUTF8(s1, s2)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT editDistanceUTF8('我是谁', '我是我') AS distance
@@ -1254,8 +1170,6 @@ SELECT
 endsWith(s, suffix)
 ```
 
-**别名**：`ends_with`
-
 **参数**
 
 * `s` — 要检查的字符串。[`String`](/zh/reference/data-types/string)
@@ -1267,7 +1181,7 @@ endsWith(s, suffix)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT endsWith('ClickHouse', 'House');
@@ -1397,7 +1311,7 @@ SELECT endsWithUTF8('данных', 'ых');
 此函数会移除 HTML 标签、注释以及 script/style 元素，仅保留文本内容。它支持：
 
 * 移除所有 HTML/XML 标签
-* 移除注释 (`<!-- -->`)
+* 移除注释 (`{/* */}`)
 * 移除 script 和 style 元素及其内容
 * 处理 CDATA 区段 (按原样复制)
 * 正确处理并规范化空白字符
@@ -2767,7 +2681,7 @@ SELECT soundex('aksel')
 
 ## space {#space}
 
-引入版本：v23.5.0
+首次引入版本：v23.5.0
 
 按指定次数重复拼接空格 (` `) 。
 
@@ -2787,7 +2701,7 @@ space(n)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT space(3) AS res, length(res);
@@ -2959,7 +2873,7 @@ SELECT sparseGramsUTF8('алиса', 3)
 
 ## startsWith {#startsWith}
 
-引入版本：v1.1.0
+首次引入于：v1.1.0
 
 检查字符串是否以给定字符串开头。
 
@@ -2969,11 +2883,9 @@ SELECT sparseGramsUTF8('алиса', 3)
 startsWith(s, prefix)
 ```
 
-**别名**：`starts_with`
-
 **参数**
 
-* `s` — 待检查的字符串。[`String`](/zh/reference/data-types/string)
+* `s` — 要检查的字符串。[`String`](/zh/reference/data-types/string)
 * `prefix` — 要检查的前缀。[`String`](/zh/reference/data-types/string)
 
 **返回值**
@@ -3239,92 +3151,6 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
-```
-
-## stringSimilarityRatio {#stringSimilarityRatio}
-
-引入版本：v26.11.0
-
-计算两个字节字符串之间归一化的 indel 相似度，结果与 Python 的 `Levenshtein.ratio` 相同：
-`2 * LCS / (length(s1) + length(s2))`，其中 `LCS` 为[最长公共子序列](https://en.wikipedia.org/wiki/Longest_common_subsequence)的长度。
-也可等价表示为 `1 - (insertions + deletions) / (length(s1) + length(s2))`。
-返回值介于 `0` (完全不同) 和 `1` (字符串相等) 之间。两个空字符串视为相等。
-
-**语法**
-
-```sql
-stringSimilarityRatio(s1, s2)
-```
-
-**参数**
-
-* `s1` — 第一个输入字符串。[`String`](/zh/reference/data-types/string)
-* `s2` — 第二个输入字符串。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回两个字符串之间归一化的 indel 相似度。[`Float64`](/zh/reference/data-types/float)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT stringSimilarityRatio('kitten', 'sitting')
-```
-
-```response title=Response
-┌─stringSimilarityRatio('kitten', 'sitting')─┐
-│                         0.6153846153846154 │
-└────────────────────────────────────────────┘
-```
-
-**名称的模糊匹配**
-
-```sql title=Query
-SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
-```
-
-```response title=Response
-┌─name─────────┐
-│ Equinix      │
-│ Equinix Inc. │
-└──────────────┘
-```
-
-## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
-
-引入版本：v26.11.0
-
-与 [`stringSimilarityRatio`](#stringSimilarityRatio) 类似，但适用于 UTF8-encoded 字符串：长度按码点计算。
-
-**语法**
-
-```sql
-stringSimilarityRatioUTF8(s1, s2)
-```
-
-**参数**
-
-* `s1` — 第一个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
-* `s2` — 第二个输入的 UTF8 字符串。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-返回两个 UTF8 字符串之间归一化的 indel 相似度。[`Float64`](/zh/reference/data-types/float)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
-```
-
-```response title=Response
-┌──────────────ratio─┐
-│ 0.6666666666666667 │
-└────────────────────┘
 ```
 
 ## substring {#substring}

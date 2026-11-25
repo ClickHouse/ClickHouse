@@ -170,29 +170,17 @@ quit
 
 在设置表单中，为 foreign server 输入名称。选择用于连接的 ClickHouse
 服务、数据库和用户。输入 ClickHouse
-密码，然后选择要导入 ClickHouse 表的 Postgres 数据库和目标端 schema。点击 **连接**，创建 foreign
+密码，然后选择要导入 ClickHouse 表的 Postgres 数据库和目标 schema。点击 **连接**，创建 foreign
 server 并导入 schema。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse Cloud 控制台中 taxi 数据库的 pg\_clickhouse 设置表单](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置表单" size="lg" border />
 
 设置完成后，控制台会显示确认信息，foreign
 server 将出现在 server 列表中。
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse Cloud 控制台中 taxi 数据库的 pg\_clickhouse 设置已完成](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置已完成" size="lg" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![显示 taxi pg\_clickhouse 连接的 foreign server 列表](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
-  </Frame>
-</div>
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="显示 taxi pg_clickhouse 连接的 foreign server 列表" size="lg" border />
 
 现在，您可以打开 Postgres **SQL 控制台**并查询已导入的表：
 
@@ -337,11 +325,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 现在来查询该表：
 
 ```pgsql
-SELECT count(*) FROM taxi.trips;
-  count
----------
- 1999657
-(1 row)
+ SELECT count(*) FROM taxi.trips;
+   count
+ ---------
+  1999657
+ (1 row)
 ```
 
 注意这个查询执行得有多快。pg&#95;clickhouse 将整个
@@ -349,12 +337,12 @@ SELECT count(*) FROM taxi.trips;
 向 Postgres 返回一行结果。使用 [EXPLAIN] 查看：
 
 ```pgsql
-EXPLAIN select count(*) from taxi.trips;
-                   QUERY PLAN
--------------------------------------------------
- Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-   Relations: Aggregate on (trips)
-(2 rows)
+ EXPLAIN select count(*) from taxi.trips;
+                    QUERY PLAN
+ -------------------------------------------------
+  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+    Relations: Aggregate on (trips)
+ (2 rows)
 ```
 
 请注意，&quot;Foreign Scan&quot; 出现在执行计划的根节点，这意味着
@@ -605,7 +593,7 @@ EXPLAIN select count(*) from taxi.trips;
    ```
 
    该查询汇总了终点为 LaGuardia 或 JFK 机场的出租车行程，按各行政区统计数量。请注意，其中有不少行程的
-   上车社区未知。
+   上车区域未知。
 
 ## 执行 JOIN {#perform-a-join}
 
@@ -689,7 +677,7 @@ EXPLAIN select count(*) from taxi.trips;
 
 [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html "SQL 命令：EXPLAIN"
 
-[dictionary]: /reference/statements/create/dictionary
+[字典]: /reference/statements/create/dictionary
 
 [PGXN]: https://pgxn.org/dist/pg_clickhouse "PGXN 上的 pg_clickhouse"
 

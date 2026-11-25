@@ -7,6 +7,8 @@ sidebarTitle: 'Entrepôt de données'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/fr/components/Image.jsx";
+
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -18,10 +20,10 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 L’entrepôt de données moderne ne lie plus étroitement le stockage et le calcul. À la place, des couches distinctes mais interconnectées pour le stockage, la gouvernance et le traitement des requêtes vous offrent la flexibilité nécessaire pour choisir les bons outils pour vos flux de travail.
 
-En ajoutant des formats de table ouverts et un moteur de requêtes hautes performances comme ClickHouse à un stockage objet dans le cloud, vous bénéficiez de fonctionnalités dignes d’une base de données — transactions ACID, validation des schémas et requêtes analytiques rapides — sans sacrifier l’ouverture de votre lac de données. Cette combinaison allie performances et stockage interopérable et économique pour prendre en charge vos charges de travail d’analyse de données traditionnelles et vos charges de travail IA/ML modernes.
+En ajoutant des formats de table ouverts et un moteur de requêtes hautes performances comme ClickHouse à un stockage objet dans le cloud, vous bénéficiez de fonctionnalités dignes d’une base de données — transactions ACID, validation des schémas et requêtes analytiques rapides — sans sacrifier l’ouverture de votre lac de données. Cette combinaison allie performances et stockage interopérable et économique pour prendre en charge vos charges de travail analytiques traditionnelles et vos charges de travail IA/ML modernes.
 
 <div id="benefits">
-  ## Ce que cette architecture offre {#benefits}
+  ## Ce que cette architecture offre
 </div>
 
 En combinant un stockage objet ouvert et des formats de table avec ClickHouse comme moteur de requêtes, vous obtenez :
@@ -34,17 +36,15 @@ En combinant un stockage objet ouvert et des formats de table avec ClickHouse co
 | **Gouvernance**                         | Les catalogues et les formats de table offrent un contrôle d&#39;accès fin et des capacités d&#39;audit au niveau des lignes et des colonnes, ce qui compense les mécanismes de sécurité limités des lacs de données de base.                                                                                                                                                     |
 | **Séparation du stockage et du calcul** | Le stockage et le calcul évoluent indépendamment sur un stockage objet standard, nettement moins coûteux qu&#39;un stockage propriétaire d&#39;entrepôt de données. Si cette séparation est la norme dans les entrepôts Cloud modernes, les formats ouverts vous permettent de choisir *quel* moteur de calcul évolue avec vos données.                                      |
 
-## Comment ClickHouse propulse votre entrepôt de données {#architecture}
+<div id="architecture">
+  ## Comment ClickHouse propulse votre entrepôt de données
+</div>
 
 Les données circulent depuis les plateformes de streaming et les entrepôts de données existants, via le stockage objet, jusqu’à ClickHouse, où elles sont transformées, optimisées et mises à disposition de vos outils BI/IA.
 
 <Columns cols={2}>
   <div>
-    <div className="ch-image-lg">
-      <Frame>
-        ![Architecture d’entrepôt de données ClickHouse](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
-      </Frame>
-    </div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="Architecture d’entrepôt de données ClickHouse" />
   </div>
 
   <ExclusiveGroup name="dw-arch">
@@ -68,14 +68,14 @@ Les données circulent depuis les plateformes de streaming et les entrepôts de 
       </Accordion>
 
       <Accordion title="Intégrations">
-        ClickHouse dispose de connecteurs natifs pour des outils BI comme [Tableau](/fr/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) et [Looker](/fr/integrations/connectors/data-visualization/looker-and-clickhouse). Les outils sans connecteur natif peuvent se connecter via le [MySQL wire protocol](/fr/concepts/features/interfaces/mysql). Le [MCP server](/fr/guides/use-cases/ai-ml/MCP) connecte ClickHouse aux LLM pour l’analyse de données conversationnelle, et des contrôles [RBAC](/fr/concepts/features/security/access-rights) flexibles vous permettent d’exposer des tables en lecture seule en toute sécurité.
+        ClickHouse dispose de connecteurs natifs pour des outils BI comme [Tableau](/fr/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) et [Looker](/fr/integrations/connectors/data-visualization/looker-and-clickhouse). Les outils sans connecteur natif peuvent se connecter via le [MySQL wire protocol](/fr/concepts/features/interfaces/mysql). Le [MCP server](/fr/guides/use-cases/ai-ml/MCP) connecte ClickHouse aux LLM pour l’analytique conversationnelle, et des contrôles [RBAC](/fr/concepts/features/security/access-rights) flexibles vous permettent d’exposer des tables en lecture seule en toute sécurité.
       </Accordion>
     </AccordionGroup>
   </ExclusiveGroup>
 </Columns>
 
 <div id="hybrid-architecture-the-best-of-both-worlds">
-  ## Architecture hybride : le meilleur des deux mondes {#hybrid-architecture-the-best-of-both-worlds}
+  ## Architecture hybride : le meilleur des deux mondes
 </div>
 
 En plus d’interroger votre lac de données, vous pouvez ingérer dans le stockage natif [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) de ClickHouse les données pour lesquelles les performances sont cruciales, pour des cas d’usage qui exigent une latence ultra-faible — tableaux de bord en temps réel, analyses opérationnelles ou applications interactives.

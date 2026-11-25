@@ -7,6 +7,8 @@ description: 'Describe el motor de tabla SharedMergeTree'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 La familia de motores de tabla SharedMergeTree es un reemplazo nativo de la nube para los motores ReplicatedMergeTree, optimizado para funcionar sobre almacenamiento compartido (p. ej., Amazon S3, Google Cloud Storage, MinIO, Azure Blob Storage). Existe un equivalente de SharedMergeTree para cada tipo específico de motor MergeTree; es decir, SharedReplacingMergeTree sustituye a ReplicatedReplacingMergeTree.
 
 La familia de motores de tabla SharedMergeTree es la base de ClickHouse Cloud. Para el usuario final, no hace falta cambiar nada para empezar a usar la familia de motores SharedMergeTree en lugar de los motores basados en ReplicatedMergeTree. Ofrece las siguientes ventajas adicionales:
@@ -19,21 +21,13 @@ La familia de motores de tabla SharedMergeTree es la base de ClickHouse Cloud. P
 
 Una mejora significativa que aporta SharedMergeTree es que proporciona una separación más marcada entre cómputo y almacenamiento en comparación con ReplicatedMergeTree. A continuación puede ver cómo ReplicatedMergeTree separa el cómputo y el almacenamiento:
 
-<div className="ch-image-md">
-  <Frame>
-    ![Diagrama de ReplicatedMergeTree](/images/cloud/reference/shared-merge-tree-1.png)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="Diagrama de ReplicatedMergeTree" size="md" />
 
-Como puede ver, aunque los datos almacenados en ReplicatedMergeTree están en almacenamiento de objetos, la metadata sigue residiendo en cada uno de los clickhouse-servers. Esto significa que, para cada operación replicada, la metadata también debe replicarse en todas las réplicas.
+Como puede ver, aunque los datos almacenados en ReplicatedMergeTree están en almacenamiento de objetos, los metadatos siguen residiendo en cada uno de los clickhouse-servers. Esto significa que, para cada operación replicada, los metadatos también deben replicarse en todas las réplicas.
 
-<div className="ch-image-md">
-  <Frame>
-    ![Diagrama de ReplicatedMergeTree con metadata](/images/cloud/reference/shared-merge-tree-2.png)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="Diagrama de ReplicatedMergeTree con metadatos" size="md" />
 
-A diferencia de ReplicatedMergeTree, SharedMergeTree no requiere que las réplicas se comuniquen entre sí. En su lugar, toda la comunicación se realiza a través del almacenamiento compartido y clickhouse-keeper. SharedMergeTree implementa replicación asíncrona sin líder y utiliza clickhouse-keeper para la coordinación y el almacenamiento de metadata. Esto significa que la metadata no necesita replicarse a medida que el servicio escala y reduce su tamaño. Esto se traduce en operaciones más rápidas de replicación, mutación, fusión y escalado. SharedMergeTree permite cientos de réplicas por tabla, lo que hace posible escalar dinámicamente sin segmentos. En ClickHouse Cloud se utiliza un enfoque de ejecución distribuida de consultas para aprovechar más recursos de cómputo en una consulta.
+A diferencia de ReplicatedMergeTree, SharedMergeTree no requiere que las réplicas se comuniquen entre sí. En su lugar, toda la comunicación se realiza a través del almacenamiento compartido y clickhouse-keeper. SharedMergeTree implementa replicación asíncrona sin líder y utiliza clickhouse-keeper para la coordinación y el almacenamiento de metadatos. Esto significa que los metadatos no necesitan replicarse a medida que el servicio escala y reduce su tamaño. Esto se traduce en operaciones más rápidas de replicación, mutación, fusión y escalado. SharedMergeTree permite cientos de réplicas por tabla, lo que hace posible escalar dinámicamente sin segmentos. En ClickHouse Cloud se utiliza un enfoque de ejecución distribuida de consultas para aprovechar más recursos de cómputo en una consulta.
 
 ## Introspección {#introspection}
 
@@ -122,8 +116,8 @@ La mayoría de las veces, no debería usar `select_sequential_consistency` ni `S
 
 ## Visibilidad de `ALTER` y de las mutaciones {#alter-and-mutation-visibility}
 
-`SharedMergeTree` coordina los cambios de metadata a través de ClickHouse Keeper. Las réplicas recuperan la metadata modificada de forma asíncrona, por lo que un cambio de metadata no tiene por qué ser visible de inmediato en todas las réplicas. Las lecturas realizadas en la misma sesión y en el mismo nodo ya utilizan la metadata actual. Si una lectura debe ejecutarse en otra réplica justo después de un cambio de metadata, use `SYSTEM SYNC REPLICA LIGHTWEIGHT` para que esa réplica recupere la metadata desde ClickHouse Keeper.
+`SharedMergeTree` coordina los cambios de metadata a través de ClickHouse Keeper. Las réplicas obtienen la metadata modificada de forma asíncrona, por lo que un cambio de metadata no tiene por qué ser visible de inmediato en todas las réplicas. Las lecturas realizadas en la misma sesión y en el mismo nodo ya utilizan la metadata actualizada. Si una lectura debe ejecutarse en otra réplica justo después de un cambio de metadata, utilice `SYSTEM SYNC REPLICA LIGHTWEIGHT` para que esa réplica obtenga la metadata desde ClickHouse Keeper.
 
-Las operaciones `ALTER` que generan mutaciones realizan en segundo plano un trabajo que crea nuevas partes en el almacenamiento compartido y coordina su visibilidad a través de ClickHouse Keeper. No se trata de un proceso de reescritura ni de transferencia de datos por réplica, como ocurre en `ReplicatedMergeTree`.
+Las operaciones `ALTER` que generan mutaciones ejecutan en segundo plano un proceso que crea nuevas partes en el almacenamiento compartido y coordina su visibilidad a través de ClickHouse Keeper. No se trata de un proceso de reescritura o de transferencia de datos por réplica, como ocurre en `ReplicatedMergeTree`.
 
-En ClickHouse Cloud, el valor predeterminado de [`alter_sync`](/es/reference/settings/session-settings/alter#alter_sync) es `0`; configúrelo cuando un cliente deba esperar a que finalicen las operaciones de metadata o una reescritura `MODIFY COLUMN` que no afecte solo a la metadata. Para las operaciones `UPDATE`, `DELETE` y `MATERIALIZE ...`, use [`mutations_sync`](/es/reference/settings/session-settings/mutations#mutations_sync) para controlar la espera y supervise el progreso en [`system.mutations`](/es/reference/system-tables/mutations).
+En ClickHouse Cloud, [`alter_sync`](/es/reference/settings/session-settings/alter#alter_sync) tiene el valor predeterminado `0`; configúrelo cuando un client deba esperar a que finalicen las operaciones de metadata o una reescritura `MODIFY COLUMN` que no afecte únicamente a la metadata. Para las operaciones `UPDATE`, `DELETE` y `MATERIALIZE ...`, utilice [`mutations_sync`](/es/reference/settings/session-settings/mutations#mutations_sync) para controlar la espera y supervise el progreso en [`system.mutations`](/es/reference/system-tables/mutations).

@@ -19,13 +19,13 @@ avec ClickHouse et l’[Apache catalogue Polaris](https://polaris.apache.org/rel
 Apache Polaris prend en charge les tables Iceberg et les tables Delta (via les tables génériques). Cette intégration ne prend en charge que les tables Iceberg pour l’instant.
 
 <Note>
-  Cette fonctionnalité est en bêta. Activez-la avec :
-  `SET allow_database_iceberg = 1;`
-
-  Dans les versions antérieures à la 25.8, où la fonctionnalité est expérimentale, utilisez plutôt `SET allow_experimental_database_iceberg = 1;`.
+  Cette fonctionnalité étant expérimentale, vous devez l’activer à l’aide de :
+  `SET allow_experimental_database_unity_catalog = 1;`
 </Note>
 
-## Prérequis {#prerequisites}
+<div id="prerequisites">
+  ## Prérequis
+</div>
 
 Pour vous connecter au catalogue Polaris, vous aurez besoin des éléments suivants :
 

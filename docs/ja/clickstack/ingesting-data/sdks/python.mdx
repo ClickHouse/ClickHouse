@@ -52,7 +52,7 @@ opentelemetry-bootstrap -a install
   </Tab>
 </Tabs>
 
-*`OTEL_SERVICE_NAME` 環境変数は、ClickStack UI 内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
+*`OTEL_SERVICE_NAME` 環境変数は、HyperDX アプリ内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
 
 ### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する {#run-the-application-with-otel-python-agent}
 
@@ -124,7 +124,7 @@ logger.setLevel(logging.DEBUG)
 ### コンソールへのエクスポート {#exporting-to-the-console}
 
 OpenTelemetry Python SDK は通常、エラーが発生するとその内容をコンソールに表示します。
-ただし、エラーは発生していないのに、データが想定どおり ClickStack UI に表示されない場合は、
+ただし、エラーは発生していないのに、データが想定どおり HyperDX に表示されない場合は、
 デバッグモードを有効にすることもできます。
 デバッグモードを有効にすると、すべてのテレメトリーがコンソールに出力されるため、
 アプリケーションが想定どおりのデータを出力するよう適切にインストルメントされているかを確認できます。

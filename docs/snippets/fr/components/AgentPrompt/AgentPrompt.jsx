@@ -1,4 +1,4 @@
-const AgentPrompt = ({ prompt, title = "Configuration assistée par agent", description, outline, outlineLabel = "Ce que l'agent va faire", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
+export const AgentPrompt = ({ prompt, title = "Configuration assistée par agent", description, outline, outlineLabel = "Ce que l'agent va faire", repositoryUrl, repositoryLabel = "ClickHouse/agent-skills" }) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -102,5 +102,3 @@ const AgentPrompt = ({ prompt, title = "Configuration assistée par agent", desc
     </div>
   )
 }
-
-export { AgentPrompt };

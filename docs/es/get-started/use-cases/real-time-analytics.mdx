@@ -7,6 +7,8 @@ sidebarTitle: 'Análisis en tiempo real'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -20,7 +22,9 @@ En analítica, &quot;en tiempo real&quot; suele significar que la experiencia de
 Un cliente actualiza un dashboard, abre una clasificación o investiga un problema y espera que los datos reflejen lo que acaba de suceder.
 Técnicamente, esto significa no solo ofrecer consultas analíticas de baja latencia, sino también lograrlo mientras los datos se insertan continuamente a gran volumen.
 
-## Propiedades de un sistema de análisis en tiempo real {#system-properties}
+<div id="system-properties">
+  ## Propiedades de un sistema de análisis en tiempo real
+</div>
 
 Cuando los clientes evalúan una plataforma de análisis en tiempo real, a menudo se centran solo en la latencia de las consultas. &quot;¿Puede devolver una respuesta en 50 ms?&quot; es una pregunta razonable, y una que la mayoría de los motores analíticos pueden responder de forma convincente si se les asignan suficientes recursos de cómputo sobre un conjunto de datos estático.
 
@@ -32,21 +36,15 @@ La disponibilidad de los datos exige pensar en el tiempo total hasta obtener inf
 * **Tiempo de transformación y preparación**: ¿Cuánto se tarda en limpiar, enriquecer, unir, preagregar o actualizar las estructuras de consulta (vistas materializadas, rollups, índices) sobre las que realmente se ejecutan las consultas?
 * **Tiempo de consulta**: ¿Cuánto se tarda en planificar y ejecutar la lectura una vez que los datos están disponibles?
 
-<div className="ch-image-lg">
-  <Frame>
-    ![Análisis en tiempo real: tiempo de ingestión, transformación y consulta](/images/use-cases/rta-considerations.webp)
-  </Frame>
-</div>
+<Image img="/images/use-cases/rta-considerations.webp" alt="Análisis en tiempo real: tiempo de ingestión, transformación y consulta" />
 
-## Cómo ClickHouse impulsa el análisis en tiempo real {#clickhouse-rta}
+<div id="clickhouse-rta">
+  ## Cómo ClickHouse impulsa el análisis en tiempo real
+</div>
 
 <Columns cols={2}>
   <div>
-    <div className="ch-image-lg">
-      <Frame>
-        ![Cómo ClickHouse impulsa el análisis en tiempo real](/images/use-cases/real-time-analytics-architecture.webp)
-      </Frame>
-    </div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="Cómo ClickHouse impulsa el análisis en tiempo real" />
   </div>
 
   <ExclusiveGroup name="rta-arch">

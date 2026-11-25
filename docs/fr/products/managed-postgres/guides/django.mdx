@@ -7,6 +7,10 @@ keywords: ['managed postgres', 'django', 'python', 'psycopg', 'psycopg 3', 'orm'
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-django-beta" />
+
 [Django](https://www.djangoproject.com/) est un framework web Python doté d&#39;un ORM et d&#39;un système de migrations intégrés, qui communique avec PostgreSQL via le driver [psycopg 3](https://www.psycopg.org/psycopg3/). Dans ce guide, vous allez connecter un nouveau projet Django à ClickHouse Managed Postgres via PgBouncer, créer une table `todos` à l&#39;aide d&#39;une migration, puis traiter des requêtes de création, de lecture, de mise à jour et de suppression à partir d&#39;une petite vue JSON. Toutes les connexions utilisent TLS avec une vérification complète des certificats.
 
 ## Prérequis {#prerequisites}

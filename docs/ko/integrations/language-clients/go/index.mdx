@@ -4,7 +4,7 @@ keywords: ['clickhouse', 'go', 'client', 'golang']
 slug: /integrations/go
 description: 'ClickHouse용 Go 클라이언트를 사용하면 Go 표준 database/sql 인터페이스 또는 최적화된 네이티브 인터페이스를 통해 ClickHouse에 연결할 수 있습니다.'
 title: 'ClickHouse Go'
-doc_type: 'reference'
+doc_type: '참고'
 integration:
   - support_level: 'core'
   - category: 'language_client'
@@ -219,7 +219,7 @@ mkdir my-clickhouse-app && cd my-clickhouse-app
 cat > go.mod <<-END
   module my-clickhouse-app
 
-  go 1.26
+  go 1.21
 
   require github.com/ClickHouse/clickhouse-go/v2 main
 END
@@ -263,7 +263,6 @@ go run main.go
 | &gt;= 2.3, &lt; 2.41 |    1.18+   |
 |      &gt;= 2.41      |    1.21+   |
 |      &gt;= 2.43      |    1.24+   |
-|      &gt;= 2.50      |    1.26+   |
 
 ## 모범 사례 {#best-practices}
 

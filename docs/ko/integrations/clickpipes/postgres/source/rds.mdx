@@ -10,15 +10,18 @@ integration:
    - category: 'clickpipes'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
-  ## 지원되는 Postgres 버전 {#supported-postgres-versions}
+  ## 지원되는 Postgres 버전
 </div>
 
 ClickPipes는 Postgres 12 이상을 지원합니다.
 
-## 논리적 복제 활성화 {#enable-logical-replication}
+<div id="enable-logical-replication">
+  ## 논리적 복제 활성화
+</div>
 
 RDS 인스턴스에 다음 설정이 이미 구성되어 있으면 이 섹션은 건너뛰어도 됩니다:
 
@@ -39,35 +42,21 @@ postgres=> SHOW rds.logical_replication ;
 1. 필요한 설정이 포함된, 사용 중인 Postgres 버전에 맞는 새 파라미터 그룹을 생성합니다.
    * `rds.logical_replication`을 1로 설정합니다
 
-<div className="ch-image-lg">
-  <Frame>
-    ![RDS에서 파라미터 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="RDS에서 파라미터 그룹을 찾는 위치" size="lg" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![rds.logical_replication 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="rds.logical_replication 변경" size="lg" border />
 
 2. 새 파라미터 그룹을 RDS Postgres 데이터베이스에 적용합니다
 
-<div className="ch-image-lg">
-  <Frame>
-    ![새 파라미터 그룹을 사용하도록 RDS Postgres 수정](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="새 파라미터 그룹을 사용하도록 RDS Postgres 수정" size="lg" border />
 
 3. 변경 사항을 적용하려면 RDS 인스턴스를 재부팅합니다
 
-<div className="ch-image-lg">
-  <Frame>
-    ![RDS Postgres 재부팅](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="RDS Postgres 재부팅" size="lg" border />
 
-## 데이터베이스 사용자 구성 {#configure-database-user}
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
 
 RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명령을 실행합니다:
 
@@ -77,7 +66,7 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
    CREATE USER clickpipes_user PASSWORD 'some-password';
    ```
 
-2. 이전 단계에서 생성한 사용자에게 스키마(schema) 수준의 읽기 전용 액세스 권한을 부여합니다. 다음 예시는 `public` 스키마(schema)에 대한 권한을 보여줍니다. 복제하려는 테이블이 포함된 각 스키마(schema)에 대해 이 명령을 반복하십시오:
+2. 이전 단계에서 생성한 사용자에게 스키마(schema) 수준의 읽기 전용 액세스 권한을 부여합니다. 다음 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제하려는 테이블이 포함된 각 스키마에 대해 이 명령을 반복하십시오:
 
    ```sql
    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
@@ -103,16 +92,16 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-* 특정 스키마(schema)의 모든 테이블에 대한 publication을 생성하려면:
+  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
 
-  ```sql
-  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-  ```
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
 
 `clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제하려는 경우가 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <div id="iam-authentication">
-  ### IAM authentication 사용(선택 사항) {#iam-authentication}
+  ### IAM authentication 사용(선택 사항)
 </div>
 
 <IAMAuthentication engine="postgres" service="rds">
@@ -122,33 +111,27 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
 </IAMAuthentication>
 
 <div id="configure-network-access">
-  ## 네트워크 액세스 설정 {#configure-network-access}
+  ## 네트워크 액세스 설정
 </div>
 
-### IP 기반 액세스 제어 {#ip-based-access-control}
+<div id="ip-based-access-control">
+  ### IP 기반 액세스 제어
+</div>
 
 RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
-<div className="ch-image-lg">
-  <Frame>
-    ![RDS Postgres에서 보안 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="RDS Postgres에서 보안 그룹을 어디서 찾을 수 있습니까?" size="lg" border />
 
-<div className="ch-image-lg">
-  <Frame>
-    ![위 보안 그룹의 인바운드 규칙 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="위 보안 그룹의 인바운드 규칙 편집" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink를 통한 비공개 액세스 {#private-access-via-aws-privatelink}
+  ### AWS PrivateLink를 통한 비공개 액세스
 </div>
 
 비공개 네트워크를 통해 RDS 인스턴스에 연결하려면 AWS PrivateLink를 사용할 수 있습니다. 연결을 설정하려면 [ClickPipes용 AWS PrivateLink 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 따르십시오.
 
 <div id="workarounds-for-rds-proxy">
-  ### RDS Proxy 우회 방안 {#workarounds-for-rds-proxy}
+  ### RDS Proxy 우회 방안
 </div>
 
 RDS Proxy는 논리적 복제 연결을 지원하지 않습니다. RDS에서 동적 IP 주소를 사용하며 DNS 이름이나 Lambda를 사용할 수 없는 경우, 다음과 같은 대안을 고려할 수 있습니다:
@@ -159,7 +142,7 @@ RDS Proxy는 논리적 복제 연결을 지원하지 않습니다. RDS에서 동
 4. Terraform 또는 CloudFormation 같은 도구를 사용해 IP 주소 관리를 자동화합니다.
 
 <div id="whats-next">
-  ## 다음 단계 {#whats-next}
+  ## 다음 단계
 </div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Postgres 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.

@@ -11,7 +11,7 @@ doc_type: 'guide'
 
 ## Fournir le contexte de trace à ClickHouse {#supplying-trace-context-to-clickhouse}
 
-ClickHouse accepte les en-têtes HTTP de contexte de trace, comme décrit dans la [recommandation du W3C](https://www.w3.org/TR/trace-context/). Il accepte également le contexte de trace via un protocole natif utilisé pour la communication entre les serveurs ClickHouse, ou entre le client et le serveur. Les gestionnaires HTTP des protocoles Prometheus (exposition des métriques, écriture distante, lecture distante et API de requête) acceptent aussi les en-têtes HTTP de contexte de trace. Pour les tests manuels, vous pouvez fournir à `clickhouse-client` des en-têtes de contexte de trace conformes à la recommandation Trace Context à l&#39;aide des options `--opentelemetry-traceparent` et `--opentelemetry-tracestate`.
+ClickHouse accepte les en-têtes HTTP de contexte de trace, comme décrit dans la [recommandation du W3C](https://www.w3.org/TR/trace-context/). Il accepte également le contexte de trace via un protocole natif utilisé pour la communication entre les serveurs ClickHouse, ou entre le client et le serveur. Pour les tests manuels, vous pouvez fournir à `clickhouse-client` des en-têtes de contexte de trace conformes à la recommandation Trace Context à l&#39;aide des options `--opentelemetry-traceparent` et `--opentelemetry-tracestate`.
 
 Si aucun contexte de trace parent n&#39;est fourni, ou si le contexte de trace fourni n&#39;est pas conforme à la norme W3C ci-dessus, ClickHouse peut démarrer une nouvelle trace, avec une probabilité contrôlée par le paramètre [opentelemetry&#95;start&#95;trace&#95;probability](/fr/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
@@ -38,16 +38,6 @@ Le `status_code` d&#39;un tel span indique la façon dont le fragment s&#39;est 
 * `UNSET` — ni succès ni échec. De tels spans portent un attribut fournissant davantage de contexte.
 
 Les requêtes `INSERT` dans une `Distributed` table produisent des spans analogues dans `DistributedSink`, avec les mêmes clés d&#39;attribut `clickhouse.cluster` et `clickhouse.shard_num`.
-
-### Spans des tâches du plan distribué {#spans-of-distributed-plan-tasks}
-
-Avec le paramètre expérimental `make_distributed_plan`, une requête est découpée en un plan d’étapes, et chaque étape en tâches acheminées vers des workers sans état via HTTP. La requête de routage transporte le contexte de trace dans les en-têtes `traceparent` et `tracestate`, de sorte que les spans du worker se rattachent à la trace de l’initiateur :
-
-* `StatelessWorkerClient::sendTask` (type `CLIENT`) — un span par tâche acheminée, sur l’initiateur, qui couvre uniquement la requête de démarrage ; la tâche elle-même s’exécute de manière asynchrone sur le worker, qui est interrogé périodiquement jusqu’à sa complétion. Attributs : `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` et `clickhouse.target_host`, ainsi que `clickhouse.exception` en cas d’échec du routage ;
-* `InterserverIOHTTPHandler` (type `SERVER`) — le côté worker d’une requête porteuse d’un contexte de trace, avec `clickhouse.uri`, `http.method` et `clickhouse.http_status`. Une requête qui échoue avant le démarrage de sa tâche (échec d’authentification ou exception dans l’endpoint) enregistre `clickhouse.exception` et `clickhouse.exception_code` sur ce span, qui constitue alors la seule trace côté worker du routage. Les requêtes sans en-tête `traceparent` (par exemple les récupérations de parts entre répliques) ne sont pas tracées ;
-* `DistributedPlanTask::execute` (type `SERVER`) — l’exécution d’une tâche sur le worker, l’équivalent du span `query` d’une requête classique : il porte de la même manière `db.statement`, `clickhouse.query_id` et `clickhouse.query_status` ou l’exception, ainsi que l’identité de la tâche : `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (le hachage du fragment de plan sérialisé), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` et les flux `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` que la tâche lit et écrit.
-
-Le span de la tâche survit au span de la requête qui l’a lancée. Avec `distributed_plan_execute_locally = 1`, aucune requête n’est envoyée : les tâches s’exécutent sur les fils d’exécution de l’initiateur et leurs spans `DistributedPlanTask::execute` sont directement rattachés à la trace de l’initiateur.
 
 ## Traçage des requêtes ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 

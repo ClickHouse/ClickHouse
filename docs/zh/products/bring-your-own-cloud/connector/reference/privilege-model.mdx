@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -14,20 +15,16 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 ## Identities {#identities}
 
-<div className="ch-image-lg">
-  <Frame>
-    ![ClickHouse 连接器身份模型](/images/cloud/reference/byoc-connector-identity-model.svg)
-  </Frame>
-</div>
+<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse 连接器身份模型" />
 
-* **连接器的 mTLS 客户端证书**以你的组织 ID 作为通用名 (common name) ，用于向你的连接器端点认证每个守护进程。`clicklink clctl instances create` 调用该端点时使用同一份证书和 HMAC 密钥。
-* **`pcm_scraper` 和 `pcm_troubleshooter`** 是抓取器和故障排查器连接时所用的只读 ClickHouse 用户。executor 没有对应的 ClickHouse 用户。
+* **连接器的 mTLS 客户端证书**以你的 organization ID 作为通用名 (common name) ，用于向你的连接器端点认证每个守护进程。`clicklink clctl instances create` 调用该端点时使用同一份证书和 HMAC key。
+* **`pcm_scraper` 和 `pcm_troubleshooter`** 是抓取器和故障排查工具连接时所用的只读 ClickHouse 用户。executor 没有对应的 ClickHouse 用户。
 * **Troubleshooter ServiceAccount** (每个已 provisioned 的部署各一个) 承载 support session 可使用的只读 Kubernetes 视图。
-* **`pcm-executor`** 是 executor 用于托管服务生命周期管理的 Kubernetes ServiceAccount。ValidatingAdmissionPolicy 会将其 writes 限制在服务命名空间内。
+* **`pcm-executor`** 是 executor 用于托管 services 生命周期管理的 Kubernetes ServiceAccount。ValidatingAdmissionPolicy 会将其 writes 限制在 service 命名空间内。
 * **`pcm-platform`** 是 executor 用于平台更新的身份。你执行 `clicklink clctl platform approve` 会为其签发有效期 2 小时的令牌，且不会续期；在两次批准之间，executor 对平台层没有写入 access。
-* **按服务划分的 IAM 角色** (默认为 `CH-S3-<service>-<region>-00-Role`) 由 `clicklink clctl executor prepare` 使用你的凭证创建。其作用范围仅限该服务的数据桶和 backup 桶，且仅被该服务的 Kubernetes ServiceAccount 信任，因此 executor 和 ClickHouse 都无法代入该角色。
-* **连接器 EC2 虚拟机的实例配置文件** 会代入你环境中的只读 ECR puller 角色，以进行直接的平台 access，用于 chart 登录和镜像检查。批准用的命令行客户端使用同一条实例配置文件路径；workstation 上的 AWS profile 或 SSO 凭证无法替代它。其他 ECR chart registry 使用环境隐式 AWS 凭证。镜像拉取发生在你的节点上，使用节点各自的 pull 角色。executor 不持有任何针对你的桶或 IAM 的凭证，也不会发起任何 S3 或 IAM 调用。参见 [registry credentials](/zh/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)。
-* **你自己的凭证** 用于授予每一项 授权：在 `init --managed` 时授予 executor 的访问授权，在 `prepare` 时创建桶和角色，在 `approve` 时提供每次平台更新的权限部分，以及在 `teardown` 时执行清理。
+* **按 service 划分的 IAM role** (默认为 `CH-S3-<service>-<region>-00-Role`) 由 `clicklink clctl executor prepare` 使用你的凭证创建。其作用范围仅限该 service 的数据桶和 backup 桶，且仅被该 service 的 Kubernetes ServiceAccount 信任，因此 executor 和 ClickHouse 都无法 assume 该 role。
+* **连接器 EC2 虚拟机的 instance profile** 会 assume 你环境中的只读 ECR puller role，以进行直接的平台 access，用于 chart 登录和镜像检查。批准用的命令行客户端使用同一条 instance-profile 路径；workstation 上的 AWS profile 或 SSO 凭证无法替代它。其他 ECR chart registry 使用 ambient AWS 凭证。Image pulls 发生在你的节点上，使用节点各自的 pull role。executor 不持有任何针对你的桶或 IAM 的凭证，也不会发起任何 S3 或 IAM 调用。参见 [registry credentials](/zh/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)。
+* **你自己的凭证** 用于授予每一项 授权：在 `init --managed` 时授予 executor 的 access 授权，在 `prepare` 时创建桶和 role，在 `approve` 时提供每次平台更新的 permission 部分，以及在 `teardown` 时执行清理。
 
 ## 连接器 的功能 {#what-the-connector-can-do}
 

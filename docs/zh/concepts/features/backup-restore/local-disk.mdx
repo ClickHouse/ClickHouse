@@ -9,13 +9,19 @@ doc_type: 'guide'
 import ExampleSetup from '/snippets/zh/_example_setup.mdx';
 import Syntax from '/snippets/zh/_syntax.mdx';
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 <Syntax />
 
-## 配置磁盘备份目标位置 {#configure-backup-destinations-for-disk}
+<div id="configure-backup-destinations-for-disk">
+  ## 配置磁盘备份目标位置
+</div>
 
-### 为本地磁盘配置备份目标位置 {#configure-a-backup-destination}
+<div id="configure-a-backup-destination">
+  ### 为本地磁盘配置备份目标位置
+</div>
 
 在下面的示例中，你会看到备份目标位置被指定为 `Disk('backups', '1.zip')`。
 要使用 `Disk` 备份引擎，首先需要在下面的路径添加一个用于指定
@@ -45,7 +51,9 @@ import Syntax from '/snippets/zh/_syntax.mdx';
 </clickhouse>
 ```
 
-### 为 S3 磁盘配置备份目标位置 {#backuprestore-using-an-s3-disk}
+<div id="backuprestore-using-an-s3-disk">
+  ### 为 S3 磁盘配置备份目标位置
+</div>
 
 也可以通过在 ClickHouse 存储配置中配置 S3 磁盘，将 `BACKUP`/`RESTORE` 到 S3。像上文为本地磁盘所做的那样，在
 `/etc/clickhouse-server/config.d` 中添加一个文件来配置该磁盘。
@@ -93,9 +101,13 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
     `BACKUP ... TO S3(<endpoint>)` 语法来处理此类用例。
 </Note>
 
-## 本地磁盘备份/恢复使用示例 {#usage-examples}
+<div id="usage-examples">
+  ## 本地磁盘备份/恢复使用示例
+</div>
 
-### 对表进行备份和恢复 {#backup-and-restore-a-table}
+<div id="backup-and-restore-a-table">
+  ### 对表进行备份和恢复
+</div>
 
 <ExampleSetup />
 
@@ -159,7 +171,9 @@ RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backup
 
 可以使用 zip 以外的格式。更多详细信息，请参阅下方的[&quot;tar 归档形式的备份&quot;](#backups-as-tar-archives)。
 
-### 磁盘增量备份 {#incremental-backups}
+<div id="incremental-backups">
+  ### 磁盘增量备份
+</div>
 
 ClickHouse 中的基础备份是初始的全量备份，后续的
 增量备份都基于它创建。增量备份仅存储自基础备份以来
@@ -191,7 +205,9 @@ RESTORE TABLE test_db.test_table AS test_db.test_table2
 FROM Disk('backups', 'incremental-a.zip');
 ```
 
-### 保护备份 {#assign-a-password-to-the-backup}
+<div id="assign-a-password-to-the-backup">
+  ### 保护备份
+</div>
 
 写入磁盘的备份文件可以设置密码。
 可使用 `password` 设置指定密码。
@@ -218,7 +234,9 @@ FROM Disk('backups', 'password-protected.zip')
 SETTINGS password='qwerty'
 ```
 
-### tar 归档形式的备份 {#backups-as-tar-archives}
+<div id="backups-as-tar-archives">
+  ### tar 归档形式的备份
+</div>
 
 备份不仅可以存储为 zip 归档，也可以存储为 tar 归档。
 其功能与 zip 相同，不同之处在于 tar 归档不支持密码保护。
@@ -254,7 +272,9 @@ BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
 * `.tzst`
 * `.tar.xz`
 
-### 压缩设置 {#compression-settings}
+<div id="compression-settings">
+  ### 压缩设置
+</div>
 
 可分别通过设置 `compression_method` 和 `compression_level`
 来指定压缩方法和压缩级别。
@@ -269,7 +289,9 @@ TO Disk('backups', 'filename.zip')
 SETTINGS compression_method='lzma', compression_level=3
 ```
 
-### 恢复特定分区 {#restore-specific-partitions}
+<div id="restore-specific-partitions">
+  ### 恢复特定分区
+</div>
 
 如果需要恢复某个表的特定分区，可以显式指定这些分区。
 

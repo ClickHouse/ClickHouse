@@ -6,8 +6,6 @@
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
-#include <base/EnumReflection.h>
-#include <base/arithmeticOverflow.h>
 #include <fmt/ranges.h>
 
 #include <cmath>
@@ -128,7 +126,7 @@ namespace
         if (milliseconds < 0)
             str += "-";
         /// Negated as unsigned, so the most negative duration is not undefined behaviour.
-        UInt64 rest = milliseconds < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
+        UInt64 rest = milliseconds < 0 ? (0 - static_cast<UInt64>(milliseconds)) : static_cast<UInt64>(milliseconds);
         for (const auto & unit : units)
         {
             if (unit.exact_only && (rest % unit.length_ms))
@@ -403,32 +401,6 @@ void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 time_scal
 bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 time_scale_, String * error_message_, size_t * error_pos_)
 {
     return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, time_scale_, *this, error_message_, error_pos_);
-}
-
-
-String PrometheusQueryTree::Node::getTypeAndName() const
-{
-    return String{magic_enum::enum_name(node_type)};
-}
-
-String PrometheusQueryTree::Function::getTypeAndName() const
-{
-    return fmt::format("Function '{}'", function_name);
-}
-
-String PrometheusQueryTree::UnaryOperator::getTypeAndName() const
-{
-    return fmt::format("Unary operator '{}'", operator_name);
-}
-
-String PrometheusQueryTree::BinaryOperator::getTypeAndName() const
-{
-    return fmt::format("Binary operator '{}'", operator_name);
-}
-
-String PrometheusQueryTree::AggregationOperator::getTypeAndName() const
-{
-    return fmt::format("Aggregation operator '{}'", operator_name);
 }
 
 
@@ -724,7 +696,7 @@ int PrometheusQueryTree::BinaryOperator::getPrecedence() const
         return 6;
     if (operator_name == "or")
         return 7;
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented", getTypeAndName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", operator_name);
 }
 
 bool PrometheusQueryTree::BinaryOperator::isRightAssociative() const

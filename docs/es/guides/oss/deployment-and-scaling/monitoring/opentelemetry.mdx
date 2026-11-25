@@ -11,9 +11,9 @@ doc_type: 'guide'
 
 ## Proporcionar el contexto de traza a ClickHouse {#supplying-trace-context-to-clickhouse}
 
-ClickHouse acepta cabeceras HTTP de contexto de traza, como se describe en la [recomendación del W3C](https://www.w3.org/TR/trace-context/). También acepta contexto de traza a través de un protocolo nativo que se utiliza para la comunicación entre servidores de ClickHouse o entre el cliente y el servidor. Los handlers HTTP de los protocolos de Prometheus (exposición de métricas, escritura remota, lectura remota y la API de consultas) también aceptan cabeceras HTTP de contexto de traza. Para realizar pruebas manuales, se pueden proporcionar a `clickhouse-client` encabezados de contexto de traza conformes con la recomendación Trace Context mediante las opciones `--opentelemetry-traceparent` y `--opentelemetry-tracestate`.
+ClickHouse acepta encabezados HTTP de contexto de traza, como se describe en la [recomendación del W3C](https://www.w3.org/TR/trace-context/). También acepta contexto de traza a través de un protocolo nativo que se utiliza para la comunicación entre servidores de ClickHouse o entre el cliente y el servidor. Para realizar pruebas manuales, se pueden proporcionar a `clickhouse-client` encabezados de contexto de traza conformes con la recomendación Trace Context mediante las opciones `--opentelemetry-traceparent` y `--opentelemetry-tracestate`.
 
-Si no se proporciona un contexto de traza padre, o si el contexto de traza proporcionado no cumple con el estándar W3C mencionado anteriormente, ClickHouse puede iniciar una nueva traza, con una probabilidad controlada por el parámetro de configuración [opentelemetry&#95;start&#95;trace&#95;probability](/es/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
+Si no se proporciona un contexto de traza padre, o si el contexto de traza proporcionado no cumple con el estándar W3C mencionado anteriormente, ClickHouse puede iniciar una nueva traza, con una probabilidad controlada por la configuración [opentelemetry&#95;start&#95;trace&#95;probability](/es/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 ## Propagación del contexto de traza {#propagating-the-trace-context}
 
@@ -38,16 +38,6 @@ El `status_code` de dicho span indica cómo terminó el fragmento:
 * `UNSET`: ni éxito ni fallo. Estos spans incluyen un atributo que aporta más contexto.
 
 Las consultas `INSERT` sobre una tabla `Distributed` generan spans análogos en `DistributedSink`, con las mismas claves de atributo `clickhouse.cluster` y `clickhouse.shard_num`.
-
-### Spans de las tareas del plan distribuido {#spans-of-distributed-plan-tasks}
-
-Con el parámetro de configuración experimental `make_distributed_plan`, una consulta se divide en un plan de etapas, y cada etapa, en tareas que se envían a trabajadores sin estado a través de HTTP. La solicitud de envío transporta el contexto de traza en los encabezados `traceparent` y `tracestate`, de modo que los spans del trabajador se incorporan a la traza del initiator:
-
-* `StatelessWorkerClient::sendTask` (tipo `CLIENT`): un span por cada tarea enviada en el initiator, que abarca únicamente la solicitud de inicio; la tarea en sí se ejecuta de forma asíncrona en el trabajador y se consulta periódicamente hasta que finaliza. Atributos: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` y `clickhouse.target_host`, además de `clickhouse.exception` cuando el envío falla;
-* `InterserverIOHTTPHandler` (tipo `SERVER`): el lado del trabajador de una solicitud que transporta un contexto de traza, con `clickhouse.uri`, `http.method` y `clickhouse.http_status`. Si una solicitud falla antes de que se inicie su tarea (por un fallo de autenticación o una excepción en el endpoint), registra `clickhouse.exception` y `clickhouse.exception_code` en este span, que pasa a ser el único rastro del envío en el lado del trabajador. Las solicitudes sin encabezado `traceparent` (por ejemplo, los fetch de partes entre réplicas) no se registran en ninguna traza;
-* `DistributedPlanTask::execute` (tipo `SERVER`): la ejecución de una tarea en el trabajador, equivalente al span `query` de una consulta normal. Incluye `db.statement`, `clickhouse.query_id` y `clickhouse.query_status` o la excepción del mismo modo, además de la identity de la tarea: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (el hash del fragmento de plan serializado), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` y los flujos `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` que la tarea lee y escribe.
-
-El span de la tarea dura más que el span de la solicitud que la inició. Con `distributed_plan_execute_locally = 1` no se envía ninguna solicitud: las tareas se ejecutan en los threads del initiator y sus spans `DistributedPlanTask::execute` se vinculan directamente a la traza del initiator.
 
 ## Trazado de solicitudes de ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 

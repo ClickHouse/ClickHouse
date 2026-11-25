@@ -45,7 +45,7 @@ clickhouse-local --input-format SQLite --structure "number UInt64, s String" --q
 
 Для столбцов `Float32` и `Float64` значения, отличные от `NaN`, записываются с использованием нативных классов хранилища SQLite, а значения `NaN` — в текстовой сериализации ClickHouse. Значения `Bool` и обычные целочисленные значения также записываются с использованием нативных классов хранилища SQLite. Широкие целые числа и сложные типы записываются в текстовой сериализации ClickHouse. Значения `NULL` записываются как `NULL` SQLite.
 
-При выводе схемы из входных данных SQLite ClickHouse использует то же соответствие типов, что и [движок баз данных SQLite](/ru/reference/engines/database-engines/sqlite#data_types-support):
+При выводе схемы из входных данных SQLite ClickHouse использует то же соответствие типов, что и [движок баз данных SQLite](/ru/engines/database-engines/sqlite#data_types-support):
 
 | Объявленный тип SQLite               | Выведенный тип ClickHouse |
 | ------------------------------------ | ------------------------- |
