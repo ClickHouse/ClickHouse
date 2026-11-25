@@ -28,9 +28,7 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-<div id="what-is-odigos">
-  ## Odigosとは？
-</div>
+## Odigosとは？ {#what-is-odigos}
 
 {/* vale on */}
 
@@ -48,36 +46,30 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
 
 {/* vale off */}
 
-<div id="why-odigos-clickstack">
-  ## なぜ Odigos + ClickStack なのか
-</div>
+## なぜ Odigos + ClickStack なのか {#why-odigos-clickstack}
 
 {/* vale on */}
 
-多数のサービスに OpenTelemetry を展開するには時間がかかることが多く、アプリケーション内部の挙動も表面的にしか把握できません。Odigos は Kubernetes 上で、より深いテレメトリー取得のための eBPF インストルメンテーションと collector の運用を担います。ClickStack は ClickHouse を基盤としたストレージと、大規模なテレメトリーをクエリできる HyperDX UI を提供します。
+多数のサービスに OpenTelemetry を展開するには時間がかかることが多く、アプリケーション内部の挙動も表面的にしか把握できません。Odigos は Kubernetes 上で、より深いテレメトリー取得のための eBPF インストルメンテーションと collector の運用を担います。ClickStack は ClickHouse を基盤としたストレージと、大規模なテレメトリーをクエリできる ClickStack UI を提供します。
 
 <Tip>
   **主なポイント**
 
   * **Odigos** は再起動なしであらゆる Kubernetes ワークロードを自動的にインストルメントし、OpenTelemetry パイプラインを自動で管理します。
-  * **ClickStack** はログ、メトリクス、トレースを ClickHouse に保存し、HyperDX に表示します。
+  * **ClickStack** はログ、メトリクス、トレースを ClickHouse に保存し、ClickStack UI に表示します。
 </Tip>
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
-* Kubernetes クラスターからアクセス可能な **ClickStack** がインストールされていること。[Open Source ClickStack を使い始める](/ja/clickstack/getting-started/oss) または [Managed ClickStack の Getting Started](/ja/clickstack/getting-started/managed) を参照してください。
-* ClickStack の **OTLP HTTP エンドポイント** (ポート `4318`) と、Odigos が `Authorization` ヘッダーで渡す認証値。オープンソース版 ClickStack の場合、これは HyperDX UI の **Team Settings → API Keys** にある **APIインジェストキー** です。Managed ClickStack の場合、これは独自のスタンドアロン ClickStack collector の起動時に設定する **`OTLP_AUTH_TOKEN`** です。
+* Kubernetes クラスターからアクセス可能な **ClickStack Open Source** がインストールされていること。[ClickStack Open Source を使い始める](/ja/clickstack/getting-started/oss) を参照してください。
+* ClickStack の **OTLP HTTP エンドポイント** (ポート `4318`) と、Odigos が `Authorization` ヘッダーで渡す認証値。オープンソース版 ClickStack の場合、これは ClickStack UI の **Team Settings → API Keys** にある **API取り込みキー** です。
 * **Kubernetes クラスター** (eBPF インストルメンテーションには、カーネル 4.18 以降の Linux ノードが必要)
 * `odigos-system` ネームスペースにインストールするための **Helm**、**kubectl**、およびクラスター認証情報
 * **Odigos Enterprise オンプレミス トークン** — アクセスするには [Odigos チーム](https://odigos.io/) にお問い合わせください
 
 {/* vale off */}
 
-<div id="integrate-odigos-clickstack">
-  ## ClickStackとOdigosを統合する
-</div>
+## ClickStack と Odigos を統合する {#integrate-odigos-clickstack}
 
 {/* vale on */}
 
@@ -89,7 +81,7 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
     export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
     ```
 
-    または、インストール前に、`odigos-pro` という名前の Kubernetes Secret にトークンを保存しておくこともできます。詳しくは、[Odigos Enterprise installation](https://docs.odigos.io/enterprise/setup/installation) を参照してください。
+    または、インストール前に、`odigos-pro` という名前の Kubernetes Secret にトークンを保存しておくこともできます。詳しくは、[Odigos Enterprise ドキュメント](https://enterprise.docs.odigos.io/) (アクセス権が必要) を参照してください。
 
     Odigos の Helm リポジトリを追加し、チャートを `odigos-system` にインストールします。
 
@@ -103,7 +95,7 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
       --set onPremToken=$ODIGOS_ONPREM_TOKEN
     ```
 
-    `--set` フラグまたはカスタム values ファイル (`-f`) を使用して、追加の設定上書きを指定できます。チャートのデフォルト値は、GitHub 上の [helm/odigos/values.yaml](https://github.com/odigos-io/odigos/blob/main/helm/odigos/values.yaml) にあります。
+    `--set` フラグまたはカスタム values ファイル (`-f`) を使用して、追加の設定上書きを指定できます。チャートのデフォルト値を確認するには、`helm show values odigos/odigos` を実行します。
 
     Odigos のポッドが実行中であることを確認してください。
 
@@ -126,71 +118,29 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
   </Step>
 
   <Step title="Odigos UI で ClickStack を宛先として追加する" id="add-destination-ui">
-    ClickStack にテレメトリーを送信するには、Odigos で **OTLP HTTP** 宛先を追加します。具体的な設定内容は、ClickStack のデプロイ方法によって異なります。Open Source ClickStack では OpenTelemetry collector が同梱されており、インジェスト key は HyperDX UI で自動的に生成されます。Managed ClickStack では、独自の standalone ClickStack collector を実行し、コンテナーの起動時に認証トークンを自分で設定します。
+    オープンソース版 ClickStack にテレメトリーを送信するには、Odigos で **OTLP HTTP** 宛先を追加します。同梱の collector は、ClickStack UI で発行されたAPI取り込みキーを使用してテレメトリーを受信します。
 
     <Tip>
       **代替手段: ClickHouse に直接書き込む**
 
-      Kubernetes クラスターから ClickHouse にアクセスできる場合は、OTLP collector を完全に省略して、代わりに Odigos の [native **ClickHouse** 宛先](#native-clickhouse-destination) を使用できます。これは Open Source ClickStack と Managed ClickStack のどちらでも利用できます。
+      Kubernetes クラスターから ClickHouse にアクセスできる場合は、OTLP collector を完全に省略して、代わりに Odigos の [Native **ClickHouse** 宛先](#native-clickhouse-destination) を使用できます。
     </Tip>
 
-    <Tabs>
-      <Tab title="Open Source ClickStack">
-        Open Source ClickStack では、たとえば all-in-one イメージを使用する場合、ゲートウェイ OpenTelemetry collector が含まれており、インジェスト API key は HyperDX によって自動的に生成されます。
+    オープンソース版 ClickStack では、たとえば all-in-one イメージを使用する場合、ゲートウェイ OpenTelemetry Collector が含まれており、API取り込みキー は ClickStack UI によって自動的に生成されます。
 
-        1. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
-        2. **OTLP HTTP Endpoint** に ClickStack collector を設定します (例: `http://clickstack.example.com:4318`) 。エンドポイントの詳細については、[OpenTelemetry でのインジェスト](/ja/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss) を参照してください。
-        3. ClickStack UI の **Team Settings → API Keys** で API Ingestion Key をコピーします。
-        4. **Headers** に以下を追加します。
-           * **Key**: `Authorization`
-           * **Value**: API Ingestion Key
-        5. **Logs**、**Metrics**、**Traces** を有効にします。
-        6. 宛先を保存します。
-      </Tab>
-
-      <Tab title="Managed ClickStack">
-        Managed ClickStack にはホスト型の OpenTelemetry collector は含まれておらず、UI にインジェスト key も表示されません。代わりに、自身で [standalone モードの ClickStack distribution の collector](/ja/clickstack/ingesting-data/collector#configuring-the-collector) を実行し、コンテナーの起動時に `OTLP_AUTH_TOKEN` 環境変数で認証トークンを設定します。すると Odigos は、その collector に対して同じトークンを `Authorization` header に含めて OTLP HTTP トラフィックを送信します。
-
-        1. standalone モードで ClickStack collector を起動し、ClickHouse Cloud service を指定し、任意の `OTLP_AUTH_TOKEN` で保護します。
-
-           ```shell
-           export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
-           export CLICKHOUSE_USER=<CLICKHOUSE_USER>
-           export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
-           export OTLP_AUTH_TOKEN="a_very_secure_string"
-
-           docker run \
-             -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
-             -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
-             -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
-             -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
-             -p 4317:4317 \
-             -p 4318:4318 \
-             clickhouse/clickstack-otel-collector:latest
-           ```
-
-           TLS、専用のインジェスト users、その他の本番環境向けの推奨事項については、[collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) を参照してください。
-        2. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
-        3. **OTLP HTTP Endpoint** に、先ほど起動した standalone collector を設定します (例: `http://my-collector.example.com:4318`) 。
-        4. **Headers** に以下を追加します。
-           * **Key**: `Authorization`
-           * **Value**: collector に設定した `OTLP_AUTH_TOKEN` の値
-        5. **Logs**、**Metrics**、**Traces** を有効にします。
-        6. 宛先を保存します。
-
-        <Info>
-          **任意: Kubernetes manifest**
-
-          UI の代わりに `Destination` manifest を使って同じ宛先を設定することもできます。Advanced configuration の [Kubernetes manifest を使用した宛先の設定](#destination-manifest) を参照してください。
-        </Info>
-      </Tab>
-    </Tabs>
+    1. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
+    2. **OTLP HTTP Endpoint** に ClickStack collector を設定します (例: `http://clickstack.example.com:4318`) 。エンドポイントの詳細については、[OpenTelemetry でのインジェスト](/ja/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss) を参照してください。
+    3. ClickStack UI の **Team Settings → API Keys** で API取り込みキー をコピーします。
+    4. **Headers** に以下を追加します。
+       * **Key**: `Authorization`
+       * **Value**: API取り込みキー
+    5. **Logs**、**Metrics**、**Traces** を有効にします。
+    6. 宛先を保存します。
   </Step>
 
   <Step title="ClickStack でテレメトリーを確認する" id="verify-telemetry">
-    1. ClickStack UI (HyperDX) を開きます。
-       * **Open Source ClickStack**: たとえば、all-in-one イメージでは `http://<host>:8080` です。
-       * **Managed ClickStack**: [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、**Launch ClickStack** をクリックします。
+    1. ClickStack UI を開きます。
+       * **オープンソース版 ClickStack**: たとえば、all-in-one イメージでは `http://<host>:8080` です。
     2. **Logs**、**Metrics**、**Traces** を確認し、インストルメントしたサービスからのデータがあることを確認します。
     3. `odigos.version` でトレースを絞り込み、エンドツーエンドでエクスポートされていることを検証します。
 
@@ -198,28 +148,22 @@ Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプ�
   </Step>
 </Steps>
 
-<div id="advanced-configuration">
-  ## 詳細設定
-</div>
+## 詳細設定 {#advanced-configuration}
 
-<div id="hyperdx-log-normalizer">
-  ### HyperDX ログノーマライザー
-</div>
+### HyperDX ログノーマライザー {#hyperdx-log-normalizer}
 
 Odigos のネイティブ **ClickHouse** 宛先を使用して ClickHouse に直接エクスポートする場合 (ClickStack への OTLP HTTP ではなく) 、**HyperDX ログノーマライザー** (`HYPERDX_LOG_NORMALIZER: true`) を有効にしてください。これにより、JSON 形式のログ本文が解析され、属性が正規化されるため、ClickStack UI でより適切にクエリできるようになります。
 
-<div id="native-clickhouse-destination">
-  ### ネイティブ ClickHouse 宛先
-</div>
+### Native ClickHouse 宛先 {#native-clickhouse-destination}
 
-クラスターから ClickHouse に直接アクセスできる場合は、OTLP HTTP の代わりに Odigos のネイティブ **ClickHouse** 宛先を使用できます。ClickHouse のエンドポイント、データベース名、スキーマオプションは、UI またはマニフェストで設定します。詳しくは [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse) を参照してください。
+このオプションは **ClickStack Open Source およびセルフマネージドの ClickHouse Observability にのみ** 適用されます。完全マネージド型の ClickHouse Observability では、[オブザーバビリティガイド](/ja/clickstack/observability/integration-partners/odigos#add-destination-ui) で説明しているマネージド OTLP エンドポイントを使用してください。
+
+クラスターから ClickHouse に直接アクセスできる場合は、OTLP HTTP の代わりに Odigos のNative **ClickHouse** 宛先を使用できます。ClickHouse のエンドポイント、データベース名、スキーマオプションは、UI またはマニフェストで設定します。詳しくは [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse) を参照してください。
 
 * **本番環境のスキーマ**: `CLICKHOUSE_CREATE_SCHEME` を `false` に設定し、独自の DDL を適用してください。
 * **TLS / 認証**: `CLICKHOUSE_TLS_ENABLED` と `CLICKHOUSE_USERNAME` を使用し、パスワードは Kubernetes Secret で指定します。
 
-<div id="destination-manifest">
-  ### Kubernetes のマニフェストで宛先を設定する
-</div>
+### Kubernetes のマニフェストで宛先を設定する {#destination-manifest}
 
 **OTLP HTTP (ClickStack)**
 
@@ -238,7 +182,7 @@ spec:
     - LOGS
   data:
     OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
-    # オープンソース ClickStack の API インジェストキー、または Managed ClickStack の場合は OTLP_AUTH_TOKEN
+    # API ingestion key for ClickStack Open Source
     OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
 ```
 
@@ -271,9 +215,7 @@ kubectl apply -f destination.yaml
 
 {/* vale off */}
 
-<div id="odigos-vm-agent">
-  ### Odigos VM エージェント
-</div>
+### Odigos VM エージェント {#odigos-vm-agent}
 
 {/* vale on */}
 
@@ -283,9 +225,7 @@ VM Agent は Odigos Pro の一部です。セットアップ、ソース、宛�
 
 {/* vale off */}
 
-<div id="odigos-central">
-  ### Odigos Central
-</div>
+### Odigos Central {#odigos-central}
 
 {/* vale on */}
 
@@ -293,21 +233,17 @@ VM Agent は Odigos Pro の一部です。セットアップ、ソース、宛�
 
 Odigos Central は Odigos Enterprise で利用できます。マルチクラスター管理、SSO、統合されたサンプリングルールについては、[Central の概要](https://docs.odigos.io/central/overview) を参照してください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * **ClickStack で、インストルメント済みの各サービスのトレースを確認する**
 * **Odigos がエクスポートしたメトリクスのダッシュボードを作成する**
 * **保持期間やクエリパターンに合わせて ClickHouse のスキーマと有効期限 (TTL) を調整する**
 
-<div id="read-more">
-  ## 関連情報
-</div>
+## 関連情報 {#read-more}
 
-* [Odigos Enterprise のインストール](https://docs.odigos.io/enterprise/setup/installation)
+* [Odigos Enterprise ドキュメント](https://enterprise.docs.odigos.io/)(アクセス権が必要)
 * [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse)
 * [Odigos VM Agent 概要](https://docs.odigos.io/vmagent/overview)
 * [Odigos Central 概要](https://docs.odigos.io/central/overview)
 * [本番環境での当て推量をやめる: ClickHouse と Odigos で実現する大規模なフルフィデリティトレーシング](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
-* [Open Source ClickStack を使い始める](/ja/clickstack/getting-started/oss)
+* [オープンソース版 ClickStack を使い始める](/ja/clickstack/getting-started/oss)

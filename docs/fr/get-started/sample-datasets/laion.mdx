@@ -11,9 +11,7 @@ Le [jeu de données Laion-400M](https://laion.ai/blog/laion-400-open-dataset/) c
 
 Le jeu de données contient l’URL de l’image, les embeddings de l’image et de sa légende, un score de similarité entre l’image et sa légende, ainsi que des métadonnées, par exemple la largeur et la hauteur de l’image, la licence et un indicateur NSFW. Nous pouvons utiliser ce jeu de données pour illustrer la [recherche approximative des plus proches voisins](/fr/reference/engines/table-engines/mergetree-family/annindexes) dans ClickHouse.
 
-<div id="data-preparation">
-  ## Préparation des données
-</div>
+## Préparation des données {#data-preparation}
 
 Les embeddings et les métadonnées sont stockés dans des fichiers distincts parmi les données brutes. Une étape de préparation des données permet de télécharger les données, de fusionner les fichiers,
 de les convertir en CSV et de les importer dans ClickHouse. Vous pouvez utiliser pour cela le script `download.sh` suivant :
@@ -77,9 +75,7 @@ Le jeu de données est réparti en 410 fichiers, chacun contenant env. 1 million
 
 (Le script Python ci-dessus est très lent (~2 à 10 minutes par fichier), consomme beaucoup de mémoire (41 GB par fichier), et les fichiers CSV obtenus sont volumineux (10 GB chacun) ; soyez donc prudent. Si vous avez suffisamment de RAM, augmentez la valeur de `-P1` pour accroître le parallélisme. Si cela reste trop lent, envisagez une meilleure procédure d’ingestion — par exemple en convertissant les fichiers .npy en Parquet, puis en effectuant tout le reste du traitement avec ClickHouse.)
 
-<div id="create-table">
-  ## Créer une table
-</div>
+## Créer une table {#create-table}
 
 Pour créer une table sans index dans un premier temps, exécutez :
 
@@ -106,9 +102,7 @@ INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 
 Notez que la colonne `id` n’est là qu’à titre d’illustration et que le script la renseigne avec des valeurs non uniques.
 
-<div id="run-a-brute-force-vector-similarity-search">
-  ## Exécuter une recherche de similarité vectorielle par force brute
-</div>
+## Exécuter une recherche de similarité vectorielle par force brute {#run-a-brute-force-vector-similarity-search}
 
 Pour effectuer une recherche vectorielle approximative par force brute, exécutez :
 
@@ -139,9 +133,7 @@ Pour l&#39;instant, nous pouvons utiliser comme `target` l&#39;embedding d&#39;u
 10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
 ```
 
-<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
-  ## Effectuer une recherche approximative de similarité vectorielle avec un index de similarité vectorielle
-</div>
+## Effectuer une recherche approximative de similarité vectorielle avec un index de similarité vectorielle {#run-an-approximate-vector-similarity-search-with-a-vector-similarity-index}
 
 Définissons maintenant deux index de similarité vectorielle sur la table.
 
@@ -192,15 +184,11 @@ La latence de la requête a fortement diminué, car les plus proches voisins ont
 La recherche de similarité vectorielle utilisant un index de similarité vectorielle peut renvoyer des résultats légèrement différents de ceux d’une recherche par force brute.
 Un index HNSW peut potentiellement atteindre un taux de rappel proche de 1 (la même précision qu’une recherche par force brute) grâce à une sélection rigoureuse des paramètres HNSW et à l’évaluation de la qualité de l’index.
 
-<div id="creating-embeddings-with-udfs">
-  ## Création d’embeddings avec des UDF
-</div>
+## Création d’embeddings avec des UDF {#creating-embeddings-with-udfs}
 
 On cherche généralement à créer des embeddings pour de nouvelles images ou de nouvelles légendes d’image, puis à rechercher dans les données des paires image/légende similaires. On peut utiliser des [UDF](/fr/reference/functions/regular-functions/udf) pour créer le vecteur `target` sans quitter le client. Il est important d’utiliser le même modèle pour créer les données et les nouveaux embeddings utilisés pour les recherches. Les scripts suivants utilisent le modèle `ViT-B/32`, qui est également celui sur lequel repose le jeu de données.
 
-<div id="text-embeddings">
-  ### Embeddings de texte
-</div>
+### Embeddings de texte {#text-embeddings}
 
 Commencez par enregistrer le script Python suivant dans le répertoire `user_scripts/` de votre répertoire de données ClickHouse, puis rendez-le exécutable (`chmod +x encode_text.py`).
 
@@ -244,13 +232,13 @@ Créez ensuite `encode_text_function.xml` à un emplacement indiqué par `<user_
 </functions>
 ```
 
-Vous pouvez désormais utiliser :
+Vous pouvez désormais utiliser :
 
 ```sql
 SELECT encode_text('cat');
 ```
 
-La première exécution sera lente, car elle charge le modèle, mais les suivantes seront rapides. Nous pouvons ensuite copier le résultat dans `SET param_target=...` et écrire facilement des requêtes. Sinon, la fonction `encode_text()` peut être utilisée directement comme argument de la fonction `cosineDistance` :
+La première exécution sera lente, car elle charge le modèle, mais les suivantes seront rapides. Nous pouvons ensuite copier le résultat dans `SET param_target=...` et écrire facilement des requêtes. Sinon, la fonction `encode_text()` peut être utilisée directement comme argument de la fonction `cosineDistance` :
 
 ```SQL
 SELECT url
@@ -261,9 +249,7 @@ LIMIT 10
 
 Notez que l’UDF `encode_text()` elle-même peut nécessiter quelques secondes pour effectuer le calcul et renvoyer le vecteur d’embedding.
 
-<div id="image-embeddings">
-  ### Embeddings d’images
-</div>
+### Embeddings d’images {#image-embeddings}
 
 Les embeddings d’images peuvent être créés de la même manière, et nous fournissons un script Python capable de générer un embedding à partir d’une image stockée localement sous forme de fichier.
 

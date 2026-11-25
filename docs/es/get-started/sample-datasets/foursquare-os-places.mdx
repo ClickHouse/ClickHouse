@@ -7,14 +7,12 @@ keywords: ['conjunto de datos de ejemplo', 'Foursquare', 'geoespacial', 'Iceberg
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Foursquare OS Places contiene más de 100 millones de puntos de interés (POI) comerciales,
 incluidos comercios, restaurantes, parques, zonas de juegos y monumentos. En esta guía,
 conectarás ClickHouse al catálogo Iceberg de Foursquare, explorarás el conjunto de datos y lo cargarás
 en una tabla optimizada para consultas geoespaciales.
 
-El conjunto de datos está disponible a través del [portal de Foursquare Places](https://places.foursquare.com/)
+El conjunto de datos está disponible a través del [Foursquare Places Portal](https://places.foursquare.com/)
 y se puede utilizar gratuitamente conforme a la licencia Apache 2.0.
 
 <Note>
@@ -25,7 +23,7 @@ y se puede utilizar gratuitamente conforme a la licencia Apache 2.0.
 </Note>
 
 <div id="before-you-begin">
-  ## Antes de empezar
+  ## Antes de empezar {#before-you-begin}
 </div>
 
 Antes de ejecutar las consultas de esta guía, necesita lo siguiente:
@@ -34,7 +32,7 @@ Antes de ejecutar las consultas de esta guía, necesita lo siguiente:
 * Un token de acceso creado desde la pestaña **Access Data** del conjunto de datos **OS Places**
 
 <div id="connect-to-the-foursquare-catalog">
-  ## Conéctate al catálogo de Foursquare
+  ## Conéctate al catálogo de Foursquare {#connect-to-the-foursquare-catalog}
 </div>
 
 Mantén privado tu token de acceso. Inicia el client de ClickHouse y sustituye
@@ -58,7 +56,7 @@ cambiar con el tiempo. Por tanto, las consultas sin una cláusula `ORDER BY` pue
 muestra distintas de las respuestas mostradas en esta guía.
 
 <div id="verify-the-connection">
-  ## Verifique la conexión
+  ## Verifique la conexión {#verify-the-connection}
 </div>
 
 Consulte una fila de la tabla Iceberg `places_os`:
@@ -102,7 +100,7 @@ bbox:                (NULL,NULL,NULL,NULL)
 ```
 
 <div id="explore-the-data">
-  ## Explorar los datos
+  ## Explorar los datos {#explore-the-data}
 </div>
 
 La fila de muestra contiene varios campos nulos. Añada filtros para obtener una fila más completa:
@@ -189,7 +187,7 @@ DESCRIBE places.`datasets.places_os`;
 ```
 
 <div id="loading-the-data">
-  ## Cargue los datos en ClickHouse
+  ## Cargue los datos en ClickHouse {#loading-the-data}
 </div>
 
 Para almacenar los datos de forma persistente, cree una tabla en `clickhouse-server` o en ClickHouse Cloud.
@@ -364,9 +362,7 @@ desalineen los valores importados. La consulta excluye `unresolved_flags` porque
 se necesita en la tabla local y filtra las filas sin coordenadas porque no
 pueden situarse en el mapa. Los demás valores anulables del origen permanecen como nulos en la tabla local.
 
-<div id="data-visualization">
-  ## Visualización de los datos
-</div>
+## Visualización de los datos {#data-visualization}
 
 <Note>
   El modelo de acceso de Foursquare ha cambiado desde que se crearon estas visualizaciones. La
@@ -378,10 +374,26 @@ pueden situarse en el mapa. Los demás valores anulables del origen permanecen c
 Durante un hackatón de la empresa, el cofundador y CTO de ClickHouse, Alexey Milovidov, utilizó ClickHouse
 para crear las siguientes visualizaciones a partir del conjunto de datos de Foursquare.
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Mapa de densidad de puntos de interés en Europa" />
+<div className="ch-image-md">
+  <Frame>
+    ![Mapa de densidad de puntos de interés en Europa](/images/getting-started/example-datasets/visualization_1.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="Bares de sake en Japón" />
+<div className="ch-image-md">
+  <Frame>
+    ![Bares de sake en Japón](/images/getting-started/example-datasets/visualization_2.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="Cajeros automáticos" />
+<div className="ch-image-md">
+  <Frame>
+    ![Cajeros automáticos](/images/getting-started/example-datasets/visualization_3.webp)
+  </Frame>
+</div>
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="Mapa de Europa con puntos de interés clasificados por país" />
+<div className="ch-image-md">
+  <Frame>
+    ![Mapa de Europa con puntos de interés clasificados por país](/images/getting-started/example-datasets/visualization_4.webp)
+  </Frame>
+</div>

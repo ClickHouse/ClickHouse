@@ -8,12 +8,11 @@ keywords: ['clickstack', '可观测性', 'materialized views', '性能', '优化
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge />
 
 <div id="introduction">
-  ## 简介
+  ## 简介 {#introduction}
 </div>
 
 ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/materialized-views/incremental-materialized-view)来加速依赖重度聚合查询的可视化，例如计算随时间变化的每分钟平均请求耗时。该功能可显著提升查询性能，通常在规模较大的部署中收益最明显——大约从每日 10 TB 及以上开始——并支持进一步扩展到每日 PB 级别。增量materialized view 目前处于 Beta 阶段，应谨慎使用。
@@ -24,9 +23,7 @@ ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/mat
   缩短执行时间有助于提升响应速度并降低资源消耗。
 </Note>
 
-<div id="what-are-incremental-materialized-views">
-  ## 什么是增量materialized view
-</div>
+## 什么是增量materialized view {#what-are-incremental-materialized-views}
 
 增量materialized view 允许将计算成本从查询时转移到写入时，从而显著加快 `SELECT` 查询。
 
@@ -36,7 +33,11 @@ ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/mat
 
 ClickHouse 中的 materialized view 会随着数据流入源表而持续更新，行为更像始终保持最新的索引。这与许多其他数据库不同：在那些数据库中，materialized view 是静态快照，必须定期刷新，类似于 ClickHouse 的 [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 示意图" />
+<div className="ch-image-md">
+  <Frame>
+    ![materialized view 示意图](/images/materialized-view/materialized-view-diagram.webp)
+  </Frame>
+</div>
 
 增量materialized view 只会在新数据到达时计算视图的变更，将计算前移到写入时。由于 ClickHouse 对摄取进行了高度优化，因此，相比查询执行时获得的收益，为每个写入块维护视图所增加的成本很小。聚合的计算成本被分摊到多次写入中，而不是在每次读取时反复付出。因此，查询预聚合结果的代价远低于重新计算这些结果，即使在 PB 级规模下，也能为下游可视化带来更低的运营成本和接近实时的性能。
 
@@ -58,7 +59,7 @@ ClickHouse 中的 materialized view 会随着数据流入源表而持续更新�
 更多细节请参阅我们的[增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)指南。
 
 <div id="selecting-visualizatons-for-acceleration">
-  ## 选择需要加速的可视化
+  ## 选择需要加速的可视化 {#selecting-visualizatons-for-acceleration}
 </div>
 
 在创建任何 materialized view 之前，务必先明确你希望加速哪些可视化，以及哪些工作流对用户最关键。
@@ -68,21 +69,21 @@ ClickHouse 中的 materialized view 会随着数据流入源表而持续更新�
 通常，建议如下：
 
 <div id="identify-high-impact-visualizations">
-  ### 识别高价值可视化项
+  ### 识别高价值可视化 {#identify-high-impact-visualizations}
 </div>
 
 最值得加速的对象通常属于以下几类之一：
 
-* 刷新频繁且长期持续展示的仪表盘图表，例如显示在墙上大屏上的高层监控仪表盘。
+* 刷新频繁且长期持续展示的仪表盘可视化，例如显示在墙上大屏上的高层监控仪表盘。
 * runbook 中使用的诊断工作流：在事件响应期间需要反复查看特定图表，并且要求快速返回结果。
-* HyperDX 的核心体验，包括：
+* ClickStack 用户界面的核心体验，包括：
   * 搜索页面中的直方图视图。
-  * 预设仪表盘中使用的可视化项，例如 APM、Services 或 Kubernetes 视图。
+  * 预设仪表盘中使用的可视化，例如 APM、Services 或 Kubernetes 视图。
 
-这些可视化项通常会在不同用户和时间范围下被反复执行，因此非常适合将计算从查询时转移到写入时。
+这些可视化通常会在不同用户和时间范围下被反复执行，因此非常适合将计算从查询时转移到写入时。
 
 <div id="balance-benefit-against-insert-time-cost">
-  ### 权衡收益与写入时成本
+  ### 权衡收益与写入时成本 {#balance-benefit-against-insert-time-cost}
 </div>
 
 materialized view 会在写入时增加额外负担，因此应有选择地谨慎创建。并非每个可视化都能从预聚合中受益，而为使用频率很低的图表提速，通常并不值得这部分开销。materialized view 的总数应控制在 20 个以内。
@@ -94,7 +95,7 @@ materialized view 会在写入时增加额外负担，因此应有选择地谨�
 一旦你确定了最重要的可视化，下一步就是归并。
 
 <div id="consolidate-visualizations-into-shared-views">
-  ### 将可视化整合到共享视图中
+  ### 将可视化整合到共享视图中 {#consolidate-visualizations-into-shared-views}
 </div>
 
 ClickStack 中的所有 materialized view 都应使用诸如 [`toStartOfMinute`](/zh/reference/functions/regular-functions/date-time-functions#toStartOfMinute) 之类的函数，按时间间隔对数据进行分组。不过，许多可视化还会共用额外的分组键，例如服务名称、span 名称或状态码。当多个可视化使用相同的分组维度时，通常可以由同一个 materialized view 提供支持。
@@ -118,16 +119,18 @@ GROUP BY time, ServiceName, StatusCode
 
 在这个阶段，**重点关注**你想要加速的可视化所发起的查询。下一节将通过一个示例说明，如何将多个聚合查询合并为一个 materialized view。
 
-<div id="creating-a-materialized-view">
-  ## 创建 materialized view
-</div>
+## 创建 materialized view {#creating-a-materialized-view}
 
 确定要加速的一个或一组可视化后，下一步就是找出其底层查询。实际操作中，这意味着检查可视化配置并审查生成的 SQL，重点关注所用的聚合指标和应用的函数。
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成的 SQL" />
+<div className="ch-image-lg">
+  <Frame>
+    ![生成的 SQL](/images/clickstack/materialized_views/generated_sql.webp)
+  </Frame>
+</div>
 
 <Note>
-  如果 HyperDX 中某个组件没有调试面板，用户可以查看浏览器控制台，其中会记录所有查询。
+  如果 ClickStack 用户界面中某个组件没有调试面板，用户可以查看浏览器控制台，其中会记录所有查询。
 </Note>
 
 梳理出所需查询后，你应该先熟悉 ClickHouse 中的 [**聚合状态函数**](/zh/reference/data-types/aggregatefunction)。materialized view 依赖这些函数将计算从查询时转移到写入时。materialized view 不会存储最终聚合值，而是计算并存储**中间聚合状态**，然后在查询时再对其进行合并并完成最终聚合。与原始表相比，这些状态通常会小得多。这些状态有对应的专用数据类型，必须在目标表的 schema 中显式定义。
@@ -148,7 +151,7 @@ GROUP BY time, ServiceName, StatusCode
 **强烈建议**你在继续之前先熟悉这些概念。
 
 <div id="example-materialized-view">
-  ### 示例 materialized view
+  ### 示例 materialized view {#example-materialized-view}
 </div>
 
 请看下面这个原始查询：它按分钟、服务名称和状态码分组，计算平均耗时、最大耗时、事件数以及各百分位数：
@@ -214,28 +217,34 @@ GROUP BY
 最终得到的是一张紧凑的表，按分钟为每个服务名和状态码存储聚合状态。它的大小会随时间和基数以可预测的方式增长；经过后台合并后，它表示的结果与直接对原始数据执行原始聚合查询的结果相同。查询这张表的成本远低于直接从源链路追踪表进行聚合，因此能够在大规模场景下实现快速且稳定一致的可视化性能。
 
 <div id="materialized-view-usage-in-clickstack">
-  ## 在 ClickStack 中使用 materialized view
+  ## 在 ClickStack 中使用 materialized view {#materialized-view-usage-in-clickstack}
 </div>
 
 在 ClickHouse 中创建 materialized view 后，必须将其注册到 ClickStack 中，以便可视化、仪表盘和告警自动使用。
 
-<div id="registering-a-view">
-  ### 注册 materialized view 以便使用
-</div>
+### 注册 materialized view 以便使用 {#registering-a-view}
 
-materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**对应的 **数据源** 上。
+materialized view 应注册到 ClickStack 用户界面中与其所派生自的**原始源表**对应的 **数据源** 上。
 
 <Steps>
   <Step title="编辑 数据源" id="edit-the-source">
-    在 HyperDX 中找到相应的 **数据源**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
+    在 ClickStack 用户界面中找到相应的 **数据源**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="编辑 source" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![编辑 source](/images/clickstack/materialized_views/edit_source.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="添加 materialized view" id="add-the-materialized-view">
     选择 **添加 materialized view**，然后选择作为该 materialized view 后端的数据库和目标表。
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="编辑 source" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![编辑 source](/images/clickstack/materialized_views/add_view.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="选择指标" id="select-metrics">
@@ -248,13 +257,21 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
 
     对于维度，请指定除 时间戳 之外，该视图用于分组的所有列。
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="选择指标" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![选择指标](/images/clickstack/materialized_views/select_metrics.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="选择时间粒度" id="select-time-granularity">
     选择 materialized view 的**时间粒度**，例如 1 分钟。
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="选择时间粒度" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![选择时间粒度](/images/clickstack/materialized_views/select_time_granularity.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="选择最小日期" id="specify-the-minimum-date">
@@ -265,7 +282,11 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
       有关回填 materialized view 的完整指南，请参阅[“回填数据”](/zh/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="选择最小时间" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![选择最小时间](/images/clickstack/materialized_views/select_min_time.webp)
+      </Frame>
+    </div>
 
     如果无法确定确切的开始时间，可以通过查询目标表中的最小 时间戳 来确定，例如：
 
@@ -277,15 +298,17 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
   <Step title="保存 数据源" id="save-the-source">
     保存 数据源 配置。
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="保存 Source" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![保存 source](/images/clickstack/materialized_views/save_source.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 注册 materialized view 后，只要查询符合条件，ClickStack 就会自动使用它，无需修改仪表盘、可视化或告警。ClickStack 会在执行时评估每个查询，并确定是否可以应用 materialized view。
 
-<div id="verifying-acceleration-in-dashboards-and-visualizations">
-  ### 在仪表盘和可视化中验证加速效果
-</div>
+### 在仪表盘和可视化中验证加速效果 {#verifying-acceleration-in-dashboards-and-visualizations}
 
 请务必记住，增量materialized view 仅包含在**视图创建之后**插入的数据。它们不会自动回填，因此能够保持轻量且维护成本较低。因此，用户在注册视图时必须显式指定其有效时间范围。
 
@@ -300,7 +323,11 @@ ClickStack 提供了清晰的可视化标识，用于确认是否正在使用 ma
 * **绿色闪电**表示该查询已由 materialized view 加速。
 * **橙色闪电**表示该查询是在源表上执行的。
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="加速的可视化" />
+<div className="ch-image-lg">
+  <Frame>
+    ![加速的可视化](/images/clickstack/materialized_views/accelerated_visual.webp)
+  </Frame>
+</div>
 
 2. **查看优化详情**  点击闪电图标，打开详情面板，其中会显示：
 
@@ -318,7 +345,7 @@ ClickStack 提供了清晰的可视化标识，用于确认是否正在使用 ma
 这些标识可以帮助你轻松确认某个可视化是否已加速，了解为何选择了特定视图，并诊断某个视图为何不符合使用条件。
 
 <div id="how-views-are-selected">
-  ### 如何为可视化选择 materialized view
+  ### 如何为可视化选择 materialized view {#how-views-are-selected}
 </div>
 
 执行可视化时，ClickStack 可能有多个可选对象，包括基表和多个 materialized view。为确保获得最佳性能，ClickStack 会借助 ClickHouse 的 [`EXPLAIN ESTIMATE`](/zh/reference/statements/explain#explain-estimate) 机制，自动评估并选择效率最高的选项。
@@ -348,7 +375,7 @@ ClickStack 提供了清晰的可视化标识，用于确认是否正在使用 ma
 即使可视化包含过滤器、搜索约束或时间分桶，只要视图中包含所有必需的维度，materialized view 仍可用于查询加速。这样一来，无需修改可视化定义，也能利用这些视图加速仪表盘、直方图和带过滤条件的图表。
 
 <div id="example-of-choosing-materialized-view">
-  #### 选择 materialized view 的示例
+  #### 选择 materialized view 的示例 {#example-of-choosing-materialized-view}
 </div>
 
 考虑在同一个链路追踪数据源上创建的两个 materialized view：
@@ -407,13 +434,13 @@ ORDER BY hour DESC
 这两个 materialized view 的性能仍然优于直接查询基表，但选择能够满足需求的最小视图，性能最佳。
 
 <div id="alerts">
-  ### 告警
+  ### 告警 {#alerts}
 </div>
 
 兼容时，告警查询会自动使用 materialized view。这里同样适用相同的优化逻辑，从而加快告警评估速度。
 
 <div id="backfilling-a-materialized-view">
-  ## 回填 materialized view
+  ## 回填 materialized view {#backfilling-a-materialized-view}
 </div>
 
 如前所述，增量materialized view 仅包含**在视图创建后**插入的数据，不会自动回填。这种设计使视图保持轻量、维护成本较低，但也意味着：如果查询需要早于该视图最小时间戳的数据，就无法使用该视图。
@@ -433,7 +460,7 @@ ORDER BY hour DESC
 总之，回填通常并不值得付出这样的成本和运维风险。只有在历史数据加速至关重要的特殊情况下，才应考虑这样做。如果你决定继续，建议遵循下文概述的受控方法，以在性能、成本和对生产环境的影响之间取得平衡。
 
 <div id="backfilling-approaches">
-  ### 回填方式
+  ### 回填方式 {#backfilling-approaches}
 </div>
 
 <Info>
@@ -463,7 +490,7 @@ GROUP BY
 如前所述，增量materialized view 不会自动回填。建议采用以下流程，在安全回填历史数据的同时，保留对新数据的增量处理行为。
 
 <div id="direct-backfill">
-  #### 使用 `INSERT INTO SELECT` 直接回填
+  #### 使用 `INSERT INTO SELECT` 直接回填 {#direct-backfill}
 </div>
 
 这种方法最适合**较小的数据集**或**相对较轻量的聚合查询**：能够在合理时间内完成整个回填，同时不会耗尽集群资源。通常适用于回填查询可在几分钟内完成，最多不超过几小时，且可以接受 CPU 和 I/O 使用量的临时上升。对于更大的数据集或成本更高的聚合，建议改用下面介绍的增量回填或基于块的回填方法。
@@ -524,7 +551,7 @@ GROUP BY
 </Steps>
 
 <div id="incremental-backfill-null-table">
-  #### 使用 Null 表进行增量回填
+  #### 使用 Null 表进行增量回填 {#incremental-backfill-null-table}
 </div>
 
 对于更大的数据集，或资源开销更高的聚合查询，使用单条 `INSERT INTO SELECT` 直接回填可能并不现实，甚至存在风险。这种情况下，建议采用**增量回填**。这种方法更接近增量materialized view 的常规工作方式：不是一次聚合整个历史数据集，而是按可控的数据块逐步处理。
@@ -606,34 +633,34 @@ GROUP BY
 </Steps>
 
 <div id="recommendations">
-  ## 建议
+  ## 建议 {#recommendations}
 </div>
 
 以下建议概述了在 ClickStack 中设计和运维 materialized views 的最佳实践。遵循这些建议有助于确保 materialized views 高效、可预测，并具备良好的成本效益。
 
 <div id="granularity-selection-and-alignment">
-  ### 粒度选择与对齐
+  ### 粒度选择与对齐 {#granularity-selection-and-alignment}
 </div>
 
-只有当图表或告警的粒度是视图粒度的**精确整数倍**时，才会使用 materialized view。具体如何确定该粒度，取决于图表类型：
+只有当可视化或告警的粒度是视图粒度的**精确整数倍**时，才会使用 物化视图。具体如何确定该粒度，取决于图表类型：
 
 * **时间图表** (x 轴为时间的折线图或柱状图) ：
-  图表显式指定的粒度必须是 materialized view 粒度的整数倍。
-  例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 materialized view，但不能使用 20 分钟或 3 分钟粒度的视图。
+  图表显式指定的粒度必须是 物化视图 粒度的整数倍。
+  例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 物化视图，但不能使用 20 分钟或 3 分钟粒度的视图。
 
 * **非时间图表** (数值、表格或摘要图表) ：
-  有效粒度通过 `(time range / 80)` 计算得出，并向上取整到 HyperDX 支持的最近粒度。该派生粒度也必须是 materialized view 粒度的整数倍。
+  实际粒度通过 `(time range / 80)` 计算得出，并向上取整到 ClickStack 用户界面支持的最近粒度。该派生粒度也必须是 物化视图 粒度的整数倍。
 
 因此：
 
-* **不要创建 10 分钟粒度的 materialized view**。
-  ClickStack 支持图表和告警使用 15 分钟粒度，但不支持 10 分钟粒度。因此，10 分钟的 materialized view 将无法兼容常见的 15 分钟图表和告警。
+* **不要创建 10 分钟粒度的 物化视图**。
+  ClickStack 支持图表和告警使用 15 分钟粒度，但不支持 10 分钟粒度。因此，10 分钟的 物化视图 将无法兼容常见的 15 分钟可视化和告警。
 * 优先选择 **1 分钟**或**1 小时**粒度，它们与大多数图表和告警配置都能良好适配。
 
 更高的粒度 (例如 1 小时) 会生成更小的视图，并降低存储开销；更低的粒度 (例如 1 分钟) 则能为细粒度分析提供更大的灵活性。请选择能够支持关键工作流的最小粒度。
 
 <div id="limit-and-consolidate-materialized-views">
-  ### 限制并整合 materialized view
+  ### 限制并整合 materialized view {#limit-and-consolidate-materialized-views}
 </div>
 
 每个 materialized view 都会带来额外的插入时开销，并增加分片与合并压力。
@@ -646,7 +673,7 @@ GROUP BY
 在可能的情况下，应通过同一个 materialized view 计算多个指标，并支撑多个图表。
 
 <div id="choose-dimensions-carefully">
-  ### 谨慎选择维度
+  ### 谨慎选择维度 {#choose-dimensions-carefully}
 </div>
 
 只纳入那些经常用于分组或过滤的维度：
@@ -662,7 +689,7 @@ GROUP BY
 </Info>
 
 <div id="naming-conventions-for-aggregation-columns">
-  ### 聚合列的命名约定
+  ### 聚合列的命名约定 {#naming-conventions-for-aggregation-columns}
 </div>
 
 materialized view 的聚合列必须遵循严格的命名约定，才能启用自动推断：
@@ -676,7 +703,7 @@ materialized view 的聚合列必须遵循严格的命名约定，才能启用�
 ClickStack 依赖这一约定，才能将查询正确映射到 materialized view 列。
 
 <div id="quantiles-and-sketch-selection">
-  ### 分位数与草图选择
+  ### 分位数与草图选择 {#quantiles-and-sketch-selection}
 </div>
 
 不同的分位数函数在性能和存储方面各有特点：
@@ -687,7 +714,7 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 你也可以指定草图大小 (例如，对这两个函数都在写入时使用 `quantile(0.5)`) 。之后仍可基于生成的草图查询其他分位数值，例如 `quantile(0.95)`。建议通过实验找到最适合你的工作负载的平衡点。
 
 <div id="validate-effectiveness-continously">
-  ### 持续验证效果
+  ### 持续验证效果 {#validate-effectiveness-continously}
 </div>
 
 始终要验证 materialized view 是否确实带来了实际收益：
@@ -699,7 +726,7 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 应将 materialized view 视为一种性能优化手段；随着查询模式的演变，需要定期审查和调整。
 
 <div id="advanced-configurations">
-  ### 高级配置
+  ### 高级配置 {#advanced-configurations}
 </div>
 
 对于更复杂的工作负载，可以使用多个 materialized view 来适配不同的访问模式。示例包括：
@@ -712,32 +739,32 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 遵循这些建议，有助于确保 materialized view 持续保持高效、易于维护，并与 ClickStack 的执行模型一致。
 
 <div id="limitations">
-  ## 局限性
+  ## 局限性 {#limitations}
 </div>
 
 <div id="common-incompatibility-reasons">
-  ### 常见不兼容原因
+  ### 常见不兼容原因 {#common-incompatibility-reasons}
 </div>
 
-如果出现以下任一情况，**将不会**使用 materialized view：
+如果出现以下任一情况，**将不会**使用 物化视图：
 
 * **查询时间范围**
-  查询时间范围的起始时间早于 materialized view 的最小时间戳。由于视图不会自动回填，因此只能满足其时间范围被完全覆盖的查询。
+  查询时间范围的起始时间早于 物化视图 的最小时间戳。由于视图不会自动回填，因此只能满足其时间范围被完全覆盖的查询。
 
 * **粒度不匹配**
-  可视化的实际粒度必须是 materialized view 粒度的整数倍。具体而言：
+  可视化的实际粒度必须是 物化视图 粒度的整数倍。具体而言：
 
-  * 对于**时间图表** (x 轴为时间的折线图或柱状图) ，图表选择的粒度必须是视图粒度的倍数。例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 materialized view，但不能使用 20 分钟或 3 分钟的视图。
-  * 对于**非时间图表** (数值图表或表格图表) ，实际粒度按 `(time range / 80)` 计算，向上取整到最接近的 HyperDX 支持粒度，并且同样必须是视图粒度的倍数。
+  * 对于**时间图表** (x 轴为时间的折线图或柱状图) ，图表选择的粒度必须是视图粒度的倍数。例如，10 分钟图表可以使用粒度为 10、5、2 或 1 分钟的 物化视图，但不能使用 20 分钟或 3 分钟的视图。
+  * 对于**非时间图表** (数值图表或表格图表) ，实际粒度按 `(time range / 80)` 计算，向上取整到最接近的 ClickStack 用户界面支持粒度，并且同样必须是视图粒度的倍数。
 
 * **不支持的聚合函数**
-  查询所需的聚合在 materialized view 中不存在。只有在视图中显式计算并存储的聚合才能使用。
+  查询所需的聚合在 物化视图 中不存在。只有在视图中显式计算并存储的聚合才能使用。
 
 * **自定义计数表达式**
-  使用 `count(if(...))` 或其他条件计数表达式的查询，无法从标准聚合状态中推导出来，因此不能使用 materialized view。
+  使用 `count(if(...))` 或其他条件计数表达式的查询，无法从标准聚合状态中推导出来，因此不能使用 物化视图。
 
 <div id="design-and-operational-constraints">
-  ### 设计和运维约束
+  ### 设计和运维约束 {#design-and-operational-constraints}
 </div>
 
 * **不会自动回填**
@@ -755,11 +782,11 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 了解这些限制，有助于确保 materialized view 只用在确实能带来实际收益的场景中，并避免采用那些会在无提示的情况下回退到更慢的源表查询的配置。
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
 <div id="materialied-view-not-being-used">
-  ### materialized view 未生效
+  ### materialized view 未生效 {#materialied-view-not-being-used}
 </div>
 
 **检查 1：日期范围**
@@ -784,7 +811,7 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 * 在优化弹窗中查看“Available group/filter columns”。
 
 <div id="slow-mv-queries">
-  ### materialized view 查询缓慢
+  ### materialized view 查询缓慢 {#slow-mv-queries}
 </div>
 
 **问题 1：materialized view 粒度过细**
@@ -803,7 +830,7 @@ ClickStack 依赖这一约定，才能将查询正确映射到 materialized view
 * 解决方案：删除很少使用或总是被跳过的 MV。
 
 <div id="config-errors">
-  ### 配置错误
+  ### 配置错误 {#config-errors}
 </div>
 
 **错误：&quot;At least one aggregated column is required&quot;**

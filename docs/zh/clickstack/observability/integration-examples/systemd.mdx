@@ -1,0 +1,300 @@
+---
+slug: /clickstack/observability/integration-examples/systemd
+title: '使用 ClickHouse Observability 监控 Systemd 日志'
+sidebarTitle: 'Systemd/Journald 日志'
+description: '使用 OpenTelemetry 采集 systemd 系统日志，并将其发送到 ClickHouse Observability。'
+doc_type: 'guide'
+keywords: ['systemd', 'journald', '系统日志', 'OTEL', 'ClickHouse Observability', '系统日志', 'systemctl']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry journald 接收器收集 systemd 系统日志，并将其发送到 ClickHouse Observability。借助[演示数据集](#demo-dataset)，无需 Linux 主机即可体验此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* 如需采集您自己的日志，需要一台运行 systemd 的 Linux 主机，已安装 `journalctl` 并具有读取其系统日志的权限
+* `curl`；运行演示还需要 Docker
+
+### 连接详情 {#connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **Team Settings → Data → Managed Telemetry**，复制您的 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制配置，或点击 **Reveal key** 查看被隐藏的密钥。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为配合下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务中的实际端点 (含端口) 和 API key。请使用不带 `/v1/logs` 后缀的基础 HTTP 端点，导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果您的采集器无需身份验证，请在下文配置中省略导出器的 `headers` 块。有关设置说明，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+被监控主机或演示采集器必须能够访问该端点。如果目标端采集器运行在 Docker 主机上，请使用 `http://host.docker.internal:4318`。
+
+## 与现有系统集成 {#existing-systems}
+
+<Steps>
+  <Step title="检查系统日志" id="verify-systemd">
+    在需要监控的 Linux 主机上：
+
+    ```bash
+    systemctl --version
+    sudo journalctl -n 20
+    sudo journalctl --disk-usage
+    ```
+
+    该接收器通过主机上的 `journalctl` 读取可用的系统日志。持久化和易失性系统日志存储均受支持，无需更改存储设置。
+  </Step>
+
+  <Step title="下载采集器" id="download-collector">
+    在受监控的 Linux 主机上运行以下命令：
+
+    ```bash
+    case "$(uname -m)" in
+      x86_64) arch=amd64 ;;
+      aarch64|arm64) arch=arm64 ;;
+      *) echo "Unsupported architecture"; exit 1 ;;
+    esac
+    curl -fL -o otelcol-contrib.tar.gz \
+      "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.161.0/otelcol-contrib_0.161.0_linux_${arch}.tar.gz"
+    tar -xzf otelcol-contrib.tar.gz otelcol-contrib
+    ```
+
+    采集器直接在主机上运行，因此可以使用主机上已安装的 `journalctl`。标准的 Contrib Docker 镜像中并不包含该二进制文件。
+  </Step>
+
+  <Step title="配置采集器" id="configure-collector">
+    将以下内容保存为 `systemd-monitoring.yaml`：
+
+    ```yaml
+    receivers:
+      journald:
+        start_at: end
+        priority: info
+        convert_message_bytes: true
+    processors:
+      transform/journald:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              - merge_maps(log.attributes, log.body, "upsert")
+              - set(resource.attributes["host.name"], log.attributes["_HOSTNAME"])
+              - set(resource.attributes["service.name"], "systemd-logs")
+              - set(log.attributes["unit"], log.attributes["SYSLOG_IDENTIFIER"])
+              - set(log.attributes["unit"], log.attributes["_SYSTEMD_UNIT"]) where log.attributes["_SYSTEMD_UNIT"] != nil
+              - set(log.attributes["priority"], log.attributes["PRIORITY"])
+              - set(log.body, log.attributes["MESSAGE"])
+              - set(log.severity_text, "info")
+              - set(log.severity_number, SEVERITY_NUMBER_INFO)
+              - set(log.severity_text, "warn") where Int(log.attributes["PRIORITY"]) == 4
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where log.severity_text == "warn"
+              - set(log.severity_text, "error") where Int(log.attributes["PRIORITY"]) == 3
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where log.severity_text == "error"
+              - set(log.severity_text, "fatal") where Int(log.attributes["PRIORITY"]) < 3
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where log.severity_text == "fatal"
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs:
+          receivers: [journald]
+          processors: [transform/journald, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    系统日志字段会保留为日志属性，消息会作为日志正文，主机名则会作为资源属性。该接收器会采集优先级为 `info` 及以上的所有 unit。如需限制采集范围，请在 `journald` 下添加 `units` 列表，并填入主机上实际存在的 unit 名称，例如 `ssh.service` 或 `nginx.service`。
+  </Step>
+
+  <Step title="运行采集器" id="run-collector">
+    先设置[连接变量](#connection-details)，然后在下载目录中运行以下命令。该命令会使用管理员权限读取系统日志，并且仅保留这两个连接变量：
+
+    ```bash
+    sudo --preserve-env=OTEL_EXPORTER_OTLP_ENDPOINT,OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      ./otelcol-contrib --config=systemd-monitoring.yaml
+    ```
+
+    保持该终端打开，然后在另一个终端中生成一条系统日志条目：
+
+    ```bash
+    echo 'ClickHouse Observability journal ingestion test' | systemd-cat -t observability-test -p info
+    ```
+
+    测试完成后，按 **Ctrl+C** 停止采集器。如需持续采集，请将其作为 systemd 服务运行，并授予其系统日志访问权限，同时配置[游标存储](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/journaldreceiver#cursor-tracking)，以便重启后从上次位置继续采集。
+  </Step>
+
+  <Step title="验证日志" id="verify-logs">
+    打开 **搜索** 页面，选择 **Logs**，按 `ServiceName:systemd-logs` 进行过滤，并选择 **Last 15 minutes**。查找测试消息以及 `unit`、`priority` 等属性。
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该样本包含 1,334 条文本日志条目，时间跨度约 48 小时，涵盖 SSH 活动、计划任务和服务事件。它使用 `filelog` 接收器，因此无需安装 systemd 或 `journalctl`。采集器会刷新时间戳，同时保留原始日志正文以及事件之间的时间间隔。
+
+<Steps>
+  <Step title="下载样本" id="download-sample">
+    ```bash
+    curl -fL -o systemd-demo.log \
+      https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/systemd/systemd-demo.log
+    ```
+  </Step>
+
+  <Step title="配置演示采集器" id="configure-demo">
+    将以下内容保存为 `systemd-demo.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/systemd:
+        include:
+          - /var/log/demo/systemd-demo.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          - type: add
+            field: attributes.source
+            value: systemd-demo
+          - type: add
+            field: resource["service.name"]
+            value: systemd-demo
+    processors:
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(resource.attributes["host.name"], log.attributes["hostname"])
+              - set(log.time, Now() - Duration("2m") - (Time("2025-11-16T23:45:00Z", "%Y-%m-%dT%H:%M:%SZ") - log.time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        logs:
+          receivers: [filelog/systemd]
+          processors: [transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    该文本样本不含系统日志优先级字段，因此本演示不会根据消息文本设置严重级别。
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo">
+    设置好[连接变量](#connection-details)后，在包含这两个文件的目录中运行：
+
+    ```bash
+    docker run --rm --name systemd-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/systemd-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/systemd-demo.log:/var/log/demo/systemd-demo.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    验证摄取期间请保持终端开启，完成后按 **Ctrl+C** 停止。再次运行演示时，会使用刷新后的时间戳重新摄取样本数据。
+  </Step>
+
+  <Step title="验证演示日志" id="verify-demo">
+    打开 **搜索**，选择 **Logs**，按 `ServiceName:systemd-demo` 进行过滤，并选择 **最近 2 天**。您应能看到带有 `unit`、`hostname` 和 `message` 属性的样本条目。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 搜索页面中的 Systemd 演示日志](/images/clickstack/observability-systemd-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json" download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载仪表盘配置</TrackedLink>} id="download-dashboard" />
+
+  <Step title="导入仪表盘" id="import-dashboard">
+    1. 打开 **仪表盘**，然后点击右上角的 **Import**。
+    2. 上传 `systemd-logs-dashboard.json`。
+    3. 将图表映射到您的 **Logs** source，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![导入仪表盘按钮](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="view-dashboard">
+    查看样本数据时，请选择 **最近 2 天**，也可以按 `ServiceName:systemd-demo` 进行过滤。查看实时日志时，请使用 `ServiceName:systemd-logs`，并选择涵盖您的记录的时间范围。该仪表盘展示日志量、单元、SSH 事件和服务故障等信息。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中的 systemd 日志仪表盘](/images/clickstack/observability-systemd-logs-dashboard.png)
+      </Frame>
+    </div>
+
+    对于实时系统日志，请将 SSH 身份验证图表中的条件 `Body LIKE '%sshd%'` 改为 `LogAttributes['SYSLOG_IDENTIFIER'] = 'sshd'`。这是因为实时接收器会将消息存储在 `Body` 中，而进程标识符则单独存储。
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 找不到 journalctl {#journalctl-not-found}
+
+请在被监控的 Linux 主机上运行正式环境中的采集器，并确保该主机已安装 `journalctl`，且该命令位于采集器的执行路径中。演示环境使用的是 `filelog`，因此无需 `journalctl`。
+
+### 未显示日志 {#no-logs}
+
+检查采集器输出中是否有系统日志访问错误、身份验证错误或导出错误。确认在被监控主机上执行 `sudo journalctl -n 20` 能返回条目。如果配置了 unit 过滤器，请确认其与您的服务名称匹配。启动采集后，生成一条新条目。
+
+在 ClickHouse Observability 中，检查 **Logs** source、服务名称过滤器和时间范围。如果使用演示数据，请选择 **最近 2 天**，并确认样本文件已挂载到所配置的路径。
+
+## 后续步骤 {#next-steps}
+
+* 为服务故障或身份验证失败设置[告警](/zh/clickstack/observability/features/alerts)。
+* 为您的服务创建更多[仪表盘](/zh/clickstack/observability/features/dashboards/overview)。
+* 有关部署采集器的指南，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

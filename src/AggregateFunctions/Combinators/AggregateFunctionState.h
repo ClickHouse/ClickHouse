@@ -45,7 +45,6 @@ public:
 
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
-        DataTypeAggregateFunction::checkSupportedFunctions(nested_);
         return nested_->getStateType();
     }
 
@@ -133,6 +132,8 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_func->getEstimatedMergeWork(place); }
+    size_t getStateBytesPerDistinctInput() const override { return nested_func->getStateBytesPerDistinctInput(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {

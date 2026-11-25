@@ -45,9 +45,11 @@ Las sentencias SQL `INSERT` enviadas mediante los métodos query o command se ri
 
 ### Formatos de escritura {#write-formats}
 
-Los formatos de escritura están implementados para un número limitado de tipos. En la mayoría de los casos, ClickHouse Connect determina automáticamente el formato de escritura correcto para una columna a partir de su primer valor de datos no nulo. Por ejemplo, cuando el primer valor de una columna `DateTime` es un entero, el Client lo trata como un segundo desde la época.
+Los formatos de escritura están implementados para un número limitado de tipos. En la mayoría de los casos, ClickHouse Connect determina automáticamente el formato de escritura correcto para una columna a partir de su primer valor de datos no nulo. Por ejemplo, cuando el primer valor de una columna `DateTime` es un entero, el Client lo trata como un segundo desde el epoch.
 
 Normalmente no es necesario aplicar una sobrescritura a un formato de escritura, pero los métodos de `clickhouse_connect.datatypes.format` pueden establecer uno de forma global. Las envolturas de contenedor, como `Array`, `Nullable` y `LowCardinality`, conservan el comportamiento de formato del tipo de elemento.
+
+Las inserciones directas en columnas de enteros de 8 a 64 bits rechazan los valores float NaN e infinito con `DataError`, incluso en columnas que admiten valores nulos y en valores anidados. Use `None` para representar el NULL de SQL en una columna de enteros que admite valores NULL. Una columna de enteros que no admite valores NULL rechaza `None`. `insert_df` escribe los valores ausentes como NULL en una columna de enteros que admite valores NULL y como 0 en una que no los admite, con cualquiera de los dos códecs.
 
 #### Opciones de formato de escritura {#write-format-options}
 
@@ -63,10 +65,10 @@ Normalmente no es necesario aplicar una sobrescritura a un formato de escritura,
 | Interval*             | int                                |                       | Los valores son recuentos de 64 bits con signo en la unidad del tipo interval.                                                                                                                                                                                     |
 | String                | str or bytes                       |                       | Una columna debe contener siempre texto o bytes de forma consistente.                                                                                                                                                                                              |
 | FixedString           | bytes                              | string                | Los valores de cadena se rellenan con bytes cero. Los bytes vacíos se escriben como bytes completamente cero.                                                                                                                                                      |
-| Enum[8,16]            | str or int                         |                       | Inserte las etiquetas como cadenas o como sus valores enteros subyacentes.                                                                                                                                                                                         |
+| Enum[8,16]            | str or int                         |                       | Inserte las etiquetas como cadenas o como códigos enteros. Las etiquetas y los códigos pueden combinarse en la misma columna.                                                                                                                                      |
 | Date                  | datetime.date or datetime.datetime | int                   | Los valores enteros se interpretan como días desde 1970-01-01.                                                                                                                                                                                                     |
 | Date32                | datetime.date or datetime.datetime | int                   | Los valores enteros se interpretan como desplazamientos de días con signo.                                                                                                                                                                                         |
-| DateTime              | datetime.datetime                  | int                   | Los valores enteros se interpretan como segundos desde la época Unix.                                                                                                                                                                                              |
+| DateTime              | datetime.datetime                  | int                   | Los valores enteros se interpretan como segundos desde el epoch Unix.                                                                                                                                                                                              |
 | DateTime64            | datetime.datetime                  | int                   | Los valores enteros se interpretan como ticks con la precisión de la columna.                                                                                                                                                                                      |
 | Time                  | datetime.timedelta                 | int, string, time     | Los valores enteros se interpretan como segundos.                                                                                                                                                                                                                  |
 | Time64                | datetime.timedelta                 | int, string, time     | Se admiten escalas de 0 a 9. Los valores enteros se interpretan como ticks con la precisión de la columna. Los valores timedelta de NumPy y las inserciones de DataFrame funcionan con cualquier escala. Los tipos time de Python están limitados a microsegundos. |
@@ -82,6 +84,12 @@ Normalmente no es necesario aplicar una sobrescritura a un formato de escritura,
 | MultiPoint            | Sequence[tuple]                    |                       | Cada punto es una tupla de 2 elementos. Insertar valores MultiPoint requiere ClickHouse 26.8 o posterior.                                                                                                                                                          |
 | Geometry              | tuple or list                      |                       | Los valores Point son tuplas de 2 elementos. Envuelva los valores basados en listas, incluido MultiPoint, con `typed_variant` para seleccionar un miembro de geometría.                                                                                            |
 | QBit                  | Sequence[float]                    |                       | NumPy se usa automáticamente para una transposición de bits más rápida cuando está instalado.                                                                                                                                                                      |
+
+#### Valores de Enum {#enum-values}
+
+Las etiquetas de cadena desconocidas lanzan `clickhouse_connect.driver.exceptions.DataError`, indicando el nombre de columna y la etiqueta no válida. Esto también se aplica a los valores dentro de `Array` y `Tuple`, así como a los DataFrames de Pandas. Una cadena vacía solo es válida si está declarada como etiqueta.
+
+Las inserciones de listas de Python solo aceptan `None` para `Nullable(Enum8(...))` o `Nullable(Enum16(...))`. En las columnas Enum que no admiten valores NULL, `insert_df` convierte los valores ausentes en el entero cero antes de la serialización.
 
 #### Valores Date y Date32 {#date-and-date32-values}
 
@@ -235,6 +243,8 @@ La configuración global `naive_datetime_insert` controla la inserción de objet
 * `"local"` es el valor predeterminado en 1.x. Python interpreta el valor en la zona horaria del proceso al llamar a `.timestamp()`. Esto conserva el comportamiento existente.
 * `"server"` interpreta el valor como hora local en la zona horaria declarada por la columna `DateTime` o `DateTime64`. Si la columna no tiene zona horaria, utiliza la zona horaria del servidor indicada cuando se conectó el Client.
 
+Con el códec de Python en modo `"local"`, si `.timestamp()` lanza `OSError` cerca o antes del epoch en Windows, el controlador vuelve a intentarlo adjuntando su zona horaria local detectada. Instale `tzlocal` o establezca `TZ` en un nombre de zona horaria IANA resoluble antes de importar el controlador para disponer de las reglas históricas de zona horaria. De lo contrario, la alternativa de respaldo puede usar un desplazamiento fijo que no coincida con el horario de verano histórico.
+
 Configure la opción antes de realizar una inserción. Se lee al serializar cada columna de inserción nativa que contiene objetos `datetime` de Python o cadenas ISO `DateTime64`, por lo que el cambio se aplica a los Clients existentes y a los contextos de inserción reutilizables.
 
 ```python
@@ -248,13 +258,13 @@ naive_time = datetime(2023, 6, 15, 10, 30)
 client.insert("events", [[naive_time]], column_names=["event_time"])
 ```
 
-Con `"server"`, ClickHouse Connect asigna el `tzinfo` de destino antes de convertir el valor a una época. Para las zonas horarias IANA, sigue las reglas de la biblioteca estándar para las transiciones de horario de verano. En una superposición de otoño se usa el valor `fold` de `datetime`. El valor predeterminado `fold=0` selecciona el desplazamiento anterior a la transición, mientras que `fold=1` selecciona el posterior. En un salto de primavera se usa la misma selección de desplazamiento, y no se rechaza ni se normaliza.
+Con `"server"`, ClickHouse Connect asigna el `tzinfo` de destino antes de convertir el valor a un epoch. Para las zonas horarias IANA, sigue las reglas de la biblioteca estándar para las transiciones de horario de verano. En una superposición de otoño se usa el valor `fold` de `datetime`. El valor predeterminado `fold=0` selecciona el desplazamiento anterior a la transición, mientras que `fold=1` selecciona el posterior. En un salto de primavera se usa la misma selección de desplazamiento, y no se rechaza ni se normaliza.
 
 Las horas de reloj inexistentes durante un salto de primavera pueden no conservarse en un recorrido de ida y vuelta mediante un parámetro de consulta en modo de reloj, ya que el análisis de texto de ClickHouse puede seleccionar un desplazamiento diferente. Use un `datetime` con zona horaria o una hora de reloj válida cuando el instante sea importante.
 
 La opción solo se aplica a inserciones nativas de objetos Python de valores `datetime` y cadenas ISO sin zona horaria aceptadas por `DateTime64`. Las columnas de NumPy y Pandas con dtype `datetime64` sin zona horaria conservan su conversión actual de hora de reloj UTC.
 
-Para representar un instante específico independientemente de cualquiera de los modos, asigne la zona horaria deseada o proporcione explícitamente un entero de época.
+Para representar un instante específico independientemente de cualquiera de los modos, asigne la zona horaria deseada o proporcione explícitamente un entero de epoch.
 
 ```python
 from datetime import datetime, timezone

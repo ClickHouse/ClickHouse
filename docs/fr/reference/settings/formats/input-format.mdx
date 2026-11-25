@@ -128,11 +128,11 @@ Ignorer les colonnes de types non pris en charge lors de l’inférence du sché
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "auto"},{"label": "Fait d’abord correspondre les noms de colonnes d’entrée en respectant la casse, puis bascule vers une correspondance insensible à la casse, au lieu d’exiger une correspondance exacte de la casse."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "match_case"},{"label": "Nouveau paramètre."}]}]} />
 
 Définit le mode de correspondance des noms de colonnes lors de l’ingestion de données dans différents formats (notamment JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow et RowBinaryWithNames).
-Modes pris en charge :
+Modes pris en charge :
 
-* match&#95;case : correspondance sensible à la casse
-  * ignore&#95;case : correspondance insensible à la casse
-  * auto : essaie d’abord une correspondance sensible à la casse ; en cas d’échec, essaie une correspondance insensible à la casse.
+* match&#95;case : correspondance sensible à la casse
+* ignore&#95;case : correspondance insensible à la casse
+* auto : essaie d’abord une correspondance sensible à la casse ; en cas d’échec, essaie une correspondance insensible à la casse.
 
 ## input_format_connection_handling {#input_format_connection_handling}
 
@@ -856,7 +856,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser des colonnes géo dans un fichier Parquet"}]}]} />
 
-Utilise le parseur de colonnes géo pour convertir Array(UInt8) en types Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
+Lors de la lecture de fichiers Parquet, décode les colonnes géométriques en types géométriques ClickHouse (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` ou `Geometry`). S&#39;applique aux colonnes décrites par les métadonnées `geo` de GeoParquet, ainsi qu&#39;aux colonnes annotées avec le type logique Parquet `GEOMETRY` ou `GEOGRAPHY`. Lorsque ce paramètre est désactivé, ces colonnes sont lues en tant que `String` contenant les octets WKB (ou WKT) bruts, sauf si un type géographique est explicitement demandé. Les colonnes utilisant l&#39;encodage natif (GeoArrow) de GeoParquet 1.1 sont alors lues avec les types imbriqués sous-jacents `Array` et `Tuple`.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -879,6 +879,14 @@ Lors de la lecture de fichiers Parquet, ignore des groupes de lignes entiers sur
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore la casse lors de la correspondance entre les colonnes Parquet et les colonnes CH.
+
+## input_format_parquet_detect_variant_by_structure {#input_format_parquet_detect_variant_by_structure}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant de lire les colonnes variant de Spark, dépourvues de type logique `VARIANT`, en tant que `Dynamic` plutôt que `Tuple`"}]}]} />
+
+Lit comme un variant, c&#39;est-à-dire en tant que `Dynamic` plutôt que `Tuple`, un groupe Parquet dépourvu de type logique `VARIANT` mais présentant la disposition d&#39;un variant non fragmenté (un champ `metadata` et un champ `value` de type `BYTE_ARRAY`). C&#39;est ainsi que Spark 4.0 écrit les colonnes variant. Les groupes annotés avec le type logique `VARIANT` sont toujours lus comme des variants.
 
 ## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
 
@@ -914,9 +922,9 @@ Lors de la lecture de fichiers Parquet, ignore les groupes de lignes entiers en 
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de remplacer la taille de lecture initiale adaptative du footer Parquet par un nombre fixe d’octets ; 0 conserve le comportement adaptatif."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre définissant la taille de lecture initiale du footer Parquet ; 0 lit 64 Kio d’un fichier local et adapte la taille de lecture pour les autres sources."}]}]} />
 
-Taille (en octets) de la lecture initiale en fin de fichier qui récupère le footer Parquet (`FileMetaData`) à l’ouverture d’un fichier avec le lecteur v3. Avec `0` (valeur par défaut), la taille de la lecture s’adapte au fichier (1 % de sa taille, bornée à `[128 KiB, 2 MiB]`), ce qui permet généralement de lire l’intégralité du footer en une seule fois, même pour des fichiers au format wide comportant des centaines de colonnes. Définissez une valeur non nulle pour imposer une taille de lecture initiale fixe à la place de la taille adaptative. C’est utile avec un stockage d’objet à très forte latence : lire d’emblée une portion plus importante de la fin du fichier évite un second aller-retour. La valeur est bornée à la taille du fichier.
+Taille (en octets) de la lecture initiale en fin de fichier qui récupère le footer Parquet (`FileMetaData`) à l’ouverture d’un fichier avec le lecteur v3. Avec `0` (valeur par défaut), 64 Kio sont lus en fin de fichier lorsque celui-ci est lu directement depuis le système de fichiers local ; pour les autres sources (stockage d’objet, URL, HDFS), la taille de la lecture s’adapte au fichier (1 % de sa taille, bornée à `[128 KiB, 2 MiB]`), ce qui permet généralement de lire l’intégralité du footer en une seule fois, même pour des fichiers au format wide comportant des centaines de colonnes. Définissez une valeur non nulle pour imposer une taille de lecture initiale fixe à la place de la taille adaptative. C’est utile avec un stockage d’objet à très forte latence : lire d’emblée une portion plus importante de la fin du fichier évite un second aller-retour. La valeur est bornée à la taille du fichier.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
@@ -1211,6 +1219,22 @@ Pour le format Values : si le champ n’a pas pu être analysé par le parseur 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Pour le format Values : si le champ n’a pas pu être analysé par le parseur en flux, exécuter le parseur SQL et tenter de l’interpréter comme une expression SQL.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de pousser les parties traduisibles des conditions WHERE portant sur des colonnes de premier niveau de type entier, à virgule flottante, string\/binaire, `Bool`, `Date`, `Date32` et `DateTime64` jusque dans le parcours du format Vortex, ce qui peut réduire le nombre de lignes décodées ; une condition qui n'est que partiellement traduisible est élargie en une condition qui conserve au moins toutes les lignes correspondantes, et ClickHouse réapplique le filtre complet après le parcours."}]}]} />
+
+Lors de la lecture de fichiers Vortex, pousse les parties traduisibles des conditions WHERE portant sur des colonnes de premier niveau de type entier, à virgule flottante, string/binaire, `Bool`, `Date`, `Date32` et `DateTime64` jusque dans le parcours, afin qu&#39;une requête sélective lise et décode moins de données. Seule la partie traduite de la condition est appliquée lors du parcours : une condition qui n&#39;est que partiellement traduisible est élargie en une condition qui conserve au moins toutes les lignes correspondantes, si bien que des lignes non correspondantes peuvent malgré tout être lues et décodées. ClickHouse réapplique ensuite le filtre complet après le parcours.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant de renvoyer les lignes d’un fichier Vortex dans l’ordre du fichier ; par défaut, le fichier est décodé en parallèle et l’ordre des lignes n’est pas garanti."}]}]} />
+
+Renvoie les lignes d’un fichier Vortex dans l’ordre du fichier. Par défaut, les divisions de lignes d’un fichier sont décodées en parallèle (voir `max_parsing_threads`) et renvoyées dès qu’elles sont prêtes : l’ordre des lignes n’est donc pas garanti. Avec ce paramètre, une division lente bloque celles qui la suivent. Déconseillé, car l’ordre des lignes n’est généralement pas garanti et d’autres étapes du pipeline de requête peuvent ne pas le respecter.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

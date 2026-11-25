@@ -1,0 +1,152 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-08-21
+title: 'デモデイズ - 2026-08-21'
+sidebarTitle: '2026-08-21'
+description: '2026-08-21 の ClickStack デモデー'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## チャートエディタでのメトリクス数式 {#metric-formulas-in-the-chart-editor}
+
+*デモ担当者: [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tSCoW-GGXTU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+メトリクスチャートで算術演算ができるようになりました。これまでは、同じチャート上に 2 つのメトリクスを表示しても単に 2 本の線が並ぶだけで、それらを組み合わせる方法はありませんでした。
+
+チャート内の系列には `A`、`B`、`C` のようにラベルが付けられます。数式行を使うと、これらの参照から派生系列を作成できます。たとえば `A / (A + B + C) * 100` でキューの使用率が求められます。同様に、collector の受信数と送信数から飽和度を計算することもできます。
+
+1 つのチャートに複数の数式を追加でき、オペランドの系列を結果と並べて表示するか、数式のみを表示するかを選択できます。また、異なるメトリクスの系列を組み合わせることもできます。アラートも数式に対して利用できます。
+
+算術演算自体は ClickHouse で実行されます。各数式は検証済みの AST から合成メトリクスクエリへとコンパイルされるため、アプリが後から結果を結合するのではなく、ClickHouse が単一のクエリの中で計算します。各系列は CTE となり、数式は結合された結果に対して評価されます。
+
+欠損しているオペランドはゼロとして扱われるため、エラーのないグループは N/A ではなく 0% と表示されます。除算の分母はすべて `nullif(..., 0)` でラップされるため、分母がゼロまたは欠損している場合は、ゼロやエラーではなく空白 (ギャップ) としてレンダリングされます。
+
+後続の変更により、`HAVING`、`ORDER BY`、`LIMIT` は各 `UNION` ブランチではなく、最終的な結合に適用されるようになりました。以前は、これらの句がユーザー向けの出力名が存在しないスコープで実行されていました。そのため、各系列が結合前に個別にフィルタされる一方で、最終的な行の順序は非決定論的なままでした。
+
+現時点では、入力欄で受け付けるのは文字による参照と単純な算術演算のみで、任意の SQL は使用できません。不明な系列参照、不正な形式の式、定数のみの式は、入力欄の下にリアルタイムで表示されます。同じ検証によって保存と実行もブロックされるため、無効な式が ClickHouse に到達することはありません。
+
+ビット単位の演算子や ClickHouse の関数はまだサポートされていません。特に深い理由があるわけではなく、単に最初のバージョンでの実装範囲がそこまでだったというだけです。より幅広い式のサポートは、次に追加できる候補の 1 つです。
+
+議論の中で挙がったものの、まだ実装されていない点が 2 つあります。1 つは、数式から他の数式を参照できないため、`F1` を `F2` に連鎖させられないことです。もう 1 つは、チャート全体でオペランドを切り替えるよりも、系列ごとに表示/非表示を制御できるほうが便利だという点です。実際に求められているのは、`A` と `B` を数式には残したまま非表示にするケースです。
+
+また、結合をどこまで推し進めると有用でなくなるのか、という妥当な疑問も出されました。PromQL の除算を使ったことがある人なら、結合が期待どおりに一致せず、何の通知もないままデータが返らないという失敗パターンをご存じでしょう。
+
+**関連 プルリクエスト:** [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 合成メトリクスクエリでの数式のレンダリング、[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) メトリクス数式用のチャートエディタ UI、[#2946](https://github.com/hyperdxio/hyperdx/pull/2946) HAVING/ORDER BY/LIMIT を系列ごとのブランチではなく合成メトリクスの結合に適用、[#2952](https://github.com/hyperdxio/hyperdx/pull/2952) API 全体での数式サポート、[#2953](https://github.com/hyperdxio/hyperdx/pull/2953) ログ/トレースイベントのソースに対する数式サポート
+
+## 依存関係のあるダッシュボード変数とマクロ {#dependent-dashboard-variables-and-macros}
+
+*デモ担当者: [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0CaapNH1Vc" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+先週のデモで寄せられた 2 つの要望が実装されました。
+
+フィルタ定義の `WHERE` 句で他の変数を参照できるようになったため、あるドロップダウンの選択内容で別のドロップダウンの候補を絞り込めます。たとえば、サービス名フィルタを参照する severity フィルタは、最初は空の状態です。サービスを選択すると、そのサービスに存在する severity のみが選択肢として表示されます。
+
+参照先の変数で何も選択されていない場合でも、選択肢を取得するクエリは実行されます。その状態でも値を表示させたい場合は、`$__filters` または `$__conditionalAll` を使用してください。単純な `<expression> IN ($var)` は、`$var` で何かが選択されるまで何も返しません。これまでは理由もわからないまま空のリストが表示されていましたが、今後はツールチップでその理由が説明されます。また、フィルタモーダルの `WHERE` 入力欄でも、変数とマクロの自動補完が利用できるようになりました。
+
+循環依存を作成することも可能ですが、変数は再帰的に評価されるのではなく選択値で置換されるだけなので、実害はありません。
+
+マクロが引数として渡された変数を展開するようになったため、`$__timeFilter($TimeColumn)` のような書き方が可能になりました。変数でタイムスタンプ列を選択すると、マクロはその列を対象とした完全なタイムスタンプフィルタに展開されます。なお、`$__filter` および `$__conditionalAll` に渡す変数は、`$var` 形式で記述する必要があります。以前は `$` を付けない `var` も受け付けていましたが、この緩い仕様はむしろ混乱を招くことがほとんどでした。
+
+外部 API v2 と MCPサーバーの両方が変数に対応したため、Terraform からも変数を扱えるようになりました。エージェントは、変数フィルタやブロードキャストフィルタ、依存関係のあるドロップダウン、さらにそれらの変数を直接またはマクロ経由で参照するタイルを含むダッシュボードを構築できます。create、save、patch の各ツールは、変数が機能しない箇所で使用されている場合に警告を出します。
+
+クエリタイルのツールも変数値を受け付けるため、エージェントはダッシュボードを引き渡す前に、自身の置換結果を確認できます。
+
+**関連 プルリクエスト:** [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 依存変数の値クエリをサポート、[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) ネストされたマクロおよびマクロ内での変数参照をサポート、[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 外部 API にダッシュボード変数を追加、[#2951](https://github.com/hyperdxio/hyperdx/pull/2951) MCPサーバーでダッシュボード変数をサポート
+
+## 厳格なクライアントでも受け入れられる MCP ツールのスキーマ {#mcp-tool-schemas-that-strict-clients-accept}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W4dvgYj47ZM" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+あるお客様から、自社のエージェントで当社のMCPサーバーがまったく使用できないという報告が寄せられました。
+
+一部のエージェントフレームワークは、利用可能なツールの一覧を取得し、モデルプロバイダーに送信する前にすべての入力スキーマを検証します。スキーマが1つでも無効だと、フレームワークは問題のあるツールだけでなくツール一覧全体を拒否するため、サーバーが完全に壊れているように見えてしまいます。
+
+多くのエージェントハーネスはもっと寛容ですが、そうでないものもあります。影響を受けたクライアントでは、エージェントを再び動作させるにはサーバーを切り離すしかありませんでした。
+
+現在は、すべてのツールの入力スキーマが JSON Schema draft 2020-12 として有効であることを検証するテストが追加されています。そのため、新しいツールが追加されても、同じ形で厳格なクライアントが動作しなくなることはありません。
+
+**関連するプルリクエスト:** [#2925](https://github.com/hyperdxio/hyperdx/pull/2925) draft 2020-12 に準拠したツール入力スキーマを出力、[#2971](https://github.com/hyperdxio/hyperdx/pull/2971) 分位数のレベルを文字列の enum として公開
+
+## ローテーション可能な Personal API Access Key {#rotatable-personal-api-access-keys}
+
+*デモ担当者 [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tHQoaFaVPpY" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Personal API Access Key を、チーム設定 → API &amp; Agents からローテーションできるようになりました。
+
+このキーは、外部 API v2 および MCPサーバーの Bearerトークンとして使用されます。これまではアカウント作成時に一度だけ生成され、後から変更することはできませんでした。そのため、キーが漏洩した場合はユーザーを削除するしかありませんでした。
+
+ローテーションは猶予期間なしで即時に反映されますが、ブラウザのセッションはサインインしたまま維持されます。ただし、キーはチームではなくアカウントに紐づいている点に注意してください。複数のチームに所属している場合は、すべてのチームにわたって、そのキーを使用している箇所をすべて更新する必要があります。
+
+Enterprise では、この点を説明する警告が表示されます。単一チーム構成のオープンソース環境では警告すべき事項がないため、警告は表示されません。
+
+この機能には、意図的に設けた制限が 2 つあります。まず、`PATCH /me/accessKey` ルートはユーザー識別子を受け付けません。ID はセッションから取得されるため、このルートでローテーションできるのは常に呼び出し元自身のキーのみです。
+
+また、このルートは Bearer 認証の外部 API v2 では公開されていません。外部 API v2 では、漏洩したキーを使ってそのキー自体をすでに読み取れてしまいます。そのうえローテーションまで許可すると、第三者が所有者を自身のツールから締め出せてしまうためです。
+
+**関連するプルリクエスト:** [#2926](https://github.com/hyperdxio/hyperdx/pull/2926) make personal API access keys rotatable
+
+## Column Values タブのキーをアルファベット順に表示 {#alphabetical-keys-in-the-column-values-tab}
+
+*デモ担当者: [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/9RfTL-dtZF0" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+行サイドパネルの Column Values タブに表示されるキーが、ログとトレースのいずれでも、すべてのネストレベルでアルファベット順にソートされるようになりました。
+
+これまで JSON ツリーは ClickHouse の物理ストレージ順でキーをレンダリングしていたため、事実上ランダムな順序で表示されていました。`ProfileEvents` のように 125 個のキーを持つ `Map` カラムでは並び順に規則性がなく、目的のキーを見つけるにはリスト全体に目を通す必要がありました。
+
+さらに見落とされがちな問題として、各レベルの表示は 50 行までに制限されており、その切り出しがソートより前に行われていました。そのため表示される 50 個のキーは任意の部分集合にすぎず、残りのキーを確認するには「Expand 75 more properties」を使うしかありませんでした。
+
+現在は、リストを切り出す前に `TreeNode` 内でソートが行われます。ソートは数値を考慮するため、`key2` は `key10` より前に並びます。
+
+**関連 プルリクエスト:** [#2943](https://github.com/hyperdxio/hyperdx/pull/2943) JSON ビューアーのキーをアルファベット順にソート
+
+## 閲覧可能なデザインシステムとしての Storybook {#storybook-as-a-browsable-design-system}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/mnHtrsuKsC8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Storybook は、単なるコンポーネントのサンドボックスから、閲覧可能なデザインシステムへと生まれ変わりました。サイドバーは Guidelines → Brand → Icons → Design Tokens → Components の順に構成されています。
+
+Guidelines は `agent_docs` の Markdown を直接レンダリングするため、コーディングスタイル、テーマ設定、ページレイアウト、データ可視化の配色がすべて 1 か所に集約されています。これは人間だけでなく、エージェントにとっても役立ちます。新しいチームメンバーが読むのと同じドキュメントをエージェントに参照させることで、生成されるコンポーネントが既存のものと一貫しやすくなります。
+
+Brand と Icons には、HyperDX と ClickStack のロゴ、および `IconAiNotebook` を含むカスタムアイコンが収録されています。SVG はコピーまたはダウンロードでき、Tabler 互換のアウトラインアイコンとブランドマークの使い分けに関するガイダンスも用意されています。
+
+この取り組みはアイコンから始まりました。スライドで、それらしく見えるものが適当に使われていたためです。資料用のマークが必要な場合は、ここから取得してください。
+
+Brand ツールバーで HyperDX と ClickStack を、Theme ツールバーでライトとダークを切り替えられます。新しいコンポーネントは、リリース前にすべての組み合わせで確認できます。未分類のままだったコンポーネントのストーリーは `Components/` 配下にまとめられ、チャートカードコンポーネントも併せて公開されています。
+
+作業の過程で 2 つの問題が見つかりました。1 つ目として、Storybook のフォント CSS 変数をアプリと同様に `<html>` 上で定義するようにしたため、本文テキストやポータル化されたポップオーバーが Times でレンダリングされることはなくなりました。
+
+2 つ目として、Tabler アイコンセットが一貫して使われていないことも判明しました。PromQL にはおそらく専用のアイコンが必要であり、メトリクスとトレースは現在、場所によって異なるアイコンで表されています。今後は Storybook を準拠すべきリファレンスとしてください。
+
+ローカルでは `yarn workspace @hyperdx/app storybook` で起動できます。
+
+**関連 プルリクエスト:** [#2935](https://github.com/hyperdxio/hyperdx/pull/2935) Storybook を閲覧可能なデザインシステムに刷新
+
+## ヒストグラムチャートでのカテゴリ別パレット {#categorical-palette-on-histogram-charts}
+
+*デモ担当者: [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wybAadS6ms0" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Services ダッシュボードの Request Latency をはじめとするヒストグラムチャートでは、色が `#50FA7B` にハードコードされていました。このネオングリーンはチャートパレットに含まれておらず、コントラストも不十分でした。さらに、ツールチップの「Number of events」も同じ色で表示されていました。
+
+現在は、`getColorFromCSSToken` を通じて `chart-blue` を解決するようになりました。ツールチップには共通の `ChartTooltipContainer` と `ChartTooltipItem` を使用し、折れ線グラフ、棒グラフ、円グラフと見た目が統一されています。
+
+ツールチップの **View events** リンクは削除されました。`generateSearchUrl` は内部のヒストグラムとツールチップで受け取れるようになっていたものの、`DBHistogramChart` から渡されていなかったため、本番環境でこのリンクが表示されることはありませんでした。
+
+唯一の呼び出し元には所要時間のバケットに対応する検索 URL ビルダーがなく、イベントをレイテンシの範囲でフィルタリングする処理は、単なる配線の修正ではなく新機能に相当します。
+
+細かな改善ですが、積み重ねることで大きな違いになります。
+
+**関連 プルリクエスト:** [#2949](https://github.com/hyperdxio/hyperdx/pull/2949) ヒストグラムチャートでカテゴリ別パレットを使用
