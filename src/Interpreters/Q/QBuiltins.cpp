@@ -2145,7 +2145,9 @@ const std::unordered_map<String, Handler> & handlers()
                     c.unsupported("cross of values that are not lists");
                 String a = c.compiler.newLambdaParameter();
                 String b = c.compiler.newLambdaParameter();
-                ASTPtr pairs = fn("arrayFlatten",
+                /// A list of the pairs for each item of the left list, and these lists joined together. Only this outer
+                /// layer is flattened: `arrayFlatten` would dissolve the pairs as well.
+                ASTPtr pairs = fn("arrayReduce", lit(Field(String("groupArrayArray"))),
                     fn("arrayMap", makeLambda({a}, fn("arrayMap", makeLambda({b}, fn("array", ident(a), ident(b))), right.ast)), left.ast));
                 QValue result = QCompiler::scalar(pairs, left.depth + 1);
                 result.qtype = left.qtype;
