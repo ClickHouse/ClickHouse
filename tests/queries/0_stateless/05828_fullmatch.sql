@@ -36,11 +36,27 @@ SELECT fullMatch('gold-1', 'zzz|gold.*');
 SELECT fullMatch('app-gold-1', 'zzz|gold.*');
 SELECT match('app-gold-1', 'zzz|gold.*');
 
-SELECT '-- The end of a range is a single character, so `[` there does not start a named class';
-SELECT fullMatch('!abc', '[!-[:]|x:]'), fullMatch('zzx:]', '[!-[:]|x:]'), fullMatch('!', '[!-[:]|x:]'), fullMatch('x:]', '[!-[:]|x:]');
-SELECT fullMatch('!abc', materialize('[!-[:]|x:]')), fullMatch('!abc', '[\\!-[:]|x:]'), fullMatch('!abc', '[\\x21-[:]|x:]');
-SELECT fullMatch('!x:]\nzzz', '[!-[:](?m)x:]$'), fullMatch('ax', '[!-\\](]|x');
-SELECT fullMatch('ax', '[[:alpha:]-[:digit:](]|x'), fullMatch('-x', '[-[:digit:](]|x'), fullMatch('1x', '[\\d-[:digit:](]|x'), fullMatch('ax', '[\\pL-[:digit:](]|x'), fullMatch('αx', '[\\p{Greek}-[:digit:](]|x');
+SELECT '-- `[` at the end of a range is a literal, not a named class';
+SELECT fullMatch('!abc', '[!-[:]|x:]');
+SELECT fullMatch('zzx:]', '[!-[:]|x:]');
+SELECT fullMatch('!', '[!-[:]|x:]');
+SELECT fullMatch('x:]', '[!-[:]|x:]');
+SELECT fullMatch('!abc', materialize('[!-[:]|x:]'));
+SELECT fullMatch('!abc', '[\\!-[:]|x:]');
+SELECT fullMatch('!abc', '[\\x21-[:]|x:]');
+SELECT fullMatch('!x:]\nzzz', '[!-[:](?m)x:]$');
+SELECT fullMatch('ax', '[!-\\](]|x');
+SELECT fullMatch('zzx', '[!-\\x41-[:alpha:][]|x');
+SELECT fullMatch('zzx', '[!-\\x{41}-[:alpha:][]|x');
+SELECT fullMatch('zzx', '[!-\\101-[:alpha:][]|x');
+SELECT fullMatch('zzx', '[!-é-[:alpha:][]|x');
+
+SELECT '-- `[` after a class that cannot start a range still starts a named class';
+SELECT fullMatch('ax', '[[:alpha:]-[:digit:](]|x');
+SELECT fullMatch('-x', '[-[:digit:](]|x');
+SELECT fullMatch('1x', '[\\d-[:digit:](]|x');
+SELECT fullMatch('ax', '[\\pL-[:digit:](]|x');
+SELECT fullMatch('αx', '[\\p{Greek}-[:digit:](]|x');
 
 SELECT '-- Empty haystack and empty pattern';
 SELECT fullMatch('', '');

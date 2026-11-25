@@ -23,11 +23,26 @@
 1
 0
 1
--- The end of a range is a single character, so `[` there does not start a named class
-0	0	1	1
-0	0	0
-0	0
-0	0	0	0	0
+-- `[` at the end of a range is a literal, not a named class
+0
+0
+1
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+-- `[` after a class that cannot start a range still starts a named class
+0
+0
+0
+0
+0
 -- Empty haystack and empty pattern
 1
 0

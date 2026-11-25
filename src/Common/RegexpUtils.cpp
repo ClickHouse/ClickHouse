@@ -341,7 +341,7 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
 {
     size_t depth = 0;
     bool in_class = false;
-    bool after_range_start = false;
+    bool can_start_range = false;
     bool in_quote = false;
     bool top_level_alternation = false;
     bool top_level_multiline = false;
@@ -368,10 +368,15 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
             ++pos;
             if (in_class && pos < regexp.size())
             {
-                /// A class such as `\d` or `\p{Greek}` can not start a range, unlike an escaped character.
-                after_range_start = std::string_view("dDsSwWpP").find(regexp[pos]) == std::string_view::npos;
+                /// A class such as `\d` or `\p{Greek}` cannot start a range, an escaped character can.
+                can_start_range = std::string_view("dDsSwWpP").find(regexp[pos]) == std::string_view::npos;
                 if ((regexp[pos] == 'p' || regexp[pos] == 'P') && pos + 1 < regexp.size())
-                    pos = regexp[pos + 1] == '{' ? std::min(regexp.find('}', pos), regexp.size()) : pos + 1;
+                {
+                    if (regexp[pos + 1] == '{')
+                        pos = std::min(regexp.find('}', pos), regexp.size() - 1);
+                    else
+                        ++pos;
+                }
             }
         }
         else if (in_class)
@@ -384,21 +389,33 @@ String anchorRegexpToMatchWholeString(std::string_view regexp)
                 /// RE2 treats `[:` without a following `:]` as literal characters.
                 if (size_t end_of_named_class = regexp.find(":]", pos + 2); end_of_named_class != String::npos)
                     pos = end_of_named_class + 1;
-                after_range_start = false;
+                can_start_range = false;
             }
-            else if (c == '-' && after_range_start && pos + 1 < regexp.size() && regexp[pos + 1] != ']')
+            else if (c == '-' && can_start_range && pos + 1 < regexp.size() && regexp[pos + 1] != ']')
             {
                 /// The end of a range is a single character, so RE2 reads `[` in `[!-[:]` as a literal, not as a named class.
-                pos += regexp[pos + 1] == '\\' ? 2 : 1;
-                after_range_start = false;
+                ++pos;
+                if (regexp[pos] == '\\' && pos + 1 < regexp.size())
+                {
+                    ++pos;
+                    /// Skip the digits of `\x{41}`, `\x41` or `\101`.
+                    if (regexp[pos] == 'x' && pos + 1 < regexp.size() && regexp[pos + 1] == '{')
+                        pos = std::min(regexp.find('}', pos), regexp.size() - 1);
+                    else if (regexp[pos] == 'x')
+                        pos = std::min(pos + 2, regexp.size() - 1);
+                    else if (regexp[pos] >= '0' && regexp[pos] <= '7')
+                        for (size_t i = 0; i < 2 && pos + 1 < regexp.size() && regexp[pos + 1] >= '0' && regexp[pos + 1] <= '7'; ++i)
+                            ++pos;
+                }
+                can_start_range = false;
             }
-            else
-                after_range_start = true;
+            else if (!UTF8::isContinuationOctet(static_cast<UInt8>(c)))
+                can_start_range = true;
         }
         else if (c == '[')
         {
             in_class = true;
-            after_range_start = false;
+            can_start_range = false;
             /// A `]` right after `[` or `[^` is literal.
             if (pos + 1 < regexp.size() && regexp[pos + 1] == '^')
                 ++pos;
