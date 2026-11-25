@@ -235,7 +235,7 @@ public:
     {
         if (path.starts_with("detached"))
         {
-            if (remaining_failures > 0)
+            if (remaining_failures > 0 && (!fail_only_detached_root || path == "detached"))
             {
                 --remaining_failures;
                 ++failed_syncs;
@@ -249,7 +249,21 @@ public:
     mutable std::atomic<size_t> remaining_failures{0};
     mutable std::atomic<size_t> failed_syncs{0};
     mutable std::atomic<size_t> successful_syncs{0};
+    /// Fail only the synchronization of `detached` itself, which links the directory of the copy.
+    std::atomic<bool> fail_only_detached_root{false};
 };
+
+/// The number of files below the `detached` directory of a log disk.
+size_t countDetachedFiles(const std::string & disk_path)
+{
+    const auto detached = fs::path(disk_path) / "detached";
+    if (!fs::exists(detached))
+        return 0;
+    size_t files = 0;
+    for (const auto & dir_entry : fs::recursive_directory_iterator(detached))
+        files += dir_entry.is_regular_file();
+    return files;
+}
 
 /// The marker is written and finalized, but its synchronization fails, so the move reports that the
 /// marker was not published although it is on the disk.
@@ -5891,8 +5905,11 @@ TYPED_TEST(CoordinationChangelogTest, StartupRejectingAppendOnNonLocalSourceKeep
         marker->finalize();
     }
 
+    const auto retained_digest = DB::computeKeeperFileDigest(latest_disk, String(path));
+
     /// The move of the selected changelog to the latest disk fails, and appending to it on object
-    /// storage is not supported. Startup fails without removing the retained copy.
+    /// storage is not supported. Startup fails without removing the retained copy: it was archived
+    /// before the move, which would have overwritten it.
     this->keeper_context->setLatestLogDisk(failing_latest_disk);
     {
         DB::Changelog recovered(
@@ -5901,7 +5918,14 @@ TYPED_TEST(CoordinationChangelogTest, StartupRejectingAppendOnNonLocalSourceKeep
         EXPECT_EQ(failing_latest_disk->failed_marker_writes.load(), 1);
     }
     EXPECT_TRUE(regular_disk->existsFile(String(path)));
-    EXPECT_TRUE(latest_disk->existsFile(String(path)));
+    EXPECT_FALSE(latest_disk->existsFile(String(path)));
+    ASSERT_EQ(countDetachedFiles(latest.path), 1);
+    for (const auto & dir_entry : fs::recursive_directory_iterator(fs::path(latest.path) / "detached"))
+    {
+        if (dir_entry.is_regular_file())
+            EXPECT_TRUE(
+                DB::computeKeeperFileDigest(latest_disk, fs::relative(dir_entry.path(), latest.path).generic_string()) == retained_digest);
+    }
 
     /// Once the move succeeds, all entries are available on the latest disk.
     this->keeper_context->setLatestLogDisk(latest_disk);
@@ -6304,8 +6328,9 @@ TYPED_TEST(CoordinationChangelogTest, RetriedDetachOfRecoveryCopySynchronizesThe
         EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
         EXPECT_EQ(regular_disk->successful_syncs, 0);
 
+        /// The directory of the copy and `detached`, which links it, are both synchronized.
         ASSERT_NO_THROW(recovered.writeAt(3, getLogEntry("rewrite_3", 2)));
-        EXPECT_EQ(regular_disk->successful_syncs, 1);
+        EXPECT_EQ(regular_disk->successful_syncs, 2);
         EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
         recovered.flush();
         EXPECT_EQ(recovered.getNextEntryIndex(), 4);
@@ -6321,6 +6346,144 @@ TYPED_TEST(CoordinationChangelogTest, RetriedDetachOfRecoveryCopySynchronizesThe
     EXPECT_EQ(restarted.getNextEntryIndex(), 4);
     EXPECT_EQ(restarted.entryAt(2)->get_term(), 1);
     EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
+}
+
+TYPED_TEST(CoordinationChangelogTest, DetachOfRecoveryCopySynchronizesTheDetachedDirectory)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the retirement of recovery copies is independent of compression";
+
+    /// The archive of a detached recovery copy is `detached/<timestamp>`. Synchronizing the timestamp
+    /// directory does not make its entry in `detached` durable, so `detached` is synchronized too. If
+    /// that fails, the rewrite fails, and its retry synchronizes the whole chain again before the
+    /// copy is forgotten.
+    ChangelogDirTest regular("./logs_detach_root_sync_regular");
+    ChangelogDirTest latest("./logs_detach_root_sync_latest");
+    auto regular_disk = std::make_shared<DetachSyncFailingDisk>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = true,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view copy_path = "changelog_1_5.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 7; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    regular_disk->copyFile(String(copy_path), *latest_disk, String(copy_path), {});
+
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    ASSERT_TRUE(regular_disk->existsFile(String(copy_path)));
+    ASSERT_EQ(regular_disk->successful_syncs, 0);
+
+    regular_disk->fail_only_detached_root = true;
+    regular_disk->remaining_failures = 1;
+    EXPECT_ANY_THROW(recovered.writeAt(3, getLogEntry("rewrite_3", 2)));
+    /// The timestamp directory was synchronized, `detached` was not.
+    EXPECT_EQ(regular_disk->failed_syncs, 1);
+    EXPECT_EQ(regular_disk->successful_syncs, 1);
+    EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
+
+    ASSERT_NO_THROW(recovered.writeAt(3, getLogEntry("rewrite_3", 2)));
+    EXPECT_EQ(regular_disk->failed_syncs, 1);
+    EXPECT_EQ(regular_disk->successful_syncs, 3);
+    EXPECT_FALSE(regular_disk->existsFile(String(copy_path)));
+    EXPECT_EQ(countDetachedFiles(regular.path), 1);
+    recovered.flush();
+    EXPECT_EQ(recovered.getNextEntryIndex(), 4);
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupPromotionOfActiveLogArchivesRetainedCopyAtDestination)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    ChangelogDirTest regular("./logs_promotion_archives_retained_copy_regular");
+    ChangelogDirTest latest("./logs_promotion_archives_retained_copy_latest");
+    ChangelogDirTest backup("./logs_promotion_archives_retained_copy_backup");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    DB::DiskPtr backup_disk = std::make_shared<DB::DiskLocal>("backup", backup.path);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 20,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_20.bin";
+
+    /// The regular disk ends up with entries 1-5, the latest disk with entries 1-10.
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 5; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    regular_disk->copyFile(String(path), *backup_disk, String(path), {});
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 6; index <= 10; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    regular_disk->copyFile(String(path), *latest_disk, String(path), {});
+    backup_disk->copyFile(String(path), *regular_disk, String(path), {});
+    const auto complete_digest = DB::computeKeeperFileDigest(latest_disk, String(path));
+    ASSERT_FALSE(DB::computeKeeperFileDigest(regular_disk, String(path)) == complete_digest);
+
+    /// The marker of an unknown version makes startup retain the latest-disk copy and select the
+    /// shorter regular one.
+    {
+        String marker_contents = DB::serializeKeeperMoveMarker(complete_digest);
+        marker_contents[8] = 2;
+        auto marker = latest_disk->writeFile("tmp_" + String(path));
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
+
+    /// The selected changelog is not full, so startup moves it to the latest disk to append to it,
+    /// onto the path of the retained copy. That copy is the only one with entries 6-10, so it is
+    /// archived instead of overwritten.
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+        EXPECT_FALSE(regular_disk->existsFile(String(path)));
+        EXPECT_TRUE(latest_disk->existsFile(String(path)));
+        EXPECT_FALSE(latest_disk->existsFile("tmp_" + String(path)));
+
+        ASSERT_EQ(countDetachedFiles(latest.path), 1);
+        for (const auto & dir_entry : fs::recursive_directory_iterator(fs::path(latest.path) / "detached"))
+        {
+            if (dir_entry.is_regular_file())
+                EXPECT_TRUE(
+                    DB::computeKeeperFileDigest(latest_disk, fs::relative(dir_entry.path(), latest.path).generic_string())
+                    == complete_digest);
+        }
+
+        recovered.appendEntry(6, getLogEntry("new_entry_6", 2));
+        recovered.flush();
+    }
+
+    /// The archived copy does not compete with the appended changelog on restart.
+    DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 7);
+    EXPECT_EQ(restarted.entryAt(6)->get_term(), 2);
+    EXPECT_EQ(countDetachedFiles(latest.path), 1);
 }
 
 TYPED_TEST(CoordinationChangelogTest, FailedBackgroundMoveRemovesUnpublishedDestinationBeforeRewrite)

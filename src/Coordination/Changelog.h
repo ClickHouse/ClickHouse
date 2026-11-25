@@ -779,8 +779,9 @@ private:
     std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
         uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
     /// Moves `description` to the latest log disk before appending to it, and retires every other copy
-    /// of its range, including a move source that could not be removed. Throws if a copy cannot be
-    /// removed.
+    /// of its range, including a move source that could not be removed. A recovery copy that startup
+    /// retained at the destination of the move is detached before the move. Throws if a copy cannot
+    /// be removed.
     void prepareChangelogForAppend(const ChangelogFileDescriptionPtr & description);
     /// Waits for removals of changelogs superseded by `writeAt` at `index`. Terminates if one failed:
     /// appending the rewrite while a superseded changelog may remain would make the changelog inconsistent.
@@ -799,6 +800,10 @@ private:
     void detachRetainedChangelogCopy(ChangelogFileDescription & copy);
     /// Makes the rename of a detached recovery copy durable and forgets that it was pending.
     static void synchronizeDetachedChangelogCopy(ChangelogFileDescription & copy);
+    /// Detaches the recovery copy of the range that startup retained at `path` on `disk`, if any, and
+    /// forgets it. Called before a move of the registered changelog of the range overwrites that
+    /// location. Throws if the copy cannot be detached durably.
+    void detachRetainedChangelogCopyAt(uint64_t from_log_index, const DiskPtr & disk, const std::string & path);
     /// Removes the retained recovery copies that the entries appended by the current writer supersede:
     /// those of its range and of every later range, and those of the ranges that startup detached,
     /// which are no longer registered in `existing_changelogs`. Called by the write thread before it

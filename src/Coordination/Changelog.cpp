@@ -150,12 +150,12 @@ KeeperMoveResult moveChangelogBetweenDisks(
 /// Move a changelog to `disk_to` before appending to it. When the move fails, the writer continues on
 /// the source, so no file at the destination may survive: restart would select it, either because it
 /// matches its move marker or by disk precedence, and lose the entries appended to the source. This
-/// includes a destination that existed before the move (for example, a retained recovery copy): a
-/// move that failed to synchronize its marker may still have published a marker it matches. Throws if
-/// the destination cannot be removed.
+/// includes a destination that existed before the move: a move that failed to synchronize its marker
+/// may still have published a marker it matches. The caller archives a retained recovery copy at the
+/// destination before the move, so the file removed here is never the only copy of its entries.
+/// Throws if the destination cannot be removed.
 /// Throws if the source disk is not local: appending to it is supported only for `DiskLocal`. Then the
-/// destination is kept: nothing is appended to the source, so it cannot lose entries, and it may be a
-/// retained recovery copy.
+/// destination is kept: nothing is appended to the source, so it cannot lose entries.
 /// Returns the source when the destination was published but the source could not be removed. The
 /// caller must retire it before appending: it is a stale copy of the range that would compete with
 /// the appended changelog on restart, and win once a rotation renames the appended one.
@@ -4650,6 +4650,11 @@ void Changelog::prepareChangelogForAppend(const ChangelogFileDescriptionPtr & de
     auto latest_log_disk = getLatestLogDisk();
     if (log_disk != latest_log_disk)
     {
+        /// The move keeps the path and overwrites whatever is at it on the latest disk. A recovery copy
+        /// that startup retained there was never compared with this changelog and can be the only
+        /// complete copy of the range, so it is archived first.
+        detachRetainedChangelogCopyAt(description->from_log_index, latest_log_disk, description->path);
+
         if (auto leftover_source = moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context))
         {
             LOG_WARNING(
@@ -5668,9 +5673,46 @@ void Changelog::detachRetainedChangelogCopy(ChangelogFileDescription & copy)
 void Changelog::synchronizeDetachedChangelogCopy(ChangelogFileDescription & copy)
 {
     chassert(copy.unsynchronized_detached_path);
+    /// Synchronizing a directory does not make its own entry in its parent durable, so every directory
+    /// on the way to the archived copy is synchronized: the timestamp directory that holds the copy,
+    /// the detached directory that links the timestamp directory, and the changelog directory, which
+    /// links the detached directory and no longer links the copy. The removal of the copy from its
+    /// path comes last: it must not become durable before the archived copy is reachable.
+    const auto timestamp_folder = fs::path(*copy.unsynchronized_detached_path).parent_path().generic_string();
     syncKeeperParentDirectory(copy.disk, *copy.unsynchronized_detached_path);
+    syncKeeperParentDirectory(copy.disk, timestamp_folder);
+    syncKeeperParentDirectory(copy.disk, fs::path(timestamp_folder).parent_path().generic_string());
     syncKeeperParentDirectory(copy.disk, copy.path);
     copy.unsynchronized_detached_path.reset();
+}
+
+void Changelog::detachRetainedChangelogCopyAt(uint64_t from_log_index, const DiskPtr & disk, const std::string & path)
+{
+    auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
+    if (duplicate_it == retained_duplicate_changelogs.end())
+        return;
+
+    auto & copies = duplicate_it->second;
+    for (auto copy_it = copies.begin(); copy_it != copies.end();)
+    {
+        auto & copy = **copy_it;
+        /// The leftover source of a move was validated against the destination of that move, so it
+        /// holds nothing that the registered changelog lacks.
+        if (copy.may_be_absent || copy.disk != disk || copy.path != path)
+        {
+            ++copy_it;
+            continue;
+        }
+
+        /// If this throws, the copy stays registered, and its location is not written to.
+        detachRetainedChangelogCopy(copy);
+        if (copy.recovery_marker_path)
+            removeKeeperFileIfExists(copy.disk, *copy.recovery_marker_path);
+        copy_it = copies.erase(copy_it);
+    }
+
+    if (copies.empty())
+        retained_duplicate_changelogs.erase(duplicate_it);
 }
 
 void Changelog::removeRetainedChangelogCopiesSupersededByWriter()
