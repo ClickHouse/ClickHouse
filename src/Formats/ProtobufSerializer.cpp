@@ -151,7 +151,7 @@ namespace
     /// of a composite column would reach sub-columns that are also held by the serializers
     /// of its nested fields through the non-const `WrappedPtr` dereference.
     /// Exception-safe: on failure, the already appended sub-columns are rolled back.
-    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum`), not the column's.
+    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum` without 0), not the column's.
     void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr)
     {
         if (auto * column_array = typeid_cast<ColumnArray *>(&column))
@@ -202,6 +202,14 @@ namespace
                 popBackBorrowed(nested_column, 1);
                 throw;
             }
+        }
+        else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type); enum8 && enum8->hasValue(0))
+        {
+            column.insertDefault();
+        }
+        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type); enum16 && enum16->hasValue(0))
+        {
+            column.insertDefault();
         }
         else if (type)
         {
