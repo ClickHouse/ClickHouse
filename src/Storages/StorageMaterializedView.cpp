@@ -200,10 +200,13 @@ namespace
         const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
         if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
-        /// The `SETTINGS` clause of the query is not applied to the context when the view is created.
-        Settings query_settings = context->getSettingsCopy();
+        /// The `SETTINGS` clause of the query is not applied to the context when the view is created. Apply it to
+        /// a copy of the context in the same way as the refresh does, so that a `profile` in the clause is resolved
+        /// to the settings of the profile: the query runs with them, and not with the changes as they are written.
+        auto settings_context = Context::createCopy(context);
         if (const auto & select_settings = select.settings())
-            query_settings.applyChanges(select_settings->as<ASTSetQuery &>().changes);
+            settings_context->applySettingsChanges(select_settings->as<ASTSetQuery &>().changes);
+        const Settings & query_settings = settings_context->getSettingsRef();
 
         if (query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
