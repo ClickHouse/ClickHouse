@@ -12,7 +12,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 数据库备份旨在支持您通过最近一次成功备份将服务恢复到之前的状态。
 
 <div id="backups">
-  ## 备份
+  ## 备份 {#backups}
 </div>
 
 ### ClickHouse Cloud 中备份的工作原理 {#how-backups-work-in-clickhouse-cloud}
@@ -26,13 +26,9 @@ ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，
 第 1 天会执行一次全量备份，以启动备份链。第 2 天会执行一次增量备份，此时全量备份和增量备份都可用于恢复。到第 7 天时，这条链中已有 1 个全量备份和 6 个增量备份，且它们全部可见并可用于恢复。到第 8 天，系统会执行一次新的全量备份；到第 9 天，当新链中已有 2 个备份后，前一条链就会被丢弃。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![ClickHouse Cloud 中的备份链示例](/images/cloud/manage/backup-chain.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse Cloud 中的备份链示例](/images/cloud/manage/backup-chain.webp)
+  </Frame>
 </div>
 
 ### 默认备份策略 {#default-backup-policy}
@@ -68,7 +64,7 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
 如果您将备份配置到自己的存储桶，ClickHouse Cloud 默认也会继续创建自己的备份。
 备份保留策略设置适用于写入到您存储桶中的备份。由 ClickHouse Cloud 管理的备份则使用默认的备份保留策略。
 
-有关 ClickHouse Cloud 备份工作机制的详细信息，请参阅 [backups](/zh/products/cloud/guides/backups/review-and-restore-backups) 文档。
+有关 ClickHouse Cloud 备份工作机制的详细信息，请参阅 [备份](/zh/products/cloud/guides/backups/review-and-restore-backups) 文档。
 
 本指南将介绍如何将备份导出到您的 AWS、GCP 和 Azure 对象存储，以及如何将您账户中的这些备份恢复到新的 ClickHouse Cloud 服务。
 我们还会提供备份/恢复命令，帮助您将备份导出到自己的存储桶并进行恢复。
@@ -79,9 +75,15 @@ ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) �
   如果将备份导出到同一云提供商中的
   其他区域，则会产生 [数据传输](/zh/products/cloud/reference/billing/network-data-transfer)
   费用。
-
-  目前，我们不支持对使用 [透明数据加密 (TDE)](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde) 的服务或受监管服务进行备份/恢复。
 </Info>
+
+<Warning>
+  **无法将备份导出到自有存储桶的服务**
+
+  使用 **HIPAA 合规** 或 **符合 PCI 标准** 区域类型创建的服务 (受监管服务) ，以及使用 [透明数据加密 (TDE)](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde) 的服务，均不支持将备份导出到您自己的存储桶。
+
+  对于受监管服务，这是受监管环境的一项安全管控措施，而非可调整的设置：控制台中的 **Set up 外部备份** 选项已禁用，且不会授予 `BACKUP` 特权，因此也无法通过 `BACKUP ... TO` 将备份写入外部存储桶。由 ClickHouse 管理的备份、可配置的备份计划，以及恢复到同一区域中新服务的功能仍然可用。请参阅 [HIPAA 引导指南](/zh/products/cloud/guides/security/compliance/hipaa-onboarding#backups) 和 [PCI 引导指南](/zh/products/cloud/guides/security/compliance/pci-onboarding#backups)。
+</Warning>
 
 有关如何对 AWS、GCP、Azure 对象存储执行全量备份和增量备份，以及如何从这些备份中恢复的示例，请参阅[“将备份导出到您自己的 Cloud 账户”](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。
 
