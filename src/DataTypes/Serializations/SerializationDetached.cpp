@@ -8,12 +8,22 @@
 #include <IO/VarInt.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <base/unit.h>
+
+#include <algorithm>
 
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+constexpr size_t MAX_BLOB_READ_STEP = 100_MiB;
+
 }
 
 SerializationDetached::SerializationDetached(const SerializationPtr & nested_) : nested(nested_)
@@ -70,8 +80,17 @@ void SerializationDetached::deserializeBinaryBulk(
     auto & blob = blob_column.getBLOB();
     size_t bytes = 0;
     readVarUInt(bytes, istr);
-    blob.resize(bytes);
-    istr.readStrict(blob.data(), blob.size());
+
+    /// The blob is grown in steps of at most `MAX_BLOB_READ_STEP` bytes, so a declared size that the stream
+    /// cannot back does not preallocate an arbitrary amount of memory.
+    blob.clear();
+    while (blob.size() < bytes)
+    {
+        const size_t offset = blob.size();
+        const size_t step = std::min(bytes - offset, MAX_BLOB_READ_STEP);
+        blob.resize(offset + step);
+        istr.readStrict(blob.data() + offset, step);
+    }
     /// The number of rows is not encoded in the opaque BLOB, so record it here for size().
     blob_column.setRows(limit);
 }
