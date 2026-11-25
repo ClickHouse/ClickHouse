@@ -660,10 +660,11 @@ std::mutex table_disk_roots_mutex;
 [[clang::no_destroy]] std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
 
 /// Whether one path is equal to the other one or contains it, compared by path components.
+/// A path with a slash at the end has an empty last component, it is ignored.
 bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
 {
     auto [lhs_it, rhs_it] = std::mismatch(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
-    return lhs_it == lhs.end() || rhs_it == rhs.end();
+    return lhs_it == lhs.end() || rhs_it == rhs.end() || lhs_it->empty() || rhs_it->empty();
 }
 
 }

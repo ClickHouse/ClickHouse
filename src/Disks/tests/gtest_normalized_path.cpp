@@ -1,4 +1,4 @@
-#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/NormalizedPath.h>
 
 #include <gtest/gtest.h>
 
