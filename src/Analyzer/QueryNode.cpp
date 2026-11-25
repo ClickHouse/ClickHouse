@@ -83,6 +83,21 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
     }
     projection_columns = std::move(projection_columns_value);
+
+    if (hasOrderBy())
+    {
+        for (const auto & node : getOrderBy().getNodes())
+        {
+            auto & sort = node->as<SortNode &>();
+            if (auto index = sort.getProjectionIndex())
+            {
+                if (*index >= projection_columns.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} is out of bounds for {} columns",
+                        *index, projection_columns.size());
+                sort.setProjectionColumnName(projection_columns[*index].name);
+            }
+        }
+    }
 }
 
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)

@@ -8218,21 +8218,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
-    if (query_node_typed.hasOrderBy())
-    {
-        const auto & resolved_columns = query_node_typed.getProjectionColumns();
-        for (const auto & node : query_node_typed.getOrderBy().getNodes())
-        {
-            auto & sort = node->as<SortNode &>();
-            if (auto index = sort.getProjectionIndex())
-            {
-                if (*index >= resolved_columns.size())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} is out of bounds for {} columns",
-                        *index, resolved_columns.size());
-                sort.setProjectionColumnName(resolved_columns[*index].name);
-            }
-        }
-    }
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)

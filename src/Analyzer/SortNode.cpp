@@ -130,6 +130,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     result->column_name = column_name;
     result->projection_index = projection_index;
     result->projection_column_name = projection_column_name;
+    result->positional_projection_reference = positional_projection_reference;
     return result;
 }
 
@@ -143,7 +144,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
 
-    if (projection_index && !projection_column_name.empty())
+    if (projection_index && !positional_projection_reference && !projection_column_name.empty())
         result->children.push_back(make_intrusive<ASTIdentifier>(projection_column_name));
     else
         result->children.push_back(getExpression()->toAST(options));
