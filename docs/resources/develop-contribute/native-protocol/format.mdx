@@ -1487,7 +1487,7 @@ The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs 
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
 
-`0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
+`0x9f` (`ZXC`) is a **beta** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 `0xa0` (`PCO`) is a **beta** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`.
 
