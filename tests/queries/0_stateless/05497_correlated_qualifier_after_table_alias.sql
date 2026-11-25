@@ -11,6 +11,11 @@ ORDER BY a;
 -- Resolve the hidden original name as a correlated reference when an outer table owns it.
 SET prefer_outer_table_name_for_correlated_identifier = true;
 
+-- The original name is hidden even if no outer scope can resolve it.
+SELECT squality_alias_scope.a FROM squality_alias_scope AS inner_table; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT {CLICKHOUSE_DATABASE:Identifier}.squality_alias_scope.a
+FROM squality_alias_scope AS inner_table; -- { serverError UNKNOWN_IDENTIFIER }
+
 SELECT a, coalesce(
     (SELECT count() FROM squality_alias_scope AS inner_table WHERE inner_table.b < squality_alias_scope.b), 0)
 FROM squality_alias_scope
