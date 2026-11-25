@@ -19,12 +19,9 @@ StatisticsCache::StatisticsCache(const String & cache_policy, size_t max_size_in
 {
 }
 
-UInt128 StatisticsCache::hash(const String & part_path, const String & column_name)
+UInt128 StatisticsCache::hash(const String & part_path)
 {
-    SipHash hash;
-    hash.update(part_path.data(), part_path.size() + 1);
-    hash.update(column_name.data(), column_name.size() + 1);
-    return hash.get128();
+    return sipHash128(part_path.data(), part_path.size());
 }
 
 }
