@@ -578,7 +578,6 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 }
 
 
-<<<<<<< HEAD
 /// The throttler of `sendNow` waits outside OpenSSL, so its fiber never suspends inside an OpenSSL
 /// call. An error of the throttler leaves the connection usable, and a slow throttler suspends the
 /// fiber between the writes.
@@ -659,7 +658,9 @@ TYPED_TEST(SilkFiberSocketTest, SendNowWithAThrottler)
 
     client_future.wait();
     peer.close();
-=======
+}
+
+
 using SilkFiberPlainSocketTest = SilkFiberSocketTest<PlainPolicy>;
 
 
@@ -727,7 +728,6 @@ TEST_F(SilkFiberPlainSocketTest, SendTimeoutAfterPartialWriteSubmitsNoFurtherWri
     while (const int received = peer.receiveBytes(buffer.data(), static_cast<int>(buffer.size())))
         received_after_resume += received;
     EXPECT_EQ(received_after_resume, 0);
->>>>>>> public/master
 }
 
 
