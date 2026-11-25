@@ -133,7 +133,7 @@ bool readsColumn(const ASTFunction & call, const AliasColumns & aliases)
         return false;
     const auto & arguments = call.arguments->children;
     std::vector<const IAST *> stack;
-    for (size_t i = Poco::toLower(call.name).starts_with("dict") ? 1 : 0; i < arguments.size(); ++i)
+    for (size_t i = (Poco::toLower(call.name).starts_with("dict") || functionIsDictGet(call.name)) ? 1 : 0; i < arguments.size(); ++i)
         stack.push_back(arguments[i].get());
     std::unordered_set<String> expanded;
     while (!stack.empty())
@@ -155,6 +155,7 @@ bool readsColumn(const ASTFunction & call, const AliasColumns & aliases)
 }
 
 /// Whether a subquery reads no table and names no column or alias, so it computes from literals only.
+/// It must not call `assignCentroid` either, which is never folded but loads its dictionary when the subquery runs.
 bool computesFromLiterals(const IAST & subquery)
 {
     std::vector<const IAST *> stack{&subquery};
@@ -162,6 +163,8 @@ bool computesFromLiterals(const IAST & subquery)
     {
         const IAST * node = stack.back();
         stack.pop_back();
+        if (const auto * call = node->as<ASTFunction>(); call && call->name == "assignCentroid")
+            return false;
         if (node->as<ASTTablesInSelectQuery>() || node->as<ASTIdentifier>())
             return false;
         for (const auto & child : node->children)
@@ -173,8 +176,8 @@ bool computesFromLiterals(const IAST & subquery)
 /// Whether folding the call loads a dictionary or runs a user-defined function.
 bool runsWhenFolded(const ASTFunction & call, const ContextPtr & context)
 {
-    return Poco::toLower(call.name).starts_with("dict") || UserDefinedSQLFunctionFactory::instance().has(call.name)
-        || UserDefinedExecutableFunctionFactory::has(call.name, context);
+    return Poco::toLower(call.name).starts_with("dict") || functionIsDictGet(call.name) || call.name == "predictXGBoost"
+        || UserDefinedSQLFunctionFactory::instance().has(call.name) || UserDefinedExecutableFunctionFactory::has(call.name, context);
 }
 
 /// With `load_tables_readonly`, refuses an argument that loads a dictionary or runs a user-defined function when it is folded.

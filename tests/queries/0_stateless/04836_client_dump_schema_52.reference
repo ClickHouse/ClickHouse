@@ -1,0 +1,46 @@
+--- a model function on constants in a TTL, a projection or a secondary index is refused ---
+xgboost_ttl: dump failed: 1
+would run when the table is loaded
+xgboost_ttl: table dumped: 0
+xgboost_ttl: no command ran
+xgboost_projection: dump failed: 1
+would run when the table is loaded
+xgboost_projection: table dumped: 0
+xgboost_projection: no command ran
+xgboost_index: dump failed: 1
+would run when the table is loaded
+xgboost_index: table dumped: 0
+xgboost_index: no command ran
+naive_bayes_ttl: dump failed: 1
+would run when the table is loaded
+naive_bayes_ttl: table dumped: 0
+naive_bayes_ttl: no command ran
+naive_bayes_identifier: dump failed: 1
+would run when the table is loaded
+naive_bayes_identifier: table dumped: 0
+naive_bayes_identifier: no command ran
+naive_bayes_with_prob: dump failed: 1
+would run when the table is loaded
+naive_bayes_with_prob: table dumped: 0
+naive_bayes_with_prob: no command ran
+naive_bayes_with_all_probs: dump failed: 1
+would run when the table is loaded
+naive_bayes_with_all_probs: table dumped: 0
+naive_bayes_with_all_probs: no command ran
+centroid_subquery: dump failed: 1
+would run when the table is loaded
+centroid_subquery: table dumped: 0
+centroid_subquery: no command ran
+--- a model function that reads a column, or assignCentroid outside a subquery, is not run, and the table is dumped ---
+xgboost_column: dump failed: 0
+xgboost_column: table dumped: 1
+xgboost_column: no command ran
+naive_bayes_column: dump failed: 0
+naive_bayes_column: table dumped: 1
+naive_bayes_column: no command ran
+centroid_column: dump failed: 0
+centroid_column: table dumped: 1
+centroid_column: no command ran
+centroid_constant: dump failed: 0
+centroid_constant: table dumped: 1
+centroid_constant: no command ran
