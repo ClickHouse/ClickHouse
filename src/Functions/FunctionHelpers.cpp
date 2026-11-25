@@ -514,7 +514,8 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
     return res;
 }
 
-bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type)
+bool conversionResultDependsOnSetting(
+    const FunctionResultSetting & setting, const DataTypePtr & from, const DataTypePtr & to, bool creates_result_type)
 {
     /// The settings of inferring the type of a value from its text, used only for a `Dynamic`, `Variant` or `JSON` value.
     static const FunctionResultSetting inference_settings[] = {
@@ -535,7 +536,8 @@ bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, con
     /// The settings of writing a value as text.
     static const FunctionResultSetting writing_settings[] = {
         Setting::date_time_output_format, Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands,
-        Setting::interval_output_format, Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
+        Setting::interval_output_format, Setting::output_format_decimal_trailing_zeros,
+        Setting::output_format_always_write_decimal_point_in_float_and_decimal,
         Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
         Setting::output_format_values_escape_quote_with_quote};
 
@@ -571,12 +573,21 @@ bool conversionResultDependsOnSetting(const FunctionResultSetting & setting, con
     if (!(setting == FunctionResultSetting(Setting::session_timezone)))
         return true;
 
-    bool has_implicit_time_zone = has_type(to, [](const IDataType & type)
+    auto has_implicit_time_zone = [](const IDataType & type)
     {
         const auto * time_zone = dynamic_cast<const TimezoneMixin *>(&type);
         return time_zone && !time_zone->hasExplicitTimeZone();
-    });
-    if (!has_implicit_time_zone)
+    };
+
+    /// A time without an explicit time zone is written as text in the time zone of the session, e.g. `toString([dt])`.
+    if (has_type(from, has_implicit_time_zone) && has_type(to, is_text))
+        return true;
+
+    /// A type inferred from text can be a `DateTime` in the time zone of the session, e.g. a path of `CAST(s AS JSON)`.
+    if (has_type(to, may_hold_any) && has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); }))
+        return true;
+
+    if (!has_type(to, has_implicit_time_zone))
         return false;
 
     /// A type without an explicit time zone that the function creates takes the time zone of the session, which changes how its

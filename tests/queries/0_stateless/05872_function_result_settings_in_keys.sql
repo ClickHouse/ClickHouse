@@ -29,6 +29,8 @@ DROP TABLE IF EXISTS t_time_as_text_index;
 DROP TABLE IF EXISTS t_json_float;
 DROP TABLE IF EXISTS t_json_overflow;
 DROP TABLE IF EXISTS t_bool_cast;
+DROP TABLE IF EXISTS t_json_inferred_time;
+DROP TABLE IF EXISTS t_time_array_text;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -103,6 +105,12 @@ INSERT INTO t_json_overflow SELECT toString(1000000 + number) FROM numbers(50);
 -- The spellings of `Bool` are used to parse it from text.
 CREATE TABLE t_bool_cast (s String) ENGINE = MergeTree ORDER BY CAST(s AS Bool) SETTINGS index_granularity = 1;
 INSERT INTO t_bool_cast SELECT if(number % 2, 'true', 'false') FROM numbers(50);
+-- A `DateTime` inferred in `JSON`, and a `DateTime` without a time zone written as text, use the time zone of the session.
+CREATE TABLE t_json_inferred_time (s String) ENGINE = MergeTree
+    ORDER BY assumeNotNull(toUInt32(dynamicElement(getSubcolumn(CAST(s AS JSON), 'a'), 'DateTime'))) SETTINGS index_granularity = 1;
+INSERT INTO t_json_inferred_time SELECT concat('{"a":"2024-01-01 ', leftPad(toString(number), 2, '0'), ':00:00"}') FROM numbers(24);
+CREATE TABLE t_time_array_text (dt DateTime) ENGINE = MergeTree ORDER BY toString([dt]) SETTINGS index_granularity = 1;
+INSERT INTO t_time_array_text SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -180,6 +188,14 @@ SELECT 'time as text', count() FROM t_time_as_text WHERE toString(toDateTime(n))
 SELECT 'time as text index expected', count() FROM t_time_as_text_index WHERE toString(toDateTime(n)) = '2024-01-01 19:00:00'
 SETTINGS use_skip_indexes = 0;
 SELECT 'time as text index', count() FROM t_time_as_text_index WHERE toString(toDateTime(n)) = '2024-01-01 19:00:00';
+-- Only `session_timezone` differs from the settings of the table here.
+SET input_format_try_infer_dates = 1, type_json_skip_null_typed_paths = 0;
+SELECT 'json inferred time expected', count() FROM t_json_inferred_time
+WHERE assumeNotNull(toUInt32(dynamicElement(getSubcolumn(CAST(s AS JSON), 'a'), 'DateTime'))) = 1704067200 SETTINGS use_primary_key = 0;
+SELECT 'json inferred time', count() FROM t_json_inferred_time
+WHERE assumeNotNull(toUInt32(dynamicElement(getSubcolumn(CAST(s AS JSON), 'a'), 'DateTime'))) = 1704067200;
+SELECT 'time array text expected', count() FROM t_time_array_text WHERE toString([dt]) = '[''2024-01-01 19:00:00'']' SETTINGS use_primary_key = 0;
+SELECT 'time array text', count() FROM t_time_array_text WHERE toString([dt]) = '[''2024-01-01 19:00:00'']';
 SET optimize_if_transform_strings_to_enum = 1, optimize_if_transform_const_strings_to_lowcardinality = 1,
     input_format_try_infer_datetimes_only_datetime64 = 1;
 SELECT 'if of numbers uses the index', count() FROM t_if_numbers WHERE if(x >= 0, -x, x) = -5 SETTINGS force_primary_key = 1;
@@ -206,6 +222,8 @@ DROP TABLE t_time_as_text_index;
 DROP TABLE t_json_float;
 DROP TABLE t_json_overflow;
 DROP TABLE t_bool_cast;
+DROP TABLE t_json_inferred_time;
+DROP TABLE t_time_array_text;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;

@@ -666,7 +666,7 @@ FunctionResultSettings getConversionResultSettings(ConversionResultKind kind)
         Setting::output_format_decimal_trailing_zeros, Setting::output_format_always_write_decimal_point_in_float_and_decimal,
         Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
         Setting::output_format_values_escape_quote_with_quote, Setting::type_json_skip_null_typed_paths,
-        Setting::json_type_escape_dots_in_keys
+        Setting::json_type_escape_dots_in_keys, Setting::session_timezone
     };
 
     static constexpr FunctionResultSetting cast_settings[] = {
