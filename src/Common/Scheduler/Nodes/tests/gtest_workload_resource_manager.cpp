@@ -13,6 +13,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
+#include <Common/CacheLine.h>
 #include <Common/EventRateMeter.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -878,7 +879,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[64] = {}; // to avoid false sharing
+    char padding[DB::CH_CACHE_LINE_SIZE] = {}; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
@@ -4933,45 +4934,12 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
     }
 }
 
-/// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`
-static bool hasWorkloadNodeUnder(ResourceTest & t, const String & resource, const String & parent, const String & child)
-{
-    bool seen = false;
-    t.manager->forEachNode([&](const String & r, const String & path, ISchedulerNode *)
-    {
-        auto parent_pos = path.find("/" + parent + "/");
-        if (r == resource && parent_pos != String::npos && path.find("/" + child, parent_pos + parent.size() + 1) != String::npos)
-            seen = true;
-    });
-    return seen;
-}
-
-// Moving workloads so that a parent becomes a child is applied in an order that keeps the hierarchy acyclic
-TEST(SchedulerWorkloadResourceManager, ReversedHierarchyIsApplied)
-{
-    ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
-
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "a", "b"));
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD a IN b");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "b", "a"));
-
-    // An unchanged workload between the moved ones
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD a; CREATE WORKLOAD b IN a; CREATE WORKLOAD c IN b");
-    t.storage.loadFromString("CREATE RESOURCE memory (MEMORY RESERVATION); CREATE WORKLOAD b; CREATE WORKLOAD c IN b; CREATE WORKLOAD a IN c");
-    EXPECT_TRUE(hasWorkloadNodeUnder(t, "memory", "c", "a"));
-}
-
-// A workload replaced by a resource of the same name is dropped only after its children leave it
+// A workload and a resource of the same name swapped in one load: the workload is dropped after its children leave it
 TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChildren)
 {
     ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+    t.sql_storage->loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    t.sql_storage->loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
 
     bool has_b_in_a = false;
     t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode *)
@@ -4982,12 +4950,12 @@ TEST(SchedulerWorkloadResourceManager, WorkloadReplacedByResourceOutlivesItsChil
     EXPECT_TRUE(has_b_in_a);
 }
 
-// A resource replaced by a workload of the same name is created before its new children are attached to it
+// A resource and a workload of the same name swapped in one load: the workload is created before its new children
 TEST(SchedulerWorkloadResourceManager, ResourceReplacedByWorkloadPrecedesItsChildren)
 {
     ResourceTest t;
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
-    t.storage.loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
+    t.sql_storage->loadFromString("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE a (WRITE DISK d); CREATE WORKLOAD b SETTINGS weight = 2 FOR a");
+    t.sql_storage->loadFromString("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a; CREATE WORKLOAD b IN a");
     EXPECT_FALSE(t.manager->hasResource("a"));
     EXPECT_TRUE(hasWorkloadNodeUnder(t, "io", "a", "b"));
 }

@@ -1020,6 +1020,38 @@ def test_replaced_resource_releases_disk_operations():
     assert dequeued() > before
 
 
+def test_replaced_resource_keeps_other_disk_resource():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e6);
+    """
+    )
+
+    # `io_read` is selected for reads of the disk, `io_write` is the other resource that also reads it
+    node.query(
+        """
+        create resource io_read (read disk s3_no_resource);
+        create resource io_write (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued(resource):
+        return int(
+            node.query(
+                f"select sum(dequeued_requests) from system.scheduler where resource='{resource}' and type='request_queue'"
+            )
+        )
+
+    # After the selected resource stops reading the disk, the other one is used
+    node.query("create or replace resource io_read (write disk s3_no_resource)")
+    before = dequeued("io_write")
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued("io_write") > before
+
+
 def test_workload_entity_keeper_storage():
     node.query("create resource io_write (write disk s3_no_resource);")
     node.query("create resource io_read (read disk s3_no_resource);")
@@ -1157,6 +1189,42 @@ def test_drop_does_not_remove_entity_of_other_kind():
         node.query("drop resource io_read", user="drop_resource_user")
     finally:
         node.query("drop user if exists drop_workload_user; drop user if exists drop_resource_user")
+
+
+def test_workload_and_resource_with_same_name():
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload io settings max_io_requests = 10 for io;
+    """
+    )
+    try:
+        definitions = node.query(
+            "select value from system.zookeeper where path = '/clickhouse/workload' and name = 'definitions.sql'"
+        )
+        assert "CREATE RESOURCE io" in definitions
+        assert "CREATE WORKLOAD io" in definitions
+
+        def check_both_exist():
+            assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+            assert node.query("select count() from system.workloads where name = 'io'") == "1\n"
+            assert (
+                node.query(
+                    "select count() from system.scheduler where resource = 'io' and path ilike '%/io/%' and type = 'inflight_limit' and max_requests = 10"
+                )
+                == "1\n"
+            )
+
+        check_both_exist()
+        node.restart_clickhouse()  # Both are loaded back from Keeper
+        check_both_exist()
+
+        assert "referenced by" in node.query_and_get_error("drop resource io")
+        node.query("drop workload io")
+        assert node.query("select count() from system.resources where name = 'io'") == "1\n"
+        node.query("drop resource io")
+    finally:
+        node.query("drop workload if exists io; drop resource if exists io")
 
 
 def test_throw_on_unknown_workload():

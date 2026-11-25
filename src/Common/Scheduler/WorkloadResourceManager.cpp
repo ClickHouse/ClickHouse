@@ -598,7 +598,8 @@ void WorkloadResourceManager::topologicallySortedWorkloadsImpl(Workload * worklo
     if (!parent.empty())
     {
         auto parent_iter = workloads.find(parent);
-        chassert(parent_iter != workloads.end()); // validations check that all parents exist
+        if (parent_iter == workloads.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent workload '{}' of workload '{}' does not exist", parent, getEntityName(workload->workload_entity));
         topologicallySortedWorkloadsImpl(parent_iter->second.get(), visited, sorted_workloads);
     }
 

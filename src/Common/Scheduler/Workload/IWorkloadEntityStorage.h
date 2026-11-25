@@ -96,7 +96,7 @@ enum class WorkloadEntityType : uint8_t
 /// Identifies a workload entity (see above)
 struct WorkloadEntityKey
 {
-    WorkloadEntityType type;
+    WorkloadEntityType type = WorkloadEntityType::MAX;
     String name;
 
     auto operator<=>(const WorkloadEntityKey &) const = default;

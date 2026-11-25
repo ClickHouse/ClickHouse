@@ -203,7 +203,7 @@ public:
     /// Bound the bytes of the stored keys instead of the hash table buffer. Call before inserts.
     void boundKeyBytes() { bound_key_bytes = true; }
 
-    void insert(ColumnPtr values);
+    size_t insert(ColumnPtr values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
@@ -265,7 +265,7 @@ public:
 
     ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_);
 
-    void insert(ColumnPtr values);
+    void insert(ColumnPtr values, size_t first_row = 0);
     /// Sets `rows_passed` to the number of rows that passed the filter: the bloom probe counts the
     /// matches while filling the mask, so the caller must not rescan the mask to collect stats.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
@@ -281,7 +281,7 @@ public:
     static ApproximateSetRuntimeFilter deserialize(ReadBuffer & in, const RuntimeFilterGeometry & geometry);
 
 private:
-    void insertIntoBloomFilter(const ColumnPtr & values);
+    void insertIntoBloomFilter(const ColumnPtr & values, size_t first_row);
 
     BloomFilter bloom_filter;
 };
@@ -294,7 +294,7 @@ public:
 
     explicit DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_);
 
-    void insert(const ColumnPtr & values);
+    void insert(const ColumnPtr & values, size_t first_row = 0);
     void mergeFrom(const DenseBitsetRuntimeFilter & source);
     /// Sets `rows_passed`.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
@@ -372,9 +372,10 @@ private:
 
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter, RuntimeFilterDisabledReason reason);
-    void switchFromExactFilter(Filter & filter);
-    void switchToDenseBitset(Filter & filter);
-    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
+    /// The replacement also takes the rows of `block` from `first_row` on.
+    void switchFromExactFilter(Filter & filter, const ColumnPtr & block = nullptr, size_t first_row = 0);
+    void switchToDenseBitset(Filter & filter, const ColumnPtr & block, size_t first_row);
+    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter, const ColumnPtr & block = nullptr, size_t first_row = 0);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
@@ -567,6 +568,8 @@ struct RuntimeFilterIndexAnalysisDescriptor
     /// The probe key is `_part_starting_offset + _part_offset` (the global row index of the read), not a column.
     /// `key_column_name` is then only a display name.
     bool is_global_row_index = false;
+    /// The cast between the key and the filter, nullptr if there is none.
+    FunctionBasePtr key_cast;
 };
 using RuntimeFilterIndexAnalysisDescriptors = VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor>;
 
