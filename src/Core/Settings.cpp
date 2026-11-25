@@ -10302,6 +10302,10 @@ but makes distributed index analysis less efficient if large tables are used in 
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0, \
         {"26.1", false, false, "New setting"}) \
+    DECLARE(Bool, distributed_index_analysis_on_stateless_workers, false, R"(
+Runs distributed index analysis on stateless workers in an initial query that runs as a distributed plan (`make_distributed_plan`) and holds or can lease workers, independently of `distributed_index_analysis`. The workers analyze the tables on object storage of a shared table. For now enabling this setting turns off index analysis on the replicas (`distributed_index_analysis`), so the reads the workers do not take, and the reads of other queries, are analyzed locally. The workers need streaming exchanges: with `Persisted` ones (`distributed_plan_force_exchange_kind`, or no streaming listener configured) the reads are analyzed locally. The MergeTree settings `distributed_index_analysis_min_parts_to_activate` and `distributed_index_analysis_min_indexes_bytes_to_activate` apply.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_iceberg, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'iceberg'`
 
