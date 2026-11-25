@@ -22,6 +22,17 @@ endif()
 include(grpc.cmake)
 include(protobuf_generate_grpc.cmake)
 
+# gRPC registers every subsystem into its core configuration from a static initializer
+# (`BuildCoreConfiguration`), so the linker cannot discard the ones that are never used: the
+# registration is a reference to them. xDS (resolver, load balancing policies, RBAC, fault injection,
+# external processing and GCP authentication filters, default channel credentials for the bootstrap
+# config) and the RLS load balancing policy only act on an xDS bootstrap config or on a service config
+# that asks for them. ClickHouse serves gRPC and opens plain channels, and provides neither.
+# These switches of gRPC leave them out of the registry, which removes about 2.4 MiB from the binary.
+foreach (target grpc grpc_unsecure)
+  target_compile_definitions(${target} PRIVATE GRPC_NO_XDS GRPC_NO_RLS)
+endforeach()
+
 if (OS_SUNOS)
   # illumos declares FIONREAD in sys/filio.h rather than sys/ioctl.h.
   foreach (target grpc grpc_unsecure)
