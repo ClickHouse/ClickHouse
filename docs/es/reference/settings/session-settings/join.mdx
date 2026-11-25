@@ -15,9 +15,9 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Se añadió `ie_join` a la lista predeterminada, por lo que un join cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con IEJoin en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos de join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Se añadió `ie_join` a la lista predeterminada, por lo que un join cuya sección `ON` solo tiene condiciones de desigualdad se ejecuta con IEJoin en lugar de un `CROSS JOIN` con un filtro. Al estar al final, solo se utiliza cuando no se aplican los demás algoritmos."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` es un alias obsoleto de `hash` y se eliminó de la lista predeterminada, aunque se sigue aceptando. Incluir `hash` o `parallel_hash` no controla el grado de paralelismo del join."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' quedó obsoleto en favor de algoritmos de join especificados explícitamente; además, ahora se prefiere parallel_hash a hash"}]}]} />
 
 Especifica qué algoritmo [JOIN](/es/reference/statements/select/join) se utiliza.
 
@@ -41,7 +41,7 @@ Seleccionar `grace_hash` explícitamente está pensado principalmente para fines
 
 `grace_hash` es externo desde el primer bloque: la tabla derecha se particiona de inmediato, mientras que `hash` y `parallel_hash` la recopilan primero en memoria y solo la particionan cuando supera el umbral de volcado. Elíjalo cuando ya sepa que el lado derecho no cabrá en memoria y quiera omitir la fase en memoria. El umbral de volcado es el mismo que utiliza cualquier algoritmo hash, [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), y uno de los dos debe ser distinto de cero salvo que `legacy_join_size_limits_trigger_spilling` esté activado. Sin un umbral, `grace_hash` se omite en favor del siguiente algoritmo de la lista, y se rechaza si es el único.
 
-La primera fase de un grace join lee la tabla derecha y la divide en N buckets según el valor hash de las columnas clave (inicialmente, N es `grace_hash_join_initial_buckets`). Esto se hace de forma que cada bucket pueda procesarse de manera independiente. Las filas del primer bucket se añaden a una hash table en memoria, mientras que las demás se guardan en disco. Si la hash table crece por encima del umbral de volcado, se incrementa el número de buckets junto con el bucket asignado a cada fila. Todas las filas que no pertenecen al bucket actual se vuelcan y se reasignan.
+La primera fase de un grace join lee la tabla derecha y la divide en N buckets según el valor hash de las columnas clave (inicialmente, N es `grace_hash_join_initial_buckets`). Esto se hace de forma que cada bucket pueda procesarse de manera independiente. Las filas del primer bucket se añaden a una tabla hash en memoria, mientras que las demás se guardan en disco. Si la tabla hash crece por encima del umbral de volcado, se incrementa el número de buckets junto con el bucket asignado a cada fila. Todas las filas que no pertenecen al bucket actual se vuelcan y se reasignan.
 
 Admite `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -53,7 +53,7 @@ Al usar el algoritmo `hash`, la parte derecha del `JOIN` se carga en la RAM.
 
 * parallel&#95;hash
 
-Una variante del `hash` join que divide los datos en buckets y construye varias hashtables en lugar de una sola de forma concurrente para acelerar este proceso.
+Igual que `hash`; se mantiene por compatibilidad. Los hash joins `INNER`, `LEFT`, `RIGHT` y `FULL` pueden construir la tabla hash en hasta `max_threads` threads, y `parallel_hash_join_threshold` determina cuándo lo hacen. Para construirla en varios threads siempre que el tipo de join lo permita, establezca `parallel_hash_join_threshold` en `0`.
 
 Al usar el algoritmo `parallel_hash`, la parte derecha del `JOIN` se carga en la RAM.
 
@@ -100,7 +100,7 @@ La segmentación por hash según las join keys se aplica únicamente a joins de 
 * Lados que ya están ordenados (una lectura de MergeTree en orden o cualquier entrada preordenada): una dispersión que preserve el orden en los merges por segmento puede bloquear la canalización. En su lugar se conservan la lectura en orden y su optimización `read_in_order_use_virtual_row`.
 * Mientras el iniciador crea un plan distribuido (`make_distributed_plan`), porque la ordenación dispersa no se puede serializar para la ejecución remota. El plan local de un solo fragmento y los fragmentos por trabajador se vuelven a optimizar con esa configuración desactivada, por lo que aún pueden segmentarse.
 
-Omitirla desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados MergeTree que leen en orden aún pueden segmentarse en el origen mediante rangos de clave primaria (que se ordenan por la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) cuando `query_plan_join_shard_by_pk_ranges` está habilitado.
+Omitirla desactiva solo esta reescritura, no el paralelismo en general: el join se ejecuta como un único `full_sorting_merge`, y los lados MergeTree que leen en orden aún pueden segmentarse en el origen mediante rangos de clave primaria (que se ordenan por la misma comparación que usa el join, por lo que las claves iguales permanecen juntas) gracias a `query_plan_join_shard_by_pk_ranges` (habilitado de forma predeterminada).
 
 * prefer&#95;partial&#95;merge
 

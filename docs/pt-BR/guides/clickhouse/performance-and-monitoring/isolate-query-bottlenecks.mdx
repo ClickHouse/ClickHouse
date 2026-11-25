@@ -9,13 +9,12 @@ doc_type: 'guide'
 keywords: ['otimização de consultas', 'gargalos em consultas', 'desempenho', 'benchmarking']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/pt-BR/_nyc_taxi_example_dataset.mdx';
 
 A otimização de consultas fica mais fácil quando você altera uma parte da consulta por vez e compara os resultados com uma base de referência estável. Este guia mostra como simplificar progressivamente uma consulta e usar as diferenças entre execuções para identificar quais operações mais contribuem para sua duração. Em seguida, você pode validar o possível gargalo antes de escolher uma otimização.
 
 <div id="before-you-begin">
-  ## Antes de começar
+  ## Antes de começar {#before-you-begin}
 </div>
 
 Comece com um padrão recorrente de consultas lentas que deseja investigar. Se ainda não identificou um, consulte [Diagnosticar consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries).
@@ -29,7 +28,7 @@ Para executar os exemplos deste guia conforme descritos, crie e carregue a tabel
 A tabela de exemplo usa `ORDER BY ()`, portanto, seu filtro de data não pode usar uma chave de ordenação para eliminar dados durante a leitura. Use o exemplo para praticar o método de comparação, e não como referência de desempenho.
 
 <div id="how-it-works">
-  ## Como funciona
+  ## Como funciona {#how-it-works}
 </div>
 
 Simplificar uma consulta progressivamente permite comparar sua duração antes e depois de remover uma etapa do processamento. As diferenças ajudam a decidir se é necessário investigar a varredura e a filtragem, o agrupamento, os cálculos de agregação ou etapas posteriores, como a ordenação e a formatação da saída:
@@ -44,9 +43,7 @@ Essas etapas se aplicam diretamente a consultas de agregação agrupadas convenc
   Essas diferenças são estimativas para diagnóstico, não medições exatas das etapas de execução do ClickHouse. Alterar a consulta pode modificar seu plano de execução, as colunas lidas e os dados transmitidos entre as etapas. Use os resultados para formular uma hipótese. Em seguida, valide-a com logs de consulta e [`EXPLAIN`](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement).
 </Note>
 
-<div id="establish-a-repeatable-baseline">
-  ## Estabeleça uma linha de referência reproduzível
-</div>
+## Estabeleça uma linha de referência reproduzível {#establish-a-repeatable-baseline}
 
 Use as práticas a seguir para tornar as medições comparáveis:
 
@@ -71,7 +68,11 @@ SET optimize_use_implicit_projections = 0;
 
 O fluxo de trabalho combina execuções controladas de consultas com medições do log de consultas:
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Fluxo de trabalho para identificar consultas candidatas nos logs de consultas e testar alterações de forma isolada" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Fluxo de trabalho para identificar consultas candidatas nos logs de consultas e testar alterações de forma isolada](/images/guides/best-practices/query_optimization_diagram_1.webp)
+  </Frame>
+</div>
 
 Colete as medições de cada execução da seguinte forma:
 
@@ -131,7 +132,7 @@ Use uma tabela como a seguir para organizar as medições representativas. Consu
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## Execute consultas cada vez mais simples
+  ## Execute consultas cada vez mais simples {#run-progressively-simpler-queries}
 </div>
 
 Para demonstrar as três comparações, o exemplo usa a [carga de trabalho agrupada por intervalo de datas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation). Você pode aplicar o método a outra consulta sem seguir o exemplo passo a passo. Se a consulta não contiver `GROUP BY`, pule a execução B, conforme descrito abaixo.
@@ -196,7 +197,7 @@ Para demonstrar as três comparações, o exemplo usa a [carga de trabalho agrup
 </Steps>
 
 <div id="interpret-the-differences">
-  ## Interprete as diferenças
+  ## Interprete as diferenças {#interpret-the-differences}
 </div>
 
 Compare durações representativas de execuções repetidas, em vez de subtrair duas medições individuais. Diferenças grandes e consistentes indicam o que investigar a seguir:
@@ -209,7 +210,7 @@ Compare durações representativas de execuções repetidas, em vez de subtrair 
 | As três execuções têm durações semelhantes       | A fonte da latência pode ser comum às três versões, ou a simplificação pode ter alterado o plano de execução | Compare `read_rows`, `read_bytes` e o pico de memória entre as execuções. Se também forem semelhantes, investigue as operações mantidas na execução C. Caso contrário, compare os planos de execução para identificar diferenças |
 
 <div id="compare-rows-read-with-count-result">
-  ### Compare as linhas lidas com o resultado de `count`
+  ### Compare as linhas lidas com o resultado de `count` {#compare-rows-read-with-count-result}
 </div>
 
 Compare o `read_rows` da execução C com o valor retornado por seu `count`. Por exemplo, se `read_rows` for 100 milhões e `count` retornar 1 milhão, o ClickHouse examinou aproximadamente 100 linhas de origem para cada linha contada. Isso mostra que o filtro rejeitou a maioria das linhas lidas da tabela, mas não identifica o motivo. Essa razão se aplica a varreduras simples de uma única tabela. Para consultas com várias fontes de dados ou projeções, interprete `read_rows` usando o plano de execução.
@@ -224,7 +225,7 @@ SET use_skip_indexes_on_data_read = 0;
 Em seguida, use [`EXPLAIN indexes = 1`](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para verificar quais índices o ClickHouse usou e quantas partes e grânulos cada índice eliminou. Se o ClickHouse selecionou mais grânulos do que o esperado, verifique se os filtros estão alinhados à chave de ordenação da tabela e se a eliminação de partições ou um data skipping index poderia eliminar mais grânulos. Se o plano não tiver uma seção `Indexes`, o `EXPLAIN` não informou a poda por índice para essa consulta. Em contraste, espera-se que uma consulta analítica na tabela inteira leia a maior parte da tabela.
 
 <div id="validate-the-suspected-bottleneck">
-  ## Valide o gargalo suspeito
+  ## Valide o gargalo suspeito {#validate-the-suspected-bottleneck}
 </div>
 
 Depois que a comparação indicar um provável gargalo, valide-o antes de alterar o esquema ou a consulta. Use evidências adequadas à fonte suspeita de latência:
@@ -236,8 +237,6 @@ Depois que a comparação indicar um provável gargalo, valide-o antes de altera
 
 Consulte o [guia de diagnóstico de consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para obter detalhes sobre as informações de índice retornadas por `EXPLAIN`. Aplique uma alteração pontual e repita as execuções A, B e C nas mesmas condições. Confirme que a alteração reduziu o trabalho pretendido e não deslocou o gargalo para outro ponto.
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
-Prossiga para [Abordagens de otimização](/pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches) para associar o possível gargalo a uma ou mais alterações específicas.
+Siga para [Abordagens de otimização](/pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches) para associar o possível gargalo a uma ou mais alterações específicas.

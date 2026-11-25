@@ -10,22 +10,20 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La réplication des mises à jour et des suppressions de Postgres vers ClickHouse entraîne des lignes en double dans ClickHouse en raison de sa structure de stockage des données et du processus de réplication. Cette page explique pourquoi cela se produit et quelles stratégies utiliser dans ClickHouse pour gérer ces doublons.
 
 <div id="how-does-data-get-replicated">
-  ## Comment les données sont-elles répliquées ?
+  ## Comment les données sont-elles répliquées ? {#how-does-data-get-replicated}
 </div>
 
 <div id="PostgreSQL-logical-decoding">
-  ### Décodage logique de PostgreSQL
+  ### Décodage logique de PostgreSQL {#PostgreSQL-logical-decoding}
 </div>
 
 ClickPipes utilise le [décodage logique de Postgres](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) pour capter les changements au fur et à mesure qu’ils se produisent dans Postgres. Le processus de décodage logique dans Postgres permet à des clients comme ClickPipes de recevoir ces changements dans un format lisible par des humains, c’est-à-dire sous la forme d’une série d’INSERT, d’UPDATE et de DELETE.
 
 <div id="replacingmergetree">
-  ### ReplacingMergeTree
+  ### ReplacingMergeTree {#replacingmergetree}
 </div>
 
 ClickPipes associe les tables Postgres à ClickHouse à l’aide du moteur [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree). ClickHouse offre les meilleures performances avec des charges de travail en ajout seul et ne recommande pas les `UPDATE` fréquents. C’est là que ReplacingMergeTree est particulièrement puissant.
@@ -58,26 +56,28 @@ PRIMARY KEY id
 ORDER BY id;
 ```
 
-<div id="illustrative-example">
-  ### Exemple illustratif
-</div>
+### Exemple illustratif {#illustrative-example}
 
 L’illustration ci-dessous présente un exemple simple de synchronisation d’une table `users` entre PostgreSQL et ClickHouse à l’aide de ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="Chargement initial de ClickPipes" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Chargement initial de ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+  </Frame>
+</div>
 
-**Étape 1** montre l’instantané initial des 2 lignes dans PostgreSQL, puis ClickPipes effectuant le chargement initial de ces 2 lignes vers ClickHouse. Comme vous pouvez l’observer, les deux lignes sont copiées telles quelles dans ClickHouse.
+**Étape 1** montre l’instantané initial des 2 lignes dans PostgreSQL, puis ClickPipes effectuant le chargement initial de ces 2 lignes vers ClickHouse. Comme vous pouvez l’observer, les deux lignes sont copiées telles quelles dans ClickHouse.
 
-**Étape 2** montre trois opérations sur la table users : l’insertion d’une nouvelle ligne, la mise à jour d’une ligne existante et la suppression d’une autre ligne.
+**Étape 2** montre trois opérations sur la table users : l’insertion d’une nouvelle ligne, la mise à jour d’une ligne existante et la suppression d’une autre ligne.
 
-**Étape 3** montre comment ClickPipes réplique les opérations INSERT, UPDATE et DELETE vers ClickHouse sous forme d’insertions versionnées. L’UPDATE apparaît comme une nouvelle version de la ligne avec l’ID 2, tandis que le DELETE apparaît comme une nouvelle version de l’ID 1, marquée comme true à l’aide de `_is_deleted`. En conséquence, ClickHouse contient trois lignes supplémentaires par rapport à PostgreSQL.
+**Étape 3** montre comment ClickPipes réplique les opérations INSERT, UPDATE et DELETE vers ClickHouse sous forme d’insertions versionnées. L’UPDATE apparaît comme une nouvelle version de la ligne avec l’ID 2, tandis que le DELETE apparaît comme une nouvelle version de l’ID 1, marquée comme true à l’aide de `_is_deleted`. En conséquence, ClickHouse contient trois lignes supplémentaires par rapport à PostgreSQL.
 
 Par conséquent, l’exécution d’une requête simple comme `SELECT count(*) FROM users;` peut produire des résultats différents dans ClickHouse et PostgreSQL. Selon la [documentation ClickHouse sur les fusions](/fr/concepts/core-concepts/merges#replacing-merges), les versions obsolètes des lignes sont finalement supprimées pendant le processus de fusion. Cependant, le moment où cette fusion se produit est imprévisible, ce qui signifie que les requêtes dans ClickHouse peuvent renvoyer des résultats incohérents jusqu’à ce qu’elle ait lieu.
 
-Comment garantir des résultats de la requête identiques dans ClickHouse et PostgreSQL ?
+Comment garantir des résultats de la requête identiques dans ClickHouse et PostgreSQL ?
 
 <div id="deduplicate-using-final-keyword">
-  ### Dédupliquer à l’aide du mot-clé FINAL
+  ### Dédupliquer à l’aide du mot-clé FINAL {#deduplicate-using-final-keyword}
 </div>
 
 La méthode recommandée pour dédupliquer les données dans les requêtes ClickHouse consiste à utiliser le [modificateur FINAL.](/fr/reference/statements/select/from#final-modifier) Cela garantit que seules les lignes dédupliquées sont renvoyées.
@@ -133,7 +133,7 @@ LIMIT 10
 ```
 
 <div id="final-setting">
-  #### paramètre FINAL
+  #### paramètre FINAL {#final-setting}
 </div>
 
 Plutôt que d’ajouter le modificateur FINAL à chaque nom de table dans la requête, vous pouvez utiliser le [paramètre FINAL](/fr/reference/settings/session-settings/other#final) pour l’appliquer automatiquement à toutes les tables de la requête.
@@ -150,7 +150,7 @@ SELECT count(*) FROM posts;
 ```
 
 <div id="row-policy">
-  #### ROW policy
+  #### ROW policy {#row-policy}
 </div>
 
 Un moyen simple de masquer le filter redondant `_peerdb_is_deleted = 0` consiste à utiliser une [ROW policy.](/fr/concepts/features/security/access-rights#row-policy-management) Vous trouverez ci-dessous un exemple qui crée une ROW policy afin d’exclure les lignes supprimées de toutes les queries sur la table votes.
@@ -163,7 +163,7 @@ CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO
 > Les politiques au niveau des lignes s’appliquent à une liste d’utilisateurs et de rôles. Dans cet exemple, elles s’appliquent à tous les utilisateurs et rôles. Ce paramètre peut être ajusté pour ne s’appliquer qu’à certains utilisateurs ou rôles.
 
 <div id="query-like-with-postgres">
-  ### Interroger comme dans Postgres
+  ### Interroger comme dans Postgres {#query-like-with-postgres}
 </div>
 
 La migration d’un jeu de données analytique de PostgreSQL vers ClickHouse nécessite souvent de modifier les requêtes de l’application pour tenir compte des différences de gestion des données et d’exécution des requêtes.
@@ -171,7 +171,7 @@ La migration d’un jeu de données analytique de PostgreSQL vers ClickHouse né
 Cette section présente des techniques de déduplication des données tout en conservant les requêtes d’origine inchangées.
 
 <div id="views">
-  #### Vues
+  #### Vues {#views}
 </div>
 
 Les [vues](/fr/reference/statements/create/view#normal-view) sont un excellent moyen de masquer le mot-clé FINAL dans la requête, car elles ne stockent aucune donnée et se contentent de lire une autre table à chaque accès.
@@ -200,7 +200,7 @@ LIMIT 10
 ```
 
 <div id="refreshable-material-view">
-  #### Vue matérialisée actualisable
+  #### Vue matérialisée actualisable {#refreshable-material-view}
 </div>
 
 Une autre approche consiste à utiliser une [vue matérialisée actualisable](/fr/concepts/features/materialized-views/refreshable-materialized-view), qui permet de planifier l’exécution d’une requête afin de dédupliquer les lignes et de stocker les résultats dans une table de destination. À chaque actualisation planifiée, la table de destination est remplacée par le résultat le plus récent de la requête.

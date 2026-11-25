@@ -163,11 +163,11 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = true, .is_order_dependent = true};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     /// The reservoir holds a fixed 8192 values and replaces slots as later values arrive, so which
     /// values survive into the sample depends on the order they arrive in.
-    AggregateFunctionProperties properties_single = {.is_order_dependent = true};
+    AggregateFunctionProperties properties_single = {.is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.

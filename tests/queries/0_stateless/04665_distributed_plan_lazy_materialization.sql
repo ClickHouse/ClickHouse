@@ -2,7 +2,7 @@
 -- fragment carries the local top-N bound, and the worker defers the wide column to a second read of
 -- only the rows its local top-N kept. Results must be identical to the non-distributed plan.
 
-SET enable_analyzer = 1, enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 1000;
 SET distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
 SET distributed_plan_max_rows_to_broadcast = 1000;

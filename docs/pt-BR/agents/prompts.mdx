@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'Prompts'
+slug: /agents/prompts
+title: 'Prompts'
+description: 'Biblioteca de prompts salvos do ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+A biblioteca Prompts é o lugar para salvar e reutilizar prompts em linguagem natural que você se pega digitando repetidamente. Pense nela como um conjunto de snippets para o campo de composição da conversa — útil quando a mesma pergunta analítica ou instrução de formatação se repete em várias conversas.
+
+## Criar um prompt {#create-a-prompt}
+
+Abra o painel Prompts pelo ícone **Prompts** na navegação à esquerda e clique no botão **+** para abrir o formulário **Create Prompt**. Preencha os campos:
+
+* **Prompt Name** (obrigatório) - o nome exibido no seletor. Seja descritivo: *&quot;Usuários ativos semanais por região&quot;* é melhor do que *&quot;WAU&quot;*.
+* **Text** (obrigatório) - o texto propriamente dito que será inserido no campo de composição.
+* **Special variables** - clique no botão **Special variables** para inserir marcadores de posição ou digite diretamente marcadores no formato `{{name}}`. O seletor solicita os valores antes da inserção.
+* **Category**, **Description**, **Command** (opcionais) - servem para organizar a biblioteca, definir o texto de prévia no seletor e criar um atalho de invocação rápida.
+
+Em seguida, clique em **Create Prompt** no canto inferior direito.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Painel Prompts com o botão + destacado à esquerda e o formulário Create Prompt aberto à direita, mostrando os campos Prompt Name, Text, Category, Special variables, Description e Command, com um botão Create Prompt](/images/cloud/agent-builder/prompts/create-prompt.webp)
+  </Frame>
+</div>
+
+## Usar um prompt {#use-a-prompt}
+
+No painel Prompts, abra o menu **...** no cartão de um prompt e selecione **Preview**:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Painel Prompts com um prompt selecionado, seus detalhes visíveis à direita e um menu de contexto exibindo as opções Preview e Edit](/images/cloud/agent-builder/prompts/preview.webp)
+  </Frame>
+</div>
+
+A prévia exibe o texto do prompt, além do autor e da data. Clique em **Use Prompt** para inserir o corpo no campo de composição. Se o prompt tiver variáveis, preencha-as antes.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Modal de prévia do prompt exibindo o título, o autor, a data, o texto do corpo e um botão Use Prompt](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
+  </Frame>
+</div>
+
+## Compartilhar prompts {#share-prompts}
+
+Por padrão, um prompt é visível apenas para a pessoa que o criou. O proprietário pode alterar a visibilidade de um prompt para:
+
+* **Usuários ou grupos específicos** - qualquer pessoa que você indicar pode encontrar e usar o prompt.
+* **Em toda a organização** - todos na sua organização do ClickHouse Cloud podem encontrá-lo e usá-lo.
+
+Os prompts usam o mesmo modelo de permissões dos agentes. Para ver a matriz completa de funções e o que cada uma pode fazer, consulte [Compartilhamento e
+acesso](/pt-BR/agents/sharing-and-access).
+
+## Prompts vs. habilidades vs. instruções {#prompts-vs-skills-vs-instructions}
+
+Prompts, habilidades e instruções do agente adicionam texto ao modelo, mas diferem quanto a quem os aciona e ao tempo durante o qual persistem.
+
+* **Prompts** - texto que você mesmo insere no campo de composição, editado a cada turno.
+* **[Habilidades](/pt-BR/agents/builder/skills)** - conjuntos de instruções que o agente carrega por conta própria quando os considera relevantes para a tarefa.
+* **Instruções do agente** - o prompt do sistema persistente do agente, aplicado a todas as conversas.
+
+Use um prompt quando quiser reaproveitar uma formulação, mas manter o controle sobre o texto a cada vez. Use uma habilidade quando quiser que o agente aplique
+as mesmas orientações de forma consistente em um tipo de tarefa, sem que você precise digitá-las. Use as instruções do agente quando o comportamento precisar valer durante todo o
+ciclo de vida do agente.

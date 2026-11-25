@@ -50,11 +50,11 @@ void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factor
 void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All };
 
     /// The t-digest compresses centroids once more than `max_unmerged` of them accumulate, so which
     /// values end up merged together depends on the order they arrive in.
-    AggregateFunctionProperties properties_single = { .is_order_dependent = true };
+    AggregateFunctionProperties properties_single = { .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All };
 
     FunctionDocumentation::Description description = R"(
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.

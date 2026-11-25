@@ -57,6 +57,27 @@ public:
         /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
         if (rhs.grower.bufSize() > Base::grower.bufSize())
             Base::resize(rhs.size() + Base::size());
+        else if constexpr (GrowerWithRobinHood<Grower>)
+        {
+            /// The cells of `rhs` are inserted in position order, so they sweep each `rhs.bufSize()`-cell segment of this table from left
+            /// to right, and the keys that outnumber the cells of a segment pile up right after the insertion point until the table grows.
+            if (Base::size() + rhs.size() > Base::grower.bufSize())
+            {
+                constexpr size_t max_cells_to_estimate_new_keys = 256;
+                size_t sampled = 0;
+                size_t new_keys = 0;
+                for (size_t i = 0; i < rhs.grower.bufSize() && sampled < max_cells_to_estimate_new_keys; ++i)
+                {
+                    if (rhs.buf[i].isZero(*this))
+                        continue;
+                    ++sampled;
+                    new_keys += !this->has(rhs.buf[i].getKey(), rhs.buf[i].getHash(*this));
+                }
+                const size_t expected_size = Base::size() + (sampled ? rhs.size() * new_keys / sampled : 0);
+                if (expected_size > Base::grower.bufSize())
+                    Base::resize(expected_size);
+            }
+        }
 
         if (!this->hasZero() && rhs.hasZero())
         {
@@ -263,12 +284,12 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
     HashSetCellWithSavedHash() : Base() {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
     HashSetCellWithSavedHash(const Key & key_, const typename Base::State & state) : Base(key_, state) {} // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the default constructor above
 
-    bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }
-    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
+    [[nodiscard]] bool keyEquals(const Key & key_) const { return bitEquals(this->key, key_); }
+    [[nodiscard]] bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->key, key_); }
+    [[nodiscard]] bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
-    size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
+    [[nodiscard]] size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
 template <
