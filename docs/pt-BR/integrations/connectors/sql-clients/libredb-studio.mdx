@@ -10,7 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -67,7 +66,7 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     2. Escolha **ClickHouse** como tipo de banco de dados. A porta é preenchida automaticamente com `8123`.
     3. Informe um nome para a conexão, o host, a porta, o nome de usuário, a senha e, opcionalmente, o
        nome do banco de dados.
-    4. Para HTTPS, abra **SSL / TLS**, escolha um modo SSL diferente de `disable` e altere **Port** para
+    4. Para HTTPS, abra **SSL / TLS**, escolha um modo SSL diferente de `disable` e altere **porta** para
        a porta HTTPS do seu servidor (geralmente `8443`). Qualquer modo diferente de `disable` valida o certificado
        do servidor com base nas CAs consideradas confiáveis pelo servidor do LibreDB Studio, que é o comportamento descrito por `verify-system`.
        Isso funciona com o ClickHouse Cloud e com servidores cujo certificado é emitido por uma CA
@@ -79,7 +78,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     `clickhouse://localhost:8123/default` ou `https://reader:secret@ch.example.com:8443/analytics`.
     Uma URL `https://` ativa o TLS.
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-new-connection.png" size="sm" border alt="Caixa de diálogo New Connection do LibreDB Studio com ClickHouse selecionado, host, porta 8123, nome de usuário e banco de dados preenchidos e um teste de conexão bem-sucedido" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![Caixa de diálogo New Connection do LibreDB Studio com ClickHouse selecionado, host, porta 8123, nome de usuário e banco de dados preenchidos e um teste de conexão bem-sucedido](/images/integrations/sql-clients/libredb-studio-new-connection.png)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Execute uma consulta" id="run-a-query">
@@ -102,7 +105,11 @@ GRANT SELECT ON system.data_skipping_indices TO reader;
     LIMIT 10
     ```
 
-    <Image img="/images/integrations/sql-clients/libredb-studio-query.png" size="md" border alt="Editor SQL do LibreDB Studio mostrando a consulta uk_price_paid e uma grade de resultados com os tipos de coluna declarados do ClickHouse" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Editor SQL do LibreDB Studio mostrando a consulta uk_price_paid e uma grade de resultados com os tipos de coluna declarados do ClickHouse](/images/integrations/sql-clients/libredb-studio-query.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
@@ -128,7 +135,11 @@ O LibreDB Studio também pode executar `OPTIMIZE TABLE ... FINAL` em uma tabela,
 de uma tabela ou banco de dados e interromper uma consulta em execução com `KILL QUERY ... SYNC`. Essas operações exigem
 as concessões correspondentes.
 
-<Image img="/images/integrations/sql-clients/libredb-studio-monitoring.png" size="md" border alt="Visão geral de monitoramento do LibreDB Studio para uma conexão com o ClickHouse, mostrando a versão do servidor, tempo de atividade, conexões, tamanho do armazenamento, taxa de acertos do cache e número de tabelas" />
+<div className="ch-image-md">
+  <Frame>
+    ![Visão geral de monitoramento do LibreDB Studio para uma conexão com o ClickHouse, mostrando a versão do servidor, tempo de atividade, conexões, tamanho do armazenamento, taxa de acertos do cache e número de tabelas](/images/integrations/sql-clients/libredb-studio-monitoring.png)
+  </Frame>
+</div>
 
 ## Solução de problemas {#troubleshooting}
 

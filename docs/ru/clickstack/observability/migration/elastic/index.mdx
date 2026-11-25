@@ -1,0 +1,25 @@
+---
+slug: /clickstack/observability/migration/elastic
+title: 'Миграция с Elastic на ClickHouse Observability'
+sidebarTitle: 'Обзор'
+description: 'Миграция с Elastic Stack на полностью управляемый сервис ClickHouse Observability; для самоуправляемых развертываний приведены отдельные инструкции.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'landing-page'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Сервис в стадии бета-тестирования" />
+
+Спланируйте миграцию с Elastic Stack на **полностью управляемый ClickHouse Observability** — рекомендуемый вариант по умолчанию. Начните с введения и сравнения возможностей поиска, затем переходите к руководствам по миграции данных, агентов и SDK. Если шаги различаются, для самоуправляемых развертываний используйте соответствующие вкладки.
+
+| Раздел                                                                           | Описание                                                                             |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [Введение](/ru/clickstack/observability/migration/elastic/intro)                    | Особенности миграции и различия между платформами                                    |
+| [Поиск](/ru/clickstack/observability/migration/elastic/search)                      | Преобразование поисковых запросов, различия в схемах и обработке отсутствующих полей |
+| [Миграция данных](/ru/clickstack/observability/migration/elastic/migrating-data)    | Планирование параллельной ингестии, сроков хранения и миграции исторических данных   |
+| [Миграция агентов](/ru/clickstack/observability/migration/elastic/migrating-agents) | Выбор пути миграции для Beats, Elastic Agent или коллекторов OpenTelemetry           |
+| [Миграция SDK](/ru/clickstack/observability/migration/elastic/migrating-sdks)       | Перенос инструментирования приложений с Elastic APM на OpenTelemetry                 |
+
+Полностью управляемый ClickHouse Observability берет на себя управление базовыми схемами и конфигурацией хранилища. Если вы управляете этими внутренними компонентами самостоятельно, ознакомьтесь с [эквивалентными концепциями](/ru/clickstack/self-configured/migration/elastic/concepts) и [сопоставлением типов](/ru/clickstack/self-configured/migration/elastic/types).

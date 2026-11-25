@@ -19,9 +19,7 @@ doc_type: 'reference'
   поскольку работа со значениями таких типов может приводить к неоднозначности. По умолчанию создание такого типа `Variant` приводит к исключению, но это поведение можно включить с помощью настройки `allow_suspicious_variant_types`
 </Note>
 
-<div id="creating-variant">
-  ## Создание типа Variant
-</div>
+## Создание типа Variant {#creating-variant}
 
 Использование типа `Variant` при определении столбца таблицы:
 
@@ -111,9 +109,7 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-<div id="reading-variant-nested-types-as-subcolumns">
-  ## Чтение вложенных типов Variant как подстолбцов
-</div>
+## Чтение вложенных типов Variant как подстолбцов {#reading-variant-nested-types-as-subcolumns}
 
 Тип Variant поддерживает чтение отдельного вложенного типа из столбца Variant, используя имя типа в качестве подстолбца.
 Так, если у вас есть столбец `variant Variant(T1, T2, T3)`, вы можете прочитать подстолбец типа `T2` с помощью синтаксиса `variant.T2`.
@@ -192,15 +188,11 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="conversion-between-a-variant-column-and-other-columns">
-  ## Преобразование между столбцом Variant и другими столбцами
-</div>
+## Преобразование между столбцом Variant и другими столбцами {#conversion-between-a-variant-column-and-other-columns}
 
 Возможны 4 преобразования для столбца типа `Variant`.
 
-<div id="converting-a-string-column-to-a-variant-column">
-  ### Преобразование столбца String в столбец Variant
-</div>
+### Преобразование столбца String в столбец Variant {#converting-a-string-column-to-a-variant-column}
 
 Преобразование из `String` в `Variant` выполняется путём синтаксического разбора строкового значения как значения типа `Variant`:
 
@@ -247,9 +239,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 └───────────┴──────────────┘
 ```
 
-<div id="converting-an-ordinary-column-to-a-variant-column">
-  ### Преобразование обычного столбца в столбец типа Variant
-</div>
+### Преобразование обычного столбца в столбец типа Variant {#converting-an-ordinary-column-to-a-variant-column}
 
 Обычный столбец типа `T` можно преобразовать в столбец `Variant`, содержащий этот тип:
 
@@ -275,9 +265,7 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-<div id="converting-a-variant-column-to-an-ordinary-column">
-  ### Преобразование столбца Variant в обычный столбец
-</div>
+### Преобразование столбца Variant в обычный столбец {#converting-a-variant-column-to-an-ordinary-column}
 
 Столбец `Variant` можно преобразовать в обычный столбец. В этом случае все вложенные варианты будут преобразованы в целевой тип:
 
@@ -295,9 +283,9 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-<div id="converting-a-variant-to-another-variant">
-  ### Преобразование `Variant` в другой `Variant`
-</div>
+Альтернатива, которую невозможно преобразовать в целевой тип, вызывает ошибку только в том случае, если столбец содержит значения этой альтернативы.
+
+### Преобразование `Variant` в другой `Variant` {#converting-a-variant-to-another-variant}
 
 Можно преобразовать столбец `Variant` в другой столбец `Variant`, но только если целевой столбец `Variant` содержит все вложенные типы исходного `Variant`:
 
@@ -315,9 +303,7 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-<div id="reading-variant-type-from-the-data">
-  ## Чтение типа Variant из данных
-</div>
+## Чтение типа Variant из данных {#reading-variant-type-from-the-data}
 
 Все текстовые форматы (TSV, CSV, CustomSeparated, Values, JSONEachRow и т. д.) поддерживают чтение типа `Variant`. При разборе данных ClickHouse пытается вставить значение в наиболее подходящий тип варианта.
 
@@ -350,9 +336,7 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-<div id="comparing-values-of-variant-data">
-  ## Сравнение значений типа Variant
-</div>
+## Сравнение значений типа Variant {#comparing-values-of-variant-data}
 
 Значения типа `Variant` можно сравнивать только со значениями того же типа `Variant`.
 
@@ -484,9 +468,7 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **Примечание**: по умолчанию тип `Variant` нельзя использовать в ключах `GROUP BY`/`ORDER BY`; если вы хотите его использовать, учитывайте особые правила его сравнения и включите настройки `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
 
-<div id="jsonextract-functions-with-variant">
-  ## Функции JSONExtract с аргументами типа Variant
-</div>
+## Функции JSONExtract с аргументами типа Variant {#jsonextract-functions-with-variant}
 
 Все функции `JSONExtract*` поддерживают тип `Variant`:
 
@@ -520,9 +502,7 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 └────────────────────────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-<div id="functions-with-variant-arguments">
-  ## Функции с аргументами Variant
-</div>
+## Функции с аргументами Variant {#functions-with-variant-arguments}
 
 Большинство функций в ClickHouse автоматически поддерживают аргументы типа `Variant` благодаря **реализации по умолчанию для Variant**.
 Начиная с версии `26.1`, если функция, которая не обрабатывает типы Variant явно, получает столбец Variant, ClickHouse:
@@ -592,9 +572,7 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
   деление на ноль или нехватка памяти, вызываются как обычно, чтобы не скрывать реальные проблемы.
 </Note>
 
-<div id="variant-type-mismatch-behavior">
-  ### Поведение при несоответствии типов
-</div>
+### Поведение при несоответствии типов {#variant-type-mismatch-behavior}
 
 Параметр `variant_throw_on_type_mismatch` определяет, что происходит, когда функция применяется к столбцу `Variant`, а фактический тип значения в строке несовместим с этой функцией:
 
@@ -607,10 +585,10 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
 INSERT INTO test VALUES ('hello'), (42), ('foo');
 
--- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
-SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+-- По умолчанию (сгенерировать исключение при несоответствии типов): length() не принимает UInt64, поэтому запрос завершается с ошибкой.
+SELECT length(v) FROM test;  -- генерирует ILLEGAL_TYPE_OF_ARGUMENT
 
--- With throw disabled: incompatible rows return NULL.
+-- При отключённом исключении: несовместимые строки возвращают NULL.
 SET variant_throw_on_type_mismatch = false;
 SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 ```
@@ -621,6 +599,31 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ hello │         5 │
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
+```
+
+## Агрегатные функции с аргументами типа Variant {#aggregate-functions-with-variant-arguments}
+
+Некоторые агрегатные функции, например `count`, `any`, `groupArray` и функции семейства `uniq`, нативно поддерживают аргументы типа `Variant`.
+Агрегатные функции, работающие только со значениями определённых типов, — например, `sum`, `avg`, `min`, `max`, `quantile`, статистические функции, а также аргумент `val` функций `argMin` и `argMax` — применяются к наименьшему общему супертипу альтернатив, обёрнутому в `Nullable`:
+
+```text
+f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
+```
+
+Значения `NULL` в `Variant`, как обычно, пропускаются. Если у альтернатив нет общего супертипа или он не может быть обёрнут в `Nullable`, выбрасывается исключение `ILLEGAL_TYPE_OF_ARGUMENT`.
+
+**Пример:**
+
+```sql
+SET allow_suspicious_variant_types = 1;
+SELECT sum(v), max(v), toTypeName(sum(v))
+FROM values('v Variant(UInt32, Float64)', 1::UInt32, 2.5::Float64, NULL);
+```
+
+```text
+┌─sum(v)─┬─max(v)─┬─toTypeName(sum(v))─┐
+│    3.5 │    2.5 │ Nullable(Float64)  │
+└────────┴────────┴────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

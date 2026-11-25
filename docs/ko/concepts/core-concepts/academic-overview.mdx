@@ -14,7 +14,7 @@ doc_type: 'guide'
 </Frame>
 
 <div id="abstract">
-  ## 초록
+  ## 초록 {#abstract}
 </div>
 
 지난 수십 년 동안 저장 및 분석되는 데이터의 양은 기하급수적으로 증가했습니다. 산업과 분야를 막론하고 기업들은 제품 개선, 성과 평가, 그리고 비즈니스에 중대한 의사결정을 내리기 위해 이러한 데이터에 의존하기 시작했습니다. 그러나 데이터 규모가 점차 인터넷 규모로 커지면서, 기업들은 과거 데이터와 신규 데이터를 비용 효율적이면서도 확장 가능한 방식으로 관리하는 동시에, 많은 수의 동시 쿼리를 처리하고 실시간에 가까운 지연 시간(예: 사용 사례에 따라 1초 미만)으로 분석해야 하게 되었습니다.
@@ -22,7 +22,7 @@ doc_type: 'guide'
 이 논문은 높은 수집 속도로 페타바이트 규모의 데이터 세트에 대해 고성능 분석을 수행하도록 설계된, 널리 사용되는 오픈소스 OLAP 데이터베이스인 ClickHouse를 개괄적으로 소개합니다. ClickHouse의 스토리지 계층은 전통적인 로그 구조 머지(LSM) 트리를 기반으로 하는 데이터 포맷과, 과거 데이터를 백그라운드에서 지속적으로 변환(예: 집계, 아카이빙)하는 새로운 기법을 결합합니다. 쿼리는 사용하기 편리한 SQL 방언으로 작성되며, 선택적 코드 컴파일을 지원하는 최첨단 벡터화된 쿼리 실행 엔진에서 처리됩니다. ClickHouse는 쿼리 처리 시 관련 없는 데이터를 평가하지 않도록 프루닝 기법을 적극적으로 활용합니다. 다른 데이터 관리 시스템은 테이블 함수, 테이블 엔진 또는 데이터베이스 엔진 수준에서 통합할 수 있습니다. 실제 벤치마크는 ClickHouse가 시장에서 가장 빠른 분석형 데이터베이스 중 하나임을 보여줍니다.
 
 <div id="1-introduction">
-  ## 1 소개
+  ## 1 소개 {#1-introduction}
 </div>
 
 이 논문에서는 수조 개의 행과 수백 개의 컬럼을 가진 테이블에서 고성능 분석 쿼리를 수행하도록 설계된 열 지향 OLAP 데이터베이스인 ClickHouse를 설명합니다. ClickHouse는 2009년에 웹 규모의 로그 파일 데이터를 위한 필터 및 집계 연산자로 [시작되었고](https://clickhou.se/evolution), 2016년에 오픈 소스로 공개되었습니다. [그림 1](#page-1-0)은 이 논문에서 설명하는 주요 기능이 ClickHouse에 언제 도입되었는지를 보여줍니다.
@@ -192,7 +192,7 @@ ClickHouse는 각 삽입이 결국 하나의 파트를 생성한다는 점에 �
 이 절의 나머지 부분에서는 먼저 데이터 요소, 데이터 청크, 세그먼트 세분화 수준에서의 병렬 처리를 더 자세히 설명합니다. 이어서 쿼리 성능을 극대화하기 위한 핵심 최적화 몇 가지를 소개합니다. 마지막으로 여러 쿼리가 동시에 실행되는 환경에서 ClickHouse가 공유 시스템 리소스를 어떻게 관리하는지 설명합니다.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 SIMD 병렬화
+  ### 4.1 SIMD 병렬화 {#4-1-simd-parallelization}
 </div>
 
 여러 행을 연산자 사이에서 전달하면 벡터화를 활용할 기회가 생깁니다. 벡터화는 수동으로 작성한 인트린식 <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup> 또는 컴파일러의 자동 벡터화 <sup>[[25]](#page-12-19)</sup>를 기반으로 합니다. 벡터화의 이점을 얻을 수 있는 코드는 서로 다른 컴퓨트 커널로 컴파일됩니다. 예를 들어, 쿼리 연산자의 내부 핫 루프는 비벡터화 커널, 자동 벡터화된 AVX2 커널, 수동으로 벡터화한 AVX-512 커널로 구현할 수 있습니다. 가장 빠른 커널은 `cpuid` 명령에 따라 [런타임에 선택됩니다](https://clickhou.se/cpu-dispatch). 이 접근 방식을 사용하면 ClickHouse는 최소 요구 사항인 SSE 4.2를 지원하는 15년 이상 된 시스템에서도 실행될 수 있으며, 최신 하드웨어에서는 여전히 상당한 성능 향상을 제공합니다.
@@ -218,7 +218,7 @@ ClickHouse는 SQL 쿼리를 물리 계획 연산자의 방향 그래프로 변�
 ClickHouse의 쿼리 실행 엔진과 모르셀 기반 병렬화 <sup>[[44]](#page-12-20)</sup>는 레인이 일반적으로 서로 다른 코어/NUMA 소켓에서 실행되고, 워커 스레드가 다른 레인의 작업을 가져올 수 있다는 점에서 유사합니다. 또한 중앙 스케줄링 구성 요소가 없으며, 대신 워커 스레드가 연산자 계획을 계속 순회하면서 각자 작업을 선택합니다. 모르셀 기반 병렬화와 달리 ClickHouse는 최대 병렬화 수준을 계획에 미리 반영하고, 기본 모르셀 크기인 약 100,000개 행과 비교해 원본 테이블을 분할하는 데 훨씬 더 큰 범위를 사용합니다. 이로 인해 경우에 따라 정체가 발생할 수 있지만(예: 서로 다른 레인에서 필터 연산자의 런타임 차이가 매우 큰 경우), Repartition과 같은 exchange 연산자를 적극적으로 사용하면 적어도 이러한 불균형이 단계 전반에 걸쳐 누적되는 것은 방지할 수 있다고 봅니다.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 다중 노드 병렬화
+  ### 4.3 다중 노드 병렬화 {#4-3-multi-node-parallelization}
 </div>
 
 쿼리의 원본 테이블이 세그먼트로 분할되어 있으면, 쿼리를 수신한 노드(initiator node)의 쿼리 최적화기는 가능한 한 많은 작업을 다른 노드에서 수행하려고 합니다. 다른 노드의 결과는 쿼리 계획의 여러 지점에서 통합될 수 있습니다. 쿼리에 따라 원격 노드는 1. 원본 테이블의 원시 컬럼을 initiator node로 스트리밍하거나, 2. 원본 컬럼을 필터링한 뒤 남은 행을 전송하거나, 3. 필터 및 집계 단계를 수행하고 부분 집계 상태를 포함한 로컬 결과 그룹을 전송하거나, 또는 4. 필터, 집계, 정렬을 포함한 전체 쿼리를 실행할 수 있습니다.
@@ -297,13 +297,13 @@ ClickHouse는 서버, 사용자, 쿼리 수준에서 메모리 할당의 바이�
 호환 인터페이스. 클라이언트는 네이티브 바이너리 wire 프로토콜과 HTTP 외에도 MySQL 또는 PostgreSQL wire 프로토콜 호환 인터페이스를 통해 ClickHouse와 상호작용할 수 있습니다. 이 호환성 기능은 공급업체가 아직 네이티브 ClickHouse 연결을 구현하지 않은 proprietary 애플리케이션(예: 일부 비즈니스 인텔리전스 도구)에서 접근을 가능하게 하는 데 유용합니다.
 
 <div id="6-performance-as-a-feature">
-  ## 6 기능으로서의 성능
+  ## 6 기능으로서의 성능 {#6-performance-as-a-feature}
 </div>
 
 이 섹션에서는 성능 분석을 위한 내장 도구를 소개하고, 실제 워크로드와 벤치마크 쿼리를 사용해 성능을 평가합니다.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 내장 성능 분석 도구
+  ### 6.1 내장 성능 분석 도구 {#6-1-built-in-performance-analysis-tools}
 </div>
 
 개별 쿼리나 백그라운드 작업의 성능 병목을 조사할 수 있는 다양한 도구가 제공됩니다. 모든 도구는 시스템 테이블을 기반으로 한 통일된 인터페이스를 통해 사용할 수 있습니다.
@@ -317,7 +317,7 @@ ClickHouse는 서버, 사용자, 쿼리 수준에서 메모리 할당의 바이�
 **EXPLAIN 쿼리**. 다른 데이터베이스와 마찬가지로 SELECT 쿼리 앞에 EXPLAIN을 붙이면 쿼리의 AST, 논리 및 물리 연산자 계획, 그리고 실행 시 동작을 자세히 확인할 수 있습니다.
 
 <div id="6-2-benchmarks">
-  ### 6.2 벤치마크
+  ### 6.2 벤치마크 {#6-2-benchmarks}
 </div>
 
 벤치마크는 현실성이 충분하지 않다는 비판을 받아왔지만 <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>, 데이터베이스의 강점과 약점을 파악하는 데 여전히 유용합니다. 다음에서는 벤치마크를 사용해 ClickHouse의 성능을 어떻게 평가하는지 설명합니다.
@@ -369,7 +369,7 @@ Photon <sup>[&#91;5&#93;](#page-12-39)</sup>과 Velox <sup>[&#91;62&#93;](#page-
 DuckDB <sup>[[67]](#page-13-6)</sup> 역시 호스트 프로세스에 내장되도록 설계되었지만, 여기에 더해 쿼리 최적화와 트랜잭션도 제공합니다. 이는 가끔 발생하는 OLTP SQL 문이 섞인 OLAP 쿼리를 처리하도록 설계되었습니다. 이에 따라 DuckDB는 DataBlocks <sup>[[43]](#page-12-43)</sup> 저장 포맷을 선택했으며, 이 포맷은 하이브리드 워크로드에서 우수한 성능을 내기 위해 순서 보존 딕셔너리나 frame-of-reference <sup>[[2]](#page-12-10)</sup> 같은 경량 압축 방식을 사용합니다. 반면 ClickHouse는 append-only 사용 사례, 즉 업데이트와 삭제가 없거나 매우 드문 경우에 최적화되어 있습니다. 블록은 LZ4와 같은 고비용 압축 기법으로 압축되며, 사용자가 빈번한 쿼리의 속도를 높이기 위해 데이터 프루닝을 적극적으로 활용하고, 나머지 쿼리에서는 압축 해제 비용보다 I/O 비용이 훨씬 크다고 가정합니다. 또한 DuckDB는 Hyper의 MVCC 방식 <sup>[[55]](#page-13-35)</sup>에 기반한 직렬화 가능 트랜잭션을 제공하는 반면, ClickHouse는 snapshot isolation만 제공합니다.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 결론 및 전망
+  ## 8 결론 및 전망 {#8-conclusion-and-outlook}
 </div>
 
 오픈소스 고성능 OLAP 데이터베이스인 ClickHouse의 아키텍처를 소개했습니다. 쓰기에 최적화된 스토리지 계층과 최첨단 벡터화 쿼리 엔진을 기반으로 하는 ClickHouse는 높은 수집 속도로 페타바이트 규모 데이터 세트에 대한 실시간 분석을 지원합니다. ClickHouse는 백그라운드에서 데이터를 비동기적으로 병합하고 변환하여 데이터 유지 관리와 병렬 삽입을 효율적으로 분리합니다. 또한 스토리지 계층은 희소 프라이머리 인덱스, 스키핑 인덱스, 프로젝션 테이블을 활용해 적극적인 데이터 프루닝을 수행할 수 있도록 합니다. 업데이트와 삭제, 멱등 삽입, 그리고 고가용성을 위한 노드 간 데이터 복제에 대한 ClickHouse의 구현도 설명했습니다. 쿼리 처리 레이어는 다양한 기법을 사용해 쿼리를 최적화하고, 모든 서버 및 클러스터 리소스 전반에서 실행을 병렬화합니다. 통합 테이블 엔진과 함수는 다른 데이터 관리 시스템 및 데이터 포맷과 자연스럽게 상호 운용할 수 있는 편리한 방법을 제공합니다. 벤치마크를 통해 ClickHouse가 시장에서 가장 빠른 분석 데이터베이스 중 하나임을 입증했으며, 지난 수년간 실제 ClickHouse 배포 환경에서 일반적인 쿼리의 성능이 크게 향상되었음을 보여주었습니다.
@@ -377,17 +377,17 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 역시 호스트 프로세스에 내장되�
 2024년에 계획된 모든 기능과 개선 사항은 공개 로드맵 <sup>[[18]](#page-12-33)</sup>에서 확인할 수 있습니다. 계획된 개선 사항에는 사용자 트랜잭션 지원, 대체 쿼리 언어로서의 PromQL <sup>[[69]](#page-13-36)</sup>, 반정형 데이터(예: JSON)를 위한 새로운 데이터 타입, 조인에 대한 더 나은 계획 수준 최적화, 그리고 경량 삭제를 보완하는 경량 업데이트 구현이 포함됩니다.
 
 <div id="acknowledgements">
-  ## 감사의 말
+  ## 감사의 말 {#acknowledgements}
 </div>
 
 버전 24.6 기준으로 `SELECT * FROM system.contributors`는 ClickHouse에 기여한 1994명의 개인을 반환합니다. 이 데이터베이스를 함께 만들어 오는 데 큰 노력과 헌신을 기울여 주신 ClickHouse Inc.의 전체 엔지니어링 팀과 ClickHouse의 훌륭한 오픈 소스 커뮤니티에 감사드립니다.
 
 <div id="references">
-  ## 참고
+  ## 참고 {#references}
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>
-  * <a id="page-12-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>1</sup> Daniel Abadi, Peter Boncz, Stavros Harizopoulos, Stratos Idreaos, 및 Samuel Madden. 2013. The Design and Implementation of Modern Column-Oriented Database Systems. https://doi.org/10.1561/9781601987556
+  * <a id="page-12-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>1</sup> Daniel Abadi, Peter Boncz, Stavros Harizopoulos, Stratos Idreos, 및 Samuel Madden. 2013. The Design and Implementation of Modern Column-Oriented Database Systems. https://doi.org/10.1561/9781601987556
   * <a id="page-12-10" style={{display:"block",scrollMarginTop:"80px"}} /><sup>2</sup> Daniel Abadi, Samuel Madden, Miguel Ferreira. 2006. Integrating Compression and Execution in Column-Oriented Database Systems. In Proceedings of the 2006 ACM SIGMOD International Conference on Management of Data (SIGMOD &#39;06). 671–682.https://doi.org/10.1145/1142473.1142548
   * <a id="page-12-41" style={{display:"block",scrollMarginTop:"80px"}} /><sup>3</sup> Anastassia Ailamaki, David J. DeWitt, Mark D. Hill, and Marios Skounakis. 2001. Weaving Relations for Cache Performance. In Proceedings of the 27th International Conference on Very Large Data Bases (VLDB &#39;01). Morgan Kaufmann Publishers Inc., San Francisco, CA, USA, 169–180.
   * <a id="page-12-38" style={{display:"block",scrollMarginTop:"80px"}} /><sup>4</sup> Nikos Armenatzoglou, Sanuj Basu, Naga Bhanoori, Mengchu Cai, Naresh Chainani, Kiran Chinta, Venkatraman Govindaraju, Todd J. Green, Monish Gupta, Sebastian Hillig, Eric Hotinger, Yan Leshinksy, Jintian Liang, Michael McCreedy, Fabian Nagel, Ippokratis Pandis, Panos Parchas, Rahul Pathak, Orestis Polychroniou, Foyzur Rahman, Gaurav Saxena, Gokul Soundararajan, Sriram Subramanian, and Doug Terry. 2022. Amazon Redshift Re-Invented. In Proceedings of the 2022 International Conference on Management of Data (Philadelphia, PA, USA) (SIGMOD &#39;22). Association for Computing Machinery, New York, NY, USA, 2205–2217. https://doi.org/10.1145/3514221.3526045
@@ -395,11 +395,11 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 역시 호스트 프로세스에 내장되�
   * <a id="page-12-18" style={{display:"block",scrollMarginTop:"80px"}} /><sup>6</sup> Philip A. Bernstein, Nathan Goodman. 1981. Concurrency Control in Distributed Database Systems. ACM Computing Survey 13, 2 (1981), 185–221. https://doi.org/10.1145/356842.356846
   * <a id="page-12-23" style={{display:"block",scrollMarginTop:"80px"}} /><sup>7</sup> Spyros Blanas, Yinan Li, and Jignesh M. Patel. 2011. 멀티코어 CPU를 위한 주 메모리 해시 조인 알고리즘의 설계 및 평가. In Proceedings of the 2011 ACM SIGMOD International Conference on Management of Data (Athens, Greece) (SIGMOD &#39;11). Association for Computing Machinery, New York, NY, USA, 37–48. https://doi.org/10.1145/1989323.1989328
   * <a id="page-12-26" style={{display:"block",scrollMarginTop:"80px"}} /><a id="page-12-14" style={{display:"block",scrollMarginTop:"80px"}} /><sup>8</sup> Daniel Gomez Blanco. 2023. Practical OpenTelemetry. Springer Nature.
-  * <sup>9</sup> Burton H. Bloom. 1970. 허용 가능한 오류가 있는 Hash 코딩의 공간/시간 절충. Commun. ACM 13, 7 (1970), 422–426. [https://doi.org/10.1145/362686.](https://doi.org/10.1145/362686.362692) [362692](https://doi.org/10.1145/362686.362692)
+  * <sup>9</sup> Burton H. Bloom. 1970. 허용 가능한 오류가 있는 해시 코딩의 공간/시간 절충 관계. Commun. ACM 13, 7 (1970), 422–426. [https://doi.org/10.1145/362686.](https://doi.org/10.1145/362686.362692) [362692](https://doi.org/10.1145/362686.362692)
   * <a id="page-12-27" style={{display:"block",scrollMarginTop:"80px"}} /><sup>10</sup> Peter Boncz, Thomas Neumann, and Orri Erling. 2014. TPC-H 분석: 영향력 있는 벤치마크에 숨겨진 메시지와 교훈. In Performance Characterization and Benchmarking. 61–76. [https://doi.org/10.1007/978-3-319-](https://doi.org/10.1007/978-3-319-04936-6_5) [04936-6&#95;5](https://doi.org/10.1007/978-3-319-04936-6_5)
   * <a id="page-12-0" style={{display:"block",scrollMarginTop:"80px"}} /><sup>11</sup> Peter Boncz, Marcin Zukowski, and Niels Nes. 2005. MonetDB/X100: 하이퍼 파이프라이닝 쿼리 실행. In CIDR.
   * <a id="page-12-8" style={{display:"block",scrollMarginTop:"80px"}} /><sup>12</sup> Martin Burtscher and Paruj Ratanaworabhan. 2007. High Throughput Compression of Double-Precision Floating-Point Data. In Data Compression Conference (DCC). 293–302. https://doi.org/10.1109/DCC.2007.44
-  * <a id="page-12-6" style={{display:"block",scrollMarginTop:"80px"}} /><sup>13</sup> Jef Carpenter와 Eben Hewitt. 2016. Cassandra: The Defnitive Guide (제2판). O&#39;Reilly Media, Inc.
+  * <a id="page-12-6" style={{display:"block",scrollMarginTop:"80px"}} /><sup>13</sup> Jeff Carpenter와 Eben Hewitt. 2016. Cassandra: The Definitive Guide (제2판). O&#39;Reilly Media, Inc.
   * <a id="page-12-17" style={{display:"block",scrollMarginTop:"80px"}} /><sup>14</sup> Bernadette Charron-Bost, Fernando Pedone, and André Schiper (편). 2010. 복제: 이론과 실제. Springer-Verlag.
   * <a id="page-12-3" style={{display:"block",scrollMarginTop:"80px"}} /><sup>15</sup> chDB. 2024. chDB - 내장 OLAP SQL Engine. 2024-06-20에 https://github.com/chdb-io/chdb에서 확인함
   * <a id="page-12-29" style={{display:"block",scrollMarginTop:"80px"}} /><sup>16</sup> ClickHouse. 2024. ClickBench: 분석 데이터베이스를 위한 벤치마크. 2024-06-20에 https://github.com/ClickHouse/ClickBench에서 확인함
@@ -417,7 +417,7 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 역시 호스트 프로세스에 내장되�
   * <a id="page-12-12" style={{display:"block",scrollMarginTop:"80px"}} /><sup>28</sup> Ted Dunning. 2021. The t-digest: 분포에 대한 효율적인 추정. Software Impacts 7 (2021). https://doi.org/10.1016/j.simpa.2020.100049
   * <a id="page-12-16" style={{display:"block",scrollMarginTop:"80px"}} /><sup>29</sup> Martin Faust, Martin Boissier, Marvin Keller, David Schwalb, Holger Bischof, Katrin Eisenreich, Franz Färber, and Hasso Plattner. 2016. SAP HANA의 해시 인덱스를 사용한 저장 공간 축소 및 고유성 강제. In Database and Expert Systems Applications. 137–151. [https://doi.org/10.1007/978-3-319-44406-](https://doi.org/10.1007/978-3-319-44406-2_11) [2&#95;11](https://doi.org/10.1007/978-3-319-44406-2_11)
   * <a id="page-12-11" style={{display:"block",scrollMarginTop:"80px"}} /><sup>30</sup> Philippe Flajolet, Eric Fusy, Olivier Gandouet, and Frederic Meunier. 2007. HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm. 수록: AofA: Analysis of Algorithms, Vol. DMTCS Proceedings vol. AH, 2007 Conference on Analysis of Algorithms (AofA 07). Discrete Mathematics and Theoretical Computer Science, 137–156. https://doi.org/10.46298/dmtcs.3545
-  * <a id="page-12-13" style={{display:"block",scrollMarginTop:"80px"}} /><sup>31</sup> Hector Garcia-Molina, Jefrey D. Ullman, Jennifer Widom. 2009. Database Systems - The Complete Book (2. Ed.).
+  * <a id="page-12-13" style={{display:"block",scrollMarginTop:"80px"}} /><sup>31</sup> Hector Garcia-Molina, Jeffrey D. Ullman, Jennifer Widom. 2009. Database Systems - The Complete Book (2. Ed.).
   * <a id="page-12-24" style={{display:"block",scrollMarginTop:"80px"}} /><sup>32</sup> Pawan Goyal, Harrick M. Vin, and Haichen Chen. 1996. Start-time fair queueing: a scheduling algorithm for integrated services packet switching networks. 26, 4 (1996), 157–168. https://doi.org/10.1145/248157.248171
   * <a id="page-12-21" style={{display:"block",scrollMarginTop:"80px"}} /><sup>33</sup> Goetz Graefe. 1993. Query Evaluation Techniques for Large Databases. ACM Comput. Surv. 25, 2 (1993), 73–169. https://doi.org/10.1145/152610.152611
   * <a id="page-12-40" style={{display:"block",scrollMarginTop:"80px"}} /><sup>34</sup> Jean-François Im, Kishore Gopalakrishna, Subbu Subramaniam, Mayank Shrivastava, Adwait Tumbde, Xiaotian Jiang, Jennifer Dai, Seunghyun Lee, Neha Pawar, Jialiang Li, Ravi Aringunram. 2018. Pinot: 5억 3천만 사용자를 위한 실시간 OLAP. 『2018 데이터 관리 국제 학술대회 논문집』(미국 텍사스주 휴스턴) (SIGMOD &#39;18). Association for Computing Machinery, 미국 뉴욕주 뉴욕, 583–594. https://doi.org/10.1145/3183713.3190661
@@ -430,15 +430,15 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 역시 호스트 프로세스에 내장되�
   * <a id="page-12-42" style={{display:"block",scrollMarginTop:"80px"}} /><sup>41</sup> André Kohn, Viktor Leis, and Thomas Neumann. 2018. 컴파일된 쿼리의 적응형 실행. In 2018 IEEE 34th International Conference on Data Engineering (ICDE). 197–208. https://doi.org/10.1109/ICDE.2018.00027
   * <a id="page-12-36" style={{display:"block",scrollMarginTop:"80px"}} /><sup>42</sup> Andrew Lamb, Matt Fuller, Ramakrishna Varadarajan, Nga Tran, Ben Vandiver, Lyric Doshi, and Chuck Bear. 2012. Vertica 분석용 데이터베이스: 7년 후의 C-Store. Proc. VLDB Endow. 5, 12 (2012년 8월), 1790–1801. [https://doi.org/10.](https://doi.org/10.14778/2367502.2367518) [14778/2367502.2367518](https://doi.org/10.14778/2367502.2367518)
   * <a id="page-12-43" style={{display:"block",scrollMarginTop:"80px"}} /><sup>43</sup> Harald Lang, Tobias Mühlbauer, Florian Funke, Peter A. Boncz, Thomas Neumann, and Alfons Kemper. 2016. Data Blocks: Hybrid OLTP and OLAP on Compressed Storage using both Vectorization and Compilation. In 『2016 International Conference on Management of Data』 논문집 (San Francisco, California, USA) (SIGMOD &#39;16). Association for Computing Machinery, New York, NY, USA, 311–326. https://doi.org/10.1145/2882903.2882925
-  * <a id="page-12-20" style={{display:"block",scrollMarginTop:"80px"}} /><sup>44</sup> Viktor Leis, Peter Boncz, Alfons Kemper, and Thomas Neumann. 2014. Morseldriven parallelism: a NUMA-aware query evaluation framework for the manycore age. In Proceedings of the 2014 ACM SIGMOD International Conference on Management of Data (Snowbird, Utah, USA) (SIGMOD &#39;14). Association for Computing Machinery, New York, NY, USA, 743–754. [https://doi.org/10.1145/2588555.](https://doi.org/10.1145/2588555.2610507) [2610507](https://doi.org/10.1145/2588555.2610507)
+  * <a id="page-12-20" style={{display:"block",scrollMarginTop:"80px"}} /><sup>44</sup> Viktor Leis, Peter Boncz, Alfons Kemper, and Thomas Neumann. 2014. Morsel-driven parallelism: a NUMA-aware query evaluation framework for the many-core age. In Proceedings of the 2014 ACM SIGMOD International Conference on Management of Data (Snowbird, Utah, USA) (SIGMOD &#39;14). Association for Computing Machinery, New York, NY, USA, 743–754. [https://doi.org/10.1145/2588555.](https://doi.org/10.1145/2588555.2610507) [2610507](https://doi.org/10.1145/2588555.2610507)
   * <a id="page-13-17" style={{display:"block",scrollMarginTop:"80px"}} /><sup>45</sup> Viktor Leis, Alfons Kemper, and Thomas Neumann. 2013. 적응형 래딕스 트리: 메인 메모리 데이터베이스를 위한 ARTful 인덱싱. 2013 IEEE 제29회 International Conference on Data Engineering (ICDE)에서. 38–49. [https://doi.org/10.1109/ICDE.](https://doi.org/10.1109/ICDE.2013.6544812) [2013.6544812](https://doi.org/10.1109/ICDE.2013.6544812)
   * <a id="page-13-34" style={{display:"block",scrollMarginTop:"80px"}} /><sup>46</sup> Chunwei Liu, Anna Pavlenko, Matteo Interlandi, and Brandon Haynes. 2023. A Deep Dive into Common Open Formats for Analytical DBMSs. 16, 11 (jul 2023), 3044–3056. https://doi.org/10.14778/3611479.3611507
   * <a id="page-13-30" style={{display:"block",scrollMarginTop:"80px"}} /><sup>47</sup> Zhenghua Lyu, Huan Hubert Zhang, Gang Xiong, Gang Guo, Haozhou Wang, Jinbao Chen, Asim Praveen, Yu Yang, Xiaoming Gao, Alexandra Wang, Wen Lin, Ashwin Agrawal, Junfeng Yang, Hao Wu, Xiaoliang Li, Feng Guo, Jiang Wu, Jesse Zhang, and Venkatesh Raghavan. 2021. Greenplum: A Hybrid Database for Transactional and Analytical Workloads (SIGMOD &#39;21). Association for Computing Machinery, New York, NY, USA, 2530–2542. [https:](https://doi.org/10.1145/3448016.3457562) [//doi.org/10.1145/3448016.3457562](https://doi.org/10.1145/3448016.3457562)
   * <a id="page-13-28" style={{display:"block",scrollMarginTop:"80px"}} /><sup>48</sup> Roger MacNicol and Blaine French. 2004. Sybase IQ Multiplex - 분석용으로 설계됨. In 초대용량 데이터베이스에 관한 제30회 국제 학술대회 논문집 - Volume 30 (Toronto, Canada) (VLDB &#39;04). VLDB Endowment, 1227–1230.
-  * <a id="page-13-31" style={{display:"block",scrollMarginTop:"80px"}} /><sup>49</sup> Sergey Melnik, Andrey Gubarev, Jing Jing Long, Geofrey Romer, Shiva Shivakumar, Matt Tolton, Theo Vassilakis, Hossein Ahmadi, Dan Delorey, Slava Min, Mosha Pasumansky, and Jef Shute. 2020. Dremel: A Decade of Interactive SQL Analysis at Web Scale. Proc. VLDB Endow. 13, 12 (aug 2020), 3461–3472. https://doi.org/10.14778/3415478.3415568
+  * <a id="page-13-31" style={{display:"block",scrollMarginTop:"80px"}} /><sup>49</sup> Sergey Melnik, Andrey Gubarev, Jing Jing Long, Geoffrey Romer, Shiva Shivakumar, Matt Tolton, Theo Vassilakis, Hossein Ahmadi, Dan Delorey, Slava Min, Mosha Pasumansky, and Jeff Shute. 2020. Dremel: A Decade of Interactive SQL Analysis at Web Scale. Proc. VLDB Endow. 13, 12 (aug 2020), 3461–3472. https://doi.org/10.14778/3415478.3415568
   * <a id="page-13-2" style={{display:"block",scrollMarginTop:"80px"}} /><sup>50</sup> Microsoft. 2024. Kusto Query Language. 2024-06-20에 [https:](https://github.com/microsoft/Kusto-Query-Language) [//github.com/microsoft/Kusto-Query-Language](https://github.com/microsoft/Kusto-Query-Language)에서 확인함
   * <a id="page-13-14" style={{display:"block",scrollMarginTop:"80px"}} /><sup>51</sup> Guido Moerkotte. 1998. 소규모 구체화된 집계: 데이터 웨어하우징을 위한 경량 인덱스 구조. In Proceedings of the 24rd International Conference on Very Large Data Bases (VLDB &#39;98). 476–487.
-  * <a id="page-13-22" style={{display:"block",scrollMarginTop:"80px"}} /><sup>52</sup> Jalal Mostafa, Sara Wehbi, Suren Chilingaryan, and Andreas Kopmann. 2022. SciTS: A Benchmark for Time-Series Databases in Scientifc Experiments and Industrial Internet of Things. In Proceedings of the 34th International Conference on Scientifc and Statistical Database Management (SSDBM &#39;22). 제12번 논문. [https:](https://doi.org/10.1145/3538712.3538723) [//doi.org/10.1145/3538712.3538723](https://doi.org/10.1145/3538712.3538723)
+  * <a id="page-13-22" style={{display:"block",scrollMarginTop:"80px"}} /><sup>52</sup> Jalal Mostafa, Sara Wehbi, Suren Chilingaryan, and Andreas Kopmann. 2022. SciTS: A Benchmark for Time-Series Databases in Scientific Experiments and Industrial Internet of Things. In Proceedings of the 34th International Conference on Scientific and Statistical Database Management (SSDBM &#39;22). 제12번 논문. [https:](https://doi.org/10.1145/3538712.3538723) [//doi.org/10.1145/3538712.3538723](https://doi.org/10.1145/3538712.3538723)
   * <a id="page-13-0" style={{display:"block",scrollMarginTop:"80px"}} /><sup>53</sup> Thomas Neumann. 2011. efficiently Compiling efficient Query Plans for Modern Hardware. Proc. VLDB Endow. 4, 9 (jun 2011), 539–550. [https://doi.org/10.14778/](https://doi.org/10.14778/2002938.2002940) [2002938.2002940](https://doi.org/10.14778/2002938.2002940)
   * <a id="page-13-25" style={{display:"block",scrollMarginTop:"80px"}} /><sup>54</sup> Thomas Neumann and Michael J. Freitag. 2020. Umbra: A Disk-Based System with In-Memory Performance. In 10th Conference on Innovative Data Systems Research, CIDR 2020, Amsterdam, The Netherlands, January 12-15, 2020, Online Proceedings. www.cidrdb.org. [http://cidrdb.org/cidr2020/papers/p29-neumann](http://cidrdb.org/cidr2020/papers/p29-neumann-cidr20.pdf)[cidr20.pdf](http://cidrdb.org/cidr2020/papers/p29-neumann-cidr20.pdf)
   * <a id="page-13-35" style={{display:"block",scrollMarginTop:"80px"}} /><sup>55</sup> Thomas Neumann, Tobias Mühlbauer, and Alfons Kemper. 2015. Fast Serializable Multi-Version Concurrency Control for Main-Memory Database Systems. In Proceedings of the 2015 ACM SIGMOD International Conference on Management of Data (Melbourne, Victoria, Australia) (SIGMOD &#39;15). Association for Computing Machinery, New York, NY, USA, 677–689. [https://doi.org/10.1145/2723372.](https://doi.org/10.1145/2723372.2749436) [2749436](https://doi.org/10.1145/2723372.2749436)

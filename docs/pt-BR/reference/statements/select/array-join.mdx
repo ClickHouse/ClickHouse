@@ -378,6 +378,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
+## Ordem das linhas e paginação {#row-order-and-paging}
+
+`ARRAY JOIN` preserva a ordem das linhas que recebe. Para cada linha, gera os elementos na mesma ordem em que aparecem no array. Se uma consulta tiver mais de uma cláusula `ARRAY JOIN`, a primeira cláusula corresponde ao loop externo:
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Se uma cláusula `ARRAY JOIN` tiver mais de um array, por exemplo, `ARRAY JOIN xs AS x, ys AS y`, os elementos na mesma posição vão para a mesma linha. Neste exemplo, o resultado são as duas linhas `('a', 1)` e `('b', 2)`.
+
+Sem `ORDER BY`, a ordem das linhas que o `ARRAY JOIN` recebe não é garantida. Por exemplo, uma consulta pode ler uma tabela em fluxos paralelos. Para obter uma ordem estável, adicione `ORDER BY` com as colunas que identificam a linha de origem e a posição do elemento. Isso é obrigatório para paginar o resultado com `LIMIT` e `OFFSET`:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+Se o `ORDER BY` começar com as colunas da sorting key de uma tabela `MergeTree`, a consulta lê a tabela na ordem da chave. No exemplo, isso ocorre quando a tabela tem `ORDER BY id`. A consulta então para assim que obtém as linhas necessárias para o `LIMIT` e não expande os arrays das demais linhas. Para mais informações, consulte [Otimização da leitura de dados](/pt-BR/reference/statements/select/order-by#optimization-of-data-reading) e a configuração [optimize&#95;read&#95;in&#95;order](/pt-BR/reference/settings/session-settings/optimize#optimize_read_in_order). Se o `ORDER BY` começar com um elemento do array, por exemplo `ORDER BY num, id`, a consulta expande e ordena todas as linhas.
+
+A função [arrayJoin](/pt-BR/reference/functions/regular-functions/array-join) também produz os elementos de cada array na ordem em que aparecem no array. Porém, se uma consulta tiver mais de uma chamada a `arrayJoin`, a primeira chamada nem sempre corresponde ao loop externo. Para mais informações, consulte [Ordem das linhas](/pt-BR/reference/functions/regular-functions/array-join#row-order).
+
 ## Detalhes de implementação {#implementation-details}
 
 A ordem de execução da consulta é otimizada na execução de `ARRAY JOIN`. Embora `ARRAY JOIN` sempre deva ser especificado antes da cláusula [WHERE](/pt-BR/reference/statements/select/where)/[PREWHERE](/pt-BR/reference/statements/select/prewhere) em uma consulta, tecnicamente essas operações podem ser executadas em qualquer ordem, a menos que o resultado de `ARRAY JOIN` seja usado para filtrar. A ordem de processamento é controlada pelo otimizador de consultas.

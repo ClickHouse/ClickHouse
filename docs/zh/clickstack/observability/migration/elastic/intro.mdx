@@ -1,0 +1,39 @@
+---
+slug: /clickstack/observability/migration/elastic/intro
+title: '从 Elastic 迁移到 ClickHouse Observability'
+sidebarTitle: '简介'
+description: '从 Elastic Stack 迁移到全托管 ClickHouse Observability 的注意事项。'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Beta 版产品" />
+
+## 从 Elastic 迁移到 ClickHouse Observability {#migrating-to-clickstack-from-elastic-self-configured}
+
+本指南介绍如何从 Elastic Stack 迁移，涵盖使用 Kibana 探索日志、trace 和指标的部署场景，其中的数据由 Elastic Agent 采集并存储在 Elasticsearch 中。本指南重点介绍全托管的 ClickHouse Observability，说明如何调整基于 Lucene 的搜索、迁移遥测数据采集方式，以及规划数据迁移。对于自管理部署中步骤有所不同的部分，也提供了相应说明。
+
+ClickHouse Observability 是面向 SRE、开发者及其智能体的全托管平台。它结合全保真遥测数据、快速搜索、high-cardinality 聚合和 SQL，帮助您调查故障。只需将遥测数据发送到托管的 OpenTelemetry 端点，ClickHouse 就会负责摄取、schema、基础设施和扩缩容。
+
+您无需先弄清 Elasticsearch 的内部机制如何对应到 ClickHouse，即可开始使用。对于自管理部署，请参阅[对应概念](/zh/clickstack/self-configured/migration/elastic/concepts)和[类型映射](/zh/clickstack/self-configured/migration/elastic/types)。
+
+如果符合以下情况，可以考虑迁移到 ClickHouse Observability：
+
+* **您希望使用自己的 SRE 智能体。** 通过 [ClickStack MCP 服务器](/zh/clickstack/observability/mcp)连接 Claude、Codex 或自建的智能体运行框架，选择适合团队的模型和调查流程。
+* **您的智能体需要的不只是预定义搜索。** MCP 工具支持日志搜索、trace 探索、事件模式和事件差异分析。SQL 支持跨遥测数据的连接和历史对比，并能解答更深入的分析问题。
+* **慢查询拖慢了调查进度。** 对 high-cardinality 遥测数据进行快速搜索和聚合，有助于工程师和智能体验证假设、对比证据。
+* **您需要全保真遥测数据来进行根因分析。** 保留可能因采样或预聚合而丢失的详细日志、trace span 和属性，为调查保留完整上下文。
+* **不断增长的遥测数据量带来了成本压力。** ClickHouse 的列式压缩和分析引擎可帮助您高效存储和查询大量遥测数据。
+* **您希望减少可观测性平台的运维时间。** 全托管服务负责数据库容量配置、schema、摄取和扩缩容。
+* **您希望以开放标准为基础构建平台。** 以开源 ClickStack 为基础，使用 OpenTelemetry 采集数据、使用 SQL 进行分析，并通过 MCP 接入智能体。
+
+如果符合以下情况，ClickHouse Observability 可能不适合您：
+
+* 您的主要需求是安全分析，需要专注于 SIEM 的产品。
+* 全面性能剖析对您的工作流程至关重要。
+* 您需要的是通用商业智能平台，而非面向 SRE 和开发者的调查流程。对于此类需求，可以考虑将 ClickHouse 与 [Grafana](/zh/integrations/connectors/data-visualization/grafana/index) 或 [Superset](/zh/integrations/connectors/data-visualization/superset-and-clickhouse) 配合使用。
+
+如果您需要直接访问数据库，将遥测数据与外部业务数据进行连接，或希望自行优化数据库，可以考虑 [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/overview)。对于大多数团队，全托管服务是首选。
