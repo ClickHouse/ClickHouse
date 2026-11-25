@@ -23,14 +23,17 @@ public:
     explicit LocalDirectorySyncGuard(const String & full_path);
     ~LocalDirectorySyncGuard() override;
 
+    /// Synchronize and close the descriptor. Propagates errors; subsequent calls are no-ops.
+    void sync() override;
+
 private:
     int fd = -1;
 };
 
 /// Keeps a directory open so a mutation inside it can be persisted afterwards.
-/// Unlike LocalDirectorySyncGuard, the sync is explicit and its failure propagates, so a caller
-/// can refuse to acknowledge a change whose directory entry it could not persist. The
-/// constructor opens the directory, so it can be held before the mutation it will persist.
+/// The sync is explicit and its failure propagates, so a caller can refuse to acknowledge a
+/// change whose directory entry it could not persist. The constructor opens the directory, so
+/// it can be held before the mutation it will persist.
 class CheckedDirectorySync
 {
 public:
@@ -65,4 +68,3 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
 void createDirectoriesAndSync(const String & dir, bool fsync, const String & existing_root = {});
 
 }
-

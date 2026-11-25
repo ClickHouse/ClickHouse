@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -39,6 +40,25 @@ String doubleQuoteString(std::string_view x)
 }
 
 
+String doubleQuoteStringPostgreSQL(std::string_view x)
+{
+    WriteBufferFromOwnString wb;
+    writeDoubleQuotedStringPostgreSQL(x, wb);
+    return wb.str();
+}
+
+
+String doubleQuoteStringSQLite(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeDoubleQuotedStringSQLite(x, wb);
+    }
+    return res;
+}
+
+
 String backQuote(std::string_view x)
 {
     String res(2 + x.size(), '\0');
@@ -61,6 +81,15 @@ String backQuoteIfNeed(std::string_view x)
 }
 
 
+String backQuoteIfNotBareWord(std::string_view x)
+{
+    bool is_bare_word = !x.empty() && isValidIdentifierBegin(x[0]) && std::all_of(x.begin() + 1, x.end(), isWordCharASCII);
+    if (is_bare_word)
+        return String(x);
+    return backQuote(x);
+}
+
+
 String backQuoteMySQL(std::string_view x)
 {
     String res(2 + x.size(), '\0');
@@ -71,4 +100,13 @@ String backQuoteMySQL(std::string_view x)
     return res;
 }
 
+String backQuoteSQLite(std::string_view x)
+{
+    String res(2 + x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeBackQuotedStringSQLite(x, wb);
+    }
+    return res;
+}
 }

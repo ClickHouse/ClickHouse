@@ -317,7 +317,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
 
-            DETACH TABLE test.kafka_{format_name};
+            DETACH TABLE test.kafka_{format_name} SYNC;
             ATTACH TABLE test.kafka_{format_name};
             """
         )

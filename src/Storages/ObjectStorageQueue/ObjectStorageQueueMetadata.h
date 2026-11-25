@@ -83,6 +83,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        size_t processing_state_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -102,6 +103,8 @@ public:
     /// - adjust, if needed and allowed, passed queue settings according to
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
+    /// - if not `strict` or from a named collection, a table is loaded even if its source differs from keeper;
+    /// - if keeper has no `source` (metadata written by an older version), save the table's `source` there;
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
         const fs::path & zookeeper_path,
@@ -109,7 +112,8 @@ public:
         const ColumnsDescription & columns,
         const std::string & format,
         const ContextPtr & context,
-        bool is_attach,
+        const ObjectStorageQueueTableMetadata::Source & source,
+        bool strict,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -201,6 +205,7 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+    size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
 
@@ -212,6 +217,9 @@ public:
     void updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id);
     /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
     void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Forget both watermarks of the table and remove their metrics, so that a table which was shut down
+    /// does not leave stale series. A later update starts again from an empty watermark.
+    void removePipelineLagMetrics(const StorageID & storage_id);
 
 private:
     void cleanupThreadFunc();
@@ -246,6 +254,7 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
+    std::atomic<size_t> processing_state_cache_ttl_seconds;
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
     /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be

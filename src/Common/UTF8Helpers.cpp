@@ -3,7 +3,10 @@
 #include <Poco/UTF8Encoding.h>
 
 #include <widechar_width.h>
+#include <algorithm>
 #include <bit>
+#include <cstring>
+#include <type_traits>
 
 namespace DB
 {
@@ -72,27 +75,93 @@ struct UTF8Decoder
     UInt32 codepoint {0};
 };
 
-static int wcwidth(wchar_t wc)
+namespace
 {
-    int width = widechar_wcwidth(wc);
+
+/// The terminal columns of a `widechar_wcwidth` result, as in terminals with Unicode 9 or newer widths: most emoji take two.
+size_t terminalWidth(int width)
+{
     switch (width)
     {
         case widechar_nonprint:
         case widechar_combining:
         case widechar_unassigned:
+        case widechar_non_character:
             return 0;
         case widechar_ambiguous:
         case widechar_private_use:
-        case widechar_widened_in_9:
             return 1;
+        case widechar_widened_in_9:
+            return 2;
         default:
-            return width;
+            return static_cast<size_t>(width);
     }
 }
 
-
-namespace
+/// The width of a code point and the interval of code points around it that have the same width,
+/// so that the next code point of the same script usually needs no binary search over the tables.
+struct CodePointWidthCache
 {
+    UInt32 lo = 1;
+    UInt32 hi = 0;
+    size_t width = 0;
+
+    size_t get(UInt32 code_point)
+    {
+        if (code_point < lo || code_point > hi)
+            lookUp(code_point);
+        return width;
+    }
+
+private:
+    /// Like `widechar_in_table`, and narrows the interval to the range or the gap around `code_point`.
+    template <typename Table>
+    bool inTable(const Table & table, UInt32 code_point)
+    {
+        const auto * where = std::lower_bound(std::begin(table), std::end(table), code_point,
+            [](widechar_range range, UInt32 value) { return range.hi < value; });
+        if (where != std::end(table) && where->lo <= code_point)
+        {
+            lo = std::max(lo, where->lo);
+            hi = std::min(hi, where->hi);
+            return true;
+        }
+        if (where != std::begin(table))
+            lo = std::max(lo, std::prev(where)->hi + 1);
+        if (where != std::end(table))
+            hi = std::min(hi, where->lo - 1);
+        return false;
+    }
+
+    /// The same checks in the same order as `widechar_wcwidth`: every code point of the interval
+    /// is in the same table and in none of the tables checked before it.
+    void lookUp(UInt32 code_point)
+    {
+        lo = 0;
+        hi = 0x10FFFF;
+        int res = 1;
+        if (inTable(widechar_ascii_table, code_point))
+            res = 1;
+        else if (inTable(widechar_private_table, code_point))
+            res = widechar_private_use;
+        else if (inTable(widechar_nonprint_table, code_point))
+            res = widechar_nonprint;
+        else if (inTable(widechar_nonchar_table, code_point))
+            res = widechar_non_character;
+        else if (inTable(widechar_combining_table, code_point) || inTable(widechar_combiningletters_table, code_point))
+            res = widechar_combining;
+        else if (inTable(widechar_doublewide_table, code_point))
+            res = 2;
+        else if (inTable(widechar_ambiguous_table, code_point))
+            res = widechar_ambiguous;
+        else if (inTable(widechar_unassigned_table, code_point))
+            res = widechar_unassigned;
+        else if (inTable(widechar_widened_table, code_point))
+            res = widechar_widened_in_9;
+        width = terminalWidth(res);
+    }
+};
+
 
 enum ComputeWidthMode
 {
@@ -100,45 +169,67 @@ enum ComputeWidthMode
     BytesBeforeLimit    /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
 
+/// One bit per byte of a block of `block_size` bytes that is not printable ASCII (32 to 126), lowest bit first.
+/// Turning the lanes into bits is endian dependent.
+template <size_t block_size>
+ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
+{
+    using Bytes = UInt8 __attribute__((ext_vector_type(block_size)));
+    using Mask = bool __attribute__((ext_vector_type(block_size)));
+    using Bits = std::conditional_t<block_size == 32, UInt32, UInt16>;
+    static_assert(std::endian::native == std::endian::little);
+
+    Bytes bytes;
+    memcpy(&bytes, data, block_size);
+    /// A byte is printable iff `bytes - 32` is in [0, 94] (unsigned lanes, so the wraparound is well defined).
+    /// `x >> 7` is set for x >= 128 and `(x + 33) >> 7` for x in [95, 127], so the union is set exactly for x > 94.
+    /// A comparison is not used because its result type would depend on `-faltivec-src-compat` on PowerPC.
+    const Bytes x = bytes - static_cast<UInt8>(32);
+    return __builtin_bit_cast(Bits, __builtin_convertvector((x | (x + static_cast<UInt8>(33))) >> 7, Mask));
+}
+
 template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
+    CodePointWidthCache width_cache;
     bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
     {
         /// Quickly skip regular ASCII
-
-#if defined(__SSE2__)
-        const auto lower_bound = _mm_set1_epi8(32);
-        const auto upper_bound = _mm_set1_epi8(126);
-
-        while (i + 15 < size)
+        if constexpr (std::endian::native == std::endian::little)
         {
-            if (is_escape_sequence)
-                break;
-
-            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
-
-            const uint16_t non_regular_width_mask = static_cast<uint16_t>(_mm_movemask_epi8(
-                _mm_or_si128(
-                    _mm_cmplt_epi8(bytes, lower_bound),
-                    _mm_cmpgt_epi8(bytes, upper_bound))));
-
-            if (non_regular_width_mask)
+            /// At a byte that is not printable ASCII, e.g. every byte of a multi-byte character, the blocks
+            /// cannot skip anything, and the mask is expensive to build on ARM, which has no `movemask`.
+            if (!is_escape_sequence && isPrintableASCII(data[i]))
             {
-                auto num_regular_chars = std::countr_zero(non_regular_width_mask);
-                width += num_regular_chars;
-                i += num_regular_chars;
-                break;
-            }
+                /// Advance by whole blocks until one has a byte to stop at, so that the next load does not
+                /// wait for the position of that byte.
+                UInt32 non_printable = 0;
+                for (; i + 32 <= size; i += 32, width += 32)
+                    if ((non_printable = nonPrintableASCIIMask<32>(&data[i])))
+                        break;
 
-            i += 16;
-            width += 16;
+                if (!non_printable && i + 16 <= size)
+                {
+                    non_printable = nonPrintableASCIIMask<16>(&data[i]);
+                    if (!non_printable)
+                    {
+                        i += 16;
+                        width += 16;
+                    }
+                }
+
+                if (non_printable)
+                {
+                    const size_t printable = std::countr_zero(non_printable);
+                    i += printable;
+                    width += printable;
+                }
+            }
         }
-#endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
@@ -189,7 +280,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                     else if (decoder.codepoint == '\t')
                         next_width += 8 - (prefix + width) % 8;
                     else
-                        next_width += wcwidth(decoder.codepoint);
+                        next_width += width_cache.get(decoder.codepoint);
 
                     if (mode == BytesBeforeLimit && next_width > limit)
                         return i - rollback;

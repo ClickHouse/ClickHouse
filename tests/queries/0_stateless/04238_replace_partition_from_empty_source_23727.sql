@@ -28,8 +28,8 @@ ALTER TABLE t_replace_empty_dst REPLACE PARTITION 202301 FROM t_replace_empty_sr
 
 SELECT 'destination data cleared', count() FROM t_replace_empty_dst;
 
--- `compatibility` < 26.6 must also restore the legacy silent-drop (SettingsChangesHistory keeps the
--- 26.6-bucket entry with previous_value=true). Fails if the entry's bucket or previous_value regresses.
+-- `compatibility` < 26.6 must also restore the legacy silent-drop (the setting keeps a 26.6 history
+-- record with previous_value=true). Fails if the record's version or previous_value regresses.
 INSERT INTO t_replace_empty_dst VALUES ('2023-01-15', 100), ('2023-01-20', 200);
 ALTER TABLE t_replace_empty_dst REPLACE PARTITION 202301 FROM t_replace_empty_src
     SETTINGS compatibility = '26.5';

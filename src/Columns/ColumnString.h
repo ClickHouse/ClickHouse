@@ -2,7 +2,6 @@
 
 #include <cstring>
 
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -109,11 +108,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
-    {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-    }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override
     {
@@ -128,6 +123,8 @@ public:
     }
 
     bool hasOnlyTypeDefaults() const override;
+
+    ColumnPtr createWithOffsets(const Offsets & positions, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
     void insert(const Field & x) override
     {
@@ -214,12 +211,16 @@ public:
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
     void serializeAsComparable(size_t n, String & out) const override;
     void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
+
+    size_t rowStoreOverflowBytes(size_t start, size_t count) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
@@ -323,6 +324,7 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
+    ColumnPlanes getPlanes() const override;
 
     /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
     ColumnPtr createSizeSubcolumn() const;

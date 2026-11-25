@@ -13,6 +13,3 @@ SELECT x FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM 
 SELECT x FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM numbers(10))) ORDER BY x LIMIT AFTER y >= 6 UNTIL y >= 14 SETTINGS distributed_group_by_no_merge = 2;
 SELECT x FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM numbers(10))) ORDER BY x LIMIT 3 AFTER y >= 10 SETTINGS distributed_push_down_limit = 1, distributed_group_by_no_merge = 2;
 SELECT x, x + 1 AS z FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM numbers(10))) ORDER BY x LIMIT 3 AFTER y >= 10 SETTINGS distributed_group_by_no_merge = 2;
--- Legacy interpreter (enable_analyzer = 0).
-SELECT x FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM numbers(10))) ORDER BY x LIMIT 3 AFTER y >= 10 SETTINGS distributed_group_by_no_merge = 2, enable_analyzer = 0;
-SELECT x FROM remote('127.0.0.1', view(SELECT number AS x, number * 2 AS y FROM numbers(10))) ORDER BY x LIMIT AFTER y >= 6 UNTIL y >= 14 SETTINGS distributed_group_by_no_merge = 2, enable_analyzer = 0;

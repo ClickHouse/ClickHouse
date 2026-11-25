@@ -1,0 +1,67 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nestjs
+description: 'Configuração do NestJS para o ClickHouse Observability e implantações autogerenciadas.'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentação']
+sidebarTitle: 'NestJS'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Use o SDK Node.js do ClickStack para coletar telemetria da sua aplicação NestJS e enviá-la ao ClickHouse Observability. O SDK inclui instrumentação de requisições do NestJS e captura a saída do console.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Instale o SDK {#install-sdk}
+
+Use o Node.js 22.15 ou superior:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+## Configure o destino {#configure-destination}
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    Abra **Team Settings → Data → Managed Telemetry** no seu serviço e copie o **OTLP HTTP endpoint** e a **API key**. Use o endpoint HTTPS completo, incluindo a porta:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    Use o endpoint OTLP HTTP e a chave de ingestão do seu coletor. Use `http://` em vez de `https://` se o coletor não tiver TLS configurado. Para configurar o coletor, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Inicie sua aplicação {#start-application}
+
+Defina `OTEL_SERVICE_NAME` para identificar sua aplicação. Compile sua aplicação NestJS e, em seguida, faça o pré-carregamento do SDK antes do ponto de entrada compilado:
+
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+```
+
+Ajuste `dist/main.js` de acordo com a saída da sua compilação. Se você usa `ts-node` ou outro transpilador que intercepta o `require`, use `--require @clickhouse/clickstack-node/register` em vez disso. Se você empacotar sua aplicação, mantenha o SDK e as dependências instrumentadas como externas.
+
+Você pode continuar usando o logger de console padrão do NestJS. Para um logger personalizado, use uma integração compatível, como Winston ou Pino. Para detalhes de configuração e compatibilidade, consulte o [guia do Node.js](/pt-BR/clickstack/observability/ingesting-data/sdks/nodejs).
+
+## Verificar a ingestão {#verify-ingestion}
+
+Faça uma requisição a um controlador e emita uma mensagem de log. No ClickHouse Observability, selecione um intervalo de tempo recente e localize o nome do serviço da sua aplicação em Logs e Traces. Depois de aguardar o tempo necessário para a exportação, confira as métricas em Métricas.

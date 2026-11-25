@@ -1,0 +1,3 @@
+status:       applicable
+status:       not_applicable
+reason:       Hypothetical projection can no longer be added to this table: projection with this name already exists. Drop the real projection or use another name

@@ -40,10 +40,10 @@ class AggregateFunctionTimeSeriesGroupArray final :
 public:
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>;
 
-    using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
+    using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
+    using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "timeSeriesGroupArray";
     }
@@ -183,9 +183,16 @@ public:
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        /// With the single argument form the result type is the same as the type of that argument.
         if (argument_types_.size() == 1)
-            return argument_types_[0];
+        {
+            /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
+            /// as its only argument, in this case it should return `Array(Tuple(timestamp_type, value_type))`.
+            const auto & array_type = typeid_cast<const DataTypeArray &>(*argument_types_[0]);
+            const auto & tuple_type = typeid_cast<const DataTypeTuple &>(*array_type.getNestedType());
+            if (tuple_type.hasExplicitNames())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements(), tuple_type.getElementNames()));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements()));
+        }
 
         const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
         const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
@@ -193,19 +200,19 @@ public:
         return std::make_shared<DataTypeArray>(make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
@@ -250,8 +257,8 @@ public:
         }
         else
         {
-            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num], arena);
         }
     }
@@ -315,8 +322,8 @@ public:
         if (!array_of_pairs_argument && !array_arguments)
         {
             /// Each row holds a single sample.
-            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
+            const TimestampType * timestamp_data = typeid_cast<const TimestampColumnType &>(*columns[0]).getData().data();
+            const ValueType * value_data = typeid_cast<const ValueColumnType &>(*columns[1]).getData().data();
 
             if (!flags_data)
                 addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
@@ -342,8 +349,8 @@ public:
             /// The timestamps and the values are stored in the same array, so they share the offsets.
             timestamp_offsets = array_column.getOffsets().data();
             value_offsets = timestamp_offsets;
-            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
+            timestamp_data = typeid_cast<const TimestampColumnType &>(tuple_column.getColumn(0)).getData().data();
+            value_data = typeid_cast<const ValueColumnType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
@@ -352,21 +359,21 @@ public:
 
             timestamp_offsets = timestamp_array_column.getOffsets().data();
             value_offsets = value_array_column.getOffsets().data();
-            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
+            timestamp_data = typeid_cast<const TimestampColumnType &>(timestamp_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
         }
 
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
 
         /// Reserve memory for all the samples at once if no rows are skipped.
         if (!flags_data && row_end > row_begin)
-            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
+            reserveAdd(place, timestamp_offsets[static_cast<ssize_t>(row_end) - 1] - previous_timestamp_offset, arena);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
             /// A flag is per row, and each row holds a whole series
-            if (!flags_data || flags_data[i] == flag_value_to_include)
+            if (!flags_data || (flags_data[i] != 0) == flag_value_to_include)
             {
                 const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
                 const size_t value_array_size = value_offsets[i] - previous_value_offset;
@@ -512,20 +519,25 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        ColVecType & timestamps_to = typeid_cast<ColVecType &>(tuple.getColumn(0));
-        ColVecResultType & values_to = typeid_cast<ColVecResultType &>(tuple.getColumn(1));
+        auto & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0)).getData();
+        auto & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1)).getData();
 
         Data & data = this->data(place);
 
         data.sort(arena);
 
-        for (const Element & element : data.elements)
+        const size_t num_elements = data.elements.size();
+        const size_t timestamps_offset = timestamps_to.size();
+        const size_t values_offset = values_to.size();
+        timestamps_to.resize(timestamps_offset + num_elements);
+        values_to.resize(values_offset + num_elements);
+        for (size_t i = 0; i != num_elements; ++i)
         {
-            timestamps_to.insert(element.timestamp);
-            values_to.insert(element.value);
+            timestamps_to[timestamps_offset + i] = data.elements[i].timestamp;
+            values_to[values_offset + i] = data.elements[i].value;
         }
 
-        offsets_to.push_back(offsets_to.back() + data.elements.size());
+        offsets_to.push_back(offsets_to.back() + num_elements);
     }
 
 private:

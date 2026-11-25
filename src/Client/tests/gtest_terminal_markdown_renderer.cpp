@@ -161,6 +161,12 @@ TEST(TerminalMarkdownRenderer, BadgeComponentRendered)
 {
     EXPECT_EQ(plainRenderer().render("<ExperimentalBadge/>"), "[Experimental]\n");
     EXPECT_EQ(plainRenderer().render("<CloudNotSupportedBadge/>"), "[Not supported in ClickHouse Cloud]\n");
+    EXPECT_EQ(
+        plainRenderer(200).render("<CloudOnlyBadge/>"),
+        "[Available in ClickHouse Cloud, ClickHouse Private, and BYOC]\n");
+    EXPECT_EQ(
+        plainRenderer(200).render("<CloudOnlyBadge supported={[\"cloud\", \"BYOC\"]}/>"),
+        "[Available in ClickHouse Cloud and BYOC]\n");
 }
 
 TEST(TerminalMarkdownRenderer, PlanFeatureBadgeRendersItsMessage)
@@ -216,6 +222,14 @@ TEST(TerminalMarkdownRenderer, MintlifyCardKeepsTitleAndContent)
         plainRenderer().render("<Card title=\"Looking for a guide?\" href=\"/concepts/json\" icon=\"book\">\n"
                                "  Check out the JSON guide.\n</Card>"),
         "Looking for a guide?\nCheck out the JSON guide.\n");
+}
+
+TEST(TerminalMarkdownRenderer, MintlifyAccordionKeepsTitleAndContent)
+{
+    EXPECT_EQ(
+        plainRenderer().render("<Accordion title=\"Implementation details\">\nBody.\n</Accordion>"),
+        "Implementation details\nBody.\n");
+    EXPECT_EQ(plainRenderer().render("Before.\n\n<Frame>\nInside.\n</Frame>\n\nAfter."), "Before.\n\nInside.\n\nAfter.\n");
 }
 
 TEST(TerminalMarkdownRenderer, SelfClosingComponentIsDropped)

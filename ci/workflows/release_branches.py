@@ -1,11 +1,13 @@
+import os
+
 from praktika import Workflow
 
 from ci.defs.defs import (
-    BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
+    with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
@@ -16,12 +18,12 @@ builds_for_release_branch = [
     if "coverage" not in job.name and "binary" not in job.name
 ] + JobConfigs.release_build_jobs
 
-# Add long retention tags to subset of artifacts
-clickhouse_binaries_with_tags = []
-for artifact in ArtifactConfigs.clickhouse_binaries:
-    if artifact.name in BINARIES_WITH_LONG_RETENTION:
-        artifact = artifact.add_tags({"retention": "long"})
-    clickhouse_binaries_with_tags.append(artifact)
+clickhouse_binaries_with_tags = with_long_retention_tags(
+    ArtifactConfigs.clickhouse_binaries
+)
+
+# Reports and CIDB are public; only a build in the public repository may write to them.
+is_public_repository = os.getenv("GITHUB_REPOSITORY") == "ClickHouse/ClickHouse"
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
@@ -33,7 +35,7 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.special_build_jobs
-            if any(t in job.name for t in ("darwin",))
+            if any(t in job.name for t in ("darwin", "illumos", "compat"))
         ],
         *JobConfigs.sign_macos_binary_jobs,
         JobConfigs.docker_server,
@@ -41,11 +43,6 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_master_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
         *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
-        *[
-            job
-            for job in JobConfigs.integration_test_asan_master_jobs
-            if "asan" in job.name
-        ],
         *[
             job
             for job in JobConfigs.integration_test_jobs_required
@@ -71,8 +68,8 @@ workflow = Workflow.Config(
     secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
-    enable_report=True,
-    enable_cidb=True,
+    enable_report=is_public_repository,
+    enable_cidb=is_public_repository,
     enable_commit_status_on_failure=True,
     enable_slack_feed=True,
     pre_hooks=[

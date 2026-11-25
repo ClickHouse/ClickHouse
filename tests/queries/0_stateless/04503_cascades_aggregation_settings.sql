@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- `distributed_plan_force_shuffle_aggregation` and `distributed_aggregation_memory_efficient`
 -- apply to the aggregation alternatives built by the cost-based optimizer.
 

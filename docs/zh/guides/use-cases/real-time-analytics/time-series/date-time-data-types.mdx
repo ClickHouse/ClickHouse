@@ -65,16 +65,12 @@ precise_datetime:      2025-03-12 11:39:07.196
 very_precise_datetime: 2025-03-12 11:39:07.196724000
 ```
 
-<div id="time-series-time-types">
-  ## Time 和 Time64 类型
-</div>
+## Time 和 Time64 类型 {#time-series-time-types}
 
 对于需要存储不包含日期 components 的时刻值的场景，ClickHouse 提供了 [`Time`](/zh/reference/data-types/time) 和 [`Time64`](/zh/reference/data-types/time64) 类型，它们于 25.6 版本中引入。这些类型适合表示重复性计划、每日规律，或其他适合将日期与时间 components 分开处理的场景。
 
 <Note>
-  使用 `Time` 和 `Time64` 需要启用以下设置：`SET enable_time_time64_type = 1;`
-
-  这些类型于 25.6 版本引入
+  自 25.12 版本起，`Time` 和 `Time64` 已默认启用。在 25.6 至 25.11 版本中，请使用 `SET enable_time_time64_type = 1;` 启用它们。
 </Note>
 
 `Time` 类型以秒级精度存储小时、分钟和秒。它在内部以有符号 32 位整数存储，支持 `[-999:59:59, 999:59:59]` 范围，因此可以表示超过 24 小时的值。这在跟踪耗时或进行结果超出单日范围的算术运算时非常有用。
@@ -104,7 +100,7 @@ ORDER BY event_id;
 INSERT INTO time_examples VALUES 
     (1, '14:30:25', '14:30:25.123'),
     (2, 52225, 52225.456),
-    (3, '26:11:10', '26:11:10.789');  -- 超过 24 小时的值会被规范化
+    (3, '26:11:10', '26:11:10.789');  -- Values normalize beyond 24 hours
 
 SELECT * FROM time_examples ORDER BY event_id;
 ```
@@ -123,9 +119,7 @@ SELECT * FROM time_examples ORDER BY event_id;
 SELECT * FROM time_examples WHERE basic_time = '14:30:25';
 ```
 
-<div id="time-series-timezones">
-  ## 时区
-</div>
+## 时区 {#time-series-timezones}
 
 许多使用场景还需要一并存储时区。我们可以将时区设置为 `DateTime` 或 `DateTime64` 类型的最后一个参数：
 
@@ -191,9 +185,7 @@ dt64_2: 2022-12-12 12:13:15.123456789
 在第二行中，我们插入所有值时都未指定时区，因此使用了服务器的本地时区。
 与第一行一样，`dt_1` 和 `dt64_1` 会转换为 `Europe/Berlin`，而 `dt_2` 和 `dt64_2` 使用服务器的本地时区。
 
-<div id="time-series-date-time-functions">
-  ## 日期和时间函数
-</div>
+## 日期和时间函数 {#time-series-date-time-functions}
 
 ClickHouse 还提供了一组函数，让我们可以在不同的数据类型之间进行转换。
 

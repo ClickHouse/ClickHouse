@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- The fix is in the analyzer's `LogicalExpressionOptimizerPass`; the old analyzer rejects these
 -- `JOIN ON` shapes via a different path (`INVALID_JOIN_ON_EXPRESSION`), so its output differs.
 
