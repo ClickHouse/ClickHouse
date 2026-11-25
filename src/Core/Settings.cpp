@@ -2503,7 +2503,7 @@ Possible values:
 )", 0, \
         {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
-For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -2820,7 +2820,9 @@ The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/
 
 Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
 
-Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
+The plan is masked with the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) of the server, like the `query` column. A query in which a rule matches, in its text or in a query parameter, stores no plan, because constant folding can carry the masked text into the plan in a form no rule matches. Otherwise every text the plan holds, such as filter conditions, `IN` lists and output column names, is masked before it is stored. A query with secret arguments, such as the key of `encrypt`, stores no plan either, because they cannot be reliably hidden inside it.
+
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected. Use [`log_query_plans_probability`](/reference/settings/session-settings/log-query#log_query_plans_probability) to capture only a random sample of queries.
 
 That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/concepts/features/performance/caches/query-cache) executes no plan and so has none to store.
 
@@ -2832,6 +2834,22 @@ See also:
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to capture the query plan actually executed, together with per-step runtime statistics."}) \
+    DECLARE(Float, log_query_plans_probability, 1., R"(
+Captures the query plan, as enabled by [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), only for a sample of queries selected randomly with the specified probability. A query that is not selected does not pay the profiling cost of [`log_query_plans`](/reference/settings/session-settings/log-query#log_query_plans), and its `system.query_log` rows are still written, with an empty `query_plan` column.
+
+The choice is made per query, once it is known that the plan of the query can be captured, so queries that are never captured (for example, queries other than `SELECT`) do not take part in the sampling.
+
+It applies on top of [`log_queries_probability`](/reference/settings/session-settings/log-queries#log_queries_probability): a query whose rows are not written has no plan captured either, so with both settings at `0.5` about a quarter of the queries have their plan captured.
+
+The choice is made before the query runs, so it cannot depend on how long the query takes. With [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms), every slow query still writes its row, but only the given share of those rows carry a plan, while the same share of all queries, fast ones included, pay the profiling cost.
+
+Possible values:
+
+- 0 — No query plans are captured.
+- Positive floating-point number in the range [0..1]. For example, if the setting value is `0.1`, the plans of about one in ten queries are captured.
+- 1 — The plan of every query is captured.
+)", EXPERIMENTAL, \
+        {"26.12", 1., 1., "New setting to capture the query plan of only a random sample of queries when `log_query_plans` is enabled."}) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
@@ -4063,7 +4081,7 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
+In case of `ORDER BY` with `LIMIT`, when the memory used by the blocks accumulated since the previous such step is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top `LIMIT` rows. Before spilling to disk because of `max_bytes_before_external_sort`, all accumulated blocks are counted.
 )", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
@@ -7253,6 +7271,14 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0, \
         {"26.3", 9223372036854775807, 9223372036854775807, "New setting."}) \
+    DECLARE(NonZeroUInt64, iceberg_metadata_previous_versions_max, 100, R"(
+The maximum number of entries in the `metadata-log` of an Iceberg table that a write keeps, including the entry of the metadata file it writes. When a write adds an entry over the limit, the oldest entries are removed. The metadata files themselves are not deleted.
+
+The Iceberg table property `write.metadata.previous-versions-max` takes precedence over this setting. As in the Java implementation, the property is the number of previous metadata files and is at least one, so the `metadata-log` keeps one entry more than its value.
+
+The setting has no effect on tables in a catalog that writes the metadata files itself, such as a REST catalog: the catalog maintains the `metadata-log` according to its own configuration and the table property.
+)", 0, \
+        {"26.12", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Data files smaller than this are selected for compaction.
 
@@ -10710,6 +10736,19 @@ snapshot with its own manifest, so an `INSERT` writes exactly one manifest only 
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0, \
         {"25.12", 100, 100, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_initial_backoff_ms, 10, R"(
+The upper bound of the delay before the first retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit.
+The bound doubles with each next retry, up to `iceberg_insert_commit_retry_max_backoff_ms`, and each delay is chosen at random
+between zero and the bound, so that the writers that lost the same race do not retry at the same moment and collide again.
+The delay is taken before the latest metadata is looked up, so with many concurrent writers it also limits how often the metadata
+directory is listed. `0` retries without a delay.
+)", 0, \
+        {"26.12", 0, 10, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
+    DECLARE(UInt64, iceberg_insert_commit_retry_max_backoff_ms, 5000, R"(
+The maximum of the delay bound before a retry of an `INSERT` into an Iceberg table whose commit was lost to a concurrent commit,
+see `iceberg_insert_commit_retry_initial_backoff_ms`.
+)", 0, \
+        {"26.12", 0, 5000, "New setting. A commit of an `INSERT` into Iceberg lost to a concurrent commit is retried after a random exponential delay instead of immediately."}) \
     DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
 Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
 )", 0, \
@@ -10903,6 +10942,10 @@ instead of glob listing. 0 means disabled.
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0, \
         {"26.1", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."}) \
+    DECLARE(Bool, json_use_optimized_type_conversion, true, R"(
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
+)", 0, \
+        {"26.12", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}) \
     DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, true, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
