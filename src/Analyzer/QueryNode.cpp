@@ -21,6 +21,7 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -67,8 +68,6 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
-    projection_column_names_before_override.clear();
-
     // Ensure the number of aliases matches the number of projection columns
     if (!this->projection_aliases_to_override.empty())
     {
@@ -79,12 +78,26 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
                 projection_columns_value.size(),
                 this->projection_aliases_to_override.size());
 
-        projection_column_names_before_override.reserve(projection_columns_value.size());
+        /// The projection can be renamed more than once: e.g. the columns of a CTE `t(a, b)` get one more name
+        /// when `x IN t` is rewritten to a join. The second time the names passed here are the overridden ones,
+        /// while the `INTERPOLATE` items still refer to the names the columns have in this query, so keep the earliest.
+        const bool keep_names_before_override = projection_column_names_before_override.size() == projection_columns_value.size();
+        if (!keep_names_before_override)
+        {
+            projection_column_names_before_override.clear();
+            projection_column_names_before_override.reserve(projection_columns_value.size());
+        }
+
         for (size_t i = 0; i < projection_columns_value.size(); ++i)
         {
-            projection_column_names_before_override.push_back(std::move(projection_columns_value[i].name));
+            if (!keep_names_before_override)
+                projection_column_names_before_override.push_back(std::move(projection_columns_value[i].name));
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
         }
+    }
+    else
+    {
+        projection_column_names_before_override.clear();
     }
     projection_columns = std::move(projection_columns_value);
 }
@@ -521,6 +534,29 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     return result_query_node;
 }
 
+namespace
+{
+
+/// Inside the expression of an `INTERPOLATE` item, the interpolated column is the only one written as a short identifier
+/// with this name: it shadows everything else there. Subqueries have their own names and are not visited.
+void renameShortIdentifier(const ASTPtr & ast, const String & name, const String & new_name)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+        return;
+
+    if (auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->isShort() && identifier->shortName() == name)
+            identifier->setShortName(new_name);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        renameShortIdentifier(child, name, new_name);
+}
+
+}
+
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
@@ -634,7 +670,33 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST(options));
 
     if (hasInterpolate())
-        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST(options));
+    {
+        auto interpolate_ast = getInterpolate()->toAST(options);
+
+        /// The projection above is written with the names given to the columns from outside, while an `INTERPOLATE` item
+        /// refers to its column by the name it has in this query. Rename the items as well, so that the query is valid
+        /// for whoever parses it again, e.g. a shard.
+        if (!projection_column_names_before_override.empty())
+        {
+            std::unordered_map<String, String> renamed_columns;
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+                if (projection_column_names_before_override[i] != projection_columns[i].name)
+                    renamed_columns.emplace(projection_column_names_before_override[i], projection_columns[i].name);
+
+            for (auto & interpolate_element_ast : interpolate_ast->children)
+            {
+                auto & interpolate_element = interpolate_element_ast->as<ASTInterpolateElement &>();
+                auto it = renamed_columns.find(interpolate_element.column);
+                if (it == renamed_columns.end())
+                    continue;
+
+                renameShortIdentifier(interpolate_element.expr, interpolate_element.column, it->second);
+                interpolate_element.column = it->second;
+            }
+        }
+
+        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_ast));
+    }
 
     if (hasLimitByLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST(options));
