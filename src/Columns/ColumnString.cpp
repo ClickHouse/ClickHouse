@@ -284,8 +284,10 @@ void insertStringsFromEither(
     {
         const size_t true_row = src_true_is_const ? 0 : i;
         const size_t false_row = src_false_is_const ? 0 : i;
-        const UInt8 * value = condition_data[i] ? true_chars + true_offsets[ssize_t(true_row) - 1]
-                                                : false_chars + false_offsets[ssize_t(false_row) - 1];
+        /// Both are computed so that the select is a `cmov`: a branch on a random condition is mispredicted.
+        const UInt8 * value_if_true = true_chars + true_offsets[ssize_t(true_row) - 1];
+        const UInt8 * value_if_false = false_chars + false_offsets[ssize_t(false_row) - 1];
+        const UInt8 * value = condition_data[i] ? value_if_true : value_if_false;
         memcpySmallAllowReadWriteOverflow15(out_chars + start, value, out_offsets[i] - start);
         start = out_offsets[i];
     }

@@ -902,7 +902,10 @@ void ColumnArray::insertFromEither(
     UInt64 * out = indexes->getData().data();
     for (size_t i = 0; i < rows; ++i)
     {
-        const size_t start = condition_data[i] ? true_start(i) : false_start(i);
+        /// Both are computed so that the select is a `cmov`: a branch on a random condition is mispredicted.
+        const size_t start_if_true = true_start(i);
+        const size_t start_if_false = false_start(i);
+        const size_t start = condition_data[i] ? start_if_true : start_if_false;
         const size_t size = res_offsets[old_rows + i] - res_offsets[static_cast<ssize_t>(old_rows + i) - 1];
         for (size_t k = 0; k < size; ++k)
             out[k] = start + k;
