@@ -140,6 +140,58 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO ts_strings SELECT leftPad(toString(number), 8, '0'), number % 7 FROM numbers(131072) SETTINGS s3_truncate_on_insert = 1"
 run_top_k_statistics ts_strings s3_top_k_statistics
 
+# The footer is edited to claim 1, 2^63 - 1 and 2^63 - 1 rows; the last two row groups are skipped by their statistics.
+echo "File, row counts adding up to more than Int64"
+CORRUPT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_row_counts.parquet"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT number + 1 AS x FROM numbers(3) SETTINGS output_format_parquet_row_group_size = 1 FORMAT Parquet" > "$CORRUPT_FILE"
+python3 - "$CORRUPT_FILE" <<'PYEOF'
+import struct, sys
+
+def varint(buf, pos):
+    r = s = 0
+    while True:
+        b = buf[pos]; pos += 1; r |= (b & 0x7F) << s; s += 7
+        if not b & 0x80: return r, pos
+
+def walk(buf, pos, ct, path, out):
+    """Skips one Thrift compact protocol value of type `ct`; out[path] = (value start, end)."""
+    start = pos
+    if ct == 3: pos += 1
+    elif ct in (4, 5, 6): pos = varint(buf, pos)[1]
+    elif ct == 7: pos += 8
+    elif ct == 8: n, pos = varint(buf, pos); pos += n
+    elif ct in (9, 10):
+        h = buf[pos]; pos += 1; n = h >> 4
+        if n == 15: n, pos = varint(buf, pos)
+        for i in range(n): pos = pos + 1 if h & 15 in (1, 2) else walk(buf, pos, h & 15, path + (i,), out)
+    elif ct == 12:
+        fid = 0
+        while buf[pos]:
+            h = buf[pos]; pos += 1
+            if h >> 4: fid += h >> 4
+            else: u, pos = varint(buf, pos); fid = (u >> 1) ^ -(u & 1)
+            pos = walk(buf, pos, h & 15, path + (fid,), out)
+        pos += 1
+    elif ct not in (1, 2): raise ValueError(ct)
+    out[path] = (start, pos)
+    return pos
+
+buf = open(sys.argv[1], "rb").read()
+off = len(buf) - 8 - struct.unpack("<I", buf[-8:-4])[0]
+footer = buf[off:-8]
+# FileMetaData.row_groups[g].num_rows = 2^63 - 1, a zigzag varint.
+for g in (1, 2):
+    out = {}; walk(footer, 0, 12, (), out)
+    start, end = out[(4, g, 3)]
+    footer = footer[:start] + b"\xfe" + b"\xff" * 8 + b"\x01" + footer[end:]
+open(sys.argv[1], "wb").write(buf[:off] + footer + struct.pack("<I", len(footer)) + b"PAR1")
+PYEOF
+touch -d '2020-01-01 00:00:00' "$CORRUPT_FILE"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT count(), sum(x) FROM file('$CORRUPT_FILE', Parquet) WHERE x = 1 SETTINGS $SETTINGS, max_threads = 1"
+rm -f "$CORRUPT_FILE"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ts"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE tf_strings"

@@ -700,6 +700,10 @@ struct Reader
     bool track_matched_row_blocks = false;
     size_t rows_per_row_block = 8192;
 
+    /// `nullopt` if the row counts of the row groups add up to more than Int64 (the type of FileMetaData::num_rows).
+    /// Row blocks are used only otherwise, so no row offset or block boundary overflows.
+    std::optional<size_t> numRowBlocks() const;
+
     /// Called when the subgroup's filter is final (all prewhere steps done), before it's freed.
     void recordMatchedRowBlocks(RowSubgroup & row_subgroup, const RowGroup & row_group) const;
     VectorWithMemoryTracking<bool> getMatchedRowBlocks() const;

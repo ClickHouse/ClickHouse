@@ -49,3 +49,5 @@ S3, statistics-only top-K read first
 112347
 112347
 1
+File, row counts adding up to more than Int64
+1	1
