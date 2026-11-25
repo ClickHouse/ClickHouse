@@ -364,12 +364,73 @@ T parseInt(std::string_view str)
     return x;
 }
 
+/// Parses all of [pos, end) as one decimal integer: an optional sign ('-' only for a signed `T`) and at least one digit.
+/// Accepts exactly the ranges that `readIntTextInBaseImpl<10, T, bool, check_overflow>` on a buffer holding the range
+/// accepts and consumes whole; with `CHECK_OVERFLOW` the value must fit in `T`, otherwise it wraps around as in `readIntText`.
+/// Returns false, leaving `x` unchanged, otherwise.
+template <ReadIntTextCheckOverflow check_overflow, typename T>
+requires (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+bool NO_SANITIZE_UNSIGNED_OVERFLOW tryParseWholeDecimalInteger(T & x, const char * pos, const char * end)
+{
+    using UnsignedT = make_unsigned_t<T>;
+
+    bool negative = false;
+    if (pos != end && (*pos == '-' || *pos == '+'))
+    {
+        if (*pos == '-')
+        {
+            if constexpr (!is_signed_v<T>)
+                return false;
+            negative = true;
+        }
+        ++pos;
+    }
+    if (pos == end)
+        return false;
+
+    UnsignedT res = 0;
+    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+    {
+        /// The largest magnitude the value may have: `max` of `T`, or `-min` for a negative number.
+        const UnsignedT limit = static_cast<UnsignedT>(static_cast<UnsignedT>(std::numeric_limits<T>::max()) + (negative ? 1 : 0));
+        const UnsignedT limit_div_10 = static_cast<UnsignedT>(limit / 10);
+        const unsigned limit_mod_10 = static_cast<unsigned>(limit % 10);
+        for (; pos != end; ++pos)
+        {
+            const unsigned digit = static_cast<unsigned>(static_cast<unsigned char>(*pos)) - static_cast<unsigned>('0');
+            if (digit > 9)
+                return false;
+            if (res > limit_div_10 || (res == limit_div_10 && digit > limit_mod_10))
+                return false;
+            res = static_cast<UnsignedT>(res * static_cast<UnsignedT>(10) + static_cast<UnsignedT>(digit));
+        }
+    }
+    else
+    {
+        for (; pos != end; ++pos)
+        {
+            const unsigned digit = static_cast<unsigned>(static_cast<unsigned char>(*pos)) - static_cast<unsigned>('0');
+            if (digit > 9)
+                return false;
+            res = static_cast<UnsignedT>(res * static_cast<UnsignedT>(10) + static_cast<UnsignedT>(digit));
+        }
+    }
+
+    x = negative ? static_cast<T>(-res) : static_cast<T>(res);
+    return true;
+}
+
 /// Tries to parse an integer in a specific base (2 or 8 or 10 or 16), returns false if fails.
 template <int base, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 bool tryParseIntInBase(T & x, std::string_view str)
 {
-    ReadBufferFromMemory buf{std::move(str)};
-    return tryReadIntTextInBase<base, check_overflow>(x, buf) && buf.eof();
+    if constexpr (base == 10 && std::is_integral_v<T> && !std::is_same_v<T, bool>)
+        return tryParseWholeDecimalInteger<check_overflow>(x, str.data(), str.data() + str.size());
+    else
+    {
+        ReadBufferFromMemory buf{std::move(str)};
+        return tryReadIntTextInBase<base, check_overflow>(x, buf) && buf.eof();
+    }
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>

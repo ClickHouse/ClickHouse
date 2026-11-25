@@ -1638,6 +1638,26 @@ struct ConvertThroughParsing
                 /// and `isAllRead` skips it.
                 trimRight(text, '\0');
             }
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && IsDataTypeNumber<ToDataType>
+                && std::is_integral_v<typename ToDataType::FieldType>)
+            {
+                /// Same verdict and value as the generic path below, without a read buffer per row;
+                /// a rejected row goes there only in `Throw` mode, for the message.
+                constexpr auto check_overflow
+                    = (exception_mode != ConvertFromStringExceptionMode::Throw || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                    ? ReadIntTextCheckOverflow::CHECK_OVERFLOW
+                    : ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW;
+                if constexpr (exception_mode != ConvertFromStringExceptionMode::Throw)
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
+                const bool parsed = tryParseIntInBase<10, check_overflow>(vec_to[i], text);
+                if (parsed || exception_mode != ConvertFromStringExceptionMode::Throw)
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                        (*vec_null_map_to)[i] = !parsed;
+                    current_offset = next_offset;
+                    continue;
+                }
+            }
             if constexpr (std::is_same_v<FromDataType, DataTypeString> && is_floating_point<typename ToDataType::FieldType>)
             {
                 if (settings.precise_float_parsing)
