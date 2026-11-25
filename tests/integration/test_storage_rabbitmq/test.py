@@ -2328,6 +2328,69 @@ def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, 
     connection.close()
 
 
+def test_rabbitmq_view_created_while_cycle_waits_gets_messages(rabbitmq_cluster, db, unique):
+    # A view created while a streaming cycle waits for its first message must get the messages that arrive
+    # meanwhile, although the insert pipeline of that cycle was built without it.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbit (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.t1 (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE TABLE {db}.t2 (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.mv1 TO {db}.t1 AS SELECT key FROM {db}.rabbit;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    def publish(key):
+        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": key}))
+
+    def queue_stats():
+        queue = requests.get(
+            f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/queues/%2F/{unique}",
+            auth=("root", "clickhouse"),
+            timeout=30,
+        ).json()
+        return queue.get("messages_ready"), queue.get("messages_unacknowledged")
+
+    # Streaming is active before the cycle is held.
+    publish(0)
+    check_expected_result_polling(1, f"SELECT count() FROM {db}.t1")
+
+    failpoint = "rabbitmq_pause_after_building_insert_pipeline"
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        # The held cycle has its insert pipeline built for mv1 only.
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=DEFAULT_TIMEOUT_SEC)
+        instance.query(f"CREATE MATERIALIZED VIEW {db}.mv2 TO {db}.t2 AS SELECT key FROM {db}.rabbit")
+        for key in range(1, 101):
+            publish(key)
+
+        # The consumer of the held cycle has received all of them when the cycle goes on.
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        while queue_stats() != (0, 100):
+            assert time.monotonic() < deadline, f"messages not delivered to the consumer: {queue_stats()}"
+            time.sleep(0.5)
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    connection.close()
+
+    check_expected_result_polling(101, f"SELECT count() FROM {db}.t1")
+    check_expected_result_polling(100, f"SELECT count() FROM {db}.t2")
+    assert int(instance.query(f"SELECT uniqExact(key) FROM {db}.t2")) == 100
+
+
 def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

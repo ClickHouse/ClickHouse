@@ -34,6 +34,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Stopwatch.h>
@@ -106,6 +107,11 @@ namespace ErrorCodes
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
     extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace FailPoints
+{
+    extern const char rabbitmq_pause_after_building_insert_pipeline[];
 }
 
 namespace ExchangeType
@@ -1357,16 +1363,17 @@ void StorageRabbitMQ::threadFunc()
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
-                    if (!hasDependencies(table_id))
+                    auto views = DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext());
+                    if (views.empty())
                         break;
 
-                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                    LOG_DEBUG(log, "Started streaming to {} attached views", views.size());
 
                     /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
                     /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
-                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
+                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker, views);
                     /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
                     milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     if (!continue_reading)
@@ -1427,7 +1434,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker, const std::vector<StorageID> & views)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1461,7 +1468,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
             /* drive_loop_on_worker */drive_loop_on_worker,
-            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()));
+            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
+            /* streaming_views */views);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1502,6 +1510,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
     if (!connection->getHandler().loopRunning())
         startLoop();
+
+    FailPointInjection::pauseFailPoint(FailPoints::rabbitmq_pause_after_building_insert_pipeline);
 
     bool write_failed = false;
     try

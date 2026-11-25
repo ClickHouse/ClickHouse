@@ -7,6 +7,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/logger_useful.h>
@@ -65,7 +66,8 @@ RabbitMQSource::RabbitMQSource(
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
     bool drive_loop_on_worker_,
-    UInt64 first_poll_timeout_ms_)
+    UInt64 first_poll_timeout_ms_,
+    std::optional<std::vector<StorageID>> streaming_views_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -80,7 +82,8 @@ RabbitMQSource::RabbitMQSource(
         log_,
         cancel_epoch_,
         drive_loop_on_worker_,
-        first_poll_timeout_ms_)
+        first_poll_timeout_ms_,
+        std::move(streaming_views_))
 {
 }
 
@@ -98,7 +101,8 @@ RabbitMQSource::RabbitMQSource(
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
     bool drive_loop_on_worker_,
-    UInt64 first_poll_timeout_ms_)
+    UInt64 first_poll_timeout_ms_,
+    std::optional<std::vector<StorageID>> streaming_views_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -110,6 +114,7 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , drive_loop_on_worker(drive_loop_on_worker_)
     , first_poll_timeout_ms(first_poll_timeout_ms_)
+    , streaming_views(std::move(streaming_views_))
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -153,6 +158,16 @@ uint64_t RabbitMQSource::driveBudgetMs() const
     if (!drive_loop_on_worker)
         return max_execution_time_ms ? std::min(first_poll_timeout_ms, max_execution_time_ms) : first_poll_timeout_ms;
     return max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
+}
+
+bool RabbitMQSource::viewsChanged() const
+{
+    if (!streaming_views)
+        return false;
+
+    const auto views = DatabaseCatalog::instance().getReadyDependentViews(storage.getStorageID(), context);
+    return views.size() != streaming_views->size()
+        || !std::ranges::all_of(views, [&](const StorageID & view) { return std::ranges::contains(*streaming_views, view); });
 }
 
 bool RabbitMQSource::driveLoopUntilMessage()
@@ -311,6 +326,13 @@ Chunk RabbitMQSource::generateImpl()
 
         if (consumer->hasPendingMessages())
         {
+            /// Leave the message to the next cycle, whose pipeline includes the views attached meanwhile.
+            if (total_rows == 0 && viewsChanged())
+            {
+                LOG_TRACE(log, "Dependent views changed since the streaming cycle started, ending the cycle");
+                break;
+            }
+
             /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
             {
