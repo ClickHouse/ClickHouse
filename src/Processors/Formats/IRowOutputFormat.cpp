@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -102,15 +103,29 @@ private:
             return;
         }
 
-        auto & cached = defaults[slot];
-        if (cached.settings != &settings)
+        if (defaults[slot].settings != &settings) [[unlikely]]
+            cacheDefault(serialize, slot, settings);
+
+        const String & bytes = defaults[slot].bytes;
+        /// Inline: a `memcpy` call costs more than copying the few bytes of a default value. A closed buffer goes to `write`.
+        if (!ostr.isFinalized() && !ostr.isCanceled() && bytes.size() <= MAX_INLINE_WRITE_SIZE && bytes.size() <= ostr.available())
         {
-            WriteBufferFromOwnString buf;
-            (values_serialization.get()->*serialize)(*values, 0, buf, settings);
-            cached.bytes = buf.str();
-            cached.settings = &settings;
+            memcpySmall(ostr.position(), bytes.data(), bytes.size());
+            ostr.position() += bytes.size();
         }
-        ostr.write(cached.bytes.data(), cached.bytes.size());
+        else
+        {
+            ostr.write(bytes.data(), bytes.size());
+        }
+    }
+
+    /// Out of line, so that its `WriteBufferFromOwnString` does not put a stack protector canary on every row.
+    NO_INLINE void cacheDefault(SerializeRow serialize, size_t slot, const FormatSettings & settings) const
+    {
+        WriteBufferFromOwnString buf;
+        (values_serialization.get()->*serialize)(*values, 0, buf, settings);
+        defaults[slot].bytes = buf.str();
+        defaults[slot].settings = &settings;
     }
 
     const SerializationPtr values_serialization;
