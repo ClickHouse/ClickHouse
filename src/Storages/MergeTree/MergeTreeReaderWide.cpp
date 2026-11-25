@@ -2,9 +2,7 @@
 #include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -14,11 +12,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/FailPoint.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/typeid_cast.h>
 #include <Core/UUID.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -42,14 +37,6 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-
-    /// The streams of these columns are known only after reading the serialization prefixes:
-    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
-    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
-    {
-        return column.getTypeInStorage()->hasDynamicStructure()
-            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
-    }
 }
 
 namespace ErrorCodes
@@ -92,54 +79,29 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
     , log(getLogger("MergeTreeReaderWide"))
 {
-    requested_column_names.reserve(getColumns().size());
-    for (const auto & column : getColumns())
-        requested_column_names.push_back(column.name);
-
-    /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
-    const bool cache_possible = columns_cache
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID(), data_part_info_for_read->isProjectionPart());
-
     /// A part read without marks has streams that cannot seek, so a granule served from the
     /// cache could not be followed by one read from the part. Such a read still populates the
     /// cache: it reads every granule from its first row to its last.
-    columns_cache_reads_possible = cache_possible && settings.enable_columns_cache_reads && !read_without_marks;
-    columns_cache_writes_possible = cache_possible && settings.enable_columns_cache_writes;
-
-    if (columns_cache_reads_possible || columns_cache_writes_possible)
-    {
-        stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
-
-        column_identities.reserve(requested_column_names.size());
-        for (const auto & name : requested_column_names)
-            column_identities.push_back(getColumnsCacheColumnIdentity(
-                data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName(), name, settings.columns_cache_schema_identity));
-
-        /// Capture the invalidation generation once, before anything is read, so that any
-        /// invalidation racing with this reader is observed. It is passed to `setMany` by every
-        /// deferred write of the reader: the write is dropped if the table was invalidated or the
-        /// whole cache dropped after this point. It is not refreshed when a later mark range
-        /// starts, otherwise a reader that began before `SYSTEM DROP COLUMNS CACHE` would
-        /// repopulate the cache from its next range. The schema token of the cache keys is not
-        /// taken from here but from the metadata snapshot of the query
-        /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
-        /// schema this read actually uses, see `getColumnsCacheColumnIdentity`.
-        if (columns_cache_writes_possible)
-            cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
-    }
+    initColumnsCache(/*can_read=*/ !read_without_marks);
 
     try
     {
+        column_kinds.resize(columns_to_read.size());
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
-                addStreams(columns_to_read[i], serializations[i]);
+            auto & kind = column_kinds[i];
+            kind.skipped = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i);
+            if (!kind.skipped)
+                addStreams(columns_to_read[i], serializations[i], kind);
+            has_columns_read_only_from_part = has_columns_read_only_from_part || kind.read_only_from_part;
+            kind.regular = !kind.skipped && !kind.absent_from_part && !kind.read_only_from_part;
+            num_regular_columns += kind.regular;
         }
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -186,7 +148,7 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
         throw;
     }
@@ -248,15 +210,6 @@ void MergeTreeReaderWide::prefetchForColumns(
     }
 }
 
-/// Rows are about to be appended to the result column at `pos`. A column shared with the columns
-/// cache is not modified: the rows go to a copy of it.
-static IColumn::MutablePtr & takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos)
-{
-    if (shared_columns[pos])
-        res_columns[pos] = IColumn::mutate(std::move(shared_columns[pos]));
-    return res_columns[pos];
-}
-
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns, Columns & shared_columns)
@@ -308,7 +261,7 @@ size_t MergeTreeReaderWide::readRows(
     }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
+        if (!isRetryableException(std::current_exception()) && !isQueryCancellation(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
@@ -410,55 +363,47 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     }
 
     streams.clearPrefetched();
-
-    /// Clear the caches but keep the per-column entries, so they are not allocated again on every read.
-    for (auto & [_, cache] : caches)
-        cache.clear();
+    caches.clear();
 
     return read_rows;
 }
 
 bool MergeTreeReaderWide::isColumnFilledAfterReading(size_t pos) const
 {
-    return isColumnAbsentFromPart(pos) || isColumnReadOnlyFromPart(pos);
+    return column_kinds[pos].absent_from_part || column_kinds[pos].read_only_from_part;
 }
 
 bool MergeTreeReaderWide::isColumnReadOnlyFromPart(size_t pos) const
 {
-    return isColumnPartiallyRead(pos) || columns_not_cacheable.contains(columns_to_read[pos].name);
+    return column_kinds[pos].read_only_from_part;
 }
 
 bool MergeTreeReaderWide::hasColumnsReadOnlyFromPart() const
 {
-    return !partially_read_columns.empty() || !columns_not_cacheable.empty();
+    return has_columns_read_only_from_part;
 }
 
 bool MergeTreeReaderWide::isColumnAbsentFromPart(size_t pos) const
 {
-    return columns_absent_from_part.contains(columns_to_read[pos].name);
-}
-
-bool MergeTreeReaderWide::isColumnPartiallyRead(size_t pos) const
-{
-    return partially_read_columns.contains(columns_to_read[pos].name);
+    return column_kinds[pos].absent_from_part;
 }
 
 bool MergeTreeReaderWide::isColumnSkipped(size_t pos) const
 {
-    return isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos);
+    return column_kinds[pos].skipped;
 }
 
 void MergeTreeReaderWide::lookupColumnsCache(
     size_t first_mark, size_t end_mark, size_t num_columns,
-    std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable)
+    std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns)
 {
     const size_t num_granules = end_mark - first_mark;
     const size_t first_stripe = stripes.stripeOf(first_mark);
     const size_t end_stripe = num_granules ? stripes.stripeOf(end_mark - 1) + 1 : first_stripe;
     entries.assign(num_columns, {});
-    servable.assign(num_granules, true);
 
-    bool any_regular_column = false;
+    cached_columns.assign(num_granules, 0);
+
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         /// Columns dropped by pending mutations, invalidated system columns, and columns that
@@ -466,55 +411,73 @@ void MergeTreeReaderWide::lookupColumnsCache(
         /// path never produces one for them, so requiring one would make every read of a table
         /// with such a column miss forever. A partially read column is still read from the part
         /// while the rest of the granule is served.
-        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+        if (!column_kinds[pos].regular)
             continue;
 
-        any_regular_column = true;
         entries[pos] = columns_cache->getMany(column_identities[pos], first_stripe, end_stripe);
 
-        for (size_t i = 0; i < num_granules; ++i)
+        /// Entry by entry rather than granule by granule: a stripe can hold hundreds of granules.
+        for (const auto & entry : entries[pos])
         {
-            const auto & entry = entries[pos][stripes.stripeOf(first_mark + i) - first_stripe];
-            if (!entry || !entry->coversMarks(first_mark + i, first_mark + i + 1))
-                servable[i] = false;
+            if (!entry)
+                continue;
+            for (size_t mark = std::max(entry->first_mark, first_mark); mark < std::min(entry->end_mark, end_mark); ++mark)
+                ++cached_columns[mark - first_mark];
         }
     }
+}
 
+bool MergeTreeReaderWide::allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const
+{
     /// Nothing is served if there is nothing to serve: without a regular column the read produces
     /// no cached rows, and the granules have to be read from the part for whatever they contain.
-    if (!any_regular_column)
-        servable.assign(num_granules, false);
+    return num_regular_columns && begin < end
+        && std::all_of(cached_columns.begin() + begin, cached_columns.begin() + end, [&](UInt32 cached) { return cached == num_regular_columns; });
 }
 
 void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns)
 {
+    end_mark = std::max(from_mark, std::min(end_mark, data_part_info_for_read->getIndexGranularity().getMarksCount()));
+
+    /// The entries looked up for the current range cover [from_mark, end_mark) already: the reader
+    /// re-enters the range at a later position after `PREWHERE` filtered rows out. They stay valid
+    /// - the part does not change - so they are kept. Looking the rest of the range up again at
+    /// every re-entry would cost a lookup of every remaining stripe and granule per gap, which is
+    /// quadratic in the length of the range for the whole-part ranges of in-order reads.
+    const bool reentry = end_mark == range_end_mark && range_first_mark <= from_mark && from_mark < range_end_mark;
+
     /// Lets a test invalidate the cache between two ranges of one reader.
-    if (columns_cache_range_started)
+    if (columns_cache_range_started && !reentry)
         FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_before_later_range);
     columns_cache_range_started = true;
 
-    /// The previous range is over. The granules of it that were read to their end but not
-    /// written yet - the range ended inside a stripe - are written now.
+    /// The rows read so far are over. The granules that were read to their end but not written
+    /// yet - the range ended or rows were skipped inside a stripe - are written now.
     finishAccumulatedGranules();
     flushPendingColumnsCacheWrites();
 
-    range_first_mark = from_mark;
-    range_end_mark = std::max(from_mark, std::min(end_mark, data_part_info_for_read->getIndexGranularity().getMarksCount()));
-    range_first_stripe = stripes.stripeOf(from_mark);
     cursor_mark = from_mark;
     cursor_offset = 0;
     disk_positioned.assign(num_columns, false);
     partial_columns_started = false;
 
+    if (reentry)
+        return;
+
+    range_first_mark = from_mark;
+    range_end_mark = end_mark;
+    range_first_stripe = stripes.stripeOf(from_mark);
+
     cached_entries.clear();
-    granule_served_from_cache.clear();
+    granule_cached_columns.clear();
 
     if (columns_cache_reads_possible)
     {
-        lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_served_from_cache);
+        lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_cached_columns);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
-            range_first_mark, range_end_mark, data_part_info_for_read->getPartName(),
-            std::count(granule_served_from_cache.begin(), granule_served_from_cache.end(), true), granule_served_from_cache.size());
+            range_first_mark, range_end_mark, columns_cache_part_name,
+            num_regular_columns ? std::count(granule_cached_columns.begin(), granule_cached_columns.end(), num_regular_columns) : 0,
+            granule_cached_columns.size());
     }
 }
 
@@ -540,17 +503,10 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
     const size_t end_mark = std::min(mark_range.end, data_part_info_for_read->getIndexGranularity().getMarksCount());
 
     std::vector<std::vector<ColumnsCache::MappedPtr>> entries;
-    std::vector<bool> servable;
-    lookupColumnsCache(mark_range.begin, end_mark, columns_to_read.size(), entries, servable);
+    std::vector<UInt32> cached_columns;
+    lookupColumnsCache(mark_range.begin, end_mark, columns_to_read.size(), entries, cached_columns);
 
-    return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool s) { return s; });
-}
-
-bool MergeTreeReaderWide::admitStripeToColumnsCache(size_t stripe)
-{
-    if (!stripe_admission || stripe_admission->first != stripe)
-        stripe_admission.emplace(stripe, columns_cache->shouldAdmit());
-    return stripe_admission->second;
+    return allGranulesServed(cached_columns, 0, cached_columns.size());
 }
 
 /// The cache can still reject a stripe read whole for it (too large for a shard, budget used up, invalidated), leaving
@@ -579,14 +535,13 @@ bool MergeTreeReaderWide::isColumnsCacheStripeServed(size_t stripe)
 
     /// The stripe is in the range being read: its lookup is done. Otherwise it is the beginning of
     /// the next range, which is not looked up yet.
-    if (range_first_mark <= first_mark && end_mark <= range_end_mark && granule_served_from_cache.size() == range_end_mark - range_first_mark)
-        return std::all_of(granule_served_from_cache.begin() + (first_mark - range_first_mark),
-            granule_served_from_cache.begin() + (end_mark - range_first_mark), [](bool served) { return served; });
+    if (range_first_mark <= first_mark && end_mark <= range_end_mark && granule_cached_columns.size() == range_end_mark - range_first_mark)
+        return allGranulesServed(granule_cached_columns, first_mark - range_first_mark, end_mark - range_first_mark);
 
     std::vector<std::vector<ColumnsCache::MappedPtr>> entries;
-    std::vector<bool> servable;
-    lookupColumnsCache(first_mark, end_mark, columns_to_read.size(), entries, servable);
-    return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool served) { return served; });
+    std::vector<UInt32> cached_columns;
+    lookupColumnsCache(first_mark, end_mark, columns_to_read.size(), entries, cached_columns);
+    return allGranulesServed(cached_columns, 0, cached_columns.size());
 }
 
 const ColumnsCache::MappedPtr & MergeTreeReaderWide::cachedEntryFor(size_t pos, size_t mark) const
@@ -663,26 +618,51 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
     /// but is not a no-op to read, because `fillMissingColumns` sizes every re-added member of the
     /// group from its offsets. A column that is not cacheable is read the same way: in one call
     /// per block unless the block mixes served and read granules.
-    const bool has_columns_read_only_from_part = hasColumnsReadOnlyFromPart();
-
-    auto columns_from_disk = [&](size_t mark)
+    ///
+    /// The lookup of the range tells how many regular columns of a granule are cached: when all or
+    /// none of them are, the columns need not be checked one by one.
+    enum class GranuleCached : UInt8 { None, All, Some };
+    auto granule_cached = [&](size_t mark)
     {
-        std::vector<bool> from_disk(num_columns, false);
+        const size_t cached = granule_cached_columns.empty() ? 0 : granule_cached_columns[mark - range_first_mark];
+        if (cached == 0)
+            return GranuleCached::None;
+        return cached == num_regular_columns ? GranuleCached::All : GranuleCached::Some;
+    };
+    auto columns_from_disk = [&](size_t mark, GranuleCached cached, std::vector<bool> & from_disk)
+    {
+        from_disk.assign(num_columns, false);
+        if (cached == GranuleCached::All)
+            return;
         for (size_t pos = 0; pos < num_columns; ++pos)
-            if (!isColumnSkipped(pos) && !isColumnFilledAfterReading(pos) && !isGranuleColumnCached(pos, mark))
-                from_disk[pos] = true;
-        return from_disk;
+            from_disk[pos] = column_kinds[pos].regular && (cached == GranuleCached::None || !isGranuleColumnCached(pos, mark));
     };
 
     std::vector<size_t> sizes_before_reading;
+    std::vector<bool> from_disk;
+    std::vector<bool> next_from_disk;
     size_t read_rows = 0;
+    size_t hits = 0;
+    size_t misses = 0;
     size_t run_begin = 0;
     while (run_begin < segments.size())
     {
-        const auto from_disk = columns_from_disk(segments[run_begin].mark);
+        const auto run_cached = granule_cached(segments[run_begin].mark);
+        columns_from_disk(segments[run_begin].mark, run_cached, from_disk);
         size_t run_end = run_begin + 1;
-        while (run_end < segments.size() && columns_from_disk(segments[run_end].mark) == from_disk)
+        while (run_end < segments.size())
+        {
+            const auto cached = granule_cached(segments[run_end].mark);
+            if (cached != run_cached)
+                break;
+            if (cached == GranuleCached::Some)
+            {
+                columns_from_disk(segments[run_end].mark, cached, next_from_disk);
+                if (next_from_disk != from_disk)
+                    break;
+            }
             ++run_end;
+        }
 
         size_t run_rows = 0;
         for (size_t i = run_begin; i < run_end; ++i)
@@ -692,7 +672,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         size_t served_columns = 0;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+            if (!column_kinds[pos].regular)
                 continue;
             if (from_disk[pos])
                 ++disk_columns;
@@ -754,16 +734,17 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
             {
                 const auto & segment = segments[i];
                 if (columns_cache_writes_possible && !written_as_is)
-                    accumulateRowsForColumnsCache(segment.mark, segment.offset, segment.rows, segment.granule_rows, row_in_run, from_disk, sizes_before_reading, res_columns);
+                    accumulateRowsForColumnsCache(segment.mark, segment.offset, segment.rows, segment.granule_rows, row_in_run,
+                        rows - row_in_run, from_disk, sizes_before_reading, res_columns);
                 if (columns_cache_reads_possible && segment.offset + segment.rows == segment.granule_rows)
-                    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, disk_columns);
+                    misses += disk_columns;
                 row_in_run += segment.rows;
             }
         }
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+            if (!column_kinds[pos].regular)
                 continue;
             /// The streams of a served column stay where they were; the others are at the cursor.
             disk_positioned[pos] = from_disk[pos];
@@ -773,7 +754,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         {
             for (size_t i = run_begin; i < run_end; ++i)
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
-                    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+                    hits += served_columns;
         }
 
         read_rows += rows;
@@ -784,6 +765,11 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
 
         run_begin = run_end;
     }
+
+    if (hits)
+        ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, hits);
+    if (misses)
+        ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, misses);
 
     /// Move the cursor over the rows that were produced.
     for (size_t left = std::min(read_rows, block_rows); left > 0;)
@@ -834,82 +820,8 @@ void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t first_mark, size_t ro
         if (isColumnReadOnlyFromPart(pos) || !isGranuleColumnCached(pos, first_mark))
             continue;
 
-        const auto & entry = cachedEntryFor(pos, first_mark);
-        const IColumn & cached_column = *entry->column;
-        if (row_begin < entry->row_begin || entry->row_begin + cached_column.size() < row_begin + rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Columns cache entry of column {} of part {} holds rows [{}, {}), but rows [{}, {}) are requested",
-                requested_column_names[pos], data_part_info_for_read->getPartName(),
-                entry->row_begin, entry->row_begin + cached_column.size(), row_begin, row_begin + rows);
-        const size_t offset = row_begin - entry->row_begin;
-
-        if (!res_columns[pos] && !shared_columns[pos])
-        {
-            /// The first rows of the result column are the cached rows, so that the column keeps
-            /// the structure the part gives it and a freshly created column would not have: the
-            /// dynamic paths of a `JSON` column and the variants of a `Dynamic` column come from
-            /// the prefix of the part, the value of a column stored as a single value per part is
-            /// in the data, and a part with sparse serialization produces a `ColumnSparse`.
-            /// Downstream behavior depends on all of these: some aggregate functions (for example
-            /// `groupConcat`) have a sparse fast path that processes non-defaults first and all
-            /// defaults at the end, while the full path preserves the natural row order.
-            ///
-            /// Rows that are the whole entry are the cached column itself, shared with the cache;
-            /// other rows are a copy, which the read may go on to modify.
-            if (offset == 0 && rows == cached_column.size())
-                shared_columns[pos] = entry->column;
-            else
-                res_columns[pos] = IColumn::mutate(cached_column.cut(offset, rows));
-            continue;
-        }
-
-        auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
-
-        /// The result column already has its structure, from the granules before this one - read
-        /// from the part or served from the cache, both of the same part. If the entry was written
-        /// under different settings and holds a `ColumnSparse` while the result is a full column,
-        /// insert from a full copy of the range so that `insertRangeFrom` is type-compatible.
-        const bool cached_is_sparse = typeid_cast<const ColumnSparse *>(&cached_column) != nullptr;
-        const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(column.get()) != nullptr;
-        if (cached_is_sparse && !dst_is_sparse)
-        {
-            auto full = cached_column.cut(offset, rows)->convertToFullColumnIfSparse();
-            column->insertRangeFrom(*full, 0, rows);
-        }
-        else
-        {
-            /// The copy is what keeps the cached column immutable: the result column is mutated
-            /// by the read in progress.
-            column->insertRangeFrom(cached_column, offset, rows);
-        }
+        serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, first_mark), pos, row_begin, rows, res_columns, shared_columns);
     }
-}
-
-bool MergeTreeReaderWide::canWriteToColumnsCache() const
-{
-    /// The query-wide estimate gate can disable cache writes while reads
-    /// are already in flight: the estimate is accumulated as read
-    /// pools build their tasks, and another pool of the same query may
-    /// exceed the budget after this reader started. Consult the shared flag
-    /// before writing so the estimate budget applies to the whole query.
-    if (settings.columns_cache_writes_disabled
-        && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
-        return false;
-
-    /// The per-query runtime budget only grows during the query, so once it is exhausted the
-    /// rest of the read is not worth copying either. 0 means half of the size limit the cache has
-    /// now, which `autoResize` lowers under memory pressure, so it is resolved on every check.
-    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
-    if (bytes_written)
-    {
-        const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache != 0
-            ? settings.columns_cache_max_bytes_to_write_to_cache
-            : columns_cache->maxSizeInBytes() / 2;
-        if (bytes_written->load(std::memory_order_relaxed) >= max_bytes)
-            return false;
-    }
-
-    return true;
 }
 
 void MergeTreeReaderWide::resetAccumulation()
@@ -958,32 +870,13 @@ bool MergeTreeReaderWide::writeStripeToColumnsCache(
     return true;
 }
 
-void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
-{
-    auto entry = makeColumnsCacheEntry();
-    {
-        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        entry->part_name = data_part_info_for_read->getPartName();
-        entry->column_name = requested_column_names[pos];
-    }
-    entry->table_uuid = data_part_info_for_read->getTableUUID();
-    entry->schema_identity = settings.columns_cache_schema_identity;
-    entry->first_mark = first_mark;
-    entry->end_mark = end_mark;
-    entry->row_begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(first_mark);
-    entry->rows = column->size();
-    entry->key = ColumnsCacheKey{column_identities[pos], stripes.stripeOf(first_mark)};
-    entry->column = std::move(column);
-
-    pending_entries.push_back(std::move(entry));
-}
-
 void MergeTreeReaderWide::accumulateRowsForColumnsCache(
     size_t mark,
     size_t offset,
     size_t rows,
     size_t granule_rows,
     size_t row_in_run,
+    size_t rows_left_in_run,
     const std::vector<bool> & from_disk,
     const std::vector<size_t> & sizes_before_reading,
     const MutableColumns & res_columns)
@@ -1036,8 +929,19 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
         if (!accumulated)
         {
             accumulated = column->cloneEmpty();
-            /// The stripe at most; the copy is shrunk to its rows before it is admitted.
-            accumulated->reserve(std::min(ColumnsCacheStripes::TARGET_ROWS * 2, stripes.stripe_marks * std::max<size_t>(granule_rows, 1)));
+            /// The copy must own its data: otherwise `insertRangeFrom` lets a `ColumnAggregateFunction`
+            /// (also nested in a `Tuple`, `Array`, ...) share the states of the column being read by
+            /// keeping a reference to it, which keeps the whole column alive in the cache and makes it
+            /// shared while the following granules are read into it.
+            accumulated->ensureOwnership();
+            /// The rows this read is going to append to the copy - the rest of the run, up to the
+            /// end of the stripe - not the whole stripe: after `PREWHERE` filtered granules out, a
+            /// run is often a single granule, and reserving a stripe for each of them would
+            /// allocate and free a large block per granule. A run that goes on in the next block
+            /// grows as usual and is shrunk before it is admitted.
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+            accumulated->reserve(std::min(rows_left_in_run, index_granularity.getRowsCountInRange(
+                mark, stripes.endMark(accumulated_stripe, index_granularity.getMarksCountWithoutFinal())) - offset));
         }
         accumulated->insertRangeFrom(*column, sizes_before_reading[pos] + row_in_run, rows);
     }
@@ -1072,7 +976,7 @@ void MergeTreeReaderWide::finishAccumulatedGranules()
             if (!column || column->empty())
                 continue;
             if (column->size() > complete_rows)
-                column = IColumn::mutate(column->cut(0, complete_rows));
+                column->popBack(column->size() - complete_rows);
             if (column->size() == complete_rows)
             {
                 /// Give back the capacity the copy holds beyond its rows. `PODArray` rounds an
@@ -1088,49 +992,54 @@ void MergeTreeReaderWide::finishAccumulatedGranules()
     resetAccumulation();
 }
 
-void MergeTreeReaderWide::flushPendingColumnsCacheWrites()
+const MergeTreeReaderWide::ResolvedSubstreams * MergeTreeReaderWide::findResolvedSubstreams(const String & column_name) const
 {
-    if (pending_entries.empty())
-        return;
+    const auto it = resolved_substreams_by_column.find(column_name);
+    return it == resolved_substreams_by_column.end() ? nullptr : &it->second;
+}
 
-    std::vector<ColumnsCache::MappedPtr> entries;
-    entries.swap(pending_entries);
+const MergeTreeReaderWide::ResolvedSubstream & MergeTreeReaderWide::resolveSubstream(
+    const ResolvedSubstreams * substreams,
+    const NameAndTypePair & name_and_type,
+    const ISerialization::SubstreamPath & substream_path,
+    ResolvedSubstream & computed) const
+{
+    auto cache_key = ISerialization::getSubstreamsCacheKeyForStream(substream_path);
+    if (substreams)
+    {
+        const auto it = substreams->find(cache_key);
+        if (it != substreams->end())
+            return it->second;
+    }
 
-    /// The budget is an advisory soft threshold, not a hard cap: the entries that cross it are
-    /// stored in full and charged afterwards, so the total written may overshoot by up to the
-    /// entries of one call (and slightly more under concurrency).
-    /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
-    if (!canWriteToColumnsCache())
-        return;
+    /// The hint slot stays empty: taking it inserts into `avg_value_size_hints`, and the prefix callbacks
+    /// resolve on the prefixes thread pool. The hint callbacks take it themselves, see `avgValueSizeHintSlot`.
+    computed.stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
+    computed.cache_key = std::move(cache_key);
+    return computed;
+}
 
-    LOG_TEST(log, "Writing {} entries of part {} to the columns cache", entries.size(), data_part_info_for_read->getPartName());
+double * MergeTreeReaderWide::avgValueSizeHintSlot(const ResolvedSubstream & resolved)
+{
+    if (resolved.avg_value_size_hint || !resolved.stream_name)
+        return resolved.avg_value_size_hint;
 
-    /// Charge the budget only for entries that were actually inserted: a write that is rejected
-    /// as stale or does not stay resident must not consume the budget, otherwise a query could
-    /// exhaust the cap and skip later real inserts even though those bytes were never written.
-    const size_t bytes_admitted = columns_cache->setMany(entries, cache_table_generation);
-    if (bytes_admitted && settings.columns_cache_bytes_written_so_far)
-        settings.columns_cache_bytes_written_so_far->fetch_add(bytes_admitted, std::memory_order_relaxed);
+    /// Only the thread of `readData` gets here: `operator[]` inserts, and the map isn't synchronized.
+    return &avg_value_size_hints[*resolved.stream_name];
 }
 
 void MergeTreeReaderWide::addStreams(
     const NameAndTypePair & name_and_type,
-    const SerializationPtr & serialization)
+    const SerializationPtr & serialization,
+    ColumnKind & kind)
 {
     bool has_any_stream = false;
     bool has_all_streams = true;
     bool has_derived_stream = false;
 
-    /// See `columns_not_cacheable`. The streams of the distinct-paths subcolumn are the structure
-    /// and shared data streams of the `JSON` column, so it is recognized by its name: a typed path
-    /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
-    if (name_and_type.isSubcolumn())
-    {
-        const auto & subcolumn_name = name_and_type.getSubcolumnName();
-        const std::string_view special_name = DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION;
-        if (subcolumn_name == special_name || subcolumn_name.ends_with(fmt::format(".{}", special_name)))
-            columns_not_cacheable.insert(name_and_type.name);
-    }
+    kind.read_only_from_part = isColumnNotCacheable(name_and_type);
+
+    auto & resolved_substreams = resolved_substreams_by_column[name_and_type.name];
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -1144,7 +1053,14 @@ void MergeTreeReaderWide::addStreams(
             return;
         }
 
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+
+        /// Resolved for the callbacks of `readData` whether the part has the file or not: a missing file is an answer too.
+        /// A stream shared by several substreams of the column is enumerated more than once and resolved the same.
+        ResolvedSubstream resolved{.stream_name = stream_name, .cache_key = ISerialization::getSubstreamsCacheKeyForStream(substream_path)};
+        if (stream_name)
+            resolved.avg_value_size_hint = &avg_value_size_hints[*stream_name];
+        resolved_substreams.try_emplace(resolved.cache_key, std::move(resolved));
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -1159,19 +1075,39 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    serialization->enumerateStreams(callback);
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    if (isReadWithTypeInPart(name_and_type))
+    {
+        enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            return IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings).has_value();
+        };
+    }
+    serialization->enumerateStreams(enumerate_settings, callback, ISerialization::SubstreamData(serialization));
 
     if (has_any_stream && !has_all_streams)
+    {
         partially_read_columns.insert(name_and_type.name);
+        kind.read_only_from_part = true;
+    }
 
     /// Not a single stream of the column is in the part: it was added by an `ALTER` after the
-    /// part was written, and the read produces nothing for it. `partially_read_columns` records
-    /// the other half of the same situation, so `isColumnFilledAfterReading` can ask about both.
+    /// part was written, and the read produces nothing for it. A partially read column is the
+    /// other half of the same situation, so `isColumnFilledAfterReading` can ask about both.
     /// A column made of derived substreams alone - the null map of a sparse `Nullable` - has no
     /// stream of its own and is not absent; a column whose real streams are missing is, whatever
     /// derived substreams its type has besides (the element null maps of a `Variant`).
     if (!has_any_stream && (!has_derived_stream || !has_all_streams))
-        columns_absent_from_part.insert(name_and_type.name);
+        kind.absent_from_part = true;
+}
+
+bool MergeTreeReaderWide::isReadWithTypeInPart(const NameAndTypePair & name_and_type) const
+{
+    const auto & name_in_part = name_and_type.getNameInStorage();
+    auto column_in_part = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_part);
+    return column_in_part
+        && (!name_and_type.isSubcolumn() || hasSubcolumnInPart(name_in_part, *column_in_part->type, name_and_type.getSubcolumnName()));
 }
 
 MergeTreeReaderStream & MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
@@ -1296,101 +1232,20 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
     });
 }
 
-namespace
-{
-
-UInt64 hashStreamKey(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
-{
-    UInt64 hash = std::hash<std::string_view>{}(name_and_type.name);
-    auto combine = [&](UInt64 value) { hash = intHash64(hash ^ value); };
-    auto combine_string = [&](const String & str)
-    {
-        if (!str.empty())
-            combine(std::hash<std::string_view>{}(str));
-    };
-
-    for (const auto & substream : substream_path)
-    {
-        combine(static_cast<UInt64>(substream.type));
-        combine_string(substream.variant_element_name);
-        combine_string(substream.name_of_substream);
-        combine_string(substream.object_path_name);
-        combine(substream.bucket);
-    }
-    return hash;
-}
-
-}
-
-MergeTreeReaderWide::StreamInfo & MergeTreeReaderWide::getStreamInfo(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
-{
-    /// The checksums and the settings, which the name also depends on, are the same for the whole reader.
-    /// Every field of the substreams is compared, even the ones that don't affect the name: it only costs extra entries.
-    auto matches = [&](const StreamInfoEntry & entry)
-    {
-        if (entry.column_name != name_and_type.name || entry.substream_path.size() != substream_path.size())
-            return false;
-
-        for (size_t i = 0; i < substream_path.size(); ++i)
-        {
-            const auto & key = entry.substream_path[i];
-            const auto & substream = substream_path[i];
-            if (key.type != substream.type || key.bucket != substream.bucket
-                || key.variant_element_name != substream.variant_element_name
-                || key.name_of_substream != substream.name_of_substream
-                || key.object_path_name != substream.object_path_name)
-                return false;
-        }
-        return true;
-    };
-
-    const UInt64 hash = hashStreamKey(name_and_type, substream_path);
-
-    {
-        std::lock_guard lock(streams_info_mutex);
-        for (auto [it, end] = streams_info.equal_range(hash); it != end; ++it)
-            if (matches(it->second))
-                return it->second.info;
-    }
-
-    StreamInfoEntry entry;
-    entry.column_name = name_and_type.name;
-    for (const auto & substream : substream_path)
-        entry.substream_path.push_back({substream.type, substream.variant_element_name, substream.name_of_substream, substream.object_path_name, substream.bucket});
-    entry.info.name = IMergeTreeDataPart::getStreamNameForColumn(
-        name_and_type, substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
-
-    std::lock_guard lock(streams_info_mutex);
-    /// Another thread may have added the same entry while the mutex was released.
-    for (auto [it, end] = streams_info.equal_range(hash); it != end; ++it)
-        if (matches(it->second))
-            return it->second.info;
-
-    return streams_info.emplace(hash, std::move(entry))->second.info;
-}
-
-double & MergeTreeReaderWide::getAvgValueSizeHint(StreamInfo & stream_info)
-{
-    chassert(stream_info.name);
-    /// Elements of `std::map` are never moved, and nothing is erased from `avg_value_size_hints`.
-    if (!stream_info.avg_value_size_hint)
-        stream_info.avg_value_size_hint = &avg_value_size_hints[*stream_info.name];
-    return *stream_info.avg_value_size_hint;
-}
-
 ReadBuffer * MergeTreeReaderWide::getStream(
     bool seek_to_start,
     const ISerialization::SubstreamPath & substream_path,
-    const std::optional<String> & stream_name,
     const NameAndTypePair & name_and_type,
     size_t from_mark,
     bool seek_to_mark,
-    ISerialization::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache & cache,
+    const ResolvedSubstream & resolved)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
+    if (cache.contains(resolved.cache_key))
         return nullptr;
 
+    const auto & stream_name = resolved.stream_name;
     if (!stream_name)
     {
         /// We allow missing streams only for columns/subcolumns that are not present in this part.
@@ -1435,6 +1290,8 @@ void MergeTreeReaderWide::deserializePrefix(
     const auto & name = name_and_type.name;
     if (!deserialize_state_map.contains(name))
     {
+        const auto * resolved_substreams = findResolvedSubstreams(name);
+
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
@@ -1442,7 +1299,9 @@ void MergeTreeReaderWide::deserializePrefix(
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            ResolvedSubstream computed;
+            const auto & resolved = resolveSubstream(resolved_substreams, name_and_type, substream_path, computed);
+            const auto & stream_name = resolved.stream_name;
             /// This stream could be prefetched in prefetchBeginOfRange, but here we
             /// have to seek the stream to the start of file to deserialize the prefix.
             /// If we do not read from the first mark, we should unmark this stream as prefetched
@@ -1450,11 +1309,12 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name && from_mark != 0)
                 streams.unmarkPrefetched(*stream_name);
 
-            return getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, cache);
+            return getStream(/* seek_to_start = */true, substream_path, name_and_type, 0, /* seek_to_mark = */false, cache, resolved);
         };
         deserialize_settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            ResolvedSubstream computed;
+            const auto & stream_name = resolveSubstream(resolved_substreams, name_and_type, substream_path, computed).stream_name;
             if (!stream_name)
                 return;
 
@@ -1472,49 +1332,61 @@ void MergeTreeReaderWide::deserializePrefix(
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name)
                 getOrAddStream(substream_path, *stream_name);
         };
         deserialize_settings.release_stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name)
                 streams.release(*stream_name);
         };
-        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        if (isReadWithTypeInPart(name_and_type))
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
-            return stream_name.has_value();
-        };
+            deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type, substream_path, ".bin",
+                    data_part_info_for_read->getChecksums(), storage_settings);
+                return stream_name.has_value();
+            };
+        }
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
-        deserialize_settings.has_uniform_marks_callback =
-            [&](const ISerialization::SubstreamPath & substream_path,
-                size_t max_transitions) -> bool
+        /// A sample read only lists the streams and their sizes, so it must not enable this callback's prefix-time
+        /// optimizations: they read column data a sample read never uses.
+        if (!settings.read_only_column_sample)
         {
-            /// Wide parts with a final mark have a trailing position after the
-            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
-            /// positions in the dictionary stream (data mark + final mark).
-            /// Without a final mark, the same check must be stricter: a true
-            /// single-dictionary part has only one distinct position, while a part
-            /// with one dictionary in the main stream and another in the suffix can
-            /// still look like "2 positions".
-            /// This is only a necessary condition; `SerializationLowCardinality`
-            /// still checks the `DictionaryKeys` stream reaches EOF after the
-            /// first dictionary.
-            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
-            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
-                ? max_transitions
-                : max_transitions - 1;
+            deserialize_settings.has_uniform_marks_callback =
+                [&](const ISerialization::SubstreamPath & substream_path,
+                size_t max_transitions) -> bool
+            {
+                /// Wide parts with a final mark have a trailing position after the
+                /// suffix, so a single per-part dictionary shows up as <= 2 distinct
+                /// positions in the dictionary stream (data mark + final mark).
+                /// Without a final mark, the same check must be stricter: a true
+                /// single-dictionary part has only one distinct position, while a part
+                /// with one dictionary in the main stream and another in the suffix can
+                /// still look like "2 positions".
+                /// This is only a necessary condition; `SerializationLowCardinality`
+                /// still checks the `DictionaryKeys` stream reaches EOF after the
+                /// first dictionary.
+                const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
+                const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
+                    ? max_transitions
+                    : max_transitions - 1;
 
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
-            if (!stream_name)
-                return false;
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type, substream_path, ".bin",
+                    data_part_info_for_read->getChecksums(), storage_settings);
+                if (!stream_name)
+                    return false;
 
-            /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
-            auto & stream = getOrAddStream(substream_path, *stream_name);
-            return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
-        };
+                /// Bucket and dynamic streams are opened lazily; the verdict must not depend on which column opened them first.
+                auto & stream = getOrAddStream(substream_path, *stream_name);
+                return stream.hasAtMostNDistinctMarks(allowed_distinct_marks);
+            };
+        }
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
@@ -1577,13 +1449,16 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
         /// a non-const lookup in `caches` can insert, so several of them looking the same key up at
         /// once would modify the map while the others read it.
         auto * column_cache = &caches[name_and_type.getNameInStorage()];
-        return [&, column_cache](const ISerialization::SubstreamPath & substream_path)
+        const auto * resolved_substreams = findResolvedSubstreams(name_and_type.name);
+        return [&, column_cache, resolved_substreams](const ISerialization::SubstreamPath & substream_path)
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            ResolvedSubstream computed;
+            const auto & resolved = resolveSubstream(resolved_substreams, name_and_type, substream_path, computed);
+            const auto & stream_name = resolved.stream_name;
             if (!stream_name || streams.isPrefetched(*stream_name))
                 return;
 
-            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, *column_cache))
+            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, name_and_type, 0, /* seek_to_mark = */false, *column_cache, resolved))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -1603,6 +1478,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     ISerialization::SubstreamsCache & cache)
 {
     const bool prefix_deserialized = deserialize_binary_bulk_state_map.contains(name_and_type.name);
+    const auto * resolved_substreams = findResolvedSubstreams(name_and_type.name);
 
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -1623,7 +1499,9 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (ISerialization::isMetadataStream(substream_path) && (prefix_deserialized || from_mark != 0))
             return;
 
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
+        ResolvedSubstream computed;
+        const auto & resolved = resolveSubstream(resolved_substreams, name_and_type, substream_path, computed);
+        const auto & stream_name = resolved.stream_name;
 
         if (stream_name && !streams.isPrefetched(*stream_name))
         {
@@ -1632,7 +1510,7 @@ void MergeTreeReaderWide::prefetchForColumn(
                 return;
 
             bool seek_to_mark = !continue_reading && !read_without_marks;
-            if (ReadBuffer * buf = getStream(false, substream_path, stream_name, name_and_type, from_mark, seek_to_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, name_and_type, from_mark, seek_to_mark, cache, resolved))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -1672,20 +1550,29 @@ void MergeTreeReaderWide::readData(
 
     deserializePrefix(serialization, name_and_type, from_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 
+    /// The substreams of the column resolved in `addStreams`; a path not found there (a dynamic subcolumn) is
+    /// resolved on the spot into `computed`, see `resolveSubstream`.
+    const auto * resolved_substreams = findResolvedSubstreams(name_and_type.name);
+    const auto resolve = [&](const ISerialization::SubstreamPath & substream_path, ResolvedSubstream & computed) -> const ResolvedSubstream &
+    {
+        return resolveSubstream(resolved_substreams, name_and_type, substream_path, computed);
+    };
+
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
+        ResolvedSubstream computed;
+        const auto & resolved = resolve(substream_path, computed);
+        const auto & stream_name = resolved.stream_name;
         bool was_prefetched = stream_name && streams.isPrefetched(*stream_name);
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
-        return getStream(
-            /* seek_to_start = */false, substream_path, stream_name,
-            name_and_type, from_mark, seek_to_mark, cache);
+        return getStream(/* seek_to_start = */false, substream_path, name_and_type, from_mark, seek_to_mark, cache, resolved);
     };
 
     deserialize_settings.seek_stream_to_mark_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark)
     {
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
+        ResolvedSubstream computed;
+        const auto & stream_name = resolve(substream_path, computed).stream_name;
         if (!stream_name)
             return;
 
@@ -1706,7 +1593,8 @@ void MergeTreeReaderWide::readData(
         if (read_without_marks)
             return;
 
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
+        ResolvedSubstream computed;
+        const auto & stream_name = resolve(substream_path, computed).stream_name;
         if (!stream_name)
             return;
 
@@ -1717,21 +1605,17 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.get_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path) -> double
     {
-        auto & stream_info = getStreamInfo(name_and_type, substream_path);
-        if (!stream_info.name)
-            return 0.0;
-
-        return getAvgValueSizeHint(stream_info);
+        ResolvedSubstream computed;
+        const double * hint = avgValueSizeHintSlot(resolve(substream_path, computed));
+        return hint ? *hint : 0.0;
     };
 
     deserialize_settings.update_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
     {
-        auto & stream_info = getStreamInfo(name_and_type, substream_path);
-        if (!stream_info.name)
-            return;
-
-        IDataType::updateAvgValueSizeHint(column_, getAvgValueSizeHint(stream_info));
+        ResolvedSubstream computed;
+        if (double * hint = avgValueSizeHintSlot(resolve(substream_path, computed)))
+            IDataType::updateAvgValueSizeHint(column_, *hint);
     };
 
     deserialize_settings.continuous_reading = continue_reading;
@@ -1742,26 +1626,51 @@ void MergeTreeReaderWide::readData(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
-std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
+bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+{
+    return column.getTypeInStorage()->hasDynamicStructure()
+        || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
+}
+
+std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
     /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.
     const auto & infos = data_part_info_for_read->getSerializationInfos();
     if (std::ranges::any_of(columns_to_read, [&](const auto & column) { return streamsDependOnPrefixes(column, infos); }))
         deserializePrefixForAllColumns(columns_to_read.size(), 0);
 
-    std::unordered_map<String, std::vector<String>> column_to_streams;
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
+        /// Under the requested name: the part may read the column under another one, as the `size0` of a Nested
+        /// array, which is the offsets subcolumn of the collected Nested column.
+        auto & streams_of_column = column_to_streams[requested_column_names[i]];
+        std::unordered_map<String, size_t> stream_positions;
 
         ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
         {
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            if (const auto & stream_name = getStreamName(name_and_type, substream_path))
-                column_to_streams[name_and_type.name].push_back(*stream_name);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return;
+
+            /// A file shared by several subcolumns is reported once per subcolumn: their hints add up, a stream without
+            /// a hint counts its file once.
+            const auto & size_hint = substream_path.back().size_hint;
+            auto [it, inserted] = stream_positions.try_emplace(*stream_name, streams_of_column.size());
+            if (inserted)
+            {
+                streams_of_column.push_back({*stream_name, size_hint});
+            }
+            else if (size_hint && streams_of_column[it->second].size_hint)
+            {
+                streams_of_column[it->second].size_hint->compressed += size_hint->compressed;
+                streams_of_column[it->second].size_hint->uncompressed += size_hint->uncompressed;
+            }
         };
 
         auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);

@@ -1,0 +1,68 @@
+---
+sidebarTitle: '技能'
+slug: /agents/builder/skills
+title: '技能'
+description: 'ClickHouse agent的可复用指令包'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'skills', 'SKILL.md']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+技能是一种可复用的指令包，agent可按需调用。对于在多个agent中反复用到的流程 (例如品牌风格指南、代码审查清单、特定工作流的运行手册) ，应使用技能来封装，而不必将相同的指令重复写入每个agent的系统提示中。
+
+## 技能的结构 {#anatomy-of-a-skill}
+
+技能就是一个 Markdown 文件，开头带有一小段前置元数据：
+
+```markdown
+---
+name: revenue-report
+description: Generates the weekly revenue report using our standard segments
+always-apply: false
+user-invocable: true
+---
+
+When asked to generate a revenue report:
+1. Filter to the requested period.
+2. Apply the standard MRR formula:
+     SUM(CASE
+       WHEN billing_cycle = 'monthly' THEN amount
+       WHEN billing_cycle = 'yearly'  THEN amount / 12
+       ELSE 0
+     END)
+3. Break down by segment: Enterprise, Mid-Market, SMB.
+4. Render the result as a Markdown table.
+```
+
+最重要的前置元数据配置项如下：
+
+* **`name`** - 采用 kebab-case 格式的标识符。
+* **`description`** - 简短摘要，模型据此判断该技能何时适用。这是最重要的字段，务必写得具体；描述含糊会导致调用错误的技能。
+* **`always-apply`** - 设为 `true` 时，该技能会在每个轮次中预加载，而不是按需选择。请谨慎使用；always-apply 技能在每条消息中都会占用上下文。
+* **`user-invocable`** - 设为 `true` (默认值) 时，该技能会出现在 `$` 弹出菜单中，供手动选择。
+
+您可以将辅助文件 (如参考文档、示例查询、小型脚本) 与技能打包在一起，只需上传一个包含 `SKILL.md` 及其静态资源的 `.zip` 文件即可。
+
+## 使用技能 {#use-a-skill}
+
+在对话中，agent 可通过以下三种方式使用技能：
+
+* **用户调用** - 在输入框中按 `$`，然后从弹出菜单中选择技能。该技能的内容会预加载到下一轮次中。
+* **模型自动选择** - agent 根据技能的 `description` 自行决定何时应用该技能。
+* **Always-apply** - 以此方式配置的技能会在每个轮次中预加载。
+
+## 管理技能 {#manage-skills}
+
+在 Cloud 控制台的“技能”面板中，您可以以内联方式创建技能、上传 `.md` 或 `.zip` 文件，并管理您的用户启用了哪些技能。您拥有的技能默认处于活跃状态；停用某个技能后，它会从弹出菜单和模型的目录中移除，但不会被删除。
+
+技能可以共享给其他用户 (参见[共享与访问](/zh/agents/sharing-and-access)) 。
+
+## 技能与指令 {#skills-vs-instructions}
+
+* **agent指令** 定义agent的定位及其整体行为方式，对该agent始终生效。
+* **技能** 则按情境启用：仅在相关时应用，且限定于特定工作流。
+
+如果同一套分步指令在多个agent中反复出现，或者您希望它仅针对特定的用户请求触发，而不是在每个轮次都生效，就应当使用技能。

@@ -160,6 +160,16 @@ ClickHouse Cloud でのみ有効です。単一の分散キャッシュの読み
 
 ClickHouse Cloudでのみ有効です。分散キャッシュでシークを行うための最小バイト数です。
 
+## distributed_cache_min_inflight_bytes_to_discard_connection {#distributed_cache_min_inflight_bytes_to_discard_connection}
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "4194304"},{"label": "読み取りリクエストがキャンセルされた際、転送中のデータが少量であれば分散キャッシュの接続を維持するための新しい設定です。デフォルトは 4 MiB です。0 にすると以前の動作 (データがまだ到着する可能性がある場合は常に接続を破棄する) に戻ります。"}]}]} />
+
+ClickHouse Cloud でのみ有効。データがまだ到着する可能性がある状態で分散キャッシュ読み取りリクエストがキャンセルされた場合、推定される転送中のバイト数がこの値を超えていれば接続を破棄します。超えていなければ接続を pool に戻し、その接続上の次のリクエストが残りのデータを排出します。0 の場合は常に接続を破棄します。seek 時には、まず `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` によって同じ接続で再リクエストするかどうかが判定されます。再リクエストせずにリクエストがキャンセルされた場合は、この設定も適用されます。なお、上記の設定とは異なり、この設定での 0 は「常に破棄する」ことを意味します。`distributed_cache_discard_connection_if_unread_data` が無効の場合は接続が常に維持されるため、この設定は効果がありません。
+
 ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />

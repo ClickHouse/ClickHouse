@@ -26,11 +26,15 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
+
+#include <algorithm>
 
 namespace DB
 {
@@ -245,9 +249,16 @@ ArrowType parseType(const flatbuf::Field & field)
             requireSingleChild(type, "FixedSizeList");
             break;
         case flatbuf::Type_Struct_:
+        {
             type.kind = TypeKind::Struct;
             type.children = parseChildren(field.children());
+            Strings names;
+            names.reserve(type.children.size());
+            for (const ArrowField & child : type.children)
+                names.push_back(child.name);
+            type.positional_fields = !DataTypeTuple::hasValidElementNames(names);
             break;
+        }
         case flatbuf::Type_Map:
             type.kind = TypeKind::Map;
             type.children = parseChildren(field.children());
@@ -345,9 +356,64 @@ ArrowType parseType(const flatbuf::Field & field)
     return type;
 }
 
+/// Arrow allows several top-level fields with the same name, but the columns of a table must have unique names.
+/// A repeated name gets the first free numeric suffix (`ints`, `ints_1`, `ints_2`), skipping the names of other
+/// fields, so that every field can be inferred, requested and matched by its own name.
+void makeFieldNamesUnique(ArrowFields & fields)
+{
+    UnorderedSetWithMemoryTracking<std::string> original_names;
+    for (const ArrowField & field : fields)
+        original_names.insert(field.name);
+    if (original_names.size() == fields.size())
+        return;
+
+    UnorderedSetWithMemoryTracking<std::string> used_names;
+    /// The next suffix to try for each repeated name, so that every candidate is tried at most once (a schema with many
+    /// equal names would otherwise take quadratic time).
+    UnorderedMapWithMemoryTracking<std::string, size_t> next_suffix;
+    for (ArrowField & field : fields)
+    {
+        if (used_names.insert(field.name).second)
+            continue;
+        size_t & suffix = next_suffix.try_emplace(field.name, 1).first->second;
+        while (true)
+        {
+            std::string candidate = fmt::format("{}_{}", field.name, suffix++);
+            if (!original_names.contains(candidate) && used_names.insert(candidate).second)
+            {
+                field.name = std::move(candidate);
+                break;
+            }
+        }
+    }
 }
 
-ArrowSchema parseSchema(const flatbuf::Schema & schema)
+}
+
+namespace
+{
+
+/// `RecordBatchDecoder` decodes a union with the V5 layout, which has no validity buffer. V4 keeps that
+/// buffer, so reading a V4 union would take every following buffer from the wrong offset. Reject the field
+/// instead of decoding it wrongly. Unions nested inside other types have the same problem, so the whole
+/// field tree is checked.
+void rejectUnionFields(const ArrowFields & fields)
+{
+    for (const auto & field : fields)
+    {
+        if (field.type.kind == TypeKind::Union)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Arrow IPC field '{}' is a union written with metadata version V4, whose layout keeps the "
+                "validity buffer that V5 removed; this reader implements the V5 union layout only",
+                field.name);
+        rejectUnionFields(field.type.children);
+    }
+}
+
+}
+
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version)
 {
     ArrowSchema result;
     /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
@@ -380,8 +446,12 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
             result.fields.push_back(std::move(f));
         }
     }
+    makeFieldNamesUnique(result.fields);
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
+    if (version != flatbuf::MetadataVersion_V5)
+        rejectUnionFields(result.fields);
+
     return result;
 }
 
@@ -516,7 +586,15 @@ buildMapEntriesField(
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> kv;
-    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, childPlan(kv_plans, 0)));
+    const DataTypePtr key_type = removeNullable(map_type.getKeyType());
+    if (isVariant(key_type) && settings.arrow.output_variant_as_json_string)
+    {
+        /// The key must not be nullable: `RecordBatchEncoder` writes a NULL `Variant` key as the JSON text `null`.
+        kv.push_back(flatbuf::CreateField(
+            b, b.CreateString("key"), /*nullable=*/ false, flatbuf::Type_Utf8, flatbuf::CreateUtf8(b).Union(), 0, 0));
+    }
+    else
+        kv.push_back(buildField(b, "key", key_type, settings, childPlan(kv_plans, 0)));
     kv.push_back(buildField(b, "value", map_type.getValueType(), settings, childPlan(kv_plans, 1)));
     auto kv_vec = b.CreateVector(kv);
     auto entries_name = b.CreateString("entries");
@@ -539,7 +617,7 @@ buildField(
     }
 
     DataTypePtr t = removeLowCardinality(type);
-    const bool nullable = t->isNullable();
+    bool nullable = t->isNullable();
     t = removeNullable(t);
 
     flatbuf::Type type_type = flatbuf::Type_NONE;
@@ -559,6 +637,13 @@ buildField(
         type_type = flatbuf::Type_Bool;
         type_offset = flatbuf::CreateBool(b).Union();
     }
+    else if (isNothing(t) && settings.arrow.output_nothing_as_null)
+    {
+        /// Every value of `Nothing` is null, so the field is nullable even when the type is not, as in `Array(Nothing)`.
+        type_type = flatbuf::Type_Null;
+        type_offset = flatbuf::CreateNull(b).Union();
+        nullable = true;
+    }
     else
     {
         const WhichDataType which(t);
@@ -572,7 +657,18 @@ buildField(
             case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
             case TypeIndex::Int32: make_int(32, true); break;
             case TypeIndex::Int64: make_int(64, true); break;
-            case TypeIndex::DateTime: make_int(32, false); break;
+            case TypeIndex::DateTime:
+                if (settings.arrow.output_datetime_as_timestamp)
+                {
+                    auto tz_off = b.CreateString(assert_cast<const DataTypeDateTime &>(*t).getTimeZone().getTimeZone());
+                    type_type = flatbuf::Type_Timestamp;
+                    type_offset = flatbuf::CreateTimestamp(b, flatbuf::TimeUnit_SECOND, tz_off).Union();
+                }
+                else
+                {
+                    make_int(32, false);
+                }
+                break;
             case TypeIndex::Float32:
                 type_type = flatbuf::Type_FloatingPoint;
                 type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_SINGLE).Union();
@@ -654,7 +750,7 @@ buildField(
                     type_offset = flatbuf::CreateFixedSizeBinary(
                         b, static_cast<Int32>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
                 }
-                else if (settings.arrow.output_string_as_string)
+                else if (settings.arrow.output_string_as_string && settings.arrow.output_fixed_string_as_string)
                 {
                     type_type = flatbuf::Type_Utf8;
                     type_offset = flatbuf::CreateUtf8(b).Union();
@@ -724,6 +820,15 @@ buildField(
             }
             case TypeIndex::Variant:
             {
+                /// `RecordBatchEncoder::encodeVariantAsJSONText` writes the JSON text of each value, and NULL as an Arrow null.
+                if (settings.arrow.output_variant_as_json_string)
+                {
+                    nullable = true;
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                    break;
+                }
+
                 /// Mirror the library writer: a dense union with one child per variant (in global order)
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
@@ -788,9 +893,10 @@ buildField(
         }
     }
 
-    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata,
+    /// unless `output_format_arrow_uuid_as_fixed_byte_array` asks for the plain storage type.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if (isUUID(t))
+    if (isUUID(t) && !settings.arrow.output_uuid_as_fixed_byte_array)
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
@@ -973,12 +1079,29 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     if (!flatbuf::VerifyFooterBuffer(verifier))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
+    if (!isFlatBuffersVectorAligned8(footer->dictionaries()) || !isFlatBuffersVectorAligned8(footer->recordBatches()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer: misaligned block list");
+
+    /// The footer carries the metadata version too, and its block list is read under that edition's
+    /// assumptions, so an edition this reader does not know is rejected here rather than at the first
+    /// message. Each message is checked again in `MessageReader::readNextMessage`.
+    ///
+    /// Some writers of the V4 era left `Footer.version` unset, so it reads as the default `V1`, while every
+    /// message of the file is V4 (e.g. a part of the Arrow 0.14.1 integration files in `apache/arrow-testing`).
+    /// The Apache Arrow library does not check the footer version either. Read such a footer as V4: the
+    /// messages still carry their own version, and a message older than V4 is rejected by `readNextMessage`.
+    const auto version = std::max(footer->version(), flatbuf::MetadataVersion_V4);
+    if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported Arrow IPC metadata version V{} in the Arrow file footer: this reader implements V4 and V5",
+            static_cast<Int16>(version) + 1);
 
     if (!footer->schema())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
 
     ArrowFileFooter result;
-    result.schema = parseSchema(*footer->schema());
+    result.schema = parseSchema(*footer->schema(), version);
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
     /// And the block's metadata+body must lie within the data region (before the footer): otherwise a
@@ -1154,7 +1277,10 @@ DataTypePtr fieldToCHType(
                 elems.push_back(fieldToCHType(child, settings, isNullableField(child), allow_null_type));
                 names.push_back(child.name);
             }
-            result = std::make_shared<DataTypeTuple>(elems, names);
+            if (type.positional_fields)
+                result = std::make_shared<DataTypeTuple>(elems);
+            else
+                result = std::make_shared<DataTypeTuple>(elems, names);
             break;
         }
         case TypeKind::Map:
@@ -1203,10 +1329,30 @@ DataTypePtr fieldToCHType(
             return fieldToCHType(type.children.at(1), settings, make_nullable, allow_null_type);
         }
         case TypeKind::Interval:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Native Arrow IPC reader does not support this type yet (field '{}')",
-                field.name);
+            /// YEAR_MONTH is a number of months. DAY_TIME and MONTH_DAY_NANO pack several counts into one value,
+            /// which are kept apart in a `Tuple` of intervals, as they cannot be converted into each other.
+            switch (type.unit)
+            {
+                case flatbuf::IntervalUnit_YEAR_MONTH:
+                    result = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month);
+                    break;
+                case flatbuf::IntervalUnit_DAY_TIME:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Millisecond)},
+                        Names{"days", "milliseconds"});
+                    break;
+                default:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond)},
+                        Names{"months", "days", "nanoseconds"});
+                    break;
+            }
+            break;
         case TypeKind::Unsupported:
             /// `UNKNOWN_TYPE` so schema inference can drop the column with
             /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`.

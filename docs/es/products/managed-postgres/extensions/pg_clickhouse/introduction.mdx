@@ -2,7 +2,7 @@
 sidebarTitle: 'Introducción'
 description: 'Ejecuta consultas analíticas en ClickHouse directamente desde PostgreSQL sin tener que reescribir SQL'
 slug: '/cloud/managed-postgres/extensions/pg_clickhouse'
-title: 'Documentación de referencia de pg_clickhouse'
+title: 'Documentación de pg_clickhouse'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extensión']
 ---
@@ -65,6 +65,8 @@ con 36 GB de memoria.
 | [Consulta 20] |     473 ms |             28 ms |          |
 | [Consulta 21] |    1145 ms |           4470 ms |          |
 | [Consulta 22] |     270 ms |             45 ms |     ✼    |
+
+## Instalación {#installation}
 
 ### Compilar a partir del código fuente {#compile-from-source}
 
@@ -210,6 +212,42 @@ superusuario predeterminado &quot;postgres&quot;:
 make installcheck PGUSER=postgres
 ```
 
+### CloudNativePG {#cloudnativepg}
+
+Agregue pg&#95;clickhouse a un cluster de [CloudNativePG] mediante [ExtensionConfiguration]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  # ... <snip>
+  postgresql:
+    # ExtensionConfiguration
+    extensions:
+      - name: pg_clickhouse
+        image:
+        reference: ghcr.io/ClickHouse/cnpg-pg_clickhouse:{pg_major_version}-{pg_clickhouse_version}
+```
+
+Para cargarla en una base de datos, use [ExtensionSpec]:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: pg_clickhouse-cluster
+spec:
+  name: app
+  owner: app
+  cluster:
+    name: pg_clickhouse-cluster
+  extensions:
+    - name: pg_clickhouse
+      version: {pg_clickhouse_version}
+```
+
 ### Carga {#loading}
 
 Una vez instalado `pg_clickhouse`, puede añadirlo a una base de datos conectándose
@@ -245,8 +283,6 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 * Permitir ajustes de ClickHouse a nivel de servidor y de sesión mediante CREATE SERVER
   y GUCs
 * Admitir todos los tipos de datos de ClickHouse
-* Admitir eliminaciones ligeras y UPDATEs
-* Admitir inserción por lotes mediante COPY
 * Añadir una función para ejecutar una consulta arbitraria de ClickHouse y devolver sus
   resultados en forma de tabla
 * Añadir compatibilidad con el pushdown de consultas UNION cuando todas consulten la
@@ -257,6 +293,7 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 * [Josh Ventura](https://github.com/JoshDreamland)
+* [Kaushik Iska](https://github.com/iskakaushik)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
@@ -269,9 +306,9 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 
 [pg_clickhouse]: https://github.com/clickHouse/pg_clickhouse "pg_clickhouse en GitHub"
 
-[importar tablas foráneas]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
+[import foreign tables]: /products/managed-postgres/extensions/pg_clickhouse/reference#import-foreign-schema
 
-[imagen de Docker]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Última versión de Docker"
+[Docker image]: https://github.com/ClickHouse/pg_clickhouse/pkgs/container/pg_clickhouse "Última versión de Docker"
 
 [tutorial]: /products/managed-postgres/extensions/pg_clickhouse/tutorial "Tutorial de pg_clickhouse"
 
@@ -302,6 +339,14 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 [TPC-H]: https://www.tpc.org/tpch/
 
 [re2]: https://github.com/ClickHouse/pg_re2 "pg_re2: funciones de expresiones regulares compatibles con ClickHouse que usan RE2"
+
+[CloudNativePG]: https://cloudnative-pg.io/ "Ejecuta PostgreSQL al estilo de Kubernetes"
+
+[ExtensionConfiguration]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionconfiguration
+
+&quot;Documentación de CloudNativePG: ExtensionConfiguration:
+[ExtensionSpec]: https://cloudnative-pg.io/docs/devel/cloudnative-pg.v1#extensionspec
+&quot;Documentación de CloudNativePG: ExtensionSpec:
 
 [Consulta 1] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/1.sql
 [Consulta 2] https://github.com/ClickHouse/pg&#95;clickhouse/blob/main/dev/tpch/queries/2.sql
