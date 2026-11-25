@@ -136,6 +136,7 @@ public:
     bool isInUse() const { return in_use; }
     UInt64 getLastUsedUsec() const { return last_used_usec; }
     bool hasConsumer() const { return kafka_consumer->hasConsumer(); }
+    bool offsetResetReadsFromBeginning() const { return kafka_consumer->offsetResetReadsFromBeginning(); }
     CppKafkaConsumerPtr moveConsumer() const;
 
     /// Can be called simultaneously with most of the functions, see the class comment for details.

@@ -185,6 +185,8 @@ Chunk KafkaSource::generateImpl()
 
     bool cancelled = false;
     bool consumed_any = false;
+    /// With another `auto.offset.reset`, a rewind restarts a partition without a valid committed offset at its end.
+    const bool check_views = streaming_views.has_value() && consumer->offsetResetReadsFromBeginning();
 
     while (true)
     {
@@ -210,7 +212,7 @@ Chunk KafkaSource::generateImpl()
                 break;
             }
             consumed_any = true;
-            if (new_batch && streaming_views
+            if (new_batch && check_views
                 && StorageKafkaUtils::viewsChanged(storage_id, context->getGlobalContext(), *streaming_views))
             {
                 ended_on_views_change = true;

@@ -111,6 +111,9 @@ std::vector<StoragePtr> getStreamingViews(const StorageID & table_id, const Cont
 /// `Atomic` database from re-attaching one of them under the same UUID.
 bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const std::vector<StoragePtr> & views);
 
+/// Whether `auto.offset.reset` starts a partition without a committed offset at its beginning.
+bool offsetResetReadsFromBeginning(const cppkafka::Configuration & consumer_config);
+
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
 /// Given the full write header and the Kafka virtual column mapping setting, splits columns into

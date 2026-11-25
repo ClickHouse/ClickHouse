@@ -99,6 +99,7 @@ public:
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
     CppKafkaConsumerPtr && moveConsumer();
+    bool offsetResetReadsFromBeginning() const { return offset_reset_reads_from_beginning; }
 
     // Poll only the main consumer queue without any topic-partition queues. This is useful to get notified about events, such as rebalance,
     // new assignment, etc..
@@ -170,6 +171,7 @@ private:
     const size_t skip_bytes = 0;
 
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
+    bool offset_reset_reads_from_beginning = true;
 
     const std::atomic<bool> & stopped;
 

@@ -1603,8 +1603,9 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(
     auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
 
     const bool cancelled = isConsumeCancelRequested(cycle_epoch);
-    views_changed = !cancelled && maybe_blocks_and_guard.has_value() && !maybe_blocks_and_guard->blocks.empty()
-        && StorageKafkaUtils::viewsChanged(getStorageID(), getContext(), views);
+    /// With another `auto.offset.reset`, a rollback restarts a partition without a valid committed offset at its end.
+    views_changed = !cancelled && consumer.offsetResetReadsFromBeginning() && maybe_blocks_and_guard.has_value()
+        && !maybe_blocks_and_guard->blocks.empty() && StorageKafkaUtils::viewsChanged(getStorageID(), getContext(), views);
     if (cancelled || views_changed)
     {
         if (views_changed)

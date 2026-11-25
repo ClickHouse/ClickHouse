@@ -68,6 +68,8 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 {
     chassert(!consumer.get());
 
+    offset_reset_reads_from_beginning = StorageKafkaUtils::offsetResetReadsFromBeginning(consumer_config);
+
     /// Using this should be safe, since cppkafka::Consumer can poll messages
     /// (including statistics, which will trigger the callback below) only via
     /// KafkaConsumer.

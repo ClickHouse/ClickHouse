@@ -1189,3 +1189,87 @@ def test_view_created_while_cycle_waits_gets_messages(kafka_cluster, keeper, var
         wait_dst_count(table, expected_dst)
         assert int(instance.query(f"SELECT uniqExact(key) FROM test.{table}_dst2")) == 100
         assert_dst_count_stable(table, expected_dst, seconds=3)
+
+
+
+
+@pytest.mark.parametrize(
+    "offset_reset,partitions",
+    [("latest", 1), ("earliest", 2)],
+    ids=["latest", "earliest-idle-partition"],
+)
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_view_created_while_cycle_waits_without_committed_offset(kafka_cluster, keeper, offset_reset, partitions):
+    # Nothing is committed yet, so a rewind restarts a partition at `auto.offset.reset`. With `latest` that would skip
+    # the fetched messages, so the cycle keeps its views and no view loses a message. With `earliest` an idle partition
+    # restarts at its beginning, so the cycle still rewinds and the new view gets everything.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_reset_{k.random_string(6)}"
+    failpoint = "kafka_pause_after_building_insert_pipeline"
+    keeper_settings = (
+        f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
+    with k.kafka_topic(admin_client, table, num_partitions=partitions):
+        instance.query(
+            f"CREATE NAMED COLLECTION {table}_nc AS kafka_broker_list = 'kafka1:19092', "
+            f"kafka_topic_list = '{table}', kafka_group_name = '{table}', kafka_format = 'JSONEachRow', "
+            f"`kafka.auto_offset_reset` = '{offset_reset}', `kafka.debug` = 'topic'"
+        )
+        try:
+            instance.query(
+                f"""
+                CREATE TABLE test.{table} (key UInt64, value UInt64) ENGINE = Kafka({table}_nc)
+                    SETTINGS kafka_flush_interval_ms = 500, kafka_poll_max_batch_size = 10{keeper_settings};
+                CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+                CREATE TABLE test.{table}_dst2 (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+                CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS SELECT key, value FROM test.{table};
+                """,
+                settings=({"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}),
+            )
+            # `auto.offset.reset` is resolved to a start offset when a partition starts fetching.
+            for p in range(partitions):
+                instance.wait_for_log_line(f"Partition {table} \\[{p}\\] start fetching at offset", timeout=60)
+
+            instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            try:
+                instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+                instance.query(
+                    f"CREATE MATERIALIZED VIEW test.{table}_mv2 TO test.{table}_dst2 AS "
+                    f"SELECT key, value FROM test.{table}"
+                )
+                producing = partitions if offset_reset == "latest" else 1
+                for p in range(producing):
+                    produce_to_partition(kafka_cluster, table, p, p * 1000, 100 // producing)
+            finally:
+                instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+            wait_dst_count(table, 100)
+            if offset_reset == "earliest":
+                result = instance.query_with_retry(
+                    f"SELECT count() FROM test.{table}_dst2",
+                    check_callback=lambda res: int(res) == 100,
+                    retry_count=120,
+                    sleep_time=0.5,
+                )
+                assert int(result) == 100, f"expected 100 rows in {table}_dst2, got {result!r}"
+
+            # Keeping its views costs the new view at most the cycle it was created in.
+            for p in range(producing):
+                produce_to_partition(kafka_cluster, table, p, 5000 + p * 1000, 100 // producing)
+            wait_dst_count(table, 200)
+            result = instance.query_with_retry(
+                f"SELECT countIf(key >= 5000) FROM test.{table}_dst2",
+                check_callback=lambda res: int(res) == 100,
+                retry_count=120,
+                sleep_time=0.5,
+            )
+            assert int(result) == 100, f"expected the 100 later rows in {table}_dst2, got {result!r}"
+            assert_dst_count_stable(table, 200, seconds=3)
+            assert int(instance.query(f"SELECT count() - uniqExact(key) FROM test.{table}_dst2")) == 0
+        finally:
+            instance.query(f"DROP TABLE IF EXISTS test.{table}_mv2 SYNC")
+            instance.query(f"DROP TABLE IF EXISTS test.{table}_mv SYNC")
+            instance.query(f"DROP TABLE IF EXISTS test.{table} SYNC")
+            instance.query(f"DROP NAMED COLLECTION IF EXISTS {table}_nc")

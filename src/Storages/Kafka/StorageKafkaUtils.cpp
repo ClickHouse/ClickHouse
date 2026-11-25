@@ -1296,6 +1296,12 @@ bool viewsChanged(const StorageID & table_id, const ContextPtr & context, const 
         || !std::ranges::all_of(current, [&](const StoragePtr & view) { return std::ranges::contains(views, view); });
 }
 
+bool offsetResetReadsFromBeginning(const cppkafka::Configuration & consumer_config)
+{
+    const auto policy = consumer_config.get("auto.offset.reset");
+    return policy == "smallest" || policy == "earliest" || policy == "beginning";
+}
+
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
