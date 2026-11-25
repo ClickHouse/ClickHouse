@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
@@ -32,6 +33,14 @@ private:
     size_t size_of_data;
     bool inner_nullable;
     bool result_is_nullable;
+    ssize_t nested_if_argument_pos = -1;
+
+    const UInt8 * getNestedIfFlags(const IColumn ** columns) const
+    {
+        if (nested_if_argument_pos < 0)
+            return nullptr;
+        return assert_cast<const ColumnUInt8 &>(*columns[nested_if_argument_pos]).getData().data();
+    }
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -41,7 +50,9 @@ public:
         , inner_nullable{nested_function->getResultType()->isNullable()}
         , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
-        // nothing
+        /// `-If` can reject every row even when its enclosing `-OrDefault` receives a non-empty block.
+        if (typeid_cast<const AggregateFunctionIf *>(nested_function.get()) && !arguments.back()->onlyNull())
+            nested_if_argument_pos = arguments.size() - 1;
     }
 
     [[nodiscard]] String getName() const override
@@ -143,6 +154,8 @@ public:
         size_t row_num,
         Arena * arena) const override
     {
+        if (const auto * flags = getNestedIfFlags(columns); flags && !flags[row_num])
+            return;
         nested_function->add(place, columns, row_num, arena);
         place[size_of_data] = 1;
     }
@@ -167,9 +180,10 @@ public:
         }
         else
         {
+            const auto * flags = getNestedIfFlags(columns);
             nested_function->addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
             for (size_t i = row_begin; i < row_end; ++i)
-                if (places[i])
+                if (places[i] && (!flags || flags[i]))
                     (places[i] + place_offset)[size_of_data] = 1;
         }
     }
@@ -194,10 +208,12 @@ public:
         }
         else
         {
+            const auto * flags = getNestedIfFlags(columns);
             nested_function->addBatchWithNonNullPlaces(
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
             for (size_t i = row_begin; i < row_end; ++i)
-                (places[i] + place_offset)[size_of_data] = 1;
+                if (!flags || flags[i])
+                    (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 
@@ -209,13 +225,16 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        if (if_argument_pos >= 0)
+        const auto * nested_flags = getNestedIfFlags(columns);
+        const auto flag_argument_pos = if_argument_pos >= 0 ? if_argument_pos : nested_if_argument_pos;
+
+        if (flag_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[flag_argument_pos]).getData();
             nested_function->addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (flags[i])
+                if (flags[i] && (!nested_flags || nested_flags[i]))
                 {
                     place[size_of_data] = 1;
                     break;
@@ -241,13 +260,16 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        if (if_argument_pos >= 0)
+        const auto * nested_flags = getNestedIfFlags(columns);
+        const auto flag_argument_pos = if_argument_pos >= 0 ? if_argument_pos : nested_if_argument_pos;
+
+        if (flag_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[flag_argument_pos]).getData();
             nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
             for (size_t i = row_begin; i < row_end; ++i)
             {
-                if (flags[i] && !null_map[i])
+                if (flags[i] && !null_map[i] && (!nested_flags || nested_flags[i]))
                 {
                     place[size_of_data] = 1;
                     break;
