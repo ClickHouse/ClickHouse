@@ -118,6 +118,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -331,6 +332,8 @@ static struct InitFiu
     REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
+    ONCE(iceberg_writes_lose_metadata_commit_response) \
+    ONCE(iceberg_writes_lose_metadata_commit_request) \
     PAUSEABLE_ONCE(glue_catalog_pause_before_update_table) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
@@ -482,6 +485,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_check_part_pause_in_check_data) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     REGULAR(transaction_hold_unknown_state) \
+    PAUSEABLE_ONCE(unique_key_delete_pause_before_commit) \
     PAUSEABLE_ONCE(unique_key_insert_pause_before_commit) \
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \

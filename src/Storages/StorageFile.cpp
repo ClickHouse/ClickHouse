@@ -2817,7 +2817,7 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// recomputed values while the reader compares its own placeholders against it, which can drop
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
 }
 
 bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
@@ -3069,6 +3069,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// pushed into the format (without the conjuncts on virtual and hive partition columns).
     /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
+        return {};
+
+    if (std::ranges::any_of(top_k_filter->columns_deciding_threshold, [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); }))
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
