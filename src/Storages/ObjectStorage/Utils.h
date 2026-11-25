@@ -54,7 +54,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
-    bool allow_page_cache = true);
+    bool allow_page_cache = true,
+    bool prepare_orc_metadata_cache = false);
 
 /// Fetches the metadata of an object to read (e.g. by an S3 `HEAD` request), when its size and ETag are not
 /// known from listing or table metadata. Every metadata request of the read path must go through these

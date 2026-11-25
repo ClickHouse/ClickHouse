@@ -191,6 +191,9 @@ struct RelativePathWithMetadata
     /// which decides the source grant required to see the cached entries. Such caches are not used
     /// for an object without them.
     std::optional<String> path_for_content_cache;
+    /// For format metadata caches: the identity of the object and the credentials used to read it,
+    /// set only after the read has been authorized and pinned to the metadata's ETag.
+    std::optional<String> path_for_format_metadata_cache;
     ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
     /// The table the object is read by, which decides who may see the cached entries, or the nil
     /// UUID for a table function. See `getColumnsCacheTableUUIDOfExternalFile`.

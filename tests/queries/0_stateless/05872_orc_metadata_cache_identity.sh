@@ -29,7 +29,16 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
     def respond(self, include_body):
-        if self.path == '/data/':
+        if self.path == '/fail':
+            self.server.failed = True
+            data = b'ok'
+            etag = None
+        elif getattr(self.server, 'failed', False):
+            self.send_response(503)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        elif self.path == '/data/':
             data = b'<a href="f.orc">f.orc</a>'
             etag = None
         elif self.path == '/data/f.orc':
@@ -42,6 +51,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/weak/f.orc':
             data = (work_dir / 'weak.orc').read_bytes()
             etag = 'W/"same-etag"'
+        elif self.path == '/headers/':
+            data = b'<a href="f.orc">f.orc</a>'
+            etag = None
+        elif self.path == '/headers/f.orc':
+            data = (work_dir / 'small.orc').read_bytes()
+            etag = '"headers-etag"'
         else:
             self.send_error(404)
             return
@@ -58,6 +73,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('X-Method', 'GET' if include_body else 'HEAD')
         if content_range:
             self.send_header('Content-Range', content_range)
         if etag:
@@ -101,3 +117,11 @@ done
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
 cp "${work_dir}/large.orc" "${work_dir}/weak.orc"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('http://127.0.0.1:${first_port}/weak/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1"
+
+${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), any(_headers['X-Method']) FROM url('http://127.0.0.1:${first_port}/headers/*.orc', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, allow_url_wildcard_from_index_pages = 1, remote_filesystem_read_prefetch = 0"
+
+failover_url="http://127.0.0.1:{${first_port}|${second_port}}/data/*.orc"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 1, allow_url_wildcard_from_index_pages = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://127.0.0.1:${first_port}/fail', 'RawBLOB')"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM url('${failover_url}', 'ORC', 'id UInt64') SETTINGS use_orc_metadata_cache = 1, use_cache_for_count_from_files = 0, use_page_cache_for_object_storage = 1, allow_url_wildcard_from_index_pages = 1"

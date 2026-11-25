@@ -1966,7 +1966,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// rows from them, so the fast path is disabled for any attached deletes. This also
     /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
     /// by path + mtime, both untouched by delete files, so it must not be used either.
-    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info) && !read_from_format_info.requested_virtual_columns.contains("_headers");
 
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
@@ -2025,7 +2025,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
+                read_settings, !headers_requested,
+                /*prepare_orc_metadata_cache=*/ Poco::toLower(format_name) == "orc" && context_->getSettingsRef()[Setting::use_orc_metadata_cache]);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -2318,6 +2319,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         const String format_name_lower = Poco::toLower(format_name);
         const bool use_metadata_cache = object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
+            && !headers_requested
             && ((format_name_lower == "parquet" && context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
                 || (format_name_lower == "orc" && context_->getSettingsRef()[Setting::use_orc_metadata_cache]));
         const bool use_parquet_content_cache = format_name_lower == "parquet"
@@ -2645,7 +2647,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings,
-    bool allow_page_cache)
+    bool allow_page_cache,
+    bool prepare_orc_metadata_cache)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -2742,7 +2745,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// where it is known. Otherwise, the read is authorized by a `HEAD` request with its own credentials, because the
     /// metadata from a listing proves only the permission to list the objects, not to read them.
     String page_cache_credentials_identity;
-    if (use_page_cache && object_storage->getType() != ObjectStorageType::Web)
+    if ((use_page_cache || prepare_orc_metadata_cache) && object_storage->getType() != ObjectStorageType::Web)
     {
         if (auto credentials_identity = getCredentialsIdentityForPageCache(*object_storage))
         {
@@ -2762,6 +2765,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
+    }
+
+    if (prepare_orc_metadata_cache && object_storage->getType() == ObjectStorageType::Web
+        && webObjectHasSeveralURLs(object_info, assert_cast<const WebObjectStorage &>(*object_storage)))
+    {
+        LOG_DEBUG(log, "Cannot use ORC metadata cache, the object can be read from several URLs (failover)");
+        return object_storage->readObject(StoredObject(object_info.getPath()), effective_read_settings);
     }
 
     /// The page cache keeps the bytes under the ETag seen by this read, so the bytes must be checked to be of that
@@ -2861,7 +2871,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
+    if ((validate_etag_on_read || pin_read_to_etag_for_page_cache || prepare_orc_metadata_cache) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache
     /// server also checks the etag of its own `GET` against the token if it is an etag, so it needs to know the kind.
@@ -2952,6 +2962,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
 
     auto impl = pipeline.build();
+
+    if (prepare_orc_metadata_cache)
+        object_info.path_for_format_metadata_cache
+            = getPageCachePathForObjectStorage(object_info, object_storage, page_cache_credentials_identity);
 
     /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
     /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
