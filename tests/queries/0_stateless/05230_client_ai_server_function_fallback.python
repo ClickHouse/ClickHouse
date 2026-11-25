@@ -3,13 +3,13 @@
 # no client-side provider at all - the `aiGenerate` function of the server it is connected to.
 # The third one is the only one the client cannot decide on its own: it asks the server whether
 # the function exists, whether default credentials are configured for it
-# (`ai_function_text_default_credentials`) and whether it is enabled
-# (`allow_experimental_ai_functions`), and the assistant exists only if all three hold.
+# (`ai_function_text_default_credentials`) and whether AI functions are enabled (`allow_ai_functions`,
+# which is on by default), and the assistant exists only if all three hold.
 #
 # This walks that boundary, one session per case and no client-side provider anywhere: the
-# assistant is unavailable while either setting is missing, and answers through `aiGenerate` once
-# both are there. The credentials point at a mock provider on the loopback interface, so nothing
-# leaves the machine.
+# assistant is unavailable while there are no credentials or while AI functions are disabled, and
+# answers through `aiGenerate` otherwise. The credentials point at a mock provider on the loopback
+# interface, so nothing leaves the machine.
 import json
 import os
 import pty
@@ -219,7 +219,9 @@ def main():
     )
 
     credentials = [f"--ai_function_text_default_credentials={COLLECTION}"]
-    enabled = ["--allow_experimental_ai_functions=1"]
+    disabled = ["--allow_ai_functions=0"]
+    # The name the setting had while AI functions were experimental, kept as an alias.
+    disabled_by_old_name = ["--allow_experimental_ai_functions=0"]
 
     try:
         # The same question in every session, because what is being varied is the two settings.
@@ -231,9 +233,14 @@ def main():
         # server-side function: the whole path, not just the transport in isolation.
         cases = [
             ("no_settings", base + common, UNAVAILABLE_LINE, "UNAVAILABLE"),
-            ("credentials_only", base + common + credentials, UNAVAILABLE_LINE, "UNAVAILABLE"),
-            ("enabled_only", base + common + enabled, UNAVAILABLE_LINE, "UNAVAILABLE"),
-            ("both_settings", base + common + credentials + enabled, FINAL_ANSWER, "ANSWERED"),
+            ("credentials", base + common + credentials, FINAL_ANSWER, "ANSWERED"),
+            ("credentials_disabled", base + common + credentials + disabled, UNAVAILABLE_LINE, "UNAVAILABLE"),
+            (
+                "credentials_disabled_by_old_name",
+                base + common + credentials + disabled_by_old_name,
+                UNAVAILABLE_LINE,
+                "UNAVAILABLE",
+            ),
         ]
         for name, argv, expected, ok in cases:
             print(f"{name}: {ok if run_session(argv, '? say hello', expected) else 'UNEXPECTED'}")

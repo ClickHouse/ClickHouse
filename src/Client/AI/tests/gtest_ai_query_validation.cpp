@@ -710,7 +710,7 @@ TEST(AIQueryValidation, RejectsAIFunctions)
     /// The AI functions send the query data to an external AI provider and incur cost,
     /// which must not happen without the user's confirmation.
     EXPECT_FALSE(isAllowed("SELECT aiGenerate('ping')"));
-    EXPECT_FALSE(isAllowed("SELECT aiGenerate('ping') SETTINGS allow_experimental_ai_functions = 1"));
+    EXPECT_FALSE(isAllowed("SELECT aiGenerate('ping') SETTINGS allow_ai_functions = 1"));
     EXPECT_FALSE(isAllowed("SELECT aiClassify('text', ['a', 'b'])"));
     EXPECT_FALSE(isAllowed("SELECT aiExtract('text', 'names')"));
     EXPECT_FALSE(isAllowed("SELECT aiTranslate('text', 'French')"));

@@ -165,7 +165,10 @@ bool AIServerFunctionTransport::isAvailable(const ScalarQueryExecutor & executor
         auto result = executor(
             "SELECT (SELECT count() FROM system.functions WHERE name = 'aiGenerate') > 0"
             " AND (SELECT count() FROM system.settings WHERE name = 'ai_function_text_default_credentials' AND value != '') > 0"
-            " AND (SELECT count() FROM system.settings WHERE name = 'allow_experimental_ai_functions' AND value = '1') > 0",
+            /// `allow_ai_functions` was named `allow_experimental_ai_functions` on older servers,
+            /// which know only that name; newer ones list both, the old one as an alias.
+            " AND (SELECT count() FROM system.settings"
+            " WHERE name IN ('allow_ai_functions', 'allow_experimental_ai_functions') AND value = '1') > 0",
             {});
         return trim(result, [](char c) { return isWhitespaceASCII(c); }) == "1";
     }

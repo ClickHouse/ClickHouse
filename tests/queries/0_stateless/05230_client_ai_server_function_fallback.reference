@@ -1,4 +1,4 @@
 no_settings: UNAVAILABLE
-credentials_only: UNAVAILABLE
-enabled_only: UNAVAILABLE
-both_settings: ANSWERED
+credentials: ANSWERED
+credentials_disabled: UNAVAILABLE
+credentials_disabled_by_old_name: UNAVAILABLE
