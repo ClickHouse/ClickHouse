@@ -1761,6 +1761,119 @@ def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
     assert instance.query("SELECT * FROM test.table") == "1\n"
 
 
+def create_constrained_actor(grants):
+    # Created after the backup, so that the backup holds only the entities to restore.
+    instance.query("CREATE USER u2 SETTINGS allow_introspection_functions = 0 CONST")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query(f"GRANT {grants} ON *.* TO u2")
+
+
+@pytest.mark.parametrize(
+    "kind,system_table,target",
+    [
+        ("USER", "users", "u1"),
+        ("ROLE", "roles", "r1"),
+        ("SETTINGS PROFILE", "settings_profiles", "prof1"),
+    ],
+)
+def test_restore_access_checks_settings_constraints(kind, system_table, target):
+    instance.query(f"CREATE {kind} {target} SETTINGS allow_introspection_functions = 1")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.{system_table} TO {backup_name}")
+    instance.query(f"DROP {kind} {target}")
+
+    create_constrained_actor(f"CREATE {kind}")
+    assert "SETTING_CONSTRAINT_VIOLATION" in instance.query_and_get_error(
+        f"CREATE {kind} {target} SETTINGS allow_introspection_functions = 1", user="u2"
+    )
+    restore = f"RESTORE TABLE system.{system_table} FROM {backup_name}"
+    assert "SETTING_CONSTRAINT_VIOLATION" in instance.query_and_get_error(
+        restore, user="u2"
+    )
+    count = f"SELECT count() FROM system.{system_table} WHERE name = '{target}'"
+    assert instance.query(count) == "0\n"
+
+    instance.query(restore)
+    assert "allow_introspection_functions = true" in instance.query(
+        f"SHOW CREATE {kind} {target}"
+    )
+
+
+def test_restore_access_checks_settings_of_inherited_profile():
+    instance.query("CREATE SETTINGS PROFILE prof1")
+    instance.query("CREATE USER u1 SETTINGS PROFILE prof1")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.users TO {backup_name}")
+    instance.query("DROP USER u1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    # The recreated profile has another UUID than the one the backup refers to.
+    instance.query(
+        "CREATE SETTINGS PROFILE prof1 SETTINGS allow_introspection_functions = 1"
+    )
+
+    create_constrained_actor("CREATE USER, DROP USER")
+    restore = f"RESTORE TABLE system.users FROM {backup_name}"
+    assert "SETTING_CONSTRAINT_VIOLATION" in instance.query_and_get_error(
+        restore, user="u2"
+    )
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+
+    instance.query(
+        "ALTER SETTINGS PROFILE prof1 DROP SETTINGS allow_introspection_functions"
+    )
+    assert (
+        instance.query("SHOW CREATE SETTINGS PROFILE prof1")
+        == "CREATE SETTINGS PROFILE `prof1`\n"
+    )
+    instance.query(restore, user="u2")
+    show_u1 = "SHOW CREATE USER u1"
+    assert "SETTINGS PROFILE `prof1`" in instance.query(show_u1)
+
+    # Like `CREATE USER ... OR REPLACE`, a replacement must keep the settings the actor is constrained on.
+    instance.query(
+        "ALTER USER u1 SETTINGS PROFILE prof1, allow_introspection_functions = 0"
+    )
+    assert "allow_introspection_functions = false" in instance.query(show_u1)
+    assert "SETTING_CONSTRAINT_VIOLATION" in instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "allow_introspection_functions = false" in instance.query(show_u1)
+
+
+def test_restore_access_checks_settings_of_existing_entities():
+    instance.query("CREATE USER u1 SETTINGS allow_introspection_functions = 1")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.users TO {backup_name}")
+    instance.query("ALTER USER u1 SETTINGS NONE")
+    show_u1 = "SHOW CREATE USER u1"
+    assert instance.query(show_u1) == "CREATE USER u1 IDENTIFIED WITH no_password\n"
+
+    create_constrained_actor("CREATE USER")
+    # `u1` exists here, but it may not exist on another host of `RESTORE ON CLUSTER`.
+    assert "SETTING_CONSTRAINT_VIOLATION" in instance.query_and_get_error(
+        f"RESTORE TABLE system.users FROM {backup_name}", user="u2"
+    )
+    assert instance.query(show_u1) == "CREATE USER u1 IDENTIFIED WITH no_password\n"
+
+    # Replacing a user along with the profile it keeps the constrained setting through is allowed.
+    instance.query("DROP USER u1, u2")
+    instance.query(
+        "CREATE SETTINGS PROFILE prof1 SETTINGS allow_introspection_functions = 0 CONST"
+    )
+    instance.query("CREATE USER u1 SETTINGS PROFILE prof1")
+    backup_name = new_backup_name()
+    backup_tables = "TABLE system.users, TABLE system.settings_profiles"
+    instance.query(f"BACKUP {backup_tables} TO {backup_name}")
+    create_constrained_actor(
+        "CREATE USER, DROP USER, CREATE SETTINGS PROFILE, DROP SETTINGS PROFILE"
+    )
+    instance.query(
+        f"RESTORE {backup_tables} FROM {backup_name} SETTINGS create_access='replace'",
+        user="u2",
+    )
+    assert "SETTINGS PROFILE `prof1`" in instance.query(show_u1)
+
+
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 

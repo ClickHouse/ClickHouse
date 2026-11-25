@@ -81,7 +81,18 @@ public:
     /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
     [[nodiscard]] AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
 
+    /// Returns every access entity selected from the backup, including the ones not restored because they exist,
+    /// with dependencies resolved. generateRandomIDsAndResolveDependencies() must be called before that.
+    [[nodiscard]] std::vector<std::pair<UUID, AccessEntityPtr>> getEntitiesFromBackup() const;
+
+    /// Returns a copy of the loaded state which never throws on existing or missing entities while resolving them.
+    /// `loadFromBackup` must be called first, and `generateRandomIDsAndResolveDependencies` must not be.
+    [[nodiscard]] AccessRestorerFromBackup makeCopyForChecking() const;
+
 private:
+    AccessRestorerFromBackup(
+        const AccessRestorerFromBackup & src, RestoreAccessCreationMode creation_mode_, bool skip_unresolved_dependencies_);
+
     const BackupPtr backup;
     const RestoreAccessCreationMode creation_mode;
     const bool skip_unresolved_dependencies;
@@ -127,6 +138,10 @@ private:
         /// `CREATE USER user1 DEFAULT ROLE role1`, then `is_dependent=true` for `user1`.
         /// This flags is set by generateRandomIDsAndResolveDependencies().
         bool is_dependent = false;
+
+        /// Whether this entity was loaded to be restored but is not restored because it exists already.
+        /// This flag is set by generateRandomIDsAndResolveDependencies().
+        bool exists = false;
 
         /// New UUID for this entity - either randomly generated or copied from an existing entity.
         /// This UUID is assigned by generateRandomIDsAndResolveDependencies().
