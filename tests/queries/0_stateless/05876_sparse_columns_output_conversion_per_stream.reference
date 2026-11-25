@@ -1,0 +1,14 @@
+id	['Default']
+s	['Sparse']
+u	['Sparse']
+100000	451654233109543262
+native 100000	451654233109543262
+parquet 100000	451654233109543262
+expression 100000	451654233109543262
+single_stream 100000	451654233109543262
+limits 100000
+quota 100000
+native	1	0
+parquet	1	0
+expression	1	0
+single_stream	0	1

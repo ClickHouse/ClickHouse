@@ -210,6 +210,14 @@ void removeSpecialColumnRepresentations(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
+void removeSpecialColumnRepresentationsKeepingBytes(Chunk & chunk)
+{
+    const size_t bytes = chunk.bytes();
+    removeSpecialColumnRepresentations(chunk);
+    if (chunk.bytes() != bytes)
+        chunk.getChunkInfos().add(std::make_shared<ChunkBytesBeforeConversion>(bytes));
+}
+
 void materializeChunk(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

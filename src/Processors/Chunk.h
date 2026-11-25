@@ -163,6 +163,14 @@ public:
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
+/// The size of a chunk before `removeSpecialColumnRepresentationsKeepingBytes` converted it. Result limits and quotas count it.
+class ChunkBytesBeforeConversion : public ChunkInfoCloneable<ChunkBytesBeforeConversion>
+{
+public:
+    explicit ChunkBytesBeforeConversion(size_t bytes_) : bytes(bytes_) {}
+    size_t bytes;
+};
+
 /// Converts all columns to full serialization in chunk.
 /// It's needed, when you have to access to the internals of the column,
 /// or when you need to perform operation with two columns
@@ -170,6 +178,7 @@ using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
 void removeSpecialColumnRepresentations(Chunk & chunk);
+void removeSpecialColumnRepresentationsKeepingBytes(Chunk & chunk);
 
 /// Analog of materializeBlock: converts const columns to full and removes sparse/replicated representations.
 void materializeChunk(Chunk & chunk);
