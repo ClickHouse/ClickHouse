@@ -29,6 +29,7 @@
 #    include <Common/ArenaWithFreeLists.h>
 #    include <Common/CurrentMetrics.h>
 #    include <Common/HashTable/HashMap.h>
+#    include <Common/KernelFileDescriptor.h>
 #    include <Common/randomSeed.h>
 
 
@@ -601,7 +602,8 @@ public:
         write_request.aio.aio_offset = current_block_index * block_size;
         #else
         write_request.aio_lio_opcode = IOCB_CMD_PWRITE;
-        write_request.aio_fildes = file.fd;
+        /// The kernel reads the descriptor from the `iocb`, bypassing the translation in libc.
+        write_request.aio_fildes = toKernelFileDescriptor(file.fd);
         write_request.aio_buf = reinterpret_cast<UInt64>(buffer);
         write_request.aio_nbytes = block_size * buffer_size_in_blocks;
         write_request.aio_offset = current_block_index * block_size;
@@ -676,7 +678,7 @@ public:
         request.aio_data = 0;
         #else
         request.aio_lio_opcode = IOCB_CMD_PREAD;
-        request.aio_fildes = file.fd;
+        request.aio_fildes = toKernelFileDescriptor(file.fd);
         request.aio_buf = reinterpret_cast<UInt64>(read_buffer_memory.data());
         request.aio_nbytes = buffer_size_in_bytes;
         request.aio_offset = block_start * block_size;
@@ -762,7 +764,7 @@ public:
             request.aio_data = block_to_fetch_index;
             #else
             request.aio_lio_opcode = IOCB_CMD_PREAD;
-            request.aio_fildes = file.fd;
+            request.aio_fildes = toKernelFileDescriptor(file.fd);
             request.aio_buf = reinterpret_cast<UInt64>(buffer_place);
             request.aio_nbytes = block_size;
             request.aio_offset = block_size * blocks_to_fetch[block_to_fetch_index];

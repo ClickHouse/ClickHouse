@@ -23,6 +23,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include <Common/KernelFileDescriptor.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
@@ -1112,6 +1113,8 @@ std::vector<SocketBufferOptions> connectedSocketBuffers(UInt16 port)
         const auto [parse_end, parse_error] = std::from_chars(name.data(), name.data() + name.size(), fd);
         if (parse_error != std::errc() || parse_end != name.data() + name.size())
             continue;
+        /// The names are kernel descriptors.
+        fd = DB::fromKernelFileDescriptor(fd);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);

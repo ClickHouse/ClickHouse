@@ -246,6 +246,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/internal/floatscan.c"
     "${MUSL_SOURCE_DIR}/src/internal/intscan.c"
     "${MUSL_SOURCE_DIR}/src/internal/libc.c"
+    "${MUSL_SOURCE_DIR}/src/internal/fdmap.c"
     "${MUSL_SOURCE_DIR}/src/internal/procfdname.c"
     "${MUSL_SOURCE_DIR}/src/internal/shgetc.c"
     "${MUSL_SOURCE_DIR}/src/internal/syscall_ret.c"
@@ -1737,6 +1738,14 @@ target_compile_definitions(musl PRIVATE
     -D_XOPEN_SOURCE=700
 )
 
+# File descriptors visible to the program are a pseudorandom encoding of the kernel ones, so that
+# a descriptor used after `close` gets EBADF instead of reaching an unrelated file (see
+# `src/internal/fdmap.h`). ThreadSanitizer tracks synchronization through descriptors in a table
+# indexed by the descriptor and ignores large ones, which would lead to false positives.
+if (SANITIZE STREQUAL "thread")
+    target_compile_definitions(musl PRIVATE FD_RANDOMIZATION=0)
+endif ()
+
 # The rest of libc is compiled with the global -fstack-protector-strong, but the objects below
 # must not be: they run before the canary exists, or they are what installs it. This is upstream
 # musl's own NOSSP_OBJS list (Makefile), minus the objects this build compiles from assembly.
@@ -1744,6 +1753,8 @@ target_compile_definitions(musl PRIVATE
 # again on return would see two different values; __init_tls and __set_thread_area set up the
 # thread pointer the canary is read through; memcpy and memset are called from that path.
 set_source_files_properties(
+    # File descriptor translation in syscalls, reached from __init_tls (mmap).
+    "${MUSL_SOURCE_DIR}/src/internal/fdmap.c"
     "${MUSL_SOURCE_DIR}/src/env/__init_tls.c"
     "${MUSL_SOURCE_DIR}/src/env/__libc_start_main.c"
     "${MUSL_SOURCE_DIR}/src/env/__stack_chk_fail.c"

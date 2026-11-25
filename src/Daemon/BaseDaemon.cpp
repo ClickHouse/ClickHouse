@@ -1,6 +1,7 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <base/defines.h>
+#include <Common/KernelFileDescriptor.h>
 #include <base/errnoToString.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
@@ -203,11 +204,11 @@ void BaseDaemon::closeFDs()
     const auto & signal_pipe = HandledSignals::instance().signal_pipe;
     if (fs::is_directory(proc_path)) /// Hooray, proc exists
     {
-        /// in /proc/self/fd directory filenames are numeric file descriptors.
+        /// in /proc/self/fd directory filenames are numeric file descriptors (kernel ones, see KernelFileDescriptor.h).
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
         VectorWithMemoryTracking<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
-            fds.push_back(parse<int>(path.path().filename()));
+            fds.push_back(fromKernelFileDescriptor(parse<int>(path.path().filename())));
 
         for (const auto & fd : fds)
         {
@@ -230,8 +231,9 @@ void BaseDaemon::closeFDs()
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
-        for (int fd = 3; fd < max_fd; ++fd)
+        for (int kernel_fd = 3; kernel_fd < max_fd; ++kernel_fd)
         {
+            int fd = fromKernelFileDescriptor(kernel_fd);
             if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
             {
                 int err = ::close(fd);

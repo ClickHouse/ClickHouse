@@ -1,4 +1,5 @@
 #include <Common/OOMCanaryExitCodes.h>
+#include <Common/KernelFileDescriptor.h>
 
 #if defined(OS_LINUX)
 
@@ -69,8 +70,8 @@ void writeStderr(std::string_view message)
     int max_fd = static_cast<int>(::sysconf(_SC_OPEN_MAX));
     if (max_fd < 0 || max_fd > 65536)
         max_fd = 65536;
-    for (int fd = 3; fd < max_fd; ++fd)
-        (void)::close(fd);
+    for (int kernel_fd = 3; kernel_fd < max_fd; ++kernel_fd)
+        (void)::close(DB::fromKernelFileDescriptor(kernel_fd));
 
     /// Make the OOM killer pick us first.
     try
