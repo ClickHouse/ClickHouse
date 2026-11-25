@@ -210,7 +210,11 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
 {
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);
-    for (UInt64 keys = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness); keys; keys &= keys - 1)
+    const UInt64 merge_keys = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness);
+    if (!merge_keys)
+        return;
+    const UInt64 key_classes = optimizer.joinKeyClasses(edges, left_mask, right_mask);
+    for (UInt64 keys = merge_keys; keys; keys &= keys - 1)
     {
         const auto key = static_cast<Int32>(std::countr_zero(keys));
         const MergeInputCandidate * left = nullptr;
@@ -223,7 +227,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
             for (const auto & right_candidate : right_candidates)
             {
                 const double candidate_cost = optimizer.mergeJoinCost(
-                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, selectivity);
+                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, key_classes, selectivity);
                 if (candidate_cost < cost)
                 {
                     cost = candidate_cost;
@@ -259,7 +263,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, selectivity, kind, strictness);
         plan.edges.assign(edges.begin(), edges.end());
         plan.method = JoinMethod::Merge;
-        plan.sharded = optimizer.isShardedMerge(left->input, left_mask, right->input, right_mask);
+        plan.sharded = optimizer.isShardedMerge(left->input, left_mask, right->input, right_mask, key_classes);
         plan.merge_class = static_cast<Int8>(key);
         plan.order_class = keeps_order ? static_cast<Int8>(key) : -1;
 
