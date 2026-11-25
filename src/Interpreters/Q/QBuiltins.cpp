@@ -132,6 +132,15 @@ ASTPtr ident(const String & name)
     return makeIdentifier(name);
 }
 
+/// The ratio of two numbers as a floating point number, which is what the division of q is.
+/// With the setting `sql_compatible_division_for_integers`, `divide` of two integers in the compiled query becomes
+/// the integer division, as for a query in SQL. That is right for a query embedded with `.ch.sql`, but not for
+/// the divisions that the compiler makes itself, so the dividend is a `Float64` in them.
+ASTPtr ratio(ASTPtr dividend, ASTPtr divisor)
+{
+    return fn("divide", fn("toFloat64", std::move(dividend)), std::move(divisor));
+}
+
 ASTPtr qualified(const String & table, const String & column)
 {
     return make_intrusive<ASTIdentifier>(std::vector<String>{table, column});
@@ -662,7 +671,7 @@ ASTPtr temporalToNumber(ASTPtr value, QType type, const Call & call)
             return fn("minus", fn("toUnixTimestamp64Nano", fn("toDateTime64", std::move(value), scale())),
                 fn("toUnixTimestamp64Nano", epochDateTime(9)));
         case QType::Datetime:
-            return fn("divide",
+            return ratio(
                 fn("minus", fn("toUnixTimestamp64Milli", fn("toDateTime64", std::move(value), lit(Field(static_cast<UInt64>(3))))),
                     fn("toUnixTimestamp64Milli", epochDateTime(3))),
                 lit(Field(static_cast<UInt64>(86'400'000))));
@@ -1468,7 +1477,7 @@ QValue xbar(Call & call)
         if (step.qtype == QType::Timespan || step.qtype == QType::Minute || step.qtype == QType::Second || step.qtype == QType::Time)
             step_seconds = fn("toFloat64", step.ast);
         else
-            step_seconds = fn("divide", fn("multiply", step.ast, lit(Field(unit_seconds_numerator))), lit(Field(unit_seconds_divisor)));
+            step_seconds = ratio(fn("multiply", step.ast, lit(Field(unit_seconds_numerator))), lit(Field(unit_seconds_divisor)));
         ASTPtr seconds = fn("toFloat64", value.ast);
         ASTPtr rounded = fn("multiply", fn("floor", fn("divide", seconds, step_seconds)), step_seconds);
         QValue result = value;
@@ -1694,7 +1703,7 @@ const std::unordered_map<String, Handler> & handlers()
         {
             if (c.args.size() == 1)
                 return handlers().at("reciprocal")(c);
-            return binaryFunction(c, "divide", QType::Float);
+            return binary(c, [](ASTPtr x, ASTPtr y) { return ratio(std::move(x), std::move(y)); }, QType::Float);
         };
         h["&"] = [](Call & c)
         {
@@ -2148,7 +2157,7 @@ const std::unordered_map<String, Handler> & handlers()
             QValues denominator_args{paired_weights};
             Call denominator_call{c.compiler, c.name, denominator_args, c.env, c.scope, c.offset};
             QValue denominator = simpleAggregate(denominator_call, "sum");
-            QValue result = QCompiler::scalar(fn("divide", numerator.ast, denominator.ast), numerator.depth);
+            QValue result = QCompiler::scalar(ratio(numerator.ast, denominator.ast), numerator.depth);
             result.aggregated = numerator.aggregated || denominator.aggregated;
             result.qtype = QType::Float;
             return result;
@@ -2376,11 +2385,11 @@ const std::unordered_map<String, Handler> & handlers()
         h["ratios"] = [lag](Call & c)
         {
             c.expectArgs(1);
-            return uniform(c, [&](ASTPtr column) { return fn("divide", column, fn("ifNull", lag(c, column, 1), one())); },
+            return uniform(c, [&](ASTPtr column) { return ratio(column, fn("ifNull", lag(c, column, 1), one())); },
                 [&](ASTPtr list)
                 {
                     return mapWithIndex(c.compiler, list,
-                        [&](ASTPtr item, ASTPtr index) { return fn("divide", item, fn("ifNull", previousItem(list, index), one())); });
+                        [&](ASTPtr item, ASTPtr index) { return ratio(item, fn("ifNull", previousItem(list, index), one())); });
                 });
         };
         h["differ"] = [lag](Call & c)
