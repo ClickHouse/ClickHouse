@@ -28,6 +28,8 @@ node5 = cluster.add_instance(
 node6 = cluster.add_instance("node6", stay_alive=True)
 # 7. [EXPECTED FAILURE] when trying to ALTER a pre-configured profile on fly via SQL
 node7 = cluster.add_instance("node7", user_configs=["configs/empty_background_profile.xml"])
+# 8. 'background' profile sets session_timezone, and an INSERT computes the sorting key in it, as merges do
+node8 = cluster.add_instance("node8", user_configs=["configs/timezone_background_profile.xml"])
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -123,3 +125,28 @@ def test_changing_profile_in_flight(started_cluster):
   node7.query_and_get_error("ALTER SETTINGS PROFILE background SETTINGS function_sleep_max_microseconds_per_block=5000000")
   
   print("Check 7: background can't be created in config and modified via SQL")
+
+def test_insert_computes_sorting_key_in_background_profile_timezone(started_cluster):
+  table_name = get_table_name(node8)
+  assert node8.query("SELECT serverTimezone() != 'Asia/Tokyo'") == "1\n"
+
+  node8.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+  # `toDate` of an `Int64` reads the time zone when it runs, so merges compute it in the zone of the 'background' profile.
+  node8.query(f"CREATE TABLE {table_name} (ts Int64, id UInt32) ENGINE = MergeTree ORDER BY (toDate(ts), id) SETTINGS index_granularity = 4")
+  for session_timezone in ["", "Asia/Tokyo", "America/Los_Angeles"]:
+    node8.query(
+      f"INSERT INTO {table_name} SELECT 1704067200 + number * 3600, 1000 - number FROM numbers(72) SETTINGS session_timezone = '{session_timezone}'"
+    )
+
+  # Parts whose rows are not sorted by the sorting key computed in the zone of the 'background' profile.
+  unsorted_parts = f"""
+    SELECT countIf(part_keys != arraySort(part_keys)) FROM (
+      SELECT arrayMap(x -> (x.1, x.2), arraySort(x -> x.3, groupArray((toDate(ts), id, _part_offset)))) AS part_keys
+      FROM {table_name} GROUP BY _part)
+    SETTINGS session_timezone = 'Asia/Tokyo'
+  """
+  assert node8.query(unsorted_parts) == "0\n"
+  node8.query(f"OPTIMIZE TABLE {table_name} FINAL")
+  assert node8.query(unsorted_parts) == "0\n"
+  assert node8.query(f"SELECT count() FROM {table_name}") == "216\n"
+  print("Check 8: an INSERT computes the sorting key in the session_timezone of the 'background' profile")

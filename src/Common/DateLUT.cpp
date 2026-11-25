@@ -1,5 +1,6 @@
 #include <Common/DateLUT.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/SessionTimezoneBlockerInThread.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -202,7 +203,7 @@ const DateLUTImpl & DateLUT::instance()
     const auto & date_lut = getInstance();
 
     std::optional<std::string> timezone_from_context;
-    if (DB::CurrentThread::isInitialized())
+    if (DB::CurrentThread::isInitialized() && !SessionTimezoneBlockerInThread::isBlocked())
     {
         const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
@@ -215,7 +216,10 @@ const DateLUTImpl & DateLUT::instance()
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
         const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
-        if (global_context)
+        /// Background merges take their settings from the background profile.
+        if (global_context && SessionTimezoneBlockerInThread::isBlocked() && global_context->hasBackgroundContext())
+            timezone_from_context.emplace(global_context->getBackgroundContext()->getSettingsRef()[DB::Setting::session_timezone]);
+        else if (global_context)
             timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
 
