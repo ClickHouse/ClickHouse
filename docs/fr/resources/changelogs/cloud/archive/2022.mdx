@@ -8,13 +8,13 @@ keywords: ['changelog', 'notes de version', 'mises à jour', 'nouvelles fonction
 ---
 
 <div id="december-20-2022">
-  ## 20 décembre 2022
+  ## 20 décembre 2022 {#december-20-2022}
 </div>
 
 Cette version introduit une connexion simplifiée des administrateurs à la console SQL, de meilleures performances pour les lectures à froid, ainsi qu’un connector Metabase amélioré pour ClickHouse Cloud.
 
 <div id="console-changes-27">
-  ### Modifications de la console
+  ### Modifications de la console {#console-changes-27}
 </div>
 
 * Activation d’un accès fluide à la console SQL pour les utilisateurs Admin
@@ -22,26 +22,26 @@ Cette version introduit une connexion simplifiée des administrateurs à la cons
 * Ajout d’un questionnaire d’onboarding
 
 <div id="reliability-and-performance-3">
-  ### Fiabilité et performances
+  ### Fiabilité et performances {#reliability-and-performance-3}
 </div>
 
 * Ajout d&#39;un mécanisme de nouvelle tentative pour les requêtes insert longues afin de pallier les défaillances réseau
 * Amélioration des performances des lectures à froid
 
 <div id="integrations-changes-26">
-  ### Changements des intégrations
+  ### Changements des intégrations {#integrations-changes-26}
 </div>
 
 * Le [plugin Metabase](/fr/integrations/connectors/data-visualization/metabase-and-clickhouse) a bénéficié d’une importante mise à jour vers la version v0.9.1, très attendue. Il est désormais compatible avec la dernière version de Metabase et a été testé de manière approfondie avec ClickHouse Cloud.
 
 <div id="december-6-2022---general-availability">
-  ## 6 décembre 2022 - Disponibilité générale
+  ## 6 décembre 2022 - Disponibilité générale {#december-6-2022---general-availability}
 </div>
 
 ClickHouse Cloud est désormais prêt pour la production, avec la conformité SOC 2 Type II, des SLA de disponibilité pour les charges de travail en production et une page d&#39;état publique. Cette version comprend d&#39;importantes nouveautés, comme l&#39;intégration AWS Marketplace, console SQL — un environnement d&#39;exploration des données pour les utilisateurs de ClickHouse —, ainsi que ClickHouse Academy — un apprentissage en autonomie dans ClickHouse Cloud. Pour en savoir plus, consultez ce [blog](https://clickhouse.com/blog/clickhouse-cloud-generally-available).
 
 <div id="production-ready">
-  ### Prêt pour la production
+  ### Prêt pour la production {#production-ready}
 </div>
 
 * Conformité SOC2 Type II (détails dans le [blog](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) et le [Trust Center](https://trust.clickhouse.com/))
@@ -49,15 +49,13 @@ ClickHouse Cloud est désormais prêt pour la production, avec la conformité SO
 * SLA de disponibilité proposé pour les cas d’utilisation en production
 * Disponible sur [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jettukeanwrfc)
 
-<div id="major-new-capabilities">
-  ### Principales nouveautés
-</div>
+### Principales nouveautés {#major-new-capabilities}
 
-* Lancement de la console SQL, l’interface d’exploration des données pour les utilisateurs de ClickHouse
-* Lancement de [ClickHouse Academy](<https://learn.clickhouse.com/>), une formation à votre rythme dans ClickHouse Cloud
+* Lancement de la console SQL, l’atelier d’exploration des données pour les utilisateurs de ClickHouse
+* Lancement de [ClickHouse Academy](https://learn.clickhouse.com/), une formation à votre rythme dans ClickHouse Cloud
 
 <div id="pricing-and-metering-changes">
-  ### Modifications de la tarification et de la mesure de l’utilisation
+  ### Modifications de la tarification et de la mesure de l’utilisation {#pricing-and-metering-changes}
 </div>
 
 * Période d’essai prolongée à 30 jours
@@ -66,7 +64,7 @@ ClickHouse Cloud est désormais prêt pour la production, avec la conformité SO
 * Amélioration de la granularité et de la précision dans la mesure des ressources de calcul
 
 <div id="integrations-changes-26">
-  ### Changements des intégrations
+  ### Changements des intégrations {#integrations-changes-27}
 </div>
 
 * Activation de la prise en charge des moteurs d’intégration Postgres / MySQL de ClickHouse
@@ -75,44 +73,44 @@ ClickHouse Cloud est désormais prêt pour la production, avec la conformité SO
 * Amélioration de l’UI Integrations avec l’ajout de métadonnées détaillées sur les versions, le statut des mises à jour, etc.
 
 <div id="console-changes-27">
-  ### Modifications de la console
+  ### Modifications de la console {#console-changes-28}
 </div>
 
 * Prise en charge de l’authentification multifacteur dans la console Cloud
 * Amélioration de la navigation dans la console Cloud sur les appareils mobiles
 
 <div id="documentation-changes">
-  ### Modifications de la documentation
+  ### Modifications de la documentation {#documentation-changes}
 </div>
 
 * Ajout d’une section [documentation](/fr/products/cloud/getting-started/intro) dédiée à ClickHouse Cloud
 
 <div id="bug-fixes-5">
-  ### Corrections de bugs
+  ### Corrections de bugs {#bug-fixes-5}
 </div>
 
 * Correction d’un problème connu : la restauration à partir d’une sauvegarde ne fonctionnait pas toujours en raison de la résolution des dépendances
 
 <div id="november-29-2022">
-  ## 29 novembre 2022
+  ## 29 novembre 2022 {#november-29-2022}
 </div>
 
 Cette version apporte la conformité SOC 2 Type II, met à jour ClickHouse vers la version 22.11 et améliore un certain nombre de clients et d’intégrations pour ClickHouse.
 
 <div id="general-changes-4">
-  ### Changements généraux
+  ### Changements généraux {#general-changes-4}
 </div>
 
 * Obtention de la conformité SOC 2 Type II (détails dans le [blog](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant) et le [Trust Center](https://trust.clickhouse.com))
 
 <div id="console-changes-27">
-  ### Modifications de la console
+  ### Modifications de la console {#console-changes-29}
 </div>
 
 * Ajout d’un indicateur d’état « Inactif » signalant qu’un service a été automatiquement mis en pause
 
 <div id="clickhouse-2211-version-upgrade">
-  ### Mise à niveau vers la version 22.11 de ClickHouse
+  ### Mise à niveau vers la version 22.11 de ClickHouse {#clickhouse-2211-version-upgrade}
 </div>
 
 * Ajout de la prise en charge des moteurs de table et des fonctions de table Hudi et DeltaLake
@@ -122,7 +120,7 @@ Cette version apporte la conformité SOC 2 Type II, met à jour ClickHouse vers 
 * Consultez le [changelog détaillé de la version 22.11](#clickhouse-2211-version-upgrade) pour obtenir la liste complète des modifications
 
 <div id="integrations-1">
-  ### Intégrations
+  ### Intégrations {#integrations-1}
 </div>
 
 * client Python : prise en charge de la v3.11, amélioration des performances d’insert
@@ -131,7 +129,7 @@ Cette version apporte la conformité SOC 2 Type II, met à jour ClickHouse vers 
 * dbt-clickhouse : prise en charge de DBT v1.3
 
 <div id="bug-fixes-6">
-  ### Correctifs de bugs
+  ### Correctifs de bugs {#bug-fixes-6}
 </div>
 
 * Correction d’un bug qui affichait une ancienne version de ClickHouse après une mise à niveau
@@ -139,26 +137,26 @@ Cette version apporte la conformité SOC 2 Type II, met à jour ClickHouse vers 
 * Les comptes non administrateur nouvellement créés n’ont plus accès aux tables système par défaut
 
 <div id="known-issues-in-this-release">
-  ### Problèmes connus de cette version
+  ### Problèmes connus de cette version {#known-issues-in-this-release}
 </div>
 
 * La restauration à partir d’une sauvegarde peut échouer en raison de la résolution des dépendances
 
 <div id="november-17-2022">
-  ## 17 novembre 2022
+  ## 17 novembre 2022 {#november-17-2022}
 </div>
 
 Cette version permet d&#39;utiliser des dictionnaires depuis une table ClickHouse locale et des sources HTTP, ajoute la prise en charge de la région de Mumbai et améliore l&#39;expérience utilisateur de la console Cloud.
 
 <div id="general-changes-4">
-  ### Changements généraux
+  ### Changements généraux {#general-changes-5}
 </div>
 
 * Ajout de la prise en charge des [dictionnaires](/fr/reference/statements/create/dictionary) à partir de tables ClickHouse locales et de sources HTTP
 * Ajout de la prise en charge de la [région](/fr/products/cloud/reference/supported-regions) de Mumbai
 
 <div id="console-changes-30">
-  ### Modifications de la Console
+  ### Modifications de la Console {#console-changes-30}
 </div>
 
 * Amélioration de la mise en forme des factures
@@ -167,38 +165,38 @@ Cette version permet d&#39;utiliser des dictionnaires depuis une table ClickHous
 * Amélioration de la gestion des erreurs lors du téléversement de fichiers
 
 <div id="bug-fixes-5">
-  ### Corrections de bugs
+  ### Corrections de bugs {#bug-fixes-7}
 </div>
 
 * Correction d’un bug pouvant entraîner l’échec des sauvegardes en présence de fichiers volumineux uniques dans certaines parties
 * Correction d’un bug empêchant la restauration depuis une sauvegarde si des modifications de la liste d’accès étaient appliquées simultanément
 
 <div id="known-issues">
-  ### Problèmes connus
+  ### Problèmes connus {#known-issues}
 </div>
 
 * La restauration depuis une sauvegarde peut ne pas fonctionner en raison de la résolution des dépendances
 
 <div id="november-3-2022">
-  ## 3 novembre 2022
+  ## 3 novembre 2022 {#november-3-2022}
 </div>
 
 Cette version supprime de la tarification les unités de lecture et d’écriture (consultez la [page de tarification](https://clickhouse.com/pricing) pour plus de détails), met à jour ClickHouse vers la version 22.10, permet une mise à l’échelle verticale plus poussée pour les clients en libre-service et améliore la fiabilité grâce à de meilleurs paramètres par défaut.
 
 <div id="general-changes-4">
-  ### Changements généraux
+  ### Changements généraux {#general-changes-6}
 </div>
 
 * Suppression des unités de lecture/écriture du modèle de tarification
 
 <div id="configuration-changes-2">
-  ### Changements de configuration
+  ### Changements de configuration {#configuration-changes-2}
 </div>
 
 * Les paramètres `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types` et `allow_suspicious_codecs` (la valeur par défaut est `false`) ne peuvent plus être modifiés par les utilisateurs pour des raisons de stabilité.
 
 <div id="console-changes-27">
-  ### Modifications de la console
+  ### Modifications de la console {#console-changes-31}
 </div>
 
 * Augmentation à 720 Go de mémoire de la limite maximale en libre-service pour la mise à l’échelle verticale pour les clients payants
@@ -208,7 +206,7 @@ Cette version supprime de la tarification les unités de lecture et d’écritur
 * Amélioration des workflows d’administration de la facturation
 
 <div id="clickhouse-2210-version-upgrade">
-  ### Mise à niveau vers la version 22.10 de ClickHouse
+  ### Mise à niveau vers la version 22.10 de ClickHouse {#clickhouse-2210-version-upgrade}
 </div>
 
 * Amélioration des fusions sur les stockages d’objets grâce à un assouplissement du seuil « Too many parts » en présence de nombreuses parts volumineuses (au moins 10 GiB). Cela permet de gérer jusqu’à des pétaoctets de données dans une seule partition d’une même table.
@@ -218,26 +216,26 @@ Cette version supprime de la tarification les unités de lecture et d’écritur
 * Consultez le [journal des modifications détaillé de la version 22.10](#clickhouse-2210-version-upgrade) pour obtenir la liste complète des changements.
 
 <div id="october-25-2022">
-  ## 25 octobre 2022
+  ## 25 octobre 2022 {#october-25-2022}
 </div>
 
 Cette version réduit considérablement la consommation de ressources de calcul pour les petites charges de travail, diminue le coût du calcul (voir la page [tarification](https://clickhouse.com/pricing) pour plus de détails), améliore la stabilité grâce à de meilleurs paramètres par défaut et enrichit les vues Billing et Usage dans la console ClickHouse Cloud.
 
 <div id="general-changes-4">
-  ### Changements généraux
+  ### Changements généraux {#general-changes-7}
 </div>
 
 * Réduction de l’allocation minimale de mémoire du service à 24G
 * Réduction du délai d’inactivité du service de 30 à 5 minutes
 
 <div id="configuration-changes-3">
-  ### Modifications de configuration
+  ### Modifications de configuration {#configuration-changes-3}
 </div>
 
 * Réduction de max&#95;parts&#95;in&#95;total de 100k à 10k. La valeur par défaut du paramètre `max_parts_in_total` pour les tables MergeTree a été abaissée de 100 000 à 10 000. Ce changement s’explique par le fait que nous avons constaté qu’un grand nombre de parties de données risque d’allonger le temps de démarrage des services dans le cloud. Un grand nombre de parties indique généralement le choix d’une clé de partitionnement trop fine, ce qui se produit souvent par inadvertance et doit être évité. Cette modification de la valeur par défaut permettra de détecter ces cas plus tôt.
 
 <div id="console-changes-27">
-  ### Modifications de la console
+  ### Modifications de la console {#console-changes-32}
 </div>
 
 * Amélioration des détails d&#39;utilisation des crédits dans la vue Billing pour les utilisateurs en version d&#39;essai
@@ -245,10 +243,8 @@ Cette version réduit considérablement la consommation de ressources de calcul 
 * Amélioration du workflow lors du changement d&#39;options pour l&#39;IP filtering
 * Ajout d&#39;un bouton de renvoi de l&#39;e-mail de confirmation dans la console Cloud
 
-<div id="october-4-2022---beta">
-  ## 4 octobre 2022 - Bêta
-</div>
+## 4 octobre 2022 - Bêta {#october-4-2022---beta}
 
-ClickHouse Cloud est entré en bêta publique le 4 octobre 2022. Pour en savoir plus, consultez ce [billet de blog](https://clickhouse.com/blog/clickhouse-cloud-public-beta).
+ClickHouse Cloud est entré en bêta publique le 4 octobre 2022. Pour en savoir plus, consultez cet [article de blog](https://clickhouse.com/blog/clickhouse-cloud-public-beta).
 
-La version de ClickHouse Cloud repose sur ClickHouse core v22.10. Pour consulter la liste des fonctionnalités compatibles, reportez-vous au guide [Compatibilité Cloud](/fr/products/cloud/guides/cloud-compatibility).
+La version de ClickHouse Cloud repose sur ClickHouse core v22.10. Pour obtenir la liste des fonctionnalités compatibles, consultez le guide [Compatibilité de Cloud](/fr/products/cloud/guides/cloud-compatibility).

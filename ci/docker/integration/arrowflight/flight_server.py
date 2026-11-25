@@ -69,6 +69,17 @@ class FlightServer(fl.FlightServerBase):
             },
             schema=struct_schema,
         )
+        # A binary column with the WKB of POINT(1 2), and the schema-level GeoParquet metadata declaring it.
+        geo_metadata = (
+            '{"version": "1.0.0", "primary_column": "geom", "columns": '
+            '{"geom": {"encoding": "WKB", "geometry_types": ["Point"]}}}'
+        )
+        self._tables["GEO"] = pa.Table.from_pydict(
+            {"geom": [bytes.fromhex("0101000000000000000000f03f0000000000000040")]},
+            schema=pa.schema(
+                [pa.field("geom", pa.binary())], metadata={b"geo": geo_metadata.encode()}
+            ),
+        )
 
     def _stalling_batches(self):
         yield self._tables["ABC"].to_batches()[0]

@@ -14,12 +14,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # event starts at zero. The group count (650e3) must stay above the 500e3 lower bound under which
 # getSizeHint does not preallocate at all; external aggregation would stop the stats collection, so both
 # spill thresholds are pinned to 0 (see 04625_hash_table_sizes_stats_table_expression_modifiers).
+# The adaptive aggregator also takes one thread and records no table sizes in the statistics, so it is off.
 
 $CLICKHOUSE_LOCAL \
     --optimize_aggregation_in_order=0 \
     --collect_hash_table_stats_during_aggregation=1 \
     --max_size_to_preallocate_for_aggregation=1000000000000 \
     --max_threads=1 \
+    --enable_adaptive_aggregator=0 \
     --max_bytes_before_external_group_by=0 \
     --max_bytes_ratio_before_external_group_by=0 \
     -q "

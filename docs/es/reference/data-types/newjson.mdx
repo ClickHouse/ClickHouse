@@ -30,6 +30,7 @@ Para declarar una columna de tipo `JSON`, puedes usar la siguiente sintaxis:
     max_dynamic_paths=N,
     max_dynamic_types=M,
     some.path TypeName,
+    SHARED some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
 )
@@ -42,6 +43,7 @@ Los parámetros de la sintaxis anterior se definen así:
 | `max_dynamic_paths`         | Un parámetro opcional que indica cuántas rutas pueden almacenarse por separado como subcolumnas en un mismo bloque de datos almacenado por separado (por ejemplo, en una misma parte de datos de una tabla MergeTree). <br /><br />Si se supera este límite, todas las demás rutas se almacenarán juntas en una única estructura llamada [datos compartidos](#shared-data-structure).<br /><br />También existen [formas](#controlling-the-number-of-dynamic-paths) de cambiar el límite de rutas dinámicas sin modificar este parámetro. | `1024`               |
 | `max_dynamic_types`         | Un parámetro opcional entre `1` y `255` que indica cuántos tipos de datos distintos pueden almacenarse por separado dentro de una misma columna de ruta de tipo `Dynamic` en un mismo bloque de datos almacenado por separado (por ejemplo, en una misma parte de datos de una tabla MergeTree). <br /><br />Si se supera este límite, todos los tipos nuevos se almacenarán juntos en una única estructura llamada `shared variant`.                                                                                                     | `32`                 |
 | `some.path TypeName`        | Una indicación de tipo opcional para una ruta concreta del JSON. Estas rutas siempre se almacenarán como subcolumnas con el tipo especificado.                                                                                                                                                                                                                                                                                                                                                                                            |                      |
+| `SHARED some.path TypeName` | Una indicación de tipo cuya ruta se almacena en una parte de MergeTree junto con las demás rutas `SHARED` de la columna, en un número constante de archivos, en lugar de en archivos propios. Consulta [rutas tipadas `SHARED`](#shared-typed-paths).                                                                                                                                                                                                                                                                                     |                      |
 | `SKIP path.to.skip`         | Una indicación opcional para una ruta concreta que debe omitirse durante el análisis del JSON. Estas rutas nunca se almacenarán en la columna JSON. Si la ruta especificada es un objeto JSON anidado, se omitirá todo el objeto anidado.                                                                                                                                                                                                                                                                                                 |                      |
 | `SKIP REGEXP 'path_regexp'` | Una indicación opcional con una expresión regular que se usa para omitir rutas durante el análisis del JSON. Todas las rutas que coincidan con esta expresión regular nunca se almacenarán en la columna JSON.                                                                                                                                                                                                                                                                                                                            |                      |
 
@@ -917,6 +919,28 @@ El tamaño del fragmento se controla mediante el ajuste de MergeTree [object&#95
 No se trata de un límite estricto: si el último fragmento resultara menor que la mitad del objetivo, se fusiona con el fragmento anterior,
 por lo que los tamaños reales de los fragmentos van de `target/2` a `1.5 * target`.
 
+## Rutas tipadas `SHARED` {#shared-typed-paths}
+
+En una parte de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree), cada ruta tipada se almacena como si fuera una columna independiente, con un archivo por cada subflujo de su tipo. Una columna con cientos de rutas tipadas genera cientos de archivos por parte y, en el almacenamiento de objetos, cada lectura de archivo es una solicitud independiente. Si se marca una ruta tipada como `SHARED`, esta pasa a almacenarse en los datos compartidos tipados de la parte: todas las rutas `SHARED` de una columna se escriben juntas en tres archivos, independientemente de cuántas sean. Los datos se organizan gránulo a gránulo y ruta a ruta, y se registra la posición de los datos de cada ruta, de modo que, al leer una ruta, solo se sigue decodificando esa ruta.
+
+```sql
+CREATE TABLE test (json JSON(SHARED a UInt32, SHARED b.c Array(String), d String)) ENGINE = MergeTree ORDER BY tuple();
+```
+
+Aquí, `a` y `b.c` se almacenan en los datos compartidos tipados, y `d`, como una columna propia. Salvo por el almacenamiento, una ruta `SHARED` es una ruta tipada como cualquier otra: los valores se analizan y se convierten con CAST al tipo declarado, la ruta y sus sub-columns se leen con la misma sintaxis (`json.a`, `json.b.c`, `json.b.c.size0`) y participa en las lecturas de sub-object y de subcolumna combinada. Fuera de las partes de MergeTree, por ejemplo en el motor `Memory` o en el formato `Native`, el modificador no tiene ningún efecto.
+
+Elija `SHARED` para columnas con muchas rutas tipadas, especialmente en almacenamiento de objetos, donde el número de archivos por parte importa más que los bytes leídos para una sola ruta. Al leer una ruta `SHARED`, se leen los bloques comprimidos que contienen sus datos, que pueden compartirse con rutas vecinas, por lo que es posible leer algo más que en el caso de una ruta con archivos propios; los bloques se truncan en cuanto alcanzan `min_compress_block_size`, lo que limita ese exceso.
+
+El modificador se añade o se elimina con `ALTER TABLE ... MODIFY COLUMN`:
+
+```sql
+ALTER TABLE test MODIFY COLUMN json JSON(SHARED a UInt32, SHARED b.c Array(String), SHARED d String);
+```
+
+Con las [indicaciones de tipo diferidas](#lazy-type-hints) habilitadas, se trata de una operación de solo metadatos y las partes existentes conservan su disposición hasta que se fusionan; en caso contrario, las partes se reescriben. Las partes de ambas disposiciones se leen conjuntamente.
+
+El formato en disco de los datos compartidos tipados está versionado mediante el ajuste de MergeTree `object_typed_shared_data_serialization_version`; por ahora, `v1` es la única versión disponible.
+
 ## Control del número de rutas dinámicas dentro de JSON en partes de MergeTree {#controlling-the-number-of-dynamic-paths}
 
 La forma principal de establecer un límite para las rutas dinámicas en JSON es usar el parámetro `max_dynamic_paths` dentro de la declaración del tipo JSON.
@@ -1380,6 +1404,7 @@ Consulta [Índices basados en valores con JSONAllValues](/es/reference/engines/t
 Antes de crear una columna `JSON` y cargar datos en ella, tenga en cuenta los siguientes consejos:
 
 * Analice sus datos y especifique tantas rutas con tipos como le sea posible. Esto hará que el almacenamiento y la lectura sean mucho más eficientes.
+* Si tiene muchas rutas tipadas en una tabla `MergeTree`, sobre todo en almacenamiento de objetos, declárelas como `SHARED` para mantener constante el número de archivos por parte. Consulte [rutas tipadas `SHARED`](#shared-typed-paths).
 * Piense qué rutas necesitará y cuáles no necesitará nunca. Especifique en la sección `SKIP` las rutas que no vaya a necesitar y, si hace falta, en la sección `SKIP REGEXP`. Esto mejorará el almacenamiento.
 * No establezca el parámetro `max_dynamic_paths` en valores demasiado altos, ya que esto puede hacer que el almacenamiento y la lectura sean menos eficientes.
   Aunque depende en gran medida de parámetros del sistema como la memoria, la CPU, etc., como regla general no debería establecer `max_dynamic_paths` por encima de 10 000 para el almacenamiento en el sistema de archivos local ni por encima de 1024 para el almacenamiento en el sistema de archivos remoto.

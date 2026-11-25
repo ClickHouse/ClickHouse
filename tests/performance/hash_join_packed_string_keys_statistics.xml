@@ -1,0 +1,156 @@
+<test iceberg="0">
+    <!-- The Iceberg configuration creates Iceberg tables, which have no `basic` statistics, so it would not run the rule under test. -->
+    <settings>
+        <join_algorithm>parallel_hash</join_algorithm>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <!--
+        Hash joins on a single String key, mostly with `basic` column statistics on the right key. The join chooses the layout of the keys
+        (`enable_packed_string_keys_in_hash_join`) from its hash table size: the keys are packed when the hash table with exact keys is
+        larger than the L2 cache (2 MiB on the CI runners). A key of more than 15 bytes, or of unknown length because the table has no
+        statistics, is hashed for every left row when packed, so then the join also needs `min_rows_for_packed_string_keys_in_hash_join`
+        (100000) rows, unless it has a runtime filter, which an INNER join gets and a LEFT join does not.
+        The right table is the build side and its key of row `id` is made from `id`. A probe row hits when its hit rate says so and takes
+        `id = intHash64(number + 1) % build_rows`; a miss takes a larger `id`. Every `id` is a UInt64, so `sipHash128` hashes the same
+        type on both sides. A probe table has a key column for each build size and hit rate, and a view repeats it to lengthen the probe side.
+    -->
+
+    <create_query>CREATE TABLE psk_stats_build_short_10k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_short_80k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_short_80k_mem (k String, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_stats_build_short_200k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_64_8k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_64_60k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_64_200k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_build_256_30k (k String STATISTICS(basic), v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE psk_stats_probe_short (k_10k_50 String, k_80k_50 String, k_200k_50 String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_stats_probe_64 (k_8k_50 String, k_60k_0 String, k_60k_50 String, k_60k_100 String, k_200k_50 String, k_200k_0 String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE psk_stats_probe_256 (k_30k_0 String, k_30k_50 String, k_30k_100 String) ENGINE = Memory</create_query>
+    <create_query>CREATE VIEW psk_stats_probe_short_long AS SELECT * FROM psk_stats_probe_short UNION ALL SELECT * FROM psk_stats_probe_short UNION ALL SELECT * FROM psk_stats_probe_short UNION ALL SELECT * FROM psk_stats_probe_short UNION ALL SELECT * FROM psk_stats_probe_short</create_query>
+    <create_query>CREATE VIEW psk_stats_probe_64_long AS SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64 UNION ALL SELECT * FROM psk_stats_probe_64</create_query>
+    <create_query>CREATE VIEW psk_stats_probe_256_long AS SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256 UNION ALL SELECT * FROM psk_stats_probe_256</create_query>
+
+    <!-- The statistics are built on insert, and the parts are merged so that every table has one part. -->
+    <fill_query>INSERT INTO psk_stats_build_short_10k SELECT toString(number), number FROM numbers_mt(10000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_short_80k SELECT toString(number), number FROM numbers_mt(80000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_short_200k SELECT toString(number), number FROM numbers_mt(200000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_64_8k SELECT substring(repeat(hex(sipHash128(number)), 2), 1, 64), number FROM numbers_mt(8000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_64_60k SELECT substring(repeat(hex(sipHash128(number)), 2), 1, 64), number FROM numbers_mt(60000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_64_200k SELECT substring(repeat(hex(sipHash128(number)), 2), 1, 64), number FROM numbers_mt(200000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_256_30k SELECT substring(repeat(hex(sipHash128(number)), 8), 1, 256), number FROM numbers_mt(30000) SETTINGS materialize_statistics_on_insert = 1</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_short_10k FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_short_80k FINAL</fill_query>
+    <fill_query>INSERT INTO psk_stats_build_short_80k_mem SELECT k, v FROM psk_stats_build_short_80k</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_short_200k FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_64_8k FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_64_60k FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_64_200k FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE psk_stats_build_256_30k FINAL</fill_query>
+
+    <!-- A hit rate of 50% takes `cityHash64(number) % 2 = 0`, 100% takes every row and 0% none. -->
+    <fill_query>
+        INSERT INTO psk_stats_probe_short
+        SELECT toString(id_10k), toString(id_80k), toString(id_200k)
+        FROM
+        (
+            SELECT
+                cityHash64(number) % 2 = 0 AS hit,
+                toUInt64(if(hit, intHash64(number + 1) % 10000, 10000 + number)) AS id_10k,
+                toUInt64(if(hit, intHash64(number + 1) % 80000, 80000 + number)) AS id_80k,
+                toUInt64(if(hit, intHash64(number + 1) % 200000, 200000 + number)) AS id_200k
+            FROM numbers_mt(40000000)
+        )
+    </fill_query>
+    <fill_query>
+        INSERT INTO psk_stats_probe_64
+        SELECT
+            substring(repeat(hex(sipHash128(id_8k_50)), 2), 1, 64),
+            substring(repeat(hex(sipHash128(id_60k_0)), 2), 1, 64),
+            substring(repeat(hex(sipHash128(id_60k_50)), 2), 1, 64),
+            substring(repeat(hex(sipHash128(id_60k_100)), 2), 1, 64),
+            substring(repeat(hex(sipHash128(id_200k_50)), 2), 1, 64),
+            substring(repeat(hex(sipHash128(id_200k_0)), 2), 1, 64)
+        FROM
+        (
+            SELECT
+                cityHash64(number) % 2 = 0 AS hit,
+                toUInt64(if(hit, intHash64(number + 1) % 8000, 8000 + number)) AS id_8k_50,
+                toUInt64(60000 + number) AS id_60k_0,
+                toUInt64(if(hit, intHash64(number + 1) % 60000, 60000 + number)) AS id_60k_50,
+                toUInt64(intHash64(number + 1) % 60000) AS id_60k_100,
+                toUInt64(if(hit, intHash64(number + 1) % 200000, 200000 + number)) AS id_200k_50,
+                toUInt64(200000 + number) AS id_200k_0
+            FROM numbers_mt(10000000)
+        )
+    </fill_query>
+    <fill_query>
+        INSERT INTO psk_stats_probe_256
+        SELECT
+            substring(repeat(hex(sipHash128(id_30k_0)), 8), 1, 256),
+            substring(repeat(hex(sipHash128(id_30k_50)), 8), 1, 256),
+            substring(repeat(hex(sipHash128(id_30k_100)), 8), 1, 256)
+        FROM
+        (
+            SELECT
+                cityHash64(number) % 2 = 0 AS hit,
+                toUInt64(30000 + number) AS id_30k_0,
+                toUInt64(if(hit, intHash64(number + 1) % 30000, 30000 + number)) AS id_30k_50,
+                toUInt64(intHash64(number + 1) % 30000) AS id_30k_100
+            FROM numbers_mt(2500000)
+        )
+    </fill_query>
+
+    <!-- 1. Short keys, 10K build rows, INNER: the hash table fits in the L2 cache, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_10k AS r ON l.k_10k_50 = r.k FORMAT Null</query>
+    <!-- 2. Short keys, 80K build rows, INNER: larger than the cache, packed keys although below the minimum of 100K rows. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_80k AS r ON l.k_80k_50 = r.k FORMAT Null</query>
+    <!-- 2a. The same 80K build rows in a Memory table, which has no statistics, INNER: the key length is unknown, and the runtime filter lets the join pack the keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_80k_mem AS r ON l.k_80k_50 = r.k FORMAT Null</query>
+    <!-- 3. Short keys, 80K build rows, LEFT: packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l LEFT JOIN psk_stats_build_short_80k AS r ON l.k_80k_50 = r.k FORMAT Null</query>
+    <!-- 4. Short keys, 200K build rows, INNER: packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_short_long AS l INNER JOIN psk_stats_build_short_200k AS r ON l.k_200k_50 = r.k FORMAT Null</query>
+    <!-- 5. 64-byte keys, 8K build rows, INNER, 50% hits: fits in the cache, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l INNER JOIN psk_stats_build_64_8k AS r ON l.k_8k_50 = r.k FORMAT Null</query>
+    <!-- 6. 64-byte keys, 60K build rows, INNER, no hits: below the minimum, packed keys because of the runtime filter. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l INNER JOIN psk_stats_build_64_60k AS r ON l.k_60k_0 = r.k FORMAT Null</query>
+    <!-- 7. 64-byte keys, 60K build rows, INNER, 50% hits: runtime filter, packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l INNER JOIN psk_stats_build_64_60k AS r ON l.k_60k_50 = r.k FORMAT Null</query>
+    <!-- 8. 64-byte keys, 60K build rows, INNER, all hits: runtime filter, packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l INNER JOIN psk_stats_build_64_60k AS r ON l.k_60k_100 = r.k FORMAT Null</query>
+    <!-- 9. 64-byte keys, 60K build rows, LEFT, no hits: no runtime filter and below the minimum, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l LEFT JOIN psk_stats_build_64_60k AS r ON l.k_60k_0 = r.k FORMAT Null</query>
+    <!-- 10. 64-byte keys, 60K build rows, LEFT, 50% hits: no runtime filter and below the minimum, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l LEFT JOIN psk_stats_build_64_60k AS r ON l.k_60k_50 = r.k FORMAT Null</query>
+    <!-- 11. 64-byte keys, 60K build rows, LEFT, all hits: no runtime filter and below the minimum, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l LEFT JOIN psk_stats_build_64_60k AS r ON l.k_60k_100 = r.k FORMAT Null</query>
+    <!-- 12. 64-byte keys, 200K build rows, INNER, 50% hits: packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l INNER JOIN psk_stats_build_64_200k AS r ON l.k_200k_50 = r.k FORMAT Null</query>
+    <!-- 13. 64-byte keys, 200K build rows, LEFT, no hits: above the minimum, packed keys without a runtime filter. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_64_long AS l LEFT JOIN psk_stats_build_64_200k AS r ON l.k_200k_0 = r.k FORMAT Null</query>
+    <!-- 14. 256-byte keys, 30K build rows, INNER, 50% hits: runtime filter, packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_256_long AS l INNER JOIN psk_stats_build_256_30k AS r ON l.k_30k_50 = r.k FORMAT Null</query>
+    <!-- 15. 256-byte keys, 30K build rows, INNER, all hits: runtime filter, packed keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_256_long AS l INNER JOIN psk_stats_build_256_30k AS r ON l.k_30k_100 = r.k FORMAT Null</query>
+    <!-- 16. 256-byte keys, 30K build rows, LEFT, no hits: no runtime filter and below the minimum, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_256_long AS l LEFT JOIN psk_stats_build_256_30k AS r ON l.k_30k_0 = r.k FORMAT Null</query>
+    <!-- 17. 256-byte keys, 30K build rows, LEFT, all hits: no runtime filter and below the minimum, exact keys. -->
+    <query>SELECT count(), sum(r.v) FROM psk_stats_probe_256_long AS l LEFT JOIN psk_stats_build_256_30k AS r ON l.k_30k_100 = r.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_10k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_80k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_80k_mem</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_short_200k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_64_8k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_64_60k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_64_200k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_build_256_30k</drop_query>
+    <drop_query>DROP VIEW IF EXISTS psk_stats_probe_short_long</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_probe_short</drop_query>
+    <drop_query>DROP VIEW IF EXISTS psk_stats_probe_64_long</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_probe_64</drop_query>
+    <drop_query>DROP VIEW IF EXISTS psk_stats_probe_256_long</drop_query>
+    <drop_query>DROP TABLE IF EXISTS psk_stats_probe_256</drop_query>
+</test>
