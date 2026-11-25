@@ -88,14 +88,20 @@ SELECT 'DEFAULT now64 for NULL, KILL MUTATION', count() FROM t_now_nullable_kill
 
 -- A condition on stored columns is still cached when the query also reads such a default.
 -- The WHERE writer records whole blocks, so a block must not span the matching and the non-matching granules.
+-- An `ATTACH` of any MergeTree table on the server clears the whole cache, so each hit gets three attempts: a miss records the verdict again.
 SELECT ts FROM t_now WHERE v < 10000 SETTINGS max_block_size = 8192 FORMAT Null;
+SELECT ts FROM t_now WHERE v < 10000 SETTINGS max_block_size = 8192, log_comment = '05458_now_where_hit' FORMAT Null;
+SELECT ts FROM t_now WHERE v < 10000 SETTINGS max_block_size = 8192, log_comment = '05458_now_where_hit' FORMAT Null;
 SELECT ts FROM t_now WHERE v < 10000 SETTINGS max_block_size = 8192, log_comment = '05458_now_where_hit' FORMAT Null;
 SELECT ts FROM t_now_prewhere PREWHERE v < 10000 FORMAT Null;
 SELECT ts FROM t_now_prewhere PREWHERE v < 10000 SETTINGS log_comment = '05458_now_prewhere_hit' FORMAT Null;
+SELECT ts FROM t_now_prewhere PREWHERE v < 10000 SETTINGS log_comment = '05458_now_prewhere_hit' FORMAT Null;
+SELECT ts FROM t_now_prewhere PREWHERE v < 10000 SETTINGS log_comment = '05458_now_prewhere_hit' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal']
+SELECT log_comment, max(ProfileEvents['QueryConditionCacheHits'] > 0 AND ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05458_now_where_hit', '05458_now_prewhere_hit')
+GROUP BY log_comment
 ORDER BY log_comment;

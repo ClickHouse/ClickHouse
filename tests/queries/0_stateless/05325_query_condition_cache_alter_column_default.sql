@@ -34,9 +34,14 @@ SELECT 'MODIFY DEFAULT, PREWHERE', count() FROM t_default_prewhere PREWHERE y = 
 SELECT 'MODIFY DEFAULT, PREWHERE', count() FROM t_default_prewhere PREWHERE y = 0 SETTINGS use_query_condition_cache = 0;
 
 -- A repeated condition still reads the verdict recorded after the ALTER.
+-- An `ATTACH` of any MergeTree table on the server clears the whole cache, so each hit gets three attempts: a miss records the verdict again.
 SELECT count() FROM t_default WHERE y = 7 FORMAT Null;
 SELECT count() FROM t_default WHERE y = 7 SETTINGS log_comment = '05325_where_hit' FORMAT Null;
+SELECT count() FROM t_default WHERE y = 7 SETTINGS log_comment = '05325_where_hit' FORMAT Null;
+SELECT count() FROM t_default WHERE y = 7 SETTINGS log_comment = '05325_where_hit' FORMAT Null;
 SELECT count() FROM t_default_prewhere PREWHERE y = 7 FORMAT Null;
+SELECT count() FROM t_default_prewhere PREWHERE y = 7 SETTINGS log_comment = '05325_prewhere_hit' FORMAT Null;
+SELECT count() FROM t_default_prewhere PREWHERE y = 7 SETTINGS log_comment = '05325_prewhere_hit' FORMAT Null;
 SELECT count() FROM t_default_prewhere PREWHERE y = 7 SETTINGS log_comment = '05325_prewhere_hit' FORMAT Null;
 
 -- MODIFY COLUMN ... REMOVE DEFAULT.
@@ -73,8 +78,9 @@ SELECT 'MODIFY DEFAULT expression', count() FROM t_expression WHERE y = k + 1;
 SELECT 'MODIFY DEFAULT expression', count() FROM t_expression WHERE y = k + 1 SETTINGS use_query_condition_cache = 0;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal']
+SELECT log_comment, max(ProfileEvents['QueryConditionCacheHits'] > 0 AND ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal'])
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment IN ('05325_where_hit', '05325_prewhere_hit')
+GROUP BY log_comment
 ORDER BY log_comment;
