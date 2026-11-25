@@ -1824,6 +1824,10 @@ namespace
 constexpr FunctionResultSetting json_type_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths};
 
+/// A number in quotes is parsed with `precise_float_parsing`.
+constexpr FunctionResultSetting json_numeric_settings[] = {
+    Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::precise_float_parsing};
+
 constexpr FunctionResultSetting json_raw_settings[] = {
     Setting::json_type_escape_dots_in_keys, Setting::type_json_skip_null_typed_paths, Setting::input_format_json_max_depth};
 
@@ -2039,7 +2043,7 @@ SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) AS res;
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractInt, JSONExtractInt64Impl>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractUInt
@@ -2069,7 +2073,7 @@ SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) AS re
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64Impl>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractUInt, JSONExtractUInt64Impl>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractFloat
@@ -2099,7 +2103,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) AS re
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64Impl>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractFloat, JSONExtractFloat64Impl>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractBool
@@ -2129,7 +2133,7 @@ SELECT JSONExtractBool('{"passed": true}', 'passed') AS res;
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractBool, JSONExtractBoolImpl>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractBool, JSONExtractBoolImpl>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractString
@@ -2364,7 +2368,7 @@ Parses JSON and extracts a value of Int type using case-insensitive key matching
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractUIntCaseInsensitive
@@ -2388,7 +2392,7 @@ Parses JSON and extracts a value of UInt type using case-insensitive key matchin
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractFloatCaseInsensitive
@@ -2412,7 +2416,7 @@ Parses JSON and extracts a value of Float type using case-insensitive key matchi
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractBoolCaseInsensitive
@@ -2436,7 +2440,7 @@ Parses JSON and extracts a boolean value using case-insensitive key matching. Th
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>(factory, documentation, json_type_settings);
+        registerWithResultSettings<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>(factory, documentation, json_numeric_settings);
     }
 
     /// JSONExtractStringCaseInsensitive

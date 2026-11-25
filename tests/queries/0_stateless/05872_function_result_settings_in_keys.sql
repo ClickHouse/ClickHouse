@@ -26,6 +26,7 @@ DROP TABLE IF EXISTS t_dynamic_time;
 DROP TABLE IF EXISTS t_json_has;
 DROP TABLE IF EXISTS t_time_as_text;
 DROP TABLE IF EXISTS t_time_as_text_index;
+DROP TABLE IF EXISTS t_json_float;
 
 CREATE TABLE t_sort (dt DateTime('UTC'), b UInt32) ENGINE = MergeTree ORDER BY (formatDateTime(dt, '%M'), b) SETTINGS index_granularity = 100;
 INSERT INTO t_sort SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + (number % 12) * 32 * 86400 + intDiv(number, 12) % 60 * 60, number FROM numbers(10000);
@@ -89,6 +90,10 @@ INSERT INTO t_time_as_text SELECT toUnixTimestamp(toDateTime('2024-01-01 00:00:0
 CREATE TABLE t_time_as_text_index (n UInt32, INDEX idx toString(toDateTime(n)) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY n
     SETTINGS index_granularity = 1;
 INSERT INTO t_time_as_text_index SELECT * FROM t_time_as_text;
+-- A number in quotes is parsed with `precise_float_parsing`: `1.6725` or `1.6724999999999999`.
+CREATE TABLE t_json_float (j String) ENGINE = MergeTree ORDER BY JSONExtractFloat(j, 'x') SETTINGS index_granularity = 1;
+INSERT INTO t_json_float SELECT '{"x":"1.6725"}' FROM numbers(3);
+INSERT INTO t_json_float SELECT concat('{"x":"', toString(number), '.5"}') FROM numbers(50);
 CREATE TABLE t_time_zone (s String) ENGINE = MergeTree ORDER BY toDateTime(s) SETTINGS index_granularity = 1;
 INSERT INTO t_time_zone SELECT toString(toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600) FROM numbers(48);
 
@@ -124,6 +129,10 @@ SELECT 'groups expected', count() FROM (SELECT formatDateTime(dt, '%M') AS k FRO
 SETTINGS allow_aggregate_partitions_independently = 0, optimize_use_implicit_projections = 0;
 
 -- The full scan runs first: the query condition cache would otherwise give it the granules the query with the index selected.
+SET precise_float_parsing = 0;
+SELECT 'json float expected', count() FROM t_json_float WHERE JSONExtractFloat(j, 'x') = 1.6724999999999999 SETTINGS use_primary_key = 0;
+SELECT 'json float', count() FROM t_json_float WHERE JSONExtractFloat(j, 'x') = 1.6724999999999999;
+SET precise_float_parsing = 1;
 SET input_format_try_infer_dates = 0;
 SELECT 'json inference expected', count() FROM t_json_inference WHERE dynamicType(getSubcolumn(CAST(s AS JSON), 'a')) = 'DateTime'
 SETTINGS use_primary_key = 0;
@@ -177,6 +186,7 @@ DROP TABLE t_dynamic_time;
 DROP TABLE t_json_has;
 DROP TABLE t_time_as_text;
 DROP TABLE t_time_as_text_index;
+DROP TABLE t_json_float;
 DROP TABLE t_sort;
 DROP TABLE t_locate;
 DROP TABLE t_locate_index;
