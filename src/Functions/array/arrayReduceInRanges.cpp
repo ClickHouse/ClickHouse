@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
@@ -135,6 +136,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     const IColumn & indices_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(0);
     const IColumn & lengths_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(1);
+    const bool is_index_uint64 = typeid_cast<const ColumnUInt64 *>(&indices_col) != nullptr;
 
     /// Handling arguments
     /// The code is mostly copied from `arrayReduce`. Maybe create a utility header?
@@ -275,6 +277,10 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
             {
                 Int64 index = indices_col.getInt(j);
                 UInt64 length = lengths_col.getUInt(j);
+
+                /// `getInt` reads a UInt64 index of 2^63 or more as negative, but it is after the end of the array.
+                if (is_index_uint64 && index < 0)
+                    index = std::numeric_limits<Int64>::max();
 
                 /// Keep the same as in arraySlice: the range is clipped to the array.
                 /// The bounds are compared with the remaining size instead of being added to the user-controlled
