@@ -1705,25 +1705,31 @@ protected:
             for (const auto & [stage_name, task_id] : stage_and_task_ids)
                 if (auto stage_it = stage_tasks.find(stage_name); stage_it != stage_tasks.end())
                     if (auto task_it = stage_it->second.find(task_id); task_it != stage_it->second.end())
+                    {
                         task_it->second.sent = true;
+                        sent_task_ids[task_it->second.endpoint_uri].push_back(task_id);
+                    }
             return true;
         }
 
-        /// Tears down the tracked tasks on their workers, once: they leave `stage_tasks` here, and those never sent are dropped.
-        /// Each worker is torn down in parallel and without the lock, so that the pollers can exit. It can run on the killed
-        /// query's own thread, so its requests skip the query cancellation check.
+        /// Tears down the query's tasks on their workers when the query ends, once: the tracked tasks leave `stage_tasks`
+        /// here, those never sent are dropped, and every sent task is forgotten. Each worker is torn down in parallel and
+        /// without the lock, so that the pollers can exit. It can run on the killed query's own thread, so its requests skip
+        /// the query cancellation check.
         void cancel()
         {
             ThreadPool teardown_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
                 workers_count, /*max_free_threads=*/ 0, /*queue_size=*/ 0);
-            MapWithMemoryTracking<String, VectorWithMemoryTracking<RunningTaskInfo>> sent_tasks_by_worker;
+            UnorderedMapWithMemoryTracking<String, Strings> task_ids_by_worker;
+            MapWithMemoryTracking<String, VectorWithMemoryTracking<RunningTaskInfo>> unfinished_tasks_by_worker;
             {
                 std::lock_guard g(lock);
                 /// Copied before anything is cleared, so a failed allocation leaves the tasks tracked.
                 for (const auto & [stage_name, started_tasks] : stage_tasks)
                     for (const auto & [task_name, task_info] : started_tasks)
                         if (task_info.sent)
-                            sent_tasks_by_worker[task_info.endpoint_uri].push_back(task_info);
+                            unfinished_tasks_by_worker[task_info.endpoint_uri].push_back(task_info);
+                task_ids_by_worker.swap(sent_task_ids);
                 cancel_started = true;
                 for (auto & [_, started_tasks] : stage_tasks)
                     started_tasks.clear();
@@ -1731,14 +1737,17 @@ protected:
                     worker.tasks.clear();
             }
 
-            for (auto & [endpoint_uri, tasks] : sent_tasks_by_worker)
+            for (auto & [endpoint_uri, task_ids] : task_ids_by_worker)
             {
                 try
                 {
-                    teardown_pool.scheduleOrThrow([this, endpoint_uri, worker_tasks = std::move(tasks)] mutable
+                    VectorWithMemoryTracking<RunningTaskInfo> unfinished;
+                    if (auto it = unfinished_tasks_by_worker.find(endpoint_uri); it != unfinished_tasks_by_worker.end())
+                        unfinished = std::move(it->second);
+                    teardown_pool.scheduleOrThrow([this, endpoint_uri, worker_tasks = std::move(unfinished), worker_task_ids = std::move(task_ids)] mutable
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
-                        tearDownWorker(endpoint_uri, std::move(worker_tasks));
+                        tearDownWorker(endpoint_uri, std::move(worker_tasks), worker_task_ids);
                     });
                 }
                 catch (...)
@@ -1902,14 +1911,12 @@ protected:
                     if (ended_ids.empty())
                         continue;
 
-                    /// Only after recording the failures: a forgotten task answers the teardown's poll with "Unknown task", which
-                    /// carries none.
-                    tryForgetTasks(endpoint_uri, ended_ids);
+                    /// The ended tasks are forgotten when the query ends, so the query keeps its slot on the worker between waves.
                     {
                         std::lock_guard g(lock);
                         const UnorderedSetWithMemoryTracking<String> ended(ended_ids.begin(), ended_ids.end());
                         std::erase_if(polled_workers[endpoint_uri].tasks, [&ended](const PolledTask & task) { return ended.contains(task.info.task_id); });
-                        /// A failed task is forgotten too, so the teardown has nothing left to do for it.
+                        /// A failed task leaves the tracked tasks, so the teardown does not cancel it again.
                         for (const auto * task : failed)
                             stage_tasks[task->stage_name].erase(task->info.task_id);
                     }
@@ -1931,37 +1938,37 @@ protected:
             polled_workers[endpoint_uri].polling = false;
         }
 
-        /// Cancels the query on one worker, waits a bounded time for its sent tasks to end, since their last statuses carry their
-        /// failures and their last logs, and forgets them all: the worker drops a task that is still running when it ends.
-        void tearDownWorker(const String & endpoint_uri, VectorWithMemoryTracking<RunningTaskInfo> tasks) noexcept
+        /// Cancels the query on one worker if it has unfinished `tasks`, waits a bounded time for them to end, since their last
+        /// statuses carry their failures and their last logs, and forgets every task sent there (`task_ids`): the worker drops a
+        /// task that is still running when it ends.
+        void tearDownWorker(const String & endpoint_uri, VectorWithMemoryTracking<RunningTaskInfo> tasks, const Strings & task_ids) noexcept
         {
-            try
+            if (!tasks.empty())
             {
-                ProfileEvents::increment(ProfileEvents::DistributedPlanTaskCancelRequests);
-                cancelQueryTasks(endpoint_uri, unique_query_id, context);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("cancelQueryTasks on {}", endpoint_uri));
+                try
+                {
+                    ProfileEvents::increment(ProfileEvents::DistributedPlanTaskCancelRequests);
+                    cancelQueryTasks(endpoint_uri, unique_query_id, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("cancelQueryTasks on {}", endpoint_uri));
+                }
             }
 
-            Strings sent_ids;
             try
             {
-                for (const auto & task : tasks)
-                    sent_ids.push_back(task.task_id);
-
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(TEARDOWN_WAIT_MS);
                 while (!tasks.empty())
                 {
                     const auto left_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
                     if (left_ms <= 0)
                         break;
-                    Strings task_ids;
+                    Strings unfinished_ids;
                     for (const auto & task : tasks)
-                        task_ids.push_back(task.task_id);
+                        unfinished_ids.push_back(task.task_id);
                     ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStatusRequests);
-                    auto statuses = getTaskStatuses(endpoint_uri, task_ids, static_cast<UInt32>(std::min<Int64>(left_ms, 300)), context, /*for_cleanup=*/ true);
+                    auto statuses = getTaskStatuses(endpoint_uri, unfinished_ids, static_cast<UInt32>(std::min<Int64>(left_ms, 300)), context, /*for_cleanup=*/ true);
 
                     VectorWithMemoryTracking<RunningTaskInfo> running;
                     for (size_t i = 0; i < tasks.size(); ++i)
@@ -1997,8 +2004,8 @@ protected:
             for (const auto & task : tasks)
                 LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; the worker drops it when it ends",
                     task.task_id, endpoint_uri);
-            if (!sent_ids.empty())
-                tryForgetTasks(endpoint_uri, sent_ids);
+            if (!task_ids.empty())
+                tryForgetTasks(endpoint_uri, task_ids);
         }
 
         /// How long the teardown waits for the tasks of one worker to end, for their last statuses.
@@ -2085,6 +2092,8 @@ protected:
             bool polling = false;
         };
         UnorderedMapWithMemoryTracking<String, PolledWorker> polled_workers TSA_GUARDED_BY(lock);
+        /// The ids of the tasks sent to each worker; `cancel` forgets them.
+        UnorderedMapWithMemoryTracking<String, Strings> sent_task_ids TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
         DistributedQueryCancellationPtr cancellation;
         StageWakeupPtr stage_wakeup;
