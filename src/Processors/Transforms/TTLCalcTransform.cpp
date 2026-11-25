@@ -6,7 +6,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Columns/ColumnConst.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -62,7 +61,12 @@ TTLCalcTransform::TTLCalcTransform(
             default_column_name = default_ast->getColumnName();
         }
         expired_columns_data.emplace(
-            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
+            expired_column.name,
+            TTLTransform::ExpiredColumnData{
+                expired_column.type,
+                std::move(default_expression),
+                std::move(default_column_name),
+                TTLTransform::sharesNestedOffsets(storage_, expired_column)});
     }
 
     if (metadata_snapshot_->hasRowsTTL())
@@ -116,19 +120,7 @@ void TTLCalcTransform::consume(Chunk chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     /// Mirrors TTLTransform: an expired column carries its default here whether or not the block
     /// still has it, so a rule reading it never sees values the base table no longer exposes.
-    for (const auto & [column, data] : expired_columns_data)
-    {
-        auto default_column = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
-        if (default_column)
-            default_column = default_column->convertToFullColumnIfConst();
-        else
-            default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
-
-        if (auto * existing = block.findByName(column))
-            existing->column = default_column;
-        else
-            block.insert(ColumnWithTypeAndName(default_column, data.type, column));
-    }
+    TTLTransform::fillExpiredColumns(block, expired_columns_data);
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 

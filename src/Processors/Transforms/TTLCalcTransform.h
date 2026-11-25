@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
+#include <Processors/Transforms/TTLTransform.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
@@ -44,13 +44,7 @@ private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     /// Physically dropped as fully expired; rules reading them evaluate over defaults, as in TTLTransform.
     NamesAndTypesList expired_columns;
-    struct ExpiredColumnData
-    {
-        DataTypePtr type;
-        ExpressionActionsPtr default_expression;
-        String default_column_name;
-    };
-    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
+    TTLTransform::ExpiredColumnsData expired_columns_data;
     /// (column name, pre-merge info) for column rules whose inputs are absent from the stream.
     VectorWithMemoryTracking<std::pair<String, MergeTreeDataPartTTLInfo>> preserved_column_ttls;
     PreparedSets::Subqueries subqueries_for_sets;
