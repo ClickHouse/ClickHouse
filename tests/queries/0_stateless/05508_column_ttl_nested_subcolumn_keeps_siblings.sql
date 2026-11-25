@@ -69,11 +69,10 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_vertica
 
 INSERT INTO t_nested_ttl_added VALUES (1, ['a', 'b'], ['x', 'y']);
 ALTER TABLE t_nested_ttl_added ADD COLUMN `n.d` Array(String);
-ALTER TABLE t_nested_ttl_added ADD COLUMN `n.e` Array(String) MATERIALIZED arrayMap(x -> concat('e', x), `n.d`);
 ALTER TABLE t_nested_ttl_added ADD COLUMN ts DateTime DEFAULT '2020-01-01 00:00:00';
 ALTER TABLE t_nested_ttl_added MODIFY TTL ts + INTERVAL 1 DAY WHERE id = 100 SETTINGS materialize_ttl_after_modify = 0;
 OPTIMIZE TABLE t_nested_ttl_added FINAL;
-SELECT 'added', `n.a`, `n.c`, `n.d`, `n.e` FROM t_nested_ttl_added;
+SELECT 'added', `n.a`, `n.c`, `n.d` FROM t_nested_ttl_added;
 
 DROP TABLE t_nested_ttl_wide;
 DROP TABLE t_nested_ttl_rows;

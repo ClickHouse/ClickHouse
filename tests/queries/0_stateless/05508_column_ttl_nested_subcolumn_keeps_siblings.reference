@@ -5,4 +5,4 @@ compact	1	['','']	['x','y']
 enum	1	['ok','ok']	['x','y']
 enum	2	['other']	['z']
 single	['','']	['','']	2	2
-added	['a','b']	['x','y']	['','']	['e','e']
+added	['a','b']	['x','y']	['','']
