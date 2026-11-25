@@ -188,6 +188,7 @@ std::vector<std::shared_ptr<ThreadPoolCallbackRunnerLocal<bool>::Task>> schedule
 
     try
     {
+        running_removals.reserve(batches_to_remove.size());
         for (const auto & [location, remove_batch] : batches_to_remove)
             running_removals.push_back(remove_tasks_runner.enqueueAndGiveOwnership([&location, &remove_batch, &object_storages, &log]()
             {
