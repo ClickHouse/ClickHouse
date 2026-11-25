@@ -184,7 +184,8 @@ namespace
     /// which must be non-negative and NaN only in a stale marker. Returns the range of the bucket indexes the spans reach
     /// (following the span walk of `floatBucketIterator` in Prometheus), or nullopt if they reach no bucket.
     std::optional<std::pair<Int64, Int64>> checkHistogramBuckets(
-        const IColumn & spans_column, const IColumn & values_column, size_t row, bool is_stale_marker, std::string_view what)
+        const IColumn & spans_column, const IColumn & values_column, size_t row, bool is_stale_marker, bool custom_buckets,
+        std::string_view what)
     {
         const auto & span_tuple = typeid_cast<const ColumnTuple &>(typeid_cast<const ColumnArray &>(spans_column).getData());
         const auto & span_offsets = span_tuple.getColumn(0);
@@ -198,8 +199,14 @@ namespace
         Int64 last_index = 0;
         for (size_t i = spans_begin; i != spans_end; ++i)
         {
+            /// As in Prometheus, only the first span of an exponential histogram may have a negative offset.
+            const Int64 offset = span_offsets.getInt(i);
+            if (offset < 0 && (i != spans_begin || custom_buckets))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has {} span number {} with a negative offset: {}", what, i - spans_begin + 1, offset);
+
             /// The first span's offset is the index of its first bucket, a later span's offset is the gap after the previous span.
-            const Int64 first_index = last_index + span_offsets.getInt(i) + ((i == spans_begin) ? 0 : 1);
+            const Int64 first_index = last_index + offset + ((i == spans_begin) ? 0 : 1);
             const UInt64 length = span_lengths.getUInt(i);
             total_length += length;
             last_index = first_index + static_cast<Int64>(length) - 1;
@@ -272,9 +279,9 @@ void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has a negative zero threshold: {}", zero_threshold);
 
     const auto positive_index_range = checkHistogramBuckets(
-        tuple.getColumn(Idx::PositiveSpans), tuple.getColumn(Idx::PositiveValues), row, is_stale_marker, "positive");
+        tuple.getColumn(Idx::PositiveSpans), tuple.getColumn(Idx::PositiveValues), row, is_stale_marker, custom_buckets, "positive");
     checkHistogramBuckets(
-        tuple.getColumn(Idx::NegativeSpans), tuple.getColumn(Idx::NegativeValues), row, is_stale_marker, "negative");
+        tuple.getColumn(Idx::NegativeSpans), tuple.getColumn(Idx::NegativeValues), row, is_stale_marker, custom_buckets, "negative");
 
     const auto [custom_values_begin, custom_values_end] = getArrayRowRange(tuple.getColumn(Idx::CustomValues), row);
     const size_t num_custom_values = custom_values_end - custom_values_begin;
