@@ -38,8 +38,10 @@ SET client_encoding TO DEFAULT;
 SELECT 1 AS connection_is_still_usable;
 EOF
 
+# Only the last line is kept: psql 15 and newer prints the result of every statement of `-c`, so
+# there is a `SET` line before the number, and an older psql prints only the last result.
 echo "--- a statement after it in the same packet is executed"
-run_psql --tuples-only -c "SET client_encoding TO 'UNICODE'; SELECT 20261124"
+run_psql --tuples-only -c "SET client_encoding TO 'UNICODE'; SELECT 20261124" | tail -n 1
 
 # Another encoding would make the client decode the UTF8 text it gets as something else, and a
 # malformed statement is not a no-op either: both fall through and fail.
