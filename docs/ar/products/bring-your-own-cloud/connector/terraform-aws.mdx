@@ -8,24 +8,27 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 يعمل الوضع المُدار على عنقود Amazon EKS تملكه أنت. ويتضمن كل إصدار أربع وحدات Terraform جذرية (يُشار إليها أدناه بالجذور)، تُنشئ إما عنقودًا يستوفي متطلباته، وإما تضيف ما يلزمه إلى شبكة VPC أو عنقود لديك بالفعل. تُنشئ الجذور العنقود مع مجموعة عقد النظام والإضافات المُدارة (`vpc-cni` و`kube-proxy` و`coredns` و`aws-ebs-csi-driver`)، إلى جانب أدوار IAM ومفاتيح KMS والوسوم؛ أما `existing-eks` فلا يثبّت إلا الإضافات التي تحددها في `install_addons`. وعند استهداف Helm، يثبّت الأمر `clicklink clctl init` بعد ذلك طبقة المنصة اعتمادًا على المخرجات وحزمة المنصة، وتشمل: Karpenter، ووحدة تحكم AWS Load Balancer، وStorageClass، والمكوّنات ذات الإصدارات المثبّتة (راجع [تهيئة الموصل من مخرجات Terraform](#hand-off)). تتطلب الجذور Terraform 1.10+ أو OpenTofu 1.12+، ومزوّد AWS بالإصدار `~> 6.0`. ويمكن استخدام `tofu` بدلًا من `terraform` في جميع الأوامر الواردة في هذه الصفحة.
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="مسار التجهيز باستخدام Terraform لموصل ClickHouse على AWS" />
+<div className="ch-image-lg">
+  <Frame>
+    ![مسار تجهيز موصل ClickHouse على AWS باستخدام Terraform](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+  </Frame>
+</div>
 
-## قبل أن تبدأ {#before-you-begin}
+## قبل البدء {#before-you-begin}
 
 ستحتاج إلى ما يلي:
 
-* Terraform 1.10+‎ أو OpenTofu 1.12+‎، إلى جانب مزوّد AWS بالإصدار `~> 6.0`.
+* Terraform 1.10+ أو OpenTofu 1.12+، بالإضافة إلى موفّر AWS بالإصدار `~> 6.0`.
 * هوية AWS تملك صلاحية إنشاء الموارد التي يتطلبها الجذر الذي اخترته وتعديلها.
-* الأداة `curl`، وأداة SHA-256 (`sha256sum` أو `shasum`)، والأداة `cosign`، وذلك لتنزيل أرشيف الإصدار والتحقق منه.
-* من خطوة [التسجيل](/ar/products/bring-your-own-cloud/connector/onboarding#registration): قيمة `chart_repository_arn` التي يتطلبها كل جذر، إضافةً إلى نقطة نهاية الموصّل، ورمز التسجيل، وحزمة المنصة اللازمة لخطوة التسليم عبر `init` في النهاية.
+* الأداة `curl`، وأداة SHA-256 (`sha256sum` أو `shasum`)، والأداة `cosign` لتنزيل أرشيف الإصدار والتحقق منه.
+* من خطوة [التسجيل](/ar/products/bring-your-own-cloud/connector/onboarding#registration): قيمة `chart_repository_arn` التي يتطلبها كل جذر، إلى جانب نقطة نهاية الموصّل، ورمز التسجيل، وحزمة المنصة اللازمة لخطوة التسليم إلى `init` في النهاية.
 
-بالنسبة إلى `production` و`existing-vpc`، حدّد مسبقًا كيف سيصل الجهاز الذي يشغّل `clicklink clctl init` و`kubectl` إلى واجهة برمجة تطبيقات EKS الخاصة، كأن يكون ذلك عبر شبكة VPN، أو مضيف bastion، أو شبكة مقترنة، أو إعادة توجيه منفذ عبر SSM.
+في حالتَي `production` و`existing-vpc`، خطّط مسبقًا لكيفية وصول الجهاز الذي يشغّل `clicklink clctl init` و`kubectl` إلى واجهة برمجة تطبيقات EKS الخاصة، كأن يكون ذلك عبر VPN، أو مضيف حصين، أو شبكة مرتبطة بالنظير (peering)، أو إعادة توجيه منفذ عبر SSM.
 
 <Steps titleSize="h2">
   <Step title="اختر المجلد الجذري لـ Terraform المناسب لبيئتك" id="choose-a-root">

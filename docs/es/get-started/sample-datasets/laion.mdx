@@ -11,9 +11,7 @@ El [conjunto de datos Laion-400M](https://laion.ai/blog/laion-400-open-dataset/)
 
 El conjunto de datos contiene la URL de la imagen, embeddings tanto de la imagen como de su subtítulo, una puntuación de similitud entre la imagen y su subtítulo, así como metadatos; por ejemplo, el ancho y el alto de la imagen, la licencia y un indicador NSFW. Podemos usar este conjunto de datos para demostrar la [búsqueda aproximada de vecinos más cercanos](/es/reference/engines/table-engines/mergetree-family/annindexes) en ClickHouse.
 
-<div id="data-preparation">
-  ## Preparación de datos
-</div>
+## Preparación de datos {#data-preparation}
 
 Los embeddings y los metadatos se almacenan en archivos separados dentro de los datos brutos. En un paso de preparación de datos, se descargan los datos, se fusionan los archivos,
 se convierten a CSV y se importan en ClickHouse. Para ello, puede usar el siguiente script `download.sh`:
@@ -77,9 +75,7 @@ El conjunto de datos está dividido en 410 archivos; cada archivo contiene aprox
 
 (El script de Python anterior es muy lento (~2-10 minutos por archivo), consume mucha memoria (41 GB por archivo) y los archivos CSV resultantes son grandes (10 GB cada uno), así que ten cuidado. Si tienes suficiente RAM, aumenta el valor de `-P1` para obtener más paralelismo. Si aun así sigue siendo demasiado lento, considera idear un procedimiento de ingestión mejor; quizá convirtiendo los archivos .npy a Parquet y luego haciendo el resto del procesamiento con ClickHouse.)
 
-<div id="create-table">
-  ## Crear tabla
-</div>
+## Crear tabla {#create-table}
 
 Para crear una tabla sin índices inicialmente, ejecute:
 
@@ -106,9 +102,7 @@ INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 
 Ten en cuenta que la columna `id` es solo ilustrativa y el script la rellena con valores no únicos.
 
-<div id="run-a-brute-force-vector-similarity-search">
-  ## Ejecuta una búsqueda de similitud vectorial por fuerza bruta
-</div>
+## Ejecuta una búsqueda de similitud vectorial por fuerza bruta {#run-a-brute-force-vector-similarity-search}
 
 Para realizar una búsqueda vectorial aproximada por fuerza bruta, ejecuta:
 
@@ -139,9 +133,7 @@ Por ahora, podemos usar como `target` el embedding de una imagen aleatoria de un
 10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
 ```
 
-<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
-  ## Realiza una búsqueda aproximada de similitud vectorial con un índice de similitud vectorial
-</div>
+## Realiza una búsqueda aproximada de similitud vectorial con un índice de similitud vectorial {#run-an-approximate-vector-similarity-search-with-a-vector-similarity-index}
 
 Ahora definamos dos índices de similitud vectorial en la tabla.
 
@@ -192,15 +184,11 @@ La latencia de la consulta disminuyó significativamente porque los vecinos más
 La búsqueda por similitud vectorial con un índice de similitud vectorial puede devolver resultados que difieran ligeramente de los de la búsqueda por fuerza bruta.
 Un índice HNSW puede alcanzar potencialmente un recall cercano a 1 (la misma precisión que la búsqueda por fuerza bruta) con una selección cuidadosa de los parámetros de HNSW y evaluando la calidad del índice.
 
-<div id="creating-embeddings-with-udfs">
-  ## Crear embeddings con UDFs
-</div>
+## Crear embeddings con UDFs {#creating-embeddings-with-udfs}
 
 Normalmente, se quiere crear embeddings para imágenes nuevas o nuevos subtítulos de imágenes y buscar pares similares de imagen/subtítulo en los datos. Podemos usar [UDF](/es/reference/functions/regular-functions/udf) para crear el vector `target` sin salir del cliente. Es importante usar el mismo modelo para crear los datos y los nuevos embeddings para las búsquedas. Los siguientes scripts utilizan el modelo `ViT-B/32`, que es también el que subyace al conjunto de datos.
 
-<div id="text-embeddings">
-  ### Embeddings de texto
-</div>
+### Embeddings de texto {#text-embeddings}
 
 Primero, guarde el siguiente script de Python en el directorio `user_scripts/` de la ruta de datos de ClickHouse y hágalo ejecutable (`chmod +x encode_text.py`).
 
@@ -208,7 +196,7 @@ Primero, guarde el siguiente script de Python en el directorio `user_scripts/` d
 
 ```python
 #!/usr/bin/python3
-#!Nota: Cambia la ubicación del ejecutable python3 indicada arriba si se está utilizando un entorno virtual.
+#!Note: Change the above python3 executable location if a virtual env is being used.
 import clip
 import torch
 import numpy as np
@@ -261,9 +249,7 @@ LIMIT 10
 
 Ten en cuenta que la propia UDF `encode_text()` podría tardar unos segundos en calcular y generar el vector de embedding.
 
-<div id="image-embeddings">
-  ### Embeddings de imágenes
-</div>
+### Embeddings de imágenes {#image-embeddings}
 
 Los embeddings de imágenes pueden crearse de forma similar, y proporcionamos un script de Python que puede generar el embedding de una imagen almacenada localmente en un archivo.
 

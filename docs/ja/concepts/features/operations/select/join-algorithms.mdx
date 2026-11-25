@@ -1,0 +1,242 @@
+---
+title: 'JOIN アルゴリズム'
+sidebarTitle: 'アルゴリズム'
+description: 'ClickHouse の JOIN アルゴリズムの仕組み、各アルゴリズムがサポートする JOIN の種類、およびアルゴリズムの選び方について説明します。'
+keywords: ['JOIN algorithms', 'join_algorithm', 'hash join', 'parallel hash join', 'grace hash join', 'full sorting merge join', 'partial merge join', 'direct join', 'IEJoin']
+doc_type: 'guide'
+---
+
+このページでは、JOIN を実行する [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) の各値と、フォールバックとして使用されるブロックネステッドループについて説明します。図をわかりやすくするため、`max_threads = 2` を前提としています。
+
+## `direct` {#direct}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ダイレクト JOIN のパイプライン: 2 つの並列ストリームが左テーブルを読み取り、2 つの結合ステージが右テーブルを支える Dictionary で各行をルックアップする。ビルドフェーズはない](/images/guides/join-algorithms/direct-join.png)
+  </Frame>
+</div>
+
+`direct` アルゴリズムは、左側の各行について右側でルックアップを実行します。右側は、低レイテンシのキー・バリュールックアップをサポートするストレージである必要があります。ClickHouse は左側を並列にストリーミングし、各ブロックのキーをそのストレージでルックアップして結合します。右側のデータはすでにキー・バリュー構造に格納されているため、ビルドフェーズはありません。
+
+右側として利用できるのは次のとおりです。
+
+* [Dictionary](/ja/concepts/features/dictionaries)。ただし、範囲キーを持つ Dictionary は除きます。
+* [`EmbeddedRocksDB`](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、[`KeeperMap`](/ja/reference/engines/table-engines/special/keepermap)、または [`Redis`](/ja/reference/engines/table-engines/integrations/redis) エンジンを使用するテーブル。
+* `MergeTree` テーブル (25.12 以降)。ただし、`join_algorithm` に `direct` のみが単独で設定されている場合に限ります。ClickHouse は、左側の各ブロックの JOIN キーによるフィルタを右テーブルの読み取りにプッシュダウンします。キーで右テーブルの主キーインデックスを利用できる場合は効率的です。そうでない場合、ClickHouse は左側のブロックごとに右テーブルをスキャンします。
+
+[`Join` テーブルエンジン](/ja/reference/engines/table-engines/special/join)を使用する右側も、ビルドフェーズを経ずに、事前に準備されたインメモリ構造から読み取られます。このケースは `join_algorithm` の設定に依存しません。ClickHouse は常に `Join` テーブルが保持するハッシュテーブルを使用し、`EXPLAIN` では `Algorithm: HashJoin` を伴う `FilledJoin` として表示されます。ClickHouse Cloud では、`Join` テーブルエンジンは `MergeTree` をバッキングテーブルとする `SharedJoin` として実装されています。
+
+`direct` アルゴリズムは、次の条件をすべて満たす場合に使用されます。
+
+* JOIN が `ALL` strictness の `INNER` JOIN であるか、`ALL`、`ANY`、`SEMI`、または `ANTI` strictness の `LEFT` JOIN であること。`MergeTree` テーブルでは、`ANY` strictness はサポートされていません。
+* `ON` 句に含まれる条件が、両側のカラム 1 つずつによる等値比較条件 1 つだけであること。
+* 右側のカラムがストレージの単一カラムキーであり、その型が (`Nullable` と `LowCardinality` を除いて) キーの型と一致すること。
+
+いずれかの条件を満たさない場合、ClickHouse は `join_algorithm` に指定された次のアルゴリズムを試します。
+
+**メモリとスピル。** クエリは右側用のデータ構造を構築しません。Dictionary を保持するメモリはクエリではなく Dictionary 側に計上され、[`system.dictionaries`](/ja/reference/system-tables/dictionaries) の `bytes_allocated` カラムで確認できます。このアルゴリズムはディスクへのスピルを行いません。
+
+**制限事項。** このアルゴリズムがサポートするのは単一の等値比較キーのみで、`RIGHT`、`FULL`、`ASOF` JOIN はサポートしていません。また、フィルタは右側にプッシュダウンされません。
+
+## `hash` {#hash}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ハッシュ結合のパイプライン: 2つのストリームが右テーブルを読み取って単一のインメモリハッシュテーブルを構築し、その後2つの並列ストリームが左テーブルを読み取り、そのハッシュテーブルを参照して各行を結合する](/images/guides/join-algorithms/hash-join.png)
+  </Frame>
+</div>
+
+`hash` アルゴリズムは、右側全体をメモリに読み込み、そこからインメモリのハッシュテーブルを構築します。その後、左側を並列にストリーム処理し、各行のキーをハッシュテーブルで検索して結合します。ClickHouse は、JOIN のキーカラムの型と JOIN の strictness に基づいてハッシュテーブルの実装を選択します。
+
+`INNER`、`LEFT`、`RIGHT`、`FULL` JOIN では、[`parallel_hash_join_threshold`](/ja/reference/settings/session-settings/parallel#parallel_hash_join_threshold) によってハッシュテーブルの構築方法が決まります。右側の推定行数がしきい値未満の場合、上図のように単一のスレッドが1つのハッシュテーブルにデータを書き込みます。しきい値以上の場合、ClickHouse はハッシュテーブルを複数の部分に分割し、[`parallel_hash`](#parallel-hash) で示すように、最大 [`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 個のスレッドが並行してそれらにデータを書き込みます。推定値が得られない場合も、ハッシュテーブルは分割されます。Dictionary などの特殊なストレージを使用する右側では、常に単一のスレッドが1つのハッシュテーブルを構築します。
+
+**使用される場面。** `hash` アルゴリズムは最も汎用的な実装です。ClickHouse が実装するすべての結合の種類と strictness の組み合わせをサポートします (ただし `ASOF` は `INNER` および `LEFT` JOIN に限られます)。`ON` 句内で `OR` によって組み合わされた複数の結合キーをサポートする唯一のアルゴリズムでもあります。`auto` 値でこのような JOIN を扱えるのは、`hash` で実行されるためです。また、`parallel_hash` や `grace_hash` と同様に、等値比較のキーに加えて両テーブルのカラムを比較する条件もサポートします。
+
+**メモリとスピル。** ハッシュテーブルと右側の行はメモリに収まる必要があります。ハッシュテーブルは段階的にリサイズされ、常に満杯とは限らないため、メモリ使用量が右側の非圧縮サイズを超えることがあります。スピル threshold が設定されている場合、JOIN はメモリ内で開始され、右側がしきい値を超えると `grace_hash` アルゴリズムに切り替わります。詳しくは [JOIN のメモリ管理とスピル](/ja/concepts/features/operations/select/join-memory-management) を参照してください。
+
+**制限事項。** ハッシュテーブルが分割されない場合、ビルドフェーズは単一のスレッドで実行されます。右側が推定値よりも大幅に大きい場合、このフェーズがクエリ実行時間の大半を占めることがあります。
+
+## `parallel_hash` {#parallel-hash}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![並列ハッシュ JOIN パイプライン: 右テーブルの行は JOIN キーのハッシュによって 2 つのバケットに分割され、2 つのハッシュテーブルが並行して構築されます。左テーブルの行は同じハッシュ関数によって、対応するハッシュテーブルへ振り分けられます](/images/guides/join-algorithms/parallel-hash-join.png)
+  </Frame>
+</div>
+
+`parallel_hash` は `hash` の廃止された別名で、互換性のために残されています。`join_algorithm` にこれを指定しても、ハッシュテーブルの構築方法は変わりません。どちらの値でも、構築方法は [`parallel_hash_join_threshold`](/ja/reference/settings/session-settings/parallel#parallel_hash_join_threshold) によって決まります。JOIN の種類が許す限り常にハッシュテーブルを分割するには、このしきい値を `0` に設定します。常に単一のハッシュテーブルを使用するには、`hash_join_layout` を `serial` に設定します。
+
+この図は、`hash` が分割されたハッシュテーブルを構築する仕組みを示しています。ClickHouse は右側の行を JOIN キーのハッシュに基づいて各部分に割り当て、最大 [`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) 個のスレッドが各部分を並行して構築します。プローブフェーズでは、同じハッシュ関数によって、左側の各行が一致する行を含み得る部分へ振り分けられます。
+
+## `grace_hash` {#grace-hash}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![grace_hash_join_initial_buckets = 3 の場合の Grace Hash Join の第1フェーズ: 両テーブルの行は JOIN キーのハッシュによってバケットに分割され、最初のバケットはメモリ上で結合され、両テーブルの残りのバケットは一時ストレージに退避される](/images/guides/join-algorithms/grace-hash-join.png)
+  </Frame>
+</div>
+
+`grace_hash` アルゴリズムは、右側のテーブルがメモリに収まらなくても実行できるハッシュ JOIN です。処理は次の 2 つのフェーズで行われます。
+
+1. ClickHouse は、右側の行を JOIN キーのハッシュに基づいてバケットに分割します。最初のバケットについてはインメモリのハッシュテーブルを構築し、残りのバケットは一時ストレージに書き込みます。左側も同じハッシュ関数で分割し、最初のバケットの行はその場で結合して、残りの行は一時ストレージに書き込みます。
+2. ClickHouse は残りのバケットを 1 つずつ処理します。各バケットについて、右側の行からハッシュテーブルを構築し、同じバケットに属する左側の行と結合します。
+
+バケットの初期数は、[`grace_hash_join_initial_buckets`](/ja/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) を 2 のべき乗に切り上げた値です。インメモリのハッシュテーブルがスピルしきい値を超えると、ClickHouse はバケット数を 2 倍にし、現在のバケットに属さなくなった行を移動します。バケット数の上限は [`grace_hash_join_max_buckets`](/ja/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets) です。
+
+**使用される場面。** `hash` および `parallel_hash` アルゴリズムは、右側がスピルしきい値を超えると自動的に `grace_hash` に切り替わります。`grace_hash` を明示的に選択した場合、JOIN はインメモリのフェーズを経ずに、最初のブロックから右側をパーティション分割します。このアルゴリズムは、strictness が `ALL`、`ANY`、`SEMI`、`ANTI` の `INNER`、`LEFT`、`RIGHT`、`FULL` JOIN をサポートしています。
+
+**メモリとスピル。** メモリ使用量はスピルしきい値によって制限されます。バケットの初期数を大きくすると、メモリ使用量は減りますが実行時間は長くなります。このアルゴリズムを使用するには、0 以外のスピルしきい値と、設定済みの一時ストレージが必要です。しきい値が設定されていない場合、`join_algorithm` に他のアルゴリズムも指定されていれば ClickHouse は `grace_hash` をスキップし、`grace_hash` のみが指定されていればクエリを拒否します。
+
+**制限事項。** `ASOF` JOIN や、`OR` で組み合わせた複数の JOIN キーはサポートしていません。また、一時ファイルの読み取りと書き込みが発生するため、インメモリのハッシュ JOIN よりも低速です。
+
+## `full_sorting_merge` {#full-sorting-merge}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![完全ソートマージ JOIN のパイプライン: 両テーブルのブロックは JOIN キーで並列にソートされ、一時ストレージにスピルされる場合があります。テーブルごとに 1 つのマージソートストリームが、単一のマージ結合ステージに供給されます](/images/guides/join-algorithms/full-sorting-merge-join.png)
+  </Frame>
+</div>
+
+`full_sorting_merge` アルゴリズムはソートマージ JOIN です。ClickHouse は両方の入力を JOIN キーでソートし、ソート済みの 2 つのストリームを交互に走査して一致する行を特定します。ソートはメモリ内で行われますが、入力が大きい場合はディスク上の外部ソートとして行われます。入力が JOIN キーの順序で読み取られる場合 (たとえば、キーが `MergeTree` テーブルの sorting key のプレフィックスである場合)、ClickHouse はその入力のソートを省略します。
+
+**使用される場面。** 一方または両方のテーブルが JOIN キーで物理的に並んでいる場合や、入力が大きすぎてインメモリのハッシュテーブルに収まらない場合に適しています。`ALL` strictness では `INNER`、`LEFT`、`RIGHT`、`FULL` JOIN を、`ANY` strictness では `INNER`、`LEFT`、`RIGHT` JOIN を、`ASOF` strictness では `INNER` と `LEFT` JOIN をサポートします。
+
+マージステージは単一ストリームで実行されます。これを並列化する方法は 2 つあります。
+
+* [`query_plan_join_shard_by_pk_ranges`](/ja/reference/settings/session-settings/query-plan#query_plan_join_shard_by_pk_ranges) は、JOIN キーに両テーブルの主キーのプレフィックスが含まれる場合、2 つの `MergeTree` テーブルの JOIN を主キー範囲ごとの独立したマージ JOIN に分割します。
+* [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) に `parallel_full_sorting_merge` を指定すると、JOIN キーのハッシュによって入力を分片に分割し、分片ごとに 1 つのマージ JOIN を実行します。結果の順序は保証されません。代わりに単一の `full_sorting_merge` JOIN が実行されるケースについては、設定のリファレンスを参照してください。
+
+[`max_rows_in_set_to_optimize_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) 設定を使用すると、ソート前に各入力をもう一方の入力の JOIN キーの集合でフィルタできます。ただし、このフィルタを使用すると順序どおりの読み取りによる最適化は行われなくなります。
+
+**メモリとスピル。** メモリ使用量はソートによって決まります。両方の入力がキー順に読み取られる場合、メモリ上に保持されるのは一度に少数のブロックだけです。それ以外の場合、ソートは [`max_bytes_before_external_sort`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) と [`max_bytes_ratio_before_external_sort`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_sort) に従ってディスクにスピルします。
+
+**制限事項。** `SEMI` または `ANTI` strictness、`OR` で組み合わせた複数の JOIN キー、`ON` 句における等価キー以外の条件、特殊なストレージを持つ右側テーブル、および `USING` と `join_use_nulls` の併用はサポートされません。`join_algorithm` にこのアルゴリズムを含めると、実際には別のアルゴリズムが JOIN を実行する場合でもクエリプランニングが変わります。詳しくは [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) を参照してください。
+
+## `partial_merge` {#partial-merge}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![部分マージ結合のパイプライン: 右テーブルのブロックはソートされ、ブロックごとの min-max 索引とともに一時ストレージに書き込まれます。左テーブルのブロックはメモリ内でソートされ、保存済みの右側ブロックと結合されます](/images/guides/join-algorithms/partial-merge-join.png)
+  </Frame>
+</div>
+
+`partial_merge` アルゴリズムは、右側のみを完全にソートするソートマージ JOIN のバリアントです。ClickHouse は右側を最大 [`partial_merge_join_rows_in_right_blocks`](/ja/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) 行のブロックに分割し、各ブロックを JOIN キーでソートしたうえで、ブロックごとに min-max 索引を作成します。続いて、左側の各ブロックをメモリ内でソートし、右側のブロックとマージします。その際、一致する行を含み得ない右側のブロックは min-max 索引によってスキップされます。
+
+**使用される場面。** 実行速度と引き換えに、大きなテーブル同士を結合する際のメモリ使用量を最小限に抑えるよう設計されています。左側の物理的な行順序が JOIN キーの順序と一致している場合に最も効率が高くなります。この場合、min-max 索引によって右側ブロックの大部分がスキップされるためです。反対に、左側の各ブロックに広範囲のキーの値が含まれている場合は、効率が最も低くなります。`join_algorithm` を `auto` に設定している場合、実行時に `partial_merge` へ切り替わることがあります。このアルゴリズムがサポートするのは、`ALL` strictness の `INNER`、`LEFT`、`RIGHT`、`FULL` JOIN、`ANY` strictness の `INNER` および `LEFT` JOIN、`SEMI` strictness の `LEFT` JOIN です。
+
+**メモリとスピル。** ClickHouse は、[`max_rows_in_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) または [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) に達するまで、ソート済みの右側ブロックをメモリ内に保持します。どちらも設定されていない場合は、[`default_max_bytes_in_join`](/ja/reference/settings/session-settings/default#default_max_bytes_in_join) が適用されます。上限に達すると、ClickHouse はソート済みのブロックとその索引を一時ストレージに書き込みます。並列にマージされるファイル数は [`join_on_disk_max_files_to_merge`](/ja/reference/settings/session-settings/join#join_on_disk_max_files_to_merge) で制限されます。
+
+**制限事項。** `RIGHT` および `FULL` JOIN は `ALL` strictness でのみサポートされます。`ANTI` および `ASOF` strictness、`OR` で組み合わせた複数の JOIN キー、両テーブルのカラム同士を比較する条件はサポートされていません。
+
+## `ie_join` {#ie-join}
+
+`ie_join` アルゴリズムは、ソートベースの [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) アルゴリズムを実装したもので、結合対象テーブルの式同士の不等号比較 (`<`、`<=`、`>`、`>=`) を `ON` 句に 2 つ含む JOIN を対象とします。ClickHouse は 2 つの比較に含まれる式で両方の入力をソートし、すべての行の組み合わせを比較することなく一致するペアを見つけます。このアルゴリズムはバージョン 26.8 以降で利用できます。
+
+**使用される条件。** `join_algorithm` 内での位置によって優先度が決まります。
+
+* 他のアルゴリズムより後に指定した場合は、`ON` 句にテーブル間の等価条件が含まれないときにのみ使用されます。
+* 先頭に指定した場合は、`ON` 句に 2 つの不等号条件が含まれていれば常に使用されます。等価条件を含むその他の条件は、JOIN結果に対するフィルタ、またはオペレーター内部の残余条件として適用されます。このように適用される等値比較は、結合キーとしてではなく `equals` で評価されます。詳しくは [JOIN キーの比較](#comparison-of-join-keys)を参照してください。
+
+対象となる不等号条件が `ON` 句に 3 つ以上含まれる場合、ClickHouse は列統計から推定した選択度に基づいて、キーとして使用する 2 つの条件を選択します。統計がない場合は、記述順で最初の 2 つを使用します。このアルゴリズムは、`ALL` strictness の `INNER`、`LEFT`、`RIGHT`、`FULL` JOIN、および `SEMI` と `ANTI` strictness の `LEFT` と `RIGHT` JOIN をサポートしています。
+
+**メモリとスピル。** 結合の前に両方の入力がメモリ上に蓄積され、[ハードリミット](/ja/concepts/features/operations/select/join-memory-management#hard-limits)は両側の合計に対して適用されます。このアルゴリズムはディスクへのスピルを行いません。
+
+**制限事項。** JOIN オペレーターは単一スレッドで実行され、並列に実行されるのは入力のソートのみです。`ANY` および `ASOF` strictness はサポートされていません。
+
+## Block nested loop フォールバック {#block-nested-loop-fallback}
+
+block nested loop JOIN は、`ON` 句にテーブル間の等値比較条件が含まれず、他のどのアルゴリズムでも実行できない JOIN を実行します。ClickHouse は右側をマテリアライズし、左側の行と右側の行のすべての組み合わせに対して `ON` 条件を評価します。`t1.a = t2.a OR t1.b < 0` における `t1.a = t2.a` のように条件内に含まれる等値比較は、結合キーとしてではなく `equals` で評価されます。[JOIN キーの比較](#comparison-of-join-keys)を参照してください。これは `join_algorithm` に指定できる値ではなく、JOIN 計画における最後の手段です。
+
+**使用される場合。** 範囲チェックや関数呼び出しなど、両テーブルのカラムに対する任意のブール値の式で構成された `ON` 句のうち、`ie_join` を適用できないものに使用されます。なお、`join_algorithm` に `hash` が含まれている場合、`ALL` strictness の `INNER` JOIN は、代わりに条件をフィルタとして適用する `CROSS JOIN` として実行されます。このフォールバックはバージョン 26.10 以降で利用できます。使用の可否は [`allow_block_nested_loop_join`](/ja/reference/settings/session-settings/allow#allow_block_nested_loop_join) 設定で制御します。フォールバックが許可されていない場合、このようなクエリは `INVALID_JOIN_ON_EXPRESSION` エラーで拒否されます。`ASOF`、`PASTE`、`ANY FULL` を除く、すべての結合の種類と strictness をサポートしています。
+
+**メモリとスピル。** メモリ使用量の上限はマテリアライズされた右側のサイズで決まり、結果のサイズに応じて増加することはありません。右側のブロックはメモリ上で圧縮され、スピル threshold に達するとディスクに書き込まれます。[ハードリミット](/ja/concepts/features/operations/select/join-memory-management#hard-limits)は、ディスクに退避されたブロックも含めた右側全体に適用されます。
+
+**制限事項。** コストは両テーブルの行数の積に比例して増加し、同じデータに対するハッシュ結合と比べて桁違いに高くなります。strictness のセマンティクスの詳細については、[任意の ON 条件による JOIN](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition) を参照してください。
+
+## アルゴリズムごとにサポートされる JOIN の種類 {#supported-join-types-per-algorithm}
+
+次の表は、各アルゴリズムが strictness の値ごとにサポートする JOIN の種類を示しています。この表は ClickHouse のソースコード内のサポートチェックに基づいています。空のセルは、その strictness がサポートされていないことを意味します。
+
+| アルゴリズム                                              | `ALL`                            | `ANY`                    | `SEMI`          | `ANTI`          | `ASOF`          |
+| --------------------------------------------------- | -------------------------------- | ------------------------ | --------------- | --------------- | --------------- |
+| `direct`                                            | `INNER`, `LEFT`                  | `LEFT`                   | `LEFT`          | `LEFT`          |                 |
+| `hash`, `parallel_hash`                             | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `INNER`, `LEFT` |
+| `grace_hash`                                        | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| `full_sorting_merge`, `parallel_full_sorting_merge` | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` |                 |                 | `INNER`, `LEFT` |
+| `partial_merge`                                     | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`          | `LEFT`          |                 |                 |
+| `ie_join`                                           | `INNER`, `LEFT`, `RIGHT`, `FULL` |                          | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+| ブロックネステッドループによるフォールバック                              | `INNER`, `LEFT`, `RIGHT`, `FULL` | `INNER`, `LEFT`, `RIGHT` | `LEFT`, `RIGHT` | `LEFT`, `RIGHT` |                 |
+
+このほか、次のルールが適用されます。
+
+* `ANY FULL` JOIN は、どのアルゴリズムであっても、アルゴリズムの選択前の段階で拒否されます。
+* `ASOF` JOIN をサポートするのは `hash` と `full_sorting_merge` のみです。`parallel_full_sorting_merge` は、`ASOF` JOIN を単一の `full_sorting_merge` JOIN として実行します。
+* `partial_merge` が `RIGHT` および `FULL` JOIN をサポートするのは、strictness が `ALL` の場合のみです。
+* ブロックネステッドループによるフォールバックは、`ASOF`、`PASTE`、`ANY FULL` JOIN をサポートしません。
+* `ON` 句内で `OR` によって組み合わされた複数の結合キーをサポートするのは、`hash` とその別名である `parallel_hash` のみです。`auto` を指定した場合、このような JOIN は `hash` で実行されます。
+* 等値比較キーと、両方のテーブルのカラムを比較する条件との組み合わせをサポートするのは、`hash`、`parallel_hash`、`grace_hash` のみです。
+* `direct` アルゴリズムは、[`direct`](#direct) に記載されている右側テーブルにのみ適用されます。`MergeTree` テーブルの場合、strictness `ANY` はサポートされません。
+* `CROSS JOIN`、定数の `ON` 条件を持つ JOIN、および `PASTE JOIN` には、`join_algorithm` に依存しない専用の実装があります。
+
+## JOIN キーの比較 {#comparison-of-join-keys}
+
+`ie_join` とブロックネステッドループによるフォールバックを除くすべてのアルゴリズムは、`ON` 句内にある両テーブルのカラム間の等値比較を JOIN キーとして使用します。アルゴリズムは [`equals`](/ja/reference/functions/regular-functions/comparison-functions#equals) 関数を使わずに独自にキーを比較するため、`equals` が `1` を返さない値の組でも、キーとしては一致する場合があります。`ie_join` は、2 つの不等号条件で一致した組に対して、このような等値比較を `equals` で評価します。また、ブロックネステッドループによるフォールバックは、`ON` 条件の一部として `equals` で評価します。
+
+| アルゴリズム                                                               | テーブル間の等値比較 | 2 つの `NaN` 値       | 2 つの `Tuple` 値 `(1, NULL)` |
+| -------------------------------------------------------------------- | ---------- | ------------------ | -------------------------- |
+| `direct`, `hash`, `parallel_hash`, `grace_hash`                      | JOIN キー    | 両方のビットパターンが同じ場合に一致 | 一致                         |
+| `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge` | JOIN キー    | 一致                 | 一致                         |
+| `ie_join`                                                            | `equals`   | 一致しない              | 一致しない                      |
+| ブロックネステッドループによるフォールバック                                               | `equals`   | 一致しない              | 一致しない                      |
+
+`Variant` キーの `NULL` 値は、`NULL` 要素を持つ `Tuple` と同様に動作します。キー自体が `NULL` の場合は、`equals` と同様に、どのアルゴリズムでも一致しません。詳しくは [JOIN キーにおける NULL および NaN 値](/ja/reference/statements/select/join#null-values-in-join-keys)を参照してください。
+
+`ASOF` JOIN の等価条件は、`hash` と `full_sorting_merge` のうち実際に実行する側の行に従います。また、右側が `Join` テーブルエンジンの場合は `hash` の行に従います。
+
+`complex_key_direct`、`complex_key_cache`、または `complex_key_ssd_cache` レイアウトと `CLICKHOUSE` ソースを持つ辞書に対する `direct` JOIN では、キーがテキストとしてソースに送信され、その際すべての `NaN` は `nan` として書き出されます。そのため、2 つの `NaN` キーは、両方が `nan` のビットパターンを持つ場合にのみ一致します。[`max_rows_in_set_to_optimize_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) が 0 以外の場合、`full_sorting_merge` と `parallel_full_sorting_merge` は、`NaN` 値をビットパターンで比較する JOIN キーの集合で入力を事前にフィルタすることがあります。このため、ビットパターンの異なる 2 つの `NaN` 値が一致するかどうかは、実行ごとに変わる可能性があります。
+
+したがって、このような値を比較する JOIN は、実行するアルゴリズムによって異なる行を返す可能性があります。たとえば、`join_algorithm` で `ie_join` を先頭に指定すると、2 つの不等号条件に加えて等値比較を含む JOIN が `ie_join` で実行されることがあります。その場合、等値比較は JOIN キーとしてではなく `equals` で評価されます。
+
+## JOIN アルゴリズムの選択 {#choosing-a-join-algorithm}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![direct、並列ハッシュ、ハッシュ、グレースハッシュ、フルソーティングマージ、部分マージの各 JOIN アルゴリズムの相対的なメモリ使用量と実行時間](/images/guides/joins-2.png)
+  </Frame>
+</div>
+
+上のチャートは、6 つの JOIN アルゴリズムの相対的なメモリ使用量と実行時間を示しています。このチャートの並列ハッシュ JOIN は、ハッシュテーブルを分割して使用する `hash` を指します。各アルゴリズムの位置はあくまで定性的なものであり、実際の値はデータサイズ、キーの型、キーの値の分布によって変わります。なお、このチャートには `ie_join`、`parallel_full_sorting_merge`、およびフォールバックとして使われるブロックネステッドループは含まれていません。
+
+### JOIN のパフォーマンス最適化 {#optimizing-join-performance}
+
+ベストプラクティスのページには、ワークロードに応じて最速のアルゴリズムを選ぶための決定木が掲載されています。[最適な JOIN アルゴリズムの選択](/ja/concepts/best-practices/minimize-optimize-joins#choosing-the-optimal-join-algorithm) を参照してください。
+
+## `join_algorithm` 設定 {#join-algorithm-setting}
+
+[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) 設定には、アルゴリズムをカンマ区切りのリストで指定します。デフォルト値および指定可能なすべての値については、[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のリファレンスを参照してください。
+
+ClickHouse はリスト内のアルゴリズムを順番に試し、JOIN の種類、strictness、`ON` 条件、および右側のストレージのすべてをサポートする最初のアルゴリズムを選択します。リスト内のどのアルゴリズムも適用できない場合、クエリはエラーとなり、エラーメッセージには有効なアルゴリズムの一覧が示されます。次のケースはリストの順序に関係なく処理されます。
+
+* 右側が `Join` テーブルエンジンのテーブルである場合、常にそのテーブルが保持するハッシュテーブルを使用して結合されます。
+* `CROSS JOIN`、定数の `ON` 条件を持つ JOIN、および `PASTE JOIN` には専用の実装が使用されます。
+* テーブル間の等値比較条件を含まない `ON` 句は、`ie_join` またはブロックネステッドループによるフォールバックで処理されます。
+
+スピル threshold が有効で、かつ一時ストレージが設定されている場合、`parallel_hash` と `hash` はスピル対応のハッシュ JOIN として動作し、右側がしきい値を超えると `grace_hash` に切り替わります。詳細は[スピルのしきい値](/ja/concepts/features/operations/select/join-memory-management#spill-thresholds)を参照してください。
+
+### `auto` 値 {#the-auto-value}
+
+`join_algorithm = 'auto'` の場合、ClickHouse は次のように実装を選択します。
+
+1. スピルのしきい値が有効で、一時ストレージが設定済みであり、かつ `grace_hash` がその JOIN をサポートしている場合、ClickHouse はハッシュ JOIN を使用し、右側がしきい値を超えた時点で `grace_hash` に切り替えます。
+2. 上記に該当せず、`partial_merge` がその JOIN をサポートしている場合、ClickHouse は `hash` で開始し、右側が[ハードリミット](/ja/concepts/features/operations/select/join-memory-management#hard-limits)に達した時点で `partial_merge` に切り替えます。その時点でハッシュテーブルに格納されている行は、`partial_merge` JOIN に移動されます。
+3. いずれにも該当しない場合、ClickHouse は `hash` を使用します。
+
+`EXPLAIN` の出力では、2 番目のケースは `Algorithm: JoinSwitcher` として表示されます。
+
+## 関連ページ {#related-pages}
+
+* [ClickHouse での JOIN の使用](/ja/concepts/features/operations/select/joining-tables)
+* [ClickHouse における JOIN の実行の仕組み](/ja/concepts/features/operations/select/join-execution)
+* [JOIN のメモリ管理とスピル](/ja/concepts/features/operations/select/join-memory-management)
+* [JOIN の設定](/ja/concepts/features/operations/select/join-settings)
+* [JOIN の最小化と最適化](/ja/concepts/best-practices/minimize-optimize-joins)

@@ -1,13 +1,12 @@
 ---
 title: 'جلسات الدعم'
 sidebarTitle: 'جلسات الدعم'
-description: 'فعّل وصول دعم ClickHouse عبر ClickHouse Connector، وحدّد نطاقه، وراجعه، وألغِه'
+description: 'فعّل وصول دعم ClickHouse عبر ClickHouse Connector، وحدّد نطاقه، ودقّقه، وألغِه'
 keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'connector']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -19,7 +18,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تحكم الجلسات عمليات التشخيص فقط. أما أوامر دورة الحياة للخدمات في الوضع Managed فتنتقل عبر القناة المنفصلة الخاصة بالمنفّذ، وهي قناة لا تفتحها جلسة الدعم ولا تتحكم بها؛ راجع [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
+<div className="ch-image-lg">
+  <Frame>
+    ![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+  </Frame>
+</div>
 
 يمكنك التحكم بالجلسات عبر واجهتين:
 

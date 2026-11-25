@@ -7,11 +7,6 @@ keywords: ['postgres 接続', '接続文字列', 'pgbouncer', 'tls', 'ssl']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
-
 <Tip>
   **SQL Console**
 
@@ -22,11 +17,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 アプリケーションを ClickHouse Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
 
-<Image img="/images/managed-postgres/connect-button.webp" alt="接続情報を表示するには、左側のサイドバーで Connect をクリックします" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![接続情報を表示するには、左側のサイドバーで Connect をクリックします](/images/managed-postgres/connect-button.webp)
+  </Frame>
+</div>
 
-**Connect** をクリックするとモーダルが開き、接続資格情報と複数のフォーマットの接続文字列が表示されます。
+**Connect** をクリックするとモーダルが開き、接続認証情報と複数のフォーマットの接続文字列が表示されます。
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="資格情報と接続文字列のフォーマットを表示する接続モーダル" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![認証情報と接続文字列のフォーマットを表示する接続モーダル](/images/managed-postgres/connect-modal.webp)
+  </Frame>
+</div>
 
 接続モーダルには、次の情報が表示されます。
 
@@ -38,7 +41,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 ClickHouse Managed Postgres では、データベースへのスーパーユーザーアクセスが提供されます。これらの認証情報を使用してスーパーユーザーとして接続すると、追加のユーザーを作成したり、データベースオブジェクトを管理したりできます。
 
 <div id="connection-string">
-  ## 接続文字列のフォーマット
+  ## 接続文字列のフォーマット {#connection-string}
 </div>
 
 **Connect via** タブでは、アプリケーションの要件に合わせて、接続文字列を複数のフォーマットで確認できます。
@@ -76,7 +79,7 @@ ClickHouse Managed Postgres には、サーバー側の接続プーリング用�
 すべての ClickHouse Managed Postgres インスタンスは TLS によって保護されています。サポートされる最小バージョンは **TLS 1.3** です。
 
 <div id="quick-connection">
-  ### クイック接続 (TLS で暗号化)
+  ### クイック接続 (TLS で暗号化) {#quick-connection}
 </div>
 
 デフォルトでは、接続には証明書の検証を行わない TLS 暗号化が使用されます。
@@ -89,7 +92,11 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 本番ワークロードでは、正しいサーバーと通信していることを確実にするため、検証済み TLS 接続の使用を推奨します。これを行うには、**Settings** タブから CA 証明書バンドルをダウンロードし、データベースクライアントの信頼済み証明書に追加します。
 
-<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Settings タブから CA 証明書をダウンロード" size="md" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Settings タブから CA 証明書をダウンロード](/images/managed-postgres/tls-ca-bundle.webp)
+  </Frame>
+</div>
 
 CA 証明書は ClickHouse Managed Postgres インスタンスごとに固有であり、他のインスタンスでは使用できません。
 

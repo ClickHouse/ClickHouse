@@ -2,7 +2,6 @@
 -- the immediate child of the join: a copy of a carried column of the right side added above the lookup made the direct
 -- join impossible. Such a join is read as it is. The results are compared with the optimization disabled.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 SET join_algorithm = 'direct';

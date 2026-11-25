@@ -76,7 +76,9 @@ namespace
         inner_settings[Setting::additional_result_filter] = "";
         inner_context->setSettings(inner_settings);
 
-        InterpreterSelectQueryAnalyzer interpreter(select_ast, inner_context, options, column_names);
+        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+        InterpreterSelectQueryAnalyzer interpreter(
+            select_ast, inner_context, options, context->isViewInnerQuery() ? nullptr : context->getViewSource(), column_names);
         if (query_info.storage_limits)
             interpreter.addStorageLimits(*query_info.storage_limits);
         plan = std::move(interpreter).extractQueryPlan();
