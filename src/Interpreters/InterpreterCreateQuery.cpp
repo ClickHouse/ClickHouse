@@ -4177,6 +4177,11 @@ BlockIO InterpreterCreateQuery::execute()
     {
         evaluateConstantsInDictionarySource(create, getContext());
 
+        /// The attribute expressions are inserted into the queries of the source. SQL UDFs in them are substituted here,
+        /// as `createTable` does later, so that the checks below and the hosts of `ON CLUSTER` see the expressions that are stored.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
         /// Replaced here, not only in `setEngine`, so that the checks below, the privileges and the hosts of `ON CLUSTER`
         /// see the source that is created: a source replaced by `Null` sends nothing. A `clickhouse` source is replaced
         /// only if it is not local, which depends on the host, so it is left to `setEngine`.

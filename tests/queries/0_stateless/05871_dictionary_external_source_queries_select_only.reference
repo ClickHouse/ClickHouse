@@ -3,6 +3,10 @@
 0
 --- The source is evaluated once, so the stored query is the checked one
 1	0
+--- SQL UDFs in the attribute expressions are checked after the substitution
+1
+0
+1
 --- A named collection requires the privilege NAMED COLLECTION
 Without the grant: denied, not created
 1

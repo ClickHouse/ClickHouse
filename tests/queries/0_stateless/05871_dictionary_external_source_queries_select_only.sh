@@ -17,6 +17,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_mysql"
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
 replicated_db="${CLICKHOUSE_DATABASE}_replicated"
+udf="${CLICKHOUSE_TEST_UNIQUE_NAME}_udf"
 
 function cleanup()
 {
@@ -25,6 +26,8 @@ function cleanup()
         DROP USER IF EXISTS $user;
         DROP NAMED COLLECTION IF EXISTS $nc;
         DROP NAMED COLLECTION IF EXISTS ${nc}_secret;
+        DROP FUNCTION IF EXISTS ${udf}_payload;
+        DROP FUNCTION IF EXISTS ${udf}_safe;
         DROP DATABASE IF EXISTS ${replicated_db} SYNC;"
 }
 trap cleanup EXIT
@@ -63,6 +66,23 @@ $CLICKHOUSE_CLIENT --ignore-error --multiquery --query "$queries" >/dev/null 2>&
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0, countIf(create_table_query LIKE '%DROP TABLE victim%')
     FROM system.tables WHERE database = currentDatabase() AND name LIKE 'dict_random_query_%'"
+
+echo '--- SQL UDFs in the attribute expressions are checked after the substitution'
+# The stored expression is the body of the UDF, whose string literal is written with a backslash: SQL Server would end it
+# at the quote after the backslash, and read the rest as SQL. Prints whether the dictionary is rejected for the backslash,
+# and whether a dictionary with a harmless UDF is created.
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE FUNCTION ${udf}_payload AS x -> 'x'') ) AS value INTO dbo.created_by_dictionary; --';
+    CREATE FUNCTION ${udf}_safe AS x -> concat('a', x);"
+$CLICKHOUSE_CLIENT --query "
+    CREATE DICTIONARY dict_select_only (id UInt64 EXPRESSION '1', value String EXPRESSION concat('z', ${udf}_payload(0))) PRIMARY KEY id
+        SOURCE(ODBC(CONNECTION_STRING 'DSN=none' SCHEMA 'dbo' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+    | grep -q "cannot contain comments, heredocs, typographic quotes or backslashes" && echo 1 || echo 0
+exists_and_drop
+$CLICKHOUSE_CLIENT --query "
+    CREATE DICTIONARY dict_select_only (id UInt64, value String EXPRESSION ${udf}_safe(value)) PRIMARY KEY id
+        SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
+exists_and_drop
 
 echo '--- A named collection requires the privilege NAMED COLLECTION'
 # The backup for `RESTORE` is made once, by `default`. Reading it requires `READ ON DISK`, which is a part of `SOURCES`.
