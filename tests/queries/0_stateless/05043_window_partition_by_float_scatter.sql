@@ -39,7 +39,7 @@ SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY nk) 
 WHERE explain ILIKE '%ScatterByPartition%';
 
 -- Dynamic hashes by the physical layout of the value, which can differ between blocks for
--- values that compare as equal, so it must not scatter either. Here every value is a Float64
+-- values that compare as equal, so it must not scatter. Here every value is a Float64
 -- inside Dynamic, and -0. and 0. still compare as equal.
 DROP TABLE IF EXISTS t_window_scatter_dynamic;
 

@@ -27,6 +27,10 @@ SETTINGS max_threads = 1;
 SELECT DISTINCT c FROM (SELECT count() OVER (PARTITION BY f) AS c FROM t_window_float_nan) ORDER BY c
 SETTINGS max_threads = 8;
 
+-- The Float32 key keeps the parallel scattered sort.
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() OVER (PARTITION BY f) FROM t_window_float_nan SETTINGS max_threads = 8)
+WHERE explain ILIKE '%ScatterByPartition%';
+
 -- A parallel DISTINCT below the window partitions its streams by the bits of the key, which the
 -- window must not reuse.
 CREATE TABLE t_window_float_distinct (k Float64, v UInt64) ENGINE = MergeTree() ORDER BY v;
