@@ -17,10 +17,12 @@
   *   and offset and size of each part below (64-bit, offsets from the start of the section);
   * - dictionary: a zstd dictionary shared by the name granules, possibly empty;
   * - marks: the 32-bit end offset of each name granule in the names part;
-  * - names: unique names, sorted, split into granules of `names_per_granule`, each front-coded
-  *   (varint shared prefix size, varint suffix size, suffix) and compressed into a zstd frame
+  * - names: the unique names referenced by the addresses part, sorted, split into granules of `names_per_granule`,
+  *   each front-coded (varint shared prefix size, varint suffix size, suffix) and compressed into a zstd frame
   *   with content size and checksum, against the dictionary when it is present;
-  * - addresses: one zstd frame of (varint address delta, varint size, varint name index) sorted by address.
+  * - addresses: one zstd frame of (varint address delta, varint size, varint name index), one entry per distinct
+  *   (address, size) sorted by address and then size. Of the names of an address range, only the one
+  *   `isPreferredSymbolName` prefers is stored.
   */
 namespace DB::CompactSymbols
 {
@@ -50,7 +52,7 @@ struct AddressEntry
     uint32_t name_index;
 };
 
-/// The same symbols and capacity always produce the same bytes.
+/// The same symbols and capacity always produce the same bytes, whatever the order of the symbols.
 std::vector<char> encode(std::span<const Symbol> symbols, size_t dictionary_capacity = default_dictionary_capacity);
 
 class NameGranuleDecoder

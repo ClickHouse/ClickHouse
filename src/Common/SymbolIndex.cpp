@@ -11,6 +11,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
+#include <Common/SymbolNamePreference.h>
 
 #include <algorithm>
 #include <atomic>
@@ -21,6 +22,9 @@
 #include <numeric>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
 
 #include <filesystem>
@@ -109,6 +113,100 @@ namespace DB
 
 namespace
 {
+
+/// The order `keepPreferredPerRange` needs to choose one symbol per address range: by the names, as
+/// `isPreferredSymbolName` orders them, and for equal names by the name reference. Reads names only when
+/// asked to compare, that is for ranges that have several symbols.
+class SymbolPreference
+{
+public:
+#if defined(__ELF__)
+    SymbolPreference(const SymbolIndex::Data & data_, size_t maximum_name_size_, size_t maximum_granule_size_)
+        : data(data_)
+        , maximum_name_size(maximum_name_size_)
+        , maximum_granule_size(maximum_granule_size_)
+    {
+    }
+#else
+    explicit SymbolPreference(const SymbolIndex::Data & data_)
+        : data(data_)
+    {
+    }
+#endif
+
+    bool prefers(const SymbolIndex::Symbol & lhs, const SymbolIndex::Symbol & rhs)
+    {
+        std::string_view lhs_name = name(lhs, lhs_storage);
+        std::string_view rhs_name = name(rhs, rhs_storage);
+        if (lhs_name != rhs_name)
+            return isPreferredSymbolName(lhs_name, rhs_name);
+        return std::pair(lhs.nameSourceId(), lhs.nameOffsetOrIndex()) < std::pair(rhs.nameSourceId(), rhs.nameOffsetOrIndex());
+    }
+
+private:
+    /// The view is valid until the next call with the same `storage`.
+    std::string_view name(const SymbolIndex::Symbol & symbol, [[maybe_unused]] std::string & storage)
+    {
+        const SymbolIndex::NameSource * source = data.nameSource(symbol);
+        if (!source)
+            return {};
+
+        if (source->kind == SymbolIndex::NameSource::Kind::Direct)
+            return source->direct_base ? std::string_view(source->direct_base + symbol.nameOffsetOrIndex()) : std::string_view();
+
+#if defined(__ELF__)
+        if (source->compact_table_index >= data.compact_symbol_tables.size())
+            return {};
+
+        if (!decompression_context)
+        {
+            decompression_context = createDecompressionContext();
+            granule_buffer.resize(maximum_granule_size);
+            name_buffer.reserve(maximum_name_size);
+        }
+
+        /// The decoder continues from the previous name only within one table.
+        if (symbol.nameSourceId() != cached_source_id)
+        {
+            cached_source_id = symbol.nameSourceId();
+            cached_granule_index = std::numeric_limits<uint32_t>::max();
+            cached_entry_index = std::numeric_limits<uint32_t>::max();
+            decoder.reset();
+            name_buffer.clear();
+        }
+
+        uint32_t name_index = symbol.nameOffsetOrIndex();
+        storage.assign(decodeCompactName(
+            data.compact_symbol_tables[source->compact_table_index]->reader,
+            name_index / CompactSymbols::names_per_granule,
+            name_index % CompactSymbols::names_per_granule,
+            decompression_context.get(),
+            granule_buffer,
+            decoder,
+            name_buffer,
+            cached_granule_index,
+            cached_entry_index));
+        return storage;
+#else
+        return {};
+#endif
+    }
+
+    const SymbolIndex::Data & data;
+    std::string lhs_storage;
+    std::string rhs_storage;
+#if defined(__ELF__)
+    size_t maximum_name_size = 0;
+    size_t maximum_granule_size = 0;
+    uint32_t cached_source_id = std::numeric_limits<uint32_t>::max();
+    uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
+    uint32_t cached_entry_index = std::numeric_limits<uint32_t>::max();
+    ZstdDCtxPtr decompression_context;
+    std::vector<char> granule_buffer;
+    std::string name_buffer;
+    std::optional<CompactSymbols::NameGranuleDecoder> decoder;
+#endif
+};
 
 #if defined(__ELF__)
 CompactNameWorkspace & compactNameWorkspace()
@@ -952,10 +1050,13 @@ void collectSymbolsFromMachOImage(
         [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
         { return a.offset_begin < b.offset_begin; });
 
-    /// Deduplicate symbols at the same address
-    local_symbols.erase(std::unique(local_symbols.begin(), local_symbols.end(),
+    /// Keep one symbol per address, the one with the preferred name.
+    SymbolPreference preference(data);
+    local_symbols.erase(keepPreferredPerRange(local_symbols.begin(), local_symbols.end(),
         [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
-        { return a.offset_begin == b.offset_begin; }),
+        { return a.offset_begin == b.offset_begin; },
+        [&preference](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
+        { return preference.prefers(a, b); }),
         local_symbols.end());
 
     /// Mach-O nlist_64 entries don't have a size field.
@@ -1073,14 +1174,25 @@ void SymbolIndex::load()
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
 
-    /// We found symbols both from loaded program headers and from ELF symbol tables.
-    auto sort_and_deduplicate = [](std::vector<Symbol> & symbols)
+#if defined(__ELF__)
+    SymbolPreference preference(data, maximum_name_size, maximum_name_granule_size);
+#else
+    SymbolPreference preference(data);
+#endif
+
+    /// Several symbols of one range come from aliases, from identical code folding, and from reading both
+    /// the program headers and a symbol table. One of them is kept, chosen by its name, so that the result
+    /// does not depend on the order of the symbols.
+    auto sort_and_deduplicate = [&preference](std::vector<Symbol> & symbols)
     {
-        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
-        symbols.erase(std::unique(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
+        ::sort(symbols.begin(), symbols.end(), [](const Symbol & a, const Symbol & b)
         {
-            return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
-        }), symbols.end());
+            return std::tie(a.offset_begin, a.offset_end) < std::tie(b.offset_begin, b.offset_end);
+        });
+        symbols.erase(keepPreferredPerRange(symbols.begin(), symbols.end(),
+            [](const Symbol & a, const Symbol & b) { return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end; },
+            [&preference](const Symbol & a, const Symbol & b) { return preference.prefers(a, b); }),
+            symbols.end());
     };
 
     sort_and_deduplicate(data.symbols);

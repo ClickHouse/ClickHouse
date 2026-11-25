@@ -1,4 +1,5 @@
 #include <Common/CompactSymbols.h>
+#include <Common/SymbolNamePreference.h>
 #include <base/sanitizer_defs.h>
 
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <new>
 #include <numeric>
 #include <stdexcept>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -275,14 +277,29 @@ std::vector<char> encode(std::span<const Symbol> symbols, size_t dictionary_capa
     if (dictionary_capacity > std::numeric_limits<size_t>::max() / dictionary_training_ratio)
         throw std::runtime_error("Compact symbols dictionary capacity is too large");
 
-    std::vector<std::string_view> names;
-    names.reserve(symbols.size());
     for (const auto & symbol : symbols)
     {
         if (symbol.name.empty())
             throw std::runtime_error("Cannot encode an empty compact symbol name");
-        names.push_back(symbol.name);
     }
+
+    std::vector<Symbol> ranges(symbols.begin(), symbols.end());
+    std::sort(ranges.begin(), ranges.end(), [](const Symbol & lhs, const Symbol & rhs)
+    {
+        return std::tie(lhs.address, lhs.size) < std::tie(rhs.address, rhs.size);
+    });
+    ranges.erase(
+        keepPreferredPerRange(
+            ranges.begin(),
+            ranges.end(),
+            [](const Symbol & lhs, const Symbol & rhs) { return lhs.address == rhs.address && lhs.size == rhs.size; },
+            [](const Symbol & lhs, const Symbol & rhs) { return isPreferredSymbolName(lhs.name, rhs.name); }),
+        ranges.end());
+
+    std::vector<std::string_view> names;
+    names.reserve(ranges.size());
+    for (const auto & symbol : ranges)
+        names.push_back(symbol.name);
 
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
@@ -336,16 +353,10 @@ std::vector<char> encode(std::span<const Symbol> symbols, size_t dictionary_capa
         appendLittleEndian<uint32_t>(marks, static_cast<uint32_t>(names_blob.size()));
     }
 
-    std::vector<size_t> address_order(symbols.size());
-    std::iota(address_order.begin(), address_order.end(), 0);
-    std::stable_sort(
-        address_order.begin(), address_order.end(), [&](size_t lhs, size_t rhs) { return symbols[lhs].address < symbols[rhs].address; });
-
     std::vector<char> addresses;
     uint64_t previous_address = 0;
-    for (size_t symbol_index : address_order)
+    for (const auto & symbol : ranges)
     {
-        const auto & symbol = symbols[symbol_index];
         auto name_it = std::lower_bound(names.begin(), names.end(), symbol.name);
         if (name_it == names.end() || *name_it != symbol.name)
             throw std::runtime_error("Compact symbol name index is missing");
@@ -368,7 +379,7 @@ std::vector<char> encode(std::span<const Symbol> symbols, size_t dictionary_capa
     appendLittleEndian<uint32_t>(output, format_version);
     appendLittleEndian<uint32_t>(output, header_size);
     appendLittleEndian<uint64_t>(output, names.size());
-    appendLittleEndian<uint64_t>(output, symbols.size());
+    appendLittleEndian<uint64_t>(output, ranges.size());
     appendLittleEndian<uint32_t>(output, names_per_granule);
     appendLittleEndian<uint32_t>(output, granule_count);
     appendLittleEndian<uint64_t>(output, dictionary_offset);
