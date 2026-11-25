@@ -1406,6 +1406,28 @@ std::optional<QValue> clockArithmetic(Call & call, const String & function)
         return std::nullopt;
     std::optional<QType> left = call.args[0].qtype;
     std::optional<QType> right = call.args[1].qtype;
+    /// A temporal value and a number: the number counts the units of the temporal type, as in a cast. `2024.01m+1` is
+    /// the next month and a timestamp plus one is the next nanosecond, while `plus` of ClickHouse would add a day to
+    /// the date that a month is, and a second to the timestamp. The result has the temporal type.
+    bool left_is_temporal = left && isTemporalType(*left);
+    bool right_is_temporal = right && isTemporalType(*right);
+    bool left_is_number = left && isNumberType(*left) && !call.args[0].is_string;
+    bool right_is_number = right && isNumberType(*right) && !call.args[1].is_string;
+    if ((left_is_temporal && right_is_number) || (function == "plus" && left_is_number && right_is_temporal))
+    {
+        bool temporal_first = left_is_temporal;
+        QType temporal_type = temporal_first ? *left : *right;
+        return binary(call,
+            [&](ASTPtr a, ASTPtr b)
+            {
+                ASTPtr count = temporalToNumber(temporal_first ? a : b, temporal_type, call);
+                ASTPtr number = temporal_first ? b : a;
+                ASTPtr sum = temporal_first ? fn(function, std::move(count), std::move(number)) : fn(function, std::move(number), std::move(count));
+                return numberToTemporal(std::move(sum), temporal_type, call);
+            },
+            temporal_type);
+    }
+
     std::optional<QType> result_type;
     if (isClockType(left) && isClockType(right))
         result_type = left == QType::Timespan || right == QType::Timespan ? QType::Timespan : (left == QType::Time || right == QType::Time ? QType::Time : *left);
