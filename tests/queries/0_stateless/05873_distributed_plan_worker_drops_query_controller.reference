@@ -1,3 +1,7 @@
 Injected failure after registering task
 query controllers left: 0
-teardown waited for the task	0
+teardown waited for the task: 0
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+teardown waited for the task: 1
+worker kept the running task until it ended: 1
+query controllers left: 0
