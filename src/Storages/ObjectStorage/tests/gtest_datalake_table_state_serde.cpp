@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -228,6 +229,39 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoAmbiguousColumnOmittedWith
     ASSERT_EQ(
         deserialized.identity_partition_columns[0].injection_sites,
         (std::vector<std::pair<String, Names>>{{"s.c", Names{}}}));
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoTruncatedInjectionSites)
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {Iceberg::IdentityPartitionColumn{"s.c", {{"s", Names{"c"}}}, Field("x")}};
+
+    String valid;
+    {
+        WriteBufferFromString write_buffer{valid};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    }
+    /// The data ends with the sites: count 1, "s", segment count 1, "c".
+    ASSERT_TRUE(valid.ends_with(std::string_view("\x01\x01s\x01\x01" "c", 6)));
+
+    /// Replace the site count, then the segment count, with a huge count, and end the data right after it.
+    for (size_t replaced_suffix_size : {6, 3})
+    {
+        String malformed = valid.substr(0, valid.size() - replaced_suffix_size);
+        {
+            WriteBufferFromString write_buffer{malformed, AppendModeTag{}};
+            writeVarUInt(UInt64(1) << 40, write_buffer);
+        }
+        ReadBufferFromMemory read_buffer(malformed.data(), malformed.size());
+        Iceberg::IcebergObjectSerializableInfo deserialized;
+        ASSERT_THROW(deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION), Exception);
+    }
 }
 
 

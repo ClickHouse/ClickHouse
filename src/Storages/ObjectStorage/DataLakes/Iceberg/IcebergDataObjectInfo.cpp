@@ -455,19 +455,19 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
     {
         for (auto & column : identity_partition_columns)
         {
+            /// The counts come from the peer, so the containers grow with the data read, not with the counts.
             size_t sites_size = 0;
             readVarUInt(sites_size, in);
             column.injection_sites.clear();
-            column.injection_sites.reserve(sites_size);
             for (size_t i = 0; i < sites_size; ++i)
             {
                 String header_name;
                 readStringBinary(header_name, in);
                 size_t remaining_size = 0;
                 readVarUInt(remaining_size, in);
-                Names remaining(remaining_size);
-                for (auto & segment : remaining)
-                    readStringBinary(segment, in);
+                Names remaining;
+                for (size_t j = 0; j < remaining_size; ++j)
+                    readStringBinary(remaining.emplace_back(), in);
                 column.injection_sites.emplace_back(std::move(header_name), std::move(remaining));
             }
         }
