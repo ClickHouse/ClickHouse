@@ -62,7 +62,8 @@ and a lone `\` outside of a block comment ends the script: the rest of the text 
   `xasc`, `xdesc`, `xcol`, `xcols`, `cols`, `meta`, `count`, `n#t`, `t1,t2`.
 - Joins: `lj`, `ij`, `ej`, `uj`, `aj` and `aj0` (an `ASOF JOIN`; `aj0` returns the time of the matched row),
   and `cross`.
-- `.ch.sql "SELECT ..."` uses the result of a ClickHouse query as a table.
+- `.ch.sql "SELECT ..."` uses the result of a ClickHouse query as a table. The query can have query parameters
+  (`{name:Type}`), which are taken from the request.
 
 ## How q values map to ClickHouse {#mapping}
 
@@ -123,7 +124,8 @@ digits it is a timestamp.
   is the longest timespan). A literal out of range is a syntax error. The values that ClickHouse stores are limited by
   the ranges of `Date32`, `DateTime64`, `Time`, and `Time64`.
 - The depth of an expression is limited by the setting `max_parser_depth`. A long expression without parentheses counts
-  too, because it nests to the right: `1+1+1+...` with a thousand operators is rejected by default.
+  too, because it nests to the right: `1+1+1+...` with a thousand operators is rejected by default. The same setting
+  limits the depth of the lists nested in a value, which can grow across the statements (`a:,a`).
 - The values of a program are expanded where they are used: after `a:a+a`, the expression of `a` is twice as large, and a
   function is inlined with its argument wherever it mentions the parameter. The size of the expansion is limited by
   the setting `max_expanded_ast_elements`.
@@ -139,4 +141,10 @@ digits it is a timestamp.
 - The names starting with `__q` are reserved for the helper columns of the generated query: a table with such a column
   cannot be used in a q program (rename the column with `.ch.sql`).
 - The columns of a table are those that the user is allowed to see, as in `system.columns`. A program needs the `SELECT` grant
-  only for the columns that it uses.
+  only for the columns that it uses. The `MATERIALIZED` and `ALIAS` columns are columns of the table as well, so
+  `select from t` returns them, unlike `SELECT *`. The columns of a table of the engine `Alias` are seen through
+  the grants on its target too.
+- The names of the tables are resolved when the program is compiled: in the database of the request (the setting
+  `database` included), with the external tables of the request first.
+- `prds` of a column collects the rows before every row, so its memory grows with the square of the number of the rows
+  of a group: ClickHouse has no running product. `prds` of a list does not have this cost.
