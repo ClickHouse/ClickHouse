@@ -56,6 +56,7 @@ struct FormatTopKFilterInfo
     bool track_row_group_best_values = false;
     /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
     bool filter_rows = true;
+    Names columns_deciding_threshold;
 };
 
 /// Throws INCORRECT_DATA if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
