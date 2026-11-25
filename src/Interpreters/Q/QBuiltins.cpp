@@ -1672,13 +1672,18 @@ const std::unordered_map<String, Handler> & handlers()
             c.expectArgs(2);
             QValue weights = c.scalarArg(0);
             QValue values = c.scalarArg(1);
+            /// A null in either argument excludes the whole pair. The product of such a pair is a null, and the sum skips it.
+            /// The sum of the weights has to skip the same pairs, so a weight is replaced with a null where the value is one.
+            /// The lists are summed with the aggregate function as well: `arraySum` does not take nulls.
             QValue product = c.compiler.atomic(c.name, {weights, values}, [](const ASTs & asts) { return fn("multiply", asts[0], asts[1]); }, c.scope);
+            QValue paired_weights = c.compiler.atomic(c.name, {weights, values},
+                [](const ASTs & asts) { return fn("if", fn("isNull", asts[1]), lit(Field()), asts[0]); }, c.scope);
             QValues numerator_args{product};
             Call numerator_call{c.compiler, c.name, numerator_args, c.env, c.scope, c.offset};
-            QValue numerator = simpleAggregate(numerator_call, "sum", "arraySum");
-            QValues denominator_args{weights};
+            QValue numerator = simpleAggregate(numerator_call, "sum", "");
+            QValues denominator_args{paired_weights};
             Call denominator_call{c.compiler, c.name, denominator_args, c.env, c.scope, c.offset};
-            QValue denominator = simpleAggregate(denominator_call, "sum", "arraySum");
+            QValue denominator = simpleAggregate(denominator_call, "sum", "");
             QValue result = QCompiler::scalar(fn("divide", numerator.ast, denominator.ast), numerator.depth);
             result.aggregated = numerator.aggregated || denominator.aggregated;
             result.qtype = QType::Float;
