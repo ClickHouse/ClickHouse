@@ -1818,23 +1818,21 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
     if (col_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    MutableColumnPtr res = cloneEmpty();
-    ColumnArray & res_concrete = assert_cast<ColumnArray &>(*res);
-
     if (0 == col_size)
-        return res;
+        return cloneEmpty();
+
+    PaddedPODArray<UInt64> indexes;
+    indexes.reserve_exact(replicate_offsets.back());
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_offset;
         prev_offset = replicate_offsets[i];
-
-        for (size_t j = 0; j < size_to_replicate; ++j)
-            res_concrete.insertFrom(*this, i);
+        indexes.resize_fill(indexes.size() + size_to_replicate, i);
     }
 
-    return res;
+    return indexImpl(indexes, indexes.size());
 }
 
 

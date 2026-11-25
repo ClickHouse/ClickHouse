@@ -1557,11 +1557,17 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     if (!col_array)
         return nullptr;
 
-    auto res = result_type->createColumn();
-
     size_t rows = input_rows_count;
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
+
+    auto source = result_type->createColumn();
+    source->insertRangeFrom(array_elements, 0, array_size);
+    source->insertDefault();
+    const size_t default_position = array_size;
+
+    auto positions_column = ColumnUInt64::create(rows);
+    auto & positions = positions_column->getData();
 
     for (size_t i = 0; i < rows; ++i)
     {
@@ -1569,23 +1575,23 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
         if (index > 0 && static_cast<size_t>(index) <= array_size)
         {
             size_t j = index - 1;
-            res->insertFrom(array_elements, j);
+            positions[i] = j;
             builder.update(j);
         }
         else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
         {
             size_t j = array_size + index;
-            res->insertFrom(array_elements, j);
+            positions[i] = j;
             builder.update(j);
         }
         else
         {
-            res->insertDefault();
+            positions[i] = default_position;
             builder.update();
         }
     }
 
-    return res;
+    return source->index(*positions_column, rows);
 }
 
 template <ArrayElementExceptionMode mode>
