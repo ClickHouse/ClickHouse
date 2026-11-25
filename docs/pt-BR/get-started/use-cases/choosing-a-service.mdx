@@ -1,8 +1,7 @@
 ---
 title: 'Escolha um serviço para sua carga de trabalho'
 sidebarTitle: 'Escolha um serviço'
-description: 'Escolha serviços ClickHouse ou Postgres no ClickHouse Cloud para analytics ou transações, Managed ClickStack para observabilidade ou chDB para análise local.'
-slug: /get-started/use-cases/choosing-a-service
+description: 'Escolha serviços ClickHouse ou Postgres no ClickHouse Cloud para analytics ou transações, ClickHouse Observability para observabilidade ou chDB para análise local.'
 keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
 doc_type: 'guide'
 ---
@@ -13,12 +12,12 @@ O ClickHouse Cloud é a plataforma de serviços gerenciados, que inclui o ClickH
 
 ## Mapeie a carga de trabalho para um ponto de partida {#workload-map}
 
-| O que sua aplicação precisa                                                                                                            | Comece avaliando                                                                            | O que verificar antes de escolher                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| O que sua aplicação precisa                                                                                                            | Comece avaliando                                                                                  | O que verificar antes de escolher                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Agregações, filtragem e comparações sobre grandes históricos de eventos ou resultados                                                  | [serviço ClickHouse no ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro)             | Consultas representativas, batches de ingestão, atualidade dos dados, consultas concorrentes e o design de atualizações ou novas tentativas |
-| Estado transacional da aplicação, como pedidos, reservas de estoque ou jobs cujas transições de estado exigem transações e constraints | [ClickHouse Managed Postgres no ClickHouse Cloud](/pt-BR/products/managed-postgres/overview)      | Limites de transação, constraints, índices, gerenciamento de conexões e os recursos e a disponibilidade suportados pelo service             |
-| Estado transacional da aplicação somado a consultas analíticas que exigem um sistema de atendimento independente                       | [Services Postgres e ClickHouse no ClickHouse Cloud](/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes) | Quais tabelas precisam de replicação, defasagem de replicação aceitável, mudanças de schema e o custo e a operação de dois services         |
-| Uma experiência gerenciada para buscar e investigar logs, métricas e traces de aplicações                                              | [Managed ClickStack](/pt-BR/clickstack/getting-started/managed)                                   | Instrumentação, ingestão de telemetria, retenção e os fluxos de trabalho de observabilidade de que sua equipe precisa                       |
+| Estado transacional da aplicação, como pedidos, reservas de estoque ou jobs cujas transições de estado exigem transações e constraints | [ClickHouse Managed Postgres no ClickHouse Cloud](/pt-BR/products/managed-postgres/overview)      | Limites de transação, constraints, índices, gerenciamento de conexões e os recursos e a disponibilidade suportados pelo serviço             |
+| Estado transacional da aplicação somado a consultas analíticas que exigem um sistema de atendimento independente                       | [Serviços Postgres e ClickHouse no ClickHouse Cloud](/pt-BR/products/managed-postgres/clickpipes) | Quais tabelas precisam de replicação, defasagem de replicação aceitável, mudanças de schema e o custo e a operação de dois serviços         |
+| Uma experiência gerenciada para buscar e investigar logs, métricas e traces de aplicações                                              | [ClickHouse Observability](/pt-BR/clickstack/observability/getting-started)                       | Instrumentação, ingestão de telemetria, retenção e os fluxos de trabalho de observabilidade de que sua equipe precisa                       |
 | Análise de arquivos ou dados in-memory dentro de uma aplicação local ou notebook                                                       | [chDB](/pt-BR/chdb/index)                                                                         | Recursos locais e se você precisa de um serviço de banco de dados compartilhado hospedado separadamente                                     |
 
 Consulte a documentação do produto vinculada para verificar disponibilidade, regiões e limitações atuais. O ClickHouse Managed Postgres está atualmente em beta público; consulte seu [quickstart](/pt-BR/products/managed-postgres/quickstart).
@@ -56,13 +55,13 @@ A [extensão pg&#95;clickhouse](/pt-BR/products/managed-postgres/extensions/pg_c
 
 ## Verifique a adequação antes do provisionamento {#check-fit}
 
-Escreva um pequeno conjunto de consultas representativas e teste-as com volumes de dados realistas. Inclua tanto lookups pontuais quanto agregações que abrangem todo o histórico, a carga concorrente esperada e os casos de correção que importam para sua aplicação. Ao relatar qualquer resultado de benchmark, informe também o schema, as shapes das consultas, o tamanho do hardware ou do service e o comportamento de ingestão.
+Escreva um pequeno conjunto de consultas representativas e teste-as com volumes de dados realistas. Inclua tanto lookups pontuais quanto agregações que abrangem todo o histórico, a carga concorrente esperada e os casos de correção que importam para sua aplicação. Ao relatar qualquer resultado de benchmark, informe também o schema, as shapes das consultas, o tamanho do hardware ou do serviço e o comportamento de ingestão.
 
 Para uma implantação gerenciada, verifique também:
 
-* Requisitos de region, rede, access control e recovery.
+* Requisitos de região, rede, access control e recovery.
 * Tempo ativo esperado, dados armazenados, backups e cobranças de transferência no [guia de billing do ClickHouse Cloud](/pt-BR/products/cloud/reference/billing/billing-overview) ou no [guia de preços do Managed Postgres](/pt-BR/products/managed-postgres/pricing).
-* Se uma carga de trabalho analítica intermitente tolera o atraso de connection associado ao [automatic idling](/pt-BR/products/cloud/features/autoscaling/idling).
-* A responsabilidade da equipe pelo design do schema, pelas novas tentativas da aplicação, pelo ajuste de consultas e pelos controles de custo, mesmo quando o service gerencia a infrastructure.
+* Se uma carga de trabalho analítica intermitente tolera o atraso de conexão associado ao [automatic idling](/pt-BR/products/cloud/features/autoscaling/idling).
+* A responsabilidade da equipe pelo design do schema, pelas novas tentativas da aplicação, pelo ajuste de consultas e pelos controles de custo, mesmo quando o serviço gerencia a infrastructure.
 
-Para services ClickHouse ou Postgres no ClickHouse Cloud, use a [ClickHouse CLI](/pt-BR/products/cloud/features/cli) para criar e gerenciar resources a partir de um terminal. Para Managed ClickStack e chDB, siga os guias de produto vinculados no mapa de carga de trabalho.
+Para serviços ClickHouse ou Postgres no ClickHouse Cloud, use a [ClickHouse CLI](/pt-BR/products/cloud/features/cli) para criar e gerenciar resources a partir de um terminal. Para ClickHouse Observability e chDB, siga os guias de produto vinculados no mapa de carga de trabalho.
