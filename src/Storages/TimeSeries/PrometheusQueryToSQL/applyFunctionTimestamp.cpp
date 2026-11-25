@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionTimestamp.h>
 
-#include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,15 +7,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -160,20 +154,8 @@ bool isFunctionTimestamp(std::string_view function_name)
 SQLQueryPiece applyFunctionTimestamp(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    if (arguments.size() != 1)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function 'timestamp' expects 1 argument, but was called with {} arguments",
-                        arguments.size());
-    }
-
-    if (arguments[0].type != ResultType::INSTANT_VECTOR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function 'timestamp' expects an argument of type {}, but expression {} has type {}",
-                        ResultType::INSTANT_VECTOR,
-                        getPromQLText(arguments[0], context), arguments[0].type);
-    }
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
 
     const PrometheusQueryTree::Offset * offset_node = nullptr;
     const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_node);
