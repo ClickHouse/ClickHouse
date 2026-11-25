@@ -54,7 +54,7 @@ DROP TABLE t_alter_granularity;
 DROP TABLE IF EXISTS t_alter_granularity_fixed;
 CREATE TABLE t_alter_granularity_fixed (a UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 ALTER TABLE t_alter_granularity_fixed MODIFY SETTING index_granularity = 4096; -- { serverError READONLY_SETTING }
 
 -- A non-adaptive part brought into an adaptive table is read with that table's index_granularity, so

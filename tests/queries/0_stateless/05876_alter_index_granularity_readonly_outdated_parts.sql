@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_granularity_outdated;
 
 CREATE TABLE t_granularity_outdated_fixed (a UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 CREATE TABLE t_granularity_outdated (a UInt64)
 ENGINE = MergeTree ORDER BY a
