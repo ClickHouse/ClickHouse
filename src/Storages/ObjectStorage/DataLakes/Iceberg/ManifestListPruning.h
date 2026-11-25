@@ -27,13 +27,14 @@ public:
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
-    bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
+    [[nodiscard]] bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
 
 private:
     struct SpecCondition
     {
         DB::KeyDescription partition_key;
         DB::KeyCondition condition;
+        std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
         std::vector<IntegerTruncateField> integer_truncate_fields;
     };
 

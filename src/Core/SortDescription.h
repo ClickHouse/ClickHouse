@@ -154,11 +154,17 @@ public:
     size_t min_count_to_compile_sort_description = 3;
     bool compile_sort_description = false;
 
-    bool hasPrefix(const SortDescription & prefix) const;
+    [[nodiscard]] bool hasPrefix(const SortDescription & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
+
+/// True if comparison can declare equal the values that hash equality - the equality of `GROUP BY`,
+/// `DISTINCT`, `LIMIT BY` and `IN` - keeps apart, and that functions can tell apart: `-0.0` and `0.0`,
+/// and the `NaN` payloads. `Dynamic`, `Variant` and `Object` are only known at run time and may hold
+/// such a value. Nested types are checked too.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
 
 /// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
 /// are ordered by value. A collated column is ordered by its collation key, not by value, so equal

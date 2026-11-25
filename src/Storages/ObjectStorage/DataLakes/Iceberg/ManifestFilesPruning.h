@@ -45,6 +45,20 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     DB::ContextPtr context,
     bool keep_nullable = false);
 
+/// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits: a truncated value below INT32_MIN is stored plus 2^32, while
+/// `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these values; no `long` value truncates to one of them.
+/// For W > 2^30 Java's `(x % W) + W` also overflows and stores the same key for some x that truncate to 0, so it is not `exact`.
+struct Int32TruncateWraparound
+{
+    size_t tuple_index;
+    Int64 stored;
+    Int64 value;
+    bool exact;
+};
+
+std::vector<Int32TruncateWraparound> getInt32TruncateWraparounds(
+    const PartitionSpecification & partition_specification, const IcebergSchemaProcessor & schema_processor, Int32 schema_id);
+
 /// ClickHouse before 26.9 wrote `truncate[W]` of a negative integer as a value that is not a multiple of `W`;
 /// the rows of such a partition have the spec values on both sides of it.
 struct IntegerTruncateField
@@ -82,6 +96,7 @@ private:
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key = nullptr;
     std::optional<DB::KeyCondition> partition_key_condition;
+    std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
     /// The same key over Nullable inputs, for a partition tuple that holds NULL.
     std::optional<DB::KeyDescription> nullable_partition_key;
     std::optional<DB::KeyCondition> nullable_partition_key_condition;
@@ -106,9 +121,9 @@ public:
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
-    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+    [[nodiscard]] PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 
-    const std::unordered_map<Int32, DB::DataTypePtr> & getMinMaxColumnTypes() const { return min_max_column_types; }
+    [[nodiscard]] const std::unordered_map<Int32, DB::DataTypePtr> & getMinMaxColumnTypes() const { return min_max_column_types; }
 };
 
 }
