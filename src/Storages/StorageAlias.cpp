@@ -800,10 +800,7 @@ void registerStorageAlias(StorageFactory & factory)
         }
 
         if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
-        {
-            local_context->checkAccess(AccessType::USE_ALIAS_TABLE);
             local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
-        }
 
         /// The restrictions below read the catalog, so they may only judge freshly supplied input:
         /// an already accepted definition must stay loadable, because a rejection while loading
@@ -879,12 +876,11 @@ Without it, a user is denied everything that resolves through the target, regard
 
 - Reading and writing data: `SELECT` (including the trivial `count()` shortcut), `INSERT`, `ALTER` and mutations, `OPTIMIZE`, `TRUNCATE`, `CHECK`.
 - Target-derived metadata: `DESCRIBE`, the columns and sizes in `system.columns` and `system.tables`, schema inference, `hasColumnInTable`, and reads through `Merge`, `Buffer` and `remote` over an alias.
-- Creating a new alias table.
 - Tables of `Overlay` and `Remote` databases, which are internally represented by aliases.
 
 The privilege is part of the `ALL` group, so users with `GRANT ALL` hold it implicitly. Users with fine-grained grants must be granted it explicitly; grant it only to users who actually need to work through aliases.
 
-Operations that touch only the alias's own catalog entry and resolve nothing through the target — `DROP TABLE`, `RENAME TABLE`, `DETACH`/`ATTACH`, `SHOW CREATE TABLE`, listing the alias's name — stay governed by the ordinary privileges alone.
+Operations that touch only the alias's own catalog entry and resolve nothing through the target — `CREATE TABLE`, `DROP TABLE`, `RENAME TABLE`, `DETACH`/`ATTACH`, `SHOW CREATE TABLE`, listing the alias's name — stay governed by the ordinary privileges alone. To restrict who may create alias tables, use the `TABLE ENGINE` privilege (`GRANT TABLE ENGINE ON Alias`) together with the `access_control_improvements.table_engines_require_grant` server setting.
 
 ## Supported Operations {#supported-operations}
 

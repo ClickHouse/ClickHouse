@@ -42,8 +42,9 @@ echo -e "insert\t$(outcome "INSERT INTO ${db}.al VALUES (3)")"
 echo -e "alter\t$(outcome "ALTER TABLE ${db}.al UPDATE x = x WHERE 0")"
 echo -e "optimize\t$(outcome "OPTIMIZE TABLE ${db}.al")"
 echo -e "truncate\t$(outcome "TRUNCATE TABLE ${db}.al")"
-echo -e "create\t$(outcome "CREATE TABLE ${db}.al2 ENGINE = Alias('${db}', 'target')")"
 echo -e "describe\t$(outcome "DESCRIBE ${db}.al")"
+# Creating an alias is a lifecycle operation on the alias's own catalog entry, not gated by the grant.
+echo -e "create\t$(outcome "CREATE TABLE ${db}.al2 ENGINE = Alias('${db}', 'target')")"
 # The INSERT path always refuses in `StorageAlias`, so there the message names the missing grant.
 echo -e "insert_error_names_grant\t$(run_as_user "INSERT INTO ${db}.al VALUES (3)" | grep -q 'grant USE ALIAS TABLE ON' && echo 1 || echo 0)"
 echo -e "system_columns\t$(run_as_user "SELECT count() FROM system.columns WHERE database = '${db}' AND table = 'al'")"
@@ -59,7 +60,6 @@ echo -e "insert\t$(outcome "INSERT INTO ${db}.al VALUES (3)")"
 echo -e "count_after_insert\t$(run_as_user "SELECT count() FROM ${db}.al")"
 echo -e "columns\t$(run_as_user "SELECT name, type FROM system.columns WHERE database = '${db}' AND table = 'al' FORMAT TSV")"
 echo -e "system_tables_total_rows\t$(run_as_user "SELECT total_rows FROM system.tables WHERE database = '${db}' AND name = 'al'")"
-echo -e "create\t$(outcome "CREATE TABLE ${db}.al2 ENGINE = Alias('${db}', 'target')")"
 
 echo "-- the gate does not replace the per-table grants"
 ${CLICKHOUSE_CLIENT} -q "REVOKE SELECT ON ${db}.target FROM ${user}"
