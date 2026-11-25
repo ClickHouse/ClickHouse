@@ -104,7 +104,6 @@ public:
         /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
         /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
         std::unordered_set<String> timestamp_writer_paths;
-        std::unordered_set<String> binary_columns;
     };
     SchemaResult getSchemaResult();
     [[nodiscard]] const DB::Names & getPartitionColumns() const { return partition_columns; }
@@ -155,7 +154,6 @@ private:
         bool is_bool = false;
 
         bool is_timestamp_ntz = false;
-        bool is_binary = false;
     };
     using Fields = std::vector<Field>;
 
@@ -293,7 +291,7 @@ private:
             .visit_float = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float32>>,
             .visit_double = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Float64>>,
             .visit_boolean = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Int8, true>>,
-            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String, false, false, true>>,
+            .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
             .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
             .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
             .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64, false, true>>,
@@ -328,7 +326,7 @@ private:
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
-    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false, bool is_binary = false>
+    template <DB::TypeIndex type, bool is_bool = false, bool is_timestamp_ntz = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
@@ -357,7 +355,6 @@ private:
         SchemaVisitorData::Field field(column_name, std::move(type), nullable, physical_name);
         field.is_bool = is_bool;
         field.is_timestamp_ntz = is_timestamp_ntz;
-        field.is_binary = is_binary;
         it->second->push_back(std::move(field));
     }
 
@@ -508,9 +505,6 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         const std::string field_writer_path
             = parent_writer_path.empty() ? writer_component : parent_writer_path + "." + writer_component;
 
-        if (field.is_binary && list_idx == 0)
-            result.binary_columns.insert(field.name);
-
         DB::DataTypePtr type;
         if (field.is_bool)
         {
@@ -627,11 +621,7 @@ TableSchemaResult getTableSchemaFromSnapshot(
     SchemaVisitor::visitTableSchema(snapshot, data);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {
-        std::move(result.names_and_types),
-        std::move(result.physical_names_map),
-        std::move(result.timestamp_ntz_paths),
-        std::move(result.binary_columns)};
+    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
 }
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)

@@ -7226,9 +7226,7 @@ consistency between the schema used during query analysis and the schema used du
     DECLARE(Bool, use_delta_lake_metadata_cache, false, R"(
 If turned on, the `DeltaLake` table engine and table functions keep the list of data files of each version of a table in the Delta Lake metadata cache, so that the queries to the same version do not list the files from the log again.
 
-The cache keeps the partition values and the statistics (`numRecords`, `minValues`, `maxValues` and `nullCount`) of the files, and each query skips the files by them. The statistics are used for the top-level columns of the types `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Date32`, `DateTime64` and `String`.
-
-A version that has a file with a deletion vector is not kept in the cache: its files are listed from the log by each query.
+The files of a version are listed without the filter of the query, to be reused by other queries. So with this setting, the files are skipped only by the partition values, and not by the statistics in the log.
 
 Possible values:
 

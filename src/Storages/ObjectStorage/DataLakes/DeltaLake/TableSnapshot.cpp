@@ -27,22 +27,15 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataFileStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Common/assert_cast.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
-#include <arrow/array.h>
-#include <arrow/c/bridge.h>
-#include <arrow/record_batch.h>
 
 namespace DB::ErrorCodes
 {
@@ -62,7 +55,6 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
-    extern const Event DeltaLakeMinMaxPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
@@ -70,6 +62,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_lake_stats_scan_callback_throw[];
     extern const char delta_lake_metadata_callback_throw[];
 }
 
@@ -107,104 +100,6 @@ struct DataObjectInfo : public DB::ObjectInfo
     const int64_t size;
 };
 
-std::shared_ptr<arrow::Array> getArrowColumn(const arrow::RecordBatch & batch, const std::string & name, arrow::Type::type type)
-{
-    auto column = batch.GetColumnByName(name);
-    if (!column || column->type_id() != type)
-        throw DB::Exception(
-            DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "Unexpected column `{}` in the scan metadata of delta-kernel: {}",
-            name, column ? column->type()->ToString() : "missing");
-    return column;
-}
-
-std::shared_ptr<SnapshotDataFiles> listSnapshotDataFiles(
-    ffi::SharedSnapshot * snapshot,
-    ffi::SharedExternEngine * engine,
-    const StatisticsColumns & statistics_columns,
-    const std::function<bool()> & is_cancelled)
-{
-    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelScanMetadataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
-
-    KernelScan scan(KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */nullptr, /* schema */nullptr), "scan"));
-    KernelScanMetadataIterator scan_metadata_iterator(
-        KernelUtils::unwrapResult(ffi::scan_metadata_iter_init(engine, scan.get()), "scan_metadata_iter_init"));
-
-    DataFileStatisticsParser statistics_parser(statistics_columns);
-    auto result = std::make_shared<SnapshotDataFiles>();
-    while (!is_cancelled())
-    {
-        auto * scan_metadata = KernelUtils::unwrapResult(
-            ffi::scan_metadata_next_arrow(scan_metadata_iterator.get(), engine), "scan_metadata_next_arrow");
-        if (!scan_metadata)
-            return result;
-        SCOPE_EXIT({ ffi::free_scan_metadata_arrow_result(scan_metadata); });
-
-        auto imported_batch = arrow::ImportRecordBatch(
-            reinterpret_cast<ArrowArray *>(&scan_metadata->arrow_data.array),
-            reinterpret_cast<ArrowSchema *>(&scan_metadata->arrow_data.schema));
-        if (!imported_batch.ok())
-            DB::throwFromArrowStatus(imported_batch.status(), DB::ErrorCodes::DELTA_KERNEL_ERROR, "Failed to import the scan metadata of delta-kernel");
-        const arrow::RecordBatch & batch = **imported_batch;
-        DB::ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(batch);
-
-        const auto & paths = assert_cast<const arrow::StringArray &>(*getArrowColumn(batch, "path", arrow::Type::STRING));
-        const auto & sizes = assert_cast<const arrow::Int64Array &>(*getArrowColumn(batch, "size", arrow::Type::INT64));
-        const auto & stats = assert_cast<const arrow::StringArray &>(*getArrowColumn(batch, "stats", arrow::Type::STRING));
-        const auto & deletion_vectors = assert_cast<const arrow::StructArray &>(
-            *getArrowColumn(batch, "deletionVector", arrow::Type::STRUCT));
-        const auto deletion_vector_storage_types = deletion_vectors.GetFieldByName("storageType");
-        if (!deletion_vector_storage_types)
-            throw DB::Exception(
-                DB::ErrorCodes::DELTA_KERNEL_ERROR, "No `deletionVector.storageType` in the scan metadata of delta-kernel");
-
-        const auto & selection_vector = scan_metadata->selection_vector;
-        for (int64_t row = 0; row < batch.num_rows(); ++row)
-        {
-            if (static_cast<size_t>(row) < selection_vector.len && !selection_vector.ptr[row])
-                continue;
-            if (paths.IsNull(row))
-                continue;
-
-            if (deletion_vector_storage_types->IsValid(row))
-            {
-                result->files.clear();
-                result->has_deletion_vectors = true;
-                return result;
-            }
-
-            ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
-
-            auto file = std::make_shared<ScannedDataFile>();
-            file->path = paths.GetString(row);
-            file->size = sizes.Value(row);
-            if (stats.IsValid(row))
-            {
-                file->statistics = statistics_parser.parse(stats.GetView(row));
-                file->num_records = file->statistics->num_records;
-            }
-            auto transform = ffi::get_transform_for_row(static_cast<uintptr_t>(row), scan_metadata->transforms);
-            if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
-                file->transform.emplace(transform.some._0);
-            result->files.push_back(std::move(file));
-        }
-    }
-    return nullptr;
-}
-
-std::optional<size_t> getTotalRowsOfFilesWithoutDeletionVectors(const SnapshotDataFiles & data_files)
-{
-    size_t total_rows = 0;
-    for (const auto & file : data_files.files)
-    {
-        if (!file->num_records)
-            return std::nullopt;
-        total_rows += *file->num_records;
-    }
-    return total_rows;
-}
-
 }
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
@@ -219,7 +114,6 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
-        const StatisticsColumns & statistics_columns_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -239,7 +133,6 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
-        , statistics_columns(statistics_columns_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -276,12 +169,11 @@ public:
                 name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
-        use_engine_predicate = filter.has_value() && enable_engine_predicate;
-        list_with_statistics = metadata_cache && !cached_data_files_;
-        if (filter && metadata_cache && !(cached_data_files_ && cached_data_files_->has_deletion_vectors))
-            statistics_pruner.emplace(*filter, statistics_columns, getContext());
+        use_engine_predicate = filter.has_value() && enable_engine_predicate && !metadata_cache;
+        if (metadata_cache && !cached_data_files_)
+            collector.emplace(metadata_cache->maxSizeInBytes());
 
-        if (cached_data_files_ && !cached_data_files_->has_deletion_vectors)
+        if (cached_data_files_)
         {
             data_files.assign(cached_data_files_->files.begin(), cached_data_files_->files.end());
             iterator_finished = true;
@@ -426,29 +318,6 @@ public:
             {
                 try
                 {
-                    if (list_with_statistics)
-                    {
-                        auto listed_data_files = listSnapshotDataFiles(
-                            kernel_snapshot_state->snapshot.get(),
-                            kernel_snapshot_state->engine.get(),
-                            statistics_columns,
-                            [this] { return shutdown.load(); });
-                        if (!listed_data_files)
-                            return;
-
-                        list_with_statistics = false;
-                        if (!listed_data_files->has_deletion_vectors)
-                        {
-                            publishListedDataFiles(std::move(listed_data_files));
-                            return;
-                        }
-
-                        LOG_TEST(
-                            log, "Data files at version {} have deletion vectors, they are not kept in the metadata cache",
-                            kernel_snapshot_state->snapshot_version);
-                        metadata_cache->set(metadata_cache_key, std::move(listed_data_files));
-                    }
-
                     initScanState();
 
                     LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
@@ -477,12 +346,17 @@ public:
                         }
                         else
                         {
+                            bool scan_completed = false;
                             {
                                 std::lock_guard lock(next_mutex);
                                 iterator_finished = true;
+                                scan_completed = !scan_exception && !shutdown;
                                 LOG_TEST(log, "Set finished");
                             }
                             data_files_cv.notify_all();
+
+                            if (collector && collector->isActive() && scan_completed)
+                                metadata_cache->set(metadata_cache_key, collector->release());
 
                             LOG_TRACE(
                                 log, "All data files at version {} were listed "
@@ -522,37 +396,6 @@ public:
             data_files_cv.notify_all();
             LOG_DEBUG(log, "Exception during scan_metadata_next");
         }
-    }
-
-    void publishListedDataFiles(std::shared_ptr<SnapshotDataFiles> listed_data_files)
-    {
-        const auto total_rows_of_files = getTotalRowsOfFilesWithoutDeletionVectors(*listed_data_files);
-        size_t total_bytes_of_files = 0;
-        for (const auto & file : listed_data_files->files)
-            total_bytes_of_files += static_cast<size_t>(file->size);
-
-        {
-            std::lock_guard lock(next_mutex);
-            data_files.assign(listed_data_files->files.begin(), listed_data_files->files.end());
-            total_data_files = listed_data_files->files.size();
-            total_bytes = total_bytes_of_files;
-            total_rows = total_rows_of_files;
-            iterator_finished = true;
-        }
-        data_files_cv.notify_all();
-
-        LOG_TRACE(
-            log, "All data files at version {} were listed with statistics (total data files: {}, total rows: {}, total bytes: {})",
-            kernel_snapshot_state->snapshot_version,
-            total_data_files,
-            total_rows ? DB::toString(*total_rows) : "Unknown",
-            total_bytes);
-
-        if (update_stats_func)
-            update_stats_func(SnapshotStats{.total_bytes = total_bytes, .total_rows = total_rows});
-
-        if (DB::DeltaLakeMetadataCacheWeightFunction{}(*listed_data_files) <= metadata_cache->maxSizeInBytes())
-            metadata_cache->set(metadata_cache_key, std::move(listed_data_files));
     }
 
     size_t estimatedKeysCount() override
@@ -601,13 +444,6 @@ public:
             }
 
             schedule_next_batch_cv.notify_one();
-
-            if (statistics_pruner && scan_item->statistics && statistics_pruner->canBePruned(*scan_item->statistics))
-            {
-                ProfileEvents::increment(ProfileEvents::DeltaLakeMinMaxPrunedFiles);
-                LOG_TEST(log, "Skipping file {} according to the statistics", scan_item->path);
-                continue;
-            }
 
             DB::ObjectInfoPtr object = std::make_shared<DataObjectInfo>(
                 helper->resolveDataFilePath(scan_item->path, getContext()), scan_item->size);
@@ -815,6 +651,9 @@ public:
             "Scanned file: {}, size: {}, num records: {}",
             file->path, size, stats ? DB::toString(stats->num_records) : "Unknown");
 
+        if (context->collector)
+            context->collector->add(file);
+
         {
             std::lock_guard lock(context->next_mutex);
             context->data_files.push_back(std::move(file));
@@ -846,13 +685,11 @@ private:
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
-    std::optional<StatisticsPruner> statistics_pruner;
 
     KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
-    const StatisticsColumns statistics_columns;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -863,7 +700,7 @@ private:
     const DB::DeltaLakeMetadataCachePtr metadata_cache;
     const String metadata_cache_key;
     bool use_engine_predicate = false;
-    bool list_with_statistics = false;
+    std::optional<SnapshotDataFilesCollector> collector;
 
     std::exception_ptr scan_exception;
     std::exception_ptr engine_predicate_exception;
@@ -925,7 +762,7 @@ size_t TableSnapshot::getVersionUnlocked() const
 std::pair<DB::DeltaLakeMetadataCachePtr, String>
 TableSnapshot::getMetadataCache(const DB::ContextPtr & context, const KernelSnapshotState & state) const
 {
-    if (!USE_SIMDJSON || !context->getSettingsRef()[DB::Setting::use_delta_lake_metadata_cache])
+    if (!context->getSettingsRef()[DB::Setting::use_delta_lake_metadata_cache])
         return {};
     auto metadata_cache = context->getDeltaLakeMetadataCache();
     if (!metadata_cache || !metadata_cache->maxSizeInBytes())
@@ -968,27 +805,21 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
     auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
     if (metadata_cache)
     {
-        auto data_files = metadata_cache->get(metadata_cache_key);
-        if (!data_files)
+        if (auto cached_data_files = metadata_cache->get(metadata_cache_key))
         {
-            initOrUpdateSchemaIfChanged();
-            auto listed_data_files = listSnapshotDataFiles(
-                state->snapshot.get(), state->engine.get(), schema->statistics_columns, [] { return false; });
-            if (listed_data_files->has_deletion_vectors
-                || DB::DeltaLakeMetadataCacheWeightFunction{}(*listed_data_files) <= metadata_cache->maxSizeInBytes())
-                metadata_cache->set(metadata_cache_key, listed_data_files);
-            data_files = std::move(listed_data_files);
-        }
-
-        if (!data_files->has_deletion_vectors)
-        {
-            SnapshotStats stats{.total_bytes = 0, .total_rows = getTotalRowsOfFilesWithoutDeletionVectors(*data_files)};
-            for (const auto & file : data_files->files)
+            SnapshotStats stats{.total_bytes = 0, .total_rows = 0};
+            for (const auto & file : cached_data_files->files)
+            {
                 *stats.total_bytes += static_cast<size_t>(file->size);
+                if (file->num_records && !hasDeletionVector(file->dv_info.get()) && stats.total_rows)
+                    *stats.total_rows += *file->num_records;
+                else
+                    stats.total_rows = std::nullopt;
+            }
             LOG_TEST(
-                log, "Snapshot at version {} data files with statistics: {}, total rows: {}, total bytes: {}",
+                log, "Snapshot at version {} data files from the metadata cache: {}, total rows: {}, total bytes: {}",
                 state->snapshot_version,
-                data_files->files.size(),
+                cached_data_files->files.size(),
                 stats.total_rows ? DB::toString(*stats.total_rows) : "Unknown",
                 *stats.total_bytes);
             return stats;
@@ -1012,9 +843,15 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
     struct StatsVisitor
     {
-        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+        StatsVisitor(ffi::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight)
+            : engine(engine_)
+        {
+            if (max_cached_weight)
+                collector.emplace(*max_cached_weight);
+        }
 
         ffi::SharedExternEngine * const engine;
+        std::optional<SnapshotDataFilesCollector> collector;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -1025,7 +862,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
         static bool visit(
             ffi::NullableCvoid engine_context,
-            struct ffi::KernelStringSlice /* path */,
+            struct ffi::KernelStringSlice path,
             int64_t size,
             int64_t /* mod_time */,
             const ffi::Stats * stats,
@@ -1034,22 +871,49 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
             const struct ffi::CStringMap * /* deprecated */)
         {
             /// Wrap handles in RAII immediately to ensure cleanup on any exit path
-            /// TODO: Actually we do not need any transforms/dv_info to exist here,
-            /// so it would be better to implement in delta-kernel scanCallback
-            /// which will only collect stats.
             KernelDvInfo dv_info_handle(dv_info);
             std::optional<KernelExpression> transform_handle;
             if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
                 transform_handle.emplace(transform.some._0);
 
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
-            visitor->total_data_files += 1;
-            visitor->total_bytes += static_cast<size_t>(size);
-            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
-                visitor->total_rows.value() += stats->num_records;
-            else
-                visitor->total_rows = std::nullopt;
-            return true;
+            try
+            {
+                visitor->total_data_files += 1;
+                visitor->total_bytes += static_cast<size_t>(size);
+                if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
+                    visitor->total_rows.value() += stats->num_records;
+                else
+                    visitor->total_rows = std::nullopt;
+
+                if (visitor->collector)
+                {
+                    ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
+                    fiu_do_on(DB::FailPoints::delta_lake_stats_scan_callback_throw,
+                    {
+                        throw DB::Exception(
+                            DB::ErrorCodes::DELTA_KERNEL_ERROR, "Forced by the delta_lake_stats_scan_callback_throw failpoint");
+                    });
+                }
+
+                if (visitor->collector && visitor->collector->isActive())
+                {
+                    auto file = std::make_shared<ScannedDataFile>();
+                    file->path = KernelUtils::fromDeltaString(path);
+                    file->size = size;
+                    if (stats)
+                        file->num_records = stats->num_records;
+                    file->dv_info = std::move(dv_info_handle);
+                    file->transform = std::move(transform_handle);
+                    visitor->collector->add(file);
+                }
+                return true;
+            }
+            catch (...)
+            {
+                visitor->exception = std::current_exception();
+                return false;
+            }
         }
 
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
@@ -1078,7 +942,8 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         }
     };
 
-    StatsVisitor visitor(state->engine.get());
+    StatsVisitor visitor(
+        state->engine.get(), metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt);
 
     while (true)
     {
@@ -1096,6 +961,9 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         if (!have_scan_data)
             break;
     }
+
+    if (visitor.collector && visitor.collector->isActive())
+        metadata_cache->set(metadata_cache_key, visitor.collector->release());
 
     LOG_TEST(
         log, "Snapshot at version {} data files: {}, total rows: {}, total bytes: {}",
@@ -1304,7 +1172,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
-        schema->statistics_columns,
         filter_dag,
         callback,
         list_batch_size,
@@ -1324,7 +1191,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map, timestamp_ntz_paths, binary_columns]
+        auto [table_schema, physical_names_map, timestamp_ntz_paths]
             = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
@@ -1347,14 +1214,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             fmt::join(partition_columns, ", "),
             physical_names_map.size());
 
-        auto statistics_columns = getStatisticsColumns(table_schema, partition_columns, binary_columns, physical_names_map);
         schema.emplace(SchemaInfo{
             .table_schema = std::move(table_schema),
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
             .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
-            .statistics_columns = std::move(statistics_columns),
         });
     }
 }

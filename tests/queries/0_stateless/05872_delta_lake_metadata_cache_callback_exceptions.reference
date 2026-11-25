@@ -1,2 +1,5 @@
+Forced by the delta_lake_stats_scan_callback_throw failpoint
+stats scan	100
+stats scan again	100
 Forced by the delta_lake_metadata_callback_throw failpoint
 metadata without failpoint	100
