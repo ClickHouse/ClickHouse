@@ -94,6 +94,10 @@ SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(b Int32, a Nullable(Int32))') SETTINGS input_format_null_as_default = 1, input_format_native_allow_types_conversion = 0;
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(a Int32)') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
 SELECT * FROM file(currentDatabase() || '_05618_positional.Native', 'Native', 't Tuple(a Int32, b Nullable(Int32), c Int32)') SETTINGS input_format_native_allow_types_conversion = 0; -- { serverError TYPE_MISMATCH }
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_geo.Native', 'Native') SELECT
+    [(0., 0.), (1., 1.)]::LineString AS l, [[(0., 0.), (1., 0.), (1., 1.)]]::Polygon AS p, (1., 2.)::Point AS pt,
+    [l] AS al, (p, 1) AS tp, map('k', l) AS ml;
+SELECT * FROM file(currentDatabase() || '_05618_geo.Native', 'Native', 'l MultiLineString, p MultiPolygon, pt MultiPoint, al Array(MultiLineString), tp Tuple(MultiPolygon, UInt8), ml Map(String, MultiLineString)');
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_union.ORC', 'ORC') SELECT
     number AS id,

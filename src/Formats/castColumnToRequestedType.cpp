@@ -140,6 +140,9 @@ ColumnWithTypeAndName prepareForCast(
         const auto & from_arr_column = assert_cast<const ColumnArray &>(*from.column);
         auto prepared = prepareForCast(
             {from_arr_column.getDataPtr(), from_arr->getNestedType(), from.name}, to_arr->getNestedType(), settings);
+        /// An unchanged array keeps its custom name, such as `LineString`, which `CAST` needs for the geometry promotions.
+        if (prepared.column == from_arr_column.getDataPtr() && prepared.type == from_arr->getNestedType())
+            return from;
         from.column = ColumnArray::create(prepared.column, from_arr_column.getOffsetsPtr());
         from.type = std::make_shared<DataTypeArray>(prepared.type);
         return from;
