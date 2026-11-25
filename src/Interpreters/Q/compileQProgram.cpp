@@ -2244,10 +2244,14 @@ QValue QCompiler::compileDelete(const QSQLTemplate & sql, const QTable & source,
     }
     if (!condition)
     {
-        QValue unchanged;
-        unchanged.kind = QValueKind::Table;
-        unchanged.table = std::make_shared<QTable>(source);
-        return unchanged;
+        /// `delete from t` without the where phrase deletes all the rows:
+        /// the result has the columns and the keys of the table, and no rows.
+        QSelectBuilder empty;
+        empty.from = source.table_expression;
+        for (const auto & column : source.columns)
+            empty.select.push_back(makeIdentifier(column.name));
+        empty.limit = makeLiteral(Field(static_cast<UInt64>(0)));
+        return makeTable(empty.build(), source.keys);
     }
 
     String flag = newName();
