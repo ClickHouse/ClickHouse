@@ -7,12 +7,10 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Aunque la [inferencia de esquemas](/es/guides/clickhouse/data-formats/json/inference) puede utilizarse para definir un esquema inicial para datos JSON y consultar archivos de datos JSON directamente en su ubicación, por ejemplo en S3, conviene definir una versión optimizada y con control de versiones del esquema para tus datos. A continuación, explicamos el enfoque recomendado para modelar estructuras JSON.
 
 <div id="static-vs-dynamic-json">
-  ## JSON estático vs. dinámico
+  ## JSON estático vs. dinámico {#static-vs-dynamic-json}
 </div>
 
 La tarea principal al definir un esquema para JSON es determinar el tipo adecuado para el valor de cada clave. Recomendamos aplicar las siguientes reglas de forma recursiva a cada clave de la jerarquía JSON para determinar el tipo adecuado de cada una.
@@ -88,7 +86,7 @@ Aplicando estas reglas:
 </Note>
 
 <div id="handling-static-structures">
-  ## Manejo de estructuras estáticas
+  ## Manejo de estructuras estáticas {#handling-static-structures}
 </div>
 
 Recomendamos manejar las estructuras estáticas mediante tuplas con nombre, es decir, `Tuple`. Los arrays de objetos pueden almacenarse como arrays de tuplas, es decir, `Array(Tuple)`. Dentro de las propias tuplas, las columnas y sus respectivos tipos deben definirse siguiendo las mismas reglas. Esto puede dar lugar a `Tuple` anidados para representar objetos anidados, como se muestra a continuación.
@@ -204,7 +202,7 @@ ORDER BY company.name
 ```
 
 <div id="handling-default-values">
-  ### Manejo de valores predeterminados
+  ### Manejo de valores predeterminados {#handling-default-values}
 </div>
 
 Aunque los objetos JSON tengan una estructura definida, a menudo son dispersos y solo incluyen un subconjunto de las claves conocidas. Afortunadamente, el tipo `Tuple` no requiere todas las columnas en el payload JSON. Si no se proporcionan, se usarán valores predeterminados.
@@ -290,7 +288,7 @@ FORMAT PrettyJSONEachRow
 </Info>
 
 <div id="handling-new-columns">
-  ### Gestión de columnas nuevas
+  ### Gestión de columnas nuevas {#handling-new-columns}
 </div>
 
 Aunque un enfoque estructurado es lo más sencillo cuando las claves JSON son estáticas, este enfoque también puede usarse si los cambios en el esquema pueden planificarse; es decir, si las nuevas claves se conocen de antemano y el esquema puede modificarse en consecuencia.
@@ -373,7 +371,7 @@ SELECT id, nickname FROM people
 ```
 
 <div id="handling-semi-structured-dynamic-structures">
-  ## Manejo de estructuras semiestructuradas/dinámicas
+  ## Manejo de estructuras semiestructuradas/dinámicas {#handling-semi-structured-dynamic-structures}
 </div>
 
 Si los datos JSON son semiestructurados, con claves que pueden añadirse dinámicamente y/o tener varios tipos, se recomienda el tipo [`JSON`](/es/reference/data-types/newjson).
@@ -504,23 +502,19 @@ Un esquema estricto tiene varias ventajas:
 * **Evita el riesgo de explosión de columnas** - Aunque el tipo JSON puede escalar hasta potencialmente miles de columnas, donde las subcolumnas se almacenan como columnas dedicadas, esto puede provocar una explosión de archivos de columnas, en la que se crea un número excesivo de archivos que afecta al rendimiento. Para mitigarlo, el [tipo Dynamic](/es/reference/data-types/dynamic) subyacente que usa JSON ofrece un parámetro [`max_dynamic_paths`](/es/reference/data-types/newjson#reading-json-paths-as-sub-columns), que limita el número de rutas únicas almacenadas como archivos de columnas independientes. Una vez alcanzado el umbral, las rutas adicionales se almacenan en un archivo de columna compartido mediante un formato codificado compacto, lo que mantiene el rendimiento y la eficiencia del almacenamiento a la vez que admite una ingestión de datos flexible. Sin embargo, acceder a este archivo de columna compartido no ofrece el mismo rendimiento. Tenga en cuenta, no obstante, que la columna JSON puede usarse con [sugerencias de tipo](#using-type-hints-and-skipping-paths). Las columnas con sugerencias de tipo ofrecerán el mismo rendimiento que las columnas dedicadas.
 * **Introspección más sencilla de rutas y tipos** - Aunque el tipo JSON admite [funciones de introspección](/es/reference/data-types/newjson#introspection-functions) para determinar los tipos y las rutas que se han inferido, las estructuras estáticas pueden ser más fáciles de explorar, por ejemplo, con `DESCRIBE`.
 
-<div id="single-json-column">
-  ### Una única columna JSON
-</div>
+### Una única columna JSON {#single-json-column}
 
 Este enfoque es útil para la creación de prototipos y las tareas de ingeniería de datos. En producción, intente usar `JSON` solo para subestructuras dinámicas cuando sea necesario.
 
 <Info>
   **Consideraciones de rendimiento**
 
-  Una única columna JSON puede optimizarse omitiendo (sin almacenar) las rutas JSON que no se requieren y usando [indicaciones de tipo](#using-type-hints-and-skipping-paths). Las pistas de tipo permiten al usuario definir explícitamente el tipo de una subcolumna, evitando así la inferencia y el procesamiento de indirección en tiempo de consulta. Esto puede utilizarse para ofrecer el mismo rendimiento que si se usara un esquema explícito. Consulte [&quot;Uso de pistas de tipo y omisión de rutas&quot;](#using-type-hints-and-skipping-paths) para obtener más detalles.
+  Una única columna JSON puede optimizarse omitiendo (sin almacenar) las rutas JSON que no se requieren y usando [indicaciones de tipo](#using-type-hints-and-skipping-paths). Las indicaciones de tipo permiten al usuario definir explícitamente el tipo de una subcolumna, evitando así la inferencia y el procesamiento de indirección en tiempo de consulta. Esto puede utilizarse para ofrecer el mismo rendimiento que si se usara un esquema explícito. Consulte [&quot;Uso de indicaciones de tipo y omisión de rutas&quot;](#using-type-hints-and-skipping-paths) para obtener más detalles.
 </Info>
 
 El esquema para una única columna JSON aquí es sencillo:
 
 ```sql
-SET enable_json_type = 1;
-
 CREATE TABLE people
 (
     `json` JSON(username String)
@@ -531,6 +525,10 @@ ORDER BY json.username;
 
 <Note>
   Proporcionamos una [indicación de tipo](#using-type-hints-and-skipping-paths) para la columna `username` en la definición JSON, ya que la usamos en la clave de ordenación/clave primaria. Esto ayuda a ClickHouse a saber que esta columna no será NULL y garantiza que sepa qué subcolumna `username` debe usar (puede haber varias para cada tipo, por lo que, de lo contrario, sería ambiguo).
+</Note>
+
+<Note>
+  En las versiones 24.8 a 25.2, active el tipo `JSON` con `SET allow_experimental_json_type = 1;` antes de crear la tabla.
 </Note>
 
 La inserción de filas en la tabla anterior puede realizarse usando el formato `JSONAsObject`:
@@ -702,7 +700,7 @@ FROM people
 ```
 
 <div id="targeted-json-column">
-  ### Columna JSON dirigida
+  ### Columna JSON dirigida {#targeted-json-column}
 </div>
 
 Si bien resulta útil en la creación de prototipos y en tareas de ingeniería de datos, recomendamos utilizar un esquema explícito en producción siempre que sea posible.
@@ -808,7 +806,7 @@ FORMAT PrettyJsonEachRow
 ```
 
 <div id="using-type-hints-and-skipping-paths">
-  ### Uso de indicaciones de tipo y rutas excluidas
+  ### Uso de indicaciones de tipo y rutas excluidas {#using-type-hints-and-skipping-paths}
 </div>
 
 Las indicaciones de tipo nos permiten especificar el tipo de una ruta y de su sub-columna, lo que evita una inferencia de tipos innecesaria. Considere el siguiente ejemplo, en el que especificamos los tipos de las claves JSON `dissolved`, `employees` y `founded` dentro de la columna JSON `company.labels`
@@ -974,7 +972,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 <div id="optimizing-performance-with-type-hints">
-  #### Optimización del rendimiento con indicaciones de tipo
+  #### Optimización del rendimiento con indicaciones de tipo {#optimizing-performance-with-type-hints}
 </div>
 
 Las indicaciones de tipo ofrecen mucho más que una forma de evitar la inferencia de tipos innecesaria: eliminan por completo la indirección en el almacenamiento y el procesamiento, y además permiten especificar [tipos primitivos óptimos](/es/guides/clickhouse/data-modelling/schema-design#optimizing-types). Las rutas JSON con indicaciones de tipo siempre se almacenan igual que las columnas tradicionales, evitando la necesidad de [**columnas discriminadoras**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) o de resolución dinámica en tiempo de consulta.
@@ -983,25 +981,35 @@ Esto significa que, con indicaciones de tipo bien definidas, las claves JSON ani
 
 Como resultado, en conjuntos de datos que son mayoritariamente consistentes pero que aun así se benefician de la flexibilidad de JSON, las indicaciones de tipo ofrecen una forma práctica de preservar el rendimiento sin necesidad de reestructurar el esquema ni la canalización de ingesta.
 
-<div id="configuring-dynamic-paths">
-  ### Configuración de rutas dinámicas
-</div>
+### Configuración de rutas dinámicas {#configuring-dynamic-paths}
 
 ClickHouse almacena cada ruta JSON como una subcolumna en un diseño realmente columnar, lo que permite obtener las mismas ventajas de rendimiento que con las columnas tradicionales, como la compresión, el procesamiento acelerado por SIMD y una mínima E/S de disco. Cada combinación única de ruta y tipo en sus datos JSON puede convertirse en su propio archivo de columna en disco.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Columna por ruta JSON" />
+<div className="ch-image-md">
+  <Frame>
+    ![Columna por ruta JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+  </Frame>
+</div>
 
 Por ejemplo, cuando se insertan dos rutas JSON con tipos distintos, ClickHouse almacena los valores de cada [tipo concreto en subcolumnas independientes](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Se puede acceder a estas subcolumnas de forma independiente, lo que minimiza la E/S innecesaria. Tenga en cuenta que, al consultar una columna con varios tipos, sus valores se siguen devolviendo como una única respuesta columnar.
 
 Además, al aprovechar los offsets, ClickHouse garantiza que estas subcolumnas sigan siendo densas, sin almacenar valores predeterminados para las rutas JSON ausentes. Este enfoque maximiza la compresión y reduce aún más la E/S.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="Offsets JSON" />
+<div className="ch-image-md">
+  <Frame>
+    ![Offsets JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+  </Frame>
+</div>
 
 Sin embargo, en escenarios con estructuras JSON de alta cardinalidad o muy variables, como pipelines de telemetría, logs o feature stores de aprendizaje automático, este comportamiento puede provocar una proliferación de archivos de columna. Cada nueva ruta JSON única da lugar a un nuevo archivo de columna, y cada variante de tipo en esa ruta genera un archivo de columna adicional. Aunque esto es óptimo para el rendimiento de lectura, introduce retos operativos: agotamiento de descriptores de archivo, mayor uso de memoria y merges más lentos debido al gran número de archivos pequeños.
 
 Para mitigar esto, ClickHouse introduce el concepto de subcolumna de desbordamiento: una vez que el número de rutas JSON distintas supera un umbral, las rutas adicionales se almacenan en un único archivo compartido mediante un formato codificado compacto. Este archivo sigue siendo consultable, pero no se beneficia de las mismas características de rendimiento que las subcolumnas dedicadas.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Columna JSON compartida" />
+<div className="ch-image-md">
+  <Frame>
+    ![Columna JSON compartida](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+  </Frame>
+</div>
 
 Este umbral se controla mediante el parámetro [`max_dynamic_paths`](/es/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) en la declaración del tipo JSON.
 

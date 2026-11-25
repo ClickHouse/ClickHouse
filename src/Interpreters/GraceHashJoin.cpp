@@ -7,7 +7,6 @@
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <base/FnTraits.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
@@ -123,27 +122,13 @@ namespace
         bool eof = false;
     };
 
-    std::deque<size_t> generateRandomPermutation(size_t from, size_t to)
+    std::vector<size_t> generateRandomPermutation(size_t from, size_t to)
     {
         size_t size = to - from;
-        std::deque<size_t> indices(size);
+        std::vector<size_t> indices(size);
         std::iota(indices.begin(), indices.end(), from);
         std::shuffle(indices.begin(), indices.end(), thread_local_rng);
         return indices;
-    }
-
-    // Try to apply @callback in the order specified in @indices
-    // Until it returns true for each index in the @indices.
-    void retryForEach(std::deque<size_t> indices, Fn<bool(size_t)> auto callback)
-    {
-        while (!indices.empty())
-        {
-            size_t bucket_index = indices.front();
-            indices.pop_front();
-
-            if (!callback(bucket_index))
-                indices.push_back(bucket_index);
-        }
     }
 }
 
@@ -267,25 +252,42 @@ template <JoinTableSide table_side>
 void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets, size_t except_index = 0)
 {
     chassert(blocks.size() == buckets.size());
-    retryForEach(
-        generateRandomPermutation(1, buckets.size()), // skipping 0 block, since we join it in memory w/o spilling on disk
-        [&](size_t i)
-        {
-            /// Skip empty and current bucket
-            if (!blocks[i].rows() || i == except_index)
-                return true;
 
-            bool flushed = false;
-            if constexpr (table_side == JoinTableSide::Left)
-                flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
-            if constexpr (table_side == JoinTableSide::Right)
-                flushed = buckets[i]->tryAddRightBlock(blocks[i]);
+    /// The buckets whose file was being written by another thread when we tried them.
+    std::vector<size_t> busy_buckets;
 
-            if (flushed)
-                blocks[i].clear();
+    /// First, write to the buckets that are free at the moment.
+    /// The order is random, so that the threads do not go to the same buckets at the same time.
+    for (size_t i : generateRandomPermutation(1, buckets.size())) // skipping 0 block, since we join it in memory w/o spilling on disk
+    {
+        /// Skip empty and current bucket
+        if (!blocks[i].rows() || i == except_index)
+            continue;
 
-            return flushed;
-        });
+        bool flushed = false;
+        if constexpr (table_side == JoinTableSide::Left)
+            flushed = buckets[i]->tryAddLeftBlock(blocks[i]);
+        if constexpr (table_side == JoinTableSide::Right)
+            flushed = buckets[i]->tryAddRightBlock(blocks[i]);
+
+        if (flushed)
+            blocks[i].clear();
+        else
+            busy_buckets.push_back(i);
+    }
+
+    /// Then wait for the others. It is important to wait on the mutex and not to try again in a loop:
+    /// the owner of a mutex compresses and writes a block while holding it, so with many threads and
+    /// few buckets the threads would spend most of the CPU time on the attempts to lock.
+    for (size_t i : busy_buckets)
+    {
+        if constexpr (table_side == JoinTableSide::Left)
+            buckets[i]->addLeftBlock(blocks[i]);
+        if constexpr (table_side == JoinTableSide::Right)
+            buckets[i]->addRightBlock(blocks[i]);
+
+        blocks[i].clear();
+    }
 }
 }
 
@@ -297,7 +299,8 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    size_t max_threads_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -306,6 +309,7 @@ GraceHashJoin::GraceHashJoin(
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
+    , max_threads(std::max<size_t>(1, max_threads_))
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -847,8 +851,11 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
+    /// One bucket: 256 buckets of empty buffers would count against `max_bytes_before_external_join` and could make
+    /// Grace rehash past `grace_hash_join_max_buckets`. The inserts are serialized, but each build stream finds its
+    /// lists by its own id, so the join gets `max_threads` of them.
     auto join = std::make_unique<HashJoin>(
-        table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*is_concurrent_hash_join*/ false);
+        table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, HashJoinBuildLayout::oneBucket(max_threads));
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that
     /// can happen at any point, so these blocks are never dropped.
     join->keepRightBlocksForAnotherAlgorithm();
@@ -1001,7 +1008,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
             block_added = true;
-            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+            size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;

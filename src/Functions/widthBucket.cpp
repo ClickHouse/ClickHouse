@@ -23,6 +23,8 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <limits>
+#include <type_traits>
 #include <string>
 
 namespace DB
@@ -79,7 +81,7 @@ class FunctionWidthBucket final : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (count == 0)
         {
@@ -101,13 +103,25 @@ class FunctionWidthBucket final : public IFunction
         }
         if (operand >= high)
         {
-            return count + 1;
+            /// The result type is deliberately one step wider than the count type so that this fits.
+            /// `UInt64` is the exception - nothing is wider - so reject the one count that would wrap
+            /// to zero, which is the bucket meaning "below the range".
+            if constexpr (std::is_same_v<TCountType, TResultType>)
+            {
+                if (count == std::numeric_limits<TCountType>::max())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Last argument (count) for function {} is too large: the bucket for an operand above the range "
+                        "would be count + 1, which does not fit the result type",
+                        getName());
+            }
+            return static_cast<TResultType>(static_cast<TResultType>(count) + 1);
         }
         return std::nullopt;
     }
 
     template <typename TResultType, typename TCountType>
-    TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (const auto maybe_early_return = checkArguments<TResultType>(operand, low, high, count); maybe_early_return.has_value())
         {
@@ -125,7 +139,7 @@ class FunctionWidthBucket final : public IFunction
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
-    ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
@@ -185,11 +199,11 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWidthBucket>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return
             "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
@@ -197,9 +211,9 @@ public:
             " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         switch (arguments[3].type->getTypeId())
@@ -219,7 +233,9 @@ public:
         UNREACHABLE();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero bucket count is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 };
 
 REGISTER_FUNCTION(WidthBucket)
