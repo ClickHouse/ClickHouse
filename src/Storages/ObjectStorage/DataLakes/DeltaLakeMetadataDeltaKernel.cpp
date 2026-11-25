@@ -853,6 +853,10 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
+    /// The kernel requires the statistics of the clustering columns, and the writer only writes `numRecords`.
+    if (snapshot->hasWriterFeature("clustering"))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writing to clustered DeltaLake tables is not supported");
+
     auto write_object_storage = object_storage_;
     auto write_kernel_helper = kernel_helper;
     if (catalog && object_storage_->hasCredentialsRefreshCallback())

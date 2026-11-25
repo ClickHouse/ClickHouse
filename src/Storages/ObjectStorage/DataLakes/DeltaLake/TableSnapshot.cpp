@@ -1101,6 +1101,32 @@ const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
     return schema->timestamp_ntz_paths;
 }
 
+bool TableSnapshot::hasWriterFeature(std::string_view feature) const
+{
+    using KernelProtocol = KernelPointerWrapper<::SharedProtocol, ::free_protocol>;
+    struct Visitor
+    {
+        std::string_view feature;
+        bool found = false;
+
+        static void visitVersions(::NullableCvoid, int32_t, int32_t) {}
+
+        static void visitFeature(::NullableCvoid context, bool is_reader, ::KernelStringSlice name)
+        {
+            auto * visitor = static_cast<Visitor *>(context);
+            if (!is_reader && std::string_view(name.ptr, name.len) == visitor->feature)
+                visitor->found = true;
+        }
+    };
+
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    KernelProtocol protocol(::snapshot_get_protocol(state->snapshot.get()));
+    Visitor visitor{feature};
+    ::visit_protocol(protocol.get(), &visitor, &Visitor::visitVersions, &Visitor::visitFeature);
+    return visitor.found;
+}
+
 }
 
 #endif

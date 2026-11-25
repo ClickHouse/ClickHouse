@@ -79,5 +79,10 @@ for table in type_widening liquid_clustering iceberg_compat_v2 column_mapping_id
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT '$table', count() FROM deltaLakeLocal('$BASE/$table')"
 done
+# A rejected INSERT leaves no file behind.
+for table in type_widening liquid_clustering iceberg_compat_v2 column_mapping_id writer_features
+do
+    if diff -rq "$CUR_DIR/data_lake_corpus/delta/$table" "$BASE/$table" > /dev/null; then echo "$table: unchanged"; else echo "$table: changed"; fi
+done
 
 rm -rf "$BASE"
