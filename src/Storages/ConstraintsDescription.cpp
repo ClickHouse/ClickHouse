@@ -31,6 +31,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 
@@ -212,7 +213,10 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(
         {
             /// The list wrapper lets a bare subquery be resolved as an expression.
             auto expression_list = make_intrusive<ASTExpressionList>();
-            expression_list->children.push_back(constraint_ptr->expr->clone());
+            ASTPtr expression_ast = constraint_ptr->expr->clone();
+            /// The AST may be re-parsed from stored text, e.g. from the metadata of a replicated table.
+            normalizeSetOperations(expression_ast, context);
+            expression_list->children.push_back(expression_ast);
             auto expression = buildQueryTree(expression_list, context);
 
             QueryAnalyzer analyzer(/*only_analyze_=*/ false);
