@@ -74,7 +74,7 @@ def started_cluster():
 
 
 def request(node, cert_name=None, basic=False, basic_user="replica", basic_password="secret"):
-    context = WrapSSLContextWithSNI("interserver.test", ssl.PROTOCOL_TLS_CLIENT)
+    context = WrapSSLContextWithSNI(node.name, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=str(CERT_DIR / "ca-cert.pem"))
     context.check_hostname = True
     if cert_name:

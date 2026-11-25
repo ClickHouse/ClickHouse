@@ -31,7 +31,8 @@ make_signed_certificate() {
         -extfile "$extension_file" > /dev/null 2>&1
 }
 
-make_signed_certificate server '/CN=interserver.test' 0x01 serverAuth 'DNS:interserver.test'
+make_signed_certificate server '/CN=interserver.test' 0x01 serverAuth \
+    'DNS:interserver.test,DNS:certificate_only,DNS:mixed,DNS:basic_only,DNS:certificate_and_anonymous'
 # Put an unlisted SAN before two allowed ones to exercise scanning all SANs.
 make_signed_certificate valid-a '/CN=unlisted' 0x02 clientAuth \
     'URI:spiffe://example.org/clickhouse/unlisted,URI:spiffe://example.org/clickhouse/replica-a,URI:spiffe://example.org/clickhouse/replica-b'
